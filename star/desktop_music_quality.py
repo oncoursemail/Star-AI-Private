@@ -21,7 +21,11 @@ import threading
 from typing import Callable
 
 from .audio_understanding import AudioSource, MAX_SOURCE_BYTES
-from . import human_quality, music_recognition
+from . import human_quality
+from ._lazy import lazy_module
+
+# Keep httpx and other provider code off STAR's critical desktop startup path.
+music_recognition = lazy_module('star.music_recognition')
 
 OWNER_ACTIONS = frozenset({
     "musicStatus", "musicChooseWav", "musicChooseFpcalc", "musicClear",
