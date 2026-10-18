@@ -53,6 +53,7 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_roblox_search_games", "star_roblox_game_report", "star_roblox_compare_games",
     "star_roblox_game_image", "search_asset",
     "star_github_tree", "star_github_read", "star_mcp_search", "star_mcp_call", "star_delegate_research",
+    "workspace_minecraft_audit", "workspace_minecraft_inspect",
 })
 LUAU_AFTER_UNTRUSTED = ("Full Luau execution is off for the rest of this turn because it read web or "
                         "third-party content. Ask again in a new message to run Luau.")
