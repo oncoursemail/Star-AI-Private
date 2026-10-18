@@ -1,8 +1,9 @@
 import {Fragment,useCallback,useEffect,useRef,useState} from 'react'
 import {AnimatePresence,motion} from 'motion/react'
-import {Activity,ArrowRight,BookOpen,Box,Boxes,Braces,BrainCircuit,Check,ChevronDown,ChevronRight,CircleAlert,Copy,Download,Ellipsis,Folder,FolderOpen,Gauge,GraduationCap,ImagePlus,Info,LayoutDashboard,LoaderCircle,MessageCircleMore,PanelLeftClose,PanelLeftOpen,Pencil,Plus,Search,Settings2,Shield,SquarePen,Trash2,Undo2,Workflow,X,Zap} from 'lucide-react'
+import {Activity,ArrowRight,BookOpen,Box,Boxes,Braces,BrainCircuit,Check,ChevronDown,ChevronRight,CircleAlert,Copy,Download,Ellipsis,Folder,FolderOpen,Gauge,GraduationCap,ImagePlus,Info,LayoutDashboard,LoaderCircle,MessageCircleMore,PanelLeftClose,PanelLeftOpen,Pencil,Plus,Search,Settings2,Shield,SquarePen,Store,Trash2,Undo2,Workflow,X,Zap} from 'lucide-react'
 import {AnalyticsView} from './Charts'
 import {BrainOverview} from './BrainOverview'
+import {CommercePanel} from './CommercePanel'
 import {Message,Panel,StarMark,Tag} from './components'
 import {WEBSITE_RELEASES} from './constants'
 import {onBackendEvent,request} from './bridge'
@@ -47,8 +48,8 @@ import {MotionPolicy,useEffectiveReducedMotion} from './MotionPolicy'
 import {MotionSurface} from './MotionSurface'
 import type {Fixture,FixtureScript} from './previewFixtures'
 
-type Tab='chat'|'projects'|'brain'|'brain-overview'|'analytics'|'tools'|'library'|'settings'
-const sections:[Tab,string,typeof MessageCircleMore][]=[['chat','Chat',MessageCircleMore],['projects','Projects',Boxes],['library','Library',BookOpen],['tools','Tools',Workflow],['analytics','Analytics',Activity],['brain-overview','Brain',BrainCircuit],['brain','Model & connection',Gauge],['settings','Settings',Settings2]]
+type Tab='chat'|'projects'|'business'|'brain'|'brain-overview'|'analytics'|'tools'|'library'|'settings'
+const sections:[Tab,string,typeof MessageCircleMore][]=[['chat','Chat',MessageCircleMore],['projects','Projects',Boxes],['business','Business',Store],['library','Library',BookOpen],['tools','Tools',Workflow],['analytics','Analytics',Activity],['brain-overview','Brain',BrainCircuit],['brain','Model & connection',Gauge],['settings','Settings',Settings2]]
 const truncate=(s:string,n=90)=>s.length>n?s.slice(0,n-1)+'…':s
 const fileName=(path:string)=>path.split(/[\\/]/).pop()||path
 const defaultSettings:AppSettings={endpoint:'http://127.0.0.1:8080/v1',provider:'local',model:'',fast_model:'',reasoning_model:'',roblox_model:'',vision_model:'',router_models_dir:'',router_context:4096,gpu_layers:25,instant_route_enabled:false,project:'STAR',workspace:'',studio_id:'',studio_target:'local_pc',studio_edit:false,workspace_edit:false,max_calls:12,context_chars:26000,reduced_motion:false,obsidian_vault:'',obsidian_enabled:false,skills_enabled:true,graphify_enabled:true,comfy_workflow:'',comfy_prompt_node:'6',comfy_port:8188,mcp_graphify_docs:false,mcp_graphify_local:false,mcp_graphify_port:8931,mcp_obsidian_live:false,blender_enabled:false,blender_edit:false,blender_executable:'',roblox_research_enabled:true,asset_forge_enabled:false,tool_workshop_enabled:true,specialists_enabled:true,specialist_parallelism:1}
@@ -68,7 +69,7 @@ const starters=[
 
 function initialPreviewTab(preview:boolean):Tab {
  const value=new URLSearchParams(window.location.search).get('tab')
- if(preview&&value&&['chat','projects','brain','brain-overview','analytics','tools','library','settings'].includes(value))return value as Tab
+ if(preview&&value&&['chat','projects','business','brain','brain-overview','analytics','tools','library','settings'].includes(value))return value as Tab
  return 'chat'
 }
 /** Scripted fixtures exist only for the browser preview; the Qt desktop can never select one. */
@@ -740,7 +741,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
        {historySearchOpen&&<div className="rail-search"><input type="search" autoFocus aria-label="Find a conversation" placeholder="Find a chat" value={historyQuery} onChange={e=>setHistoryQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setHistorySearchOpen(false);setHistoryQuery('')}}}/><button type="button" aria-label="Close search" onClick={()=>{setHistorySearchOpen(false);setHistoryQuery('')}}><X size={14}/></button></div>}
      </div>
      <nav className="rail-group" aria-label="Workspace">
-       {sections.filter(([id])=>id==='projects'||id==='tools').map(([id,name,Icon])=><button className={'rail-item '+(tab===id?'is-current':'')} type="button" key={id} aria-current={tab===id?'page':undefined} onClick={()=>nav(id)}><Icon size={16}/><span>{name}</span>{id==='projects'&&<small dir="auto" title={'Current project: '+data.project}>{data.project}</small>}</button>)}
+       {sections.filter(([id])=>id==='projects'||id==='business'||id==='tools').map(([id,name,Icon])=><button className={'rail-item '+(tab===id?'is-current':'')} type="button" key={id} aria-current={tab===id?'page':undefined} onClick={()=>nav(id)}><Icon size={16}/><span>{name}</span>{id==='projects'&&<small dir="auto" title={'Current project: '+data.project}>{data.project}</small>}</button>)}
        <button className="rail-item rail-more" type="button" aria-expanded={showMore} onClick={()=>setMoreOpen(v=>!v)}><ChevronRight size={16} className={showMore?'is-open':undefined}/><span>More</span></button>
        {showMore&&<div className="rail-more-group">
          {sections.filter(([id])=>extraPages.includes(id)).map(([id,name,Icon])=><button className={'rail-item '+(tab===id?'is-current':'')} type="button" key={id} aria-current={tab===id?'page':undefined} onClick={()=>nav(id)}><Icon size={16}/><span>{id==='brain'?'Model':name}</span></button>)}
@@ -844,6 +845,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
            <div className="sr-only" role="status" aria-live="polite">{announce}</div>
          </div>}
           {tab==='analytics'&&<AnalyticsView data={data.analytics}/>}
+         {tab==='business'&&<div className="scroll-region"><div className="page-wrap commerce-page"><CommercePanel project={data.project} preview={inactive}/></div></div>}
          {tab==='brain-overview'&&<div className="scroll-region"><div className="page-wrap"><BrainOverview load={!inactive}/></div></div>}
          {tab==='projects'&&<div className="scroll-region"><div className="page-wrap"><PageTitle eyebrow="PROJECT MANAGEMENT" title="Your workspaces" description="Separate contexts, conversations, and design decisions for every project."/><div className="project-create"><input aria-label="New project name" value={newProject} onChange={e=>setNewProject(e.target.value)} placeholder="New project name" maxLength={60} onKeyDown={e=>{if(e.key==='Enter'&&newProject.trim()){void changeProject(newProject.trim());setNewProject('')}}}/><button className="primary-button" onClick={()=>{if(newProject.trim()){void changeProject(newProject.trim());setNewProject('')}}}><Plus size={17}/> New workspace</button></div><div className="project-grid">{[...new Set([data.project,...data.projects])].map(name=><button className={'project-card '+(name===data.project?'project-current':'')} key={name} type="button" aria-current={name===data.project?'page':undefined} aria-label={'Workspace '+name+(name===data.project?' — current workspace':'')} onClick={()=>changeProject(name)}><FolderOpen size={25}/><strong dir="auto" title={name}>{name}</strong><span>{name===data.project?'Current workspace':'Open workspace'}</span><ArrowRight size={18}/></button>)}</div><LearningPanel project={data.project} settings={data.settings} counts={data.learning} invoke={act} disabled={inactive} refresh={()=>void sync()}/><ReferencesPanel project={data.project} invoke={act} disabled={inactive}/></div></div>}
          {tab==='brain'&&<div className="scroll-region"><div className="page-wrap brain-page">
