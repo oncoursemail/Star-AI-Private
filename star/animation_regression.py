@@ -24,7 +24,7 @@ def sample_clip(recipe: object) -> tuple[dict[str, tuple[float, float, float]], 
     for pose in clip["keyframes"]:
         current = dict(current)
         for name, rotations in pose["bones"].items():
-            current[name] = tuple(float(axis) for axis in rotations)
+            current[name] = (float(rotations[0]), float(rotations[1]), float(rotations[2]))
         keys.append((pose["frame"], current))
     samples: list[dict[str, tuple[float, float, float]]] = []
     for (frame_a, pose_a), (frame_b, pose_b) in zip(keys, keys[1:]):
