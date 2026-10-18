@@ -286,7 +286,7 @@ jobs:
   # verified main-branch artifacts enter this trusted provenance job.
   attest-release:
     needs: [windows-build, windows-tests]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.STAR_PRIVATE_ATTESTATIONS_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -317,61 +317,130 @@ jobs:
         with:
           subject-path: 'attest-ready/*'
 
+  # This job is manual only. It is the only job that can mint a token scoped to
+  # the new PUBLIC release repository; PR and ordinary push jobs cannot publish.
   publish-release:
-    needs: [windows-build, attest-release]
-    if: github.ref == 'refs/heads/main'
+    needs: [windows-build, windows-tests, attest-release]
+    if: >-
+      ${{ always()
+      && github.event_name == 'workflow_dispatch'
+      && github.ref == 'refs/heads/main'
+      && needs.windows-build.result == 'success'
+      && needs.windows-tests.result == 'success'
+      && (
+        (vars.STAR_PRIVATE_ATTESTATIONS_ENABLED == 'true' && needs.attest-release.result == 'success')
+        || (vars.STAR_PRIVATE_ATTESTATIONS_ENABLED != 'true' && needs.attest-release.result == 'skipped')
+      ) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: star-public-release
     permissions:
-      contents: write
+      contents: read
       attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-      - name: Download tested Windows packages
+      - name: Download packages from this successfully tested private build
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: STAR-Windows-vNext
           path: release-assets
-      - name: Publish when version is new (never overwrite an existing release)
+      - name: Verify exact source, hashes and optional private attestations
+        id: prepare
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           STAR_REPO: ${{ github.repository }}
           STAR_COMMIT: ${{ github.sha }}
+          STAR_PRIVATE_ATTESTATIONS_ENABLED: ${{ vars.STAR_PRIVATE_ATTESTATIONS_ENABLED }}
         shell: bash
         run: |
           set -euo pipefail
           VERSION="$(python -c 'from star.version import __version__;print(__version__)')"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           TAG="v$VERSION"
-          # A delayed build from an old main SHA must not create a release tag
-          # pointing at an outdated workflow commit. GitHub denies those writes
-          # with 403 even when this job has contents: write.
           MAIN_SHA="$(gh api "repos/$STAR_REPO/commits/main" --jq .sha)"
           if [[ "$MAIN_SHA" != "$STAR_COMMIT" ]]; then
-            echo "::notice::Skipping superseded build $STAR_COMMIT; main is $MAIN_SHA"
-            exit 0
+            echo "::error::Private main changed. Rebuild from the latest SHA."
+            exit 1
           fi
+          # Do not issue a second build under the historically published private version.
           if gh release view "$TAG" --repo "$STAR_REPO" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; keeping existing verified binaries."
-            exit 0
+            echo "::error::Tag $TAG was already released privately. Bump the version before publishing new bytes publicly."
+            exit 1
           fi
-          # actions/upload-artifact preserves path components for multi-path inputs.
-          # Normalize both assets into a flat release directory.
+          test "$(find release-assets -type f -name "STAR-Setup-$TAG.exe" | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'STAR-Genesis-Windows-x64.zip' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name 'STAR-PREVIEW-SHA256SUMS.txt' | wc -l)" -eq 1
           SETUP="$(find release-assets -type f -name "STAR-Setup-$TAG.exe" -print -quit)"
-          PORTABLE="$(find release-assets -type f -name "STAR-Genesis-Windows-x64.zip" -print -quit)"
-          test -n "$SETUP" && test -f "$SETUP"
-          test -n "$PORTABLE" && test -f "$PORTABLE"
+          PORTABLE="$(find release-assets -type f -name 'STAR-Genesis-Windows-x64.zip' -print -quit)"
+          PREVIEW="$(find release-assets -type f -name 'STAR-PREVIEW-SHA256SUMS.txt' -print -quit)"
+          test -s "$SETUP" && test -s "$PORTABLE"
           mkdir -p release-ready
           cp "$SETUP" "release-ready/STAR-Setup-$TAG.exe"
           cp "$PORTABLE" release-ready/STAR-Genesis-Windows-x64.zip
-          # Verify the repository, signer workflow, source SHA and source ref.
-          # A passing build or a SHA-256 checksum alone is not enough to publish.
-          for artifact in "release-ready/STAR-Setup-$TAG.exe" "release-ready/STAR-Genesis-Windows-x64.zip"; do
-            gh attestation verify "$artifact" --repo "$STAR_REPO" \
-              --signer-workflow "$STAR_REPO/.github/workflows/windows-desktop.yml" \
-              --source-digest "$STAR_COMMIT" --source-ref "refs/heads/main"
-          done
-          ( cd release-ready && sha256sum "STAR-Setup-$TAG.exe" STAR-Genesis-Windows-x64.zip ) > release-ready/SHA256SUMS.txt
-          gh release create "$TAG" "release-ready/STAR-Setup-$TAG.exe" release-ready/STAR-Genesis-Windows-x64.zip release-ready/SHA256SUMS.txt \
-            --repo "$STAR_REPO" --target "$STAR_COMMIT" --title "STAR Intelligence $TAG" --generate-notes
+          # The independent Windows build job wrote these actual artifact digests.
+          ( cd release-ready && sha256sum -c "../$PREVIEW" )
+          if [[ "$STAR_PRIVATE_ATTESTATIONS_ENABLED" == true ]]; then
+            for artifact in "release-ready/STAR-Setup-$TAG.exe" "release-ready/STAR-Genesis-Windows-x64.zip"; do
+              gh attestation verify "$artifact" --repo "$STAR_REPO" \
+                --signer-workflow "$STAR_REPO/.github/workflows/windows-desktop.yml" \
+                --source-digest "$STAR_COMMIT" --source-ref "refs/heads/main"
+            done
+          else
+            echo "::notice::Private attestations disabled. CI and SHA-256 required; binaries are not code-signed by this step."
+          fi
+          (cd release-ready && sha256sum "STAR-Setup-$TAG.exe" STAR-Genesis-Windows-x64.zip) > release-ready/SHA256SUMS.txt
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Require configured public release GitHub App
+        shell: bash
+        env:
+          STAR_CLIENT_ID: ${{ vars.STAR_PUBLIC_RELEASE_APP_CLIENT_ID }}
+          STAR_APP_PRIVATE_KEY: ${{ secrets.STAR_PUBLIC_RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$STAR_CLIENT_ID" || -z "$STAR_APP_PRIVATE_KEY" ]]; then
+            echo "::error::Set STAR_PUBLIC_RELEASE_APP_CLIENT_ID and STAR_PUBLIC_RELEASE_APP_PRIVATE_KEY. Read docs/PRIVATE_PUBLIC_RELEASE_MIGRATION.md."
+            exit 1
+          fi
+      - name: Create an installation token only for public Star-AI
+        id: public-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.STAR_PUBLIC_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.STAR_PUBLIC_RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Star-AI
+          permission-contents: write
+      - name: Publish exact verified assets, not source, to public releases
+        env:
+          GH_TOKEN: ${{ steps.public-token.outputs.token }}
+          STAR_PUBLIC_REPO: oncoursemail/Star-AI
+          STAR_SOURCE_COMMIT: ${{ github.sha }}
+          TAG: ${{ steps.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$STAR_PUBLIC_REPO" --jq .visibility)" = public
+          test "$(gh api "repos/$STAR_PUBLIC_REPO" --jq .default_branch)" = main
+          if gh release view "$TAG" --repo "$STAR_PUBLIC_REPO" >/dev/null 2>&1; then
+            echo "::error::Public $TAG already exists; never replace it."
+            exit 1
+          fi
+          if gh api "repos/$STAR_PUBLIC_REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Public tag $TAG already exists; never retag it."
+            exit 1
+          fi
+          PUBLIC_MAIN_SHA="$(gh api "repos/$STAR_PUBLIC_REPO/commits/main" --jq .sha)"
+          printf 'STAR Intelligence %s\n\nTested packages built from private source commit %s.\nThis public repository contains release binaries and checksums only, not application source code.\nThe SHA256SUMS.txt file provides integrity checks, not code-signing proof.\n' \
+            "$TAG" "$STAR_SOURCE_COMMIT" > release-ready/RELEASE_NOTES.md
+          gh release create "$TAG" \
+            "release-ready/STAR-Setup-$TAG.exe" \
+            release-ready/STAR-Genesis-Windows-x64.zip \
+            release-ready/SHA256SUMS.txt \
+            --repo "$STAR_PUBLIC_REPO" --target "$PUBLIC_MAIN_SHA" \
+            --title "STAR Intelligence $TAG" --notes-file release-ready/RELEASE_NOTES.md
+          gh release view "$TAG" --repo "$STAR_PUBLIC_REPO"
