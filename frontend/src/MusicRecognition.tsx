@@ -7,7 +7,7 @@
  */
 import {useEffect,useRef,useState} from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import {AudioLines,Check,FileAudio,FolderOpen,LoaderCircle,Mic,Music2,Shield,Square,X} from 'lucide-react'
+import {AudioLines,Check,FileAudio,FolderOpen,LoaderCircle,Music2,Shield,X} from 'lucide-react'
 import {isDesktop,onBackendEvent,request} from './bridge'
 import './music-recognition.css'
 
