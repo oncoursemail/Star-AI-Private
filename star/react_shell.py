@@ -113,7 +113,11 @@ ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_INTEROP_ACTIONS
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | {'gameLabCatalog'}
 # Business uses only local draft and review actions; it cannot publish, spend or contact buyers.
 # Do not import the commerce package at desktop startup: its art scanner uses Pillow.
-COMMERCE_ACTIONS = frozenset({'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview'})
+COMMERCE_ACTIONS = frozenset({
+    'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview',
+    'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
+    'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
+})
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
 
 # A background warm-up (server check + prompt-cache priming) gives way at once to
@@ -1191,7 +1195,11 @@ def launch():
                     return json.dumps({'ok':True,'data':research_task()},default=str)
                 # String literals preserve the standalone Qt bridge test harness that
                 # extracts invoke() without its module globals. Keep in sync with the allowlist.
-                if action in ('commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview'):
+                if action in (
+                    'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview',
+                    'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
+                    'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
+                ):
                     from .commerce.workspace import handle_commerce
                     current = Settings.load(self.settings_file)
                     result = handle_commerce(action, body, project=current.project, home=app_data())
