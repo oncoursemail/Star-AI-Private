@@ -466,6 +466,6 @@ def scaffold_item(workspace, output_dir: str, *, namespace: str, item_id: str,
                 "target_version": target_version, "file_count": report["stats"]["files"],
                 "valid": True, "deployed": False, "tested_in_game": False,
                 "next_step": "Use workspace_minecraft_package to export an archive, then test in a matching client."}
-    except BaseException:
+    except Exception:
         shutil.rmtree(output)
         raise
