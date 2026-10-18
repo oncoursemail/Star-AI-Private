@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -362,6 +363,7 @@ def worker_env(config: dict, ns: Path, brain_url: str) -> dict:
         "STAR_NS_SHARE": config["share"], "STAR_NS_VALIDATION_SHARE": str(config["validation_share"]),
         "STAR_NS_SKIP_FILE": str(ns / "skip.json"), "STAR_NS_SANDBOX_SSH": config["server_ssh"],
         "STAR_NS_DIAGNOSE_MODEL": "",                    # only star-fast is loaded here
+        "STAR_NS_CONDUCTOR_MODELS": "star-fast", "STAR_NS_CONDUCTOR_TAG": "pc-",   # its new tasks go to server 1's pool
         "PYTHONIOENCODING": "utf-8",
         "APPDATA": str(ns / "appdata"), "XDG_DATA_HOME": str(ns / "appdata"),   # never the owner's STAR profile
     }
@@ -457,10 +459,28 @@ def apply_server_state(ns: Path, state: dict) -> str:
     return f"{len(tried)} tasks answered on server 1 are skipped" + seeded
 
 
+def push_conductor_tasks(config: dict, ns: Path) -> int:
+    """Copy the PC conductor's pool files (pool/conductor-pc-*.json, already checked by the same validators) into
+    server 1's pool, so every worker practises them and the next pool sync does not lose them. Returns files sent."""
+    sent = 0
+    for path in sorted((ns / "pool").glob("conductor-pc-*.json")) if config["server_ssh"] else ():
+        name = path.name
+        if not re.fullmatch(r"conductor-pc-\d{8}\.json", name):
+            continue
+        done = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", config["server_ssh"],
+             f"lxc exec {config['container']} -- sh -c 'cat > {SERVER_HOME}/pool/.{name}.tmp && "
+             f"chown star:star {SERVER_HOME}/pool/.{name}.tmp && mv {SERVER_HOME}/pool/.{name}.tmp {SERVER_HOME}/pool/{name}'"],
+            input=path.read_bytes(), capture_output=True, timeout=90, creationflags=NO_WINDOW)
+        sent += done.returncode == 0
+    return sent
+
+
 def sync_from_server(config: dict, ns: Path) -> str:
     if not config["server_ssh"]:
         return "no server_ssh in config.json: using the pool already here"
     try:
+        push_conductor_tasks(config, ns)          # before the local pool is replaced by server 1's copy
         data = _ssh(config, f"tar c -C {SERVER_HOME} pool")
         with tempfile.TemporaryDirectory(dir=ns.parent if ns.parent.is_dir() else None) as folder:
             _untar(data, Path(folder))
@@ -525,6 +545,11 @@ def merge_now(config: dict, home: Path) -> str:
             except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
                 note = f"server 1's outbox not reachable ({type(exc).__name__}); "
         sources.append(("pc-gpu", home / "ns"))
+        try:
+            if push_conductor_tasks(config, home / "ns"):
+                note += "PC conductor tasks copied to server 1's pool; "
+        except (OSError, subprocess.SubprocessError) as exc:
+            note += f"PC conductor tasks not copied ({type(exc).__name__}); "
         done = merge_outboxes(sources, home / "merged")
     return note + f"{done['lessons']} lessons, {done['examples']} worked examples in merged/"
 

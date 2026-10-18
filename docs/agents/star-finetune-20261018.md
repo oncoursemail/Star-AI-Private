@@ -30,6 +30,26 @@ Sources: server 1 `data/examples.jsonl` (324 rows), server 2 (49), PC GPU turbo 
 - Also fixed: `run_cycle` used the wall clock for the first failure cut-off instead of `now` (the existing cycle test
   failed from 2026-10-18 on).
 
+## 2. Apprentice v2 (in progress)
+- Dataset `work/apprentice/data-v2` (build_dataset.py over s1+s2+PC examples, pool of server 1): rows 589, dup task
+  163, dup answer 8, measuring slice excluded 89 -> **train 304 / val 25** (pilot 154 / 10); 165 hand-written-family,
+  134 ledger, 5 private river rows (local only). Measuring slice now 128 tasks; the pilot's 117 are all inside it
+  and none is in training (checked), so v2 is scored on the same 117 as the pilot base/apprentice answers.
+- Venv `tools-portable/train-venv` was broken (its base Python lived in the deleted voice-lab folder): pyvenv.cfg now
+  points to the Codex runtime Python 3.12.14 (backup pyvenv.cfg.bak-20261018); torch 2.11+cu128 CUDA OK.
+- HF weights re-downloaded (rev cdbee75f, 7.6 GB in work/apprentice/hf). `run_arm.sh` fixed: it killed EVERY
+  llama-server.exe (incl. the GPU turbo's); now only its own (backup run_arm.sh.bak-20261018).
+- GPU guard: RobloxStudioBeta (place edit, since 05:13Z) is open on this PC -> training waits.
+
+## 3. Embedding fine-tune: already live since 2026-10-14
+The guarded server A/B in gpu-training-pilot.md was done on 2026-10-14 (msg 2026-10-14 09:20Z, night-school-restart.md):
+star-knowledge and star-knowledge-refresh run with STAR_EMBED_MODEL=star-embed-ft1 (systemd drop-ins embed-ft1.conf),
+router alias star-embed-ft1 loaded. Checked 07:55Z: all 18,208 chunks have ft1 vectors (0 missing); the old star-embed
+vectors miss 342 chunks added since (a rollback would leave those 342 without vectors until `starkb embed` runs).
+Nightly refresh eval30 vector r@5 30/30. Nothing to do; rollback stays `deploy_embed_ft.sh rollback`.
+
 ## Status log
 - 07:37Z start; data copied read-only; HF weights of Qwen3-4B-Instruct-2507 re-downloading (pilot deleted them).
 - 07:46Z conductor deployed (file + env only; loop not restarted: quiet lock held by claude-model-scout18).
+- 08:13Z msg #427 (Studio open on the PC blocks training; quiet lock of model-scout18 paused night school 05:15-08:33Z).
+- 08:34Z star-night-school restarted under my quiet lock (< 1 min): loop now runs the new conductor, env cap 80.

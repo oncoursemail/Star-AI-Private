@@ -471,7 +471,7 @@ def due(settings, state: dict, now: dt.datetime | None = None, wall: float | Non
 
 
 def pool_file(settings, night: str) -> Path:
-    return Path(settings.pool) / f"conductor-{night}.json"
+    return Path(settings.pool) / f"conductor-{settings.conductor_tag}{night}.json"
 
 
 def _read_night_tasks(path: Path) -> list[dict]:
@@ -490,7 +490,9 @@ def _write_night_tasks(path: Path, rows: list[dict]) -> None:
 
 
 def pick_models(settings, watch) -> list[str]:
-    """The configured models that are loaded and have a slot other than 0 (slot 0 is the owner's chat)."""
+    """The configured models that are loaded and have a slot other than 0 (slot 0 is the owner's chat). With
+    STAR_NS_SLOT=0 the model server is night school's own (the PC GPU turbo): slot 0 is fine there, as in real.py."""
+    least = 0 if int(getattr(settings, "slot", 1)) == 0 else 1
     wanted = [m.strip() for m in settings.conductor_models.split(",") if m.strip()]
     try:
         loaded = watch.models()
@@ -502,7 +504,7 @@ def pick_models(settings, watch) -> list[str]:
     usable = []
     for name in wanted:
         real = next((m for m, aliases in loaded.items() if name == m or name in aliases), None)
-        if real is not None and top.get(real, 0) >= 1:
+        if real is not None and top.get(real, 0) >= least:
             usable.append(name)
     return usable
 

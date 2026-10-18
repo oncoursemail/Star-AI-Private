@@ -403,3 +403,13 @@ def test_repair_that_still_fails_is_rejected_and_capped(tmp_path):
     result = conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
     assert result["accepted"] == 0 and len(repairs) == conductor.MAX_REPAIRS_PER_CYCLE
     assert any(k.startswith("reference fails its own task") for k in result["rejected"])
+
+
+def test_pc_turbo_conductor_uses_its_own_slot_0_and_a_tagged_pool_file(tmp_path):
+    from nightschool.idle import BrainWatch
+    table = {"/v1/models": {"data": [{"id": "star-fast"}]}, "/slots?model=star-fast": [{"id": 0, "is_processing": False}]}
+    watch = BrainWatch("http://x", fetch=lambda path: table[path])
+    assert conductor.pick_models(settings_for(tmp_path, conductor_models="star-fast"), watch) == []
+    s = settings_for(tmp_path, conductor_models="star-fast", slot=0, conductor_tag="pc-")
+    assert conductor.pick_models(s, watch) == ["star-fast"]                   # STAR_NS_SLOT=0: night school's own server
+    assert conductor.pool_file(s, "20261017").name == "conductor-pc-20261017.json"
