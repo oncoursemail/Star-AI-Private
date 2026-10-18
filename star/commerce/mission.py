@@ -279,11 +279,17 @@ def run_preflight(conn: sqlite3.Connection, project: str, body: Mapping[str, Any
         raise ValueError(f"Batch size must be an integer from 1 to {MAX_BATCH}")
     # Even for 100 shops there is no infinite loop or network retry.
     waiting = conn.execute("""
-        SELECT j.* FROM commerce_preflight_jobs AS j
-        JOIN commerce_businesses AS b ON b.id=j.business_id
-        WHERE j.project=? AND j.status='queued' AND b.paused=0 AND b.project=j.project
-        ORDER BY j.created_at ASC,j.id ASC LIMIT 500
-    """, (project,)).fetchall()
+        WITH eligible AS (
+          SELECT j.*, ROW_NUMBER() OVER (
+              PARTITION BY j.business_id ORDER BY j.created_at ASC,j.id ASC
+          ) AS position_in_business
+          FROM commerce_preflight_jobs AS j
+          JOIN commerce_businesses AS b ON b.id=j.business_id
+          WHERE j.project=? AND j.status='queued' AND b.paused=0 AND b.project=j.project
+        )
+        SELECT * FROM eligible WHERE position_in_business <= ?
+        ORDER BY created_at ASC,id ASC
+    """, (project, MAX_BATCH)).fetchall()
     selected = _fair_batch(waiting, limit)
     for job in selected:
         item = _idea(conn, project, job["idea_id"])
