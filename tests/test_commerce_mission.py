@@ -211,3 +211,23 @@ def test_previous_workspace_is_migrated_without_dropping_legacy_ideas(tmp_path):
     with sqlite3.connect(db) as c:
         fields = {row[1] for row in c.execute("PRAGMA table_info(commerce_ideas)")}
         assert "business_id" in fields
+
+
+def test_a_completed_check_is_revoked_when_evidence_changes(tmp_path):
+    shop = make_business(tmp_path)
+    item = make_candidate(tmp_path, shop)
+    review_evidence(tmp_path, item)
+    request(tmp_path, "commercePauseBusiness", id=shop["id"], paused=False)
+    request(tmp_path, "commerceQueuePreflight", idea_id=item["id"])
+    completed = request(tmp_path, "commerceRunPreflight")
+    assert completed["job_counts"]["review_ready"] == 1
+    revised = request(tmp_path, "commerceEvidence", id=item["id"],
+                      evidence={"rights_evidence": "Updated source licensing evidence"})
+    assert revised["job_counts"]["review_ready"] == 0
+    assert revised["job_counts"]["stale"] == 1
+    assert revised["preflight_jobs"][0]["status"] == "stale"
+    request(tmp_path, "commerceQueuePreflight", idea_id=item["id"])
+    checked = request(tmp_path, "commerceRunPreflight")
+    assert checked["job_counts"]["review_ready"] == 1
+    assert checked["job_counts"]["stale"] == 1
+    assert checked["counts"]["approved_for_export"] == 0
