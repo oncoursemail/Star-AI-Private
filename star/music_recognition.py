@@ -180,7 +180,7 @@ async def _request_json(url: str, form: dict[str, str], *,
                         raise MusicRecognitionUnavailable("Recognition reply exceeded safety limit")
                 data = json.loads(buffer)
                 return data
-    except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
+    except (httpx.HTTPError, ValueError, json.JSONDecodeError):
         raise MusicRecognitionUnavailable("Recognition request failed or returned invalid metadata") from None
 
 
@@ -238,7 +238,7 @@ def fingerprint_fpcalc(source: AudioSource, fpcalc_executable: Path,
                 timeout=15, check=False,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+        except (OSError, subprocess.TimeoutExpired):
             raise MusicRecognitionUnavailable("Local Chromaprint fingerprint generation failed") from None
         if process.returncode or len(process.stdout) > 64000:
             raise MusicRecognitionUnavailable("Local Chromaprint fingerprint output invalid")
@@ -293,7 +293,7 @@ def capture_microphone(*, seconds: int, device_index: int | None = None) -> Audi
         raise ValueError("Select a valid local microphone input index")
     try:
         import sounddevice as sd
-    except (ImportError, OSError) as exc:
+    except (ImportError, OSError):
         raise MusicRecognitionUnavailable("Install STAR's optional voice requirements to capture a microphone") from None
     try:
         pcm = sd.rec(seconds * 16000, samplerate=16000, channels=1, dtype="int16", device=device_index)
