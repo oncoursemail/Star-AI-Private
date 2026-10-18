@@ -254,6 +254,9 @@ def _window(day: date) -> str:
 
 def _bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:
     session_known = sum(r["sessions"] is not None for r in rows)
+    # A zero-session day with positive orders may reflect another checkout
+    # channel or a broken denominator. Keep the orders, but suppress the rate.
+    invalid_denominator = any(r["sessions"] == 0 and r["orders"] > 0 for r in rows)
     orders = sum(int(r["orders"]) for r in rows)
     sessions = sum(int(r["sessions"]) for r in rows if r["sessions"] is not None)
     money_known = all(all(r[field] is not None for field in
@@ -269,7 +272,7 @@ def _bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "orders": orders,
         "sessions": sessions if session_known == len(rows) and rows else None,
         "orders_per_100_sessions": round(100 * orders / sessions, 2)
-        if session_known == len(rows) and sessions > 0 else None,
+        if not invalid_denominator and session_known == len(rows) and sessions > 0 else None,
         "net_contribution_cents": contribution,
         "session_days": session_known,
         "complete_cost_data": money_known,
@@ -315,7 +318,8 @@ def _hypothesis(rows: list[dict[str, Any]], *, shopify_break: bool) -> dict[str,
         return {**weak, "reason":
                 "Shopify session-counting method changed in September 2026; split cohorts before inferring a pattern."}
     if (len(rows) < 120 or len(months) < 5 or _coverage(rows) < 0.90
-            or any(r["sessions"] is None for r in rows)):
+            or any(r["sessions"] is None or (r["sessions"] == 0 and r["orders"] > 0)
+                   for r in rows)):
         return {**weak, "reason":
                 "Need at least 120 well-covered dates across five months with a consistent session denominator."}
     if sum(int(r["orders"]) for r in rows) < 50:
