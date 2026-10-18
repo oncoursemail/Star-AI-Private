@@ -46,7 +46,7 @@ type Props = {
   busy: boolean
   selectedBusinessId: string
   onSelectBusiness: (id: string) => void
-  onAction: (name: string, data: Record<string, unknown>, message: string) => void
+  onAction: (name: string, data: Record<string, unknown>, message: string) => Promise<boolean> | void
 }
 
 /** Multi-business operation desk using actual private STAR records, never demo income. */
@@ -86,8 +86,10 @@ export function CommerceMissionControl({board, preview, busy, selectedBusinessId
 
     {isAdding && !preview && <form className="commerce-mission-create" onSubmit={event => {
       event.preventDefault()
-      onAction('commerceCreateBusiness',{name,niche,channel},'Business added privately with local checks paused.')
-      setAdding(false); setName(''); setNiche('')
+      void Promise.resolve(onAction('commerceCreateBusiness',{name,niche,channel},
+        'Business added privately with local checks paused.')).then(saved => {
+        if (saved) { setAdding(false); setName(''); setNiche('') }
+      })
     }}>
       <div><h3>New business</h3><p>No shop is created on Etsy, Shopify or other platforms by this form.</p></div>
       <label className="commerce-field">Business name
