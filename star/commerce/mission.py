@@ -29,7 +29,7 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _time() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def _require_id(value: Any, label: str) -> str:
@@ -240,12 +240,21 @@ def queue_preflight(conn: sqlite3.Connection, project: str, body: Mapping[str, A
     if business["channel"] != item["channel"]:
         raise ValueError("Business and candidate marketplace do not match")
     finger = _fingerprint(item)
-    if conn.execute("""
-        SELECT 1 FROM commerce_preflight_jobs
+    existing = conn.execute("""
+        SELECT id,status FROM commerce_preflight_jobs
         WHERE project=? AND idea_id=? AND fingerprint=?
-    """, (project, item["id"], finger)).fetchone():
-        # Deliberate replay protection: no repeated jobs until the source
-        # evidence actually changes. This is not a new work execution.
+    """, (project, item["id"], finger)).fetchone()
+    if existing is not None:
+        # Unchanged live or completed work remains deduplicated. If the owner
+        # cancelled it or the source later reverted to an older fingerprint,
+        # an explicit new queue action may re-open the original record.
+        if existing["status"] in ("stale", "cancelled"):
+            conn.execute("""
+                UPDATE commerce_preflight_jobs
+                SET status='queued',blockers_json='[]',checked_at=NULL,created_at=?
+                WHERE project=? AND id=?
+            """, (_time(), project, existing["id"]))
+            _event(conn, project, "preflight_requeued", business["id"], existing["id"])
         return
     jobs = conn.execute(
         "SELECT count(*) FROM commerce_preflight_jobs WHERE project=?", (project,)
