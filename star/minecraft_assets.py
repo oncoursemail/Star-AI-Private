@@ -208,14 +208,13 @@ def _check_pack(entries: dict[str, bytes], findings: list[dict], version: str) -
                 findings.append(_finding("error", "invalid-identifier", name,
                                          "Minecraft asset namespaces and paths must be lowercase"))
         if name.lower().endswith(".png"):
-            if len(data) < 24 or not data.startswith(PNG_HEADER):
-                findings.append(_finding("error", "invalid-png", name, "Invalid PNG signature/header"))
+            try:
+                w, h = _verified_png(data)
+            except ValueError:
+                findings.append(_finding("error", "invalid-png", name,
+                                         "PNG framing, mandatory data, or chunk CRC is invalid"))
             else:
-                w, h = int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
-                if min(w, h) == 0 or max(w, h) > 16384:
-                    findings.append(_finding("error", "texture-dimensions", name,
-                                             f"Unreasonable PNG dimensions {w}x{h}"))
-                elif max(w, h) > 2048:
+                if max(w, h) > 2048:
                     findings.append(_finding("warning", "large-texture", name,
                                              f"Texture {w}x{h} may affect client memory/performance"))
         elif name.lower().endswith(".ogg") and not data.startswith(b"OggS"):
