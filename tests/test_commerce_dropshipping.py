@@ -76,9 +76,9 @@ def test_margin_and_break_even_are_labeled_model_based_not_profits(tmp_path):
     # and a hypothetical $1.75 returns reserve.
     assert item["hypothetical_fee_cents"] == 132
     assert item["hypothetical_returns_reserve_cents"] == 175
-    assert item["contribution_before_ads_cents"] == 1968
-    assert item["break_even_cpa_cents"] == 1968
-    assert item["break_even_roas"] == round(3500 / 1968, 2)
+    assert item["contribution_before_ads_cents"] == 1793
+    assert item["break_even_cpa_cents"] == 1793
+    assert item["break_even_roas"] == round(3500 / 1793, 2)
     assert item["status"] == "cost_preflight_candidate"
     assert board["live_sales_connected"] is False
 
