@@ -1,0 +1,85 @@
+/* Existing STAR OLED design tokens drive all colors, fonts, spacing and focus. */
+.commerce-seasonality{margin:8px 0 30px;padding:27px 0 30px;border-top:1px solid var(--star-stroke);border-bottom:1px solid var(--star-stroke);color:var(--star-text)}
+.commerce-seasonality-heading,.commerce-learning-bucket-head{display:flex;justify-content:space-between;align-items:flex-end;gap:22px;margin-bottom:21px}
+.commerce-seasonality-heading h2{font-size:clamp(20px,2.3vw,27px);font-weight:640;letter-spacing:-.045em;margin:0 0 9px;line-height:1.2}
+.commerce-seasonality-heading p:not(.commerce-kicker),.commerce-learning-bucket-head p{font-size:13px;color:var(--star-muted);line-height:1.65;max-width:600px;margin:0}
+.commerce-seasonality-unselected{display:flex;gap:16px;align-items:center;border:1px dashed var(--star-stroke-strong);padding:25px 22px;border-radius:12px;background:var(--star-surface-1)}
+.commerce-seasonality-unselected svg{color:var(--star-gold);flex:0 0 24px}
+.commerce-seasonality-unselected strong{font-size:13px;font-weight:650}
+.commerce-seasonality-unselected p{margin:6px 0 0;color:var(--star-muted);font-size:12px;line-height:1.55}
+.commerce-learning-provenance{display:flex;align-items:center;gap:11px;padding:14px 16px;color:var(--star-muted);font-size:12px;line-height:1.6;background:var(--star-surface-1);border:1px solid var(--star-stroke);border-radius:10px}
+.commerce-learning-provenance>svg{flex:0 0 16px;color:var(--star-gold)}
+.commerce-learning-provenance strong{color:var(--star-text);font-weight:650}
+.commerce-learning-provenance span{flex:1;min-width:0}
+.commerce-learning-provenance button{display:grid;place-items:center;flex:0 0 30px;height:30px;border:1px solid var(--star-stroke-strong);border-radius:7px;background:transparent;color:var(--star-body);cursor:pointer}
+.commerce-learning-provenance button:disabled{opacity:.4;cursor:not-allowed}
+.commerce-learning-form{border:1px solid var(--star-stroke-strong);border-radius:12px;background:var(--star-sidebar);padding:23px;display:flex;flex-direction:column;gap:15px;margin-top:18px}
+.commerce-learning-form h3{font-size:18px;margin:0 0 5px;letter-spacing:-.02em}
+.commerce-learning-form>p{font-size:12px;line-height:1.7;color:var(--star-muted);margin:0}
+.commerce-learning-form>p strong{color:var(--star-text)}
+.commerce-learning-form-grid{display:grid;grid-template-columns:160px minmax(200px,1fr);gap:15px}
+.commerce-learning-csv-head{display:flex;flex-direction:column;gap:8px}
+.commerce-learning-csv-head strong{font-size:12px;color:var(--star-body)}
+.commerce-learning-csv-head code{display:block;background:var(--star-surface-2);border:1px solid var(--star-stroke);border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--star-mono);padding:10px 11px;font-size:11px;line-height:1.6;color:var(--star-muted)}
+.commerce-learning-paste{font-family:var(--star-mono)!important;font-size:12px!important;min-height:120px}
+.commerce-learning-form .commerce-learning-form-help{line-height:1.65;font-size:12px;color:var(--star-muted)}
+.commerce-learning-checkbox{display:flex;align-items:flex-start;gap:11px;color:var(--star-body);font-size:12px;line-height:1.5;cursor:pointer}
+.commerce-learning-checkbox input{width:17px;height:17px;flex:0 0 17px;margin:0;accent-color:var(--star-gold)}
+.commerce-learning-form>.commerce-action-primary{align-self:flex-start}
+.commerce-learning-error,.commerce-learning-confirmation,.commerce-learning-warning{margin-top:14px;display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border:1px solid var(--star-stroke-strong);border-radius:9px;font-size:12px;line-height:1.65;color:var(--star-muted)}
+.commerce-learning-error{border-color:var(--star-danger);color:var(--star-danger)}
+.commerce-learning-confirmation svg{color:var(--star-success)}
+.commerce-learning-warning{color:var(--star-gold)}
+.commerce-learning-error svg,.commerce-learning-warning svg,.commerce-learning-confirmation svg{flex:0 0 16px;margin-top:2px}
+.commerce-learning-loading{font-size:13px;color:var(--star-muted);padding:19px 0}
+.commerce-learning-empty{padding:28px 22px;margin-top:17px;background:var(--star-surface-1);border:1px solid var(--star-stroke);border-radius:12px;display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.commerce-learning-empty svg{color:var(--star-gold)}
+.commerce-learning-empty strong{font-size:14px;font-weight:650}
+.commerce-learning-empty p{color:var(--star-muted);font-size:13px;line-height:1.65;max-width:610px;margin:0}
+.commerce-learning-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin:19px 0 28px}
+.commerce-learning-facts>div{padding:13px 18px;border-left:1px solid var(--star-stroke);display:flex;flex-direction:column;gap:7px;min-width:0}
+.commerce-learning-facts>div:first-child{border-left:0;padding-left:0}
+.commerce-learning-facts span{font-size:10px;color:var(--star-faint);font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.commerce-learning-facts strong{font-size:25px;line-height:1.2;font-variant-numeric:tabular-nums;letter-spacing:-.04em}
+.commerce-learning-facts strong.commerce-learning-financial{font-size:15px;letter-spacing:-.02em;overflow-wrap:anywhere}
+.commerce-learning-facts small{font-size:11px;line-height:1.4;color:var(--star-muted)}
+.commerce-learning-bucket-head{align-items:center}
+.commerce-learning-bucket-head h3{font-size:17px;letter-spacing:-.025em;margin:0 0 6px}
+.commerce-learning-periods{display:flex;align-items:center;background:var(--star-surface-1);border:1px solid var(--star-stroke-strong);border-radius:9px;padding:3px;gap:3px}
+.commerce-learning-periods button{border:0;border-radius:6px;background:transparent;color:var(--star-muted);font:600 12px var(--star-font);padding:8px 12px;white-space:nowrap;cursor:pointer}
+.commerce-learning-periods button[aria-pressed="true"]{color:var(--star-text);background:var(--star-surface-3)}
+.commerce-learning-bars{display:flex;flex-direction:column;gap:1px;border:1px solid var(--star-stroke);border-radius:12px;padding:7px 18px;background:var(--star-surface-1)}
+.commerce-learning-bar{display:grid;grid-template-columns:84px minmax(40px,1fr) 85px 145px;gap:12px;align-items:center;padding:12px 3px;border-top:1px solid var(--star-stroke-soft)}
+.commerce-learning-bar:first-child{border-top:0}
+.commerce-learning-bar-name{text-transform:capitalize;font-size:12px;color:var(--star-body);font-weight:600}
+.commerce-learning-track{height:6px;border-radius:4px;background:var(--star-surface-3);overflow:hidden;display:block}
+.commerce-learning-track>span{height:100%;display:block;border-radius:4px;background:var(--star-gold)}
+.commerce-learning-bar-rate{font:600 12px var(--star-mono);color:var(--star-text);text-align:right;white-space:nowrap}
+.commerce-learning-bar-detail{font-size:11px;color:var(--star-faint);text-align:right;font-variant-numeric:tabular-nums}
+.commerce-learning-insight{margin-top:17px;background:var(--star-sidebar);border:1px solid var(--star-stroke-strong);border-radius:11px;padding:19px 21px}
+.commerce-learning-insight.is-suggested{border-left:2px solid var(--star-success)}
+.commerce-learning-insight>div{display:flex;gap:10px;align-items:center;margin-bottom:9px}
+.commerce-learning-insight svg{flex:0 0 18px;color:var(--star-gold)}
+.commerce-learning-insight h3{font-size:14px;letter-spacing:-.015em;font-weight:650;margin:0}
+.commerce-learning-insight p{font-size:12px;line-height:1.7;margin:0;color:var(--star-muted)}
+.commerce-learning-insight p.commerce-learning-recommendation{color:var(--star-body);margin-top:11px}
+.commerce-learning-insight small{font-size:11px;color:var(--star-faint);display:block;margin-top:13px}
+.commerce-learning-last{margin:12px 0 0;color:var(--star-faint);font-size:11px;line-height:1.5}
+.commerce-seasonality :is(button,input,textarea):focus-visible{outline:2px solid var(--star-stroke-focus);outline-offset:3px}
+@media(max-width:1050px){
+ .commerce-learning-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .commerce-learning-facts>div:nth-child(odd){border-left:0;padding-left:0}
+ .commerce-learning-bar{grid-template-columns:78px minmax(35px,1fr) 80px}
+ .commerce-learning-bar-detail{grid-column:2/4;text-align:left}
+}
+@media(max-width:690px){
+ .commerce-seasonality-heading,.commerce-learning-bucket-head{flex-direction:column;align-items:stretch;gap:16px}
+ .commerce-learning-form-grid{grid-template-columns:1fr}
+ .commerce-learning-facts strong{font-size:21px}
+ .commerce-learning-facts>div{padding:12px}
+ .commerce-learning-bar{grid-template-columns:66px minmax(25px,1fr) 72px;gap:8px}
+ .commerce-learning-bars{padding:7px 10px}
+ .commerce-learning-bar-rate{font-size:11px}
+ .commerce-learning-periods{overflow-x:auto;justify-content:space-between}
+ .commerce-learning-periods button{padding:8px 9px}
+}
