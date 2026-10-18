@@ -95,9 +95,19 @@ TOOLS = [
      "description": "Read-only, offline inspection of an owner's Minecraft server/project folder: plugin and mod JAR metadata, Velocity/Paper/Fabric family hints, resource-pack managers, and a tiny safe allowlist of server properties. No JAR execution, credentials, server commands or live-state claims.",
      "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "default": "."}},
                      "additionalProperties": False}},
+    {"name": "workspace_minecraft_item_scaffold",
+     "description": "Create a valid version-pinned Java custom 2D item resource pack from an owner's existing PNG texture. Generates pack.mcmeta, modern item model definition, referenced model and texture. Requires owner-enabled workspace editing; output folder must be new. No placeholder art, builds, server changes or deployment.",
+     "inputSchema": {"type": "object", "properties": {
+         "output_dir": {"type": "string"}, "namespace": {"type": "string"}, "item_id": {"type": "string"},
+         "texture_path": {"type": "string"},
+         "target_version": {"type": "string", "enum": ["1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.2", "26.3"]},
+         "description": {"type": "string", "maxLength": 140}},
+         "required": ["output_dir", "namespace", "item_id", "texture_path", "target_version"],
+         "additionalProperties": False}},
 ]
 TOOL_NAMES = {t['name'] for t in TOOLS}
-WRITE_TOOLS = frozenset({'workspace_write', 'workspace_edit', 'workspace_minecraft_package'})
+WRITE_TOOLS = frozenset({'workspace_write', 'workspace_edit', 'workspace_minecraft_package',
+                         'workspace_minecraft_item_scaffold'})
 
 
 class Workspace:
@@ -146,6 +156,16 @@ class Workspace:
         if name == 'workspace_minecraft_audit':
             from . import minecraft_assets
             return minecraft_assets.audit(self, args['path'], target_version=args.get('target_version', '26.3'))
+        if name == 'workspace_minecraft_item_scaffold':
+            if not allow_write:
+                raise PermissionError('Workspace editing is switched off')
+            from . import minecraft_assets
+            return minecraft_assets.scaffold_item(self, args['output_dir'],
+                                                  namespace=args['namespace'],
+                                                  item_id=args['item_id'],
+                                                  texture_path=args['texture_path'],
+                                                  target_version=args['target_version'],
+                                                  description=args.get('description', 'Minecraft custom items'))
         if name == 'workspace_minecraft_package':
             if not allow_write:
                 raise PermissionError('Workspace editing is switched off')
