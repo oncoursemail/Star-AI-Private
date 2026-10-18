@@ -367,3 +367,105 @@ def package(workspace, relative: str, output: str, *, target_version: str = "26.
     finally:
         if staged:
             staged.unlink(missing_ok=True)
+
+
+def _verified_png(data: bytes) -> tuple[int, int]:
+    """Verify PNG chunk framing, mandatory chunks and CRC before accepting an owner texture."""
+    import zlib
+
+    if not data.startswith(PNG_HEADER) or len(data) < 57:
+        raise ValueError("Texture is not a complete PNG")
+    pos = len(PNG_HEADER)
+    ihdr = None
+    has_idat = False
+    has_iend = False
+    count = 0
+    while pos + 12 <= len(data) and count < 100_000:
+        size = int.from_bytes(data[pos:pos+4], "big")
+        if size > MAX_FILE_BYTES or pos + 12 + size > len(data):
+            raise ValueError("Invalid PNG chunk length")
+        name = data[pos+4:pos+8]
+        chunk = data[pos+8:pos+8+size]
+        crc = int.from_bytes(data[pos+8+size:pos+12+size], "big")
+        if zlib.crc32(name + chunk) & 0xffffffff != crc:
+            raise ValueError("PNG chunk checksum failed")
+        if name == b"IHDR":
+            if ihdr is not None or size != 13 or count != 0:
+                raise ValueError("Invalid PNG IHDR position")
+            width = int.from_bytes(chunk[0:4], "big")
+            height = int.from_bytes(chunk[4:8], "big")
+            if not (0 < width <= 16384 and 0 < height <= 16384):
+                raise ValueError("Invalid PNG texture dimensions")
+            ihdr = (width, height)
+        elif name == b"IDAT":
+            has_idat = True
+        elif name == b"IEND":
+            if size != 0 or pos + 12 != len(data):
+                raise ValueError("Invalid PNG end chunk")
+            has_iend = True
+            break
+        pos += 12 + size
+        count += 1
+    if ihdr is None or not has_idat or not has_iend:
+        raise ValueError("PNG is missing image data or end marker")
+    return ihdr
+
+
+def scaffold_item(workspace, output_dir: str, *, namespace: str, item_id: str,
+                  texture_path: str, target_version: str = "26.3",
+                  description: str = "Minecraft custom items") -> dict:
+    """Create a full modern item resource pack with an OWNER-SUPPLIED, verified PNG.
+
+    A 2-D item asset, not a 3-D rig or plugin. No placeholder images, network access,
+    plugin installation, item grants or deployment. Destination must be new.
+    """
+    import shutil
+
+    if target_version not in RESOURCE_FORMATS:
+        raise ValueError("Select a supported Java pack version")
+    if (not isinstance(namespace, str) or not NS.fullmatch(namespace) or
+            not isinstance(item_id, str) or not RESOURCE_PATH.fullmatch(item_id) or
+            "/" in item_id or item_id.startswith(".")):
+        raise ValueError("Namespace/item ID must be lowercase Minecraft identifiers")
+    if not isinstance(description, str) or not 1 <= len(description) <= 140:
+        raise ValueError("Pack description must be 1-140 characters")
+    source = workspace.resolve(texture_path)
+    if not source.is_file() or source.suffix.lower() != ".png" or source.stat().st_size > MAX_FILE_BYTES:
+        raise ValueError("Choose a PNG texture file in the selected workspace")
+    image = source.read_bytes()
+    dimensions = _verified_png(image)
+    output = workspace.resolve(output_dir, allow_missing=True)
+    if output.exists():
+        raise FileExistsError("Output folder exists; this tool never overwrites an existing asset project")
+    expected = RESOURCE_FORMATS[target_version]
+    metadata = ({"description": description, "min_format": list(expected), "max_format": list(expected)}
+                if expected[0] >= 65 else
+                {"description": description, "pack_format": expected[0]})
+    planned = {
+        "pack.mcmeta": {"pack": metadata},
+        f"assets/{namespace}/items/{item_id}.json": {
+            "model": {"type": "minecraft:model", "model": f"{namespace}:item/{item_id}"}},
+        f"assets/{namespace}/models/item/{item_id}.json": {
+            "parent": "minecraft:item/generated", "textures": {"layer0": f"{namespace}:item/{item_id}"}},
+    }
+    output.mkdir(parents=True, exist_ok=False)
+    try:
+        for relative, data in planned.items():
+            file = output / relative
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        tex = output / f"assets/{namespace}/textures/item/{item_id}.png"
+        tex.parent.mkdir(parents=True, exist_ok=True)
+        tex.write_bytes(image)
+        report = audit(workspace, output.relative_to(workspace.root).as_posix(),
+                       target_version=target_version)
+        if not report["valid"]:
+            raise ValueError("Generated resource pack did not pass structural validation")
+        return {"output_dir": output_dir, "namespace": namespace, "item_model": f"{namespace}:{item_id}",
+                "texture_dimensions": list(dimensions), "texture_sha256": hashlib.sha256(image).hexdigest(),
+                "target_version": target_version, "file_count": report["stats"]["files"],
+                "valid": True, "deployed": False, "tested_in_game": False,
+                "next_step": "Use workspace_minecraft_package to export an archive, then test in a matching client."}
+    except BaseException:
+        shutil.rmtree(output)
+        raise
