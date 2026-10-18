@@ -147,8 +147,28 @@ def _idea(conn: sqlite3.Connection, project: str, identifier: Any) -> sqlite3.Ro
 def _fingerprint(record: sqlite3.Row) -> str:
     """A change to the brief, evidence, assignment or review state invalidates QA."""
     original = {key: record[key] for key in
-                ("id", "business_id", "title", "concept", "evidence_json", "status")}
+                ("id", "business_id", "title", "concept", "evidence_json")}
     return sha256(json.dumps(original, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+
+def invalidate_preflights(conn: sqlite3.Connection, project: str, idea_id: str) -> None:
+    """Changes to actual source evidence invalidate both pending and completed QA."""
+    current = _idea(conn, project, idea_id)
+    updated = conn.execute("""
+        UPDATE commerce_preflight_jobs
+        SET status='stale',
+            blockers_json=?,
+            checked_at=?
+        WHERE project=? AND idea_id=? AND fingerprint<>?
+          AND status IN ('queued','review_ready','needs_evidence')
+    """, (
+        json.dumps(["Creative brief, rights evidence or business assignment changed"]),
+        _time(), project, idea_id, _fingerprint(current),
+    ))
+    if updated.rowcount:
+        _event(conn, project, "candidate_changed_preflights_stale", current["business_id"])
+
 
 
 def validate_assignment(conn: sqlite3.Connection, project: str,
@@ -208,6 +228,7 @@ def assign_business(conn: sqlite3.Connection, project: str, body: Mapping[str, A
         SET business_id=?,status='draft',updated_at=?
         WHERE project=? AND id=?
     """, (business_id, _time(), project, item["id"]))
+    invalidate_preflights(conn, project, item["id"])
     _event(conn, project, "candidate_assigned_approval_reset", business_id)
 
 
