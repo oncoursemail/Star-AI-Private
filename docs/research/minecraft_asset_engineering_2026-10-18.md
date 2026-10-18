@@ -105,9 +105,9 @@ Sources: https://geysermc.org/wiki/geyser/ and https://learn.microsoft.com/en-us
 
 ## Implementation phases
 
-**Phase A (this branch):** offline, workspace-bound Java pack audits for directory/ZIP, pack.mcmeta target formatting, asset JSON/PNG/Ogg signature checks, custom model ref warnings, Blockbench .bbmodel structural checks, deterministic ZIP pack builder. Package builds require workspace edit permission. Nothing deploys. This phase is NOT a visual model exporter or game test.
+**Phase A (this branch):** offline, workspace-bound Java pack audits for directory/ZIP, pack.mcmeta formats, JSON/PNG/Ogg checks and missing model warnings; Blockbench .bbmodel structural checks; read-only server folder, plugin/mod JAR metadata and sanitized settings inventory; Java 2D item pack generator using an owner-supplied CRC-verified PNG; deterministic ZIP exporter. Generating items and ZIPs requires workspace edit permission. Nothing deploys or runs JARs. This phase is NOT a Blockbench visual exporter or live game test.
 
-**Phase B:** official-doc retrieval with version citations; existing plugin/server inventory, syntax-aware YAML config parsers, ContentSpec schema and asset dependency graphs; Nexo source fixture generation plus Blockbench visual QA exporters.
+**Phase B:** versioned official-doc retrieval with version citations; existing plugin/server inventory, syntax-aware YAML config parsers, ContentSpec schema and asset dependency graphs; Nexo source fixture generation plus Blockbench visual QA exporters.
 
 **Phase C:** full Java plugin generator and Gradle test sandbox, disposable Paper/Folia integration tests, display entity animation test lab, static Java linters and JVM profile benchmarks.
 
