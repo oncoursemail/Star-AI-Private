@@ -15,9 +15,12 @@ _METRICS = ("p95_ttft_ms", "p95_total_ms", "requests_per_second")
 
 
 def _number(value: object, *, positive: bool = True) -> float:
-    if type(value) not in (int, float) or not math.isfinite(value) or (value <= 0 if positive else value < 0):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError("Invalid or non-finite benchmark measurement")
-    return float(value)
+    number = float(value)
+    if not math.isfinite(number) or (number <= 0 if positive else number < 0):
+        raise ValueError("Invalid or non-finite benchmark measurement")
+    return number
 
 
 def _p95(values: list[float]) -> float:
