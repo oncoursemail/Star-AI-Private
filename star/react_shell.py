@@ -1075,6 +1075,42 @@ def launch():
                 "elapsed_ms": team.elapsed_ms,
             }
 
+        def _owner_action(self, action: str, body: dict, rid: str) -> str:
+            """Qt-only, owner-initiated song and quality inspection actions."""
+            # Qt-only owner actions: no agent, tool, or chat request is mapped here.
+            if action == 'musicStatus':
+                return json.dumps({'ok': True, 'data': self.music_quality.status()})
+            if action == 'musicChooseWav':
+                chosen, _ = QFileDialog.getOpenFileName(
+                    self.host, 'Choose a local WAV recording', '', 'PCM16 WAV (*.wav)')
+                return json.dumps({'ok': True, 'data':
+                    self.music_quality.select_wav(Path(chosen)) if chosen else {'cancelled': True}})
+            if action == 'musicChooseFpcalc':
+                chosen, _ = QFileDialog.getOpenFileName(
+                    self.host, 'Choose installed Chromaprint fpcalc', '', 'Chromaprint (fpcalc.exe fpcalc)')
+                return json.dumps({'ok': True, 'data':
+                    self.music_quality.select_fpcalc(Path(chosen)) if chosen else {'cancelled': True}})
+            if action == 'musicClear':
+                return json.dumps({'ok': True, 'data': self.music_quality.clear_music()})
+            if action == 'musicIdentify':
+                if self.active_task or self._in_voice_call():
+                    raise RuntimeError('Finish the current chat or voice call before identifying music')
+                self._run(rid, action, lambda: self.music_quality.identify(
+                    body, progress=lambda phase: self._emit(rid, 'progress', {'phase': phase})))
+                return json.dumps({'ok': True, 'pending': True, 'requestId': rid})
+            if action == 'qualityChooseFile':
+                chosen, _ = QFileDialog.getOpenFileName(
+                    self.host, 'Choose an artifact for a verification checklist', '',
+                    'Reviewed artifacts (*.py *.json *.js *.jsx *.ts *.tsx *.lua *.luau *.md *.txt *.glb *.blend *.fbx)')
+                return json.dumps({'ok': True, 'data':
+                    self.music_quality.select_quality_file(Path(chosen)) if chosen else {'cancelled': True}})
+            if action == 'qualityPreview':
+                return json.dumps({'ok': True, 'data':
+                    self.music_quality.quality_preview(body.get('kind'))})
+            if action == 'qualityClear':
+                return json.dumps({'ok': True, 'data': self.music_quality.clear_quality()})
+            raise PermissionError('Unknown music/quality owner action')
+
         def _clip_action(self, action: str, body: dict, rid: str) -> str:
             """STAR Clips, clip folder, SteelSeries Moments and Game Lab (kept out of invoke for pyright)."""
             if action == 'gameLabCatalog':
@@ -1158,39 +1194,7 @@ def launch():
                 if action == 'gameLabCatalog' or action in CLIP_INTEROP_ACTIONS or action in CLIP_ACTIONS:
                     return self._clip_action(action, body, rid)
                 if action in OWNER_ACTIONS:
-                    # Qt-only owner actions: no agent, tool, or chat request is mapped here.
-                    if action == 'musicStatus':
-                        return json.dumps({'ok': True, 'data': self.music_quality.status()})
-                    if action == 'musicChooseWav':
-                        chosen, _ = QFileDialog.getOpenFileName(
-                            self.host, 'Choose a local WAV recording', '', 'PCM16 WAV (*.wav)')
-                        return json.dumps({'ok': True, 'data':
-                            self.music_quality.select_wav(Path(chosen)) if chosen else {'cancelled': True}})
-                    if action == 'musicChooseFpcalc':
-                        chosen, _ = QFileDialog.getOpenFileName(
-                            self.host, 'Choose installed Chromaprint fpcalc', '', 'Chromaprint (fpcalc.exe fpcalc)')
-                        return json.dumps({'ok': True, 'data':
-                            self.music_quality.select_fpcalc(Path(chosen)) if chosen else {'cancelled': True}})
-                    if action == 'musicClear':
-                        return json.dumps({'ok': True, 'data': self.music_quality.clear_music()})
-                    if action == 'musicIdentify':
-                        if self.active_task or self._in_voice_call():
-                            raise RuntimeError('Finish the current chat or voice call before identifying music')
-                        self._run(rid, action, lambda: self.music_quality.identify(
-                            body, progress=lambda phase: self._emit(rid, 'progress', {'phase': phase})))
-                        return json.dumps({'ok': True, 'pending': True, 'requestId': rid})
-                    if action == 'qualityChooseFile':
-                        chosen, _ = QFileDialog.getOpenFileName(
-                            self.host, 'Choose an artifact for a verification checklist', '',
-                            'Reviewed artifacts (*.py *.json *.js *.jsx *.ts *.tsx *.lua *.luau *.md *.txt *.glb *.blend *.fbx)')
-                        return json.dumps({'ok': True, 'data':
-                            self.music_quality.select_quality_file(Path(chosen)) if chosen else {'cancelled': True}})
-                    if action == 'qualityPreview':
-                        return json.dumps({'ok': True, 'data':
-                            self.music_quality.quality_preview(body.get('kind'))})
-                    if action == 'qualityClear':
-                        return json.dumps({'ok': True, 'data': self.music_quality.clear_quality()})
-                    raise PermissionError('Unknown music/quality owner action')
+                    return self._owner_action(action,body,rid)
                 if action in MEDIA_ACTIONS:
                     def media_worker():
                         return handle_media_action(
