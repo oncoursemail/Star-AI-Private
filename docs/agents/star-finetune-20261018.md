@@ -51,7 +51,7 @@ Sources: server 1 `data/examples.jsonl` (324 rows), server 2 (49), PC GPU turbo 
   points to the Codex runtime Python 3.12.14 (backup pyvenv.cfg.bak-20261018); torch 2.11+cu128 CUDA OK.
 - HF weights re-downloaded (rev cdbee75f, 7.6 GB in work/apprentice/hf). `run_arm.sh` fixed: it killed EVERY
   llama-server.exe (incl. the GPU turbo's); now only its own (backup run_arm.sh.bak-20261018).
-- GPU guard: RobloxStudioBeta (place edit, since 05:13Z) is open on this PC -> training waits.
+- GPU guard: RobloxStudioBeta (a place edit, open since 05:13Z) is open on this PC -> training waits.
 
 ## 3. Embedding fine-tune: already live since 2026-10-14
 The guarded server A/B in gpu-training-pilot.md was done on 2026-10-14 (msg 2026-10-14 09:20Z, night-school-restart.md):
@@ -77,7 +77,7 @@ Nightly refresh eval30 vector r@5 30/30. Nothing to do; rollback stays `deploy_e
 - 10:30Z recount: **429 unique verified tasks** (07:40Z: 426). +3 in ~3 h, all from the PC turbo; server 1 and 2 made
   none (server 1 waited for a quiet brain all night: another client on star-fast slot 0, quiet locks of model-scout18).
   The PC also re-answers its validation slice (250 rows on 80 tasks), which adds rows but not new tasks.
-- 10:41Z STOP. RobloxStudioBeta (pid 25896, edit of place 129870808752914, ~0.3 core busy) stayed open the whole
+- 10:41Z STOP. RobloxStudioBeta (pid 25896, ~0.3 core busy) stayed open the whole
   session, so by the owner's guard apprentice v2 was never trained. Pipeline is ready (above).
 
 ## Next (for whoever resumes)
