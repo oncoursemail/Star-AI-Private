@@ -16,7 +16,7 @@ import uuid
 from typing import Any, Mapping
 
 from .planning import assess_etsy, assess_fiverr
-from .mission import ACTIONS as MISSION_ACTIONS, ensure_schema, mission_action, mission_snapshot, validate_assignment
+from .mission import ACTIONS as MISSION_ACTIONS, ensure_schema, invalidate_preflights, mission_action, mission_snapshot, validate_assignment
 
 COMMERCE_ACTIONS = frozenset({
     "commerceBoard", "commerceCreate", "commerceEvidence", "commerceReview",
@@ -249,6 +249,7 @@ def _evidence(conn: sqlite3.Connection, project: str, body: Mapping[str, Any]) -
         "UPDATE commerce_ideas SET evidence_json=?,status='draft',updated_at=? WHERE id=? AND project=?",
         (json.dumps(current, ensure_ascii=False), now, record["id"], project),
     )
+    invalidate_preflights(conn, project, record["id"])
     conn.execute(
         "INSERT INTO commerce_events(project,idea_id,action,at) VALUES(?,?,?,?)",
         (project, record["id"], "evidence_updated_approval_reset", now),
