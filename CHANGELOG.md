@@ -7,7 +7,19 @@ Entries are taken from pull request titles and merge messages, one line per pull
 are used only where the pull request title says so. A merged pull request is not proof that a feature ran on the
 owner's PC; check the pull request for what was tested.
 
-## [1.0.0] - unreleased
+## [1.0.1] - release candidate (not yet public)
+
+### Changed
+- Separate **private** STAR source development (`oncoursemail/Star-AI-Private`) from the new **public** `oncoursemail/Star-AI` distribution repository.
+- Private Windows CI builds and checks source/hash provenance; the public publisher requires a **manual** main-branch workflow run and a GitHub App installation token restricted to the public downloads repository.
+- Removed private GitHub Pages deployment; the new public repository hosts an independent, source-free downloads portal.
+- Improved migration documentation, explicit no-release states and tests for private-to-public release boundaries.
+- Optional private artifact attestations on eligible plans; SHA-256 package integrity checks remain mandatory. No claim of code signing.
+
+### Release status
+- This version is **not released**. The public repository initially contains no installer. A future release requires independent CI and real Windows QA, GitHub App credentials, owner approval and anonymous download verification. The historic v1.0.0 release is accessible only in the now-private source repository.
+
+## [1.0.0] - published 2026-10-14 (legacy repository now private)
 
 The release PR (#254) bumps the version, adds release notes and updates the website. Check the GitHub Releases page for
 whether the v1.0.0 artifacts have actually been published.
