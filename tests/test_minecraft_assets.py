@@ -148,3 +148,69 @@ def test_invalid_blockbench_json(tmp_path):
     result = audit(ws, "broken.bbmodel")
     assert not result["valid"]
     assert any(f["code"] == "invalid-json" for f in result["findings"])
+
+
+def _real_png():
+    """Small, full-CRC 2x2 RGBA PNG, generated locally without third-party fixtures."""
+    import struct
+    import zlib
+
+    def chunk(name, data):
+        return struct.pack(">I", len(data)) + name + data + struct.pack(">I", zlib.crc32(name + data))
+    header = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+    rows = (b"\x00" + b"\xff\x55\x00\xff" * 2) * 2
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) +
+            chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def test_scaffold_creates_real_item_pack_with_owner_art(tmp_path):
+    from star.minecraft_assets import scaffold_item
+    ws, _ = _pack(tmp_path)
+    texture = ws.root / "my-art.png"
+    texture.write_bytes(_real_png())
+    original = texture.read_bytes()
+    result = scaffold_item(ws, "metallic-pack", namespace="metallic", item_id="azure_sword",
+                           texture_path="my-art.png", target_version="26.3",
+                           description="Metallic originals")
+    assert result["valid"] and result["file_count"] == 4
+    assert result["texture_dimensions"] == [2, 2]
+    assert texture.read_bytes() == original
+    assert audit(ws, "metallic-pack", target_version="26.3")["valid"]
+    with (ws.root / "metallic-pack" / "assets" / "metallic" / "items" / "azure_sword.json").open() as file:
+        assert json.load(file)["model"]["model"] == "metallic:item/azure_sword"
+    zipped = package(ws, "metallic-pack", "metallic-items.zip")
+    assert zipped["files"] == 4
+    assert audit(ws, "metallic-items.zip")["valid"]
+
+
+def test_scaffold_legacy_version_and_permissions(tmp_path):
+    ws, _ = _pack(tmp_path)
+    (ws.root / "art.png").write_bytes(_real_png())
+    args = {"output_dir": "legacy-items", "namespace": "metallic", "item_id": "ancient_gem",
+            "texture_path": "art.png", "target_version": "1.21.4"}
+    with pytest.raises(PermissionError):
+        ws.call("workspace_minecraft_item_scaffold", args)
+    result = ws.call("workspace_minecraft_item_scaffold", args, allow_write=True)
+    assert result["valid"]
+    r = audit(ws, "legacy-items", target_version="1.21.4")
+    assert r["valid"]
+    metadata = json.loads((ws.root / "legacy-items" / "pack.mcmeta").read_text())["pack"]
+    assert metadata["pack_format"] == 46
+    with pytest.raises(FileExistsError):
+        ws.call("workspace_minecraft_item_scaffold", args, allow_write=True)
+
+
+def test_scaffold_rejects_invalid_texture_and_namespace(tmp_path):
+    from star.minecraft_assets import scaffold_item
+    ws, _ = _pack(tmp_path)
+    bad = ws.root / "fake.png"
+    bad.write_bytes(b"not valid png")
+    with pytest.raises(ValueError):
+        scaffold_item(ws, "never-made", namespace="metallic", item_id="item",
+                      texture_path="fake.png", target_version="26.3")
+    assert not (ws.root / "never-made").exists()
+    good = ws.root / "good.png"
+    good.write_bytes(_real_png())
+    with pytest.raises(ValueError):
+        scaffold_item(ws, "never-made", namespace="Metallic", item_id="item",
+                      texture_path="good.png", target_version="26.3")
