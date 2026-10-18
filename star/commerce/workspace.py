@@ -16,10 +16,11 @@ import uuid
 from typing import Any, Mapping
 
 from .planning import assess_etsy, assess_fiverr
+from .mission import ACTIONS as MISSION_ACTIONS, ensure_schema, mission_action, mission_snapshot, validate_assignment
 
 COMMERCE_ACTIONS = frozenset({
     "commerceBoard", "commerceCreate", "commerceEvidence", "commerceReview",
-})
+}) | MISSION_ACTIONS
 CHANNELS = {
     "etsy": ("Etsy", "Seller OAuth and approved API app required"),
     "shopify": ("Shopify", "Merchant connection and digital delivery app required"),
@@ -93,6 +94,7 @@ def _connect(home: Path) -> sqlite3.Connection:
           at TEXT NOT NULL
         )
     """)
+    ensure_schema(connection)
     connection.commit()
     return connection
 
@@ -142,6 +144,7 @@ def _row(record: sqlite3.Row) -> dict[str, Any]:
         "title": record["title"],
         "concept": record["concept"],
         "status": record["status"],
+        "business_id": record["business_id"],
         "evidence": evidence,
         "review": review,
         "created_at": record["created_at"],
@@ -167,6 +170,7 @@ def _overview(conn: sqlite3.Connection, project: str) -> dict[str, Any]:
             for key, (label, requirement) in CHANNELS.items()
         ],
         "ideas": ideas,
+        **mission_snapshot(conn, project),
         "counts": {
             "candidates": len(ideas),
             "review_ready": sum(1 for x in ideas if x["review"]["ready"] and x["status"] == "draft"),
@@ -191,13 +195,16 @@ def _new(conn: sqlite3.Connection, project: str, body: Mapping[str, Any]) -> str
     number = conn.execute("SELECT COUNT(*) FROM commerce_ideas WHERE project=?", (project,)).fetchone()[0]
     if number >= MAX_IDEAS:
         raise ValueError("Workspace limit reached; review or archive existing candidates first")
+    business_id = body.get("business_id")
+    if business_id is not None:
+        business_id = validate_assignment(conn, project, business_id, channel)
     idea_id = uuid.uuid4().hex
     now = _now()
     conn.execute(
         """INSERT INTO commerce_ideas
-           (id,project,channel,title,concept,evidence_json,status,created_at,updated_at)
-           VALUES(?,?,?,?,?,'{}','draft',?,?)""",
-        (idea_id, project, channel, title, concept, now, now),
+           (id,project,channel,title,concept,evidence_json,status,created_at,updated_at,business_id)
+           VALUES(?,?,?,?,?,'{}','draft',?,?,?)""",
+        (idea_id, project, channel, title, concept, now, now, business_id),
     )
     conn.execute(
         "INSERT INTO commerce_events(project,idea_id,action,at) VALUES(?,?,?,?)",
@@ -285,4 +292,6 @@ def handle_commerce(action: str, body: Mapping[str, Any], *, project: str, home:
                 _evidence(conn, project, body)
             elif action == "commerceReview":
                 _review(conn, project, body)
+            elif action in MISSION_ACTIONS:
+                mission_action(conn, project, action, body, _assessment)
         return _overview(conn, project)
