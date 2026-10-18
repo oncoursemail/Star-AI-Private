@@ -137,26 +137,29 @@ describe('site navigation, assets and accessibility',()=>{
 describe('the release the page names',()=>{
  const snapshot=latestStable(builtSnapshot)
  it('never names a release older than the newest one known to be published',()=>{
-  // README names the previous published release; the floor and the committed snapshot must not be behind it.
-  const previous=readFileSync(resolve(process.cwd(),'..','README.md'),'utf8').match(/The previous\s+(?:>\s*)?release, v(\d+\.\d+\.\d+)/)?.[1]
-  expect(previous).toBeTruthy()
-  expect(compareVersions(PUBLISHED_FLOOR,previous!)).toBeGreaterThanOrEqual(0)
-  expect(snapshot,'committed release snapshot').not.toBeNull()
-  expect(compareVersions(snapshot!.tag,PUBLISHED_FLOOR),'refresh src/progress.json: STAR_REFRESH_PROGRESS=1 node scripts/build-progress.mjs --pages-only').toBeGreaterThanOrEqual(0)
+  // The last v1.0.0 release was published in the OLD source repo,
+  // now private. A snapshot can document history but not authorize downloads.
+  const historical=readFileSync(resolve(process.cwd(),'..','docs','release','v1.0','RELEASE_NOTES.md'),'utf8')
+  expect(historical).toContain('v1.0.0')
+  expect(PUBLISHED_FLOOR).toBe('1.0.0')
+  expect(snapshot,'historic committed snapshot').not.toBeNull()
+  expect(compareVersions(snapshot!.tag,PUBLISHED_FLOOR)).toBeGreaterThanOrEqual(0)
+  const readme=readFileSync(resolve(process.cwd(),'..','README.md'),'utf8')
+  expect(readme).toContain('**private source repository**')
+  expect(readme).toContain('currently has no installer')
  })
  it('drops a stale snapshot instead of naming it, and prefers GitHub\'s live answer',()=>{
   expect(currentRelease(null,release('v0.8.1'))).toBeNull()
-  expect(currentRelease(null,release('v'+PUBLISHED_FLOOR))?.tag).toBe('v'+PUBLISHED_FLOOR)
-  expect(currentRelease(release('v1.0.0'),release('v0.8.1'))?.tag).toBe('v1.0.0')
+  expect(currentRelease(null,release('v'+PUBLISHED_FLOOR))).toBeNull()
+  expect(currentRelease(release('v1.0.1'),release('v0.8.1'))?.tag).toBe('v1.0.1')
  })
- it('shows the snapshot release in the prerendered hero and download, not an older one',()=>{
+ it('never prerenders inaccessible private-release downloads as public',()=>{
   const hero=page.querySelector('.sw-hero-meta')?.textContent||''
-  expect(hero).toContain(snapshot!.tag)
-  for(const stale of ['v0.8.0','v0.8.1'])expect(hero).not.toContain(stale)
-  // The updating note may mention the tested v0.8.0 to v0.9.0 upgrade; the offered download must not be older.
+  expect(hero).toContain('Release details are unavailable')
+  expect(hero).not.toContain('v1.0.0')
   const download=page.querySelector('#download')?.textContent||''
-  expect(download).not.toMatch(/Setup v0\.8|STAR-Setup-v0\.8/)
-  expect(download).toContain('Download Setup '+snapshot!.tag)
+  expect(download).toContain('Open the latest release')
+  expect(download).not.toContain('Download Setup v1.0.0')
  })
 })
 
