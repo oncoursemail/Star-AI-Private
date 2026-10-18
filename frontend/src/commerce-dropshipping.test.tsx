@@ -33,7 +33,7 @@ describe('STAR dropshipping desk',()=>{
     await waitFor(()=>expect(request).toHaveBeenCalledWith('commerceDropship',{business_id:shop}))
     expect(screen.getByText('No supplier products yet')).toBeTruthy()
     expect(screen.getByText('No live supplier feed', {exact:false})).toBeTruthy()
-    expect(screen.getByText('OFF',{selector:'strong'})).toBeTruthy()
+    expect(screen.getAllByText('OFF',{selector:'strong'})).toHaveLength(2)
     const text='supplier,sku,title,category,product_url,unit_cost,shipping_cost,target_price,stock,delivery_days,returns_supported,sample_reviewed\nVendor,A1,Notebook,stationery,https://vendor.example/p/1,10.00,3.00,29.00,5,8,yes,yes'
     fireEvent.change(screen.getByRole('textbox',{name:/Authorized supplier CSV/}),{target:{value:text}})
     const button=screen.getByRole('button',{name:/Import & screen offers/})
