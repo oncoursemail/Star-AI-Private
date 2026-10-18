@@ -46,7 +46,7 @@ _EVIDENCE = {
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def _string(value: Any, label: str, maximum: int) -> str:
