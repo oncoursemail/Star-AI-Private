@@ -1,4 +1,4 @@
-import {useCallback,useEffect,useMemo,useState} from 'react'
+import {useCallback,useEffect,useMemo,useRef,useState} from 'react'
 import {Activity,CalendarDays,ChartNoAxesColumn,Check,FileInput,Info,LockKeyhole,RefreshCw,ShieldAlert,X} from 'lucide-react'
 import {request} from './bridge'
 import './commerce-seasonality.css'
@@ -45,32 +45,37 @@ export function CommerceSeasonality({businessId,project,preview}:{businessId:str
   const [source,setSource]=useState('Owner-prepared seller daily report')
   const [confirmed,setConfirmed]=useState(false)
   const [replace,setReplace]=useState(false)
+  const requestGeneration=useRef(0)
   const canUse=!preview&&!!businessId
 
   const refresh=useCallback(async()=>{
+    const generation=++requestGeneration.current
     if(!canUse){setReport(null);setError('');setLoading(false);return}
     setLoading(true);setReport(null)
     const answer=await request<LearningReport>('commerceLearning',{business_id:businessId})
-    if(answer.ok&&answer.data){
+    if(generation!==requestGeneration.current)return
+    if(answer.ok&&answer.data&&answer.data.business_id===businessId){
       setReport(answer.data)
       setCurrency(answer.data.currency||'USD')
       setReportTimezone(answer.data.report_timezone||'America/Chicago')
       setError('')
-    }else setError(answer.error||'Unable to open this business learning report.')
+    }else setError(answer.error||'Unable to open a matching business learning report.')
     setLoading(false)
   },[businessId,canUse])
-  useEffect(()=>{void refresh()},[refresh,project])
-  useEffect(()=>{setCsvText('');setNotice('');setError('');setShowImport(false);setConfirmed(false);setReplace(false)},[businessId,project])
+  useEffect(()=>{void refresh();return()=>{requestGeneration.current++}},[refresh,project])
+  useEffect(()=>{setCsvText('');setNotice('');setError('');setShowImport(false);setConfirmed(false);setReplace(false);setBusy(false)},[businessId,project])
 
   async function importRows(){
     if(!canUse||busy||!confirmed||!csvText.trim())return
+    const generation=requestGeneration.current
     setBusy(true);setError('');setNotice('')
     const answer=await request<LearningReport>('commerceImportDailyMetrics',{
       business_id:businessId,csv_text:csvText,currency:currency.trim().toUpperCase(),
       report_timezone:reportTimezone.trim(),source_label:source.trim(),
       replace_existing:replace,owner_confirmed:true,
     })
-    if(answer.ok&&answer.data){
+    if(generation!==requestGeneration.current)return
+    if(answer.ok&&answer.data&&answer.data.business_id===businessId){
       setReport(answer.data)
       setNotice(answer.data.import_status==='identical_no_changes'
         ?'Identical daily records already exist; nothing changed.'
