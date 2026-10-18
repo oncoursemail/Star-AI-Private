@@ -200,7 +200,7 @@ export function MusicRecognitionDialog({onClose}:{onClose:()=>void}){
              {track.score!==null&&<small>Fingerprint score {track.score} (uncalibrated)</small>}
            </li>)}</ol>:<p>Try a clearer recording, longer fingerprint sample, or a different catalog with new consent.</p>}
            <p>{result.transferred} · {result.duration_seconds}s analyzed</p>
-           <small>Unverified suggestions. Music, voices and game effects may overlap. STAR has not stored the waveform.</small>
+           <small>Unverified suggestions. Music, voices and game effects may overlap. STAR keeps an owner-selected WAV only in this session's memory until cleared; it is not saved to song history.</small>
          </section>}
        </div>
        <div className="music-actions">
