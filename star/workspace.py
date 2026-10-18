@@ -91,6 +91,10 @@ TOOLS = [
          "target_version": {"type": "string", "enum": ["1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.2", "26.3"]},
          "replace": {"type": "boolean", "default": False}},
          "required": ["path", "output", "target_version"], "additionalProperties": False}},
+    {"name": "workspace_minecraft_inspect",
+     "description": "Read-only, offline inspection of an owner's Minecraft server/project folder: plugin and mod JAR metadata, Velocity/Paper/Fabric family hints, resource-pack managers, and a tiny safe allowlist of server properties. No JAR execution, credentials, server commands or live-state claims.",
+     "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "default": "."}},
+                     "additionalProperties": False}},
 ]
 TOOL_NAMES = {t['name'] for t in TOOLS}
 WRITE_TOOLS = frozenset({'workspace_write', 'workspace_edit', 'workspace_minecraft_package'})
@@ -136,6 +140,9 @@ class Workspace:
             validate(args, schema)
         except ValidationError:
             raise ValueError('Invalid workspace tool arguments') from None
+        if name == 'workspace_minecraft_inspect':
+            from . import minecraft_server_inventory
+            return minecraft_server_inventory.inspect(self, args.get('path', '.'))
         if name == 'workspace_minecraft_audit':
             from . import minecraft_assets
             return minecraft_assets.audit(self, args['path'], target_version=args.get('target_version', '26.3'))
