@@ -44,6 +44,7 @@ from .studio_connections import connection_status, validate_target, select_insta
 from .studio_host import STUDIO_HOST_ACTIONS, handle as handle_studio_host
 from .tool_workshop import ToolWorkshop
 from .voice.bridge import VOICE_ACTIONS, VoiceBridge
+from .desktop_music_quality import DesktopMusicQuality, OWNER_ACTIONS
 from .discord_supervisor import DISCORD_ACTIONS, DiscordSupervisor, handle_action as handle_discord_action, start_if_opted_in
 from .clips_obs import CLIP_ACTIONS, ClipService
 from .clip_library import ClipLibrary
@@ -80,7 +81,7 @@ ALLOWED_ACTIONS = frozenset({
     'gpuHelperStatus','gpuHelperSet',
 })
 # Voice calls keep their own action list (star/voice/bridge.py, docs/STAR_VOICE_CALLS.md).
-ALLOWED_ACTIONS = ALLOWED_ACTIONS | VOICE_ACTIONS
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | VOICE_ACTIONS | OWNER_ACTIONS
 # Voice actions that make sound must run where Settings → Where STAR generates says (star/media_places.py).
 VOICE_PLACE_ACTIONS = frozenset({'voiceStartCall', 'voicePreviewVoice', 'voiceSpeak'})
 # Learning: review of lessons and thumbs on answers (star/lessons.py), plus the optional
@@ -747,6 +748,7 @@ def launch():
                 pass
             from . import presolve   # opt-in overnight pre-solving: until it is switched on it only reads the setting
             presolve.start_nightly(self.settings_file, app_data())
+            self.music_quality = DesktopMusicQuality()
             self.voice = VoiceBridge(lambda call_id, data: self._emit(call_id, 'voice', data),
                                      settings_path=app_data() / 'voice.json', save_turn=self._save_voice_turn)
 
@@ -1155,6 +1157,40 @@ def launch():
                     return json.dumps({'ok':True,'data':handle_discord_action(action,self.discord,autostart=saved.discord_autostart)})
                 if action == 'gameLabCatalog' or action in CLIP_INTEROP_ACTIONS or action in CLIP_ACTIONS:
                     return self._clip_action(action, body, rid)
+                if action in OWNER_ACTIONS:
+                    # Qt-only owner actions: no agent, tool, or chat request is mapped here.
+                    if action == 'musicStatus':
+                        return json.dumps({'ok': True, 'data': self.music_quality.status()})
+                    if action == 'musicChooseWav':
+                        chosen, _ = QFileDialog.getOpenFileName(
+                            self.host, 'Choose a local WAV recording', '', 'PCM16 WAV (*.wav)')
+                        return json.dumps({'ok': True, 'data':
+                            self.music_quality.select_wav(Path(chosen)) if chosen else {'cancelled': True}})
+                    if action == 'musicChooseFpcalc':
+                        chosen, _ = QFileDialog.getOpenFileName(
+                            self.host, 'Choose installed Chromaprint fpcalc', '', 'Chromaprint (fpcalc.exe fpcalc)')
+                        return json.dumps({'ok': True, 'data':
+                            self.music_quality.select_fpcalc(Path(chosen)) if chosen else {'cancelled': True}})
+                    if action == 'musicClear':
+                        return json.dumps({'ok': True, 'data': self.music_quality.clear_music()})
+                    if action == 'musicIdentify':
+                        if self.active_task or self._in_voice_call():
+                            raise RuntimeError('Finish the current chat or voice call before identifying music')
+                        self._run(rid, action, lambda: self.music_quality.identify(
+                            body, progress=lambda phase: self._emit(rid, 'progress', {'phase': phase})))
+                        return json.dumps({'ok': True, 'pending': True, 'requestId': rid})
+                    if action == 'qualityChooseFile':
+                        chosen, _ = QFileDialog.getOpenFileName(
+                            self.host, 'Choose an artifact for a verification checklist', '',
+                            'Reviewed artifacts (*.py *.json *.js *.jsx *.ts *.tsx *.lua *.luau *.md *.txt *.glb *.blend *.fbx)')
+                        return json.dumps({'ok': True, 'data':
+                            self.music_quality.select_quality_file(Path(chosen)) if chosen else {'cancelled': True}})
+                    if action == 'qualityPreview':
+                        return json.dumps({'ok': True, 'data':
+                            self.music_quality.quality_preview(body.get('kind'))})
+                    if action == 'qualityClear':
+                        return json.dumps({'ok': True, 'data': self.music_quality.clear_quality()})
+                    raise PermissionError('Unknown music/quality owner action')
                 if action in MEDIA_ACTIONS:
                     def media_worker():
                         return handle_media_action(

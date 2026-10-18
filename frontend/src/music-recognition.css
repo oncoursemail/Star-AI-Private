@@ -1,0 +1,131 @@
+/* STAR's music-identification workspace: compact native utility, not a marketing card.
+   Reuses the same OLED, gold action and accessible focus tokens as the desktop. */
+.music-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(4, 6, 8, .88);
+}
+.star-layer.music-dialog {
+  position: fixed;
+  z-index: 201;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(580px, calc(100vw - 24px));
+  max-height: min(90vh, 830px);
+  overflow: hidden;
+  border: 1px solid var(--star-stroke-strong);
+  border-radius: var(--star-r-lg);
+  background: var(--star-surface-1);
+  color: var(--star-body);
+  box-shadow: var(--star-shadow-float);
+  font: var(--star-fs-ui)/1.45 var(--star-font);
+}
+.music-head {
+  display: flex;
+  align-items: center;
+  gap: var(--star-3);
+  position: relative;
+  padding: 24px 52px 20px 24px;
+  border-bottom: 1px solid var(--star-stroke);
+}
+.music-head-symbol {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  height: 44px;
+  border: 1px solid var(--star-gold-line);
+  background: var(--star-gold-wash);
+  border-radius: var(--star-r-md);
+  color: var(--star-gold);
+}
+.music-head h2, .music-head h3, .music-head [data-radix-dialog-title] {
+  margin: 0 0 4px;
+  font-family: var(--star-font-display);
+  font-weight: 650;
+  font-size: var(--star-fs-h2);
+  color: var(--star-text);
+}
+.music-head p, .music-head [data-radix-dialog-description] {
+  margin: 0;
+  color: var(--star-muted);
+  font-size: var(--star-fs-meta);
+}
+.music-close {
+  position: absolute;
+  top: 17px;
+  right: 17px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--star-muted);
+  border: 0;
+  border-radius: var(--star-r-sm);
+  background: transparent;
+  cursor: pointer;
+}
+.music-close:hover {background: var(--star-surface-2); color: var(--star-text)}
+.music-body {overflow-y: auto; padding: 20px 24px; overscroll-behavior: contain; display: grid; gap: 12px}
+.music-switch {display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; border: 0}
+.music-switch legend {display: block; width: 100%; margin-bottom: 7px; font-size: var(--star-fs-meta); font-weight: 650; color: var(--star-muted)}
+.music-switch label {display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 12px;
+  border: 1px solid var(--star-stroke-control); border-radius: var(--star-r-sm); cursor: pointer;
+  color: var(--star-body); background: var(--star-surface-2);}
+.music-switch label:has(input:checked) {border-color: var(--star-gold-line); background: var(--star-gold-wash); color: var(--star-text)}
+.music-switch input, .music-consents input {accent-color: var(--star-gold)}
+.music-file {display: flex; align-items: center; flex-wrap: wrap; gap: 10px}
+.music-secondary {display: inline-flex; align-items: center; gap: 9px; min-height: 37px; padding: 8px 12px;
+  border: 1px solid var(--star-stroke-control); border-radius: var(--star-r-sm); background: var(--star-surface-2); color: var(--star-text);
+  font: inherit; font-size: 13px; cursor: pointer; text-align: left}
+.music-secondary:hover:enabled {background: var(--star-surface-3)}
+.music-picked {display: flex; gap: 8px; align-items: center; width: 100%; padding: 8px 11px; border-radius: var(--star-r-sm);
+  background: var(--star-bg); border: 1px solid var(--star-stroke); color: var(--star-body);}
+.music-picked div {display: grid; flex: 1; min-width: 0}
+.music-picked strong {overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--star-text)}
+.music-picked span {font-size: 12px; color: var(--star-muted)}
+.music-picked button {background: transparent; border: 0; padding: 4px; color: var(--star-muted); cursor: pointer}
+.music-compact {display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: var(--star-fs-meta); color: var(--star-muted)}
+.music-compact input, .music-compact select {min-height: 34px; max-width: 300px; border: 1px solid var(--star-stroke-control);
+  border-radius: var(--star-r-sm); padding: 5px 8px; color: var(--star-text); background: var(--star-surface-2); font: inherit;}
+.music-compact input {width: 78px}
+.music-input {align-items: flex-start; flex-direction: column}
+.music-input select {width: 100%; max-width: 100%}
+.music-context {font-size: var(--star-fs-meta); color: var(--star-muted); line-height: 1.6; margin: 0}
+.music-alert,.music-error,.music-notice,.music-progress {margin: 0; padding: 9px 12px; border-radius: var(--star-r-sm); font-size: 13px; line-height: 1.5}
+.music-alert {color: var(--star-muted); background: var(--star-surface-2)}
+.music-error {color: var(--star-danger); background: var(--star-danger-wash)}
+.music-notice {color: var(--star-success); background: var(--star-success-wash)}
+.music-progress {display: flex; align-items: center; gap: 7px; color: var(--star-gold); background: var(--star-gold-wash)}
+.music-consents {display: grid; gap: 10px; padding: 12px 0; border-top: 1px solid var(--star-stroke)}
+.music-consents label {display: flex; align-items: flex-start; gap: 10px; line-height: 1.45}
+.music-consents input {margin-top: 3px; flex: 0 0 auto}
+.music-result {border-top: 1px solid var(--star-stroke); padding-top: 16px; display: grid; gap: 10px}
+.music-result h3 {font-size: 15px; color: var(--star-text); margin: 0}
+.music-result ol {display: grid; gap: 9px; margin: 0; padding-left: 20px}
+.music-result li strong,.music-result li span {display: block}
+.music-result li strong {color: var(--star-text)}
+.music-result li span, .music-result li small, .music-result p, .music-result>small {font-size: var(--star-fs-meta); color: var(--star-muted); margin: 0}
+.music-actions {display: flex; align-items: center; gap: 12px; justify-content: space-between; border-top: 1px solid var(--star-stroke);
+  background: var(--star-surface-1); padding: 14px 24px}
+.music-actions span {display: inline-flex; gap: 6px; align-items: center; color: var(--star-muted); font-size: 12px}
+.music-primary {display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 9px 17px;
+  background: var(--star-gold); color: var(--star-on-gold); font-size: 14px; font-weight: 700;
+  border: 0; border-radius: var(--star-r-sm); cursor: pointer}
+.music-primary:hover:enabled {background: var(--star-gold-hover)}
+.music-primary:disabled {opacity: .45; cursor: not-allowed}
+.music-dialog button:focus-visible, .music-dialog input:focus-visible, .music-dialog select:focus-visible {
+  outline: 2px solid var(--star-stroke-focus); outline-offset: 3px;
+}
+@media(max-width:560px) {
+  .music-head{padding:18px 48px 16px 16px}
+  .music-body{padding:16px}
+  .music-actions{padding:14px 16px}
+  .music-actions span{max-width:140px}
+}
+@media(prefers-reduced-motion: reduce) {
+  .star-layer.music-dialog *, .music-overlay {animation: none!important; transition: none!important}
+}
