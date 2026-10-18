@@ -4,8 +4,8 @@
 your own Linux server, helps you build Roblox games, makes pictures, searches the web, and practises at night to get
 better, with you deciding what it keeps.
 
-[Download for Windows](https://github.com/oncoursemail/Star-AI/releases/latest) ·
-[Website](https://oncoursemail.github.io/Star-AI/) ·
+[Public downloads (migration pending)](https://github.com/oncoursemail/Star-AI/releases) ·
+[Public website (after Pages setup)](https://oncoursemail.github.io/Star-AI/) ·
 [v1.0 release notes](docs/release/v1.0/RELEASE_NOTES.md) ·
 [Report a problem](https://github.com/oncoursemail/Star-AI/issues)
 
@@ -14,14 +14,14 @@ better, with you deciding what it keeps.
 <sub>The app's browser preview with its sample conversation (no model running). Captured by
 `frontend/scripts/capture-site-media.mjs`.</sub>
 
-> **Shipping status:** STAR **v1.0.0** was published with
-> [Windows Setup](https://github.com/oncoursemail/Star-AI/releases/download/v1.0.0/STAR-Setup-v1.0.0.exe),
-> [portable ZIP](https://github.com/oncoursemail/Star-AI/releases/download/v1.0.0/STAR-Genesis-Windows-x64.zip) and
-> [SHA-256 checksums](https://github.com/oncoursemail/Star-AI/releases/download/v1.0.0/SHA256SUMS.txt)
-> ([what is new, what is off by default and what was not tested](docs/release/v1.0/RELEASE_NOTES.md)). The previous
-> release, v0.9.0, was published October 11, 2026. The
-> [latest published release](https://github.com/oncoursemail/Star-AI/releases/latest) is what counts:
-> **PRs, CI artifacts and passing tests** do not mean a feature is in the installer or that the website was deployed.
+> **Private/public migration (October 2026):** This is STAR's **private source repository**.
+> Historic `v1.0.0` packages remain attached to this private repository's previous releases
+> and are **not yet available from the new public download channel**.
+> STAR checks [public Star-AI Releases](https://github.com/oncoursemail/Star-AI/releases), which
+> currently has no installer. The next approved version must go through the
+> [private/public release procedure](docs/PRIVATE_PUBLIC_RELEASE_MIGRATION.md), including
+> a new version tag, controlled private CI, restricted public publisher token and
+> anonymous Windows download verification. PRs and CI artifacts are not public downloads.
 
 ## What STAR is
 
@@ -68,8 +68,8 @@ The full list, including every switch that is off by default, is in the
 
 ## Install
 
-1. Download `STAR-Setup-v1.0.0.exe` from [GitHub Releases](https://github.com/oncoursemail/Star-AI/releases/latest)
-   (or the portable `STAR-Genesis-Windows-x64.zip`).
+1. Once the first verified public stable release is available, download `STAR-Setup-vX.Y.Z.exe` from [Public GitHub Releases](https://github.com/oncoursemail/Star-AI/releases)
+   (or the portable `STAR-Genesis-Windows-x64.zip`). No public installer is available until then.
 2. Optional but recommended: compare the file with `SHA256SUMS.txt` from the same release:
    `Get-FileHash .\STAR-Setup-v1.0.0.exe -Algorithm SHA256`. The installer is not code-signed, so Windows may show a
    publisher warning.
@@ -77,7 +77,7 @@ The full list, including every switch that is off by default, is in the
    all users, Windows asks for administrator approval on every upgrade; STAR says so before Setup starts.
 4. Upgrading keeps `%APPDATA%\STAR` (chats, settings, lessons, downloaded models). Back that folder up first anyway.
 
-STAR checks the same public GitHub Releases for updates, anonymously, with exact size and SHA-256 checks.
+STAR checks the separate **public** GitHub Releases repository anonymously for updates, with exact size and SHA-256 checks. It never needs this private source repository.
 
 ## Requirements
 
