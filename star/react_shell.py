@@ -118,6 +118,8 @@ COMMERCE_ACTIONS = frozenset({
     'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
     'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
     'commerceLearning', 'commerceImportDailyMetrics',
+    'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
+    'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
 })
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
 
@@ -1201,6 +1203,8 @@ def launch():
                     'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
                     'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
     'commerceLearning', 'commerceImportDailyMetrics',
+    'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
+    'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
                 ):
                     from .commerce.workspace import handle_commerce
                     current = Settings.load(self.settings_file)
