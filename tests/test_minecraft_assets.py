@@ -135,6 +135,7 @@ def test_workspace_tool_is_permissioned(tmp_path):
 
 def test_workspace_escape_and_nested_output_rejected(tmp_path):
     ws, _ = _pack(tmp_path)
+    (tmp_path / "secret").write_text("out-of-workspace file")
     with pytest.raises(PermissionError):
         audit(ws, "../secret")
     with pytest.raises(ValueError):
