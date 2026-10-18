@@ -4,7 +4,9 @@ One cycle (every ~30 minutes between 18:00 and 09:00 owner-local time, in the ni
 the star-night-conductor timer when the loop is not running):
   a) reads the newest failures (data/failures.jsonl), groups them into clusters (same category and same first failed
      check) and asks the model for a diagnosis and 1-3 NEW, smaller practice tasks per cluster;
-  b) asks for a few task ideas from the notes that changed lately (docs-recent/*.md) and the benchmark categories;
+  b) asks for variants of recently SOLVED tasks (data/examples.jsonl: same skill, new names/objects/numbers) and for a
+     few task ideas from the notes that changed lately (docs-recent/*.md) and the benchmark categories; a reference
+     that fails its own checks gets one repair call (at most MAX_REPAIRS_PER_CYCLE) and is then checked again;
   c) keeps only a task that passes STAR's own validators: the task schema and loader (star.eval_runner/star.evals), the
      evaluation-copy guard, the static Luau check and the task's own checks run on the model's reference solution, a
      negative control (a trivial answer must fail), the Roblox API checker, and a duplicate check against the pool;
@@ -32,10 +34,13 @@ CATEGORIES = (                     # the Roblox benchmark categories (benchmarks
     "remote-security", "datastore-safety", "luau-typing", "ui-layout", "ui-interaction", "animation", "performance",
     "npc-pathing", "economy-simulation", "gameplay-systems", "server-authoritative-inventory", "round-lifecycle",
     "character-lifecycle", "debugging", "tool-attachment")
-MAX_CALLS_PER_CYCLE = 6
+MAX_CALLS_PER_CYCLE = 8
 MAX_CLUSTERS = 4
-MAX_ACCEPT_PER_CYCLE = 12
+MAX_ACCEPT_PER_CYCLE = 16
+MAX_REPAIRS_PER_CYCLE = 4          # one repair call per task whose reference fails its own checks
+VARIANT_CALLS = 2                  # calls that turn recently SOLVED tasks into new variants (2 solved tasks each)
 FAILURE_TAIL_BYTES = 800_000
+EXAMPLE_TAIL_BYTES = 600_000
 SIMILAR = 0.72                     # word-set overlap at or above which a prompt counts as a duplicate
 BLOCKED = re.compile(r"paintball|rec\s*room|golden|holdout|\bapi[_ -]?key\b|password|secret|token", re.I)
 NESTED_QUANTIFIER = re.compile(r"\([^()]*[+*][^()]*\)[+*{]")
@@ -139,6 +144,37 @@ def cluster_failures(rows: list[dict], limit: int = MAX_CLUSTERS) -> list[dict]:
              "rows": found[-3:]} for key, found in ordered[:limit]]
 
 
+def recent_solved(path: Path, cursor: int, count: int) -> list[dict]:
+    """`count` solved practice tasks from the newest 60 in data/examples.jsonl (a bounded tail), starting at `cursor`
+    (it rotates between cycles). Paintball/river tasks and anything with a blocked word are skipped; generated ledger
+    tasks are used only when fewer than `count` others exist."""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            handle.seek(max(0, size - EXAMPLE_TAIL_BYTES))
+            raw = handle.read().decode("utf-8", "replace")
+    except OSError:
+        return []
+    newest: dict[str, dict] = {}
+    for line in raw.splitlines()[1:] if size > EXAMPLE_TAIL_BYTES else raw.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or not row.get("task") or not row.get("prompt") or not row.get("answer"):
+            continue
+        if str(row.get("category", "")).startswith("river") or BLOCKED.search(str(row.get("prompt", ""))):
+            continue
+        newest.pop(row["task"], None)
+        newest[row["task"]] = row
+    rows = list(newest.values())
+    varied = [r for r in rows if not str(r.get("category", "")).startswith("ledger")]   # generated ledger tasks are
+    rows = (varied if len(varied) >= count else rows)[-60:]                            # plenty: prefer the others
+    if not rows:
+        return []
+    return [rows[(cursor + i) % len(rows)] for i in range(min(count, len(rows)))]
+
+
 def recent_docs(folder: Path, days: float = 2.0, limit: int = 6, now: float | None = None) -> list[tuple[str, str]]:
     """[(file name, the start of the text)] of notes changed in the last `days` days. Paintball notes are skipped."""
     found = []
@@ -184,6 +220,27 @@ def ideas_prompt(docs: list[tuple[str, str]], categories: list[str], count: int)
             f"{', '.join(categories)}.\n\nWrite {count} NEW practice tasks for different categories. Take the topic from a "
             "note when it names a Roblox game system, otherwise from the categories. First line: DIAGNOSIS: none.\n\n"
             + FORMAT)
+
+
+def variant_prompt(rows: list[dict]) -> str:
+    solved = []
+    for row in rows:
+        code = FENCE.search(str(row.get("answer", "")))
+        solved.append("SOLVED TASK (" + str(row.get("category", "")) + "): " + str(row.get("prompt", ""))[:700] +
+                      "\nPASSING ANSWER (cut): " + (code.group(1) if code else str(row.get("answer", "")))[:600])
+    return ("The student SOLVED these practice tasks:\n\n" + "\n\n".join(solved) + "\n\nFirst line: DIAGNOSIS: none.\n"
+            "Then write 2 NEW variants of each solved task: the same skill, but a different game object, different "
+            "module and function names and different numbers; one of the two may add one extra requirement. Do not "
+            "copy the wording of the solved task.\n\n" + FORMAT)
+
+
+def repair_prompt(raw: dict, reason: str) -> str:
+    checks = "\n".join(f"{kind}: {c['id']} ::: {c['re']} ::: {c['why']}" for kind in ("require", "forbid")
+                       for c in (raw.get(kind) or []))
+    return ("This practice task's reference solution fails the task's own checks.\n\nprompt: " + str(raw.get("prompt", "")) +
+            f"\nstrict: {raw.get('strict', 'no')}\n{checks}\n\nFAILED: {reason}\n\nreference:\n```lua\n" +
+            str(raw.get("reference", "")) + "\n```\n\nReply with only the corrected complete reference in one ```lua block. "
+            "It must satisfy the prompt and every require/forbid line; do not change the task.")
 
 
 def _check_id(text: str, index: int) -> str:
@@ -365,6 +422,9 @@ class Tally:
     accepted: int = 0
     rejected: dict = field(default_factory=dict)
     calls: int = 0
+    repairs: int = 0
+    repaired: int = 0
+    by_kind: dict = field(default_factory=dict)       # accepted tasks per job kind (cluster / variants / ideas)
     diagnoses: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     samples: list = field(default_factory=list)       # a few rejected blocks, for tuning the prompt (rejected-YYYYMMDD.jsonl)
@@ -466,10 +526,17 @@ def run_cycle(settings, ask, validators: Validators, *, now: dt.datetime | None 
     models = models if models is not None else [m.strip() for m in settings.conductor_models.split(",") if m.strip()]
     if not models:
         tally.notes.append("no usable model (none loaded with a slot other than 0)")
-    since = state.get("failure_ts") or utc()[:10] + "T00:00:00Z"
+    since = state.get("failure_ts") or now.strftime("%Y-%m-%d") + "T00:00:00Z"
     failures = read_failures(Path(settings.data) / "failures.jsonl", since)
     clusters = cluster_failures(failures)
     jobs = [("cluster", cluster_prompt(c), c) for c in clusters]
+    cursor = int(state.get("variant_cursor", 0))
+    for _ in range(VARIANT_CALLS):
+        solved = recent_solved(Path(settings.data) / "examples.jsonl", cursor, 2)
+        if solved:
+            jobs.append(("variants", variant_prompt(solved), {"tasks": [r["task"] for r in solved]}))
+            cursor += len(solved)
+    state["variant_cursor"] = cursor
     docs = recent_docs(Path(settings.conductor_docs or settings.home / "docs-recent"))
     seen_categories = sorted(set(CATEGORIES) | validators.categories)
     jobs.append(("ideas", ideas_prompt(docs, seen_categories, 4), {"docs": [d[0] for d in docs]}))
@@ -510,6 +577,20 @@ def run_cycle(settings, ask, validators: Validators, *, now: dt.datetime | None 
                 continue
             try:
                 why = validators.check(task, raw["reference"].strip("\n"))
+                if why.startswith("reference fails its own task") and tally.repairs < MAX_REPAIRS_PER_CYCLE and models:
+                    tally.repairs += 1                  # one repair round: the model fixes its own reference once
+                    fixed = ""
+                    try:
+                        found = FENCE.search(ask(models[0], SYSTEM, repair_prompt(raw, why)) or "")
+                        fixed = found.group(1).strip("\n") if found else ""
+                    except Yielded:
+                        raise
+                    except Exception as exc:
+                        tally.notes.append("repair call failed (" + type(exc).__name__ + ")")
+                    tally.calls += 1
+                    if 40 <= len(fixed) <= 6000 and not validators.check(task, fixed):
+                        raw["reference"], why = fixed, ""
+                        tally.repaired += 1
             except InfraError as exc:
                 tally.notes.append("a check could not run (" + str(exc)[:60] + "); cycle stopped")
                 return _finish(settings, state, tally, failures, night, used_model, log, stop=True)
@@ -519,6 +600,7 @@ def run_cycle(settings, ask, validators: Validators, *, now: dt.datetime | None 
             validators.remember(task)
             night_tasks.append(task)
             tally.accepted += 1
+            tally.by_kind[kind] = tally.by_kind.get(kind, 0) + 1
             _write_night_tasks(path, night_tasks)
             _keep_reference(settings, night, task, raw["reference"])
     return _finish(settings, state, tally, failures, night, used_model, log)
@@ -543,6 +625,11 @@ def _finish(settings, state: dict, tally: Tally, failures: list[dict], night: st
     state["accepted"] = int(state.get("accepted", 0)) + tally.accepted
     state["created"] = int(state.get("created", 0)) + tally.created
     state["calls"] = int(state.get("calls", 0)) + tally.calls
+    state["repairs"] = int(state.get("repairs", 0)) + tally.repairs
+    state["repaired"] = int(state.get("repaired", 0)) + tally.repaired
+    by_kind = state.setdefault("by_kind", {})
+    for key, count in tally.by_kind.items():
+        by_kind[key] = by_kind.get(key, 0) + count
     for key, count in tally.rejected.items():
         state.setdefault("rejected", {})[key] = state["rejected"].get(key, 0) + count
     state["diagnoses"] = (state.get("diagnoses", []) + tally.diagnoses)[-20:]
@@ -558,7 +645,7 @@ def _finish(settings, state: dict, tally: Tally, failures: list[dict], night: st
     log(f"night conductor: created {tally.created}, accepted {tally.accepted}, rejected {sum(tally.rejected.values())}"
         f" ({state['accepted']}/{settings.conductor_max_new} tonight)" + ("; stopped early" if stop else ""))
     return {"created": tally.created, "accepted": tally.accepted, "rejected": dict(tally.rejected),
-            "night_total": state["accepted"], "calls": tally.calls, "diagnoses": tally.diagnoses, "notes": tally.notes}
+            "night_total": state["accepted"], "calls": tally.calls, "repaired": tally.repaired, "by_kind": dict(tally.by_kind), "diagnoses": tally.diagnoses, "notes": tally.notes}
 
 
 # --- the morning report -------------------------------------------------------------------------------------------
@@ -595,6 +682,8 @@ def build_report(settings, state: dict) -> str:
              "## Tasks",
              f"created (proposed by the model): {state.get('created', 0)}",
              f"accepted into pool/conductor-{state.get('night')}.json: {state.get('accepted', 0)} (cap {settings.conductor_max_new} a night)",
+             f"accepted by source: {json.dumps(state.get('by_kind') or {}, sort_keys=True)}; references repaired "
+             f"{state.get('repaired', 0)} of {state.get('repairs', 0)} tried",
              f"rejected: {sum(c for _, c in rejected)}"]
     lines += [f"- {count} x {reason}" for reason, count in rejected[:12]]
     lines += ["", "## Diagnoses of the newest failure groups"]

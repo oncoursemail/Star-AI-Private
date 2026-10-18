@@ -327,3 +327,79 @@ def test_rejected_samples_are_kept_for_tuning(tmp_path):
                         log=lambda *_: None)
     lines = (s.conductor_dir / "rejected-20261017.jsonl").read_text(encoding="utf-8").splitlines()
     assert lines and json.loads(lines[0])["reason"] == "format: prompt or goal length"
+
+
+# --- variants of solved tasks and the repair round (star-finetune-20261018) ------------------------------------------
+
+def solved(i, cat="luau-typing"):
+    return {"ts": "2026-10-17T21:00:00Z", "task": f"S{i}", "category": cat, "kind": "first", "verified": True,
+            "prompt": f"In my Roblox game: write module Solved{i} with a typed function.",
+            "answer": f"Here:\n```lua\nlocal M{i} = {{}}\nreturn M{i}\n```\n"}
+
+
+def test_recent_solved_rotates_and_skips_river_and_blocked(tmp_path):
+    rows = [solved(i) for i in range(5)] + [solved(8, cat="river-paintball-native-cases"), dict(solved(9), prompt="Paintball gun")]
+    path = tmp_path / "examples.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    assert [r["task"] for r in conductor.recent_solved(path, 0, 2)] == ["S0", "S1"]
+    assert [r["task"] for r in conductor.recent_solved(path, 4, 2)] == ["S4", "S0"]
+    assert conductor.recent_solved(tmp_path / "missing.jsonl", 0, 2) == []
+    path.write_text("\n".join(json.dumps(r) for r in [solved(1, cat="ledger-x"), solved(2), solved(3, cat="ledger-y"), solved(4)]), encoding="utf-8")
+    assert [r["task"] for r in conductor.recent_solved(path, 0, 2)] == ["S2", "S4"]     # others before ledger tasks
+    assert len(conductor.recent_solved(path, 0, 3)) == 3                                  # too few others: all
+
+
+def test_cycle_asks_for_variants_of_solved_tasks(tmp_path):
+    s = settings_for(tmp_path)
+    Path(s.data, "examples.jsonl").write_text("\n".join(json.dumps(solved(i)) for i in range(5)), encoding="utf-8")
+    prompts = []
+
+    def ask(model, system, user):
+        prompts.append(user)
+        return "DIAGNOSIS: none\n" + (block(7) if "SOLVED" in user and "Solved0" in user else "")
+    result = conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    variant_calls = [p for p in prompts if p.startswith("The student SOLVED")]
+    assert len(variant_calls) == 2 and "Solved0" in variant_calls[0] and "Solved2" in variant_calls[1]
+    assert "local M0 = {}" in variant_calls[0]                       # the passing code is shown, not the prose
+    assert result["accepted"] == 1 and result["by_kind"] == {"variants": 1}
+    assert conductor.load_state(s)["variant_cursor"] == 4
+    report = (s.conductor_dir / "report-20261017.md").read_text(encoding="utf-8")
+    assert 'accepted by source: {"variants": 1}' in report
+
+
+def test_repair_round_fixes_a_failing_reference_once(tmp_path):
+    s = settings_for(tmp_path)
+    broken = REFERENCE.replace("Welcome, ", "Hello ")              # misses the required "Welcome," pattern
+    calls = {"repair": 0}
+
+    def ask(model, system, user):
+        if user.startswith("This practice task's reference"):
+            calls["repair"] += 1
+            assert "FAILED: reference fails its own task" in user and "Hello " in user
+            return "```lua\n" + REFERENCE + "\n```"
+        if "student failed" in user or "Recent project notes" in user:
+            return "DIAGNOSIS: none\n" + (block(1, reference=broken) if "student failed" not in user and calls["repair"] == 0 else "")
+        return ""
+    result = conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    assert calls["repair"] == 1 and result["accepted"] == 1 and result["repaired"] == 1
+    refs = (s.conductor_dir / "references-20261017.jsonl").read_text(encoding="utf-8")
+    assert "Welcome, " in refs and "Hello " not in refs
+
+
+def test_repair_that_still_fails_is_rejected_and_capped(tmp_path):
+    s = settings_for(tmp_path)
+    broken = REFERENCE.replace("Welcome, ", "Hello ")
+    repairs = []
+
+    def ask(model, system, user):
+        if user.startswith("This practice task's reference"):
+            repairs.append(user)
+            return "```lua\n" + broken + "\n```"
+        out = "DIAGNOSIS: none\n"
+        for n in range(4):
+            words = " ".join(f"{w}{len(user)}{n}" for w in ("alpha", "beta", "gamma", "delta", "kappa", "sigma", "omega", "theta"))
+            out += block(n, reference=broken, prompt="In my Roblox game: write a ModuleScript " + words + " that greets people.")
+        return out
+    result = conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    assert result["accepted"] == 0 and len(repairs) == conductor.MAX_REPAIRS_PER_CYCLE
+    assert any(k.startswith("reference fails its own task") for k in result["rejected"])
