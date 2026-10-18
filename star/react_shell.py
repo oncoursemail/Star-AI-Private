@@ -1196,7 +1196,9 @@ def launch():
                     return json.dumps({'ok':True,'data':handle_discord_action(action,self.discord,autostart=saved.discord_autostart)})
                 if action == 'gameLabCatalog' or action in CLIP_INTEROP_ACTIONS or action in CLIP_ACTIONS:
                     return self._clip_action(action, body, rid)
-                if action in OWNER_ACTIONS:
+                if action in {'musicStatus', 'musicChooseWav', 'musicChooseFpcalc',
+                              'musicClear', 'musicIdentify', 'qualityChooseFile',
+                              'qualityPreview', 'qualityClear'}:
                     return self._owner_action(action,body,rid)
                 if action in MEDIA_ACTIONS:
                     def media_worker():
