@@ -683,7 +683,7 @@ def build_report(settings, state: dict) -> str:
              "",
              "## Tasks",
              f"created (proposed by the model): {state.get('created', 0)}",
-             f"accepted into pool/conductor-{state.get('night')}.json: {state.get('accepted', 0)} (cap {settings.conductor_max_new} a night)",
+             f"accepted into pool/{pool_file(settings, str(state.get('night'))).name}: {state.get('accepted', 0)} (cap {settings.conductor_max_new} a night)",
              f"accepted by source: {json.dumps(state.get('by_kind') or {}, sort_keys=True)}; references repaired "
              f"{state.get('repaired', 0)} of {state.get('repairs', 0)} tried",
              f"rejected: {sum(c for _, c in rejected)}"]
