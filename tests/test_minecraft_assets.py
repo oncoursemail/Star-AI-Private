@@ -109,7 +109,7 @@ def test_symlink_is_rejected(tmp_path):
 
 def test_deterministic_packaging_and_no_clobber(tmp_path):
     ws, folder = _pack(tmp_path)
-    (folder / "pack.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + b"\x00\x00\x00\x10" * 2)
+    (folder / "pack.png").write_bytes(_real_png())
     first = package(ws, "pack", "one.zip")
     second = package(ws, "pack", "two.zip")
     assert first["sha256"] == second["sha256"]
@@ -214,3 +214,13 @@ def test_scaffold_rejects_invalid_texture_and_namespace(tmp_path):
     with pytest.raises(ValueError):
         scaffold_item(ws, "never-made", namespace="Metallic", item_id="item",
                       texture_path="good.png", target_version="26.3")
+
+
+def test_pack_audit_rejects_corrupted_png_crc(tmp_path):
+    ws, folder = _pack(tmp_path)
+    png = bytearray(_real_png())
+    png[-5] ^= 0x10
+    (folder / "pack.png").write_bytes(png)
+    r = audit(ws, "pack")
+    assert not r["valid"]
+    assert any(f["code"] == "invalid-png" for f in r["findings"])
