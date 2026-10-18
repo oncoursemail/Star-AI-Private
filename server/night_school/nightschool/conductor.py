@@ -471,7 +471,7 @@ def due(settings, state: dict, now: dt.datetime | None = None, wall: float | Non
 
 
 def pool_file(settings, night: str) -> Path:
-    return Path(settings.pool) / f"conductor-{settings.conductor_tag}{night}.json"
+    return Path(settings.pool) / f"conductor-{getattr(settings, 'conductor_tag', '')}{night}.json"   # getattr: a loop started before the deploy
 
 
 def _read_night_tasks(path: Path) -> list[dict]:
