@@ -78,9 +78,22 @@ TOOLS = [
          "path": {"type": "string"}, "action": {"type": "string", "enum": ["validate", "import", "test", "export"]},
          "preset": {"type": "string"}, "output": {"type": "string"}},
          "required": ["path", "action"], "additionalProperties": False}},
+    {"name": "workspace_minecraft_audit",
+     "description": "Inspect Minecraft Java resource-pack folder/ZIP or Blockbench .bbmodel inside the selected workspace. Offline read-only validation: manifests, models, references, textures, unsafe ZIP entries and animation structure. Does not launch Minecraft or install anything.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": {"type": "string"},
+         "target_version": {"type": "string", "enum": ["1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.2", "26.3"], "default": "26.3"}},
+         "required": ["path"], "additionalProperties": False}},
+    {"name": "workspace_minecraft_package",
+     "description": "Build a deterministic ZIP from a validated Minecraft Java resource-pack folder in the selected workspace. Requires owner-enabled workspace editing. Does not deploy or overwrite an existing archive unless explicitly requested.",
+     "inputSchema": {"type": "object", "properties": {
+         "path": {"type": "string"}, "output": {"type": "string"},
+         "target_version": {"type": "string", "enum": ["1.21.4", "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11", "26.1", "26.2", "26.3"]},
+         "replace": {"type": "boolean", "default": False}},
+         "required": ["path", "output", "target_version"], "additionalProperties": False}},
 ]
 TOOL_NAMES = {t['name'] for t in TOOLS}
-WRITE_TOOLS = frozenset({'workspace_write', 'workspace_edit'})
+WRITE_TOOLS = frozenset({'workspace_write', 'workspace_edit', 'workspace_minecraft_package'})
 
 
 class Workspace:
@@ -123,6 +136,16 @@ class Workspace:
             validate(args, schema)
         except ValidationError:
             raise ValueError('Invalid workspace tool arguments') from None
+        if name == 'workspace_minecraft_audit':
+            from . import minecraft_assets
+            return minecraft_assets.audit(self, args['path'], target_version=args.get('target_version', '26.3'))
+        if name == 'workspace_minecraft_package':
+            if not allow_write:
+                raise PermissionError('Workspace editing is switched off')
+            from . import minecraft_assets
+            return minecraft_assets.package(self, args['path'], args['output'],
+                                            target_version=args['target_version'],
+                                            replace=args.get('replace', False))
         if name == 'workspace_binary_triage':
             from . import binary_evidence
             return binary_evidence.triage(self, args['path'])
