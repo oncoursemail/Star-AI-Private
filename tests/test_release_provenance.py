@@ -42,7 +42,9 @@ def test_attestation_is_main_only_and_producer_is_trusted():
     assert "needs: [windows-build, windows-tests, attest-release]" in publish
     assert "github.event_name == 'workflow_dispatch'" in publish
     assert "needs.windows-tests.result == 'success'" in publish
-    assert "if: github.ref == 'refs/heads/main'" in publish
+    assert "github.ref == 'refs/heads/main'" in publish
+    assert "needs.windows-build.result == 'success'" in publish
+    assert "needs.attest-release.result == 'skipped'" in publish
 
 
 def test_both_artifacts_require_exact_source_and_signer_before_publish():
