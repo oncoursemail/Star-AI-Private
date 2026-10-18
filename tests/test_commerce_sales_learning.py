@@ -98,6 +98,19 @@ def test_missing_financial_data_is_never_interpreted_as_zero_profit(tmp_path):
     assert metrics["signal"]["status"] == "insufficient_evidence"
 
 
+def test_zero_session_day_with_orders_suppresses_comparable_rate(tmp_path):
+    shop = business(tmp_path)
+    figures = owner_import(tmp_path, shop, [
+        row("2026-09-01", "0", "3", "30.00", "0.00", "0.00", "0.00", "0.00"),
+        row("2026-09-02", "100", "4", "40.00", "0.00", "0.00", "0.00", "0.00"),
+    ])
+    assert figures["last_365_days"]["orders"] == 7
+    assert figures["last_365_days"]["sessions"] == 100
+    assert figures["last_365_days"]["orders_per_100_sessions"] is None
+    assert figures["time_of_month"][0]["orders_per_100_sessions"] is None
+    assert figures["signal"]["auto_apply"] is False
+
+
 def test_conflicting_daily_date_needs_explicit_replace_and_import_is_atomic(tmp_path):
     shop = business(tmp_path)
     owner_import(tmp_path, shop, [row()])
