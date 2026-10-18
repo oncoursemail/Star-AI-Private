@@ -79,8 +79,9 @@ def test_candidate_assignment_and_channel_guard(tmp_path):
     with pytest.raises(ValueError, match="marketplace"):
         request(tmp_path, "commerceAssignBusiness", idea_id=idea["id"], business_id=fiverr["id"])
     assert request(tmp_path)["ideas"][0]["business_id"] == etsy["id"]
-    free = request(tmp_path, "commerceCreate", title="Unassigned", concept="An original concept",
-                   channel="etsy")["ideas"][0]
+    candidates = request(tmp_path, "commerceCreate", title="Unassigned",
+                         concept="An original concept", channel="etsy")["ideas"]
+    free = next(candidate for candidate in candidates if candidate["title"] == "Unassigned")
     assert free["business_id"] is None
     linked = request(tmp_path, "commerceAssignBusiness", business_id=etsy["id"], idea_id=free["id"])
     assert any(i["id"] == free["id"] and i["business_id"] == etsy["id"] for i in linked["ideas"])
@@ -115,7 +116,7 @@ def test_evidence_change_requeues_new_fingerprint_and_stales_old_job(tmp_path):
     result = request(tmp_path, "commerceRunPreflight")
     assert result["job_counts"]["review_ready"] == 1
     assert result["counts"]["approved_for_export"] == 0
-    assert result["preflight_jobs"][0]["status"] == "review_ready"
+    assert any(job["status"] == "review_ready" for job in result["preflight_jobs"])
 
 
 def test_queue_is_idempotent_even_when_clicked_multiple_times(tmp_path):
@@ -231,3 +232,39 @@ def test_a_completed_check_is_revoked_when_evidence_changes(tmp_path):
     assert checked["job_counts"]["review_ready"] == 1
     assert checked["job_counts"]["stale"] == 1
     assert checked["counts"]["approved_for_export"] == 0
+
+
+def test_a_cancelled_job_can_be_explicitly_requeued(tmp_path):
+    shop = make_business(tmp_path)
+    idea = make_candidate(tmp_path, shop)
+    queued = request(tmp_path, "commerceQueuePreflight", idea_id=idea["id"])
+    job_id = queued["preflight_jobs"][0]["id"]
+    request(tmp_path, "commerceCancelPreflight", id=job_id)
+    retried = request(tmp_path, "commerceQueuePreflight", idea_id=idea["id"])
+    assert retried["job_counts"]["queued"] == 1
+    assert retried["job_counts"]["cancelled"] == 0
+    assert retried["preflight_jobs"][0]["id"] == job_id
+    assert any(event["action"] == "preflight_requeued" for event in retried["recent_activity"])
+
+
+def test_reverting_evidence_can_requeue_the_original_checklist(tmp_path):
+    shop = make_business(tmp_path)
+    idea = make_candidate(tmp_path, shop)
+    first = review_evidence(tmp_path, idea)["ideas"][0]
+    saved_rights = first["evidence"]["rights_evidence"]
+    request(tmp_path, "commercePauseBusiness", id=shop["id"], paused=False)
+    original = request(tmp_path, "commerceQueuePreflight", idea_id=idea["id"])
+    original_job_id = original["preflight_jobs"][0]["id"]
+    assert request(tmp_path, "commerceRunPreflight")["job_counts"]["review_ready"] == 1
+    request(tmp_path, "commerceEvidence", id=idea["id"],
+            evidence={"rights_evidence": "Temporary changed attribution"})
+    request(tmp_path, "commerceQueuePreflight", idea_id=idea["id"])
+    reverted = request(tmp_path, "commerceEvidence", id=idea["id"],
+                       evidence={"rights_evidence": saved_rights})
+    assert reverted["job_counts"]["review_ready"] == 0
+    resumed = request(tmp_path, "commerceQueuePreflight", idea_id=idea["id"])
+    assert resumed["job_counts"]["queued"] == 1
+    assert any(job["id"] == original_job_id and job["status"] == "queued"
+               for job in resumed["preflight_jobs"])
+    final = request(tmp_path, "commerceRunPreflight")
+    assert final["job_counts"]["review_ready"] == 1
