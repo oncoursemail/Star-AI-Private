@@ -1105,8 +1105,11 @@ def launch():
                 return json.dumps({'ok': True, 'data':
                     self.music_quality.select_quality_file(Path(chosen)) if chosen else {'cancelled': True}})
             if action == 'qualityPreview':
+                kind = body.get('kind')
+                if not isinstance(kind, str):
+                    raise ValueError('Choose a supported quality checklist')
                 return json.dumps({'ok': True, 'data':
-                    self.music_quality.quality_preview(body.get('kind'))})
+                    self.music_quality.quality_preview(kind)})
             if action == 'qualityClear':
                 return json.dumps({'ok': True, 'data': self.music_quality.clear_quality()})
             raise PermissionError('Unknown music/quality owner action')
