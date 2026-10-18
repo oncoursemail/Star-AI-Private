@@ -423,6 +423,10 @@ def score_answer(task: dict, answer: str, *, luau_check, sandbox=None, prelude: 
         score.checks.append(Check("unit_tests", False, "no code to test"))
 
     score.checks.extend(pattern_checks(auto, blocks, body))
+    if auto.get("design"):
+        # Design tasks (docs/design/anti-ai-look-rubric.md): the static design checker scores the whole answer.
+        from .design_check import auto_checks
+        score.checks.extend(auto_checks(auto["design"], body))
     if auto.get("citation", {}).get("required"):
         score.checks.append(citation_check(auto, footer))
     return score

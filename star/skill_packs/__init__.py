@@ -52,6 +52,14 @@ _ROBLOX_CONTEXT = re.compile(
     r"StarterGui|StarterPlayer\w*|StarterCharacterScripts|PlayerGui|ScreenGui|Instance\.new|game:GetService|"
     r"Humanoid|RemoteEvent|RemoteFunction|DataStore\w*|OnServerEvent|BindToClose|R6|R15)\b", re.IGNORECASE)
 
+# Design requests (web pages, app screens, Roblox UI, UI motion, game effects) have their own context: the design pack
+# is the one pack that may be added to a prompt that is not a Roblox or engine question.
+_DESIGN_CONTEXT = re.compile(
+    r"\b(?:design\w*|redesign\w*|restyle|landing page|web ?page|website|homepage|dashboard|sign-?up (?:form|page)|login (?:form|page)|"
+    r"pricing page|HUD|shop (?:UI|menu|screen|panel)|inventory (?:UI|screen|panel)|main menu|pause menu|settings menu|ScreenGui|"
+    r"user interface|mockup|layout|look and feel|VFX|particle effects?|UI animation|micro-?interactions?|tween\w*)\b", re.IGNORECASE)
+DESIGN_PACKS = frozenset(("design-anti-ai-look",))
+
 _GODOT_CONTEXT = re.compile(r"\b(?:godot(?:\s*4)?|gdscript|PackedScene|CharacterBody2D|Node2D|Control\s+node)\b", re.IGNORECASE)
 GODOT_PACKS = frozenset(("godot-scenes-and-nodes", "godot-gdscript-typing-and-signals",
                          "godot-physics-and-input", "godot-ui-and-themes"))
@@ -141,6 +149,12 @@ TRIGGERS: dict[str, re.Pattern] = {
     "design-ui-ux-for-games": re.compile(
         r"\b(?:game UX|UI hierarchy|information hierarchy|thumb zones?|mobile[- ]first|readable text|colou?r[- ]blind)\b",
         re.IGNORECASE),
+    # Anti-"AI look" design pack (docs/design/anti-ai-look-rubric.md): web pages, Roblox UI, UI motion, game VFX.
+    "design-anti-ai-look": re.compile(
+        r"\b(?:design\w*|redesign\w*|restyle|style[sd]?|visual\w*|palette|typography|fonts?|colou?rs?|theme[sd]?|landing|hero|"
+        r"cards?|modern|clean|beautiful|premium|professional|sleek|aesthetic|minimal\w*|layout|mockup|HUD|menu|shop|inventory|"
+        r"dashboard|form|web ?page|website|homepage|gradient\w*|animation\w*|transitions?|hover|VFX|particles?|effects?|"
+        r"explosion|impact|polish\w*|look)\b", re.IGNORECASE),
     # Service implementation recipes. Default OFF until an independent evaluation passes.
     "roblox-datastore-service-patterns": re.compile(
         r"\b(?:DataStoreService|GetRequestBudgetForRequestType|StandardRead|StandardWrite|UpdateAsync|session[- ]locks?)\b",
@@ -288,9 +302,10 @@ def select(prompt, *, enabled=None, limit: int = MAX_PACKS_PER_TURN, home=None) 
     # questions and return here without touching it. Same result in either order.
     roblox_context = bool(_ROBLOX_CONTEXT.search(prompt))
     godot_context = bool(_GODOT_CONTEXT.search(prompt))
+    design_context = bool(_DESIGN_CONTEXT.search(prompt))
     # Other-engine packs: the prompt must name that engine (ENGINE_CONTEXTS); naming it is enough.
     engines = {name for name, context in ENGINE_CONTEXTS.items() if context.search(prompt)}
-    if not roblox_context and not godot_context and not engines:
+    if not roblox_context and not godot_context and not engines and not design_context:
         return []
     allowed = enabled_names(home=home) if enabled is None else frozenset(enabled)
     if not allowed:
@@ -304,6 +319,11 @@ def select(prompt, *, enabled=None, limit: int = MAX_PACKS_PER_TURN, home=None) 
                         {m.group(0).lower() for m in TRIGGERS[pack.name].finditer(prompt)})
                 # A named engine outranks Roblox packs: "port my RemoteEvent to Bevy" wants the Bevy pack.
                 scored.append((0, -len(hits), order, pack))
+        elif pack.name in DESIGN_PACKS:
+            if pack.name in allowed and (design_context or roblox_context) and not godot_context:
+                hits = {m.group(0).lower() for m in TRIGGERS[pack.name].finditer(prompt)}
+                if len(hits) >= 2 or any(len(h) > 6 for h in hits):
+                    scored.append((1, -len(hits), order, pack))
         elif pack.name in allowed and ((pack.name in GODOT_PACKS and godot_context and not roblox_context) or
                                       (pack.name not in GODOT_PACKS and roblox_context and not godot_context)):
             hits = {m.group(0).lower() for m in TRIGGERS[pack.name].finditer(prompt)}

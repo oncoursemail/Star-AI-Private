@@ -18,6 +18,7 @@ NAMES = ["godot-scenes-and-nodes", "godot-gdscript-typing-and-signals", "godot-p
          "eng-debugging", "eng-test-first", "eng-verify-before-done", "roblox-game-math",
          "design-core-loop-and-progression", "design-onboarding-and-tutorial", "design-game-feel",
          "design-level-and-obby-layout", "design-economy-and-fair-monetisation", "design-ui-ux-for-games",
+         "design-anti-ai-look",
          "roblox-datastore-service-patterns", "roblox-remote-event-function-patterns",
          "roblox-tweenservice-easing",
          "roblox-studio-mcp-workflow", "roblox-replication-hot-paths", "roblox-editable-memory-streaming",
@@ -94,7 +95,7 @@ def test_environment_art_pack_is_opt_in_and_stays_scoped():
     prompt = "In Roblox Studio, build environmental storytelling with foliage and swaying trees."
     assert skill_packs.matching_names(prompt, enabled=NAMES) == ["roblox-environment-art"]
     assert skill_packs.matching_names(prompt, enabled=["roblox-vfx"]) == []
-    assert skill_packs.matching_names("Design a website with swaying trees", enabled=NAMES) == []
+    assert "roblox-environment-art" not in skill_packs.matching_names("Design a website with swaying trees", enabled=NAMES)
 
 
 def test_one_generic_word_is_not_enough():
