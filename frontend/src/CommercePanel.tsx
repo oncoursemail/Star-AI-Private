@@ -3,6 +3,7 @@ import {ArrowRight, Check, CircleAlert, ClipboardCheck, FilePenLine, FolderOpen,
 import {request} from './bridge'
 import {CommerceMissionControl, type MissionSnapshot} from './CommerceMissionControl'
 import {CommerceSeasonality} from './CommerceSeasonality'
+import {CommerceDropshipping} from './CommerceDropshipping'
 import './commerce.css'
 
 type Channel = 'etsy' | 'shopify' | 'fiverr' | 'payhip' | 'gumroad' | 'printify'
@@ -177,6 +178,8 @@ export function CommercePanel({project, preview = false}: {project: string; prev
       }}
       onAction={(action, payload, message) => mutate(action, payload, message)}/>
     <CommerceSeasonality businessId={selectedBusinessId} project={project} preview={preview}/>
+    <CommerceDropshipping businessId={board?.businesses?.find(x => x.id === selectedBusinessId)?.channel === 'shopify'
+      ? selectedBusinessId : ''} project={project} preview={preview}/>
     <div className="commerce-workspace">
       <section className="commerce-main" aria-label="Product pipeline">
         {showCreate && !preview && <form className="commerce-create" onSubmit={event => {
