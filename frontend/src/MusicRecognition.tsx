@@ -111,11 +111,11 @@ export function MusicRecognitionDialog({onClose}:{onClose:()=>void}){
 
  async function chooseWav(){
    const answer=await action<Status&{cancelled?:boolean}>('musicChooseWav')
-   if(answer&&!answer.cancelled){setStatus(answer);setNotice('Recording selected locally. Nothing has been uploaded.')}
+   if(answer&&!answer.cancelled){setStatus(answer);setConsent(EMPTY);setNotice('Recording selected locally. Nothing has been uploaded.')}
  }
  async function chooseFpcalc(){
    const answer=await action<Status&{cancelled?:boolean}>('musicChooseFpcalc')
-   if(answer&&!answer.cancelled){setStatus(answer);setNotice('Local Chromaprint executable selected.')}
+   if(answer&&!answer.cancelled){setStatus(answer);setConsent(EMPTY);setNotice('Local Chromaprint executable selected.')}
  }
  async function identify(){
    if(!canIdentify(status,provider,source,consent,seconds,status?.fpcalc_selected===true))return
@@ -151,8 +151,8 @@ export function MusicRecognitionDialog({onClose}:{onClose:()=>void}){
        </div>
        <div className="music-body">
          <fieldset className="music-switch"><legend>Audio source</legend>
-           <label><input type="radio" name="song-source" value="file" disabled={busy} checked={source==='file'} onChange={()=>{setSource('file');setResult(null)}}/> File</label>
-           <label><input type="radio" name="song-source" value="mic" disabled={busy} checked={source==='mic'} onChange={()=>{setSource('mic');setResult(null)}}/> Microphone / game mix</label>
+           <label><input type="radio" name="song-source" value="file" disabled={busy} checked={source==='file'} onChange={()=>{setSource('file');setResult(null);setConsent(EMPTY)}}/> File</label>
+           <label><input type="radio" name="song-source" value="mic" disabled={busy} checked={source==='mic'} onChange={()=>{setSource('mic');setResult(null);setConsent(EMPTY)}}/> Microphone / game mix</label>
          </fieldset>
          {source==='file'?
            <div className="music-file">
