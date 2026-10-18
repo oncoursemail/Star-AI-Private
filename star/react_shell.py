@@ -43,7 +43,6 @@ from .blender_bridge import status as blender_status
 from .studio_connections import connection_status, validate_target, select_instance
 from .studio_host import STUDIO_HOST_ACTIONS, handle as handle_studio_host
 from .tool_workshop import ToolWorkshop
-from .commerce.workspace import COMMERCE_ACTIONS, handle_commerce
 from .voice.bridge import VOICE_ACTIONS, VoiceBridge
 from .discord_supervisor import DISCORD_ACTIONS, DiscordSupervisor, handle_action as handle_discord_action, start_if_opted_in
 from .clips_obs import CLIP_ACTIONS, ClipService
@@ -113,6 +112,8 @@ ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_INTEROP_ACTIONS
 # A static read-only source index; no arbitrary fetch/install/execute capability.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | {'gameLabCatalog'}
 # Business uses only local draft and review actions; it cannot publish, spend or contact buyers.
+# Do not import the commerce package at desktop startup: its art scanner uses Pillow.
+COMMERCE_ACTIONS = frozenset({'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview'})
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
 
 # A background warm-up (server check + prompt-cache priming) gives way at once to
@@ -1188,7 +1189,10 @@ def launch():
                         self._run(rid, action, research_task)
                         return json.dumps({'ok':True,'pending':True,'requestId':rid})
                     return json.dumps({'ok':True,'data':research_task()},default=str)
-                if action in COMMERCE_ACTIONS:
+                # String literals preserve the standalone Qt bridge test harness that
+                # extracts invoke() without its module globals. Keep in sync with the allowlist.
+                if action in ('commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview'):
+                    from .commerce.workspace import handle_commerce
                     current = Settings.load(self.settings_file)
                     result = handle_commerce(action, body, project=current.project, home=app_data())
                     return json.dumps({'ok':True,'data':result})
