@@ -8,7 +8,7 @@ const readme=readFileSync(resolve(root,'README.md'),'utf8')
 const handoff=readFileSync(resolve(root,'docs','WEBSITE_RELEASE_CHECKLIST.md'),'utf8')
 const PRIVATE_ADDRESS=/\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d+\.\d+(?:\.\d+)?\b/
 
-describe('private-source v1.0.1 preview and public release status',()=>{
+describe('private-source preview and public release status',()=>{
  it('derives model routing from the published release, not development source',()=>{
   const release={tag:'v0.8.1',name:'STAR',publishedAt:'2026-10-10T00:00:00Z',
    url:LINKS.latest,prerelease:false,assets:[]}
@@ -18,7 +18,8 @@ describe('private-source v1.0.1 preview and public release status',()=>{
   expect(modelLabelForRelease({...release,tag:'unverified'})).toBe('Check GitHub')
  })
  it('keeps the 1.0.1 private source ahead of the empty public release channel',()=>{
-  expect(SOURCE_VERSION).toBe('1.0.1')
+  const metadata=JSON.parse(readFileSync(resolve(root,'site','version.json'),'utf8'))
+  expect(SOURCE_VERSION).toBe(metadata.version)
   expect(readme).toContain('**private source repository**')
   expect(readme).toContain('currently has no installer')
   expect(readme).toContain('private/public release procedure')
