@@ -4,18 +4,18 @@
 **Data residency:** private per-user STAR app-data SQLite database.  
 **Revenue:** not connected or verified. Never infer sales from draft counts.
 
-This work builds on the existing \`star/commerce/planning.py\`, \`star/commerce/art_quality.py\`,
-\`star/delivery_package.py\`, React 19 desktop and existing STAR design tokens.
+This work builds on the existing `star/commerce/planning.py`, `star/commerce/art_quality.py`,
+`star/delivery_package.py`, React 19 desktop and existing STAR design tokens.
 It does not create a second UI, alter the main AI model, or grant an autonomous agent the
 ability to publish, charge, message customers, or access private browser accounts.
 
 ## What works now
 
-1. **Business** is a section of STAR's desktop sidebar. Browser \`?preview=1&tab=business\`
+1. **Business** is a section of STAR's desktop sidebar. Browser `?preview=1&tab=business`
    shows a clear read-only zero state; it does not connect to a private database.
 2. The installed desktop can create real **local candidate records** by marketplace,
    with an original brief and project isolation. Data goes to
-   \`<STAR_APP_DATA>/commerce/workspace.sqlite3\`, never the Git repository.
+   `<STAR_APP_DATA>/commerce/workspace.sqlite3`, never the Git repository.
 3. The review desk validates evidence using the existing Etsy/Fiverr review standards.
    An owner can record originality, licensing, visual QA, buyer preferences, AI
    disclosures, mockup checks and print production sampling where relevant.
@@ -28,9 +28,9 @@ ability to publish, charge, message customers, or access private browser account
 6. The existing optional Playwright visual-audit script includes Business at desktop,
    small-desktop and phone viewports, checking control layout and browser a11y.
 
-The backend action names are restricted to \`commerceBoard\`, \`commerceCreate\`,
-\`commerceEvidence\` and \`commerceReview\`. No \`commercePublish\`,
-\`commerceSpend\` or Fiverr messaging action is present. Unlike the AI chat tools,
+The backend action names are restricted to `commerceBoard`, `commerceCreate`,
+`commerceEvidence` and `commerceReview`. No `commercePublish`,
+`commerceSpend` or Fiverr messaging action is present. Unlike the AI chat tools,
 these actions live inside the desktop's allowlisted Qt bridge.
 
 ## What is *not* built yet
@@ -55,14 +55,14 @@ are attached and the store is configured to sell.
 ## Engineering direction: one coordinator and one quality gate
 
 - **GSD Core**: primary phase planning/workflow if the owner later installs it into
-  their coding runtime. Do not run \`npx\` installers on an owner machine without
+  their coding runtime. Do not run `npx` installers on an owner machine without
   examining their scripts, licenses and version pin.
 - **Superpowers**: TDD, structured problem decomposition and review *practices* per task,
   rather than a second competing autonomous project manager.
 - **Frontend Design + UI UX Pro Max**: design direction and an evaluated reference
   database; existing STAR data already includes UI UX Pro Max reference tables.
 - **Anti-Slop**: evidence-based critique for generic labels, artificial metrics,
-  missing states and accessibility. It is not a substitute for a \`DESIGN.md\`
+  missing states and accessibility. It is not a substitute for a `DESIGN.md`
   with project-specific visual direction.
 - **Playwright**: inspect STAR's own preview and checkout *test environments*.
   Do not use it to stealth-automate Fiverr or circumvent Etsy auth.
@@ -75,25 +75,25 @@ No ornamental fake earnings or animated payout numbers.
 
 From repository root:
 
-\`\`\`bash
+```bash
 python -m pytest -q tests/test_commerce_workspace.py tests/test_commerce_planning.py tests/test_commerce_art_quality.py
 python -m compileall -q star/commerce star/react_shell.py
 cd frontend
-npm ci
+npm install --no-audit --no-fund
 npm run typecheck
 npm test -- --run src/commerce-panel.test.tsx
 npm run build
-\`\`\`
+```
 
 For optional real-browser QA on a machine with Microsoft Edge and a reviewed
-\`playwright-core\` install in \`.local/tools\`:
+`playwright-core` install in `.local/tools`:
 
-\`\`\`bash
+```bash
 cd frontend
 node scripts/visual-audit.mjs --tools ../.local/tools --strict
-\`\`\`
+```
 
-This test captures \`?preview=1&tab=business\` at 1280, 900 and 390 widths;
+This test captures `?preview=1&tab=business` at 1280, 900 and 390 widths;
 the test cannot demonstrate real Shopify checkout or installed Qt WebEngine.
 Report visual findings rather than treating any one automated score as proof of taste.
 
