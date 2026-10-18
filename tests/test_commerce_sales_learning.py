@@ -145,7 +145,8 @@ def test_shop_currency_and_reporting_timezone_cannot_be_silently_mixed(tmp_path)
     (HEADER+"\n"+row("2026-09-01", orders="3.2"), "nonnegative whole"),
     (HEADER+"\n"+row("2026-09-01", gross="=SUM(A1:B2)"), "nonnegative amount"),
     (HEADER+"\n"+row("2026-09-01", fees="1.999"), "nonnegative amount"),
-    (HEADER+"\n"+row("2026-09-01")[:-3], "nonnegative amount"),
+    (HEADER+"\n"+row("2026-09-01", ads="4."), "nonnegative amount"),
+    (HEADER+"\n"+row().rsplit(",", 1)[0], "Missing CSV field"),
 ])
 def test_refuses_invalid_or_customer_level_csv(text, reason):
     with pytest.raises(ValueError, match=reason):
