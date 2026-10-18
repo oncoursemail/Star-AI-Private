@@ -34,6 +34,16 @@ Java 26.3 (Sept 2026, Java 25), Fabric API 0.162+26.3, NeoForge 26.3.0.x, Bedroc
 10. Bedrock 2.x: `worldInitialize` is gone (`system.beforeEvents.startup` / `world.afterEvents.worldLoad`); `runCommandAsync` removed (use `runCommand`); `isValid` is a property; world access at top level throws (early execution).
 11. Client-only classes (`Minecraft`, renderers) in common code crash servers.
 
+## Paper/Nexo/Blockbench and resource packs (Oct 2026)
+- Paper/Purpur plugins differ from Fabric/NeoForge mods: detect server version/JDK, use documented API and plugin.yml or paper-plugin.yml. Folia has region/entity/global schedulers; never use Bukkit world operations from ordinary async threads. Gameplay grants, purchases and permissions stay server-authoritative.
+- Java 26.3 resource packs use format **97.1** (data packs 121.0). Modern pack.mcmeta requires min_format [97,1] and max_format [97,1] for a 26.3-only pack. Check assets/<namespace>/items, models, textures, blockstates, font, atlases and sounds; validate references and pack merge collisions.
+- Nexo is a paid Paper/Folia pack manager for items, blocks, armor, glyphs, furniture and auto-generated packs. Target exact licensed Nexo YAML versions; Oraxen/ItemsAdder use DIFFERENT adapters. Do not install commercial jars or invent config keys.
+- Blockbench .bbmodel is editable source. Validate UVs, textures, UUIDs, pivots, outliner bones and animations, then choose the right exporter for Java items/displays, ModelEngine/BetterModel rigs or Bedrock geometry. Visual QA must run in-game.
+- ItemDisplay/BlockDisplay/TextDisplay can animate props but do not supply collision, persistence or gameplay. Cosmetics, particles, mounts and VFX need performance budgets and attachment/visibility logic.
+- Geyser does not automatically convert all Java custom assets to Bedrock. Version-pin mappings and extensions; test Java and Bedrock separately.
+- STAR: workspace_minecraft_audit is read-only; workspace_minecraft_package is opt-in ZIP export; neither edits running servers. Full guide: docs/research/minecraft_asset_engineering_2026-10-18.md.
+- Report stages separately: planned, generated, compiled, disposable-server loaded, client rendered, deployed.
+
 ## Roblox to Minecraft
 Part -> block (`BlockState`) or display entity; Model -> structure / custom entity
 Script -> mod common code, mcfunction, or Bedrock behavior script; LocalScript -> Java client entrypoint
@@ -64,13 +74,3 @@ public class CoinMod implements ModInitializer {
 ## Verification
 Java: `./gradlew build`, then `./gradlew runClient` and read the log. Bedrock: use development_behavior_packs, `/reload`, read the content log. Say "not built" unless a build ran.
 
-## Paper, Nexo, Blockbench and server-side visuals (2026-10-18)
-
-- Paper/Purpur plugins are different from Fabric/NeoForge mods. Start from the owner's exact server version and Java toolchain. Use Paper API with plugin.yml or paper-plugin.yml; server-authoritative item grants, permissions and inventory actions. Do not call Bukkit world APIs from async callbacks. Folia requires its region/entity/global scheduler and actual integration tests; a folia-supported manifest flag is insufficient.
-- Minecraft 26.3 resource-pack format **97.1** (data pack 121.0). For a 26.3-only Java pack use min_format [97,1] and max_format [97,1] within pack.mcmeta. Older formats differ. Asset folders include assets/namespace/items (modern item definitions), models, textures, blockstates, font, sounds, atlases and GUI sprites. Validate model parents/texture references and collisions when merging packs.
-- Nexo is a *commercial* Paper/Folia plugin for custom items/blocks/armor/furniture/glyphs and pack generation. Generate YAML only against an identified licensed Nexo version. External pack merging, item components and glyphs have version-specific rules. Oraxen and ItemsAdder are separate providers with incompatible configuration syntax; never invent or blindly mix their schemas.
-- Blockbench .bbmodel is editable project source, not a universal server asset. Check cubes, UUIDs, pivots, UV/textures, outliner bones, rig animations and export target. Java inventory item models, custom display transforms, ModelEngine/BetterModel rigs and Bedrock .geo.json need different export pipelines. Never claim model quality without visual previews and an in-game render test.
-- Paper BlockDisplay/ItemDisplay/TextDisplay support interpolated visual entities. For furniture, pets, mounts, cosmetics and spells, plan hitboxes, gameplay logic, attachment points, persistent state, sound and culling separately. Particle/entity counts, textures, glyph size and animation update rates affect client/server performance.
-- Geyser/Floodgate do not magically turn arbitrary Java custom assets into Bedrock assets. Provide Java/Bedrock compatibility matrix and version-pinned mapping/extension checks; actual Bedrock device tests are essential.
-- STAR workspace tools: workspace_minecraft_audit (read-only Java pack directory/ZIP or Blockbench .bbmodel) and workspace_minecraft_package (deterministic Java pack ZIP, only when workspace edits are explicitly permitted). Neither installs plugins, runs a Minecraft server or creates a visual model.
-- Always distinguish 'planned', 'files generated', 'compiled', 'loaded in disposable server', 'rendered on actual Java/Bedrock client' and 'deployed'. Consult docs/research/minecraft_asset_engineering_2026-10-18.md for the full architecture and primary documentation links.
