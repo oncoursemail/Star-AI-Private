@@ -107,6 +107,11 @@ export function CommercePanel({project, preview = false}: {project: string; prev
   }, [preview])
 
   useEffect(() => {void refresh()}, [refresh, project])
+  useEffect(() => {
+    setSelectedBusinessId('')
+    setSelectedId('')
+    setFilter('all')
+  }, [project])
   const selected = useMemo(
     () => board?.ideas.find(item => item.id === selectedId) ?? null,
     [board, selectedId],
@@ -121,7 +126,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
   }
 
   async function mutate(action: string, payload: Record<string, unknown>, success: string) {
-    if (preview || busy) return
+    if (preview || busy) return false
     setBusy(true)
     setError('')
     const answer = await request<Board>(action, payload)
@@ -135,6 +140,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
       }
     } else setError(answer.error || 'The local operation was not completed.')
     setBusy(false)
+    return !!(answer.ok && answer.data)
   }
 
   return <div className="commerce-layout">
@@ -168,7 +174,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
         const found = board?.businesses?.find(business => business.id === id)
         if (found) setChannel(found.channel as Channel)
       }}
-      onAction={(action, payload, message) => void mutate(action, payload, message)}/>
+      onAction={(action, payload, message) => mutate(action, payload, message)}/>
     <div className="commerce-workspace">
       <section className="commerce-main" aria-label="Product pipeline">
         {showCreate && !preview && <form className="commerce-create" onSubmit={event => {
