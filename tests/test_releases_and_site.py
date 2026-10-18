@@ -52,14 +52,16 @@ def test_windows_release_workflow_has_real_windows_installer_and_guarded_release
     assert 'runs-on: windows-latest' in s
     assert 'installer/STAR.iss' in s
     assert 'smoke' in s.lower()
-    assert 'contents: write' in s and 'needs: [windows-build, attest-release]' in s
+    assert 'permission-contents: write' in s and 'needs: [windows-build, windows-tests, attest-release]' in s
     assert 'gh release create' in s
 
 
-def test_pages_is_opt_in_not_exposing_private_source():
+def test_private_site_produces_preview_artifacts_but_never_deploys_pages():
     s=(ROOT/'.github/workflows/website-pages.yml').read_text()
-    assert "vars.STAR_DEPLOY_PAGES != 'false'" in s
     assert 'path: frontend/dist' in s
+    assert 'actions/upload-pages-artifact' not in s
+    assert 'actions/deploy-pages' not in s
+    assert 'pages: write' not in s
 
 
 def test_release_job_finds_nested_setup_artifact():
