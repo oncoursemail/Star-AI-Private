@@ -118,20 +118,27 @@ def _normalize_acoustid(body: object) -> list[dict]:
         if not isinstance(item, dict):
             continue
         score = item.get("score")
-        if type(score) not in (int, float) or not math.isfinite(score) or not 0 <= score <= 1:
+        if not isinstance(score, (int, float)) or isinstance(score, bool):
             continue
-        for recording in (item.get("recordings") or [])[:6] if isinstance(item.get("recordings"), list) else []:
+        score_value = float(score)
+        if not math.isfinite(score_value) or not 0 <= score_value <= 1:
+            continue
+        recordings = item.get("recordings")
+        if not isinstance(recordings, list):
+            continue
+        for recording in recordings[:6]:
             if not isinstance(recording, dict):
                 continue
             title = _text(recording.get("title"))
-            artists = recording.get("artists") if isinstance(recording.get("artists"), list) else []
+            artist_entries = recording.get("artists")
+            artists = artist_entries if isinstance(artist_entries, list) else []
             artist = _text("".join(_text(person.get("name")) + _text(person.get("joinphrase"), 12)
                                    for person in artists if isinstance(person, dict)))
             if not title or not artist:
                 continue
             tracks.append({
                 "title": title, "artist": artist, "recording_id": _text(recording.get("id"), 80),
-                "score": round(float(score), 3),
+                "score": round(score_value, 3),
                 "score_meaning": "Uncalibrated AcoustID fingerprint similarity, not a probability",
                 "provider": "acoustid",
             })
@@ -250,9 +257,12 @@ def fingerprint_fpcalc(source: AudioSource, fpcalc_executable: Path,
     duration = data.get("duration") if isinstance(data, dict) else None
     if not isinstance(fingerprint, str) or not _FINGERPRINT.fullmatch(fingerprint):
         raise MusicRecognitionUnavailable("Local Chromaprint returned no valid fingerprint")
-    if type(duration) not in (int, float) or not math.isfinite(duration) or not MIN_CLIP_SECONDS <= duration <= 120:
+    if not isinstance(duration, (int, float)) or isinstance(duration, bool):
         raise MusicRecognitionUnavailable("Local Chromaprint returned invalid duration")
-    return fingerprint, round(duration), info
+    numeric_duration = float(duration)
+    if not math.isfinite(numeric_duration) or not MIN_CLIP_SECONDS <= numeric_duration <= 120:
+        raise MusicRecognitionUnavailable("Local Chromaprint returned invalid duration")
+    return fingerprint, round(numeric_duration), info
 
 
 async def recognize_acoustid(fingerprint: str, duration: int, info: dict, *,
@@ -314,8 +324,9 @@ def capture_microphone(*, seconds: int, device_index: int | None = None) -> Audi
 async def _cli(args: argparse.Namespace) -> dict:
     if bool(args.file) == bool(args.mic):
         raise ValueError("Select exactly one source: --file or --mic")
+    requested_seconds = args.seconds if args.seconds is not None else (12 if args.provider == "audd" else 30)
     if args.mic:
-        source = capture_microphone(seconds=args.seconds, device_index=args.device)
+        source = capture_microphone(seconds=requested_seconds, device_index=args.device)
     else:
         path = args.file
         if path.is_symlink() or not path.is_file() or path.suffix.lower() != ".wav" or not 44 <= path.stat().st_size <= 8 * 1024 * 1024:
@@ -325,12 +336,12 @@ async def _cli(args: argparse.Namespace) -> dict:
         return await recognize_audd(
             source, token=os.environ.get("STAR_AUDD_API_TOKEN", ""),
             allow_audio_upload=args.allow_upload, accept_possible_billing=args.accept_billing,
-            begin_seconds=args.start, seconds=min(args.seconds, AUDD_MAX_SECONDS),
+            begin_seconds=args.start, seconds=requested_seconds,
         )
     if args.fpcalc is None:
         raise ValueError("Install Chromaprint fpcalc and provide --fpcalc path")
     fp, duration, info = fingerprint_fpcalc(
-        source, args.fpcalc, begin_seconds=args.start, seconds=min(args.seconds, ACOUSTID_MAX_SECONDS))
+        source, args.fpcalc, begin_seconds=args.start, seconds=requested_seconds)
     return await recognize_acoustid(
         fp, duration, info, client_key=os.environ.get("STAR_ACOUSTID_CLIENT_KEY", ""),
         allow_fingerprint_lookup=args.allow_fingerprint, noncommercial_usage_confirmed=args.noncommercial,
@@ -345,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", type=int, help="Mic input index (Stereo Mix/virtual input if user configured)")
     parser.add_argument("--provider", choices=("audd", "acoustid"), default="audd")
     parser.add_argument("--start", type=int, default=0, help="Seconds into the selected WAV, default 0")
-    parser.add_argument("--seconds", type=int, default=12, help="Clip/recording duration, 4..12 AudD, 4..30 AcoustID")
+    parser.add_argument("--seconds", type=int, default=None, help="Duration: default 12s AudD, 30s AcoustID")
     parser.add_argument("--allow-upload", action="store_true", help="Send selected WAV snippet to AudD")
     parser.add_argument("--accept-billing", action="store_true", help="Acknowledge possible AudD provider charges")
     parser.add_argument("--fpcalc", type=Path, help="Owner-installed Chromaprint executable")
