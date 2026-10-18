@@ -1,6 +1,6 @@
 # STAR Intelligence — repository map and safe cleanup
 
-**Canonical home:** [oncoursemail/Star-AI](https://github.com/oncoursemail/Star-AI) (**public**). This repository contains STAR's public source, React website, Windows build workflow, and [official Releases](https://github.com/oncoursemail/Star-AI/releases/latest). There is one app and one download/update channel. No separate `Star-Intelligence-Downloads` repository, mirror token, or duplicated publisher is required.
+**Canonical development home:** [oncoursemail/Star-AI-Private](https://github.com/oncoursemail/Star-AI-Private) (**private**), with STAR's source, the Windows builder and internal tests. The separate [oncoursemail/Star-AI](https://github.com/oncoursemail/Star-AI) (**public**) is the canonical installer/download, auto-update, static landing page and support channel. The desktop checks the public Releases API without credentials. See [migration instructions](PRIVATE_PUBLIC_RELEASE_MIGRATION.md).
 
 ## Finding things quickly
 
@@ -19,13 +19,16 @@
 
 Key starting points: [README](../README.md), [architecture](ARCHITECTURE.md), [release/update model](RELEASES_AND_MODELS.md), [GitHub App setup](GITHUB_APP_SETUP.md), [working agreement](../AGENTS.md).
 
-## Canonical public release flow
+## Private build to public Releases flow
 
-1. Developers use task branches and open PRs. Do **not** merge untested agent-generated changes.
-2. After merging to `main`, the Windows workflow builds/test-packs `STAR.exe` and its React assets. Only a successful `publish-release` job may publish a **new** version tag.
-3. GitHub Releases on this repo holds `STAR-Setup-vX.Y.Z.exe`, `STAR-Genesis-Windows-x64.zip` and `SHA256SUMS.txt`. Actions *artifacts* are not Releases.
-4. The updater reads this repo's unauthenticated Release API and checks the exact official HTTPS asset URL, length, and SHA-256 before staging a user-approved installer. User data remains under `%APPDATA%\\STAR` and is **never** cleaned as part of repository maintenance.
-5. Pages builds the public React site from `frontend/`, **not** `site/` or a download mirror. Deployment still depends on the Pages configuration.
+1. Developers create isolated branches in the **private source repo** and open review PRs. No auto-merging or private-code replication to public.
+2. A successful private Windows CI build, tests and checksums are required. A new **manual** workflow_dispatch run on private `main` can publish after independent owner approval. Existing tags cannot be reused with different binaries.
+3. A public-only GitHub App installation token, created only in the publishing job, writes `STAR-Setup-vX.Y.Z.exe`, `STAR-Genesis-Windows-x64.zip` and `SHA256SUMS.txt` to **public** Star-AI Releases.
+4. The updater checks public `Star-AI` unauthenticated Releases, validates exact HTTPS asset URL, size and SHA-256, and prompts to install. Chats, models and lessons under `%APPDATA%\\STAR` remain local and are not GitHub release assets.
+5. The now-private repository's React Pages workflow builds preview artifacts **without deploying a website**. Public `Star-AI` has a separate static landing page served using GitHub Pages from `main` root after owner enables it.
+6. Private-repository artifact attestations are optional on supported GitHub plans. A checksum is not binary code signing. Verify public downloads anonymously and perform a real Windows update before announcing availability.
+
+Read [PRIVATE_PUBLIC_RELEASE_MIGRATION.md](PRIVATE_PUBLIC_RELEASE_MIGRATION.md) for exact permissions, first-release steps and blocked conditions.
 
 ## Several agents working at once
 
@@ -47,4 +50,4 @@ npm run test --prefix frontend
 npm run build --prefix frontend
 ```
 
-The GitHub Windows job must additionally pass packaged `STAR.exe --doctor` and `--ui-doctor`. The final Windows installation/restart, local GPU response and Roblox Studio workflow require **human-observed native testing**. Do not claim them verified from Linux/Python-only checks.
+The GitHub Windows job must additionally pass packaged `STAR.exe --doctor` and `--ui-doctor`. The final Windows installation/restart, anonymous public download, local GPU response and Roblox Studio workflow require **human-observed native testing**. Do not claim them verified from Linux/Python-only checks.
