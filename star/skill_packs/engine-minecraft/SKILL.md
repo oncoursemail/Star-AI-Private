@@ -41,7 +41,7 @@ Java 26.3 (Sept 2026, Java 25), Fabric API 0.162+26.3, NeoForge 26.3.0.x, Bedroc
 - Blockbench .bbmodel is editable source. Validate UVs, textures, UUIDs, pivots, outliner bones and animations, then choose the right exporter for Java items/displays, ModelEngine/BetterModel rigs or Bedrock geometry. Visual QA must run in-game.
 - ItemDisplay/BlockDisplay/TextDisplay can animate props but do not supply collision, persistence or gameplay. Cosmetics, particles, mounts and VFX need performance budgets and attachment/visibility logic.
 - Geyser does not automatically convert all Java custom assets to Bedrock. Version-pin mappings and extensions; test Java and Bedrock separately.
-- STAR: workspace_minecraft_audit is read-only; workspace_minecraft_package is opt-in ZIP export; neither edits running servers. Full guide: docs/research/minecraft_asset_engineering_2026-10-18.md.
+- STAR: workspace_minecraft_audit and workspace_minecraft_inspect are read-only; workspace_minecraft_item_scaffold creates a 2D item pack from an existing PNG; workspace_minecraft_package exports a ZIP. Writes require opt-in; no live server edits. Full guide: docs/research/minecraft_asset_engineering_2026-10-18.md.
 - Report stages separately: planned, generated, compiled, disposable-server loaded, client rendered, deployed.
 
 ## Roblox to Minecraft
