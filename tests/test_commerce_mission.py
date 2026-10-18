@@ -7,7 +7,6 @@ import uuid
 import pytest
 
 from star.commerce.workspace import handle_commerce
-from star.commerce import mission
 
 
 def request(home, action="commerceBoard", project="STAR", **kwargs):
@@ -39,11 +38,6 @@ def review_evidence(home, idea, project="STAR"):
     )
 
 
-def test_fresh_mission_is_private_unconnected_and_has_no_sales(home=None, tmp_path=None):
-    # Explicit tmp_path signature below avoids relying on model or a real seller.
-    pass
-
-
 def test_mission_zero_state(tmp_path):
     board = request(tmp_path)
     assert board["businesses"] == []
@@ -67,9 +61,6 @@ def test_businesses_created_paused_and_name_deduplicated(tmp_path):
 
 
 def test_100_record_capacity_is_enforced_without_inventing_connected_shops(tmp_path):
-    # A single sqlite connection keeps this test fast while checking the real cap.
-    with mission.sqlite3.connect(tmp_path / "dummy-does-not-exist.sqlite3") as unused:
-        unused.execute("SELECT 1")
     for n in range(100):
         make_business(tmp_path, name=f"Brand {n:03d}")
     board = request(tmp_path)
