@@ -126,7 +126,7 @@ PERMITTED_SETTINGS = frozenset({
     'endpoint','model','fast_model','reasoning_model','roblox_model','vision_model',
     'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled',
     'tool_workshop_enabled','specialists_enabled','specialist_parallelism','provider',
-    'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','max_calls',
+    'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','debug_evidence_enabled','max_calls',
     'context_chars','reduced_motion','comfy_workflow','comfy_prompt_node','comfy_port',
     'obsidian_vault','obsidian_enabled','skills_enabled','graphify_enabled',
     'mcp_graphify_docs','mcp_graphify_local','mcp_graphify_port','mcp_obsidian_live',
