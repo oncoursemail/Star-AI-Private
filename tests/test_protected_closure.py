@@ -115,6 +115,11 @@ def test_the_ci_workflow_uses_the_same_branch_list_and_the_base_branch_guard():
     assert "pull_request_target:" in text and "pull_request.base.sha" in text
     assert "persist-credentials: false" in text and "contents: read" in text
     assert "python \"$RUNNER_TEMP/guard.py\"" in text                     # the base copy runs, not the PR's
+    # A private repository requires authenticated fetches, but no fetch step may
+    # grant write scopes or persist the temporary job credential.
+    assert text.count("git -c credential.helper='!gh auth git-credential' fetch --no-tags origin") == 2
+    assert text.count("GH_TOKEN: ${{ github.token }}") == 2
+    assert "contents: write" not in text
 
 
 def test_model_facing_code_cannot_write_the_closure_or_call_promotion():

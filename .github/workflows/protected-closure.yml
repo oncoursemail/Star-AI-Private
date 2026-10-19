@@ -35,8 +35,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch --no-tags origin "pull/${PR_NUMBER}/head:pr-head"
+          # pull_request_target checks out the TRUSTED base. Since the repository is
+          # private, fetch only the PR ref with the job's read-only GitHub token.
+          # A command-local helper avoids persisting credentials in .git/config.
+          git -c credential.helper='!gh auth git-credential' fetch --no-tags origin "pull/${PR_NUMBER}/head:pr-head"
           cp star/protected_paths.py "$RUNNER_TEMP/guard.py"
           git diff --name-only --no-renames "${BASE_SHA}...pr-head" > "$RUNNER_TEMP/changed.txt"
           xargs -a "$RUNNER_TEMP/changed.txt" -d '\n' python "$RUNNER_TEMP/guard.py" --branch "$HEAD_BRANCH" --labels "$LABELS" --files
@@ -44,8 +48,9 @@ jobs:
         if: github.event_name == 'push'
         env:
           HEAD_BRANCH: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch --no-tags origin star/next
+          git -c credential.helper='!gh auth git-credential' fetch --no-tags origin star/next
           cp star/protected_paths.py "$RUNNER_TEMP/guard.py"
           git show origin/star/next:star/protected_paths.py > "$RUNNER_TEMP/guard.py" 2>/dev/null || true
           git diff --name-only --no-renames "origin/star/next...${GITHUB_SHA}" > "$RUNNER_TEMP/changed.txt"
