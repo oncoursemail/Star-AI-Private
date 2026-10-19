@@ -1,0 +1,28 @@
+name: STAR authorized duplicate cleanup
+on:
+  push:
+    branches: ['maintenance/verified-artifact-cleanup-20261019']
+    paths: ['.github/workflows/authorized-artifact-cleanup.yml']
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+concurrency:
+  group: star-owner-approved-artifact-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    if: github.repository == 'oncoursemail/Star-AI-Private' && github.actor_id == '84545815' && github.ref == 'refs/heads/maintenance/verified-artifact-cleanup-20261019'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test corruption and preservation boundaries without credentials
+        working-directory: scripts/operations
+        run: python3 -m unittest -v test_verified_cleanup
+      - name: Read-only candidate planning; no deletion in this first pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/operations/verified_cleanup.py
