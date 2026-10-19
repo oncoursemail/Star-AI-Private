@@ -1,0 +1,50 @@
+name: STAR storage and release contracts
+on:
+  push:
+    paths:
+      - '.github/workflows/operations-contracts.yml'
+      - '.github/workflows/artifact-inventory.yml'
+      - '.github/workflows/auto-patch-release.yml'
+      - '.github/workflows/windows-desktop.yml'
+      - '.github/workflows/star-activity.yml'
+      - '.devcontainer/devcontainer.json'
+      - 'tests/test_storage_operations.py'
+      - 'tests/test_github_operations_contract.py'
+      - 'tests/test_release_provenance.py'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.devcontainer/**'
+      - 'tests/test_storage_operations.py'
+      - 'tests/test_github_operations_contract.py'
+      - 'tests/test_release_provenance.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: star-operations-contracts-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install only the isolated test runner
+        run: python -m pip install pytest==9.1.1
+      - name: Exercise real workflow contracts with synthetic GitHub responses
+        # These standalone tests have no application fixtures or live services.
+        # The existing full application CI still uses its normal conftest.
+        run: >-
+          python -m pytest --noconftest -q
+          tests/test_storage_operations.py
+          tests/test_github_operations_contract.py
+          tests/test_release_provenance.py
+      - name: Record the scope of this result without an artifact upload
+        run: |
+          printf '## Operations contract checks\n\nSource: `%s`\n\nStandalone mocked workflow tests passed. This is not full application CI, Windows acceptance, a public release or a model-quality evaluation. No artifact upload was required.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
