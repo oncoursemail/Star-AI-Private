@@ -26,7 +26,7 @@ jobs:
           REPO_ID = 1412474221
           ROOT = 'https://api.github.com/repos/' + REPO
           GIB = 1024 ** 3
-          MAX_PAGES = 25
+          MAX_PAGES = 100
           class NoRedirect(urllib.request.HTTPRedirectHandler):
               def redirect_request(self, *args, **kwargs):
                   return None
@@ -105,6 +105,8 @@ jobs:
                   'listed_retained_bytes': sum(item['size_in_bytes'] for item in active),
                   'largest_groups': sorted(groups.values(), key=lambda group: group['bytes'], reverse=True)[:12],
                   'possible_duplicate_groups': sorted(suspects, key=lambda item: item['combined_bytes'], reverse=True)[:12],
+                  'possible_duplicate_group_count': len(suspects),
+                  'possible_duplicate_combined_bytes': sum(item['combined_bytes'] for item in suspects),
                   'account_quota_known': False, 'deletions_performed': 0,
                   'note': 'Repository inventory is not account-wide billed storage. No artifact is approved for deletion by this report.'}
           def main():
