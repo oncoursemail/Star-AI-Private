@@ -5,7 +5,7 @@ on:
     paths: ['.github/workflows/authorized-artifact-cleanup.yml']
 permissions:
   contents: read
-  actions: write
+  actions: read
   pull-requests: read
 concurrency:
   group: star-owner-approved-artifact-cleanup
@@ -14,7 +14,7 @@ jobs:
   cleanup:
     if: github.repository == 'oncoursemail/Star-AI-Private' && github.actor_id == '84545815' && github.ref == 'refs/heads/maintenance/verified-artifact-cleanup-20261019'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -22,40 +22,7 @@ jobs:
       - name: Test corruption and preservation boundaries without credentials
         working-directory: scripts/operations
         run: python3 -m unittest -v test_verified_cleanup
-      - name: Examine only three explicit unexamined candidates; preserve every rejected artifact
-        working-directory: scripts/operations
-        shell: python
+      - name: Reconcile remaining artifacts without deletion permission
         env:
           GH_TOKEN: ${{ github.token }}
-          STAR_CLEANUP_APPROVAL: owner-approved-20261019-duplicate-previews
-        run: |
-          import os, sys
-          sys.path.insert(0, os.getcwd())
-          import verified_cleanup as c
-          if (os.environ.get('STAR_CLEANUP_APPROVAL') != c.APPROVAL
-              or os.environ.get('GITHUB_REPOSITORY') != c.REPO
-              or os.environ.get('GITHUB_REF') != 'refs/heads/' + c.BRANCH
-              or os.environ.get('GITHUB_ACTOR_ID') != c.OWNER_ID):
-              raise c.Refuse('Exact owner authorization context is required')
-          targets = {12028059601, 12040057428, 12073114066}
-          api = c.GitHubAPI()
-          api.identity()
-          groups, newest, _ = c.candidates(api.inventory(), api.active_branches(), c.datetime.now(c.timezone.utc))
-          selected = [g for g in groups if g[0]['id'] in targets]
-          if {g[0]['id'] for g in selected} != targets:
-              raise c.Refuse('One of the three explicit candidates changed or became protected')
-          deleted, retained = [], []
-          try:
-              for group in selected:
-                  try:
-                      deleted.append(c.apply_one(api, group, newest))
-                  except (c.Refuse, ValueError, KeyError, OSError, c.zipfile.BadZipFile) as exc:
-                      reason = str(exc) if isinstance(exc, c.Refuse) else type(exc).__name__
-                      retained.append({'id': group[0]['id'], 'reason': reason})
-                      c.emit('retained-on-failure', **retained[-1])
-          finally:
-              c.emit('final-explicit-candidates', targets=sorted(targets),
-                     deleted_count=len(deleted), deleted_reported_bytes=sum(d['reported_bytes'] for d in deleted),
-                     deletions=deleted, retained_on_failure=retained, billed_savings_known=False, released=False)
-          if retained:
-              raise SystemExit(1)
+        run: python3 scripts/operations/verified_cleanup.py
