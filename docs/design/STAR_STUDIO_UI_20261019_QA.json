@@ -1,0 +1,3825 @@
+{
+  "date": "2026-10-19",
+  "repository": "oncoursemail/Star-AI-Private",
+  "base_commit": "0d7bfdb838435221ab60ecd83687e896d34b568e",
+  "context": "Actual React app and unchanged preview/fake Qt host. No live model, native Windows, release, research-quality or speed claims.",
+  "commands": [
+    {
+      "command": "python -m compileall -q star main.py",
+      "result": "passed"
+    },
+    {
+      "command": "python -m pytest -q",
+      "passed": 9588,
+      "skipped": 122,
+      "warnings": 4,
+      "seconds": 173.57
+    },
+    {
+      "command": "npm test -- --maxWorkers=4",
+      "passed": 618,
+      "files": 70,
+      "seconds": 33.0,
+      "note": "Includes56newtests; existingtests unchanged"
+    },
+    {
+      "command": "npm run typecheck",
+      "result": "passed"
+    },
+    {
+      "command": "npm run build",
+      "result": "passed",
+      "note": "Existing >500kB chunk-size warning remains; no threshold was weakened."
+    },
+    {
+      "command": "npm test -- --maxWorkers=4 (isolated UI + Deep Research #494 checkout)",
+      "passed": 672,
+      "files": 72,
+      "seconds": 47.57
+    },
+    {
+      "command": "npm run typecheck (isolated combined checkout)",
+      "result": "passed"
+    }
+  ],
+  "initial_independent_matrix": [
+    {
+      "name": "home-obsidian-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 3
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "home-obsidian-1024",
+      "theme": "obsidian",
+      "width": 1024,
+      "height": 768,
+      "fixture": null,
+      "document_width": 1024,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "home-obsidian-390",
+      "theme": "obsidian",
+      "width": 390,
+      "height": 844,
+      "fixture": null,
+      "document_width": 390,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "home-obsidian-900",
+      "theme": "obsidian",
+      "width": 900,
+      "height": 600,
+      "fixture": null,
+      "document_width": 900,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "home-obsidian-320",
+      "theme": "obsidian",
+      "width": 320,
+      "height": 740,
+      "fixture": null,
+      "document_width": 320,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "home-pearl-1440",
+      "theme": "pearl",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 3
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "home-dusk-1440",
+      "theme": "dusk",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 3
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "home-grove-1440",
+      "theme": "grove",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 3
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-obsidian-model-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-obsidian-general-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-obsidian-roblox-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-obsidian-creative-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-obsidian-knowledge-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-obsidian-workspace-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-obsidian-updates-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-general-1440",
+      "theme": "pearl",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-model-1440",
+      "theme": "pearl",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "nodes": [
+            {
+              "target": [
+                "div[data-settings-block=\"model-id\"] > .panel.settings-section > .field-grid > label:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.77 (foreground color: #bdc3bf, background color: #fffefa, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<label>Model ID<input list=\"star-model-ids\" placeholder=\"Installed model\" value=\"\" style=\"\"></label>"
+            },
+            {
+              "target": [
+                "div[data-settings-block=\"model-id\"] > .panel.settings-section > .field-grid > label:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.77 (foreground color: #bdc3bf, background color: #fffefa, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<label>Local endpoint<input value=\"http://127.0.0.1:8080/v1\" style=\"\"></label>"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-roblox-1440",
+      "theme": "pearl",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-creative-1440",
+      "theme": "pearl",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-knowledge-1440",
+      "theme": "pearl",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-workspace-1440",
+      "theme": "pearl",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "nodes": [
+            {
+              "target": [
+                "div[data-settings-block=\"permissions\"] > .panel.settings-section > .field-grid > label"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 1.77 (foreground color: #bdc3bf, background color: #fffefa, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<label>Workspace folder<input placeholder=\"Choose a project folder\" value=\"\" style=\"\"></label>"
+            }
+          ]
+        }
+      ],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-updates-1440",
+      "theme": "pearl",
+      "width": 1440,
+      "height": 1000,
+      "fixture": null,
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-general-1024",
+      "theme": "pearl",
+      "width": 1024,
+      "height": 768,
+      "fixture": null,
+      "document_width": 1024,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-general-900",
+      "theme": "pearl",
+      "width": 900,
+      "height": 600,
+      "fixture": null,
+      "document_width": 900,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-general-390",
+      "theme": "pearl",
+      "width": 390,
+      "height": 844,
+      "fixture": null,
+      "document_width": 390,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [],
+      "errors": []
+    },
+    {
+      "name": "settings-pearl-general-320",
+      "theme": "pearl",
+      "width": 320,
+      "height": 740,
+      "fixture": null,
+      "document_width": 320,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [],
+      "errors": []
+    },
+    {
+      "name": "fixture-stress-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "stress",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 16
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-chat-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "chat",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 17
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-streaming-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "streaming",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 37
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-agent-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "agent",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 25
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-team-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "team",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 23
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-teamfail-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "teamfail",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 31
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-error-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "error",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 16
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-image-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "image",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 15
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-stopped-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "stopped",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 14
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-restart-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "restart",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 23
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-states-1440",
+      "theme": "obsidian",
+      "width": 1440,
+      "height": 1000,
+      "fixture": "states",
+      "document_width": 1440,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 42
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-stress-pearl-390",
+      "theme": "pearl",
+      "width": 390,
+      "height": 844,
+      "fixture": "stress",
+      "document_width": 390,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "nodes": 7
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-stress-pearl-320",
+      "theme": "pearl",
+      "width": 320,
+      "height": 740,
+      "fixture": "stress",
+      "document_width": 320,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "nodes": 6
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-chat-pearl-390",
+      "theme": "pearl",
+      "width": 390,
+      "height": 844,
+      "fixture": "chat",
+      "document_width": 390,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "nodes": 1
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-chat-pearl-320",
+      "theme": "pearl",
+      "width": 320,
+      "height": 740,
+      "fixture": "chat",
+      "document_width": 320,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "nodes": 10
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-error-pearl-390",
+      "theme": "pearl",
+      "width": 390,
+      "height": 844,
+      "fixture": "error",
+      "document_width": 390,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "nodes": 8
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "fixture-error-pearl-320",
+      "theme": "pearl",
+      "width": 320,
+      "height": 740,
+      "fixture": "error",
+      "document_width": 320,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "nodes": 7
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "running-team-dusk-1024",
+      "theme": "dusk",
+      "width": 1024,
+      "height": 768,
+      "fixture": "team",
+      "document_width": 1024,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 26
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "running-team-dusk-900",
+      "theme": "dusk",
+      "width": 900,
+      "height": 600,
+      "fixture": "team",
+      "document_width": 900,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 2
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 17
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "running-team-dusk-390",
+      "theme": "dusk",
+      "width": 390,
+      "height": 844,
+      "fixture": "team",
+      "document_width": 390,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 23
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "running-team-dusk-320",
+      "theme": "dusk",
+      "width": 320,
+      "height": 740,
+      "fixture": "team",
+      "document_width": 320,
+      "offscreen": [],
+      "broken_visible_images": [],
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "nodes": 1
+        },
+        {
+          "id": "color-contrast",
+          "nodes": 11
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "appearance_drawer_initial": [
+    {
+      "theme": "Obsidian",
+      "width": 1440,
+      "documentWidth": 1440,
+      "drawerWidth": 392,
+      "drawerScroll": 390,
+      "shellBg": "#101113",
+      "drawerBg": "#101113",
+      "animations": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "nodes": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "aside"
+            ],
+            [
+              ".bar"
+            ],
+            [
+              ".dock"
+            ],
+            [
+              ".studio-companion-region"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(7)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "nodes": [
+            [
+              ".companion-shelf > .companion-choices > .is-selected.companion-choice[data-character=\"star\"] > .companion-choice__name"
+            ],
+            [
+              ".companion-shelf > .companion-choices > .companion-choice[data-character=\"ember\"] > .companion-choice__name"
+            ],
+            [
+              ".companion-shelf > .companion-choices > .companion-choice[data-character=\"astra\"] > .companion-choice__name"
+            ],
+            [
+              "#radix-_r_3_"
+            ]
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "theme": "Pearl",
+      "width": 1440,
+      "documentWidth": 1440,
+      "drawerWidth": 392,
+      "drawerScroll": 390,
+      "shellBg": "#F7F5F0",
+      "drawerBg": "#F7F5F0",
+      "animations": 20,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "nodes": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "aside"
+            ],
+            [
+              ".bar"
+            ],
+            [
+              ".dock"
+            ],
+            [
+              ".studio-companion-region"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(7)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "nodes": [
+            [
+              ".companion-shelf > .companion-choices > .is-selected.companion-choice[data-character=\"star\"] > .companion-choice__name"
+            ],
+            [
+              ".companion-shelf > .companion-choices > .companion-choice[data-character=\"ember\"] > .companion-choice__name"
+            ],
+            [
+              ".companion-shelf > .companion-choices > .companion-choice[data-character=\"astra\"] > .companion-choice__name"
+            ],
+            [
+              "#radix-_r_3_"
+            ]
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "theme": "Dusk",
+      "width": 1440,
+      "documentWidth": 1440,
+      "drawerWidth": 392,
+      "drawerScroll": 390,
+      "shellBg": "#16131C",
+      "drawerBg": "#16131C",
+      "animations": 20,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "nodes": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "aside"
+            ],
+            [
+              ".bar"
+            ],
+            [
+              ".dock"
+            ],
+            [
+              ".studio-companion-region"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(7)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "nodes": [
+            [
+              ".companion-shelf > .companion-choices > .is-selected.companion-choice[data-character=\"star\"] > .companion-choice__name"
+            ],
+            [
+              ".companion-shelf > .companion-choices > .companion-choice[data-character=\"ember\"] > .companion-choice__name"
+            ],
+            [
+              ".companion-shelf > .companion-choices > .companion-choice[data-character=\"astra\"] > .companion-choice__name"
+            ],
+            [
+              "#radix-_r_3_"
+            ]
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "theme": "Grove",
+      "width": 1440,
+      "documentWidth": 1440,
+      "drawerWidth": 392,
+      "drawerScroll": 390,
+      "shellBg": "#101714",
+      "drawerBg": "#101714",
+      "animations": 20,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "nodes": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "aside"
+            ],
+            [
+              ".bar"
+            ],
+            [
+              ".dock"
+            ],
+            [
+              ".studio-companion-region"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(7)"
+            ]
+          ]
+        },
+        {
+          "id": "color-contrast",
+          "nodes": [
+            [
+              ".companion-shelf > .companion-choices > .is-selected.companion-choice[data-character=\"star\"] > .companion-choice__name"
+            ],
+            [
+              ".companion-shelf > .companion-choices > .companion-choice[data-character=\"ember\"] > .companion-choice__name"
+            ],
+            [
+              ".companion-shelf > .companion-choices > .companion-choice[data-character=\"astra\"] > .companion-choice__name"
+            ],
+            [
+              "#radix-_r_3_"
+            ]
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "theme": "Obsidian",
+      "width": 320,
+      "documentWidth": 320,
+      "drawerWidth": 320,
+      "drawerScroll": 319,
+      "shellBg": "#101113",
+      "drawerBg": "#101113",
+      "animations": 0,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "nodes": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "header"
+            ],
+            [
+              ".dock"
+            ],
+            [
+              ".studio-companion-region"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(7)"
+            ]
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "theme": "Pearl",
+      "width": 320,
+      "documentWidth": 320,
+      "drawerWidth": 320,
+      "drawerScroll": 319,
+      "shellBg": "#F7F5F0",
+      "drawerBg": "#F7F5F0",
+      "animations": 48,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "nodes": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "header"
+            ],
+            [
+              ".dock"
+            ],
+            [
+              ".studio-companion-region"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(7)"
+            ]
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "theme": "Dusk",
+      "width": 320,
+      "documentWidth": 320,
+      "drawerWidth": 320,
+      "drawerScroll": 319,
+      "shellBg": "#16131C",
+      "drawerBg": "#16131C",
+      "animations": 48,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "nodes": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "header"
+            ],
+            [
+              ".dock"
+            ],
+            [
+              ".studio-companion-region"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(7)"
+            ]
+          ]
+        }
+      ],
+      "errors": []
+    },
+    {
+      "theme": "Grove",
+      "width": 320,
+      "documentWidth": 320,
+      "drawerWidth": 320,
+      "drawerScroll": 319,
+      "shellBg": "#101714",
+      "drawerBg": "#101714",
+      "animations": 20,
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-hidden-focus",
+          "nodes": [
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(1)"
+            ],
+            [
+              "a"
+            ],
+            [
+              "header"
+            ],
+            [
+              ".dock"
+            ],
+            [
+              ".studio-companion-region"
+            ],
+            [
+              "span[data-radix-focus-guard=\"\"][data-aria-hidden=\"true\"][aria-hidden=\"true\"]:nth-child(7)"
+            ]
+          ]
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "appearance_drawer_final_keyboard_motion": {
+    "motions": [],
+    "focusInside": true,
+    "focusSamples": [
+      {
+        "inside": true,
+        "label": "Brass accent"
+      },
+      {
+        "inside": true,
+        "label": "Violet accent"
+      },
+      {
+        "inside": true,
+        "label": "Sage accent"
+      },
+      {
+        "inside": true,
+        "label": "Sky accent"
+      },
+      {
+        "inside": true,
+        "label": "Coral accent"
+      },
+      {
+        "inside": true,
+        "label": "Rose accent"
+      },
+      {
+        "inside": true,
+        "label": "Choose custom accent"
+      },
+      {
+        "inside": true,
+        "label": "Accent hex color"
+      },
+      {
+        "inside": true,
+        "label": "Comfortable spacing"
+      },
+      {
+        "inside": true,
+        "label": ""
+      },
+      {
+        "inside": true,
+        "label": ""
+      },
+      {
+        "inside": true,
+        "label": "Subtle reactionsStill"
+      },
+      {
+        "inside": true,
+        "label": " Reset appearance"
+      },
+      {
+        "inside": true,
+        "label": "Close appearance"
+      },
+      {
+        "inside": true,
+        "label": "Pearl"
+      },
+      {
+        "inside": true,
+        "label": "Brass accent"
+      },
+      {
+        "inside": true,
+        "label": "Violet accent"
+      },
+      {
+        "inside": true,
+        "label": "Sage accent"
+      },
+      {
+        "inside": true,
+        "label": "Sky accent"
+      },
+      {
+        "inside": true,
+        "label": "Coral accent"
+      },
+      {
+        "inside": true,
+        "label": "Rose accent"
+      },
+      {
+        "inside": true,
+        "label": "Choose custom accent"
+      },
+      {
+        "inside": true,
+        "label": "Accent hex color"
+      },
+      {
+        "inside": true,
+        "label": "Comfortable spacing"
+      },
+      {
+        "inside": true,
+        "label": ""
+      },
+      {
+        "inside": true,
+        "label": ""
+      },
+      {
+        "inside": true,
+        "label": "Subtle reactionsStill"
+      },
+      {
+        "inside": true,
+        "label": " Reset appearance"
+      },
+      {
+        "inside": true,
+        "label": "Close appearance"
+      },
+      {
+        "inside": true,
+        "label": "Pearl"
+      },
+      {
+        "inside": true,
+        "label": "Brass accent"
+      },
+      {
+        "inside": true,
+        "label": "Violet accent"
+      },
+      {
+        "inside": true,
+        "label": "Sage accent"
+      },
+      {
+        "inside": true,
+        "label": "Sky accent"
+      },
+      {
+        "inside": true,
+        "label": "Coral accent"
+      },
+      {
+        "inside": true,
+        "label": "Rose accent"
+      }
+    ],
+    "focusReturned": true
+  },
+  "settings_contrast_after_fix": [
+    {
+      "theme": "obsidian",
+      "section": "model",
+      "text": [
+        {
+          "tag": "P",
+          "class": "",
+          "label": "Where STAR thinks: this PC, your STAR Server or a provider you choose.",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            16,
+            17,
+            19
+          ],
+          "contrast": 9.025399953000578,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "",
+          "label": "STAR Brain configures these automatically after installation.",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Model ID",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Local endpoint",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Inference providerLocal STAR BrainSTAR Server (LAN)GroqCloudOpenRouterGeminiCerebras",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "After changing provider, save Settings. STAR sends your prompt only to the provider you explicitly selected; ordinary local chat n",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SPAN",
+          "class": "",
+          "label": "Run my Luau before answering",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "Off by default. Save Settings to run assertions in your STAR Knowledge sandbox before displaying code. Up to two repair rounds; th",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Cloud key providerGroqCloudOpenRouterGeminiCerebras",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "API key (never saved in STAR settings)",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "Optional model IDs must exist on your selected provider. Leave a specialist blank to use the main model. STAR never switches to a ",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Fast answers",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Deeper reasoning",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Roblox engineering",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Image understanding",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "STAR loads model files (.gguf) from a folder you choose, one at a time, to keep memory use low. Nothing is downloaded for you. Sto",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Model folder (.gguf files)",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Context tokens",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "GPU offload layers",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "A text response is not proof of image, tools or Roblox Studio capability. Try a model on a few real tasks before you rely on it ev",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "",
+          "label": "Runs STAR's code model on this PC's NVIDIA graphics card, about three times faster than the server. Memory, tools and lessons stay",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Off by default. Pauses while a game or another program uses the card, and unloads after the idle minutes below. Works with STAR Se",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "voice-current",
+          "label": "Status: Open STAR Desktop to see this",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Model turns per task",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Context character budget",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": true
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Adds a short note about what this session can do. Off until evaluated.",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        }
+      ],
+      "checks": [
+        {
+          "position": "top",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "position": "bottom",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "minimumTextContrast": 8.140245077577712
+    },
+    {
+      "theme": "obsidian",
+      "section": "workspace",
+      "text": [
+        {
+          "tag": "P",
+          "class": "",
+          "label": "What STAR may change on this PC. Everything starts read-only.",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            16,
+            17,
+            19
+          ],
+          "contrast": 9.025399953000578,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Workspace folder",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": true
+        },
+        {
+          "tag": "SPAN",
+          "class": "",
+          "label": "Selected Roblox Studio",
+          "color": "rgb(221, 218, 211)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 12.20588035919565,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Connect an open place in Tools first",
+          "color": "rgb(170, 166, 159)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 7.029947241314902,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Only inside your selected workspace.",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Use an unpublished disposable test place first.",
+          "color": "rgb(182, 179, 172)",
+          "background": [
+            27,
+            28,
+            31
+          ],
+          "contrast": 8.140245077577712,
+          "fieldGrid": false
+        }
+      ],
+      "checks": [
+        {
+          "position": "top",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "position": "bottom",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "minimumTextContrast": 7.029947241314902
+    },
+    {
+      "theme": "pearl",
+      "section": "model",
+      "text": [
+        {
+          "tag": "P",
+          "class": "",
+          "label": "Where STAR thinks: this PC, your STAR Server or a provider you choose.",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            247,
+            245,
+            240
+          ],
+          "contrast": 6.617497342967421,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "",
+          "label": "STAR Brain configures these automatically after installation.",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Model ID",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Local endpoint",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Inference providerLocal STAR BrainSTAR Server (LAN)GroqCloudOpenRouterGeminiCerebras",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "After changing provider, save Settings. STAR sends your prompt only to the provider you explicitly selected; ordinary local chat n",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SPAN",
+          "class": "",
+          "label": "Run my Luau before answering",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "Off by default. Save Settings to run assertions in your STAR Knowledge sandbox before displaying code. Up to two repair rounds; th",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Cloud key providerGroqCloudOpenRouterGeminiCerebras",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "API key (never saved in STAR settings)",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "Optional model IDs must exist on your selected provider. Leave a specialist blank to use the main model. STAR never switches to a ",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Fast answers",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Deeper reasoning",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Roblox engineering",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Image understanding",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "STAR loads model files (.gguf) from a folder you choose, one at a time, to keep memory use low. Nothing is downloaded for you. Sto",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Model folder (.gguf files)",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Context tokens",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "GPU offload layers",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "A text response is not proof of image, tools or Roblox Studio capability. Try a model on a few real tasks before you rely on it ev",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "",
+          "label": "Runs STAR's code model on this PC's NVIDIA graphics card, about three times faster than the server. Memory, tools and lessons stay",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Off by default. Pauses while a game or another program uses the card, and unloads after the idle minutes below. Works with STAR Se",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "voice-current",
+          "label": "Status: Open STAR Desktop to see this",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Model turns per task",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Context character budget",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": true
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Adds a short note about what this session can do. Off until evaluated.",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        }
+      ],
+      "checks": [
+        {
+          "position": "top",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "position": "bottom",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "minimumTextContrast": 6.617497342967421
+    },
+    {
+      "theme": "pearl",
+      "section": "workspace",
+      "text": [
+        {
+          "tag": "P",
+          "class": "",
+          "label": "What STAR may change on this PC. Everything starts read-only.",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            247,
+            245,
+            240
+          ],
+          "contrast": 6.617497342967421,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Workspace folder",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": true
+        },
+        {
+          "tag": "SPAN",
+          "class": "",
+          "label": "Selected Roblox Studio",
+          "color": "rgb(52, 56, 49)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 11.850094379761439,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Connect an open place in Tools first",
+          "color": "rgb(88, 94, 85)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 6.6119602503427055,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Only inside your selected workspace.",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Use an unpublished disposable test place first.",
+          "color": "rgb(83, 89, 80)",
+          "background": [
+            255,
+            254,
+            250
+          ],
+          "contrast": 7.144554687005504,
+          "fieldGrid": false
+        }
+      ],
+      "checks": [
+        {
+          "position": "top",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "position": "bottom",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "minimumTextContrast": 6.6119602503427055
+    },
+    {
+      "theme": "dusk",
+      "section": "model",
+      "text": [
+        {
+          "tag": "P",
+          "class": "",
+          "label": "Where STAR thinks: this PC, your STAR Server or a provider you choose.",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            22,
+            19,
+            28
+          ],
+          "contrast": 9.13904592044116,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "",
+          "label": "STAR Brain configures these automatically after installation.",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Model ID",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Local endpoint",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Inference providerLocal STAR BrainSTAR Server (LAN)GroqCloudOpenRouterGeminiCerebras",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "After changing provider, save Settings. STAR sends your prompt only to the provider you explicitly selected; ordinary local chat n",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SPAN",
+          "class": "",
+          "label": "Run my Luau before answering",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "Off by default. Save Settings to run assertions in your STAR Knowledge sandbox before displaying code. Up to two repair rounds; th",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Cloud key providerGroqCloudOpenRouterGeminiCerebras",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "API key (never saved in STAR settings)",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "Optional model IDs must exist on your selected provider. Leave a specialist blank to use the main model. STAR never switches to a ",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Fast answers",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Deeper reasoning",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Roblox engineering",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Image understanding",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "STAR loads model files (.gguf) from a folder you choose, one at a time, to keep memory use low. Nothing is downloaded for you. Sto",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Model folder (.gguf files)",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Context tokens",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "GPU offload layers",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "A text response is not proof of image, tools or Roblox Studio capability. Try a model on a few real tasks before you rely on it ev",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "",
+          "label": "Runs STAR's code model on this PC's NVIDIA graphics card, about three times faster than the server. Memory, tools and lessons stay",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Off by default. Pauses while a game or another program uses the card, and unloads after the idle minutes below. Works with STAR Se",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "voice-current",
+          "label": "Status: Open STAR Desktop to see this",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Model turns per task",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Context character budget",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": true
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Adds a short note about what this session can do. Off until evaluated.",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        }
+      ],
+      "checks": [
+        {
+          "position": "top",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "position": "bottom",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "minimumTextContrast": 7.987893391888363
+    },
+    {
+      "theme": "dusk",
+      "section": "workspace",
+      "text": [
+        {
+          "tag": "P",
+          "class": "",
+          "label": "What STAR may change on this PC. Everything starts read-only.",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            22,
+            19,
+            28
+          ],
+          "contrast": 9.13904592044116,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Workspace folder",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": true
+        },
+        {
+          "tag": "SPAN",
+          "class": "",
+          "label": "Selected Roblox Studio",
+          "color": "rgb(222, 214, 232)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 11.375795884483232,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Connect an open place in Tools first",
+          "color": "rgb(174, 161, 188)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 6.588621341977964,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Only inside your selected workspace.",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Use an unpublished disposable test place first.",
+          "color": "rgb(191, 178, 204)",
+          "background": [
+            36,
+            31,
+            45
+          ],
+          "contrast": 7.987893391888363,
+          "fieldGrid": false
+        }
+      ],
+      "checks": [
+        {
+          "position": "top",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "position": "bottom",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "minimumTextContrast": 6.588621341977964
+    },
+    {
+      "theme": "grove",
+      "section": "model",
+      "text": [
+        {
+          "tag": "P",
+          "class": "",
+          "label": "Where STAR thinks: this PC, your STAR Server or a provider you choose.",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            16,
+            23,
+            20
+          ],
+          "contrast": 9.455323587033003,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "",
+          "label": "STAR Brain configures these automatically after installation.",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Model ID",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Local endpoint",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Inference providerLocal STAR BrainSTAR Server (LAN)GroqCloudOpenRouterGeminiCerebras",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "After changing provider, save Settings. STAR sends your prompt only to the provider you explicitly selected; ordinary local chat n",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SPAN",
+          "class": "",
+          "label": "Run my Luau before answering",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "Off by default. Save Settings to run assertions in your STAR Knowledge sandbox before displaying code. Up to two repair rounds; th",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Cloud key providerGroqCloudOpenRouterGeminiCerebras",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "API key (never saved in STAR settings)",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "Optional model IDs must exist on your selected provider. Leave a specialist blank to use the main model. STAR never switches to a ",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Fast answers",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Deeper reasoning",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Roblox engineering",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Image understanding",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "STAR loads model files (.gguf) from a folder you choose, one at a time, to keep memory use low. Nothing is downloaded for you. Sto",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Model folder (.gguf files)",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "Context tokens",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "integrated-field",
+          "label": "GPU offload layers",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "integrated-help",
+          "label": "A text response is not proof of image, tools or Roblox Studio capability. Try a model on a few real tasks before you rely on it ev",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "",
+          "label": "Runs STAR's code model on this PC's NVIDIA graphics card, about three times faster than the server. Memory, tools and lessons stay",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Off by default. Pauses while a game or another program uses the card, and unloads after the idle minutes below. Works with STAR Se",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "P",
+          "class": "voice-current",
+          "label": "Status: Open STAR Desktop to see this",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Model turns per task",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": true
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Context character budget",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": true
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Adds a short note about what this session can do. Off until evaluated.",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        }
+      ],
+      "checks": [
+        {
+          "position": "top",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "position": "bottom",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "minimumTextContrast": 7.918137322403203
+    },
+    {
+      "theme": "grove",
+      "section": "workspace",
+      "text": [
+        {
+          "tag": "P",
+          "class": "",
+          "label": "What STAR may change on this PC. Everything starts read-only.",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            16,
+            23,
+            20
+          ],
+          "contrast": 9.455323587033003,
+          "fieldGrid": false
+        },
+        {
+          "tag": "LABEL",
+          "class": "",
+          "label": "Workspace folder",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": true
+        },
+        {
+          "tag": "SPAN",
+          "class": "",
+          "label": "Selected Roblox Studio",
+          "color": "rgb(212, 224, 214)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 11.192367032261025,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Connect an open place in Tools first",
+          "color": "rgb(157, 175, 161)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 6.585343465651012,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Only inside your selected workspace.",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        },
+        {
+          "tag": "SMALL",
+          "class": "",
+          "label": "Use an unpublished disposable test place first.",
+          "color": "rgb(175, 191, 178)",
+          "background": [
+            29,
+            40,
+            34
+          ],
+          "contrast": 7.918137322403203,
+          "fieldGrid": false
+        }
+      ],
+      "checks": [
+        {
+          "position": "top",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "position": "bottom",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "minimumTextContrast": 6.585343465651012
+    }
+  ],
+  "verified_interactions": {
+    "checked_on": "2026-10-19",
+    "environment": "Chromium scripted interface preview; no real model or native Qt session",
+    "records": [
+      {
+        "name": "interaction-compact-closed-320",
+        "overflow": false,
+        "bounds": [
+          {
+            "class": "studio-workspace",
+            "rect": {
+              "x": 0,
+              "y": 412,
+              "width": 320,
+              "height": 328,
+              "top": 412,
+              "right": 320,
+              "bottom": 740,
+              "left": 0
+            }
+          },
+          {
+            "class": "cmp",
+            "rect": {
+              "x": 20,
+              "y": 668.96875,
+              "width": 280,
+              "height": 144,
+              "top": 668.96875,
+              "right": 300,
+              "bottom": 812.96875,
+              "left": 20
+            }
+          },
+          {
+            "class": "studio-companion-region",
+            "rect": {
+              "x": 0,
+              "y": 81,
+              "width": 320,
+              "height": 331,
+              "top": 81,
+              "right": 320,
+              "bottom": 412,
+              "left": 0
+            }
+          },
+          {
+            "class": "companion-shelf is-compact ",
+            "rect": {
+              "x": 30,
+              "y": 85,
+              "width": 260,
+              "height": 322,
+              "top": 85,
+              "right": 290,
+              "bottom": 407,
+              "left": 30
+            }
+          }
+        ],
+        "active": "Companions",
+        "restoredFocus": "Open companions",
+        "errors": [],
+        "external": []
+      },
+      {
+        "name": "interaction-stop-900",
+        "before": "thinking",
+        "after": "cancelled",
+        "label": "Request stopped",
+        "stopRemaining": 0,
+        "errors": [],
+        "external": []
+      },
+      {
+        "name": "final-interaction-draft-and-cast-1440",
+        "draftPrepared": true,
+        "castSelection": "Astra",
+        "checked": true,
+        "coarseState": "typing",
+        "hiddenWidth": 56,
+        "hiddenFocus": "Show companions",
+        "restoredFocus": "Companions",
+        "persisted": true,
+        "keyboardSelection": "Ember",
+        "errors": [],
+        "external": []
+      }
+    ],
+    "settings": [
+      {
+        "width": 390,
+        "height": 844,
+        "errors": [],
+        "selectedAfterArrow": "Model",
+        "matches": [
+          "knowledge-tools",
+          "permissions"
+        ],
+        "summary": "2 groups match \u201cworkspace folder\u201d",
+        "cleared": "",
+        "restoredSection": "Model"
+      },
+      {
+        "width": 1440,
+        "height": 1000,
+        "errors": [],
+        "themeBounds": [
+          {
+            "x": 533,
+            "y": 404.328125,
+            "width": 181,
+            "height": 119.078125,
+            "top": 404.328125,
+            "right": 714,
+            "bottom": 523.40625,
+            "left": 533
+          },
+          {
+            "x": 726,
+            "y": 404.328125,
+            "width": 181,
+            "height": 119.078125,
+            "top": 404.328125,
+            "right": 907,
+            "bottom": 523.40625,
+            "left": 726
+          },
+          {
+            "x": 919,
+            "y": 404.328125,
+            "width": 181,
+            "height": 119.078125,
+            "top": 404.328125,
+            "right": 1100,
+            "bottom": 523.40625,
+            "left": 919
+          },
+          {
+            "x": 1112,
+            "y": 404.328125,
+            "width": 181,
+            "height": 119.078125,
+            "top": 404.328125,
+            "right": 1293,
+            "bottom": 523.40625,
+            "left": 1112
+          }
+        ]
+      }
+    ],
+    "limits": [
+      "Earlier temporary scripts used unsuitable selectors for native radio labels, a searchbox, and the intentionally unselected search-mode tabs. Corrected flows are retained here.",
+      "This file consolidates observed records; it does not rerun or invent checks.",
+      "The compact disclosure measurement in the interaction records includes the reduced-motion note; final screenshot geometry is recorded separately."
+    ]
+  },
+  "final_screens": [
+    {
+      "name": "studio-obsidian",
+      "theme": "obsidian",
+      "character": "star",
+      "width": 1440,
+      "height": 1000,
+      "geometry": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "companionHeight": 893,
+        "workspaceHeight": 893,
+        "brokenVisible": []
+      },
+      "focusedComposer": null,
+      "errors": []
+    },
+    {
+      "name": "studio-pearl",
+      "theme": "pearl",
+      "character": "ember",
+      "width": 1440,
+      "height": 1000,
+      "geometry": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "companionHeight": 893,
+        "workspaceHeight": 893,
+        "brokenVisible": []
+      },
+      "focusedComposer": null,
+      "errors": []
+    },
+    {
+      "name": "studio-dusk",
+      "theme": "dusk",
+      "character": "astra",
+      "width": 1440,
+      "height": 1000,
+      "geometry": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "companionHeight": 893,
+        "workspaceHeight": 893,
+        "brokenVisible": []
+      },
+      "focusedComposer": null,
+      "errors": []
+    },
+    {
+      "name": "studio-grove",
+      "theme": "grove",
+      "character": "star",
+      "width": 1440,
+      "height": 1000,
+      "geometry": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "companionHeight": 893,
+        "workspaceHeight": 893,
+        "brokenVisible": []
+      },
+      "focusedComposer": null,
+      "errors": []
+    },
+    {
+      "name": "studio-settings",
+      "theme": "pearl",
+      "character": "ember",
+      "width": 1440,
+      "height": 1000,
+      "geometry": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "brokenVisible": []
+      },
+      "focusedComposer": null,
+      "errors": []
+    },
+    {
+      "name": "studio-mobile",
+      "theme": "obsidian",
+      "character": "star",
+      "width": 390,
+      "height": 844,
+      "geometry": {
+        "width": 390,
+        "documentWidth": 390,
+        "companionHeight": 53,
+        "workspaceHeight": 710,
+        "brokenVisible": []
+      },
+      "focusedComposer": null,
+      "errors": []
+    },
+    {
+      "name": "studio-companions-compact",
+      "theme": "pearl",
+      "character": "ember",
+      "width": 320,
+      "height": 740,
+      "geometry": {
+        "width": 320,
+        "documentWidth": 320,
+        "companionHeight": 315,
+        "workspaceHeight": 344,
+        "brokenVisible": []
+      },
+      "focusedComposer": {
+        "top": 657.96875,
+        "bottom": 732.96875,
+        "viewport": 740,
+        "focused": true,
+        "value": "Keep this draft while I choose a companion."
+      },
+      "errors": []
+    },
+    {
+      "name": "studio-appearance",
+      "theme": "dusk",
+      "character": "astra",
+      "width": 1440,
+      "height": 1000,
+      "geometry": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "companionHeight": 893,
+        "workspaceHeight": 893,
+        "brokenVisible": []
+      },
+      "focusedComposer": null,
+      "errors": []
+    }
+  ],
+  "combined_research_replay": [
+    {
+      "name": "research-obsidian-1440",
+      "context": "Actual Desktop with unchanged fake Qt host and synthetic research progress; no live model or web search",
+      "a11y": {
+        "violations": [],
+        "incomplete": [
+          "color-contrast"
+        ]
+      },
+      "layout": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "sources": 4,
+        "companionState": "thinking",
+        "panelBackground": "rgb(27, 28, 31)",
+        "panelColor": "rgb(182, 179, 172)"
+      },
+      "stopAcknowledged": true,
+      "errors": []
+    },
+    {
+      "name": "research-pearl-1440",
+      "context": "Actual Desktop with unchanged fake Qt host and synthetic research progress; no live model or web search",
+      "a11y": {
+        "violations": [],
+        "incomplete": [
+          "color-contrast"
+        ]
+      },
+      "layout": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "sources": 4,
+        "companionState": "thinking",
+        "panelBackground": "rgb(255, 254, 250)",
+        "panelColor": "rgb(83, 89, 80)"
+      },
+      "stopAcknowledged": true,
+      "errors": []
+    },
+    {
+      "name": "research-dusk-1440",
+      "context": "Actual Desktop with unchanged fake Qt host and synthetic research progress; no live model or web search",
+      "a11y": {
+        "violations": [],
+        "incomplete": [
+          "color-contrast"
+        ]
+      },
+      "layout": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "sources": 4,
+        "companionState": "thinking",
+        "panelBackground": "rgb(36, 31, 45)",
+        "panelColor": "rgb(191, 178, 204)"
+      },
+      "stopAcknowledged": true,
+      "errors": []
+    },
+    {
+      "name": "research-grove-1440",
+      "context": "Actual Desktop with unchanged fake Qt host and synthetic research progress; no live model or web search",
+      "a11y": {
+        "violations": [],
+        "incomplete": [
+          "color-contrast"
+        ]
+      },
+      "layout": {
+        "width": 1440,
+        "documentWidth": 1440,
+        "sources": 4,
+        "companionState": "thinking",
+        "panelBackground": "rgb(29, 40, 34)",
+        "panelColor": "rgb(175, 191, 178)"
+      },
+      "stopAcknowledged": true,
+      "errors": []
+    },
+    {
+      "name": "research-pearl-390",
+      "context": "Actual Desktop with unchanged fake Qt host and synthetic research progress; no live model or web search",
+      "a11y": {
+        "violations": [],
+        "incomplete": [
+          "color-contrast"
+        ]
+      },
+      "layout": {
+        "width": 390,
+        "documentWidth": 390,
+        "sources": 4,
+        "panelBackground": "rgb(255, 254, 250)",
+        "panelColor": "rgb(83, 89, 80)"
+      },
+      "stopAcknowledged": true,
+      "errors": []
+    },
+    {
+      "name": "research-dusk-320",
+      "context": "Actual Desktop with unchanged fake Qt host and synthetic research progress; no live model or web search",
+      "a11y": {
+        "violations": [],
+        "incomplete": [
+          "color-contrast"
+        ]
+      },
+      "layout": {
+        "width": 320,
+        "documentWidth": 320,
+        "sources": 4,
+        "panelBackground": "rgb(36, 31, 45)",
+        "panelColor": "rgb(191, 178, 204)"
+      },
+      "stopAcknowledged": true,
+      "errors": []
+    }
+  ],
+  "combined_research_manual_review": "Axe cannot determine text background because of existing thread fade pseudo-elements. All six replays retain a color-contrast incomplete item; this is not reported as a contrast pass or WCAG certification.",
+  "art_provenance": "docs/design/STAR_COMPANION_ART_20261019.json",
+  "screenshots": [
+    {
+      "path": "docs/design/assets/star-studio-obsidian-20261019.png",
+      "bytes": 144667,
+      "sha256": "5fc8d5152322065b78a72de64bd18f445c8363e0fca2233210ae57e90ba41622",
+      "context": "Actual application browser preview"
+    },
+    {
+      "path": "docs/design/assets/star-studio-pearl-20261019.png",
+      "bytes": 143726,
+      "sha256": "1f1b019fc7933677ddb30ab75073c0d65e5e8d10cf1e50b929209e92dc0eab1d",
+      "context": "Actual application browser preview"
+    },
+    {
+      "path": "docs/design/assets/star-studio-dusk-20261019.png",
+      "bytes": 138208,
+      "sha256": "fe6de0866f8381f29aa0c7655be3dd194a1a6a10c9f5a93407c55a7c7a6b3855",
+      "context": "Actual application browser preview"
+    },
+    {
+      "path": "docs/design/assets/star-studio-grove-20261019.png",
+      "bytes": 144088,
+      "sha256": "6c3a1e5eb6a74975f015130d9e235bfb9a7ace3ae74c2146e569b11347fd9a72",
+      "context": "Actual application browser preview"
+    },
+    {
+      "path": "docs/design/assets/star-studio-settings-20261019.png",
+      "bytes": 135280,
+      "sha256": "44cecf554169d62574771743811437b2baf3761417a7e68c832c0736ab18a8da",
+      "context": "Actual application browser preview"
+    },
+    {
+      "path": "docs/design/assets/star-studio-appearance-20261019.png",
+      "bytes": 127990,
+      "sha256": "2bd2e2f9936d743f7288e4ae1a0cdaa3b95be644a3ddd7f606c41e56f6b7a755",
+      "context": "Actual application browser preview"
+    },
+    {
+      "path": "docs/design/assets/star-studio-mobile-20261019.png",
+      "bytes": 52831,
+      "sha256": "64ef0ce0c5b0ac7776b44de6509e84455b55650ddca64d090031877f866dec18",
+      "context": "Actual application browser preview"
+    },
+    {
+      "path": "docs/design/assets/star-studio-companions-compact-20261019.png",
+      "bytes": 70725,
+      "sha256": "ba274e234afaf86d56c38ac868e4c2e7430bf484f0cc411a8a1827818a622e30",
+      "context": "Actual application browser preview"
+    },
+    {
+      "path": "docs/design/assets/star-research-obsidian-1440-20261019.png",
+      "bytes": 164583,
+      "sha256": "b1357c688987fca8b14bf0e09458ebf6e1deb9215a25c76474d084765367508f",
+      "context": "Controlled fake Qt research replay; no live model or web search"
+    },
+    {
+      "path": "docs/design/assets/star-research-pearl-390-20261019.png",
+      "bytes": 56009,
+      "sha256": "0b765eadefe8755fa50b32a3d6194301be2fae2ef96dbbc36f1f092461ddc713",
+      "context": "Controlled fake Qt research replay; no live model or web search"
+    }
+  ],
+  "remaining": [
+    "Native Windows Qt behavior and packaged rendering",
+    "Owner aesthetic review",
+    "The separate Deep Research feature remains subject to its independent evaluation/activation gate",
+    "Legacy floating StarPet remains off by default and retains its previous hidden-tab timer behavior"
+  ]
+}
