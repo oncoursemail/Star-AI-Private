@@ -90,7 +90,9 @@ jobs:
           if after!=(before[0],before[1],before[2]+1):
               print('No automatic handoff: only the next patch, not an existing/minor/major release, is eligible.')
               raise SystemExit(0)
+          # The dispatcher and recipient both bind the operation to the tested SHA.
+          # If main moves before dispatch is handled, the receiving build/publisher refuse.
           # A manual run cannot trigger this again (the job requires event=push).
-          # Any duplicate dispatch still encounters immutable-version checks in the publisher.
-          api(SOURCE,'/actions/workflows/windows-desktop.yml/dispatches','POST',{'ref':'main'})
+          api(SOURCE,'/actions/workflows/windows-desktop.yml/dispatches','POST',
+              {'ref':'main','inputs':{'expected_source_sha':sha}})
           print('Dispatched the trusted private main release workflow for v'+matches[0]+'. This is not a published release.')
