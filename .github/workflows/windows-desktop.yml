@@ -191,7 +191,7 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name STAR `
             --icon assets/star.ico `
-            --add-data 'frontend/dist;frontend/dist' --add-data 'star/build-info.json;star' --add-data 'star/skill_packs;star/skill_packs' --add-data 'star/data;star/data' --add-data 'star/studio_lab_specs;star/studio_lab_specs' --add-data 'star/voice/voices.json;star/voice' --add-data 'star/blender_worker.py;star' --add-data 'star/blender_animation_worker.py;star' `
+            --add-data 'frontend/dist;frontend/dist' --add-data 'star/build-info.json;star' --add-data 'star/skill_packs;star/skill_packs' --add-data 'star/data;star/data' --add-data 'star/studio_lab_specs;star/studio_lab_specs' --add-data 'star/voice/voices.json;star/voice' --add-data 'star/business/console_ui.html;star/business' --add-data 'star/blender_worker.py;star' --add-data 'star/blender_animation_worker.py;star' `
             --hidden-import PySide6.QtWebEngineWidgets --hidden-import PySide6.QtWebChannel `
             --hidden-import mcp.client.session --hidden-import mcp.client.stdio `
             --hidden-import mcp.types --collect-all faster_whisper `
