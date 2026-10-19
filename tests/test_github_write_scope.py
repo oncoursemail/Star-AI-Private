@@ -5,7 +5,7 @@ import pytest
 
 from star.github_app import GitHubApp, valid_upload_path
 from star.selfbuild import skill_path
-from star.version import REPO
+from star.repository_roles import SOURCE_REPO as REPO, SOURCE_REPO_ID, RELEASE_REPO
 
 ALLOWED = (
     "star/skills/tween_helpers.py",
@@ -13,7 +13,6 @@ ALLOWED = (
     "docs/skills/tween_helpers.md",
 )
 
-# Everything STAR is judged or limited by, plus the usual escapes.
 REFUSED = (
     "tests/test_star.py", "tests/conftest.py", "tests/fixtures/shared_brain_retrieval.json",
     "pyproject.toml", "requirements.txt", "README.md", "main.py",
@@ -74,15 +73,19 @@ def test_write_branch_file_refuses_before_any_request(tmp_path, path):
 
 
 def test_write_branch_file_still_writes_a_skill_module(tmp_path):
-    app = Recorder(tmp_path)
+    app = Recorder(tmp_path, answers=answers(), base_branch=WORK)
     asyncio.run(app.write_branch_file("star/demo", "star/skills/tween_helpers.py", b"x = 1\n", "test"))
     assert [(m, p) for m, p, _ in app.calls] == [
+        REPO_INFO,
         ("GET", f"/repos/{REPO}/contents/star/skills/tween_helpers.py"),
         ("PUT", f"/repos/{REPO}/contents/star/skills/tween_helpers.py")]
-    assert app.calls[1][2]["branch"] == "star/demo"
+    payload = app.calls[-1][2]
+    assert payload["branch"] == "star/demo"
+    assert "AI-Actor: Star AI" in payload["message"]
+    assert "AI-Run-ID: " + app.run_id in payload["message"]
+    assert "AI-Tests: not-recorded" in payload["message"]
+    assert app.last_activity["stage"] == "committed-proposal"
 
-
-# ---- where STAR's own pull requests point: a work branch, never main ----
 
 WORK = "star/work-branch"
 REPO_INFO = ("GET", f"/repos/{REPO}")
@@ -90,7 +93,8 @@ WORK_REF = ("GET", f"/repos/{REPO}/git/ref/heads/{WORK}")
 
 
 def answers(default_branch="main"):
-    return {REPO_INFO: {"default_branch": default_branch}, WORK_REF: {"object": {"sha": "b" * 40}},
+    return {REPO_INFO: {"id": SOURCE_REPO_ID, "full_name": REPO, "private": True,
+                        "default_branch": default_branch}, WORK_REF: {"object": {"sha": "b" * 40}},
             ("POST", f"/repos/{REPO}/pulls"): {"html_url": "https://example.invalid/pull/1"}}
 
 
@@ -109,8 +113,15 @@ def test_new_branch_is_cut_from_the_work_branch_not_from_main(tmp_path):
 def test_pull_request_points_at_the_work_branch_and_is_a_draft(tmp_path):
     app = Recorder(tmp_path, answers=answers(), base_branch=WORK)
     asyncio.run(app.open_pr(WORK, "star/skill-1", "title", "body"))
-    assert writes(app) == [("POST", f"/repos/{REPO}/pulls",
-                            {"title": "title", "body": "body", "base": WORK, "head": "star/skill-1", "draft": True})]
+    observed = writes(app)
+    assert len(observed) == 1 and observed[0][:2] == ("POST", f"/repos/{REPO}/pulls")
+    payload = observed[0][2]
+    assert {k: payload[k] for k in ("title", "base", "head", "draft")} == {
+        "title": "title", "base": WORK, "head": "star/skill-1", "draft": True}
+    assert payload["body"].startswith("body\n\n---\n")
+    assert "<!-- star-ai-run:" + app.run_id + " -->" in payload["body"]
+    assert "has not verified tests" in payload["body"]
+    assert app.last_activity["stage"] == "pull-request-proposed"
 
 
 @pytest.mark.parametrize("base", ["main", "master", "release", "develop", "", None, "refs/heads/main",
@@ -188,8 +199,31 @@ def test_self_build_refuses_before_any_model_call_when_the_pull_request_would_ta
         def __getattr__(self, name):
             raise AssertionError("the model must not be asked")
 
-    app = Recorder(tmp_path, answers=answers())          # no work branch configured
+    app = Recorder(tmp_path, answers=answers())
     with pytest.raises(PermissionError):
         asyncio.run(develop(client=NoModel(), model="fixture", repository=repo, task="improve a skill", github=app))
     branches = subprocess.run(["git", "branch", "--list", "star/*"], cwd=repo, capture_output=True, text=True, check=True)
     assert branches.stdout.strip() == "" and app.calls == []
+
+
+@pytest.mark.parametrize("operation", ["branch", "file", "pr"])
+def test_developer_client_cannot_write_to_public_downloads(tmp_path, operation):
+    app = Recorder(tmp_path, repo=RELEASE_REPO, base_branch=WORK)
+    with pytest.raises(PermissionError):
+        if operation == "branch":
+            asyncio.run(app.create_branch("star/demo"))
+        elif operation == "file":
+            asyncio.run(app.write_branch_file("star/demo", ALLOWED[0], b"x=1", "test"))
+        else:
+            asyncio.run(app.open_pr(WORK, "star/demo", "test", "test"))
+    assert app.calls == [] and app.last_activity is None
+
+
+@pytest.mark.parametrize("change", [{"id": 1}, {"private": False}, {"full_name": RELEASE_REPO}])
+def test_changed_source_identity_cannot_receive_a_proposal(tmp_path, change):
+    data = answers()
+    data[REPO_INFO].update(change)
+    app = Recorder(tmp_path, answers=data, base_branch=WORK)
+    with pytest.raises(PermissionError):
+        asyncio.run(app.write_branch_file("star/demo", ALLOWED[0], b"x=1", "test"))
+    assert writes(app) == [] and app.last_activity is None
