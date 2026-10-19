@@ -1,0 +1,31 @@
+{
+  "exporter": "C:\\Users\\alexi\\AppData\\Local\\StarRecovery\\windows_recovery_export.py",
+  "export_config": "C:\\Users\\alexi\\AppData\\Local\\StarRecovery\\export.json",
+  "staging_dir": "C:\\Users\\alexi\\AppData\\Local\\StarRecovery\\staging",
+  "state_file": "C:\\Users\\alexi\\AppData\\Local\\StarRecovery\\status.json",
+  "max_archive_bytes": 335544320,
+  "ssh_command": [
+    "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+    "-T",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "UserKnownHostsFile=C:/Users/alexi/AppData/Local/StarRecovery/known_hosts",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=3",
+    "-o",
+    "ClearAllForwardings=yes",
+    "-i",
+    "C:\\Users\\alexi\\AppData\\Local\\StarRecovery\\main-backup-ed25519",
+    "alexbuz1@10.17.0.96",
+    "backup"
+  ]
+}

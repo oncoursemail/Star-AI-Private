@@ -1,0 +1,16 @@
+{
+  "sources": [
+    {
+      "name": "star-state",
+      "path": "C:\\Users\\alexi\\.star"
+    },
+    {
+      "name": "star-roaming",
+      "path": "C:\\Users\\alexi\\AppData\\Roaming\\Star"
+    }
+  ],
+  "staging_dir": "C:\\Users\\alexi\\AppData\\Local\\StarRecovery",
+  "max_total_bytes": 268435456,
+  "min_free_bytes": 2147483648,
+  "sqlite_timeout_seconds": 60
+}

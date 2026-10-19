@@ -1,0 +1,157 @@
+{
+  "verified_utc": "2026-10-19T22:08:00Z",
+  "starai": {
+    "last_attempt_utc": "2026-10-19T21:11:15.682641+00:00",
+    "last_error": null,
+    "latest_complete": true,
+    "in_progress": false,
+    "last_success_utc": "2026-10-19T21:11:48.805684+00:00",
+    "last_snapshot_id": "93a30e494a141c14266bc69b728f2900a3557e012f4872aff0a2a292c761a5f7",
+    "data_added": 12474795,
+    "data_added_packed": 1823443,
+    "repository_bytes": 512923619,
+    "last_restore_verification": {
+      "files": 11211,
+      "sqlite_databases": 1,
+      "source_bytes": 1072465406,
+      "source_names": [
+        "knowledge-app",
+        "knowledge-data",
+        "knowledge-sources",
+        "learning-app",
+        "learning-conductor",
+        "learning-data",
+        "learning-docs",
+        "learning-env",
+        "learning-outbox",
+        "learning-pool",
+        "model-config",
+        "recovery-config",
+        "recovery-source",
+        "runtime-secrets",
+        "search-gateway",
+        "training"
+      ],
+      "verified_utc": "2026-10-19T19:30:35.984026+00:00",
+      "snapshot": "64f42440b079d746894e6332e9f5c27a424a60262f1dc7d95933a8af8b7d0621",
+      "application_boot_tested": false,
+      "clean_world_validated": false
+    },
+    "baseline_verification": {
+      "files": 11211,
+      "sqlite_databases": 1,
+      "source_bytes": 1072465406,
+      "source_names": [
+        "knowledge-app",
+        "knowledge-data",
+        "knowledge-sources",
+        "learning-app",
+        "learning-conductor",
+        "learning-data",
+        "learning-docs",
+        "learning-env",
+        "learning-outbox",
+        "learning-pool",
+        "model-config",
+        "recovery-config",
+        "recovery-source",
+        "runtime-secrets",
+        "search-gateway",
+        "training"
+      ],
+      "verified_utc": "2026-10-19T19:31:36.697621+00:00",
+      "snapshot": "bde340de2a6f82917c31d5c74edeff8e0ab6b1e12b46e9c69171e92f923817d4",
+      "application_boot_tested": false,
+      "clean_world_validated": false
+    },
+    "baseline_snapshot_id": "bde340de2a6f82917c31d5c74edeff8e0ab6b1e12b46e9c69171e92f923817d4",
+    "last_retention_utc": "2026-10-19T21:53:15.532789+00:00"
+  },
+  "main": {
+    "last_ingest_attempt_utc": "2026-10-19T22:05:12.478346+00:00",
+    "latest_complete": true,
+    "last_attempt_utc": "2026-10-19T22:05:15.018840+00:00",
+    "in_progress": false,
+    "last_success_utc": "2026-10-19T22:05:18.437022+00:00",
+    "last_snapshot_id": "4384b2c9e01eacc78a002fc017ac628de3a21c3334af5ca3365b55aac6bfb3fb",
+    "last_error": null,
+    "data_added": 21116521,
+    "data_added_packed": 8966479,
+    "repository_bytes": 8968886,
+    "last_ingest_validation": {
+      "files": 479,
+      "sqlite_databases": 7,
+      "source_bytes": 20643824,
+      "source_names": [
+        "star-roaming",
+        "star-state"
+      ],
+      "verified_utc": "2026-10-19T22:05:18.460598+00:00"
+    },
+    "last_restore_verification": {
+      "files": 479,
+      "sqlite_databases": 7,
+      "source_bytes": 20643824,
+      "source_names": [
+        "star-roaming",
+        "star-state"
+      ],
+      "verified_utc": "2026-10-19T22:06:54.256138+00:00",
+      "snapshot": "4384b2c9e01eacc78a002fc017ac628de3a21c3334af5ca3365b55aac6bfb3fb",
+      "application_boot_tested": false,
+      "clean_world_validated": false
+    },
+    "baseline_verification": {
+      "files": 479,
+      "sqlite_databases": 7,
+      "source_bytes": 20643824,
+      "source_names": [
+        "star-roaming",
+        "star-state"
+      ],
+      "verified_utc": "2026-10-19T22:06:59.035861+00:00",
+      "snapshot": "caf972b65d9272c887e8288370eb70fd48ef6fbe97003cc4ec4b70a453b0e982",
+      "application_boot_tested": false,
+      "clean_world_validated": false
+    },
+    "baseline_snapshot_id": "caf972b65d9272c887e8288370eb70fd48ef6fbe97003cc4ec4b70a453b0e982"
+  },
+  "repository_bytes": {
+    "starai": 512923619,
+    "starai-baseline": 525019352,
+    "star-main": 8968886,
+    "star-main-baseline": 9406199
+  },
+  "tests": {
+    "local_passed": 111,
+    "windows_run": 28,
+    "windows_passed": 26,
+    "windows_skipped": 2
+  },
+  "live_reconnect_tests": {
+    "starai": {
+      "passed": true,
+      "remote_pid_after": 1653738,
+      "persistent_runtime": true
+    },
+    "alexbuz1": {
+      "passed": true,
+      "remote_pid_after": 529635,
+      "user_service_retry_limit_disabled": true
+    }
+  },
+  "schedules": {
+    "starai_hourly_enabled": true,
+    "linux_daily_verification_and_retention_enabled": true,
+    "main_hourly_and_logon_task_enabled": true,
+    "main_requires_owner_signin": true,
+    "main_daily_verification_and_retention_enabled": true
+  },
+  "limitations": [
+    "Actual Minecraft/Metallic world and container-volume backups are not configured; MC SSH host 10.17.0.106 is unreachable.",
+    "System-wide recovery drop-ins are prepared but require an existing administrator session.",
+    "Main requires owner sign-in after boot.",
+    "Firmware/hypervisor AC restoration, real power-loss recovery, application boot restoration, and upstream DDoS mitigation are not verified.",
+    "Baselines are separate and excluded from rotation; Brain2 owner/root and shared disk/site risks remain. No immutable offsite or disconnected copy was created."
+  ]
+}
