@@ -466,7 +466,7 @@ def run_cycle(settings, ask, validators: Validators, *, now: dt.datetime | None 
     models = models if models is not None else [m.strip() for m in settings.conductor_models.split(",") if m.strip()]
     if not models:
         tally.notes.append("no usable model (none loaded with a slot other than 0)")
-    since = state.get("failure_ts") or utc()[:10] + "T00:00:00Z"
+    since = state.get("failure_ts") or now.strftime("%Y-%m-%d") + "T00:00:00Z"
     failures = read_failures(Path(settings.data) / "failures.jsonl", since)
     clusters = cluster_failures(failures)
     jobs = [("cluster", cluster_prompt(c), c) for c in clusters]
