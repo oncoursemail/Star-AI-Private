@@ -5,7 +5,7 @@ on:
     paths: ['.github/workflows/authorized-artifact-cleanup.yml']
 permissions:
   contents: read
-  actions: write
+  actions: read
   pull-requests: read
 concurrency:
   group: star-owner-approved-artifact-cleanup
@@ -14,7 +14,7 @@ jobs:
   cleanup:
     if: github.repository == 'oncoursemail/Star-AI-Private' && github.actor_id == '84545815' && github.ref == 'refs/heads/maintenance/verified-artifact-cleanup-20261019'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -22,8 +22,7 @@ jobs:
       - name: Test corruption and preservation boundaries without credentials
         working-directory: scripts/operations
         run: python3 -m unittest -v test_verified_cleanup
-      - name: Verify and remove eligible duplicates within the fixed safety budget
+      - name: Reconcile remaining artifacts without deletion permission
         env:
           GH_TOKEN: ${{ github.token }}
-          STAR_CLEANUP_APPROVAL: owner-approved-20261019-duplicate-previews
-        run: python3 scripts/operations/verified_cleanup.py --apply --limit 60
+        run: python3 scripts/operations/verified_cleanup.py
