@@ -131,7 +131,11 @@ def test_agent_blocks_wrong_studio_even_in_auto_mode():
             reply(calls=[call("execute_luau",{"studio_id":"other","datamodel_type":"Edit"})]), reply("blocked")])) )
         answer, _, _ = await execute(client=fake,model="local",prompt="change",image_paths=[],
             studio=fake_studio,studio_id="sandbox",may_edit=True,discovered=[schema_tool("execute_luau")])
-        assert answer=="blocked"
+        assert answer == (
+            "blocked\n\n**Recorded verification status:** "
+            "1 requested action(s) were rejected before execution. "
+            "Those requests did not run; a later separately authorized request has its own result."
+        )
         assert not fake_studio.calls
     asyncio.run(run())
 

@@ -146,7 +146,11 @@ def test_agent_registry_tool_is_prompt_gated_and_executes_no_installer():
         client=model, model="offline-test", prompt="Make a chair",
         image_paths=[], mcp_registry=unauthorized,
     ))
-    assert answer == "Registry not attached"
+    assert answer == (
+        "Registry not attached\n\n**Recorded verification status:** "
+        "1 requested action(s) were rejected before execution. "
+        "Those requests did not run; a later separately authorized request has its own result."
+    )
     assert all(tool["function"]["name"] != "star_mcp_registry_search"
                for tool in (model.requests[0].get("tools") or []))
     assert any("Tool request rejected" in str(msg.get("content"))

@@ -68,7 +68,11 @@ def test_luau_after_a_web_page_is_refused(monkeypatch):
     ], monkeypatch)
     assert studio.calls == []                       # nothing reached Studio
     assert "rejected" in tool_messages[-1]
-    assert answer == "done"
+    assert answer == (
+        "done\n\n**Recorded verification status:** "
+        "1 requested action(s) were rejected before execution. "
+        "Those requests did not run; a later separately authorized request has its own result."
+    )
 
 
 def test_luau_without_web_content_still_runs(monkeypatch):

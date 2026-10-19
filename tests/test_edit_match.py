@@ -127,7 +127,11 @@ def test_workspace_edit_changes_one_place_and_reports_how_it_matched(tmp_path):
     (tmp_path / "main.py").write_bytes(b"def f():\r\n    return 1\r\n")
     result = Workspace(tmp_path).call("workspace_edit", {"path": "main.py", "old_string": "return 1",
                                                          "new_string": "return 2"}, allow_write=True)
-    assert result == {"path": "main.py", "bytes_written": 24, "replacements": 1, "match": "exact"}
+    # The write still reports the original edit contract, now with parser evidence.
+    assert {key: result[key] for key in ("path", "bytes_written", "replacements", "match")} == {
+        "path": "main.py", "bytes_written": 24, "replacements": 1, "match": "exact"}
+    assert result["validation"]["status"] == "passed"
+    assert result["validation"]["runtime_verified"] is False
     assert (tmp_path / "main.py").read_bytes() == b"def f():\r\n    return 2\r\n"
 
 
@@ -182,3 +186,4 @@ def test_an_ambiguous_studio_edit_is_refused_and_not_journaled():
     result = _edit(studio, fake, "go()", "stop()")
     assert result.model_dump()["isError"] and "occurs 2 times" in str(result.model_dump())
     assert studio.journal.entries == [] and fake.scripts["ServerScriptService.Main"]["source"] == "go()\ngo()"
+
