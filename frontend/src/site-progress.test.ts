@@ -278,13 +278,16 @@ describe('prerendering',()=>{
   for(const id of ['features','learning','honest','download'])expect(markup).toContain('id="'+id+'"')
   expect(markup).not.toMatch(/undefined|NaN|\[object Object\]/)
  })
- it('offers the published release, not the source version, in the static markup',()=>{
+ it('does not offer a historical private installer without a live public release',()=>{
   const snapshot=parseStoredProgress(committed as unknown,'build')
   const setup=releaseFiles(latestStable(snapshot)).setup
   expect(setup).not.toBeNull()
-  expect(markup).toContain('href="'+setup!.url+'"')
-  // Only meaningful while the source is ahead of the published release (after a release they are the same file).
-  if(latestStable(snapshot)?.tag!=='v'+pkg.version)expect(markup).not.toContain('STAR-Setup-v'+pkg.version+'.exe')
+  // The repository was replaced: historical metadata cannot prove public availability.
+  expect(markup).not.toContain('href="'+setup!.url+'"')
+  expect(markup).toContain('Release details are unavailable')
+  expect(markup).toContain('href="'+REPO_URL+'/releases/latest"')
+  expect(markup).toContain('Open the latest release')
+  expect(markup).not.toContain('STAR-Setup-v'+pkg.version+'.exe')
  })
  it('contains nothing that depends on the visitor clock or time zone',()=>{
   expect(markup).not.toMatch(/\d+ (min|hours?|days?) ago|just now/)
