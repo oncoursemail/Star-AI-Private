@@ -288,10 +288,11 @@ export function SettingsPage(props:SettingsPageProps) {
    </Block>
   </>,
   knowledge:<>
-   <Block id="web-search" keywords="internet brave tavily api key web search">
+   <Block id="web-search" keywords="internet brave tavily api key web search deep research sources">
      <Panel className="settings-section"><div className="section-heading"><div><h3 className="settings-group-title">Web search</h3><p>{serverDraft?'With STAR Server selected, STAR uses the server’s search. A Brave or Tavily key is used instead when you add one here.':'Add a Brave or Tavily key so STAR can search the web. Your search words go to that provider; nothing else does.'}</p></div><KeyRound size={20} aria-hidden="true"/></div>
        <SearchKey provider="brave" label="Brave Search" stored={!!data.credentials?.brave} invoke={act} disabled={inactive} onSaved={sync}/>
        <SearchKey provider="tavily" label="Tavily" stored={!!data.credentials?.tavily} invoke={act} disabled={inactive} onSaved={sync}/>
+       <Switch label="Read source pages in deep research" hint="With both Team and Research selected, search several evidence angles, read up to 12 public pages, and follow up on missing evidence. Shows source activity and citation references. Uses your selected search service; pages can see the reader's network address." checked={draft.deep_research_enabled===true} onChange={on=>set({deep_research_enabled:on})}/>
      </Panel>
    </Block>
    <Block id="knowledge-tools" keywords="skills graphify obsidian notes vault practice examples knowledge agents.md project rules">
