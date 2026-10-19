@@ -110,6 +110,8 @@ class Settings:
     mcp_graphify_local: bool = False
     mcp_graphify_port: int = 8931
     mcp_obsidian_live: bool = False
+    mcp_github_repositories: bool = False  # explicit opt-in; fixed read-only repository discovery
+    github_repository_credential_source: str = 'gh'  # existing GitHub CLI account, or explicit env token
     blender_enabled: bool = False          # only attach STAR's local Blender MCP when requested
     blender_edit: bool = False             # explicit owner permission for new isolated scene jobs
     blender_executable: str = ''           # installed local executable; '' = discover without downloading
@@ -191,12 +193,15 @@ class Settings:
             raise ValueError('Project name is invalid')
         if any(type(getattr(self, key)) is not bool
                for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled',
-                            'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live',
+                            'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
                             'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
                             'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled')):
             raise ValueError('Tool access settings must be true or false')
+        if (not isinstance(self.github_repository_credential_source, str)
+                or self.github_repository_credential_source not in {'gh', 'env'}):
+            raise ValueError('GitHub repository credential source must be gh or env')
         if self.obsidian_vault and not Path(self.obsidian_vault).expanduser().is_dir():
             raise ValueError('Obsidian vault must be an existing folder')
         if self.obsidian_enabled and not self.obsidian_vault:
@@ -797,12 +802,14 @@ def redact_for_logs(value):
 
 
 def needs_project_tools(prompt: str, prior_user_turns: list[str] | None = None, *,
-                        blender: bool = False) -> bool:
+                        blender: bool = False, github_repositories: bool = False) -> bool:
     """Load task tools on explicit request or scoped short edit follow-up.
 
     User context hints are not permissions; executable scopes remain enforced.
     """
     text = prompt.lower()
+    if github_repositories and re.search(r'\b(?:githubs?|metallic(?:-[a-z]{2})?)\b', text):
+        return True
     scopes = ('studio', 'roblox', 'workspace', 'my project', 'my game', 'my files',
               'project folder', 'current place')
     if blender:   # only with the Blender switch on (Settings.blender_enabled); off, these stay plain chat
@@ -1142,7 +1149,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             and recent_all[-1][1] and prompt.startswith(recent_all[-1][1]) else recent_all
         )
         recent_users = [body for role,body in route_history if role=='user']
-        project_tools = needs_project_tools(prompt, recent_users, blender=settings.blender_enabled is True)
+        project_tools = needs_project_tools(prompt, recent_users, blender=settings.blender_enabled is True,
+                                            github_repositories=settings.mcp_github_repositories is True)
         referential = len(prompt) <= 160 and bool(re.search(
             r'\b(?:it|this|that|same|continue|again|those|these)\b', prompt, re.I))
         roblox_context = bool(project_tools and referential

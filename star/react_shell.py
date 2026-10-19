@@ -130,6 +130,7 @@ PERMITTED_SETTINGS = frozenset({
     'context_chars','reduced_motion','comfy_workflow','comfy_prompt_node','comfy_port',
     'obsidian_vault','obsidian_enabled','skills_enabled','graphify_enabled',
     'mcp_graphify_docs','mcp_graphify_local','mcp_graphify_port','mcp_obsidian_live',
+    'mcp_github_repositories','github_repository_credential_source',
     'blender_enabled','blender_edit','blender_executable','blender_brain2',
     'server_endpoint','server_timeout','server_parallel','server_context_tokens','allow_cgnat',
     'instant_route_enabled','web_auto_search',
@@ -1555,12 +1556,12 @@ def launch():
                     self._run(rid,action,worker)
                 elif action=='testMcpConnection':
                     server=str(body.get('server',''))
-                    if server not in {'graphify_docs','graphify_local','obsidian_live'}:
+                    if server not in {'graphify_docs','graphify_local','obsidian_live','github_repositories'}:
                         raise ValueError('Unknown MCP connector')
                     def worker():
                         import asyncio
                         gateway=MCPGateway(Settings.load(self.settings_file))
-                        # Probe does not call any server tool or perform writes.
+                        # Probe uses curated read-only connection checks; never writes.
                         return asyncio.run(gateway.probe(server))
                     self._run(rid,action,worker)
                 elif action=='discoverStudio':
