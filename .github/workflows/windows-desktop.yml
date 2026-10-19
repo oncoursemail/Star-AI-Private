@@ -25,6 +25,12 @@ on:
       - '.github/workflows/windows-desktop.yml'
       - 'tests/**'
   workflow_dispatch:
+    inputs:
+      expected_source_sha:
+        description: 'Exact tested source SHA for an automatic handoff; blank for an owner-initiated release'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: star-windows-${{ github.ref }}
@@ -37,6 +43,7 @@ concurrency:
 jobs:
   frontend:
     name: React desktop assets
+    if: github.event_name != 'workflow_dispatch' || inputs.expected_source_sha == '' || inputs.expected_source_sha == github.sha
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -130,6 +137,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Stamp exact source provenance for app diagnostics
         shell: pwsh
         env:
@@ -185,7 +194,7 @@ jobs:
           name: STAR-OLED-GUI-Previews
           path: ui-previews/*.png
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
       - name: Package STAR.exe with vector assets
         shell: pwsh
         run: |
@@ -249,18 +258,19 @@ jobs:
           @("$setupHash  STAR-Setup-v$version.exe", "$zipHash  STAR-Genesis-Windows-x64.zip") |
             Set-Content -Encoding utf8 'STAR-PREVIEW-SHA256SUMS.txt'
       - name: Upload testable executables
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ github.event_name == 'pull_request' && 'STAR-Fast-Brain-Preview' || 'STAR-Windows-vNext' }}
+          name: STAR-Windows-vNext
           path: |
             STAR-Genesis-Windows-x64.zip
             dist/STAR-Setup-v*.exe
             STAR-PREVIEW-SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 30
-      # Review artifacts are intentionally separate so each compressed file
-      # stays below connector/download size limits and is easy to verify.
-      # Stable releases keep using STAR-Windows-vNext above unchanged.
+          retention-days: 1
+      # Keep each PR format once, separately, so connector downloads remain small.
+      # The non-PR release handoff above still contains both verified binaries.
+      # These limits apply to future uploads; existing review artifacts are untouched.
       - name: Upload Ultimate preview Windows installer
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -270,7 +280,7 @@ jobs:
             dist/STAR-Setup-v*.exe
             STAR-PREVIEW-SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
       - name: Upload Ultimate preview portable ZIP
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -280,7 +290,7 @@ jobs:
             STAR-Genesis-Windows-x64.zip
             STAR-PREVIEW-SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
 
   # The PR build receives NO attestation or publishing permissions. Only
   # verified main-branch artifacts enter this trusted provenance job.
@@ -325,6 +335,7 @@ jobs:
       ${{ always()
       && github.event_name == 'workflow_dispatch'
       && github.ref == 'refs/heads/main'
+      && (inputs.expected_source_sha == '' || inputs.expected_source_sha == github.sha)
       && needs.windows-build.result == 'success'
       && needs.windows-tests.result == 'success'
       && (
