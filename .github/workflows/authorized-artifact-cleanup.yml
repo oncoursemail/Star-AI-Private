@@ -29,7 +29,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           STAR_CLEANUP_APPROVAL: owner-approved-20261019-duplicate-previews
         run: |
-          import os
+          import os, sys
+          sys.path.insert(0, os.getcwd())
           import verified_cleanup as c
           if (os.environ.get('STAR_CLEANUP_APPROVAL') != c.APPROVAL
               or os.environ.get('GITHUB_REPOSITORY') != c.REPO
