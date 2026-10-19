@@ -83,7 +83,7 @@ def run_handoff(tmp_path, monkeypatch, *, before="1.0.1", after="1.0.2", current
                 payload = {"tag_name": "v" + before, "draft": False, "prerelease": False}
             elif url == private_root + "/actions/workflows/windows-desktop.yml/dispatches":
                 assert request.get_method() == "POST"
-                assert json.loads(request.data) == {"ref": "main"}
+                assert json.loads(request.data) == {"ref": "main", "inputs": {"expected_source_sha": SHA}}
                 payload = None
             else:
                 raise AssertionError("Unexpected workflow request: " + url)
@@ -126,3 +126,12 @@ def test_automatic_handoff_is_opt_in_and_cannot_recurse_from_manual_builds():
     assert "workflow_run.conclusion == 'success'" in text
     assert "STAR_PUBLIC_RELEASE_APP_PRIVATE_KEY" not in text
     assert "contents: write" not in text
+
+
+def test_recipient_binds_both_build_and_publisher_to_expected_source():
+    text = (ROOT / ".github/workflows/windows-desktop.yml").read_text(encoding="utf-8")
+    frontend = text.split("\n  frontend:", 1)[1].split("\n  windows-tests:", 1)[0]
+    publish = text.split("\n  publish-release:", 1)[1]
+    assert "expected_source_sha:" in text.split("\nconcurrency:", 1)[0]
+    assert "if: github.event_name != 'workflow_dispatch' || inputs.expected_source_sha == '' || inputs.expected_source_sha == github.sha" in frontend
+    assert "&& (inputs.expected_source_sha == '' || inputs.expected_source_sha == github.sha)" in publish
