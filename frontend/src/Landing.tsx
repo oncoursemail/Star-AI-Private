@@ -30,7 +30,7 @@ export function Landing(){
  const menuButton=useRef<HTMLButtonElement>(null)
  const [menu,setMenu]=useState(false)
  const [liveRelease,setLiveRelease]=useState<ReleaseInfo|null>(null)
- // The build-time snapshot gives the prerendered page a real release; GitHub's latest-release answer replaces it.
+ // Historical build snapshots are never proof of a public release after the private/public split.
  useEffect(()=>{
   if(staticMode())return
   const controller=new AbortController()
@@ -134,7 +134,7 @@ export function Landing(){
      <SiteMascotFooter/>
      <div>
       <span className="sw-footer-mark"><StarMark size={20}/><strong>STAR</strong></span>
-      <p>An AI that runs on machines you own. Built in the open.</p>
+      <p>An AI that runs on machines you own. Developed privately; official installers are distributed publicly.</p>
       <p className="sw-fine">This site sets no cookies and runs no analytics. Release details come from GitHub's public API.</p>
      </div>
     </div>

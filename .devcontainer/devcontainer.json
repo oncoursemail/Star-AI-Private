@@ -1,0 +1,35 @@
+{
+  "name": "STAR private development",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "remoteUser": "vscode",
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": { "label": "STAR private UI preview", "onAutoForward": "notify" }
+  },
+  "containerEnv": {
+    "STAR_GITHUB_REPO": "oncoursemail/Star-AI-Private",
+    "STAR_GITHUB_BASE_BRANCH": "star/next",
+    "STAR_RELEASE_REPOSITORY": "oncoursemail/Star-AI"
+  },
+  "customizations": {
+    "codespaces": {
+      "repositories": {
+        "oncoursemail/Star-AI": { "permissions": { "contents": "read" } }
+      }
+    },
+    "vscode": {
+      "extensions": ["ms-python.python", "ms-python.vscode-pylance"],
+      "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false
+      }
+    }
+  },
+  "postCreateCommand": "python3 -m venv .venv && printf '\nRead docs/GITHUB_OPERATIONS_AND_CODESPACES.md before installing dependencies or running models. No model, service, release or paid prebuild was started.\n'"
+}

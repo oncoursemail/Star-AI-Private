@@ -1,4 +1,4 @@
-"""Regressions for STAR's canonical public GitHub Releases channel."""
+"""Regressions for the separated private-development / public-release channel."""
 from pathlib import Path
 import json
 
@@ -72,12 +72,17 @@ def test_public_web_version_and_download_location():
     assert 'site.js' in (ROOT/'site/index.html').read_text()
 
 
-def test_release_workflow_has_no_separate_public_mirror_job():
+def test_private_workflow_publishes_only_manual_verified_public_releases():
     job=(ROOT/'.github/workflows/windows-desktop.yml').read_text()
-    assert 'publish-release:' in job and 'needs: [windows-build, attest-release]' in job
+    assert 'publish-release:' in job and 'needs: [windows-build, windows-tests, attest-release]' in job
     assert 'gh release create' in job and 'SHA256SUMS.txt' in job
     assert 'publish-public:' not in job
-    assert 'STAR_PUBLIC_REPO' not in job and 'STAR_PUBLIC_RELEASE_TOKEN' not in job
+    assert 'STAR_PUBLIC_REPO: oncoursemail/Star-AI' in job
+    assert "github.event_name == 'workflow_dispatch'" in job
+    assert 'actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510' in job
+    assert 'permission-contents: write' in job
+    assert 'repositories: Star-AI' in job
+    assert 'STAR_PUBLIC_RELEASE_TOKEN' not in job
     assert 'permissions:\n      contents: read' in job
 
 

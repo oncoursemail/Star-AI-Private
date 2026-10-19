@@ -1,4 +1,4 @@
-name: STAR React Website — Build and Deploy
+name: STAR Private React Website — Build and Preview
 on:
   push:
     branches: [main]
@@ -62,22 +62,5 @@ jobs:
           path: frontend/dist/
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: frontend/dist
-  deploy:
-    needs: build
-    # One-time owner action: Settings → Pages → Source: GitHub Actions.
-    # Set repository variable STAR_DEPLOY_PAGES=false to pause deployment.
-    if: ${{ vars.STAR_DEPLOY_PAGES != 'false' }}
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    steps:
-      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
-        id: deployment
+      # Private source stays private: never publish this bundle through GitHub Pages.
+      # The separate public Star-AI repo owns the static download landing page.

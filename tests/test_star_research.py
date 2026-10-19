@@ -129,9 +129,10 @@ def test_task_rejects_invalid_scope_and_missing_dependencies():
         TaskPlan([Task("a", "ui", "Goal")], max_parallel=0)
 
 
-def test_github_token_restricted_to_one_repo(monkeypatch):
+def test_github_token_restricted_to_one_private_repo(monkeypatch):
     import asyncio
     from star.github_app import GitHubApp
+    from star.repository_roles import SOURCE_REPO, RELEASE_REPO
     from star import github_app as gh
     from datetime import datetime, timezone, timedelta
 
@@ -141,7 +142,8 @@ def test_github_token_restricted_to_one_repo(monkeypatch):
         def json(self):
             return {"token":"short-lived-test-token", "expires_at":(datetime.now(timezone.utc)+timedelta(minutes=59)).isoformat()}
     class FakeClient:
-        def __init__(self, timeout): self.timeout = timeout
+        def __init__(self, *, timeout, trust_env, follow_redirects):
+            recorded["client_settings"] = {"timeout":timeout,"trust_env":trust_env,"follow_redirects":follow_redirects}
         async def __aenter__(self): return self
         async def __aexit__(self,*args): return False
         async def post(self, url, *, headers, json):
@@ -153,10 +155,16 @@ def test_github_token_restricted_to_one_repo(monkeypatch):
     with TemporaryDirectory() as temp:
         key = Path(temp) / "test.pem"
         key.write_text("fixture, never a real secret",encoding="utf8")
-        bot = GitHubApp("123", "456", key, "owner/star-core")
+        bot = GitHubApp("123", "456", key, SOURCE_REPO)
         assert asyncio.run(bot._install_token()) == "short-lived-test-token"
-        assert recorded["json"] == {"repositories":["star-core"],
+        assert recorded["json"] == {"repositories":["Star-AI-Private"],
                                      "permissions":{"contents":"write","pull_requests":"write"}}
+        assert recorded["client_settings"] == {"timeout":30,"trust_env":False,"follow_redirects":False}
+        recorded.clear()
+        public = GitHubApp("123", "456", key, RELEASE_REPO)
+        with pytest.raises(PermissionError):
+            asyncio.run(public._install_token())
+        assert recorded == {}  # No private developer token is minted for public distribution.
 
 
 def test_selfbuilder_protects_security_and_research_documents():

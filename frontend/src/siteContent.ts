@@ -39,17 +39,19 @@ export const LINKS={
 } as const
 
 /**
- * The newest release known to be published when this source was written (v1.0.0, published October 14, 2026).
- * The build-time snapshot is refreshed by the website deployment, but if that refresh fails the committed copy can be
- * days old; a snapshot older than this floor is stale and is never named on the page. Raise it with every release.
+ * v1.0.0 was the last historically published release in the source repository,
+ * which was renamed to Star-AI-Private. It is NOT available anonymously from the
+ * new public Star-AI repository. A committed progress snapshot is historical,
+ * not proof that a public installer exists.
  */
 export const PUBLISHED_FLOOR='1.0.0'
 
-/** The release the page may name: GitHub's live answer, else the build snapshot if it is not older than the floor. */
-export function currentRelease(live:ReleaseInfo|null,snapshot:ReleaseInfo|null):ReleaseInfo|null{
- if(live)return live
- if(snapshot&&compareVersions(snapshot.tag,PUBLISHED_FLOOR)>=0)return snapshot
- return null
+/** Show only current releases verified by the live PUBLIC GitHub Releases API.
+ * The prior snapshot is deliberately ignored after the private/public split.
+ * Failing closed prevents offering inaccessible historic private binaries.
+ */
+export function currentRelease(live:ReleaseInfo|null,_snapshot:ReleaseInfo|null):ReleaseInfo|null{
+ return live&&compareVersions(live.tag,PUBLISHED_FLOOR)>=0?live:null
 }
 
 /** Only label capabilities as shipped when a stable published release confirms them. */
@@ -163,7 +165,7 @@ export const limits=[
  {title:'The installer is not code-signed.',body:'Windows may show a publisher warning. Compare the SHA-256 checksum before you run it.'},
  {title:'It makes mistakes.',body:'The 4B model on a PC is not a frontier model, and neither are the server models. Check anything that matters.'},
  {title:'Roblox work needs your review.',body:'STAR helps inside your test place. It does not ship a finished game, and what it writes needs playtesting.'},
- {title:'Windows only, no licence file yet.',body:'The source is public to read; an open-source licence has not been published.',link:{href:LINKS.security,label:'Security and autonomy notes'}},
+ {title:'Windows only, private development source.',body:'The application source is now private. No licence file has been published for the historical public sources.',link:{href:LINKS.releases,label:'Public release status'}},
 ] as const
 
 export const requirements=[

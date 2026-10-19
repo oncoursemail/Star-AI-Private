@@ -45,11 +45,16 @@ python -m pytest -q
 
 Do not force-push, bypass main protection, auto-merge, alter the GitHub App's own permissions, or publish the Roblox experience.
 
-## Public source and release safety
+## Private development and public distribution safety
 
-- The owner has chosen to keep `oncoursemail/Star-AI` **PUBLIC**. Do not change its visibility. Do not commit credentials, private keys, SQLite chats, memory, local project files, reference media, `.env` files, or model weights.
-- The working public distribution channel is GitHub Releases on this repository. A build artifact is not a public release; verify anonymous access to the published Setup, ZIP and checksum before claiming availability.
-- The obsolete separate `Star-Intelligence-Downloads` mirror/publisher is retired. Use only `oncoursemail/Star-AI` Releases and its built-in GitHub Actions publisher; never reintroduce a cross-repo publishing token without explicit owner review.
-- Compiled releases should include the Windows Setup, portable ZIP, and SHA-256 hashes only. Never publish unreviewed model-generated source, secrets, user data, or internal prompts as release attachments.
-- Scope each publishing credential to its workflow job and purpose. If the repository lacks GitHub Pages settings or release permissions, report the blocked operation accurately instead of silently claiming success.
+- **This repository is PRIVATE** (`oncoursemail/Star-AI-Private`). Owner and explicitly authorized development agents may read it. No agent may grant itself permissions, alter visibility, leak private source, export private lessons/user chats, or silently merge or release unreviewed code.
+- The separate `oncoursemail/Star-AI` repository is **PUBLIC** and for official downloads, update metadata, the public landing page, release notes and support only. Do not mirror the private source, PR artifacts, coverage reports, unreviewed website app bundles, training corpora, model weights or workspace databases into it.
+- The updater's `star.version.REPO` must remain `oncoursemail/Star-AI`. A missing public stable release means there is no auto-update; do not fall back to private Releases, GitHub CLI, unofficial mirrors or credentials.
+- The private `.github/workflows/windows-desktop.yml` performs Windows build/tests. Publication must be initiated manually on private `main`, require the exact source tip, matching package SHA-256 sums, successful Windows jobs, and optional private attestation verification where supported.
+- GitHub Apps in Actions must use a **job-scoped installation token restricted to the public Star-AI repository and Contents: write**, never personal broad-scope PATs. The source workflow uses its ordinary read token to verify private provenance and only the publisher job can mint a public-release token. Configure `star-public-release` environment review when supported.
+- The public repo stores only `STAR-Setup-vX.Y.Z.exe`, `STAR-Genesis-Windows-x64.zip`, `SHA256SUMS.txt` and safe release notes per version. No source checkout, screenshots of user data, secrets or arbitrary workspace files are release assets.
+- Do not reuse a previously published private or public version tag for different binaries. Bump `star/version.py` and corresponding installer/site metadata after independent tests and deliberate review; never force-push a release tag. A checksum does not mean the installer is signed.
+- The private React site workflow may build internal preview artifacts; it **must not deploy Pages** from private source. Host the static distribution website from the separate public repository.
+- Owner setup, current migration status and exact verification steps: [Private/Public release migration](docs/PRIVATE_PUBLIC_RELEASE_MIGRATION.md).
+- Private repository GitHub artifact attestations may require an Enterprise Cloud plan. Optional attestation mode must be explicit and cannot silently downgrade a requested attestation. Without it, disclose the limitation and keep testing, checksums, release approval and post-release download validation mandatory.
 - Analytics must display real local observations or honest zero states; do not fabricate metrics or user activity.

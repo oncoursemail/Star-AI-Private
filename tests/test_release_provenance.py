@@ -23,7 +23,11 @@ def test_pr_windows_build_never_receives_publish_or_attestation_tokens():
     assert "id-token: write" not in permissions
     assert "attestations: write" not in permissions
     assert "attestations: write" in attest
-    assert "contents: write" in publish
+    assert "contents: read" in publish
+    assert "permission-contents: write" in publish
+    assert "repositories: Star-AI" in publish
+    assert "STAR_PUBLIC_RELEASE_APP_PRIVATE_KEY" in publish
+    assert "STAR_PUBLIC_REPO: oncoursemail/Star-AI" in publish
 
 
 def test_attestation_is_main_only_and_producer_is_trusted():
@@ -35,8 +39,12 @@ def test_attestation_is_main_only_and_producer_is_trusted():
     assert "name: STAR-Windows-vNext" in attest
     assert re.search(r"actions/attest@[0-9a-f]{40} # v4\.", attest)  # pinned commit
     assert "subject-path: 'attest-ready/*'" in attest
-    assert "needs: [windows-build, attest-release]" in publish
-    assert "if: github.ref == 'refs/heads/main'" in publish
+    assert "needs: [windows-build, windows-tests, attest-release]" in publish
+    assert "github.event_name == 'workflow_dispatch'" in publish
+    assert "needs.windows-tests.result == 'success'" in publish
+    assert "github.ref == 'refs/heads/main'" in publish
+    assert "needs.windows-build.result == 'success'" in publish
+    assert "needs.attest-release.result == 'skipped'" in publish
 
 
 def test_both_artifacts_require_exact_source_and_signer_before_publish():
@@ -47,8 +55,11 @@ def test_both_artifacts_require_exact_source_and_signer_before_publish():
     assert '"release-ready/STAR-Setup-$TAG.exe"' in publish
     assert '"release-ready/STAR-Genesis-Windows-x64.zip"' in publish
     assert '--repo "$STAR_REPO"' in publish
+    assert '--repo "$STAR_PUBLIC_REPO"' in publish
     assert '--signer-workflow "$STAR_REPO/.github/workflows/windows-desktop.yml"' in publish
     assert '--source-digest "$STAR_COMMIT"' in publish
     assert '--source-ref "refs/heads/main"' in publish
     assert "attestations: read" in publish
+    assert 'sha256sum -c "../$PREVIEW"' in publish
+    assert 'PUBLIC_MAIN_SHA="$(gh api "repos/$STAR_PUBLIC_REPO/commits/main" --jq .sha)"' in publish
     assert "gh release view " in publish  # existing tags remain immutable by policy

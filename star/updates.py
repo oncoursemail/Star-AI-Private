@@ -1,6 +1,6 @@
-"""STAR installer updates from the single official public GitHub Releases channel.
+"""STAR installer updates from the official public distribution repository.
 
-Only the unauthenticated STAR source repository Release API is trusted.
+Only the unauthenticated STAR public distribution repository Release API is trusted.
 A missing/inaccessible Release offers the browser fallback, never GitHub CLI.
 Automatic installation requires the exact official Setup URL, size and SHA-256
 verification from the same public GitHub API response.

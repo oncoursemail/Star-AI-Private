@@ -1,0 +1,122 @@
+name: STAR attributable activity
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/star-activity.yml']
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: star-activity-${{ github.event.pull_request.number || 'setup' }}
+  cancel-in-progress: false
+jobs:
+  metadata:
+    if: github.repository == 'oncoursemail/Star-AI-Private'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      # No checkout, PR execution, shell interpolation of PR text or release credentials.
+      - name: Record platform-authenticated attribution and actual proposal state
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAR_DEVELOPER_BOT_ID: ${{ vars.STAR_DEVELOPER_BOT_ID }}
+          STAR_DEVELOPER_APP_ID: ${{ vars.STAR_DEVELOPER_APP_ID }}
+        run: |
+          import json, os, re, urllib.error, urllib.parse, urllib.request
+          ROOT = 'https://api.github.com/repos/oncoursemail/Star-AI-Private'
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect())
+          def api(path='', method='GET', body=None):
+              data = json.dumps(body).encode() if body is not None else None
+              request = urllib.request.Request(ROOT + path, data=data, method=method,
+                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                      'Accept':'application/vnd.github+json','Content-Type':'application/json',
+                      'X-GitHub-Api-Version':'2022-11-28','User-Agent':'STAR-activity-ledger'})
+              with opener.open(request, timeout=20) as response:
+                  raw=response.read(2000001)
+                  if len(raw)>2000000:
+                      raise RuntimeError('GitHub metadata limit exceeded')
+                  return json.loads(raw) if raw else None
+          repo = api()
+          if repo['id'] != 1412474221 or repo['private'] is not True:
+              raise RuntimeError('Private source identity or visibility mismatch')
+          labels = {
+              'actor:star-ai': ('5319e7','Matches configured GitHub App, bot user and runtime receipt. Not a quality or human-review claim.'),
+              'actor:chatgpt': ('0e8a16','Owner-directed ChatGPT-assisted contribution; not autonomous Star AI.'),
+              'actor:claude': ('a05a2c','Owner-declared Claude-assisted contribution; not autonomous Star AI.'),
+              'actor:unverified': ('b60205','Claimed runtime identity could not be verified against GitHub App metadata.'),
+              'stage:proposal': ('ededed','Draft proposal; not tested, merged or shipped by implication.'),
+              'stage:review': ('fbca04','Ready for review. Review readiness does not imply passing tests.'),
+              'stage:merged': ('0e8a16','GitHub reports a merge. This is not public release status.'),
+              'area:release': ('0052cc','Private build to public release delivery.'),
+              'area:ci': ('0052cc','Continuous integration and test infrastructure.'),
+              'area:developer-tools': ('1d76db','Local/Codespaces development setup.'),
+              'blocked:authorization': ('d93f0b','Waiting for narrowly scoped owner-authorized credentials.')
+          }
+          for name, (color, description) in labels.items():
+              path='/labels/'+urllib.parse.quote(name,safe='')
+              try:
+                  api(path)
+              except urllib.error.HTTPError as exc:
+                  if exc.code!=404:
+                      raise RuntimeError('Label lookup failed; HTTP '+str(exc.code)) from None
+                  api('/labels','POST',{'name':name,'color':color,'description':description})
+          known=[]
+          for page in range(1,6):
+              batch=api('/milestones?state=all&per_page=100&page='+str(page))
+              known.extend(batch)
+              if len(batch)<100:
+                  break
+          else:
+              raise RuntimeError('Cannot safely deduplicate an oversized milestone list')
+          titles=['v1.0.1 — Public update delivery','v1.1.0 — Verified AI activity']
+          milestones={}
+          for title in titles:
+              found=next((item for item in known if item['title']==title),None)
+              if found is None:
+                  found=api('/milestones','POST',{'title':title,'state':'open',
+                      'description':'Planned and independently gated work. A milestone is not a release or intelligence-gain claim.'})
+              milestones[title]=found['number']
+          with open(os.environ['GITHUB_EVENT_PATH'],encoding='utf-8') as handle:
+              event=json.load(handle)
+          numbers=[]
+          if os.environ['GITHUB_EVENT_NAME']=='pull_request_target':
+              number=event.get('number')
+              if type(number) is not int or number<1:
+                  raise RuntimeError('Invalid event PR number')
+              numbers=[number]
+          elif os.environ['GITHUB_EVENT_NAME'] in ('push','workflow_dispatch'):
+              numbers=[489,490]  # Known owner-directed migration work; not the unrelated backlog.
+          for number in numbers:
+              pr=api('/pulls/'+str(number))
+              issue=api('/issues/'+str(number))
+              names={x['name'] for x in issue.get('labels',[])}
+              actor=(pr.get('user') or {})
+              app=(issue.get('performed_via_github_app') or {})
+              bot_id=os.environ.get('STAR_DEVELOPER_BOT_ID','')
+              app_id=os.environ.get('STAR_DEVELOPER_APP_ID','')
+              receipt=re.search(r'<!-- star-ai-run:([0-9a-f]{32}) -->',pr.get('body') or '')
+              verified=(bot_id.isdigit() and app_id.isdigit() and actor.get('type')=='Bot'
+                        and actor.get('id')==int(bot_id) and app.get('id')==int(app_id) and receipt is not None)
+              if 'actor:star-ai' in names and not verified:
+                  api('/issues/'+str(number)+'/labels/'+urllib.parse.quote('actor:star-ai',safe=''),'DELETE')
+                  api('/issues/'+str(number)+'/labels','POST',{'labels':['actor:unverified']})
+              if verified:
+                  api('/issues/'+str(number)+'/labels','POST',{'labels':['actor:star-ai']})
+              stage='stage:merged' if pr.get('merged') else ('stage:proposal' if pr.get('draft') else 'stage:review')
+              if pr.get('state')=='closed' and not pr.get('merged'):
+                  continue
+              for previous in names & {'stage:proposal','stage:review','stage:merged'} - {stage}:
+                  api('/issues/'+str(number)+'/labels/'+urllib.parse.quote(previous,safe=''),'DELETE')
+              api('/issues/'+str(number)+'/labels','POST',{'labels':[stage]})
+              target=titles[0] if number in (489,490) else (titles[1] if verified else None)
+              if target and issue.get('milestone') is None:
+                  api('/issues/'+str(number),'PATCH',{'milestone':milestones[target]})
+              print('PR',number,'stage',stage,'authenticated_star_app',bool(verified))
+          print('Metadata only: no source, test result, permissions, merge or release was changed.')
