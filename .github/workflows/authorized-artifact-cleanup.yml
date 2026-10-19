@@ -5,7 +5,7 @@ on:
     paths: ['.github/workflows/authorized-artifact-cleanup.yml']
 permissions:
   contents: read
-  actions: read
+  actions: write
   pull-requests: read
 concurrency:
   group: star-owner-approved-artifact-cleanup
@@ -22,7 +22,8 @@ jobs:
       - name: Test corruption and preservation boundaries without credentials
         working-directory: scripts/operations
         run: python3 -m unittest -v test_verified_cleanup
-      - name: Read-only candidate planning; no deletion in this first pass
+      - name: Verify and remove at most two redundant combined preview copies
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/operations/verified_cleanup.py
+          STAR_CLEANUP_APPROVAL: owner-approved-20261019-duplicate-previews
+        run: python3 scripts/operations/verified_cleanup.py --apply --limit 2
