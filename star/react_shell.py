@@ -285,6 +285,15 @@ _TOOL_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,47}')
 # A model id as a server or provider names it ("star-voice", "openai/gpt-oss-20b"). Shown as
 # plain text in the status popover and the activity record; anything else is not forwarded.
 _MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/+-]{0,79}')
+_REPAIR_CHECKS = {
+    'python.compile': 'Python syntax check',
+    'json.loads': 'JSON syntax check',
+    'tomllib.loads': 'TOML syntax check',
+    'luau.lint': 'Luau advisory check',
+    'tool.result': 'Tool result check',
+    'none': 'Repair check',
+}
+_REPAIR_KINDS = frozenset({'syntax', 'advisory', 'tool_error', 'unknown_outcome', 'budget'})
 
 
 def _model_name(value):
@@ -424,6 +433,41 @@ def sanitize_event(event: dict) -> dict:
         return {'phase':'Reading the official documentation' if kind == 'knowledge_started'
                 else 'Documentation ready' if activity['state'] == 'done' else 'Documentation unavailable',
                 'activity':activity}
+    if kind in {'repair_detected', 'repair_check_passed', 'repair_blocked'}:
+        # Adapter-owned facts only. Diagnostics, file paths, model text and opaque
+        # output never cross into the page, even when an event carries extra fields.
+        checker = event.get('checker')
+        checker = checker if isinstance(checker, str) and checker in _REPAIR_CHECKS else 'none'
+        repair_kind = event.get('kind')
+        repair_kind = (repair_kind if isinstance(repair_kind, str) and repair_kind in _REPAIR_KINDS
+                       else 'unknown_outcome')
+        result = {'repair_detected': 'detected', 'repair_check_passed': 'check_passed',
+                  'repair_blocked': 'blocked'}[kind]
+        # An unknown checker or outcome cannot be promoted into a passed check.
+        if result == 'check_passed' and (checker == 'none' or repair_kind in {'unknown_outcome', 'budget'}):
+            result = 'blocked'
+        advisory = result == 'detected' and repair_kind == 'advisory' and checker == 'luau.lint'
+        state = 'done' if result == 'check_passed' or advisory else 'failed' if result == 'detected' else 'blocked'
+        repair_activity: dict = {'type': 'repair', 'result': result, 'state': state,
+                                 'checker': checker, 'kind': repair_kind}
+        for key, top in (('count', 100), ('attempt', 2)):
+            count = _bounded_int(event.get(key), top)
+            if count is not None:
+                repair_activity[key] = count
+        if result == 'check_passed':
+            phase = ('Tool call returned successfully' if checker == 'tool.result'
+                     else _REPAIR_CHECKS[checker] + ' passed')
+        elif result == 'blocked':
+            phase = ('Focused repair limit reached' if repair_kind == 'budget' and repair_activity.get('attempt') == 2
+                     else 'Work paused for a repair' if repair_kind == 'budget'
+                     else 'Tool outcome needs inspection' if repair_kind == 'unknown_outcome'
+                     else 'Automatic repair paused')
+        else:
+            phase = ('Luau advisory check reported possible issues' if advisory
+                     else 'A tool reported a problem' if repair_kind == 'tool_error'
+                     else 'A tool outcome is unconfirmed' if repair_kind == 'unknown_outcome'
+                     else _REPAIR_CHECKS[checker] + ' reported a problem')
+        return {'phase': phase, 'activity': repair_activity}
     if kind in {'luau_check_started','luau_repair_started','luau_check_finished'}:
         state=str(event.get('state',''))
         result=state if state in {'passed','failed','repaired','unavailable'} else ''

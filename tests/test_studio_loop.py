@@ -355,7 +355,12 @@ def test_a_model_runs_the_whole_loop_in_a_blank_place_and_the_answer_lists_the_c
     assert "Workspace.Door" in fake.instances and fake.playing is False and fake.console == ["door ready"]
     assert [event["tool"] for event in events if event["event"] == "tool_rejected"] == ["insert_asset"]
     assert "insert_asset" not in fake.names()
-    assert answer.startswith("The door is built and the playtest printed 'door ready'.\n\nStudio changes in this turn (2):")
+    assert answer.startswith(
+        "The door is built and the playtest printed 'door ready'.\n\n**Recorded verification status:** "
+        "1 requested action(s) were rejected before execution. "
+        "Those requests did not run; a later separately authorized request has its own result."
+        "\n\nStudio changes in this turn (2):"
+    )
     assert "- created script ServerScriptService.Door" in answer and "Part Workspace.Door" in answer and "Undo:" in answer
     assert run(studio.undo())["left"] == [] and fake.scripts == {} and "Workspace.Door" not in fake.instances
 
