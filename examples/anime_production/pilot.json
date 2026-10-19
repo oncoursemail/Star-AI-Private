@@ -1,0 +1,532 @@
+{
+  "schema_version": 1,
+  "kind": "anime_development_plan",
+  "status": "proposal_unproduced",
+  "working_title": "Afterlight Couriers",
+  "scene_title": "Tomorrow's Return Address",
+  "timebase": {
+    "fps_numerator": 24,
+    "fps_denominator": 1,
+    "frame_range_convention": "half_open"
+  },
+  "total_frames": 2160,
+  "target_master_audio_sample_rate": 48000,
+  "cast": [
+    {
+      "character_id": "miko",
+      "age_years": 20,
+      "voice_asset_id": null,
+      "design_asset_id": null
+    },
+    {
+      "character_id": "ren",
+      "age_years": 22,
+      "voice_asset_id": null,
+      "design_asset_id": null
+    },
+    {
+      "character_id": "omi",
+      "age_years": null,
+      "fictional_adult": true,
+      "visible": false,
+      "voice_asset_id": null,
+      "design_asset_id": null
+    }
+  ],
+  "layout_assumptions": {
+    "gap_metres": 2.2,
+    "unfolded_strap_metres": 5.0,
+    "miko_start_roof": "left",
+    "ren_start_roof": "right",
+    "destination": "stairwell_behind_ren",
+    "miko_tether_wrist": "left",
+    "miko_parcel_arm": "right",
+    "ren_tether_control_hand": "left",
+    "ren_helping_hand": "right",
+    "ren_tether_attachment": "fixed_anchor_ring_on_right_roof",
+    "private_message_listener": "miko",
+    "private_message_device": "miko_right_ear_receiver",
+    "validated_in_layout": false
+  },
+  "shots": [
+    {
+      "cut_id": "c01",
+      "start_frame": 0,
+      "end_frame_exclusive": 144,
+      "category": "layout",
+      "intent": "Establish Miko left, Ren right, shelter behind Ren; introduce receiver.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c02",
+      "start_frame": 144,
+      "end_frame_exclusive": 336,
+      "category": "dialogue",
+      "intent": "Dry exchange across the gap; Ren listens and measures the distance.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c03",
+      "start_frame": 336,
+      "end_frame_exclusive": 480,
+      "category": "prop",
+      "intent": "Scanner shows RETURN TO SENDER: TOMORROW; Miko notices; Omi warns.",
+      "visible_cast": [
+        "miko"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c04",
+      "start_frame": 480,
+      "end_frame_exclusive": 624,
+      "category": "contact",
+      "intent": "Miko loops cargo strap on left wrist and throws other end to Ren.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c05",
+      "start_frame": 624,
+      "end_frame_exclusive": 744,
+      "category": "contact",
+      "intent": "Ren clips far end to anchor ring; left hand controls strap; right hand free.",
+      "visible_cast": [
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c06",
+      "start_frame": 744,
+      "end_frame_exclusive": 840,
+      "category": "hero_action",
+      "intent": "Clear anticipation and brief launch left-to-right; fixed action geography.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c07",
+      "start_frame": 840,
+      "end_frame_exclusive": 984,
+      "category": "hero_action",
+      "intent": "Brief crossing then foot slip and ledge struggle; tether takes weight.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c08",
+      "start_frame": 984,
+      "end_frame_exclusive": 1104,
+      "category": "hero_action",
+      "intent": "Ren helps with right hand on Miko left forearm; Miko plants foot and recovers.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c09",
+      "start_frame": 1104,
+      "end_frame_exclusive": 1320,
+      "category": "dialogue",
+      "intent": "Relief, breaths and joke; same parcel and tether.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c10",
+      "start_frame": 1320,
+      "end_frame_exclusive": 1536,
+      "category": "emotional",
+      "intent": "Parcel activates Miko private receiver; future Ren recording only she hears.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c11",
+      "start_frame": 1536,
+      "end_frame_exclusive": 1872,
+      "category": "emotional",
+      "intent": "Ren sees her reaction and asks; Miko conceals message; quiet discomfort.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    },
+    {
+      "cut_id": "c12",
+      "start_frame": 1872,
+      "end_frame_exclusive": 2160,
+      "category": "layout",
+      "intent": "Both walk toward shelter; Miko holds worry; title on final three seconds.",
+      "visible_cast": [
+        "miko",
+        "ren"
+      ],
+      "asset_package_version": null,
+      "key_drawings": [],
+      "exposure_plan": null,
+      "selected_media_id": null,
+      "review_status": "not_produced"
+    }
+  ],
+  "dialogue_cues": [
+    {
+      "cue_id": "d01",
+      "cut_id": "c02",
+      "character_id": "ren",
+      "target_start_frame": 156,
+      "target_end_frame_exclusive": 216,
+      "text": "Tell me that's our platform.",
+      "direction": "Ask for reassurance without hiding the practical concern.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "miko"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d02",
+      "cut_id": "c02",
+      "character_id": "miko",
+      "target_start_frame": 222,
+      "target_end_frame_exclusive": 258,
+      "text": "It's a platform.",
+      "direction": "Answer only the easy part, dry and quick.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "ren"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d03",
+      "cut_id": "c02",
+      "character_id": "ren",
+      "target_start_frame": 264,
+      "target_end_frame_exclusive": 324,
+      "text": "That's not what I asked.",
+      "direction": "Read the dodge and leave room for a small beat.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "miko"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d04",
+      "cut_id": "c03",
+      "character_id": "omi",
+      "target_start_frame": 354,
+      "target_end_frame_exclusive": 438,
+      "text": "Storm shutters closing. Find cover.",
+      "direction": "Dispatch concisely, with controlled urgency.",
+      "delivery_route": "shared_radio",
+      "in_world_listeners": [
+        "miko",
+        "ren"
+      ],
+      "mouth_visible": false,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d05",
+      "cut_id": "c04",
+      "character_id": "miko",
+      "target_start_frame": 492,
+      "target_end_frame_exclusive": 540,
+      "text": "That's the plan.",
+      "direction": "Conceal concern about the parcel and commit to the crossing.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "ren"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d06",
+      "cut_id": "c08",
+      "character_id": "ren",
+      "target_start_frame": 1020,
+      "target_end_frame_exclusive": 1056,
+      "text": "Got you.",
+      "direction": "Speak through the pull with physical effort.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "miko"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d07",
+      "cut_id": "c09",
+      "character_id": "ren",
+      "target_start_frame": 1122,
+      "target_end_frame_exclusive": 1194,
+      "text": "You said that strap was useless.",
+      "direction": "Recover breathing; relief allows a dry challenge.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "miko"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d08",
+      "cut_id": "c09",
+      "character_id": "miko",
+      "target_start_frame": 1218,
+      "target_end_frame_exclusive": 1284,
+      "text": "Only for carrying things.",
+      "direction": "Keep it light, still winded, no announcer cadence.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "ren"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d09",
+      "cut_id": "c10",
+      "character_id": "ren",
+      "target_start_frame": 1368,
+      "target_end_frame_exclusive": 1476,
+      "text": "Miko... don't let me go tomorrow.",
+      "direction": "Frightened future recording; make the request personal, not declamatory.",
+      "delivery_route": "private_receiver_audience_audible",
+      "in_world_listeners": [
+        "miko"
+      ],
+      "mouth_visible": false,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d10",
+      "cut_id": "c11",
+      "character_id": "ren",
+      "target_start_frame": 1596,
+      "target_end_frame_exclusive": 1644,
+      "text": "What did it say?",
+      "direction": "Notice Miko changing expression, without having heard the message.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "miko"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d11",
+      "cut_id": "c11",
+      "character_id": "miko",
+      "target_start_frame": 1680,
+      "target_end_frame_exclusive": 1716,
+      "text": "Wrong address.",
+      "direction": "Hide the message; attempt casualness and let the effort show.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "ren"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d12",
+      "cut_id": "c11",
+      "character_id": "ren",
+      "target_start_frame": 1752,
+      "target_end_frame_exclusive": 1812,
+      "text": "You're a terrible courier.",
+      "direction": "Gentle teasing, trusting her answer.",
+      "delivery_route": "in_scene",
+      "in_world_listeners": [
+        "miko"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d13",
+      "cut_id": "c12",
+      "character_id": "omi",
+      "target_start_frame": 1896,
+      "target_end_frame_exclusive": 1956,
+      "text": "You two still there?",
+      "direction": "Check the team over the shared radio.",
+      "delivery_route": "shared_radio",
+      "in_world_listeners": [
+        "miko",
+        "ren"
+      ],
+      "mouth_visible": false,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    },
+    {
+      "cue_id": "d14",
+      "cut_id": "c12",
+      "character_id": "miko",
+      "target_start_frame": 1980,
+      "target_end_frame_exclusive": 2040,
+      "text": "Yeah. Both of us.",
+      "direction": "Answer Omi while privately resolving to keep Ren safe.",
+      "delivery_route": "in_scene_and_radio",
+      "in_world_listeners": [
+        "ren",
+        "omi"
+      ],
+      "mouth_visible": true,
+      "selected_take_id": null,
+      "actual_duration_seconds": null,
+      "actual_sample_rate": null,
+      "audio_sha256": null,
+      "alignment_id": null,
+      "review_status": "not_recorded"
+    }
+  ],
+  "generated_media": [],
+  "approved_assets": [],
+  "observed_metrics": null,
+  "runtime_integration_implemented": false
+}
