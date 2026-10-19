@@ -62,6 +62,7 @@ from . import gpu_helper
 from .chat_media import prepare_turn
 from .roblox_cloud import (ROBLOX_ACTIONS, ROBLOX_NETWORK_ACTIONS, RobloxCloud,
                            handle_action as handle_roblox_action)
+from .research_activity import sanitize_research_event
 
 ALLOWED_ACTIONS = frozenset({
     'bootstrap','brainSnapshot','plannerStatus','switchProject','pickFiles','sendMessage','saveSettings',
@@ -134,7 +135,7 @@ PERMITTED_SETTINGS = frozenset({
     'server_endpoint','server_timeout','server_parallel','server_context_tokens','allow_cgnat',
     'instant_route_enabled','web_auto_search',
     'knowledge_endpoint','luau_run_before_answer',
-    'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'presolve_enabled',
+    'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','deep_research_enabled','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'presolve_enabled',
     'media_images','media_voice','media_video','media_chat_auto','session_capabilities_prompt','media_use_references','comfy_home','ffmpeg_dir',
     'picture_max_side',
     'best_of_n','best_of_n_max',
@@ -309,6 +310,9 @@ def sanitize_event(event: dict) -> dict:
     are never included.
     """
     kind = str(event.get('event', 'working'))[:36]
+    research_activity = sanitize_research_event(event)
+    if research_activity is not None:
+        return research_activity
     if kind == 'team_planned':
         steps = []
         tasks = event.get('tasks')

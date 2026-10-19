@@ -1,0 +1,346 @@
+{
+  "context": "Controlled synthetic event replay of actual Star AI UI components; not live model, research-quality, or deployment results.",
+  "date": "2026-10-19",
+  "browser": "Chromium1194; Playwright1.56.1",
+  "results": [
+    {
+      "name": "desktop-running",
+      "a11y": {
+        "violations": [],
+        "incomplete": []
+      },
+      "layout": {
+        "viewport": 1440,
+        "documentWidth": 1440,
+        "timeline": {
+          "x": 336,
+          "width": 768,
+          "height": 428.1875
+        },
+        "overflow": [],
+        "undersizedControls": [],
+        "controls": [
+          {
+            "label": "Deep research9 found \u00b7 4 read",
+            "width": 652.109375,
+            "height": 40,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Stop",
+            "width": 68.5625,
+            "height": 28,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Status messages and accessible progress updateswww.w3.org (opens in a new tab)",
+            "width": 368,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Disclosure patterns: buttons, keyboard controls & expansionwww.w3.org (opens in a new tab)",
+            "width": 368,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Lucide for React \u2014 consistent SVG iconslucide.dev (opens in a new tab)",
+            "width": 368,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Unavailable page \u2014 controlled failure sampleunavailable.example (opens in a new tab)",
+            "width": 368,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Show all 6 sources",
+            "width": 148.59375,
+            "height": 32,
+            "focusOutline": "none"
+          }
+        ],
+        "reducedMotion": "true",
+        "activeAnimations": 0,
+        "liveRegions": [
+          {
+            "text": "Reading source pages",
+            "live": "polite"
+          }
+        ],
+        "timer": {
+          "role": "timer",
+          "live": "off"
+        },
+        "cards": 4
+      }
+    },
+    {
+      "name": "keyboard-and-stop",
+      "statusWhenCollapsed": "Reading source pages",
+      "expanded": "true",
+      "focus": {
+        "active": true,
+        "outline": "solid",
+        "width": "2px"
+      },
+      "stopAcknowledged": "Research run stopped"
+    },
+    {
+      "name": "desktop-complete",
+      "a11y": {
+        "violations": [],
+        "incomplete": []
+      },
+      "layout": {
+        "viewport": 1440,
+        "documentWidth": 1440,
+        "timeline": {
+          "x": 336,
+          "width": 768,
+          "height": 619.515625
+        },
+        "overflow": [],
+        "undersizedControls": [],
+        "controls": [
+          {
+            "label": "Worked for 23s9 found \u00b7 5 read",
+            "width": 760,
+            "height": 40,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Status messages and accessible progress updateswww.w3.org (opens in a new tab)",
+            "width": 368,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Disclosure patterns: buttons, keyboard controls & expansionwww.w3.org (opens in a new tab)",
+            "width": 368,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Lucide for React \u2014 consistent SVG iconslucide.dev (opens in a new tab)",
+            "width": 368,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Unavailable page \u2014 controlled failure sampleunavailable.example (opens in a new tab)",
+            "width": 368,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Using server-sent eventsdeveloper.mozilla.org (opens in a new tab)",
+            "width": 368,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Respecting reduced motion preferenceswww.w3.org (opens in a new tab)",
+            "width": 368,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Show fewer sources",
+            "width": 156.859375,
+            "height": 32,
+            "focusOutline": "none"
+          }
+        ],
+        "reducedMotion": "true",
+        "activeAnimations": 0,
+        "liveRegions": [
+          {
+            "text": "Research answer finished",
+            "live": "polite"
+          }
+        ],
+        "timer": {},
+        "cards": 6
+      }
+    },
+    {
+      "name": "narrow-running",
+      "a11y": {
+        "violations": [],
+        "incomplete": []
+      },
+      "layout": {
+        "viewport": 390,
+        "documentWidth": 390,
+        "timeline": {
+          "x": 16,
+          "width": 358,
+          "height": 893.1875
+        },
+        "overflow": [],
+        "undersizedControls": [],
+        "controls": [
+          {
+            "label": "Deep research9 found \u00b7 4 read",
+            "width": 242.109375,
+            "height": 40,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Stop",
+            "width": 68.5625,
+            "height": 28,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Status messages and accessible progress updateswww.w3.org (opens in a new tab)",
+            "width": 334,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Disclosure patterns: buttons, keyboard controls & expansionwww.w3.org (opens in a new tab)",
+            "width": 334,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Lucide for React \u2014 consistent SVG iconslucide.dev (opens in a new tab)",
+            "width": 334,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Unavailable page \u2014 controlled failure sampleunavailable.example (opens in a new tab)",
+            "width": 334,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Using server-sent eventsdeveloper.mozilla.org (opens in a new tab)",
+            "width": 334,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Respecting reduced motion preferenceswww.w3.org (opens in a new tab)",
+            "width": 334,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Show fewer sources",
+            "width": 156.859375,
+            "height": 40,
+            "focusOutline": "none"
+          }
+        ],
+        "reducedMotion": "true",
+        "activeAnimations": 0,
+        "liveRegions": [
+          {
+            "text": "Reading source pages",
+            "live": "polite"
+          }
+        ],
+        "timer": {
+          "role": "timer",
+          "live": "off"
+        },
+        "cards": 6
+      }
+    },
+    {
+      "name": "narrow-long-titles",
+      "a11y": {
+        "violations": [],
+        "incomplete": []
+      },
+      "layout": {
+        "viewport": 320,
+        "documentWidth": 320,
+        "timeline": {
+          "x": 16,
+          "width": 288,
+          "height": 968.78125
+        },
+        "overflow": [],
+        "undersizedControls": [],
+        "controls": [
+          {
+            "label": "Deep research9 found \u00b7 4 read",
+            "width": 172.109375,
+            "height": 40.59375,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Stop",
+            "width": 68.5625,
+            "height": 28,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Status messages and accessible progress updateswww.w3.org (opens in a new tab)",
+            "width": 264,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Long-title layout check \u2014 documentation on structured research: observations, retrieved evidence, accessibility and source provenance across multiple parallel requests with Unicode \u65e5\u672c\u8a9e \u0627\u0644\u0639\u0631\u0628\u064a\u0629www.w3.org (opens in a new tab)",
+            "width": 264,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Lucide for React \u2014 consistent SVG iconslucide.dev (opens in a new tab)",
+            "width": 264,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Unavailable page \u2014 controlled failure sampleunavailable.example (opens in a new tab)",
+            "width": 264,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Using server-sent eventsdeveloper.mozilla.org (opens in a new tab)",
+            "width": 264,
+            "height": 61.5,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Respecting reduced motion preferenceswww.w3.org (opens in a new tab)",
+            "width": 264,
+            "height": 81,
+            "focusOutline": "none"
+          },
+          {
+            "label": "Show fewer sources",
+            "width": 156.859375,
+            "height": 40,
+            "focusOutline": "none"
+          }
+        ],
+        "reducedMotion": "true",
+        "activeAnimations": 0,
+        "liveRegions": [
+          {
+            "text": "Reading source pages",
+            "live": "polite"
+          }
+        ],
+        "timer": {
+          "role": "timer",
+          "live": "off"
+        },
+        "cards": 6
+      }
+    }
+  ],
+  "errors": []
+}
