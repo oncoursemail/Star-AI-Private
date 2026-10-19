@@ -90,6 +90,13 @@ _RE_TRIGGER = re.compile(
     re.IGNORECASE,
 )
 
+# Source-study and asset audits need only the three read-only additions, not
+# every external binary-analysis tool. Keep the existing RE trigger unchanged.
+_REFERENCE_TRIGGER = re.compile(
+    r"\b(?:Grand[- ]?V|asset manifest|asset integrity|reference engineering|"
+    r"game portability|browser port|WebAssembly|WebGPU|memory64)\b", re.IGNORECASE,
+)
+
 
 def check_intent(text: str) -> str | None:
     """Return a refusal reason if the text asks for a forbidden RE use, else None."""
@@ -506,6 +513,34 @@ _PATH = {"type": "string", "minLength": 1, "maxLength": 500,
          "description": "Workspace-relative path to the binary/file to analyse."}
 _ARCH = {"type": "string", "enum": ["x86", "x64", "arm", "arm64"]}
 
+REFERENCE_TOOLS = (
+    _tool("re_verify_asset_manifest",
+          "Verify listed workspace assets against a versioned JSON manifest using sizes and streamed SHA-256. "
+          "Read-only; detects same-size corruption. Does not execute files or authenticate the manifest, "
+          "source/license labels, runtime correctness or performance. Limits: 128 assets, 128 MiB/file, "
+          "512 MiB total, 15-second cooperative budget, at most 24 result details (failures first). "
+          "Paths are workspace-relative, including members of nested manifests.",
+          {"manifest_path": _PATH,
+           "expected_manifest_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}},
+          ("manifest_path",)),
+    _tool("re_reference_guidance",
+          "Read a bounded, source-backed engineering study from Grand-V and official runtime documentation. "
+          "Returns scoped candidate guidance and validation tasks, not verified learning or a trained model update. "
+          "Local curated text only; no network, file execution or memory changes.",
+          {"topic": {"type": "string", "enum": ["overview", "browser", "streaming", "multiplayer",
+                                                    "asset_integrity", "roblox"], "default": "overview"}}),
+    _tool("re_game_portability_plan",
+          "Plan browser, native or Roblox engineering from supplied memory requirements and capability reports. "
+          "Missing capabilities stay unknown. This tool does not probe hardware, compile or run games, "
+          "measure speed, or prove portability. Read-only and offline.",
+          {"target": {"type": "string", "enum": ["browser", "roblox", "native"]},
+           "required_linear_memory_mib": {"type": "integer", "minimum": 1, "maximum": 1048576},
+           "webgpu": {"type": "boolean"}, "memory64": {"type": "boolean"},
+           "cross_origin_isolated": {"type": "boolean"}, "threads": {"type": "boolean"},
+           "requires_threads": {"type": "boolean", "default": False}},
+          ("target", "required_linear_memory_mib")),
+)
+
 RE_TOOLS = (
     _tool("re_tool_status",
           "List which local reverse-engineering tools are installed on this PC and how to install the missing ones. "
@@ -558,7 +593,7 @@ RE_TOOLS = (
     _tool("re_crash_dump",
           "Triage a Windows crash dump (.dmp/minidump) with cdb headless (!analyze -v) if the Debugging Tools for Windows "
           "are installed. Read-only analysis of your own dump.", {"path": _PATH}, ("path",)),
-)
+) + REFERENCE_TOOLS
 _RE_NAMES = {tool["name"] for tool in RE_TOOLS}
 
 
@@ -578,11 +613,15 @@ class ReverseEngineering:
         """Offer the RE tools only for a binary-analysis request, never for a forbidden intent."""
         if self.root is None:
             return []
-        if not isinstance(prompt, str) or not _RE_TRIGGER.search(prompt):
+        if not isinstance(prompt, str):
             return []
         if check_intent(prompt):
             return []
-        return list(RE_TOOLS)
+        if _RE_TRIGGER.search(prompt):
+            return list(RE_TOOLS)
+        if _REFERENCE_TRIGGER.search(prompt):
+            return list(REFERENCE_TOOLS)
+        return []
 
     def status(self) -> dict:
         tools = {}
@@ -596,7 +635,8 @@ class ReverseEngineering:
                             for name in ("capstone", "pefile", "lief", "unicorn", "angr", "dnfile")},
             "external_tools": tools,
             "builtin": ["re_identify", "re_strings", "re_pe_info"],
-            "verification_tools": ["re_compare_artifacts"],
+            "verification_tools": ["re_compare_artifacts", "re_verify_asset_manifest"],
+            "reference_tools": ["re_reference_guidance", "re_game_portability_plan"],
             "builtin_note": "Identify, strings and PE parsing are pure-Python and always available.",
             "policy": ("Local, defensive use on your own or permitted binaries only. No anti-cheat/client-protection "
                        "bypass, game cheats, DRM/licence cracking, or malware creation."),
@@ -638,6 +678,29 @@ class ReverseEngineering:
 
         if name == "re_tool_status":
             return self.status()
+
+        if name == "re_reference_guidance":
+            from .game_portability import reference_guidance
+            return reference_guidance(args.get("topic", "overview"))
+
+        if name == "re_game_portability_plan":
+            from .game_portability import plan_portability
+            return plan_portability(**args)
+
+        if name == "re_verify_asset_manifest":
+            from .re_asset_manifest import resolve_manifest_member, verify_asset_manifest
+            root = self.root
+            if root is None:
+                raise PermissionError("Select a workspace folder before verifying assets")
+
+            def resolve_member(relative):
+                return resolve_manifest_member(root, self._resolve, relative)
+
+            manifest = resolve_member(args["manifest_path"])
+            return verify_asset_manifest(
+                manifest, resolve_member, manifest_label=args["manifest_path"],
+                expected_manifest_sha256=args.get("expected_manifest_sha256"),
+            )
 
         if name == "re_compare_artifacts":
             from .re_artifact_verifier import compare_artifacts
@@ -724,3 +787,4 @@ def for_settings(settings, home: Path | None = None) -> "ReverseEngineering | No
         return None
     sandbox = (home / "re_sandbox") if home is not None else None
     return ReverseEngineering(workspace=workspace, sandbox=sandbox)
+

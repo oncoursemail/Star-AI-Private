@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "date_utc": "2026-10-19",
+  "upstream_repository": "oncoursemail/Star-AI-Private",
+  "upstream_base": "bd575de0aba344b145fe7119d23670ec9c954967",
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Linux",
+    "checkout": "pinned relevant source subset; full repository suite not run locally"
+  },
+  "fixture_scope": "Original synthetic local assets; existing RE tests plus new independent behavior tests. No Grand-V binaries or game assets executed.",
+  "checks": [
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_reverse_engineering.py",
+        "tests/test_re_artifact_verifier.py",
+        "tests/test_re_asset_manifest.py",
+        "tests/test_reference_engineering_gateway.py",
+        "tests/test_game_portability.py",
+        "tests/test_re_manifest_review.py"
+      ],
+      "exit_code": 0,
+      "stdout": "........................................................................ [ 43%]\n........................................................................ [ 87%]\n.....................                                                    [100%]\n165 passed in 0.28s",
+      "stderr": ""
+    },
+    {
+      "command": [
+        ".venv/bin/ruff",
+        "check",
+        "star/reverse_engineering.py",
+        "star/re_asset_manifest.py",
+        "star/game_portability.py",
+        "tests/test_re_asset_manifest.py",
+        "tests/test_reference_engineering_gateway.py",
+        "tests/test_game_portability.py",
+        "tests/test_re_manifest_review.py"
+      ],
+      "exit_code": 0,
+      "stdout": "All checks passed!",
+      "stderr": ""
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "compileall",
+        "-q",
+        "star/reverse_engineering.py",
+        "star/re_asset_manifest.py",
+        "star/game_portability.py",
+        "tests/test_re_asset_manifest.py",
+        "tests/test_reference_engineering_gateway.py",
+        "tests/test_game_portability.py",
+        "tests/test_re_manifest_review.py"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "star.protected_paths",
+        "--branch",
+        "star/chatgpt-grandv-reference-engineering-20261019",
+        "--files",
+        "star/reverse_engineering.py",
+        "star/re_asset_manifest.py",
+        "star/game_portability.py",
+        "tests/test_re_asset_manifest.py",
+        "tests/test_reference_engineering_gateway.py",
+        "tests/test_game_portability.py",
+        "tests/test_re_manifest_review.py",
+        "docs/REFERENCE_ENGINEERING.md",
+        "docs/research/STAR_GRAND_V_RESEARCH_20261019.md",
+        "docs/research/STAR_GRAND_V_VALIDATION_20261019.json"
+      ],
+      "exit_code": 0,
+      "stdout": "protected closure: OK (10 changed files from generator branch 'star/chatgpt-grandv-reference-engineering-20261019')",
+      "stderr": ""
+    }
+  ],
+  "files_sha256": {
+    "star/reverse_engineering.py": "8fdeb7f117476d660bbaff4446a31918c8859777d85c20254bddc79c57bad620",
+    "star/re_asset_manifest.py": "4f6a6d094f8a01f11502dc96d643fe6deecbd09ea7e52d4a5facf27df9a2ba42",
+    "star/game_portability.py": "6dac18f3843e0888039d701be520ddc26f8bdadb29b6e89a675dfa710b1842c6",
+    "tests/test_re_asset_manifest.py": "d1aa8b317369ac9b23e0926d67325a90dd8a96fec0bc89a4c513daf2d62e7717",
+    "tests/test_reference_engineering_gateway.py": "03a113a73ce7d9ac10f01efa1d4163cabc9c2fa731c483de4e555337bff95915",
+    "tests/test_game_portability.py": "1e7b08c9bd5ac7896e6faab361dbd9bb69af410f8d7f645b009b18e5bb5cc5c3",
+    "tests/test_re_manifest_review.py": "fb296b437eba96753233d03ba119cbc278c74bd03c014e906676736fac524754",
+    "docs/REFERENCE_ENGINEERING.md": "274a5f6b2f572b6caaef554fdb6cf77246b4078aca8cffb5b4685942a3600978",
+    "docs/research/STAR_GRAND_V_RESEARCH_20261019.md": "eb4d80d62ad0ec7e75450ea8a147fef7215437e3780e54d8a0e8e48829b3621b"
+  },
+  "not_verified": [
+    "full repository CI",
+    "native Windows acceptance",
+    "browser/Studio gameplay",
+    "real performance or model quality improvement",
+    "independent evaluation gate"
+  ],
+  "activation": "default-off development candidate; no runtime installation, merge, release or model training performed"
+}
