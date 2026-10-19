@@ -1,0 +1,96 @@
+name: STAR verified patch release handoff
+on:
+  workflow_run:
+    workflows: ['STAR Desktop — Build, Test & Release']
+    types: [completed]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: star-patch-release-handoff
+  cancel-in-progress: false
+jobs:
+  handoff:
+    if: >-
+      github.repository == 'oncoursemail/Star-AI-Private'
+      && vars.STAR_AUTO_PATCH_RELEASE == 'true'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_branch == 'main'
+      && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      # No checkout and no release credentials. Dispatch only the existing trusted
+      # main workflow, which rebuilds/rechecks before minting its public token.
+      - name: Hand off only the next patch on the exact tested private main tip
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import base64, json, os, re, urllib.error, urllib.request
+          SOURCE='oncoursemail/Star-AI-Private'
+          PUBLIC='oncoursemail/Star-AI'
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs):
+                  return None
+          opener=urllib.request.build_opener(NoRedirect())
+          def api(repo,path='',method='GET',body=None):
+              headers={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',
+                       'Content-Type':'application/json','User-Agent':'STAR-patch-handoff'}
+              if repo==SOURCE:
+                  headers['Authorization']='Bearer '+os.environ['GH_TOKEN']
+              elif repo!=PUBLIC:
+                  raise RuntimeError('Repository outside allowed roles')
+              request=urllib.request.Request('https://api.github.com/repos/'+repo+path,
+                  data=json.dumps(body).encode() if body is not None else None,headers=headers,method=method)
+              with opener.open(request,timeout=20) as response:
+                  raw=response.read(2000001)
+                  if len(raw)>2000000:
+                      raise RuntimeError('Metadata limit exceeded')
+                  return json.loads(raw) if raw else None
+          with open(os.environ['GITHUB_EVENT_PATH'],encoding='utf-8') as f:
+              event=json.load(f)
+          run=event['workflow_run']
+          source=api(SOURCE)
+          if source['id']!=1412474221 or source['private'] is not True:
+              raise RuntimeError('Private source identity changed')
+          if run.get('repository',{}).get('id')!=1412474221:
+              raise RuntimeError('Untrusted workflow producer repository')
+          if run.get('path')!='.github/workflows/windows-desktop.yml':
+              raise RuntimeError('Unexpected build workflow')
+          sha=run.get('head_sha','')
+          if not re.fullmatch(r'[0-9a-f]{40}',sha):
+              raise RuntimeError('Missing exact source SHA')
+          main=api(SOURCE,'/commits/main')['sha']
+          if main!=sha:
+              print('No handoff: build was superseded by a newer main commit.')
+              raise SystemExit(0)
+          file=api(SOURCE,'/contents/star/version.py?ref='+sha)
+          if file.get('encoding')!='base64' or file.get('size',100000)>4096:
+              raise RuntimeError('Unexpected version metadata')
+          text=base64.b64decode(file['content']).decode('utf-8')
+          matches=re.findall(r'^__version__\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*$',text,re.M)
+          if len(matches)!=1:
+              raise RuntimeError('Ambiguous source version')
+          public=api(PUBLIC)
+          if public['id']!=1424898960 or public['private'] is not False:
+              raise RuntimeError('Public distribution identity changed')
+          try:
+              release=api(PUBLIC,'/releases/latest')
+          except urllib.error.HTTPError as exc:
+              if exc.code==404:
+                  print('First public release requires the owner-controlled migration workflow; no automatic bootstrap.')
+                  raise SystemExit(0)
+              raise RuntimeError('Public release lookup failed; HTTP '+str(exc.code)) from None
+          tag=release.get('tag_name','')
+          if release.get('draft') or release.get('prerelease') or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+',tag):
+              raise RuntimeError('No valid public stable baseline')
+          before=tuple(map(int,tag[1:].split('.')))
+          after=tuple(map(int,matches[0].split('.')))
+          if after!=(before[0],before[1],before[2]+1):
+              print('No automatic handoff: only the next patch, not an existing/minor/major release, is eligible.')
+              raise SystemExit(0)
+          # A manual run cannot trigger this again (the job requires event=push).
+          # Any duplicate dispatch still encounters immutable-version checks in the publisher.
+          api(SOURCE,'/actions/workflows/windows-desktop.yml/dispatches','POST',{'ref':'main'})
+          print('Dispatched the trusted private main release workflow for v'+matches[0]+'. This is not a published release.')
