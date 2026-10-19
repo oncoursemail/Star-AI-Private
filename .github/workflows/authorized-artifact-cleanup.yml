@@ -22,8 +22,8 @@ jobs:
       - name: Test corruption and preservation boundaries without credentials
         working-directory: scripts/operations
         run: python3 -m unittest -v test_verified_cleanup
-      - name: Verify and remove at most two redundant combined preview copies
+      - name: Verify and remove eligible duplicates within the fixed safety budget
         env:
           GH_TOKEN: ${{ github.token }}
           STAR_CLEANUP_APPROVAL: owner-approved-20261019-duplicate-previews
-        run: python3 scripts/operations/verified_cleanup.py --apply --limit 2
+        run: python3 scripts/operations/verified_cleanup.py --apply --limit 60
