@@ -330,12 +330,14 @@ def package(workspace, relative: str, output: str, *, target_version: str = "26.
         raise ValueError("Output must be a .zip outside the source directory")
     if destination.exists() and not replace:
         raise FileExistsError("Refusing to overwrite existing ZIP without explicit replace flag")
-    report = audit(workspace, relative, target_version=target_version)
-    if not report["valid"]:
-        raise ValueError("Resource pack failed inspection; fix errors before packaging")
+    if target_version not in RESOURCE_FORMATS:
+        raise ValueError("Unsupported Java version; choose one of the verified format mappings")
+    # Validate the same bounded byte snapshot that goes into the ZIP. A second
+    # folder read after audit could pick up an editor save that was never checked.
     entries, findings = _files_from_folder(source)
-    if findings:
-        raise ValueError("Resource pack changed or failed safety checks during packaging")
+    _check_pack(entries, findings, target_version)
+    if any(finding["severity"] == "error" for finding in findings):
+        raise ValueError("Resource pack failed inspection; fix errors before packaging")
     destination.parent.mkdir(parents=True, exist_ok=True)
     staged = None
     try:
