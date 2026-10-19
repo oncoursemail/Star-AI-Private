@@ -39,6 +39,14 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from .re_recompilation import RECOMPILATION_NAMES, RECOMPILATION_TOOLS, dispatch_recompilation
+
+
+_RECOMPILATION_TRIGGER = re.compile(
+    r"\b(?:ps3recomp|ps3|ppu|spu|static\s+recompil\w*|recompilation|"
+    r"semantic\s+(?:evidence|contract|trace)|elf\s+preflight)\b", re.IGNORECASE,
+)
+
 
 # --- Limits ------------------------------------------------------------------
 MAX_FILE_BYTES = 128 * 1024 * 1024      # refuse to parse anything larger
@@ -521,6 +529,7 @@ RE_TOOLS = (
     _tool("re_pe_info",
           "Parse a Windows PE/DOS executable's headers: machine, subsystem, sections, imported DLLs/functions and "
           "whether it is a managed .NET assembly. Pure local analysis.", {"path": _PATH}, ("path",)),
+    *RECOMPILATION_TOOLS,
     _tool("re_disassemble",
           "Linearly disassemble a byte range of a workspace file with capstone (if installed). Supply the file offset, "
           "length (<=4096) and architecture.",
@@ -576,6 +585,9 @@ class ReverseEngineering:
 
     def definitions(self, prompt: str) -> list[dict]:
         """Offer the RE tools only for a binary-analysis request, never for a forbidden intent."""
+        if (self.root is not None and isinstance(prompt, str)
+                and _RECOMPILATION_TRIGGER.search(prompt) and not _RE_TRIGGER.search(prompt)):
+            return [] if check_intent(prompt) else list(RECOMPILATION_TOOLS)
         if self.root is None:
             return []
         if not isinstance(prompt, str) or not _RE_TRIGGER.search(prompt):
@@ -654,6 +666,9 @@ class ReverseEngineering:
                 length=args.get("length"),
                 expected_reference_sha256=args.get("expected_reference_sha256"),
             )
+
+        if name in RECOMPILATION_NAMES:
+            return dispatch_recompilation(name, args, workspace=self.root, resolve=self._resolve)
 
         path = self._resolve(args["path"])
         self.sandbox.mkdir(parents=True, exist_ok=True)

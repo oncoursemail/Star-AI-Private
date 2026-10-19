@@ -1,0 +1,161 @@
+{
+  "schema_version": "star-research-validation-v1",
+  "prepared_at_utc": "2026-10-19T20:20:38Z",
+  "repository": "oncoursemail/Star-AI-Private",
+  "base": {
+    "ref": "main",
+    "commit": "80bf8540b75633c065437036baf75614afe68f74",
+    "tree": "c3b3645d0aff79cdaebf810da00b2a3d1d25645a"
+  },
+  "research_source": {
+    "repository": "sp00nznet/ps3recomp",
+    "commit": "749182eebb936f086a007f63e1c7d853f3cf708a",
+    "release": "v0.16.0",
+    "release_published_at_utc": "2026-10-19T16:50:19Z"
+  },
+  "environment": {
+    "os": "Linux",
+    "python": "3.12.14",
+    "pytest": "8.4.2",
+    "jsonschema": "4.25.1",
+    "ruff": "0.13.3"
+  },
+  "local_validation": {
+    "scope": "Selected relevant source snapshot; not a complete checkout or full-repository CI run.",
+    "fixture_scope": "Used --noconftest because normal unrelated fixtures import components outside the selected snapshot; no repository harness or fixtures were changed.",
+    "pytest": {
+      "command": "python -m pytest --noconftest -q tests/test_reverse_engineering.py tests/test_re_artifact_verifier.py tests/test_re_ps3_elf.py tests/test_re_semantic_evidence.py tests/test_recompilation_input_review.py tests/test_recompilation_gateway.py",
+      "exit_code": 0,
+      "passed": 276,
+      "new_cases": 241,
+      "existing_cases": 35,
+      "new_case_breakdown": {
+        "elf": 29,
+        "semantic_evidence": 94,
+        "input_reader": 70,
+        "gateway": 48
+      },
+      "reported_seconds": 0.38
+    },
+    "ruff": {
+      "command": "ruff check star/reverse_engineering.py star/re_analysis_input.py star/re_ps3_elf.py star/re_semantic_evidence.py star/re_recompilation.py star/recompilation_guidance.py tests/test_re_ps3_elf.py tests/test_re_semantic_evidence.py tests/test_recompilation_input_review.py tests/test_recompilation_gateway.py",
+      "exit_code": 0,
+      "result": "All checks passed!"
+    },
+    "compile": {
+      "command": "python -m compileall -q star",
+      "exit_code": 0
+    },
+    "whitespace": {
+      "command": "git diff --check",
+      "exit_code": 0
+    },
+    "protected_closure": {
+      "command": "python -m star.protected_paths --branch star/chatgpt-ps3recomp-evidence-20261019 --files star/reverse_engineering.py star/re_analysis_input.py star/re_ps3_elf.py star/re_semantic_evidence.py star/re_recompilation.py star/recompilation_guidance.py tests/test_re_ps3_elf.py tests/test_re_semantic_evidence.py tests/test_recompilation_input_review.py tests/test_recompilation_gateway.py docs/RECOMPILATION_ANALYSIS.md docs/research/STAR_PS3RECOMP_RESEARCH_20261019.md docs/research/STAR_PS3RECOMP_VALIDATION_20261019.json",
+      "exit_code": 0,
+      "scope": "Explicit 13 changed paths against the intended branch scope; no protected gate or evaluation files changed."
+    }
+  },
+  "grand_v_compatibility": {
+    "pull_request": "https://github.com/oncoursemail/Star-AI-Private/pull/499",
+    "head": "5e6caf0b20afa5408f505d6be04d159f03e5af70",
+    "operation": "Clean three-way gateway merge in an isolated temporary copy only; neither PR merged.",
+    "pytest": {
+      "options": "--noconftest -q",
+      "scope": "10 relevant test files in combined selected-source snapshot",
+      "exit_code": 0,
+      "passed": 406,
+      "reported_seconds": 0.8,
+      "overlaps_primary_run": true
+    },
+    "unchanged_source_test_files_verified_by_hash": 25,
+    "routing": {
+      "grand_v_only": "3 Grand-V tools",
+      "ps3_only": "3 PS3 tools",
+      "ordinary_binary": "17 tools including both additions and 11 legacy tools",
+      "mixed_grand_v_ps3": "Earlier PS3 handler selects 3 PS3 tools",
+      "unrelated": "No RE tools"
+    }
+  },
+  "reviewed_python_files": [
+    {
+      "path": "star/reverse_engineering.py",
+      "sha256": "d3bb1d8887e315849b94421df2674900e3b77a77269187cdc3ded82e60f49caa",
+      "size_bytes": 36040
+    },
+    {
+      "path": "star/re_analysis_input.py",
+      "sha256": "e0e5685d7e69dd6c288981c6700a902e60ad9392753b3d7676ebb88401e8c0e6",
+      "size_bytes": 8792
+    },
+    {
+      "path": "star/re_ps3_elf.py",
+      "sha256": "67ab3c478999609c8c76923d64bde639e88cc7a237525a1f8db2b28f59264273",
+      "size_bytes": 19098
+    },
+    {
+      "path": "star/re_semantic_evidence.py",
+      "sha256": "359f96858af82360ee92b7e72374f9672e1fc17bf79d35431a55eb8038bb4a84",
+      "size_bytes": 16334
+    },
+    {
+      "path": "star/re_recompilation.py",
+      "sha256": "d48c4613c04b2427f0924d05bceb471857d47820195227a0ce94b088db3af7b2",
+      "size_bytes": 4424
+    },
+    {
+      "path": "star/recompilation_guidance.py",
+      "sha256": "92fea612a6bc8bf5c0792dd85c5d2b5cb11e90af3c2b03ae89c16fecd02be6b2",
+      "size_bytes": 9504
+    },
+    {
+      "path": "tests/test_re_ps3_elf.py",
+      "sha256": "64f691f95f7a66ff6d30e349ffa5891a7923476e4113ed76a9bb0ff91efdc8b6",
+      "size_bytes": 17380
+    },
+    {
+      "path": "tests/test_re_semantic_evidence.py",
+      "sha256": "1f1d552d6ffa56f011ae0cb1a8d46eb85cc47318e60e0c80c371348206e3d446",
+      "size_bytes": 21093
+    },
+    {
+      "path": "tests/test_recompilation_input_review.py",
+      "sha256": "51eba9a775a48dc3ed36847cf94deec894a734404d29c0773a81e0fdd12b75d4",
+      "size_bytes": 10653
+    },
+    {
+      "path": "tests/test_recompilation_gateway.py",
+      "sha256": "14a4c0ce601b82489278ac5a09b149cc5cc410285e680ad41cd604946749d113",
+      "size_bytes": 16873
+    }
+  ],
+  "changed_paths": [
+    "star/reverse_engineering.py",
+    "star/re_analysis_input.py",
+    "star/re_ps3_elf.py",
+    "star/re_semantic_evidence.py",
+    "star/re_recompilation.py",
+    "star/recompilation_guidance.py",
+    "tests/test_re_ps3_elf.py",
+    "tests/test_re_semantic_evidence.py",
+    "tests/test_recompilation_input_review.py",
+    "tests/test_recompilation_gateway.py",
+    "docs/RECOMPILATION_ANALYSIS.md",
+    "docs/research/STAR_PS3RECOMP_RESEARCH_20261019.md",
+    "docs/research/STAR_PS3RECOMP_VALIDATION_20261019.json"
+  ],
+  "github_ci": {
+    "status_at_preparation": "pending",
+    "live_status_location": "Associated draft pull request; this immutable receipt records local preparation evidence only."
+  },
+  "claims_and_limits": [
+    "All three tools remain behind the existing default-off reverse_engineering_enabled setting.",
+    "Guidance is candidate context only; no model training, persistent lesson acceptance or policy changes.",
+    "No upstream binaries, guest programs, compilers or emulators were executed during research.",
+    "A structural ELF result does not establish executable validity, game compatibility or performance.",
+    "A semantic MATCH covers supplied records only; producer identity and reference authority are unauthenticated.",
+    "Input receipts hash the records actually read, not the game or generated artifacts merely named by those records.",
+    "No merge, public release, installation, deployment, service changes or default-on enablement.",
+    "No full-repository, Windows runtime, gameplay or speed result is claimed by local synthetic tests."
+  ]
+}
