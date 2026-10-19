@@ -21,6 +21,7 @@ export type SettingsSectionId='general'|'model'|'roblox'|'creative'|'knowledge'|
 
 /** Everything the page needs from the desktop shell. The shell keeps the state; this page only lays it out. */
 export type SettingsPageProps={
+ appearance?:ReactNode
  data:BootData
  draft:AppSettings
  setDraft:(update:AppSettings|((d:AppSettings)=>AppSettings))=>void
@@ -200,8 +201,9 @@ export function SettingsPage(props:SettingsPageProps) {
  const panels:Record<SettingsSectionId,ReactNode>={
   general:<>
    <Block id="interface" keywords="theme animation motion mascot pet appearance accessibility home start workbench clips obs replay recording game lab">
+     {props.appearance}
      <Panel className="settings-section"><h3 className="settings-group-title">Interface</h3>
-       <Switch label="Show Star" hint="Off by default. Display the mascot over the chat. Saved on this device." checked={props.showStar} onChange={props.setShowStar}/>
+       <Switch label="Show Star" hint="Off by default. Display the mascot in a floating corner of the chat, in addition to your chosen companion. Saved on this device." checked={props.showStar} onChange={props.setShowStar}/>
        {props.setNewHome&&<Switch label="Workbench home screen" hint="Off by default. Shows the new start canvas with starter tasks when a chat is empty. Saved on this device." checked={!!props.newHome} onChange={props.setNewHome}/>}
        {props.setClipsOn&&<Switch label="STAR Clips and Game Lab" hint="Off by default. Shows the OBS replay, clip folder, SteelSeries Moments and Game Lab panels on the Tools page. Needs your own OBS Studio. Saved on this device." checked={!!props.clipsOn} onChange={props.setClipsOn}/>}
        <Switch label="Reduced motion" hint="Turns off animation everywhere in STAR. Applied and saved immediately." checked={draft.reduced_motion} onChange={props.setReducedMotion}/>
@@ -368,7 +370,7 @@ export function SettingsPage(props:SettingsPageProps) {
      </SearchMatches.Provider>
    </div>
    <div className={'settings-savebar'+(dirty?' is-dirty':'')}>
-     <span className="settings-savebar-state" aria-live="polite">{dirty?<><Info size={14} aria-hidden="true"/> Unsaved changes</>:inactive?'Preview: changes are not saved':'All changes saved'}</span>
+     <span className="settings-savebar-state" aria-live="polite">{dirty?<><Info size={14} aria-hidden="true"/> Unsaved changes</>:inactive?'Preview: model and tool settings are not saved':'All changes saved'}</span>
      <div className="settings-savebar-actions">
        {dirty&&<button type="button" className="secondary-button" onClick={()=>setDraft(data.settings)}><Undo2 size={14} aria-hidden="true"/> Discard</button>}
        <button type="button" className="primary-button save-button" aria-label="Save settings" onClick={props.saveSettings}><Check size={16} aria-hidden="true"/> Save<span className="settings-save-word"> settings</span></button>

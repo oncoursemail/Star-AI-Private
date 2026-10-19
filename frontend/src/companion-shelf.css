@@ -1,0 +1,222 @@
+/* Companions have their own reserved place; their stage never covers a control. */
+.companion-shelf {
+  width: 100%;
+  min-width: 0;
+  color: var(--star-body);
+}
+.companion-shelf__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+}
+.companion-shelf__header h2 {
+  margin: 0;
+  color: var(--star-muted);
+  font: 500 12px/1.4 var(--star-font);
+  letter-spacing: 0;
+}
+.companion-shelf__header h2:focus-visible {
+  outline: 2px solid var(--star-stroke-focus);
+  outline-offset: 4px;
+}
+.companion-shelf__controls { display: flex; gap: 2px; }
+.companion-icon-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--star-faint);
+  background: transparent;
+}
+.companion-icon-button:hover { color: var(--star-text); background: var(--star-veil); }
+.companion-icon-button[aria-pressed='true'] { color: var(--star-gold); }
+.companion-icon-button:focus-visible,
+.companion-reopen:focus-visible {
+  outline: 2px solid var(--star-stroke-focus);
+  outline-offset: 3px;
+}
+.companion-shelf__stage {
+  position: relative;
+  display: grid;
+  height: 212px;
+  margin: 9px auto 0;
+  place-items: center;
+  isolation: isolate;
+}
+.companion-shelf__character {
+  display: block;
+  width: min(100%, 208px);
+  height: 208px;
+  object-fit: contain;
+  object-position: center bottom;
+  transform-origin: 50% 91%;
+  user-select: none;
+  pointer-events: none;
+}
+/* Approved Star sprites carry a larger transparent margin than the new cast.
+ * Crop only that margin in CSS so all three characters share the shelf baseline. */
+.companion-shelf[data-character='star'] .companion-shelf__character {
+  object-fit: cover;
+  object-position: 50% 88%;
+}
+.companion-shelf__floor {
+  position: absolute;
+  right: 18%;
+  bottom: 12px;
+  left: 18%;
+  z-index: -1;
+  height: 1px;
+  background: var(--star-stroke);
+}
+.companion-shelf__identity { margin: 8px 0 22px; text-align: center; }
+.companion-shelf__identity strong {
+  color: var(--star-text);
+  font-family: var(--star-font-display);
+  font-size: 17px;
+  font-weight: 550;
+  letter-spacing: -0.035em;
+}
+.companion-shelf__identity p {
+  min-height: 18px;
+  margin: 5px 0 0;
+  color: var(--star-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.companion-shelf__motion-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--star-faint);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.companion-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.companion-choice {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 82px;
+  padding: 5px 2px 9px;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  border-radius: 8px;
+  color: var(--star-faint);
+  cursor: pointer;
+}
+.companion-choice:hover { color: var(--star-body); background: var(--star-veil); }
+.companion-choice.is-selected { color: var(--star-text); }
+.companion-choice.is-selected::after {
+  position: absolute;
+  bottom: 0;
+  width: 20px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--star-gold);
+  content: '';
+}
+.companion-choice input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.companion-choice:has(input:focus-visible) {
+  outline: 2px solid var(--star-stroke-focus);
+  outline-offset: 3px;
+}
+.companion-choice__portrait {
+  display: block;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--star-surface-1);
+}
+.companion-choice__portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 22%;
+  transform: scale(1.9);
+  transform-origin: 50% 24%;
+}
+.companion-choice[data-character='star'] .companion-choice__portrait img { object-position: 50% 100%; }
+.companion-choice__name { max-width: 100%; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.companion-choice__check { position: absolute; top: 2px; right: 4px; color: var(--star-gold); }
+.companion-shelf__caption {
+  margin: 17px 0 0;
+  color: var(--star-faint);
+  font-size: 10px;
+  line-height: 1.65;
+  text-align: center;
+}
+.companion-shelf__missing { display: grid; gap: 10px; justify-items: center; color: var(--star-muted); font-size: 11px; }
+.companion-reopen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  max-width: 100%;
+  padding: 4px 9px 4px 4px;
+  border: 1px solid var(--star-stroke);
+  border-radius: 8px;
+  color: var(--star-muted);
+  background: transparent;
+  font: 500 12px/1.5 var(--star-font);
+}
+.companion-reopen:hover { color: var(--star-text); background: var(--star-veil); }
+.companion-reopen__portrait { display: block; flex: 0 0 28px; width: 28px; height: 28px; overflow: hidden; border-radius: 6px; }
+.companion-reopen__portrait img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 22%; transform: scale(1.9); transform-origin: 50% 24%; }
+.companion-reopen__portrait[data-character='star'] img { object-position: 50% 100%; }
+.companion-reopen svg { flex-shrink: 0; }
+.companion-reopen.is-compact { min-height: 44px; }
+.companion-reopen.is-compact > .companion-reopen__copy { display: flex; align-items: baseline; gap: 8px; }
+.companion-reopen.is-compact strong { color: var(--star-body); font-size: 12px; font-weight: 550; }
+.companion-reopen.is-compact > .companion-reopen__copy > span { color: var(--star-faint); font-size: 11px; font-weight: 400; }
+.companion-shelf.is-compact { max-width: 260px; margin-inline: auto; }
+.companion-shelf.is-compact .companion-shelf__header { min-height: 30px; }
+.companion-shelf.is-compact .companion-shelf__stage { height: 132px; margin-top: 4px; }
+.companion-shelf.is-compact .companion-shelf__character { width: min(100%, 132px); height: 132px; }
+.companion-shelf.is-compact .companion-shelf__floor { right: 30%; bottom: 7px; left: 30%; }
+.companion-shelf.is-compact .companion-shelf__identity { margin: 4px 0 6px; }
+.companion-shelf.is-compact .companion-shelf__identity strong { display: block; font-size: 15px; line-height: 20px; }
+.companion-shelf.is-compact .companion-shelf__identity p { min-height: 16px; margin-top: 2px; font-size: 11px; line-height: 16px; }
+.companion-shelf.is-compact .companion-shelf__motion-note { margin-top: 2px; line-height: 14px; }
+.companion-shelf.is-compact .companion-choice { min-height: 72px; padding-block: 3px 5px; gap: 3px; }
+.companion-shelf.is-compact .companion-shelf__caption { display: none; }
+.companion-controls { display: grid; gap: 18px; min-width: 0; }
+.companion-controls__visibility { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--star-body); font-size: 13px; }
+.companion-controls__visibility input { width: 24px; height: 24px; margin: 0; accent-color: var(--star-gold); }
+.companion-controls__label { margin-bottom: 10px; color: var(--star-muted); font-size: 12px; }
+.companion-controls__motion { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr); align-items: center; gap: 12px; color: var(--star-body); font-size: 12px; }
+.companion-controls__motion select { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--star-stroke-control); border-radius: 7px; color: var(--star-body); background: var(--star-surface-1); font: inherit; }
+.companion-controls__note { margin: -9px 0 0; color: var(--star-muted); font-size: 11px; line-height: 1.6; }
+.companion-shelf__character[data-reaction='greet'] { animation: companion-greet 540ms ease-out both; }
+.companion-shelf__character[data-reaction='focus'] { animation: companion-focus 540ms ease-out both; }
+.companion-shelf__character[data-reaction='complete'] { animation: companion-complete 680ms cubic-bezier(.2,.7,.3,1) both; }
+@keyframes companion-greet { 0%,100% { transform: rotate(0); } 35% { transform: rotate(-2deg); } 70% { transform: rotate(1deg); } }
+@keyframes companion-focus { 0%,100% { transform: translateY(0); } 45% { transform: translateY(-2px); } }
+@keyframes companion-complete { 0%,100% { transform: translateY(0) rotate(0); } 40% { transform: translateY(-5px) rotate(-2deg); } 75% { transform: translateY(-1px) rotate(1deg); } }
+.companion-shelf[data-still] .companion-shelf__character { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .companion-shelf *, .companion-reopen * { animation: none !important; transition: none !important; }
+}

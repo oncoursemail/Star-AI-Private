@@ -1,0 +1,31 @@
+{
+  "generated_on": "2026-10-19",
+  "tool": "image_gen.imagegen",
+  "purpose": "Original Star AI companion artwork requested by the owner",
+  "style_reference": "frontend/public/assets/mascot/poses/stand.png",
+  "transparent_background": true,
+  "original_assets_preserved": true,
+  "provider_affiliation": "None. Characters are cosmetic preferences, not model/provider routing.",
+  "assets": [
+    {
+      "character": "Astra",
+      "path": "frontend/public/assets/companions/astra.png",
+      "width": 1122,
+      "height": 1402,
+      "mode": "RGBA",
+      "bytes": 1072487,
+      "sha256": "7b16d7fed4f8ff9831fe5ce1a540b0be237308e53cef0232e6db8d592043dd00",
+      "prompt": "Use case: stylized-concept. Asset type: transparent desktop companion sprite for Star AI. The attached image is STYLE REFERENCE ONLY, the existing original Star character. Create one NEW original character in the SAME professionally drawn chibi anime sprite family: consistent large head and compact full body, confident fine dark linework, clean warm cel shading, simple readable silhouette, soft restrained blush, fully clothed, friendly. Draw a single full-body character centered front three-quarter facing slightly left, both boots entirely visible, relaxed standing pose with tiny mitten hands, 3 head-heights tall. Output genuinely transparent background, generous consistent clear margins around the entire silhouette, no ground, no halo, no white outline, no extra objects or companion, no words, logos, UI, labels or watermarks. At 160px display size face and silhouette must read clearly. Crisp production sprite, high craft. Character: ASTRA. Midnight black hair with vivid muted violet ends, two expressive purple cat ears, bright violet eyes, small playful confident smile. Compact bob with one long side lock and a crescent hair clip. Fully clothed deep indigo short celestial coat with lavender cuffs and a simple silver crescent clasp, dark plum skirt, opaque midnight tights, violet ankle boots, a slender curved purple cat tail at one side. Minimal tiny celestial accents only. No glowing particles or background effects. Original design, visibly distinct from Star and Ember."
+    },
+    {
+      "character": "Ember",
+      "path": "frontend/public/assets/companions/ember.png",
+      "width": 1122,
+      "height": 1402,
+      "mode": "RGBA",
+      "bytes": 1273096,
+      "sha256": "d1b9cb725968827683d6d0c37616d45c1a1a57bb3ef3362a0926c5554b39b432",
+      "prompt": "Use case: stylized-concept. Asset type: transparent desktop companion sprite for Star AI. The attached image is STYLE REFERENCE ONLY, the existing original Star character. Create one NEW original character in the SAME professionally drawn chibi anime sprite family: consistent large head and compact full body, confident fine dark linework, clean warm cel shading, simple readable silhouette, soft restrained blush, fully clothed, friendly. Draw a single full-body character centered front three-quarter facing slightly left, both boots entirely visible, relaxed standing pose with tiny mitten hands, 3 head-heights tall. Output genuinely transparent background, generous consistent clear margins around the entire silhouette, no ground, no halo, no white outline, no extra objects or companion, no words, logos, UI, labels or watermarks. At 160px display size face and silhouette must read clearly. Crisp production sprite, high craft. Character: EMBER. Long flowing copper-orange hair with two swept front locks, dark warm oval glasses, honey-brown eyes, small confident smile. Cream high-neck blouse with russet bow, deep chocolate short tailored cape-jacket, dark brown pleated skirt, amber waist detail, opaque dark tights, simple dark ankle boots. Holding a small closed plum notebook against one hip. Elegant warm academic personality, no logo or star hair ornament, visibly distinct from Star."
+    }
+  ]
+}
