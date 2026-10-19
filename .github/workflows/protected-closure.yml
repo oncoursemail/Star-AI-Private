@@ -32,17 +32,26 @@ jobs:
         if: github.event_name == 'pull_request_target'
         env:
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # pull_request_target checks out the TRUSTED base. Since the repository is
-          # private, fetch only the PR ref with the job's read-only GitHub token.
-          # A command-local helper avoids persisting credentials in .git/config.
-          git -c credential.helper='!gh auth git-credential' fetch --no-tags origin "pull/${PR_NUMBER}/head:pr-head"
+          set -euo pipefail
+          # Diff the exact commit from this event. A virtual pull/N/head ref can be
+          # unavailable even after the private repository checkout succeeds, and
+          # a branch may move between the event and this step. Never substitute its
+          # newer tip or run any code from the pull request.
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            # The full checkout normally already has same-repository PR commits.
+            # A command-local helper keeps the read-only token out of .git/config.
+            git -c credential.helper='!gh auth git-credential' fetch --no-tags origin "$HEAD_SHA"
+          fi
+          test "$(git rev-parse "${HEAD_SHA}^{commit}")" = "$HEAD_SHA"
           cp star/protected_paths.py "$RUNNER_TEMP/guard.py"
-          git diff --name-only --no-renames "${BASE_SHA}...pr-head" > "$RUNNER_TEMP/changed.txt"
+          git diff --name-only --no-renames "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/changed.txt"
           xargs -a "$RUNNER_TEMP/changed.txt" -d '\n' python "$RUNNER_TEMP/guard.py" --branch "$HEAD_BRANCH" --labels "$LABELS" --files
       - name: Check a pushed generator branch against star/next
         if: github.event_name == 'push'
