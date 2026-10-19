@@ -185,8 +185,16 @@ def parse_manifest(raw: bytes) -> Episode:
         cursor = start + duration
     _unique([shot.shot_id for shot in shots], "shot IDs")
     _unique(line_ids, "line IDs")
-    return Episode(hashlib.sha256(raw).hexdigest(), *identifiers, _text(data["title"], "title", 200),
-                   tuple(cast), tuple(shots), cursor)
+    return Episode(
+        sha256=hashlib.sha256(raw).hexdigest(),
+        show_id=identifiers[0],
+        episode_id=identifiers[1],
+        canon_version=identifiers[2],
+        title=_text(data["title"], "title", 200),
+        cast=tuple(cast),
+        shots=tuple(shots),
+        duration_seconds=cursor,
+    )
 
 
 def assess_readiness(episode: Episode, reviews: object) -> dict:
