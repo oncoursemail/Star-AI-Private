@@ -112,13 +112,15 @@ jobs:
           test -s react-qa/website-desktop.png
           test -s react-qa/chat-desktop.png
       - name: Upload actual React browser renders
-        if: ${{ always() && steps.scope.outputs.docs_only != 'true' }}
+        # Review evidence is not a handoff or a prerequisite for any offline test.
+        # PRs and star/** pushes must validate even when artifact storage is full.
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.scope.outputs.docs_only != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: STAR-v08-React-Visual-QA
           path: react-qa/*.png
           if-no-files-found: ignore
-          retention-days: 30
+          retention-days: 7
 
   pyright:
     name: Python types (pyright basic, baseline gate)

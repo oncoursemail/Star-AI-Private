@@ -11,6 +11,8 @@ on:
       - 'installer/**'
       - 'requirements*.txt'
       - 'scripts/build_windows.ps1'
+      - 'scripts/check_windows_preview_budget.py'
+      - 'scripts/smoke_windows_installer.ps1'
       - '.github/workflows/windows-desktop.yml'
       - 'tests/**'
   pull_request:
@@ -22,16 +24,28 @@ on:
       - 'installer/**'
       - 'requirements*.txt'
       - 'scripts/build_windows.ps1'
+      - 'scripts/check_windows_preview_budget.py'
+      - 'scripts/smoke_windows_installer.ps1'
       - '.github/workflows/windows-desktop.yml'
       - 'tests/**'
   workflow_dispatch:
+    inputs:
+      preview_format:
+        description: 'Optional download on a non-main branch; ordinary PR runs never upload previews'
+        type: choice
+        default: none
+        options: [none, setup, portable]
 
+# Serialize this workflow's artifact writers, including release handoffs. Normal PR
+# validation stays parallel across refs and may cancel a superseded PR run.
 concurrency:
-  group: star-windows-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.preview_format != 'none')) && 'star-windows-artifact-writer' || format('star-windows-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.ref != 'refs/heads/main' && inputs.preview_format == 'none') }}
 
-# Layout (2026-10-13): the React bundle is built and tested once on Linux; the Windows offline
-# suite runs as two parallel shards (tests/sharding.py) while windows-build packages the EXE.
+# Layout: Linux React validation is still required. Each Windows job builds and tests
+# its own React bundle from the checked-out commit, so PR validation needs no artifact
+# storage. The offline suite still runs as two shards while windows-build packages,
+# exercises, installs, and checks the exact binaries later offered for release.
 # A release still needs every shard green: attest-release needs windows-tests, and
 # publish-release needs attest-release. Check names: "Windows offline tests (1/2)" and "(2/2)".
 jobs:
@@ -58,13 +72,6 @@ jobs:
           npm run test
           npm run build
           test -s dist/index.html
-      - name: Hand the React bundle to the Windows jobs
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: star-frontend-dist
-          path: frontend/dist/
-          if-no-files-found: error
-          retention-days: 1
 
   windows-tests:
     name: Windows offline tests (${{ matrix.shard }}/2)
@@ -92,11 +99,21 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - name: Download the React bundle built from this commit
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: star-frontend-dist
-          path: frontend/dist
+      - name: Build and verify React assets on this Windows runner
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'React dependencies could not be installed' }
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { throw 'React type checks failed' }
+          npm run test
+          if ($LASTEXITCODE -ne 0) { throw 'React tests failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'React build failed' }
+          if (-not (Test-Path 'dist/index.html') -or (Get-Item 'dist/index.html').Length -eq 0) {
+            throw 'React index missing or empty'
+          }
       - name: Install STAR test requirements
         shell: pwsh
         run: |
@@ -113,8 +130,21 @@ jobs:
           python -m pytest -q --durations=15 --junitxml=test-results/windows-shard.xml
           if ($LASTEXITCODE -ne 0) { throw 'Offline tests failed' }
           python -m compileall -q star star_desktop.py
-      - name: Keep this shard's per-test results and timings
+      - name: Record this shard's real test result counts without artifact storage
         if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if (Test-Path 'test-results/windows-shard.xml') {
+            [xml]$report = Get-Content 'test-results/windows-shard.xml' -Raw
+            $total = $report.SelectNodes('//testcase').Count
+            $failed = $report.SelectNodes('//testcase[failure or error]').Count
+            $skipped = $report.SelectNodes('//testcase[skipped]').Count
+            "Windows shard: $total reported cases; $failed failures/errors; $skipped skipped." >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            'Windows shard did not produce a test report; do not infer a passing suite.' >> $env:GITHUB_STEP_SUMMARY
+          }
+      - name: Keep this shard's per-test results and timings
+        if: ${{ always() && github.ref == 'refs/heads/main' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-tests-shard-${{ matrix.shard }}
@@ -128,6 +158,7 @@ jobs:
     timeout-minutes: 65
     permissions:
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Stamp exact source provenance for app diagnostics
@@ -154,12 +185,25 @@ jobs:
             requirements.txt
             requirements-desktop.txt
             requirements-dev.txt
-      - name: Download the React bundle built from this commit
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          name: star-frontend-dist
-          path: frontend/dist
-      - name: Check the React bundle (npm run build in the frontend job)
+          node-version: '22'
+      - name: Build and verify React assets on this Windows runner
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'React dependencies could not be installed' }
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { throw 'React type checks failed' }
+          npm run test
+          if ($LASTEXITCODE -ne 0) { throw 'React tests failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'React build failed' }
+          if (-not (Test-Path 'dist/index.html') -or (Get-Item 'dist/index.html').Length -eq 0) {
+            throw 'React index missing or empty'
+          }
+      - name: Check the React bundle produced on this runner
         shell: pwsh
         run: |
           if (-not (Test-Path 'frontend/dist/index.html')) { throw 'React index missing' }
@@ -179,13 +223,8 @@ jobs:
           $env:QT_QPA_PLATFORM = 'offscreen'
           $env:APPDATA = Join-Path $env:RUNNER_TEMP 'STAR-CI-Empty-Profile'
           python -m scripts.capture_desktop_ui
-      - name: Upload rendered GUI preview screenshots
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: STAR-OLED-GUI-Previews
-          path: ui-previews/*.png
-          if-no-files-found: error
-          retention-days: 30
+          if ($LASTEXITCODE -ne 0) { throw 'GUI capture failed' }
+          if (@(Get-ChildItem 'ui-previews/*.png' -File).Count -eq 0) { throw 'GUI previews missing' }
       - name: Package STAR.exe with vector assets
         shell: pwsh
         run: |
@@ -237,6 +276,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'STAR installer build failed' }
           $setup = "dist/STAR-Setup-v$version.exe"
           if (-not (Test-Path $setup)) { throw "Missing $setup" }
+      - name: Install and smoke test the exact Setup output on the disposable Windows runner
+        shell: pwsh
+        env:
+          STAR_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: ./scripts/smoke_windows_installer.ps1
       - name: Create standalone SHA-256 file for manual preview downloads
         shell: pwsh
         run: |
@@ -248,21 +292,37 @@ jobs:
           $zipHash = (Get-FileHash -Path $portable -Algorithm SHA256).Hash.ToLowerInvariant()
           @("$setupHash  STAR-Setup-v$version.exe", "$zipHash  STAR-Genesis-Windows-x64.zip") |
             Set-Content -Encoding utf8 'STAR-PREVIEW-SHA256SUMS.txt'
+      - name: Admit an explicitly requested preview within the repository byte budget
+        id: preview-budget
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && inputs.preview_format != 'none'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAR_PREVIEW_FORMAT: ${{ inputs.preview_format }}
+        run: |
+          python scripts/check_windows_preview_budget.py
+          if ($LASTEXITCODE -ne 0) { throw 'Requested preview exceeds the budget or could not be verified' }
+      - name: Record actual package validation
+        shell: pwsh
+        run: |
+          'Packaged EXE doctors and silent installation checks completed on this runner. See each Windows offline-test job for its independent result.' >> $env:GITHUB_STEP_SUMMARY
+          'Ordinary PR validation stores no Actions artifacts; optional downloads require a non-main workflow dispatch.' >> $env:GITHUB_STEP_SUMMARY
       - name: Upload testable executables
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ github.event_name == 'pull_request' && 'STAR-Fast-Brain-Preview' || 'STAR-Windows-vNext' }}
+          name: STAR-Windows-vNext
           path: |
             STAR-Genesis-Windows-x64.zip
             dist/STAR-Setup-v*.exe
             STAR-PREVIEW-SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 30
-      # Review artifacts are intentionally separate so each compressed file
-      # stays below connector/download size limits and is easy to verify.
-      # Stable releases keep using STAR-Windows-vNext above unchanged.
+          retention-days: 1
+      # A requested non-main preview uploads exactly one format, never a duplicate
+      # combined archive. The byte check includes screenshots and checksum overhead.
+      # Main release consumers still use the mandatory exact STAR-Windows-vNext bundle.
       - name: Upload Ultimate preview Windows installer
-        if: github.event_name == 'pull_request'
+        if: steps.preview-budget.outputs.format == 'setup'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: STAR-Ultimate-Windows-Setup
@@ -270,9 +330,9 @@ jobs:
             dist/STAR-Setup-v*.exe
             STAR-PREVIEW-SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
       - name: Upload Ultimate preview portable ZIP
-        if: github.event_name == 'pull_request'
+        if: steps.preview-budget.outputs.format == 'portable'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: STAR-Ultimate-Windows-Portable
@@ -280,7 +340,16 @@ jobs:
             STAR-Genesis-Windows-x64.zip
             STAR-PREVIEW-SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
+
+      - name: Upload rendered GUI preview screenshots
+        if: github.ref == 'refs/heads/main' || steps.preview-budget.outputs.format != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: STAR-OLED-GUI-Previews
+          path: ui-previews/*.png
+          if-no-files-found: error
+          retention-days: 7
 
   # The PR build receives NO attestation or publishing permissions. Only
   # verified main-branch artifacts enter this trusted provenance job.
