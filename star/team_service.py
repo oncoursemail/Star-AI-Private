@@ -14,13 +14,14 @@ import asyncio
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from time import monotonic
 
 from .agent_runtime import TeamResult, run_plan
 from .autonomous_research import (EvidenceBook, begin_research, finish_research,
                                    followup_question)
 from .deep_research import research_web
+from .web_fetch import Page
 from .web_search import _safe_results, search_web
 from .orchestration import Task, TaskPlan
 from .learning import learned_context
@@ -78,8 +79,8 @@ async def run_research_team(
     settings=None,
     speeds: ProviderSpeeds | None = None,
     research: bool = False,
-    web_provider=None,
-    page_provider=None,
+    web_provider: Callable[..., Awaitable[list[dict]]] | None = None,
+    page_provider: Callable[[str], Awaitable[Page]] | None = None,
     research_budget: ResearchBudget | None = None,
 ) -> tuple[str, TeamResult]:
     """Run 3 parallel-able specialist roles + 1 dependency-aware synthesis.
@@ -279,8 +280,10 @@ async def run_research_team(
                         raise RuntimeError("Web research needs STAR Server search or a Brave Search / Tavily key. "
                                            "Set one up in Settings.")
 
-                    async def searcher(query, *, limit):
+                    async def configured_search(query: str, *, limit: int) -> list[dict]:
                         return await search_web(query, limit=limit, settings=settings)
+
+                    searcher = configured_search
 
                 remaining = max(.01, total_seconds - (monotonic() - started))
                 budget = research_budget or ResearchBudget(

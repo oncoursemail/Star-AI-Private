@@ -153,3 +153,11 @@ The fully hydrated repository regression run completed with **9,635 Python tests
 A final privacy review separated the search-suggesting critic from automatically retrieved private project notes and from the other specialists' drafts. It still receives the explicit user objective and public source excerpts. Evidence, design, and synthesis retain the authorized local notes. Two additional behavioral tests cover serial and parallel execution with an adversarial public page: a real follow-up search is dispatched without the private marker, while the local analysis stages retain that marker. This addresses that specific private-note path; the explicit user objective remains part of the user-authorized search flow.
 
 Final focused research verification: **47 new Python tests passed** across all four new modules in 1.24 seconds, including the final private-note boundary. Together with the 54 new frontend cases, this change adds **101 passing new tests**.
+
+### Repository CI follow-up
+
+The initial draft PR's GitHub runner completed the Python suite with **9,667 passed, 90 skipped, and four warnings**; the different pass/skip split reflects its environment. Both frontend jobs passed all **616 tests** and built the assets, then failed when GitHub refused the artifact upload because the repository's storage quota was exhausted. This does not establish a downloadable Windows package.
+
+GitHub's additional pinned pyright gate identified missing async provider types and an unnarrowed status lookup. The follow-up corrects those product types without suppressions or baseline changes. A matching local run of **pyright 1.1.414**, using an isolated Python 3.12 environment without third-party packages, passed the unchanged baseline gate: **430 known errors, none new**. Independent review found no behavior change, and all **47 new Python cases** passed again in 0.74 seconds.
+
+The PR's protected-closure check against its actual `main` base passed. A separate push check compares the branch with `star/next` and rejects two protected-file changes already inherited from `main` (`.github/workflows/protected-closure.yml` and `tests/test_protected_closure.py`). Neither file is changed by this PR. That base-branch mismatch and the artifact storage quota need independent repository maintenance; this candidate does not alter or bypass either check.

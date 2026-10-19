@@ -131,10 +131,11 @@ def sanitize_research_event(event: dict) -> dict | None:
         except ValueError:
             pass
     phrase = _PHRASES[kind]
-    if kind == "research_finished":
+    status = payload.get("status")
+    if kind == "research_finished" and isinstance(status, str):
         phrase = {"failed": "Research could not retrieve sources", "cancelled": "Research stopped",
                   "timed_out": "Research time limit reached", "partial": "Research has limited sources"}.get(
-                      payload.get("status"), phrase)
+                      status, phrase)
     return {"phase": phrase, "activity": payload}
 
 
