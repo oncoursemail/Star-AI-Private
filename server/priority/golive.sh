@@ -8,6 +8,8 @@
 #   night school + conductor -> 127.0.0.1:8083 with STAR_NS_GATE=priority (code: idle.py/__main__.py/config.py/
 #             conductor.py/star/task_checkpoint.py from the stage; the live MAX_REPAIRS_PER_CYCLE value is kept)
 #   knowledge refresh -> 127.0.0.1:8083 (drop-in); the knowledge service itself stays on 8080
+#   router binary -> /opt/star/bin-prio (llama.cpp with patch 0003, built by server/ramforge/build_prio.sh): background
+#             requests marked low_priority read their prompt in 64-token chunks and wait while an owner request works
 set -euo pipefail
 stage=/opt/star/priority/stage
 backup=/opt/star/config/backups/priority-$(date -u +%Y%m%d-%H%M%S)
@@ -55,6 +57,12 @@ open(p, "w", encoding="utf-8").write(text[:start] + section + text[end:])
 PY
 grep -q -- "--host 0.0.0.0 --port 8080" "$dropin"
 sed -i 's/--host 0.0.0.0 --port 8080/--host 127.0.0.1 --port 8081/' "$dropin"
+prio_build=/opt/star/src/llama.cpp-prio/build/bin
+test -x "$prio_build/llama-server" && grep -qa low_priority "$prio_build/libllama-server-impl.so"
+rm -rf /opt/star/bin-prio && install -d -o star -g star /opt/star/bin-prio
+cp -a "$prio_build"/llama-server "$prio_build"/lib*.so* /opt/star/bin-prio/
+sed -i 's#/opt/star/bin-ramforge#/opt/star/bin-prio#g' "$dropin"
+grep -q "/opt/star/bin-prio/llama-server" "$dropin"
 
 install -d -o star -g star /opt/star/priority /opt/star/logs
 install -o star -g star -m 644 "$stage/priority_proxy.py" /opt/star/priority/priority_proxy.py

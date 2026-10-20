@@ -152,12 +152,17 @@ def test_solo_keep_lets_the_oldest_p2_run_beside_the_owner():
     p3 = start(sched, 3)
     p2 = start(sched, 2)
     p0 = start(sched, 0)
-    assert p0.state == "running" and p2.state == "running" and p3.state == "pausing"
+    assert p0.state == "running" and p2.state == "pausing" and p3.state == "pausing"   # its prompt gets the CPU
     sched.paused(p3)
-    late = start(sched, 3)
-    assert late.state == "queued"                               # one background beside the owner, no more
+    sched.paused(p2)
+    for job in (p2, p3):
+        with sched._cv:
+            job.state = "queued"
+            sched._queued.append(job)
+    sched.answering(p0)                                         # first token out: one background may run beside it
+    assert p2.state == "running" and p3.state == "queued"
     sched.release(p2)
-    assert late.state == "running"                              # the kept place is free again
+    assert p3.state == "running"                                # the kept place is free again
 
 
 def test_a_stuck_owner_request_stops_holding_background_off():
@@ -591,6 +596,17 @@ def test_logprobs_requests_are_passed_through_unscheduled(stack):
     status, chunks, _ = call(port, "/p0/v1/chat/completions", chat(3, stream=True, logprobs=True))
     assert status == 200 and "timings_per_token" not in fake.requests[-1]
     assert server.RequestHandlerClass.proxy.sched.view()["classes"]["P0"]["requests"] == 0
+
+
+def test_background_requests_are_marked_low_priority_when_enabled(stack):
+    fake, server, port = stack()
+    assert call(port, "/p3/v1/chat/completions", chat(2))[0] == 200
+    assert "low_priority" not in fake.requests[-1]                 # off by default: unpatched servers never see it
+    server.RequestHandlerClass.proxy.cfg.mark_low_priority = True
+    assert call(port, "/p3/v1/chat/completions", chat(2))[0] == 200
+    assert fake.requests[-1]["low_priority"] is True
+    assert call(port, "/p0/v1/chat/completions", chat(2))[0] == 200
+    assert "low_priority" not in fake.requests[-1]
 
 
 def test_header_overrides_class_and_config_file(tmp_path):

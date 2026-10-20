@@ -91,6 +91,7 @@ class Config:
                                       # must not starve background work: seen live 2026-10-20, a P0 stuck 10 min)
     assign_slots: bool = True         # pin each request to a slot that is free (keeps a paused answer's slot)
     class_ports: dict[int, int] = field(default_factory=dict)   # extra listen port -> default class on it
+    mark_low_priority: bool = False   # send "low_priority": true with P2/P3 requests (needs server patch 0003)
     log: str = ""
     models: dict[str, ModelPolicy] = field(default_factory=lambda: {
         "star-fast": ModelPolicy("star-fast", 2, 0, ("star-code", "star-vision")),
@@ -118,6 +119,8 @@ class Config:
             cfg.solo_max_s = float(data["solo_max_s"])
         if "assign_slots" in data:
             cfg.assign_slots = bool(data["assign_slots"])
+        if "mark_low_priority" in data:
+            cfg.mark_low_priority = bool(data["mark_low_priority"])
         if "class_ports" in data:
             cfg.class_ports = {int(port): parse_class(str(cls), cfg.default_class)
                                for port, cls in data["class_ports"].items()}
@@ -169,6 +172,7 @@ class Job:
     pauses: int = 0
     slot: int | None = None           # the llama.cpp slot it was sent to (kept while paused, for its resume)
     started_at: float = 0.0           # when it last started running
+    answering: bool = False           # has produced its first token (owner requests: background may resume)
 
 
 @dataclass
@@ -279,6 +283,13 @@ class Scheduler:
             job.state, job.cancel, job.slot = "done", None, None
             self._schedule()
 
+    def answering(self, job: Job) -> None:
+        """The job produced its first token (an owner request may now share the CPU with solo_keep streams)."""
+        with self._cv:
+            if not job.answering:
+                job.answering = True
+                self._schedule()
+
     def note(self, cls: int, **values: float) -> None:
         with self._cv:
             st = self.stats[cls]
@@ -360,9 +371,15 @@ class Scheduler:
         if job.cls >= 2:
             if sum(1 for j in running if j.cls >= 2) >= policy.cap():
                 return False
-            if solo and self._background_running() >= self.cfg.solo_keep:
+            if solo and self._background_running() >= self._keep():
                 return False
         return True
+
+    def _keep(self) -> int:
+        """solo_keep applies once every owner request has its first token: until then the prompt gets the CPU."""
+        prompting = any(j.cls == 0 and not j.answering for jobs in self._running.values() for j in jobs) or any(
+            j.cls == 0 for j in self._queued)
+        return 0 if prompting else self.cfg.solo_keep
 
     def _background_running(self) -> int:
         return sum(1 for jobs in self._running.values() for j in jobs if j.cls >= 2 and j.state != "pausing")
@@ -383,7 +400,7 @@ class Scheduler:
         if solo and self._p0_holding():
             background = sorted((j for jobs in self._running.values() for j in jobs if j.cls >= 2 and j.state == "running"),
                                 key=lambda j: (j.preemptible, j.cls, j.seq))     # kept first: unpausable, P2, oldest
-            for job in background[self.cfg.solo_keep:]:
+            for job in background[self._keep():]:
                 if job.preemptible:
                     self._pause(job)
         for name, running in self._running.items():
@@ -871,6 +888,8 @@ class Handler(BaseHTTPRequestHandler):
         body["timings_per_token"] = True
         if turn.segments:
             body.setdefault("cache_prompt", True)
+        if self.proxy.cfg.mark_low_priority and turn.cls >= 2:
+            body["low_priority"] = True       # patched llama.cpp: its prompt yields to normal requests
         if self.proxy.cfg.assign_slots:
             slot = sched.take_slot(job, self.proxy.busy_slots(job.model, headers), turn.req.get("id_slot"))
             if slot is None:
@@ -959,6 +978,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not sched.set_preemptible(job, False):
                         return False
                 made = answer.absorb(chunk)
+                if made and not job.answering:
+                    sched.answering(job)
                 if made and turn.first_token is None:
                     turn.first_token = time.monotonic() - turn.t0
                 if turn.stream:
