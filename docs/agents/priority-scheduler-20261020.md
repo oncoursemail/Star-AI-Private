@@ -52,3 +52,16 @@ docs/research/priority-scheduler-20261020.md (in the branch).
 - Next: (1) try `--ubatch-size` smaller for star-fast (cancel lands between smaller batches) to cut the 3.3-4.0 s
   tail; (2) deploy + switch Discord bot /p0 and night school /p3 (STAR_NS_GATE=priority) together; (3) wire
   StepCheckpoint into agent_fleet/conductor_fleet runs; (4) Studio/test jobs under star.cpu_priority.
+- 12:2xZ LEAD: go live (proxy as front door on 8080, router internal, star-fast 3 slots, background labelled P3/P2).
+  Built: class ports (8080 P0 / 8082 P2 / 8083 P3; night school's app refuses URL paths), all verbs passed through,
+  logprobs unscheduled, listen backlog 256, golive.sh (writes /opt/star/priority/undo.sh), deploy.sh --start/--undo.
+- 12:28Z L1 live baseline (router direct, 2 slots). 12:35Z go-live (backup /opt/star/config/backups/priority-
+  20261020-123520). 12:39-13:15Z L3-L9 (table in docs/research/priority-scheduler-20261020.md section 5). Medians
+  < 3 s everywhere; worst 5.99 / 6.58 / 44.3 / 31 s when star-fast is reading a long background prompt (night
+  school's 3,113-token prompt: cancel landed ~29 s later); ubatch 128 and batch-size 128 did not fix it.
+- ~13:25Z an owner request hung in the proxy ~10 min, star-fast did not answer /slots; lock run's 10-min limit did
+  not end the hold (ssh kept running; lock went stale). 13:3xZ UNDO run (undo.sh): router 0.0.0.0:8080 direct,
+  star-priority inactive, star-fast parallel 2 / ctx 65536, no batch lines, learning env + night school code back
+  (live MAX_REPAIRS_PER_CYCLE = 0 kept), refresh drop-in removed; brain 2 playtest brain.env restored from
+  .bak-20261020-priority. Chat via 8080 answered (110 s: star-fast reload). Nothing of this item is live now.
+- After: solo_max_s (120 s) so a stuck owner request cannot starve background (test added).

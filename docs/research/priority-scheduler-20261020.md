@@ -140,3 +140,40 @@ sample.
 9. Linux cgroup v2 (cpu.weight, cpu.idle, cpu.max, cgroup.freeze): https://docs.kernel.org/admin-guide/cgroup-v2.html
 10. LangGraph persistence / checkpointers: https://langchain-ai.github.io/langgraph/concepts/persistence/
 11. Temporal, durable execution: https://docs.temporal.io/workflows
+
+## 5. Live trial on brain 1 (2026-10-20 12:28-13:3xZ) - undone
+
+Lead decision: go live with every client behind the proxy. Deployed with `server/priority/deploy.sh --start`
+(golive.sh): router moved to 127.0.0.1:8081, proxy on 8080 (unlabelled = P0) + 8082 (P2) + 8083 (P3), star-fast
+3 slots / ctx 98304, night school + conductor on 8083 with STAR_NS_GATE=priority, knowledge refresh on 8083,
+brain 2 playtest learning on 8083. Discord bot, desktop app and voice stayed on 8080 (P0). Every step and measurement
+ran under `star lock run`. Same bench as section 3 (chat 60 tokens; batch = 6 x 250 tokens, 2 at a time, chats at
+10/50/90 s).
+
+| live run | owner first token (s) | whole chat (s) | background tok/s (vs 12.01 today) |
+|---|---|---|---|
+| today: router direct, 2 slots | K0 1.99 1.61 · K1 2.01 2.01 · K2 **48.13** 2.27 · batch 18.64 18.61 23.45 | 26.7-33.5 | 12.01 |
+| proxy, solo, grace 2 s | K0 2.93 1.95 · K1 2.06 2.07 · K2 1.81 2.06 · batch 2.03 3.28 2.00 | 7.4-8.6 | 9.57 (80%) |
+| + solo_keep 1 | K1 2.00 2.04 · K2 **5.99** 2.22 · batch 3.27 3.51 2.35 | 6.0-23.9 | 12.32 (103%) |
+| solo_keep 0, grace 1 s | K1 2.30 1.83 · K2 2.61 3.03 · batch **6.58** 4.24 3.54 | 8.4-12.1 | 12.64 (105%) |
+| + ubatch-size 128 | K0 1.71 1.56 · K1 1.80 1.87 · K2 2.03 2.05 3.46 2.26 · batch **44.32** 1.85 2.07 / 3.91 3.99 3.34 | 8.4-46.3 | 7.84 / 12.25 |
+| + batch-size 128 | long background prompt then chat: **30.96, 30.71** · batch 2.26 3.16 2.08 | 6.9-38.2 | 9.98 (83%) |
+
+Long-prompt speed did not suffer from the small batches (1,950-token cold prompt 36.2 tok/s at the default, 43.1
+with ubatch 128, 43.0 with batch 128; single samples).
+
+What failed: the owner waits whenever star-fast is reading a long background prompt. In the 44 s case night school
+(correctly labelled P3) had just sent a 3,113-token prompt; the router log shows the cancel of the paused requests
+landing ~29 s later. Smaller `ubatch-size` and `batch-size` did not remove it (31 s in the dedicated test). Then an
+owner request hung in the proxy for ~10 minutes while star-fast stopped answering `/slots` (> 2 min), and solo mode
+held all background off behind it. Lead's rule (median < 3 s, worst < 5 s, background >= 85%): medians passed in
+every configuration; the worst case did not -> **undone** with /opt/star/priority/undo.sh (router back on
+0.0.0.0:8080, proxy off, star-fast 2 slots / 65536, night school env and code, refresh drop-in and brain 2 playtest
+URL restored; checked: chat through 8080 answers).
+
+Fixed in the code after the trial: `solo_max_s` (120 s): an owner request running longer no longer holds background
+off. Open: (1) why star-fast stopped answering (not reproduced; it began after a P0 was pinned while two paused
+P3 cancels and a long P3 prompt were in flight), (2) the long-prompt wait: next is reading llama.cpp's
+update_slots to see whether a new task and cancels wait for a whole slot prompt, and either a server patch (check
+cancels between prompt batches) or a proxy rule that holds background prompts above N tokens while an owner request
+is likely (e.g. within 60 s of the last one).

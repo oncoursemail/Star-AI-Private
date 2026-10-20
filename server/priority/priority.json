@@ -7,7 +7,8 @@
   "key_file": "/opt/star/secrets/api_keys",
   "log": "/opt/star/logs/priority.jsonl",
   "solo_p0": true,
-  "grace_s": 2.0,
+  "grace_s": 1.0,
+  "solo_keep": 0,
   "models": {
     "star-fast": {"slots": 3, "bg_cap": 2, "aliases": ["star-code", "star-vision"]},
     "star-voice": {"slots": 2, "bg_cap": 1, "aliases": ["star-quick"]}

@@ -86,6 +86,9 @@ class Config:
     default_class: int = 2
     solo_p0: bool = True
     grace_s: float = 2.0
+    solo_keep: int = 0                # background generations that keep running while a P0 runs (the oldest P2 first)
+    solo_max_s: float = 120.0         # a P0 running longer than this no longer holds background off (a stuck request
+                                      # must not starve background work: seen live 2026-10-20, a P0 stuck 10 min)
     assign_slots: bool = True         # pin each request to a slot that is free (keeps a paused answer's slot)
     class_ports: dict[int, int] = field(default_factory=dict)   # extra listen port -> default class on it
     log: str = ""
@@ -109,6 +112,10 @@ class Config:
             cfg.solo_p0 = bool(data["solo_p0"])
         if "grace_s" in data:
             cfg.grace_s = float(data["grace_s"])
+        if "solo_keep" in data:
+            cfg.solo_keep = max(0, int(data["solo_keep"]))
+        if "solo_max_s" in data:
+            cfg.solo_max_s = float(data["solo_max_s"])
         if "assign_slots" in data:
             cfg.assign_slots = bool(data["assign_slots"])
         if "class_ports" in data:
@@ -161,6 +168,7 @@ class Job:
     paused_at: float = 0.0
     pauses: int = 0
     slot: int | None = None           # the llama.cpp slot it was sent to (kept while paused, for its resume)
+    started_at: float = 0.0           # when it last started running
 
 
 @dataclass
@@ -312,7 +320,7 @@ class Scheduler:
 
     def p0_active(self) -> bool:
         with self._cv:
-            return self._p0_present() or self._clock() - self._last_p0_end < self.cfg.grace_s
+            return self._p0_holding() or self._clock() - self._last_p0_end < self.cfg.grace_s
 
     def view(self) -> dict:
         with self._cv:
@@ -325,7 +333,7 @@ class Scheduler:
                                  "preemptible": j.preemptible} for j in self._running[name]],
                     "queued": [{"class": CLASS_NAMES[j.cls], "wait_s": round(now - j.queued_at, 2),
                                 "pauses": j.pauses} for j in self._queued if j.model == name]}
-            return {"p0_active": self._p0_present() or now - self._last_p0_end < self.cfg.grace_s,
+            return {"p0_active": self._p0_holding() or now - self._last_p0_end < self.cfg.grace_s,
                     "solo_p0": self.cfg.solo_p0, "models": models,
                     "classes": {CLASS_NAMES[i]: st.view() for i, st in enumerate(self.stats)}}
 
@@ -336,21 +344,28 @@ class Scheduler:
             if job in jobs:
                 jobs.remove(job)
 
-    def _p0_present(self) -> bool:
-        return any(j.cls == 0 for j in self._queued) or any(
-            j.cls == 0 for jobs in self._running.values() for j in jobs)
-
     def _solo(self) -> bool:
-        return self.cfg.solo_p0 and (self._p0_present() or self._clock() - self._last_p0_end < self.cfg.grace_s)
+        return self.cfg.solo_p0 and (self._p0_holding() or self._clock() - self._last_p0_end < self.cfg.grace_s)
+
+    def _p0_holding(self) -> bool:
+        """A P0 that may hold background off: queued, or running for less than solo_max_s."""
+        now = self._clock()
+        return any(j.cls == 0 for j in self._queued) or any(
+            j.cls == 0 and now - j.started_at < self.cfg.solo_max_s for jobs in self._running.values() for j in jobs)
 
     def _fits(self, job: Job, solo: bool) -> bool:
         policy, running = self.cfg.models[job.model], self._running[job.model]
         if len(running) >= policy.slots:
             return False
         if job.cls >= 2:
-            if solo or sum(1 for j in running if j.cls >= 2) >= policy.cap():
+            if sum(1 for j in running if j.cls >= 2) >= policy.cap():
+                return False
+            if solo and self._background_running() >= self.cfg.solo_keep:
                 return False
         return True
+
+    def _background_running(self) -> int:
+        return sum(1 for jobs in self._running.values() for j in jobs if j.cls >= 2 and j.state != "pausing")
 
     def _schedule(self) -> None:
         solo = self._solo()
@@ -359,17 +374,18 @@ class Scheduler:
                 self._queued.remove(job)
                 if job in self._paused[job.model]:
                     self._paused[job.model].remove(job)
-                job.state = "running"
+                job.state, job.started_at = "running", self._clock()
                 self._running[job.model].append(job)
         self._preempt(solo)
         self._cv.notify_all()
 
     def _preempt(self, solo: bool) -> None:
-        if solo and self._p0_present():
-            for jobs in self._running.values():
-                for job in jobs:
-                    if job.cls >= 2 and job.state == "running" and job.preemptible:
-                        self._pause(job)
+        if solo and self._p0_holding():
+            background = sorted((j for jobs in self._running.values() for j in jobs if j.cls >= 2 and j.state == "running"),
+                                key=lambda j: (j.preemptible, j.cls, j.seq))     # kept first: unpausable, P2, oldest
+            for job in background[self.cfg.solo_keep:]:
+                if job.preemptible:
+                    self._pause(job)
         for name, running in self._running.items():
             waiting = sorted((j for j in self._queued if j.model == name and j.cls <= 1), key=lambda j: (j.cls, j.seq))
             freeing = sum(1 for j in running if j.state == "pausing")
@@ -989,6 +1005,10 @@ def _has_tool_calls(chunk: dict) -> bool:
     return any((choice.get("delta") or {}).get("tool_calls") for choice in chunk.get("choices") or [])
 
 
+class FrontDoor(ThreadingHTTPServer):
+    request_queue_size = 256          # the stdlib default (5) refuses connections in a burst of embedding calls
+
+
 def make_servers(cfg: Config) -> list[ThreadingHTTPServer]:
     """The main port (default class) and one listener per class port, all sharing one scheduler: a client is labelled
     by the port it uses (http://<brain>:8083/v1 = P3) without a path a strict URL check would refuse."""
@@ -996,7 +1016,7 @@ def make_servers(cfg: Config) -> list[ThreadingHTTPServer]:
     handler = type("BoundHandler", (Handler,), {"proxy": proxy})
     servers = []
     for port, cls in [(cfg.port, cfg.default_class), *cfg.class_ports.items()]:
-        server = ThreadingHTTPServer((cfg.host, port), handler)
+        server = FrontDoor((cfg.host, port), handler)
         server.daemon_threads = True
         server.default_class = cls       # type: ignore[attr-defined]
         servers.append(server)

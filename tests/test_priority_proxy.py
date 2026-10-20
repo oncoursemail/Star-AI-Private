@@ -23,8 +23,9 @@ class Clock:
         return self.now
 
 
-def make_sched(slots=2, bg_cap=0, solo=False, grace=2.0):
-    cfg = pp.Config(solo_p0=solo, grace_s=grace, models={"m": pp.ModelPolicy("m", slots, bg_cap, ("alias",))})
+def make_sched(slots=2, bg_cap=0, solo=False, grace=2.0, keep=0):
+    cfg = pp.Config(solo_p0=solo, grace_s=grace, solo_keep=keep,
+                    models={"m": pp.ModelPolicy("m", slots, bg_cap, ("alias",))})
     clock = Clock()
     return pp.Scheduler(cfg, clock=clock), clock
 
@@ -144,6 +145,30 @@ def test_slot_affinity_skips_slots_another_client_uses():
     job = start(sched, 0)
     assert sched.take_slot(job, {1}, wanted=1) == 0
     assert sched.take_slot(job, {0, 1}) is None and job.slot is None
+
+
+def test_solo_keep_lets_the_oldest_p2_run_beside_the_owner():
+    sched, clock = make_sched(slots=3, bg_cap=2, solo=True, grace=2.0, keep=1)
+    p3 = start(sched, 3)
+    p2 = start(sched, 2)
+    p0 = start(sched, 0)
+    assert p0.state == "running" and p2.state == "running" and p3.state == "pausing"
+    sched.paused(p3)
+    late = start(sched, 3)
+    assert late.state == "queued"                               # one background beside the owner, no more
+    sched.release(p2)
+    assert late.state == "running"                              # the kept place is free again
+
+
+def test_a_stuck_owner_request_stops_holding_background_off():
+    sched, clock = make_sched(slots=3, bg_cap=2, solo=True, grace=1.0)
+    p0 = start(sched, 0)
+    bg = start(sched, 3)
+    assert p0.state == "running" and bg.state == "queued"
+    clock.now += sched.cfg.solo_max_s + 1                       # the owner request never ends
+    with sched._cv:
+        sched._schedule()
+    assert bg.state == "running"
 
 
 def test_acquire_raises_gone_when_the_client_leaves():
