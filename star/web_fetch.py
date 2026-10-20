@@ -407,4 +407,3 @@ async def tool_result(args: dict, *, settings=None, transport=None, resolver=_re
         detail = f"HTTP {status}" if status else type(exc).__name__
         return {"isError": True, "content": [{"type": "text", "text": f"Could not read the page ({detail})"}]}
     return {"isError": False, "content": [{"type": "text", "text": page_context(page)}]}
-
