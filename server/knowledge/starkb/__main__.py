@@ -1,5 +1,6 @@
 """CLI: python -m starkb {build|stats|subset|embed|search|ask|api-lookup|luau-check|serve|eval|
-                         study-plan|study|study-status|refresh|api-coverage}
+                         study-plan|study|study-status|refresh|api-coverage|
+                         offload-export|offload-import|offload-sample}
 
 Paths default to the deployed layout in the container:
   /opt/star/knowledge/app      this code
@@ -40,6 +41,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pause", type=float, default=0.0, help="sleep between batches (seconds)")
     p.add_argument("--duty", type=float, default=1.0,
                    help="fraction of time the embedding server may be busy, e.g. 0.4 (see embed.py)")
+
+    p = sub.add_parser("offload-export", help="print the texts still to embed as JSON lines (embedding on a GPU, offload.py)")
+    p.add_argument("--limit", type=int)
+    p = sub.add_parser("offload-import", help="load a vectors file from stdin (offload.py format); never replaces vectors")
+    p.add_argument("--batch", type=int, default=2000, help="rows per commit")
+    p = sub.add_parser("offload-sample", help="print N embedded texts with their stored vectors (check another machine)")
+    p.add_argument("--n", type=int, default=200)
 
     p = sub.add_parser("search", help="search and print cited passages")
     p.add_argument("query")
@@ -136,6 +144,19 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(run(args.db, batch=args.batch, limit=args.limit, sha_file=args.sha_file,
                              max_seconds=args.max_seconds, pause=args.pause, duty=args.duty,
                              log=lambda m: print(m, flush=True)), indent=2))
+        return 0
+
+    if args.cmd in ("offload-export", "offload-import", "offload-sample"):
+        from . import offload
+        from .client import EMBED_MODEL
+        if args.cmd == "offload-export":
+            count = offload.export_pending(args.db, sys.stdout, EMBED_MODEL, limit=args.limit)
+        elif args.cmd == "offload-sample":
+            count = offload.sample_existing(args.db, sys.stdout, EMBED_MODEL, n=args.n)
+        else:
+            count = offload.import_vectors(args.db, sys.stdin.buffer, EMBED_MODEL, batch=args.batch,
+                                           log=lambda m: print(m, file=sys.stderr, flush=True))
+        print(json.dumps({"model": EMBED_MODEL, "result": count}), file=sys.stderr)
         return 0
 
     if args.cmd == "search":
