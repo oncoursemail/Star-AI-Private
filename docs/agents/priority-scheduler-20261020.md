@@ -65,3 +65,17 @@ docs/research/priority-scheduler-20261020.md (in the branch).
   (live MAX_REPAIRS_PER_CYCLE = 0 kept), refresh drop-in removed; brain 2 playtest brain.env restored from
   .bak-20261020-priority. Chat via 8080 answered (110 s: star-fast reload). Nothing of this item is live now.
 - After: solo_max_s (120 s) so a stuck owner request cannot starve background (test added).
+- ROUND 2 (lead: offline first, patch llama.cpp). Root cause in update_slots: one batch per iteration, prompts added
+  greedily in slot order; router keeps the child connection while the child reads a prompt. Patch 0003 (low_priority
+  prompt chunks of 64 tokens, deferred while a normal slot works; router cli->stop()) in /opt/star/src/llama.cpp-prio
+  (copy of the live tree; build_prio.sh). Live tree and binary untouched.
+- Hang reproduced (hold HH, 15:01-15:09Z): live binary + batch-size 128 + spec + 3 slots -> GGML_ASSERT batch too
+  small (server-context.cpp:576), star-fast dies, requests wait to timeout. My round-1 batch-size experiment caused
+  the 10-minute hang.
+- Offline holds HA-HL (13:52-15:01Z, temp router 127.0.0.1:8096 + temp proxy 8097): final config passes: 3,000-token
+  background prompt -> owner 1.74-2.77 s (today 104.5 s); 30 owner requests median 2.30 s, worst 3.86 s; background
+  102% of today. Table in docs/research section 6.
+- 15:10Z go-live (deploy.sh --start; backup /opt/star/config/backups/priority-20261020-151025). Live checks LIVE-2/3:
+  owner fine except 2 samples beside another P0 answer; background 82% then 58% because an unlabelled eval on the PC
+  (scripts/brain_vault_eval.py) ran as P0. 15:4xZ UNDONE (undo.sh, after waiting for claude-fastdraft's lock).
+  Verified restored. bin-prio and llama.cpp-prio left on disk (not used).

@@ -177,3 +177,48 @@ P3 cancels and a long P3 prompt were in flight), (2) the long-prompt wait: next 
 update_slots to see whether a new task and cancels wait for a whole slot prompt, and either a server patch (check
 cancels between prompt batches) or a proxy rule that holds background prompts above N tokens while an owner request
 is likely (e.g. within 60 s of the last one).
+
+## 6. Round 2: server patch 0003 (2026-10-20 13:45-15:50Z)
+
+Root cause, from llama.cpp's update_slots: each iteration builds ONE batch (up to `batch-size`, default 2048 tokens);
+generating slots add their tokens first, then pending prompts are added greedily in slot order. A long background
+prompt in an earlier slot fills every batch, so the owner's prompt starts only when it is done. Second cause: in
+router mode a request that is still reading its prompt is not cancelled when its client leaves; the router's
+connection to the child stays open until the child sends its first byte.
+
+Patch `server/ramforge/patches/0003-server-low-priority-slots.patch` (built by `server/ramforge/build_prio.sh` into
+/opt/star/src/llama.cpp-prio, next to the live tree): a request with `"low_priority": true` reads its prompt in
+chunks of at most 64 tokens per iteration (`LLAMA_LOW_PRIO_CHUNK`), and not at all while a normal slot has work
+(prompt or generation). The router calls `cli->stop()` when the client goes away, so the child cancels mid-prompt.
+Proxy: `mark_low_priority` adds the field to P2/P3 requests; `solo_keep` streams resume only after every owner
+request has its first token.
+
+The 10-minute hang, reproduced offline: the live binary with `batch-size 128` + speculative drafts (ngram-mod) +
+3 slots under 3 streams of repetitive code hits `GGML_ASSERT(add_ok && "batch must be large enough to hold the
+sampled and draft tokens")` (server-context.cpp:576; the batch holds max(batch-size, parallel) = 128 tokens, three
+slots' sampled + draft tokens overflow it), star-fast dies and the router leaves its requests waiting until they time
+out. Cause: my round-1 `batch-size 128` experiment. The patch keeps the default batch size.
+
+Offline, temporary router on 127.0.0.1:8096 (same model, live flags, router mode), quiet lock for every run:
+
+| configuration | owner first token behind a 3,000-token background prompt | owner, all scenarios | background tok/s (batch test) |
+|---|---|---|---|
+| today: live binary, 2 slots, no proxy | **104.5 s** (chat at 3 s) | batch chats 22.8-24.9 s | 12.44 |
+| patch, chunk 256, proxy solo | 2.14-5.90 s (median ~4.1) | - | - |
+| patch, chunk 64, proxy solo (pause all) | 1.56-2.63 s (8) | latency 1.55-2.02, batch 1.82-2.02 | 9.76 (78%) |
+| patch 64, proxy solo_keep 1 | 1.64-2.78 s (12) | batch first chats 3.33-5.30 | 14.31-15.63 |
+| patch 64, proxy without solo | - | batch 1.66-5.89 | 15.37 |
+| **final: patch 64, solo_keep 1 after the owner's first token** | **1.74-2.77 s (8/8 < 3 s)** | **30 requests: median 2.30 s, worst 3.86 s** (6 over 3 s) | **12.34-13.32, mean 12.73 (102%)** |
+
+Live trial 2 (15:10-15:42Z, the final configuration via golive.sh: patched binary /opt/star/bin-prio, proxy front
+door, star-fast 3 slots): my owner requests 1.56-3.55 s in 20 of 22 samples; the two exceptions (7.41, 6.04 s) ran
+beside another client's 440-token unlabelled (= P0) answer. Background in the batch test 9.84 tok/s (82%) and then
+6.91 (58%): during that run an eval on the PC (`scripts/brain_vault_eval.py`, another session) sent star-voice and
+star-fast requests back to back without a label, so as P0 it held background off for minutes (P3 waits of
+105-204 s in the proxy log). Background >= 85% failed live -> **undone again** with /opt/star/priority/undo.sh
+(checked: router on 8080 with the live binary, proxy off, star-fast 2 slots, night school env restored, brain 2
+playtest URL restored).
+
+What is needed before the next go-live: every background client labelled, especially evals (`STAR_EVAL_SERVER=
+http://<brain 1>:8083/v1`) and any script session; or make the unlabelled default P2 and label only the owner's
+clients (Discord bot, desktop app, voice) P0. Then `deploy.sh --start` and the same live check.
