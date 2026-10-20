@@ -68,6 +68,13 @@ def doctor():
 
 
 async def main(args):
+    if args.command in {"project-catalog", "github-inventory", "github-resolve", "github-read"}:
+        from .github_inventory import cli_result
+        result = await cli_result(args.command, repository_id=getattr(args, "repository_id", None),
+                                  path=getattr(args, "path", ""), revision=getattr(args, "revision", "HEAD"),
+                                  credential_source=getattr(args, "credential_source", None))
+        print(json.dumps(result, indent=2))
+        return
     if args.command == "doctor":
         doctor()
         return
@@ -274,6 +281,16 @@ def cli():
     build.add_argument("task", help="Improvement confined to new skill modules and docs")
     build.add_argument("--publish-draft", action="store_true", help="Publish using STAR's configured GitHub App")
     sub.add_parser("github-check")
+    sub.add_parser("project-catalog", help="Show owner-confirmed project names and repository IDs")
+    inventory = sub.add_parser("github-inventory", help="List all repositories visible to the configured read credential")
+    inventory.add_argument("--credential-source", choices=("env", "gh"))
+    for command in ("github-resolve", "github-read"):
+        read = sub.add_parser(command, help="Resolve stable repository identity or read bounded source")
+        read.add_argument("--repository-id", required=True, type=int)
+        read.add_argument("--credential-source", choices=("env", "gh"))
+        read.add_argument("--revision", default="HEAD", help="Branch or commit; HEAD uses the current default branch")
+        if command == "github-read":
+            read.add_argument("path")
     sync = sub.add_parser("github-sync")
     sync.add_argument("--branch", required=True, help="star/<development-branch>")
     ask = sub.add_parser("ask")

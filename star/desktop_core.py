@@ -69,6 +69,7 @@ class Settings:
     studio_luau: bool = False             # let STAR run Luau in that sandbox (needed to create instances)
     studio_tool_examples: bool = False    # opt-in: one example call appended to each error-prone Studio tool
     workspace_edit: bool = False
+    debug_evidence_enabled: bool = False  # opt-in report analysis; never grants process execution or attachment
     max_calls: int = 12
     context_chars: int = 26000
     llama_server: str = ''
@@ -110,6 +111,8 @@ class Settings:
     mcp_graphify_local: bool = False
     mcp_graphify_port: int = 8931
     mcp_obsidian_live: bool = False
+    mcp_github_repositories: bool = False  # explicit opt-in; fixed read-only repository discovery
+    github_repository_credential_source: str = 'gh'  # existing GitHub CLI account, or explicit env token
     blender_enabled: bool = False          # only attach STAR's local Blender MCP when requested
     blender_edit: bool = False             # explicit owner permission for new isolated scene jobs
     blender_executable: str = ''           # installed local executable; '' = discover without downloading
@@ -142,6 +145,7 @@ class Settings:
     # (star/learned_week.py). False = bundles only add candidates that wait for review.
     learning_auto_live: bool = True
     research_auto_check: bool = False      # opt-in daily public-doc checks while desktop is open
+    deep_research_enabled: bool = False    # candidate: bounded page reading for Team + Research
     # Generate several, test, keep what works (star/best_of_n.py): 'off' or 'auto' (2 to best_of_n_max candidates
     # for code requests on STAR Server, as many as the free model slots allow). Off until the owner opts in.
     best_of_n: str = 'off'
@@ -196,13 +200,16 @@ class Settings:
         if not self.project.strip() or len(self.project) > 100:
             raise ValueError('Project name is invalid')
         if any(type(getattr(self, key)) is not bool
-               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled',
-                            'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live',
+               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled',
+                            'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
                             'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
-                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
+                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
                             'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled')):
             raise ValueError('Tool access settings must be true or false')
+        if (not isinstance(self.github_repository_credential_source, str)
+                or self.github_repository_credential_source not in {'gh', 'env'}):
+            raise ValueError('GitHub repository credential source must be gh or env')
         if self.obsidian_vault and not Path(self.obsidian_vault).expanduser().is_dir():
             raise ValueError('Obsidian vault must be an existing folder')
         if self.obsidian_enabled and not self.obsidian_vault:
@@ -805,12 +812,14 @@ def redact_for_logs(value):
 
 
 def needs_project_tools(prompt: str, prior_user_turns: list[str] | None = None, *,
-                        blender: bool = False) -> bool:
+                        blender: bool = False, github_repositories: bool = False) -> bool:
     """Load task tools on explicit request or scoped short edit follow-up.
 
     User context hints are not permissions; executable scopes remain enforced.
     """
     text = prompt.lower()
+    if github_repositories and re.search(r'\b(?:githubs?|metallic(?:-[a-z]{2})?)\b', text):
+        return True
     scopes = ('studio', 'roblox', 'workspace', 'my project', 'my game', 'my files',
               'project folder', 'current place')
     if blender:   # only with the Blender switch on (Settings.blender_enabled); off, these stay plain chat
@@ -1150,7 +1159,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             and recent_all[-1][1] and prompt.startswith(recent_all[-1][1]) else recent_all
         )
         recent_users = [body for role,body in route_history if role=='user']
-        project_tools = needs_project_tools(prompt, recent_users, blender=settings.blender_enabled is True)
+        project_tools = needs_project_tools(prompt, recent_users, blender=settings.blender_enabled is True,
+                                            github_repositories=settings.mcp_github_repositories is True)
         referential = len(prompt) <= 160 and bool(re.search(
             r'\b(?:it|this|that|same|continue|again|those|these)\b', prompt, re.I))
         roblox_context = bool(project_tools and referential
@@ -1202,6 +1212,10 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         allowed_context_chars = model_context_char_budget(settings, route.model)
         intelligence = for_settings(settings, home) if use_tools else None
         workspace = Workspace(Path(settings.workspace)) if use_tools and settings.workspace else None
+        debug_evidence = None
+        if workspace is not None and settings.debug_evidence_enabled is True:
+            from .debug_evidence import DebugEvidenceTools
+            debug_evidence = DebugEvidenceTools(workspace, enabled=True)
         if use_tools and settings.tool_workshop_enabled:
             workshop = ToolWorkshop(home=home,project=settings.project,knowledge=knowledge,
                                     workspace=workspace,intelligence=intelligence)
@@ -1445,6 +1459,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     kwargs['document_tools'] = document_tools
                 if reverse_engineering is not None:
                     kwargs['reverse_engineering'] = reverse_engineering
+                if debug_evidence is not None:
+                    kwargs['debug_evidence'] = debug_evidence
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.

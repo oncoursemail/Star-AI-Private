@@ -286,3 +286,17 @@ def test_server_1s_quiet_lock_blocks_a_start(rig):
     assert rig.start_blocker() == "server 1's quiet lock is held"
     rig.lock["held"], rig.next_look = False, -1e18
     assert rig.start_blocker() == ""
+
+
+def test_pc_conductor_tasks_are_pushed_to_server_1s_pool(tmp_path, monkeypatch):
+    pool = tmp_path / "ns" / "pool"
+    pool.mkdir(parents=True)
+    (pool / "conductor-pc-20261017.json").write_text("[]", encoding="utf-8")
+    (pool / "conductor-20261017.json").write_text("[]", encoding="utf-8")      # server 1's own file: never sent back
+    (pool / "conductor-pc-x.json").write_text("[]", encoding="utf-8")          # odd name: refused
+    calls = []
+    monkeypatch.setattr(turbo.subprocess, "run", lambda argv, **kw: calls.append((argv, kw)) or turbo.SimpleNamespace(returncode=0))
+    config = dict(turbo.DEFAULTS, server_ssh="star@host.invalid")
+    assert turbo.push_conductor_tasks(config, tmp_path / "ns") == 1
+    assert "pool/conductor-pc-20261017.json" in calls[0][0][-1] and calls[0][1]["input"] == b"[]"
+    assert turbo.push_conductor_tasks(dict(config, server_ssh=""), tmp_path / "ns") == 0
