@@ -222,3 +222,31 @@ playtest URL restored).
 What is needed before the next go-live: every background client labelled, especially evals (`STAR_EVAL_SERVER=
 http://<brain 1>:8083/v1`) and any script session; or make the unlabelled default P2 and label only the owner's
 clients (Discord bot, desktop app, voice) P0. Then `deploy.sh --start` and the same live check.
+
+## 7. Round 3: unlabelled = P2, owner fingerprint (2026-10-20 16:00-17:5xZ) - undone
+
+Rule (lead): a label wins (X-Star-Priority header > /pN prefix > class port); on the main port an unlabelled request
+whose body has `chat_template_kwargs` counts as the owner (the installed v1.0 app, the Discord bot and voice send it;
+v1.0 sends no header and its User-Agent is the stock `AsyncOpenAI/Python`), everything else is P2. STAR code sends
+`X-Star-Priority` from `STAR_PRIORITY` (providers.open_client, owner's server only); night school sets P3.
+
+Live trial 3 (go-live 16:04Z, same patched binary and config as round 2, P2 default): owner requests from the bench
+(labelled /p0), 24 samples: median 2.28 s; 18 between 1.54 and 4.72 s; but 37.2 and 33.6 s (beside an outside
+owner-class request with a 668-token answer whose own first token took 38.5 s) and **313 s** at 17:35Z, while a
+steady stream of outside star-voice requests carrying STAR's body fingerprint (so classified owner) ran and a
+background answer was paused and resumed 4 times. Background in the batch test 9.74 and 12.66 tok/s (81%, 105% of
+today's 12.01). (The first long-prompt run was invalid: my script sent its "owner" chats unlabelled, i.e. as P2.)
+Worst case failed -> undone ~17:5xZ with /opt/star/priority/undo.sh (lock queue: other sessions held the lock most
+of the time), checked: router on 8080 with the live binary, proxy off, star-fast 2 slots, night school env restored,
+brain 2 playtest URL restored.
+
+Findings for the next round:
+- The body fingerprint cannot tell the owner's app from other STAR-code clients (evals through desktop_core, agent
+  sessions): any of them without STAR_PRIORITY counts as owner, and owner requests never pause each other. The
+  eval runner needs STAR_PRIORITY=P3 in code (file claimed by quality-ab #196; asked in message #454).
+- Two owner-class prompts still queue behind each other (a short chat waited 33-37 s behind a 668-token owner
+  request): the patch only chunks low-priority prompts. Next: chunk every prompt while another slot has a short
+  prompt waiting, so equal-priority requests interleave.
+- The 313 s stall is not explained by the proxy log (no owner request ahead of it on star-fast); candidates: CPU
+  contention from another session's separate star-fast server (port 8099, started 15:4xZ) plus the star-voice
+  stream; needs a reproduction on the temp router before another go-live.

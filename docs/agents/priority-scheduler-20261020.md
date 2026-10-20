@@ -79,3 +79,9 @@ docs/research/priority-scheduler-20261020.md (in the branch).
   owner fine except 2 samples beside another P0 answer; background 82% then 58% because an unlabelled eval on the PC
   (scripts/brain_vault_eval.py) ran as P0. 15:4xZ UNDONE (undo.sh, after waiting for claude-fastdraft's lock).
   Verified restored. bin-prio and llama.cpp-prio left on disk (not used).
+- ROUND 3 (board #203): unlabelled = P2, owner = body has chat_template_kwargs (v1.0 app/bot/voice; v1.0 sends no
+  header, UA AsyncOpenAI/Python), STAR_PRIORITY header from providers.open_client, night school P3. Tests first
+  (seen failing), 259 related tests pass. Go-live 16:04Z (backup priority-20261020-160413). Live owner samples 24:
+  median 2.28 s, but 33-37 s beside an outside 668-token owner request and 313 s at 17:35Z (outside star-voice
+  stream classified owner by fingerprint; cause of the 313 s not proven). Background 81% / 105%. Undone ~17:5xZ
+  (undo.sh; waited for the lock queue). Restored and checked. Details docs/research section 7.
