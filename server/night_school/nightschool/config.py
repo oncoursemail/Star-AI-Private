@@ -75,6 +75,7 @@ class Settings:
     conductor_tz_hours: float = field(default_factory=lambda: float(_env("STAR_NS_CONDUCTOR_TZ_HOURS", "-5")))   # owner's local time vs UTC
     conductor_interval_min: int = field(default_factory=lambda: int(_env("STAR_NS_CONDUCTOR_INTERVAL_MIN", "30")))
     conductor_docs: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_DOCS", ""))   # "" = home/docs-recent
+    conductor_tag: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_TAG", ""))     # "pc-": pool/conductor-pc-<night>.json
 
     @property
     def app(self) -> Path:          # a copy of the repository (the folder that holds `star/`)
