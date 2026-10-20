@@ -46,7 +46,7 @@ need the cascade order or a confidence gate changed in llama.cpp (a static draft
 not a config change.
 
 ### What is live: nothing. Temp server :8099 stopped (19:36Z). Brain-1 files stay in /opt/star/bench/fastdraft/
-(editab.json, specA/B.json, luau-static.lcs, scripts). PR: star/fast-edits-20261020 -> star/next.
+(editab.json, specA/B.json, luau-static.lcs, scripts). PR #534 (star/fast-edits-20261020 -> star/next): https://github.com/oncoursemail/Star-AI-Private/pull/534
 
 ## Status log
 - 15:00Z start. Claimed #197. Read STATE, wave brief, speed-20261020 (live star-fast = DSpark n-max 2 + ngram-mod),
