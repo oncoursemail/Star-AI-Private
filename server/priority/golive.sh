@@ -21,7 +21,7 @@ mkdir -p "$backup"
 cp -p /opt/star/config/models.ini "$backup/models.ini"
 cp -p "$dropin" "$backup/ramforge.conf"
 cp -p /opt/star/learning/env "$backup/learning.env"
-for f in __main__ conductor config idle; do cp -p "$ns/$f.py" "$backup/ns-$f.py"; done
+for f in __main__ conductor config idle real; do cp -p "$ns/$f.py" "$backup/ns-$f.py"; done
 
 cat > /opt/star/priority/undo.sh <<UNDO
 #!/usr/bin/env bash
@@ -32,7 +32,7 @@ rm -f /etc/systemd/system/star-priority.service $refresh_dropin
 cp -p $backup/ramforge.conf $dropin
 cp -p $backup/models.ini /opt/star/config/models.ini
 cp -p $backup/learning.env /opt/star/learning/env
-for f in __main__ conductor config idle; do cp -p $backup/ns-\$f.py $ns/\$f.py; done
+for f in __main__ conductor config idle real; do cp -p $backup/ns-\$f.py $ns/\$f.py; done
 rm -f $app/star/task_checkpoint.py
 systemctl daemon-reload
 systemctl restart star-brain
@@ -73,8 +73,18 @@ repairs=$(grep -E '^MAX_REPAIRS_PER_CYCLE = ' "$ns/conductor.py" | head -1)
 for f in __main__ conductor config idle; do install -o star -g star -m 644 "$stage/ns-$f.py" "$ns/$f.py"; done
 sed -i "s/^MAX_REPAIRS_PER_CYCLE = .*/$repairs/" "$ns/conductor.py"
 install -o star -g star -m 644 "$stage/task_checkpoint.py" "$app/star/task_checkpoint.py"
-sed -i '/^STAR_NS_BRAIN_URL=/d; /^STAR_NS_GATE=/d' /opt/star/learning/env
-printf 'STAR_NS_BRAIN_URL=http://127.0.0.1:8083\nSTAR_NS_GATE=priority\n' >> /opt/star/learning/env
+# night school's own pinned client also sends its class as a header (port 8083 already labels it P3)
+python3 - "$ns/real.py" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+old = "max_retries=0, http_client=client)"
+if "X-Star-Priority" not in s and s.count(old) == 1:
+    s = s.replace(old, 'max_retries=0, http_client=client,\n                           default_headers={"X-Star-Priority": os.environ.get("STAR_PRIORITY", "P3")})')
+    open(p, "w", encoding="utf-8").write(s)
+PY
+sed -i '/^STAR_NS_BRAIN_URL=/d; /^STAR_NS_GATE=/d; /^STAR_PRIORITY=/d' /opt/star/learning/env
+printf 'STAR_NS_BRAIN_URL=http://127.0.0.1:8083\nSTAR_NS_GATE=priority\nSTAR_PRIORITY=P3\n' >> /opt/star/learning/env
 mkdir -p "$(dirname "$refresh_dropin")"
 printf '[Service]\nEnvironment=STAR_BRAIN_URL=http://127.0.0.1:8083\n' > "$refresh_dropin"
 

@@ -649,3 +649,34 @@ def test_abort_from_another_thread_ends_the_read_cleanly():
         assert wait_for(lambda: fake.cancelled == 10)          # every aborted generation was stopped upstream
     finally:
         fake.server.shutdown()
+
+
+def test_unlabelled_is_p2_star_clients_are_owner_and_labels_win(tmp_path):
+    """Unlabelled = P2; the owner's installed STAR app/bot/voice (bodies carry chat_template_kwargs) = P0; an explicit
+    header, URL prefix or class port always wins."""
+    fake = FakeLlama(1)
+    cfg = pp.Config(upstream=fake.url, host="127.0.0.1", port=0, default_class=2, owner_fingerprint=True,
+                    solo_p0=False, class_ports={0: 3}, models={"m": pp.ModelPolicy("m", 1, 0, ())})
+    servers = pp.make_servers(cfg)
+    for server in servers:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    main_port, p3_port = (s.server_address[1] for s in servers)
+    star_body = chat(2, chat_template_kwargs={"preserve_thinking": True})
+    try:
+        def classes():
+            return {k: v["requests"] for k, v in servers[0].RequestHandlerClass.proxy.sched.view()["classes"].items()}
+        call(main_port, "/v1/chat/completions", chat(2))                        # a plain script
+        assert classes() == {"P0": 0, "P1": 0, "P2": 1, "P3": 0}
+        call(main_port, "/v1/chat/completions", star_body)                      # the v1.0 app / bot / voice
+        assert classes()["P0"] == 1
+        call(p3_port, "/v1/chat/completions", star_body)                        # night school on its class port
+        assert classes()["P3"] == 1
+        conn = http.client.HTTPConnection("127.0.0.1", main_port, timeout=10)  # current STAR code sends a header
+        conn.request("POST", "/v1/chat/completions", json.dumps(star_body),
+                     {"Content-Type": "application/json", "X-Star-Priority": "P3"})
+        conn.getresponse().read()
+        assert classes()["P3"] == 2 and classes()["P0"] == 1
+    finally:
+        for server in servers:
+            server.shutdown()
+        fake.server.shutdown()

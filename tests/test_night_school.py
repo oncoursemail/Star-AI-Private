@@ -553,6 +553,7 @@ def test_real_path_backs_off_at_once_when_another_client_appears_and_writes_the_
     monkeypatch.setenv("STAR_NS_APP", str(repo))
     monkeypatch.setenv("STAR_SERVER_API_KEY", "test-key-not-real")
     monkeypatch.delenv("STAR_SKILL_PACKS", raising=False)
+    monkeypatch.delenv("STAR_PRIORITY", raising=False)
     with fake.FakeBrain() as brain:
         settings = settings_for(tmp_path, brain_url=brain.url, idle_s=0, poll_s=0.05, watch_s=0.1,
                                 key_file=str(tmp_path / "no-key-file"))
@@ -562,6 +563,7 @@ def test_real_path_backs_off_at_once_when_another_client_appears_and_writes_the_
         request.addfinalizer(model.close)                       # also when an assertion below fails
         import star.providers as providers
         assert providers.open_client.__qualname__.startswith("pin_slots")
+        assert providers.open_client(model.app_settings).default_headers["X-Star-Priority"] == "P3"   # background class
         task = dict(fake.practice_task("P-01", "limitHealth"), _test_body="")
         first = model.solve(task, [])
         assert first.passed is False and first.reasons == ["require:uses_expected_call: the expected call is used"]

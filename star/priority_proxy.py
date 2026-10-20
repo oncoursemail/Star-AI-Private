@@ -92,6 +92,8 @@ class Config:
     assign_slots: bool = True         # pin each request to a slot that is free (keeps a paused answer's slot)
     class_ports: dict[int, int] = field(default_factory=dict)   # extra listen port -> default class on it
     mark_low_priority: bool = False   # send "low_priority": true with P2/P3 requests (needs server patch 0003)
+    owner_fingerprint: bool = False   # unlabelled request whose body has chat_template_kwargs = the owner's STAR app,
+                                      # Discord bot or voice (v1.0 sends no header) -> P0
     log: str = ""
     models: dict[str, ModelPolicy] = field(default_factory=lambda: {
         "star-fast": ModelPolicy("star-fast", 2, 0, ("star-code", "star-vision")),
@@ -119,6 +121,8 @@ class Config:
             cfg.solo_max_s = float(data["solo_max_s"])
         if "assign_slots" in data:
             cfg.assign_slots = bool(data["assign_slots"])
+        if "owner_fingerprint" in data:
+            cfg.owner_fingerprint = bool(data["owner_fingerprint"])
         if "mark_low_priority" in data:
             cfg.mark_low_priority = bool(data["mark_low_priority"])
         if "class_ports" in data:
@@ -687,14 +691,17 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     # helpers --------------------------------------------------------------------------------------------------------
-    def _split(self) -> tuple[int, str]:
+    def _split(self) -> tuple[int, str, bool]:
+        """(class, path without the class prefix, labelled). A class port, a /pN prefix or the X-Star-Priority header
+        is a label (strongest last); the main port's default class is not."""
         cls, path = getattr(self.server, "default_class", self.proxy.cfg.default_class), self.path
+        labelled = bool(getattr(self.server, "class_port", False))
         head = path.split("/", 2)
         if len(head) > 1 and head[1].lower() in ("p0", "p1", "p2", "p3"):
-            cls, path = int(head[1][1]), "/" + (head[2] if len(head) > 2 else "")
-        if self.headers.get("X-Star-Priority"):
-            cls = parse_class(self.headers["X-Star-Priority"], cls)
-        return cls, path
+            cls, path, labelled = int(head[1][1]), "/" + (head[2] if len(head) > 2 else ""), True
+        if parse_class(self.headers.get("X-Star-Priority", ""), -1) >= 0:
+            cls, labelled = parse_class(self.headers["X-Star-Priority"], cls), True
+        return cls, path, labelled
 
     def _forward_headers(self) -> dict[str, str]:
         return {k: v for k, v in self.headers.items() if k.lower() not in HOP_HEADERS}
@@ -755,7 +762,7 @@ class Handler(BaseHTTPRequestHandler):
         self._route("HEAD")
 
     def _route(self, method: str) -> None:
-        cls, path = self._split()
+        cls, path, labelled = self._split()
         body = self._body() if method in ("POST", "PUT", "PATCH", "DELETE") else b""
         if path.startswith("/priority/v1/status"):
             if not self._loopback() and not self.proxy.authorized(self.headers.get("Authorization", "")):
@@ -775,6 +782,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(401, {"error": {"code": 401, "message": "Invalid API Key",
                                                     "type": "authentication_error"}})
                     return
+                if not labelled and self.proxy.cfg.owner_fingerprint and "chat_template_kwargs" in req:
+                    cls = 0               # the owner's STAR app / Discord bot / voice (they send no header in v1.0)
                 self._scheduled(cls, kind, model, path, req)
                 return
         self._passthrough(method, path, body)
@@ -1036,10 +1045,11 @@ def make_servers(cfg: Config) -> list[ThreadingHTTPServer]:
     proxy = Proxy(cfg)
     handler = type("BoundHandler", (Handler,), {"proxy": proxy})
     servers = []
-    for port, cls in [(cfg.port, cfg.default_class), *cfg.class_ports.items()]:
+    for index, (port, cls) in enumerate([(cfg.port, cfg.default_class), *cfg.class_ports.items()]):
         server = FrontDoor((cfg.host, port), handler)
         server.daemon_threads = True
         server.default_class = cls       # type: ignore[attr-defined]
+        server.class_port = index > 0    # type: ignore[attr-defined]
         servers.append(server)
     return servers
 
