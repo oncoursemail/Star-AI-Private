@@ -13,8 +13,8 @@ integration testing on the user's Roblox account.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-import json
+from datetime import date
+import math
 import os
 import re
 from typing import Any, Callable
@@ -121,7 +121,7 @@ def _metric_response(body: dict, metric: str, universe_id: int) -> dict:
                 continue
             val = point.get("value")
             when = point.get("time")
-            if type(val) not in (float, int) or isinstance(val, bool) or not (
+            if type(val) not in (float, int) or not math.isfinite(val) or not (
                     isinstance(when, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T[^\x00-\x1f]{1,36}", when)):
                 continue
             clean_points.append({"time": when[:36], "value": val,
