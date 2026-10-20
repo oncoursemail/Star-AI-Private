@@ -1,0 +1,22 @@
+{
+  "workload": "star-main",
+  "restic": "/home/<BRAIN2_USER>/.local/share/star-recovery/bin/restic",
+  "repository": "/home/<BRAIN2_USER>/.local/share/star-recovery/repositories/star-main",
+  "password_file": "/home/<BRAIN2_USER>/.config/star-recovery/star-main-password",
+  "baseline_repository": "/home/<BRAIN2_USER>/.local/share/star-recovery/repositories/star-main-baseline",
+  "baseline_password_file": "/home/<BRAIN2_USER>/.config/star-recovery/star-main-baseline-password",
+  "state_file": "/home/<BRAIN2_USER>/.local/state/star-recovery/main/status.json",
+  "cache_dir": "/home/<BRAIN2_USER>/.cache/star-recovery-main",
+  "timeout_seconds": 1800,
+  "min_free_bytes": 21474836480,
+  "max_export_bytes": 268435456,
+  "max_repository_bytes": 2147483648,
+  "export_command": [
+    "/usr/bin/false"
+  ],
+  "expected_sources": [
+    "star-state",
+    "star-roaming"
+  ],
+  "max_upload_bytes": 335544320
+}
