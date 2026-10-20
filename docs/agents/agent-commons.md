@@ -5,6 +5,11 @@ capability, rejects agent permission requests unless the host passes `approve`, 
 `agent_reported` receipts, states ok/unavailable/auth_required/timeout/cancelled/error. Tested with a fake
 agent (simulation) in `tests/test_acp_adapter.py`. No settings/UI wiring yet.
 
-Left: stream() and tool-approval UI, real OpenCode/Gemini/goose runs on authorized hardware, JSON-RPC (Pi) variant,
-mission/event stream into chat, host-verified evidence, sandbox grants, resource admission, React inspector,
+Slice 2 (`star/fleet-handoff-20261020`): the adapter is now used by the agent fleet (`FleetTask.acp_prompt`,
+`docs/agents/agent-fleet.md`): worktree isolation, host-side approval of writes, host-run tests, receipts on disk.
+`agent_fleet.probe_agents()` reports installed/missing CLIs honestly (auth and quota "unknown").
+
+Left: stream() and tool-approval UI, real OpenCode/Gemini/goose runs on authorized hardware (gate 1 needs real
+hardware or a labelled simulation: the tests are the simulation), JSON-RPC (Pi) variant, mission/event stream into
+chat, host-verified evidence beyond the test receipt, sandbox grants, resource admission, React inspector,
 benchmarks (gates 2-4).

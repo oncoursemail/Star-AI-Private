@@ -2,21 +2,32 @@
 
 Off by default (set STAR_AGENT_FLEET=1 or pass enabled=True). Never merges, pushes or publishes: a task that passes its
 own independent test run only yields a *proposal* (branch + diffstat) for the owner to review.
+
+Slice 2: a task may hand its worktree to an ACP agent (``acp_prompt``; the agent process is started with cwd = the
+worktree and may only write when the host's ``approve`` says yes), receipts can be appended to a JSON-lines file,
+``fleet_worktrees()`` lists leftover fleet worktrees after a crash (never deletes them) and ``probe_agents()`` says
+which agent CLIs are installed (auth and quota stay "unknown": nothing is launched or guessed).
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any, Callable
 
 from star import resource_probes as probes
+from star.acp_adapter import AcpAdapter
 
 PROTECTED_MARKERS = ("paintball", os.path.join("appdata", "roaming", "star").lower())
+AGENT_CLIS = ("opencode", "codex", "claude")   # ACP/CLI coding agents the owner may have installed and signed in to
 _WORKTREE_ADD = threading.Lock()  # concurrent `git worktree add` on one repo races on git lock files
 _ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 
@@ -64,6 +75,8 @@ class FleetTask:
     agent_cmd: list[str]   # the CLI agent, run with cwd = its worktree
     test_cmd: list[str]    # run by the fleet itself after the agent exits; the agent is never trusted on tests
     enabled: bool = True
+    acp_prompt: str = ""   # set: agent_cmd is an ACP agent (JSON-RPC over stdio) that gets this one prompt
+    approve: Callable[[dict[str, Any]], bool] | None = None   # host answer to the agent's permission requests
 
 
 @dataclass
@@ -109,6 +122,49 @@ def _run(cmd: list[str], cwd: Path, timeout: float, cancel: threading.Event) -> 
     return proc.returncode, "".join(out)
 
 
+def _run_acp(task: FleetTask, wt: Path, timeout: float, cancel: threading.Event) -> tuple[int | None, str]:
+    """One ACP turn in the worktree. rc 0 = the agent finished its turn (not a pass: the host tests decide)."""
+    adapter = AcpAdapter(task.agent_cmd, name=task.task_id, enabled=True, cwd=str(wt), timeout=timeout,
+                         approve=task.approve)
+    stop = threading.Event()
+
+    def watch() -> None:   # a fleet cancel reaches the agent at its next message (the adapter polls between lines)
+        while not stop.wait(0.1):
+            if cancel.is_set():
+                adapter.cancel()
+                return
+
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        turn = asyncio.run(adapter.run_turn(task.acp_prompt))
+    finally:
+        stop.set()
+    if turn.state == "cancelled":
+        return None, "cancelled"
+    if turn.state != "ok":
+        return 1, f"{turn.state}: {turn.error}"[-300:]
+    return 0, turn.text
+
+
+def probe_agents(clis: tuple[str, ...] = AGENT_CLIS) -> list[dict[str, Any]]:
+    """Installed check per agent CLI; never launches one, never guesses sign-in or quota."""
+    return [{"agent": name, "installed": shutil.which(name) is not None, "auth": "unknown", "quota": "unknown"}
+            for name in clis]
+
+
+def fleet_worktrees(repo: str | Path) -> list[tuple[str, str]]:
+    """(path, branch) of every fleet worktree git still knows about, e.g. after a crash. Nothing is removed here:
+    the owner reviews them and removes worktree and branch by hand."""
+    out = _git(Path(repo), "worktree", "list", "--porcelain").stdout
+    found, path = [], ""
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            path = line[9:]
+        elif line.startswith("branch refs/heads/star/fleet-"):
+            found.append((path, line[len("branch refs/heads/"):]))
+    return found
+
+
 def run_task(repo: Path, base_ref: str, task: FleetTask, worktrees: Path, cancel: threading.Event,
              timeout: float = 1800) -> Receipt:
     t0 = time.monotonic()
@@ -134,7 +190,10 @@ def run_task(repo: Path, base_ref: str, task: FleetTask, worktrees: Path, cancel
         if add.returncode:
             rec.detail = add.stderr.strip()[-300:]
             return rec
-        rc, out = _run(task.agent_cmd, wt, timeout, cancel)
+        if task.acp_prompt:
+            rc, out = _run_acp(task, wt, timeout, cancel)
+        else:
+            rc, out = _run(task.agent_cmd, wt, timeout, cancel)
         if rc is None:
             rec.status, rec.detail = "cancelled", out
             return rec
@@ -172,14 +231,16 @@ class FleetResult:
 
 def run_fleet(repo: str | Path, tasks: list[FleetTask], *, base_ref: str = "HEAD", worktrees: str | Path | None = None,
               enabled: bool | None = None, resources: dict | None = None, cancel: threading.Event | None = None,
-              timeout: float = 1800, **plan_kw) -> FleetResult:
-    """Run every enabled task in its own worktree, at most as many at once as live resources allow."""
+              timeout: float = 1800, receipts_file: str | Path | None = None, **plan_kw) -> FleetResult:
+    """Run every enabled task in its own worktree, at most as many at once as live resources allow.
+    With ``receipts_file`` every receipt (plus the measured resources and slot count) is appended as one JSON line."""
     if not fleet_enabled(enabled):
         return FleetResult(0, "disabled: set STAR_AGENT_FLEET=1 to opt in")
     repo = Path(repo)
     if is_protected(repo):
         return FleetResult(0, "refused: protected project")
-    n, reason = plan_slots(resources or sample_resources(), **plan_kw)
+    res = resources or sample_resources()
+    n, reason = plan_slots(res, **plan_kw)
     if n == 0:
         return FleetResult(0, reason)
     wts = Path(worktrees) if worktrees else repo.parent / (repo.name + "-fleet")
@@ -187,4 +248,8 @@ def run_fleet(repo: str | Path, tasks: list[FleetTask], *, base_ref: str = "HEAD
     cancel = cancel or threading.Event()
     with ThreadPoolExecutor(max_workers=n) as pool:
         recs = list(pool.map(lambda t: run_task(repo, base_ref, t, wts, cancel, timeout), tasks))
+    if receipts_file:
+        with open(receipts_file, "a", encoding="utf-8") as fh:
+            for rec in recs:
+                fh.write(json.dumps({**asdict(rec), "resources": res, "slots": n, "at": time.time()}) + "\n")
     return FleetResult(n, reason, recs)

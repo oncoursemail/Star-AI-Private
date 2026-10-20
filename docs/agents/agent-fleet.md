@@ -14,9 +14,19 @@ Branch `star/agent-fleet-20261016`, PR to `star/next`, "Refs #406".
 
 Tests: `tests/test_agent_fleet.py` (8, offline, real git + python subprocesses).
 
+## Slice 2 (branch `star/fleet-handoff-20261020`, Refs #406 #424)
+- `FleetTask.acp_prompt` + `approve`: the task's command is an ACP agent (`star/acp_adapter.py`) started with cwd = the
+  worktree; it can only change files when the host's `approve` callback says yes; its "end_turn" is never a pass, the
+  fleet's own test command decides. States map to the existing receipts (`auth_required` -> `agent_failed`, etc.).
+  A fleet cancel reaches a running ACP agent at its next message (the adapter polls between JSON lines).
+- `receipts_file=`: every receipt + the measured resources + slot count appended as JSON lines (latency/load evidence).
+- `fleet_worktrees(repo)`: lists leftover `star/fleet-*` worktrees after a crash; never deletes (owner reviews).
+- `probe_agents()`: installed-or-not for `opencode`, `codex`, `claude` CLIs; auth/quota stay "unknown" (nothing launched).
+- Tests: 4 more in `tests/test_agent_fleet.py` (12 total; fake ACP agent = simulation, no real CLI).
+
 ## Left of #406
-- Real ACP/CLI adapters (OpenCode, Codex, Claude Code) with capability tests; today the caller passes a raw command.
-- Per-agent enable UI + "Run all enabled agents"; pause/resume; crash recovery of orphaned worktrees on restart.
-- Leases through `agent_resource_planner` (this slice only does a one-shot sizing), VRAM budget, UI of budgets/blocked states.
-- Diff review step, receipts persisted to disk, integration with `orchestration.TaskPlan` dependencies.
-- Acceptance items: real Windows packaged test, latency/load evidence, protected-project refusal in the packaged app.
+- Capability tests against a real installed OpenCode/Codex/Claude CLI on authorized hardware (only simulation so far).
+- Per-agent enable UI + "Run all enabled agents" button; pause/resume.
+- Leases through `agent_resource_planner` (one-shot sizing only), VRAM budget, UI of budgets/blocked states.
+- Diff review step in the app, integration with `orchestration.TaskPlan` dependencies.
+- Acceptance items: real Windows packaged test, protected-project refusal in the packaged app.
