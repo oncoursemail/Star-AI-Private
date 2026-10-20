@@ -23,6 +23,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      # Self-hosted runners keep the tool-cache Python between jobs: give this job its own venv.
+      - name: Fresh Python environment for this job
+        run: python -c "import os,venv; d=os.path.join(os.environ['RUNNER_TEMP'],'job-venv'); venv.create(d, with_pip=True); open(os.environ['GITHUB_PATH'],'a').write(os.path.join(d,'Scripts' if os.name=='nt' else 'bin')+chr(10))"
       - name: Audit Python dependency declarations
         run: |
           python -m pip install --disable-pip-version-check pip-audit

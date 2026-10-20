@@ -194,7 +194,7 @@ class OfflineWorkflowTests(unittest.TestCase):
                     self.assertFalse(condition(uploads[0], event=event, ref=ref, docs_only=docs_only))
         self.assertTrue(condition(uploads[0], event="push", ref="refs/heads/main", docs_only="false"))
         self.assertFalse(condition(uploads[0], event="push", ref="refs/heads/main", docs_only="true"))
-        self.assertIn("retention-days: 7", uploads[0])
+        self.assertIn("retention-days: 3", uploads[0])
 
     def test_required_offline_validation_is_still_fail_closed_on_unknown_scope(self):
         required = {
@@ -271,7 +271,7 @@ class WorkflowTests(unittest.TestCase):
     def test_retention_and_trusted_release_dependencies_are_preserved(self):
         for step in steps("windows-build"):
             if "actions/upload-artifact@" in step:
-                days = 1 if "name: STAR-Windows-vNext" in step else 7 if "name: STAR-OLED-GUI-Previews" in step else 3
+                days = 1 if "name: STAR-Windows-vNext" in step else 3
                 self.assertIn(f"retention-days: {days}", step)
         self.assertIn("needs: [windows-build, windows-tests]", job("attest-release"))
         self.assertIn("if: github.ref == 'refs/heads/main'", job("attest-release"))

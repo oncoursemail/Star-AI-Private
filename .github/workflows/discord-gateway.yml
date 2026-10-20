@@ -52,6 +52,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      # Self-hosted runners keep the tool-cache Python between jobs: give this job its own venv.
+      - name: Fresh Python environment for this job
+        run: python -c "import os,venv; d=os.path.join(os.environ['RUNNER_TEMP'],'job-venv'); venv.create(d, with_pip=True); open(os.environ['GITHUB_PATH'],'a').write(os.path.join(d,'Scripts' if os.name=='nt' else 'bin')+chr(10))"
       - name: Install regular STAR and Discord dependencies
         run: python -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-discord.txt
       - name: Verify Discord gateway source compiles

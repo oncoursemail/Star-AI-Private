@@ -29,9 +29,7 @@ jobs:
         run: npm install --prefix frontend --no-audit --no-fund
       - name: Type-check, test and build React
         run: |
-          npm run typecheck --prefix frontend
-          npm run test --prefix frontend
-          npm run build --prefix frontend
+          sh scripts/ci_heavy.sh sh -c 'npm run typecheck --prefix frontend && npm run test --prefix frontend && npm run build --prefix frontend'
       - name: Check safe public files
         run: |
           test -f frontend/dist/index.html
