@@ -373,7 +373,13 @@ class LocalIntelligence:
         self._shared_root = (registered_workspace(workspace, registered_workspaces)
                              if graphify_enabled is True else None)
         self.roblox = RobloxResearch(home=home) if roblox_research_enabled else None
-        self.roblox_hub = RobloxIntelligenceHub() if roblox_research_enabled else None
+        # An invalid owner-provided analytics allowlist must not crash normal STAR chat.
+        self.roblox_hub_config_error = False
+        try:
+            self.roblox_hub = RobloxIntelligenceHub() if roblox_research_enabled else None
+        except ValueError:
+            self.roblox_hub = RobloxIntelligenceHub(analytics_universes="") if roblox_research_enabled else None
+            self.roblox_hub_config_error = True
         self.asset_forge_enabled = asset_forge_enabled
         if skills_enabled:
             install_starters(home / "skills")
@@ -439,7 +445,9 @@ class LocalIntelligence:
             "craft": {"enabled": self.roblox is not None, "read_only": True,
                       "tools": [tool["name"] for tool in CRAFT_TOOLS] if self.roblox else []},
             "roblox_research": self.roblox.status() if self.roblox else {"enabled": False},
-            "roblox_intelligence_hub": self.roblox_hub.status() if self.roblox_hub else {"enabled": False},
+            "roblox_intelligence_hub": ({**self.roblox_hub.status(),
+                                        "analytics_configuration_error": self.roblox_hub_config_error}
+                                       if self.roblox_hub else {"enabled": False}),
             "doc_knowledge": {"enabled": self.docs is not None, "read_only": True},
             "design": {"enabled": self.design_enabled, "read_only": True, "offline": True,
                        "tools": [tool["name"] for tool in DESIGN_TOOLS] if self.design_enabled else []},
