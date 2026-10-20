@@ -69,6 +69,7 @@ class Settings:
     studio_luau: bool = False             # let STAR run Luau in that sandbox (needed to create instances)
     studio_tool_examples: bool = False    # opt-in: one example call appended to each error-prone Studio tool
     workspace_edit: bool = False
+    debug_evidence_enabled: bool = False  # opt-in report analysis; never grants process execution or attachment
     max_calls: int = 12
     context_chars: int = 26000
     llama_server: str = ''
@@ -191,7 +192,7 @@ class Settings:
         if not self.project.strip() or len(self.project) > 100:
             raise ValueError('Project name is invalid')
         if any(type(getattr(self, key)) is not bool
-               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled',
+               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled',
                             'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live',
                             'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
@@ -1195,6 +1196,10 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         allowed_context_chars = model_context_char_budget(settings, route.model)
         intelligence = for_settings(settings, home) if use_tools else None
         workspace = Workspace(Path(settings.workspace)) if use_tools and settings.workspace else None
+        debug_evidence = None
+        if workspace is not None and settings.debug_evidence_enabled is True:
+            from .debug_evidence import DebugEvidenceTools
+            debug_evidence = DebugEvidenceTools(workspace, enabled=True)
         if use_tools and settings.tool_workshop_enabled:
             workshop = ToolWorkshop(home=home,project=settings.project,knowledge=knowledge,
                                     workspace=workspace,intelligence=intelligence)
@@ -1428,6 +1433,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     kwargs['document_tools'] = document_tools
                 if reverse_engineering is not None:
                     kwargs['reverse_engineering'] = reverse_engineering
+                if debug_evidence is not None:
+                    kwargs['debug_evidence'] = debug_evidence
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.
