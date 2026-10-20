@@ -788,3 +788,27 @@ def test_status_questions_get_the_card():
         assert awareness.status_question(text), text
     for text in ("hey", "write me a round timer", "what is a RemoteEvent"):
         assert not awareness.status_question(text), text
+
+
+def test_team_notes_come_only_from_the_private_corpus():
+    from star.discord_bot.notes import NOT_SET_UP, search_notes
+
+    class Client:
+        def __init__(self, reply):
+            self.reply, self.bodies = reply, []
+
+        def _request(self, method, path, body, timeout):
+            self.bodies.append((method, path, body))
+            if isinstance(self.reply, Exception):
+                raise self.reply
+            return self.reply
+    private = Client({"corpus": "private", "passages": [
+        {"title": "knowledge-fix-20261020", "heading": "Watchdog", "text": "starkb/watchdog.py restarts after 2 fails"}]})
+    text = asyncio.run(search_notes("what does the watchdog do", client=private))
+    assert "knowledge-fix-20261020 > Watchdog: starkb/watchdog.py restarts" in text
+    assert private.bodies[0] == ("POST", "/search", {"query": "what does the watchdog do", "corpus": "private",
+                                                     "mode": "hybrid", "top": 4})
+    # An older service ignores "corpus" and answers from the public docs: never shown as team notes.
+    public = Client({"corpus": "public", "passages": [{"title": "Roblox FAQ", "text": "x"}]})
+    assert asyncio.run(search_notes("night school", client=public)) == NOT_SET_UP
+    assert asyncio.run(search_notes("night school", client=Client(ValueError("404")))) == NOT_SET_UP

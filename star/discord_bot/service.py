@@ -59,8 +59,10 @@ def lookup_schema() -> dict:
         "name": "star_lookup",
         "description": ("Only when the LIVE STATUS block does not already answer him: look up one part of your "
                         "live status in detail (services, night school hours, lesson gate results, conductor, Studio "
-                        "Lab, knowledge search, his work board, PRs, jobs he started, speed)."),
-        "parameters": {"type": "object", "properties": {"section": {"type": "string", "enum": list(SECTIONS)}},
+                        "Lab, knowledge search, his work board, PRs, jobs he started, speed), or section 'notes' with "
+                        "a query to search the team's private notes (what changed today, how a part of STAR works)."),
+        "parameters": {"type": "object", "properties": {"section": {"type": "string", "enum": list(SECTIONS) + ["notes"]},
+                                                        "query": {"type": "string", "description": "for notes: what to look for"}},
                        "required": ["section"]}}}
 
 
@@ -162,6 +164,10 @@ class DiscordService:
 
     async def _tool(self, name: str, arguments: dict, confirm) -> str:
         if name == "star_lookup" and self.awareness is not None:
+            if arguments.get("section") == "notes":
+                from .notes import search_notes
+                return await search_notes(str(arguments.get("query", "") or ""),
+                                          settings=getattr(self.brain, "_settings", None))
             return self.awareness.detail(str(arguments.get("section", "overview")))
         if name == "star_action" and self.runner is not None:
             from .actions import parse_request
