@@ -499,6 +499,7 @@ def build_real(args, log=print):
     key = read_key(Path(args.key_file))
     os.environ["STAR_SERVER_API_KEY"] = key
     os.environ["STAR_SKILL_PACKS"] = args.packs
+    os.environ["STAR_BACKGROUND_WORK"] = "1"     # star-fast requests name a background slot (star/background_cap.py)
     server = (args.server or os.environ.get("STAR_EVAL_SERVER", "")).rstrip("/")
     if not server:
         raise SystemExit("Give the STAR Server URL with --server or STAR_EVAL_SERVER")
