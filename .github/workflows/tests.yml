@@ -1,7 +1,9 @@
 name: STAR offline checks
 on:
+  # Work branches get their run from pull_request; a push run on them too would run the suite twice
+  # on the shared self-hosted runner.
   push:
-    branches: [main, 'star/**']
+    branches: [main, star/next]
   pull_request:
 permissions:
   contents: read
