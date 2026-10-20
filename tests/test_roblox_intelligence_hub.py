@@ -227,3 +227,19 @@ def test_router_exposes_analytics_only_with_explicit_owner_universe_allowlist(tm
         assert "star_roblox_creator_asset" not in tools
     finally:
         hub.close()
+
+def test_bad_environment_allowlist_does_not_break_existing_star_research(tmp_path, monkeypatch):
+    from star.intelligence import LocalIntelligence
+
+    monkeypatch.setenv("STAR_ROBLOX_ANALYTICS_UNIVERSES", "bad/123")
+    hub = LocalIntelligence(home=tmp_path, skills_enabled=False, graphify_enabled=False,
+                            design_enabled=False, roblox_research_enabled=True)
+    try:
+        state = hub.status()["roblox_intelligence_hub"]
+        assert state["analytics_configuration_error"] is True
+        assert state["creator_analytics_opt_in"] is False
+        names = {t["name"] for t in hub.definitions("Research Roblox marketplace catalog")}
+        assert "star_roblox_marketplace_search" in names
+        assert "star_roblox_analytics_metrics" not in names
+    finally:
+        hub.close()
