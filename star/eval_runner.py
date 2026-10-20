@@ -165,9 +165,13 @@ def summarize(tasks: dict) -> dict:
             counts[record["status"]] += 1
             seconds.append(record.get("seconds", 0.0))
     scored = counts["pass"] + counts["fail"]
+    slops = [r["slop"]["score"] for r in tasks.values() if isinstance(r.get("slop"), dict)]
     return {**counts, "scored": scored,
             "pass_rate": round(counts["pass"] / scored, 4) if scored else None,
-            "median_seconds": round(statistics.median(seconds), 1) if seconds else None}
+            "median_seconds": round(statistics.median(seconds), 1) if seconds else None,
+            **({"slop_mean": round(sum(slops) / len(slops), 1),
+                "slop_hard": sum(1 for r in tasks.values() if isinstance(r.get("slop"), dict) and r["slop"]["hard"])}
+               if slops else {})}
 
 
 def grader_sha256(root: Path = ROOT) -> str:
@@ -283,7 +287,10 @@ def record_for(task: dict, asked: Asked | None, score: checks.TaskScore | None, 
                 "seconds": round(asked.seconds, 1) if asked else 0.0, "error": error}
     events = compact_events(asked.events)
     packs = next((e.get("names") for e in events if e.get("event") == "skill_packs"), [])
+    from . import slop                     # measurement only: the score never changes pass/fail
+    report = slop.score_answer(asked.answer, prompt=task.get("prompt", ""))
     return {
+        "slop": {"score": report.score, "hard": report.hard, "rules": report.rules},
         "status": "pass" if score.passed else "fail", "passed": score.passed,
         "prompt_sha256": hashlib.sha256(task["prompt"].encode("utf-8")).hexdigest()[:16],
         "reasons": score.reasons, "checks": [c.record() for c in score.checks],

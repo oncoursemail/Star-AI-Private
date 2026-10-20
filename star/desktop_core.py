@@ -150,6 +150,12 @@ class Settings:
     roblox_docs_live_enabled: bool = False  # opt-in live retrieval from create.roblox.com/docs; STAR_ROBLOX_DOCS_LIVE=1 also enables
     project_rules_enabled: bool = False    # opt-in: add the workspace's AGENTS.md (star/project_rules.py) to each turn
     luau_retry_ladder: bool = False        # opt-in: a second, thinking repair after a failed Luau repair
+    # Anti-slop post-check of the answer (star/slop.py): 'off', 'flag' (a note on invented APIs, unverifiable claims
+    # and stubs) or 'trim' (the note, and filler lines outside code are removed). Off until the owner opts in.
+    slop_check: str = 'off'
+    # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
+    # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
+    api_hints_enabled: bool = False
     skill_pack_embeddings: bool = False    # opt-in: STAR Server embeddings pick a skill pack the keywords missed
     # Settings > "Use my GPU" (star/gpu_helper.py): STAR's code model on this PC's NVIDIA card, per request, the
     # server as fallback. Off by default. Paths '' = <app data>/gpu-helper/llama-server.exe and star-fast.gguf.
@@ -195,7 +201,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled')):
+                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if self.obsidian_vault and not Path(self.obsidian_vault).expanduser().is_dir():
             raise ValueError('Obsidian vault must be an existing folder')
@@ -205,6 +211,8 @@ class Settings:
             raise ValueError('Choose an existing workspace directory')
         if self.best_of_n not in ('off', 'auto') or type(self.best_of_n_max) is not int                 or not 2 <= self.best_of_n_max <= 8:
             raise ValueError('Best-of-N must be off or auto, with 2 to 8 candidates')
+        if self.slop_check not in ('off', 'flag', 'trim'):
+            raise ValueError('Slop check must be off, flag or trim')
         if type(self.specialist_parallelism) is not int or self.specialist_parallelism not in (1,2):
             raise ValueError('Limit specialists to 1 or 2 concurrent model calls')
         if (type(self.team_timeout_min) is not int or type(self.team_timeout_max) is not int
@@ -1357,6 +1365,16 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     turn_sections.insert(1 if docs.block else 0, (skill_packs.BLOCK_HEADING, pack_block))
                     audited_event({'event': 'skill_packs', 'names': [pack.name for pack in packs], 'chars': len(pack_block)})
                 # <<< Skill packs
+                if settings.api_hints_enabled is True and route.profile == 'roblox':
+                    # Opt-in (star/api_hints.py): real member names of the classes the request names, from the
+                    # local API dump; reference data after the documentation, before the packs.
+                    from . import api_hints
+                    from .slop import bundled_api_dump
+                    dump = bundled_api_dump()
+                    hint_block = api_hints.hint_block(prompt, dump) if dump is not None else ''
+                    if hint_block:
+                        turn_sections.insert(1 if docs.block else 0, (api_hints.BLOCK_HEADING, hint_block))
+                        audited_event({'event': 'api_hints', 'classes': hint_block.count('\n') + 1, 'chars': len(hint_block)})
                 # Pasted Studio output uses the same per-turn path, including Fast mode.
                 error_block = roblox_errors.reference_context(prompt)
                 if error_block:
