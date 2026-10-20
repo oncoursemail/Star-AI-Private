@@ -34,7 +34,9 @@ function Mark() {
 
 export default function App() {
   const [load, setLoad] = useState<Load>({ state: "loading" });
-  const [pick, setPick] = useState<string | null>(null);
+  // The project is in the URL (#STAR) so a link or a reload opens the same view.
+  const [pick, setPickState] = useState<string | null>(() => decodeURIComponent(location.hash.slice(1)) || null);
+  const setPick = (name: string) => { setPickState(name); history.replaceState(null, "", "#" + encodeURIComponent(name)); };
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -232,12 +234,13 @@ function ProjectHead({ p }: { p: Project }) {
 function Timing({ run, now }: { run: CheckRun; now: Date }) {
   const t = run.timings;
   const cacheTotal = run.cache.hits + run.cache.misses;
+  const noTests = run.tests.total_files === 0;
   return (
     <section className="timing" aria-label="Latest check timing">
       <dl>
         <div><dt>First verdict</dt><dd className="tnum">{seconds(t.first_signal)}</dd></div>
-        <div><dt>Nearest tests done</dt><dd className="tnum">{seconds(t.near_done)}</dd></div>
-        <div><dt>All selected tests</dt><dd className="tnum">{seconds(t.tests_done)}</dd></div>
+        <div><dt>Nearest tests done</dt><dd className="tnum">{noTests ? <small>no tests set up</small> : seconds(t.near_done)}</dd></div>
+        <div><dt>All selected tests</dt><dd className="tnum">{noTests ? <small>no tests set up</small> : seconds(t.tests_done)}</dd></div>
         <div><dt>Cache hits</dt>
           <dd className="tnum">{cacheTotal ? `${Math.round(run.cache.hit_rate * 100)} %` : "-"}
             <small> {run.cache.hits}/{cacheTotal}</small></dd></div>
@@ -245,8 +248,10 @@ function Timing({ run, now }: { run: CheckRun; now: Date }) {
       <p className="provenance">
         Check of <span className="mono">{short(run.tree)}</span> on {run.branch} against{" "}
         <span className="mono">{short(run.base)}</span>, {run.changed} changed file(s), runner {run.runner},{" "}
-        {ago(run.started, now)}. Tests: {run.tests.selected} of {run.tests.total_files} files selected
-        {run.tests.full_reason && ` (${run.tests.full_reason})`}, {run.tests.cached} from cache, {run.tests.ran} ran.
+        {ago(run.started, now)}.{" "}
+        {noTests ? "No test command in metallic.toml: add [tests] to run tests here." : <>
+          Tests: {run.tests.selected} of {run.tests.total_files} files selected
+          {run.tests.full_reason && ` (${run.tests.full_reason})`}, {run.tests.cached} from cache, {run.tests.ran} ran.</>}
       </p>
     </section>
   );
@@ -320,13 +325,13 @@ function Checks({ run }: { run: CheckRun }) {
     <section className="panel" aria-label="Checks">
       <div className="panel-head"><h2>Checks</h2>
         <p className="muted">{loud.length} need a look, {quiet.length} passed or skipped</p></div>
-      <table className="dense checks">
+      {(loud.length > 0 || showPassing) && <table className="dense checks">
         <thead><tr><th>Result</th><th>Check</th><th>Detail</th><th className="num">Time</th></tr></thead>
         <tbody>
           {loud.map((c) => <CheckRow key={c.name} c={c} />)}
           {showPassing && quiet.map((c) => <CheckRow key={c.name} c={c} />)}
         </tbody>
-      </table>
+      </table>}
       {quiet.length > 0 && (
         <button className="text-button" aria-expanded={showPassing} onClick={() => setShowPassing(!showPassing)}>
           {showPassing ? "Hide" : "Show"} {quiet.length} passing and skipped checks

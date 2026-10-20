@@ -58,6 +58,12 @@ a PR gets the label `queue` (or a `/queue` comment) -> webhook -> `metallic queu
 pushes the fast-forward to the target branch with a bot token that only it holds. Merging by hand stays possible for
 the owner; agents only enqueue.
 
+RAN on STAR (throwaway local target `metallic/demo-target` = origin/star/next 78bc1ebd; branches: this branch, #517
+anti-slop, #515 release-v2-checklist; nothing pushed): first run 698 s: the batch was red on a false positive (the
+anti-slop rule matched fixtures inside string literals in #517's own tests), so all three were tested one by one
+(~165-177 s each), #517 rejected. After the fix (matches inside string literals are ignored), the second run took
+186 s: batch green, all three fast-forwarded in one full run. Serial pytest one PR at a time would be 3 x 475 s.
+
 Expected gain: the round 6 class of failure (and #229-style fix PRs) goes to zero; one full run per green batch
 instead of one per PR (round 8b merged 16 PRs after one simulated combined merge: the queue makes that the default).
 
@@ -144,6 +150,8 @@ background-request convention from the speed notes (never in the chat slot).
 
 ## (f) One dashboard
 
+Screenshots (real data from this PC, 2026-10-20): `metallic-layer-20261020/dashboard-1440.png` and `dashboard-390.png`.
+
 v1 (metallic/dashboard, React 19 + Vite, no other runtime dependency): reads `metallic status` JSON (projects from
 `~/.metallic/projects.toml`, their latest check and queue reports, latest tag, runners probed now); `metallic serve`
 serves it on 127.0.0.1 with live data. Look: the owner's Metallic-MC control dashboard (graphite, hairlines, three-bar
@@ -156,13 +164,13 @@ release notes per tag, Metallic-PX progress feed.
 | Signal | Target | Measured (RAN, STAR, this PC, 4 workers) |
 |---|---|---|
 | First verdict (built-in checks) | < 2 s | 0.6-1.2 s |
-| First test result | < 15 s | 9.3-9.6 s on real merges (13.9 s on a cold full run, before the key fix) |
+| First test result | < 15 s | 3.3 s with recorded durations; 9.3-9.6 s on real merges (13.9 s cold, before the key fix) |
 | Nearest tests (changed tests + direct importers) done | < 60 s | 19-38 s |
 | Selected tests done | < 3 min | 121-130 s |
 | Unchanged re-run | < 15 s | 12.5 s (100 % cache hits) |
 | Full suite, local | < 3.5 min | 185 s (serial pytest: 475 s) |
 | Full suite, fleet | < 60 s | not built yet (estimate 40-60 s) |
-| Queue, green batch of N PRs | one full run | one full run (demo repo; STAR run in the notes) |
+| Queue, green batch of N PRs | one full run | 3 PRs in 186 s (one full run on the combined tree) |
 
 ## Architecture
 
