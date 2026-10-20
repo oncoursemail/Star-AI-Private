@@ -130,3 +130,28 @@ def test_reject_hidden_file_in_source(tmp_path):
 def test_reject_unknown_license(tmp_path):
     with pytest.raises(PermissionError, match="permissive"):
         preview_skill(source(tmp_path), **{**kwargs(), "license_id": "Unknown"})
+
+
+def test_cli_preview_import_and_verify(tmp_path, capsys):
+    from scripts.skill_review import main
+
+    folder = source(tmp_path)
+    origin = ["--source", str(folder), "--source-url", REPO,
+              "--commit", COMMIT, "--license", "MIT"]
+    assert main(["preview", *origin]) == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "useful-review"
+
+    home = tmp_path / "profile"
+    assert main(["import", *origin, "--home", str(home)]) == 2
+    assert "Explicit owner approval" in capsys.readouterr().err
+    assert main(["import", *origin, "--home", str(home), "--approve"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "imported-not-executed"
+    assert main(["verify", "--home", str(home), "--name", "useful-review"]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+
+
+def test_reject_oversized_reference(tmp_path):
+    folder = source(tmp_path)
+    (folder / "references" / "huge.md").write_text("x" * 64001)
+    with pytest.raises(ValueError, match="limits"):
+        preview_skill(folder, **kwargs())
