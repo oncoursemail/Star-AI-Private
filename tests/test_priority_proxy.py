@@ -533,12 +533,47 @@ def test_status_endpoint(stack):
     assert data["p0_active"] is False
 
 
+def test_class_port_labels_clients_without_a_path(tmp_path):
+    fake = FakeLlama(1)
+    cfg = pp.Config(upstream=fake.url, host="127.0.0.1", port=0, default_class=0, solo_p0=False,
+                    class_ports={0: 3}, models={"m": pp.ModelPolicy("m", 1, 0, ())})
+    servers = pp.make_servers(cfg)
+    for server in servers:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    main_port, p3_port = (s.server_address[1] for s in servers)
+    try:
+        results: dict = {}
+        t = threading.Thread(target=run_bg, args=(p3_port, "/v1/chat/completions", chat(20), results, "bg"))
+        t.start()
+        assert wait_for(lambda: fake.busy == 1)
+        time.sleep(0.1)
+        assert call(main_port, "/v1/chat/completions", chat(2))[0] == 200          # unlabelled = owner (P0)
+        t.join(30)
+        assert results["bg"][1]["choices"][0]["message"]["content"] == words(0, 20)
+        view = servers[0].RequestHandlerClass.proxy.sched.view()
+        assert view["classes"]["P3"]["preemptions"] == 1 and view["classes"]["P0"]["requests"] == 1
+        conn = http.client.HTTPConnection("127.0.0.1", main_port, timeout=10)
+        conn.request("HEAD", "/v1/models")
+        assert conn.getresponse().status in (200, 501)                              # passed through, not refused here
+    finally:
+        for server in servers:
+            server.shutdown()
+        fake.server.shutdown()
+
+
+def test_logprobs_requests_are_passed_through_unscheduled(stack):
+    fake, server, port = stack()
+    status, chunks, _ = call(port, "/p0/v1/chat/completions", chat(3, stream=True, logprobs=True))
+    assert status == 200 and "timings_per_token" not in fake.requests[-1]
+    assert server.RequestHandlerClass.proxy.sched.view()["classes"]["P0"]["requests"] == 0
+
+
 def test_header_overrides_class_and_config_file(tmp_path):
     cfg_file = tmp_path / "priority.json"
-    cfg_file.write_text(json.dumps({"port": 9, "default_class": "P3", "solo_p0": False,
+    cfg_file.write_text(json.dumps({"port": 9, "default_class": "P3", "solo_p0": False, "class_ports": {"8083": "P3"},
                                     "models": {"star-fast": {"slots": 3, "bg_cap": 2, "aliases": ["star-code"]}}}))
     cfg = pp.Config.load(str(cfg_file))
-    assert cfg.port == 9 and cfg.default_class == 3 and not cfg.solo_p0
+    assert cfg.port == 9 and cfg.default_class == 3 and not cfg.solo_p0 and cfg.class_ports == {8083: 3}
     assert cfg.canonical("star-code") == "star-fast" and cfg.canonical("star-voice") == ""
     assert cfg.models["star-fast"].cap() == 2
     assert pp.parse_class("p1", 2) == 1 and pp.parse_class("urgent", 2) == 2

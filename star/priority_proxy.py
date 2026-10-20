@@ -1,15 +1,16 @@
 """STAR priority proxy: owner requests first, background work paused and resumed, never lost.
 
 A small HTTP proxy in front of the llama.cpp router (stdlib only, one thread per request). Every STAR client can go
-through it; the URL prefix says how urgent the client is:
+through it. The class says how urgent the client is:
 
-    /p0/...  owner chat, voice, Discord          P0
-    /p1/...  tasks the owner assigned             P1
-    /p2/...  conductor, agents, game work         P2 (also: no prefix)
-    /p3/...  night school, evals, indexing        P3
+    P0  owner chat, voice, Discord      P1  tasks the owner assigned
+    P2  conductor, agents, game work    P3  night school, evals, indexing, Studio Lab, playtest learning
 
-(or the header `X-Star-Priority: P0..P3`). Only chat and text completions on the models named in the config are
-scheduled; everything else (embeddings, /slots, /v1/models, other models) is passed through unchanged.
+A client gets its class from the port it uses (the main port has `default_class`; `class_ports` adds e.g. 8083 =
+P3, so http://<brain>:8083/v1 is a valid STAR server URL for a background client), from a URL prefix /p0../p3, or
+from the header `X-Star-Priority: P0..P3` (strongest last). Only chat and text completions on the models named in
+the config are scheduled (not requests asking for logprobs); everything else (embeddings, /slots, /v1/models, other
+models) is passed through unchanged.
 
 Rules, per model (a model has `slots` parallel slots in llama.cpp):
   * A request starts when its model has a free slot. Background (P2/P3) also needs the model's `bg_cap` room.
@@ -86,6 +87,7 @@ class Config:
     solo_p0: bool = True
     grace_s: float = 2.0
     assign_slots: bool = True         # pin each request to a slot that is free (keeps a paused answer's slot)
+    class_ports: dict[int, int] = field(default_factory=dict)   # extra listen port -> default class on it
     log: str = ""
     models: dict[str, ModelPolicy] = field(default_factory=lambda: {
         "star-fast": ModelPolicy("star-fast", 2, 0, ("star-code", "star-vision")),
@@ -109,6 +111,9 @@ class Config:
             cfg.grace_s = float(data["grace_s"])
         if "assign_slots" in data:
             cfg.assign_slots = bool(data["assign_slots"])
+        if "class_ports" in data:
+            cfg.class_ports = {int(port): parse_class(str(cls), cfg.default_class)
+                               for port, cls in data["class_ports"].items()}
         if "models" in data:
             cfg.models = {}
             for name, row in data["models"].items():
@@ -650,7 +655,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # helpers --------------------------------------------------------------------------------------------------------
     def _split(self) -> tuple[int, str]:
-        cls, path = self.proxy.cfg.default_class, self.path
+        cls, path = getattr(self.server, "default_class", self.proxy.cfg.default_class), self.path
         head = path.split("/", 2)
         if len(head) > 1 and head[1].lower() in ("p0", "p1", "p2", "p3"):
             cls, path = int(head[1][1]), "/" + (head[2] if len(head) > 2 else "")
@@ -704,9 +709,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         self._route("DELETE")
 
+    def do_PUT(self) -> None:
+        self._route("PUT")
+
+    def do_PATCH(self) -> None:
+        self._route("PATCH")
+
+    def do_OPTIONS(self) -> None:
+        self._route("OPTIONS")
+
+    def do_HEAD(self) -> None:
+        self._route("HEAD")
+
     def _route(self, method: str) -> None:
         cls, path = self._split()
-        body = self._body() if method in ("POST", "DELETE") else b""
+        body = self._body() if method in ("POST", "PUT", "PATCH", "DELETE") else b""
         if path.startswith("/priority/v1/status"):
             if not self._loopback() and not self.proxy.authorized(self.headers.get("Authorization", "")):
                 self._send_json(401, {"error": "key required"})
@@ -720,7 +737,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 req = None
             model = self.proxy.cfg.canonical(str(req.get("model") or "")) if isinstance(req, dict) else ""
-            if model and isinstance(req, dict):
+            if model and isinstance(req, dict) and not req.get("logprobs") and not req.get("n_probs"):
                 if not self.proxy.authorized(self.headers.get("Authorization", "")):
                     self._send_json(401, {"error": {"code": 401, "message": "Invalid API Key",
                                                     "type": "authentication_error"}})
@@ -742,6 +759,10 @@ class Handler(BaseHTTPRequestHandler):
             for key, value in resp.getheaders():
                 if key.lower() not in HOP_HEADERS:
                     self.send_header(key, value)
+            if method == "HEAD":
+                self.send_header("Content-Length", resp.getheader("Content-Length") or "0")
+                self.end_headers()
+                return
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
             while True:
@@ -968,12 +989,22 @@ def _has_tool_calls(chunk: dict) -> bool:
     return any((choice.get("delta") or {}).get("tool_calls") for choice in chunk.get("choices") or [])
 
 
-def make_server(cfg: Config) -> ThreadingHTTPServer:
+def make_servers(cfg: Config) -> list[ThreadingHTTPServer]:
+    """The main port (default class) and one listener per class port, all sharing one scheduler: a client is labelled
+    by the port it uses (http://<brain>:8083/v1 = P3) without a path a strict URL check would refuse."""
     proxy = Proxy(cfg)
     handler = type("BoundHandler", (Handler,), {"proxy": proxy})
-    server = ThreadingHTTPServer((cfg.host, cfg.port), handler)
-    server.daemon_threads = True
-    return server
+    servers = []
+    for port, cls in [(cfg.port, cfg.default_class), *cfg.class_ports.items()]:
+        server = ThreadingHTTPServer((cfg.host, port), handler)
+        server.daemon_threads = True
+        server.default_class = cls       # type: ignore[attr-defined]
+        servers.append(server)
+    return servers
+
+
+def make_server(cfg: Config) -> ThreadingHTTPServer:
+    return make_servers(cfg)[0]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -990,10 +1021,13 @@ def main(argv: list[str] | None = None) -> int:
         value = getattr(args, key)
         if value is not None:
             setattr(cfg, key, value)
-    server = make_server(cfg)
-    print(f"star priority proxy on {cfg.host}:{cfg.port} -> upstream, models {', '.join(cfg.models)}", flush=True)
+    servers = make_servers(cfg)
+    for extra in servers[1:]:
+        threading.Thread(target=extra.serve_forever, daemon=True).start()
+    ports = ", ".join(f"{s.server_address[1]}={CLASS_NAMES[s.default_class]}" for s in servers)   # type: ignore[attr-defined]
+    print(f"star priority proxy on {cfg.host} ports {ports} -> upstream, models {', '.join(cfg.models)}", flush=True)
     try:
-        server.serve_forever()
+        servers[0].serve_forever()
     except KeyboardInterrupt:
         pass
     return 0
