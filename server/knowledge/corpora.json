@@ -169,6 +169,8 @@
       "group": "general-base",
       "kind": "files",
       "walker": "jsonl-pages",
+      "_exclude_titles": "Left out (embed-offload-20261020): date, year, decade and century pages, 'year in X', list/timeline/index pages, disambiguation pages, dated seasons/elections/tournaments (48,786 of 289,893 chunks; low-value passages for STAR).",
+      "exclude_titles": ["^(January|February|March|April|May|June|July|August|September|October|November|December)( \\d{1,2})?$", "^\\d{1,4}s?( BC| AD|BC)?$", "^\\d{1,2}(st|nd|rd|th) (century|millennium)( BC)?$", "^\\d{3,4}( BC)? in ", "^(List|Lists|Timeline|Index) of ", "\\(disambiguation\\)$", "^\\d{4}([–-]\\d{2,4})? .*\\b(season|election|elections|Championships?|Grand Prix|Cup|Open|Olympics|Games|Tournament|Awards|Contest|tour|Tour)\\b"],
       "repo": "https://simple.wikipedia.org",
       "branch": "",
       "licence": "CC-BY-SA-4.0",
