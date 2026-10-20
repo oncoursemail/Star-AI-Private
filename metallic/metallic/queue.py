@@ -88,7 +88,8 @@ def _check(scratch: Path, base: str, branch: str, jobs: int, cache: cache_mod.Ca
     cfg = load(scratch)                     # the combined tree's own config: a gate added by a branch is enforced
     head = gitutil.rev("HEAD", scratch)
     return engine.run_check(scratch, cfg, base=base, tree=gitutil.tree_of(head, scratch), branch=branch, full=True,
-                            jobs=jobs, cache=cache, emit=emit, test_cache_scope="tree")
+                            jobs=jobs, cache=cache, emit=emit, test_cache_scope="tree",
+                            fail_fast=True)
 
 
 def run(root: Path, target: str, branches: list[str], *, apply: bool = False, jobs: int = 4,

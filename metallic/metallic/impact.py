@@ -51,14 +51,16 @@ class Graph:
             got = self._closure[f] = frozenset(seen)
         return got
 
-    def dependents(self, f: str) -> set[str]:
-        seen, todo = {f}, deque([f])
+    def dependents(self, f: str) -> dict[str, int]:
+        """Every file whose closure contains f, with its distance in import hops (f itself: 0)."""
+        dist, todo = {f: 0}, deque([f])
         while todo:
-            for d in self.rdeps.get(todo.popleft(), ()):
-                if d not in seen:
-                    seen.add(d)
+            x = todo.popleft()
+            for d in self.rdeps.get(x, ()):
+                if d not in dist:
+                    dist[d] = dist[x] + 1
                     todo.append(d)
-        return seen
+        return dist
 
 
 def _parse(text: str) -> dict:
@@ -181,15 +183,21 @@ def build(root: Path, files: dict[str, str], cfg: Config, cache: cache_mod.Cache
 @dataclass
 class Selection:
     tests: list[str]
-    direct: list[str]                 # changed test files (run first)
+    direct: list[str]                 # changed test files
     full_reason: str = ""             # non-empty: the whole suite was selected, and why
     untested: list[str] = field(default_factory=list)    # changed source files no test depends on
+    distance: dict[str, int] = field(default_factory=dict)   # test -> import hops to the nearest changed file;
+    #                                   run order: a changed test (0) and its direct importers (1) give the first signal
 
 
 def select(graph: Graph, changed: list[str], cfg: Config) -> Selection:
     tests = set(graph.tests)
-    chosen: set[str] = set()
+    chosen: dict[str, int] = {}
     direct, untested = [], []
+
+    def take(t: str, d: int):
+        chosen[t] = min(d, chosen.get(t, d))
+
     for f in changed:
         if cfg.full_on and matches(f, cfg.full_on):
             return Selection(sorted(tests), [], full_reason=f"{f} matches full_on")
@@ -201,16 +209,18 @@ def select(graph: Graph, changed: list[str], cfg: Config) -> Selection:
             continue
         if f in tests:
             direct.append(f)
-            chosen.add(f)
+            take(f, 0)
             continue
-        hit = graph.dependents(f) & tests
+        hit = {t: d for t, d in graph.dependents(f).items() if t in tests}
+        for t, d in hit.items():
+            take(t, d)
         if hit:
-            chosen |= hit
-        elif f.endswith(".py"):
+            continue
+        if f.endswith(".py"):
             untested.append(f)
         elif not matches(f, cfg.no_tests):
             return Selection(sorted(tests), [], full_reason=f"{f}: no test names or imports it (unknown impact)")
-    return Selection(sorted(chosen), sorted(direct), untested=sorted(untested))
+    return Selection(sorted(chosen), sorted(direct), untested=sorted(untested), distance=chosen)
 
 
 def test_key(graph: Graph, test: str, cfg: Config, toolchain: str, extra=()) -> str:

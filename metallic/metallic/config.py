@@ -3,6 +3,7 @@ branch is enforced on the combined tree the queue tests), plus per-user settings
 private names, brain URL, runner probes).
 
 Without a metallic.toml the built-in checks still run with defaults; tests run only when `[tests]` says how.
+METALLIC_CONFIG=path uses another file (a clone that has no metallic.toml yet, or an old commit).
 """
 from __future__ import annotations
 
@@ -51,7 +52,7 @@ class Config:
 
 def load(root: Path) -> Config:
     cfg = Config(name=root.name)
-    path = root / "metallic.toml"
+    path = Path(os.environ.get("METALLIC_CONFIG") or root / "metallic.toml")
     if not path.exists():
         return cfg
     data = tomllib.loads(path.read_text(encoding="utf-8"))

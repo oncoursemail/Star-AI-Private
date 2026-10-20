@@ -1,7 +1,8 @@
 """Run test files in parallel batches and report one result per file.
 
-Workers pull from one queue ordered for an early signal: changed test files first, then the fastest files by the
-durations recorded on earlier runs. A worker's first batch is a single file (first verdict in seconds); later batches
+Workers pull from one queue ordered for an early useful signal: by import distance to the change (changed test
+files, then their direct importers, ...), and within a distance the fastest files first (durations recorded on earlier
+runs). A worker's first batch is a single file (first verdict in seconds); later batches
 grow to about `batch_seconds` of estimated work to amortise interpreter start-up. Each batch is one pytest process
 writing a JUnit XML report (xunit1, which carries the file of every test case), parsed per file.
 """
@@ -84,22 +85,26 @@ class Durations:
 
 
 def run_files(root: Path, files: list[str], cmd: list[str], python: str, env: dict[str, str], *, jobs: int,
-              durations: Durations, first: list[str] = (), batch_seconds: float = 25.0, timeout: int = 1800,
-              on_result=None) -> list[FileResult]:
-    first_set = set(first)
-    order = sorted(files, key=lambda f: (f not in first_set, durations.get(f), f))
+              durations: Durations, priority: dict[str, int] | None = None, batch_seconds: float = 25.0,
+              timeout: int = 1800, on_result=None, fail_fast: bool = False) -> list[FileResult]:
+    """fail_fast: no new batch starts after a file fails (the merge queue only needs to know the tree is red)."""
+    priority = priority or {}
+    order = sorted(files, key=lambda f: (priority.get(f, 99), durations.get(f), f))
     lock = threading.Lock()
     results: list[FileResult] = []
     todo = list(order)
 
+    stop = threading.Event()
+
     def take(n_done: int) -> list[str]:
         with lock:
-            if not todo:
+            if not todo or stop.is_set():
                 return []
             if n_done == 0:
                 return [todo.pop(0)]
             batch, est = [], 0.0
-            while todo and (not batch or est + durations.get(todo[0]) <= batch_seconds) and len(batch) < 40:
+            tier = priority.get(todo[0], 99)
+            while todo and (not batch or est + durations.get(todo[0]) <= batch_seconds) and len(batch) < 40                     and priority.get(todo[0], 99) == tier:
                 f = todo.pop(0)
                 batch.append(f)
                 est += durations.get(f)
@@ -113,6 +118,8 @@ def run_files(root: Path, files: list[str], cmd: list[str], python: str, env: di
                 return
             done += 1
             for r in _run_batch(root, batch, cmd, python, env, timeout):
+                if fail_fast and r.status != "pass":
+                    stop.set()
                 durations.set(r.path, r.seconds)
                 with lock:
                     results.append(r)

@@ -40,7 +40,20 @@ def test_lazy_and_relative_imports_are_edges(repo):
     write(repo, "pkg/lazy.py", "def f():\n    from .core import add\n    return add\n")
     write(repo, "tests/test_lazy.py", "import importlib\n\n\ndef test_f():\n"
                                       "    assert importlib.import_module('pkg.lazy').f()(1, 1) == 2\n")
-    assert _select(repo, ["pkg/core.py"]).tests == ["tests/test_core.py", "tests/test_lazy.py"]
+    sel = _select(repo, ["pkg/core.py"])
+    assert sel.tests == ["tests/test_core.py", "tests/test_lazy.py"]
+    assert sel.distance == {"tests/test_core.py": 1, "tests/test_lazy.py": 2}       # run order: nearest first
+
+
+def test_fail_fast_starts_no_new_batch_after_a_failure(repo):
+    import sys
+    from metallic import testrun
+    write(repo, "pkg/core.py", "def add(a, b):\n    return a - b\n")
+    durations = testrun.Durations(repo / "durations.json")
+    got = testrun.run_files(repo, ["tests/test_core.py", "tests/test_other.py", "tests/test_loader.py"],
+                            load(repo).test_cmd, sys.executable, {}, jobs=1, durations=durations,
+                            priority={"tests/test_core.py": 0}, fail_fast=True)
+    assert [(r.path, r.status) for r in got] == [("tests/test_core.py", "fail")]
 
 
 def test_rerun_is_all_cache_hits_and_change_reruns_only_affected(repo):

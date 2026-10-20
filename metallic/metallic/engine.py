@@ -70,7 +70,7 @@ def _run_gate(root: Path, gate: Gate, python: str, files: dict[str, str], cache:
 def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | None = None, branch: str | None = None,
               full: bool = False, jobs: int = 4, cache: cache_mod.Cache | None = None, only: list[str] | None = None,
               verdict_file: str | None = None, ai_review: bool = False, emit=None,
-              test_cache_scope: str = "closure") -> dict:
+              test_cache_scope: str = "closure", fail_fast: bool = False) -> dict:
     """test_cache_scope "closure": a test file's cached pass is reused while its dependency closure is unchanged
     (fast local signal); "tree": only for the identical tree (the queue: inferred dependencies are never trusted)."""
     t0 = time.monotonic()
@@ -124,14 +124,17 @@ def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | N
         timings["graph"] = round(time.monotonic() - tg, 3)
         sel = impact.select(graph, changed, cfg)
         if full and not sel.full_reason:
-            sel = impact.Selection(list(graph.tests), sel.direct, full_reason="--full", untested=sel.untested)
+            sel = impact.Selection(list(graph.tests), sel.direct, full_reason="--full", untested=sel.untested,
+                                   distance=sel.distance)
         extra = [tree] if test_cache_scope == "tree" else []
         keys = {t: impact.test_key(graph, t, cfg, toolchain, extra) for t in sel.tests}
         to_run, cached = [], []
         for t in sel.tests:
             (cached if cache.get(keys[t]) else to_run).append(t)
+        near = {t for t in to_run if sel.distance.get(t, 99) <= 1}
         tests_info.update(selected=len(sel.tests), total_files=len(graph.tests), cached=len(cached),
-                          ran=len(to_run), full_reason=sel.full_reason, untested=sel.untested, direct=sel.direct)
+                          ran=len(to_run), full_reason=sel.full_reason, untested=sel.untested, direct=sel.direct,
+                          near=len(near))
         emit("selection", tests_info, time.monotonic() - t0)
         durations = testrun.Durations(state / "durations.json")
         file_results: list[testrun.FileResult] = []
@@ -141,13 +144,16 @@ def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | N
                 file_results.append(r)
                 timings.setdefault("first_test", round(time.monotonic() - t0, 3))
                 timings.setdefault("first_signal", round(time.monotonic() - t0, 3))
+                near.discard(r.path)
+                if not near:            # the changed tests and their direct importers have all answered
+                    timings.setdefault("near_done", round(time.monotonic() - t0, 3))
             if r.status == "pass":
                 cache.put(keys[r.path], {"tests": r.tests, "seconds": r.seconds})
             emit("test", r, time.monotonic() - t0)
 
         if to_run:
             testrun.run_files(root, to_run, cfg.test_cmd, python, cfg.test_env, jobs=jobs, durations=durations,
-                              first=sel.direct, on_result=on_result)
+                              priority=sel.distance, on_result=on_result, fail_fast=fail_fast)
             durations.save()
         timings["tests_done"] = round(time.monotonic() - t0, 3)
         bad = [r for r in file_results if r.status != "pass"]
@@ -155,9 +161,12 @@ def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | N
                                 for r in bad]
         tests_info["tests_run"] = sum(r.tests for r in file_results)
         status = checks.FAIL if bad else checks.PASS
+        skipped = len(to_run) - len(file_results)
+        tests_info["not_run"] = skipped
         summary = (f"{len(sel.tests)}/{len(graph.tests)} test files selected"
                    + (f" ({sel.full_reason})" if sel.full_reason else "")
-                   + f", {len(cached)} cached, {len(to_run)} ran, {len(bad)} failed")
+                   + f", {len(cached)} cached, {len(file_results)} ran, {len(bad)} failed"
+                   + (f", {skipped} not run (fail fast)" if skipped else ""))
         record(checks.CheckResult("tests", status, summary,
                                   [checks.finding(r.path, 0, "test", "; ".join(r.failures[:3]) or r.status)
                                    for r in bad]))
