@@ -33,8 +33,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import os
+import faulthandler
 from pathlib import Path
 import re
+import signal
 import sys
 import threading
 import time
@@ -324,8 +326,11 @@ class Service:
         mode = body.get("mode", DEFAULT_MODE)
         top = body.get("top", 5)
         per_page = body.get("per_page", DEFAULT_PER_PAGE)
+        scope = body.get("scope")          # None: decided from the query (search.auto_scope); "roblox" | "all" | group
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= MAX_QUERY:
             return 400, {"error": f"query must be 1..{MAX_QUERY} characters"}
+        if scope is not None and (not isinstance(scope, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", scope)):
+            return 400, {"error": "scope must be a short lowercase group name, 'roblox' or 'all'"}
         if mode not in SERVICE_MODES or type(top) is not int or not 1 <= top <= MAX_TOP:
             return 400, {"error": "mode must be one of " + ", ".join(SERVICE_MODES) + f" and top 1..{MAX_TOP}"}
         if type(per_page) is not int or not 1 <= per_page <= MAX_PER_PAGE:
@@ -334,18 +339,20 @@ class Service:
         started = time.perf_counter()
         s = self.searcher()
         try:
-            key = (self.generation(s), mode, top, per_page, query)
+            key = (self.generation(s), mode, top, per_page, query, scope)
             hit = self.cache.get(key)
             if hit is not None:
                 return 200, {**hit, "cached": True,
                              "timing_ms": {"total_ms": round((time.perf_counter() - started) * 1000, 1)}}
-            passages, timing = s.search(query, mode=mode, top=top, per_doc=per_page, fallback=True, degrade=True)
+            passages, timing = s.search(query, mode=mode, top=top, per_doc=per_page, fallback=True, degrade=True,
+                                        scope=scope)
             degraded = bool(timing.pop("degraded", 0))
             reply = {
                 "mode": mode, "mode_used": "bm25" if degraded else mode, "degraded": degraded,
                 "timing_ms": timing, "untrusted": True, "cached": False,
                 "index": {"chunks": s.chunk_count(), "embedded": s.embedded_count()},
                 "attribution": {n: v["attribution"] for n, v in s.sources.items()},
+                "scope": scope or ("roblox" if timing.get("scoped_sources") else "all"),
                 "passages": [p.as_dict() for p in passages]}
             if not degraded and not timing.get("fallback_failed"):   # only a full-quality reply is worth repeating
                 self.cache.put(key, reply)
@@ -584,6 +591,9 @@ def serve(db_path: Path, host: str = "127.0.0.1", port: int = 8091, key_file: st
         raise SystemExit("refusing to start without an API key file")
     if not db_path.is_file():
         raise SystemExit("refusing to start without an index (run: python -m starkb build)")
+    # `systemctl kill --signal=SIGUSR1 star-knowledge` (the watchdog, before a restart) prints every thread's stack
+    # to the journal: a hung service can be diagnosed afterwards.
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
     service = Service(db_path, keys)
     service.health()   # load the vectors once before accepting requests; fails fast on a broken index
     server = Server((host, port), make_handler(service))

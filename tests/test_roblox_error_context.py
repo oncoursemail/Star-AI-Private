@@ -39,7 +39,7 @@ class FakeKnowledge:
     def __init__(self, unavailable=False):
         self.unavailable, self.searches = unavailable, []
 
-    def search(self, query, *, top=4, mode="vector"):
+    def search(self, query, *, top=4, mode="vector", scope=None):
         self.searches.append(query)
         if self.unavailable:
             raise OSError("Documentation service unavailable")

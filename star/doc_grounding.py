@@ -146,7 +146,8 @@ def _retrieve(client: KnowledgeClient, plan: GroundingPlan, query: str) -> list[
                                  "retrieved_at": hit.get("retrieved_at", ""), "text": hit["text"]})
     if len(passages) < plan.passages:
         seen = {p["url"] for p in passages if p["url"]}
-        for hit in client.search(retrieval_query(query), top=min(10, plan.passages + len(passages))):
+        # The index may also hold non-Roblox sources; these rules and links are for the Roblox documentation only.
+        for hit in client.search(retrieval_query(query), top=min(10, plan.passages + len(passages)), scope="roblox"):
             if len(passages) >= plan.passages:
                 break
             if hit["url"] and hit["url"] in seen:

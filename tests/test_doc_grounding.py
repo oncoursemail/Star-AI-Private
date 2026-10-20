@@ -31,10 +31,11 @@ class FakeKnowledge:
         self.passages = passages if passages is not None else [passage(1), passage(2)]
         self.reports = list(reports or [])
         self.search_error, self.check_error = search_error, check_error
-        self.searches, self.lookups, self.checked = [], [], []
+        self.searches, self.lookups, self.checked, self.scopes = [], [], [], []
 
-    def search(self, query, *, top=4, mode="vector"):
+    def search(self, query, *, top=4, mode="vector", scope=None):
         self.searches.append((query, top))
+        self.scopes.append(scope)
         if self.search_error:
             raise self.search_error
         return [dict(p) for p in self.passages[:top]]
@@ -199,6 +200,7 @@ def test_prepare_searches_with_the_distilled_query_but_the_model_sees_the_whole_
               "Give only the code block and one sentence.")
     found = prepare(Settings(model="m"), route_for(prompt), prompt, [], None, client=knowledge)
     assert knowledge.searches == [("tweens a Part named Door 10 studs up.", 4)] and found.query == prompt
+    assert knowledge.scopes == ["roblox"]       # the index also holds non-Roblox sources; grounding asks for Roblox only
 
 
 # --- untrusted-data delimiting ----------------------------------------------------------------
