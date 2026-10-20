@@ -7,7 +7,7 @@ import json
 import pytest
 
 from star.roblox_intelligence_hub import (
-    BASE, MARKET, MAX_BODY_BYTES, RobloxIntelligenceHub, _operation_id, _range,
+    BASE, MARKET, RobloxIntelligenceHub, _operation_id, _range,
 )
 
 
@@ -174,8 +174,8 @@ def test_creator_store_beta_search_and_asset_details_have_no_uploads():
 
 
 @pytest.mark.parametrize("name,keyword", [
-    ("marketplace_search", "test\\ntrick"),
-    ("creator_store_search", "a\\x00b"),
+    ("marketplace_search", "test\ntrick"),
+    ("creator_store_search", "a\x00b"),
 ])
 def test_reject_control_character_queries(name, keyword):
     hub, client = setup_hub()
