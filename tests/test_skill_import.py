@@ -75,6 +75,15 @@ def test_no_overwriting_existing_skill(tmp_path):
         import_reviewed_skill(folder, home=home, approved=True, **kwargs())
 
 
+def test_cannot_shadow_bundled_skills(tmp_path):
+    folder = source(tmp_path)
+    bundled_name = folder.parent / "roblox-vfx"
+    folder.rename(bundled_name)
+    (bundled_name / "SKILL.md").write_text(SKILL.replace("useful-review", "roblox-vfx"))
+    with pytest.raises(FileExistsError, match="bundled"):
+        import_reviewed_skill(bundled_name, home=tmp_path / "profile", approved=True, **kwargs())
+
+
 @pytest.mark.parametrize("relative", ["scripts/run.py", "assets/evil.exe", "README.md"])
 def test_reject_unreviewed_content(tmp_path, relative):
     folder = source(tmp_path)
