@@ -5,4 +5,4 @@ pyttsx3>=2.99,<3
 
 keyring>=25.7.0,<27
 # Local OBS WebSocket v5 control for opt-in replay buffer. OBS itself is separate.
-obsws-python>=1.7,<2
+obsws-python>=1.8.0,<2
