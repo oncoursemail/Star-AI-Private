@@ -45,7 +45,7 @@ install -o root -g root -m 0644 "$HOME_DIR/app/$UNIT" "/etc/systemd/system/$UNIT
 # The study job (star-knowledge-study.service) is NOT installed: measured on 2026-10-11 it did not
 # improve retrieval (see starkb/study.py). To run the experiment further, copy that unit to
 # /etc/systemd/system by hand and `systemctl start --no-block star-knowledge-study`.
-for extra in star-knowledge-refresh.service star-knowledge-refresh.timer \n             star-knowledge-watchdog.service star-knowledge-watchdog.timer; do
+for extra in star-knowledge-refresh.service star-knowledge-refresh.timer star-knowledge-watchdog.service star-knowledge-watchdog.timer; do
   install -o root -g root -m 0644 "$HOME_DIR/app/$extra" "/etc/systemd/system/$extra"
 done
 systemctl daemon-reload
