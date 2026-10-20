@@ -41,9 +41,13 @@ def base_key(pyi_args: list[str], script: str) -> str:
     import PyInstaller
 
     digest = hashlib.sha256()
-    digest.update(f"{PyInstaller.__version__}\n{sys.version}\n{sys.executable}\n".encode())
-    for entry in sys.path:
-        digest.update(entry.encode() + b"\0")
+    digest.update(f"{PyInstaller.__version__}\n{sys.version}\n".encode())
+    # The shared part of sys.path (base venv, standard library). Not the job's own venv or the script folder:
+    # those sit under each runner's work folder, and both PC runners must find the same saved analysis.
+    own = os.path.normcase(os.path.abspath(sys.prefix)) + os.sep
+    for entry in sys.path[1:]:
+        if not (os.path.normcase(os.path.abspath(entry)) + os.sep).startswith(own):
+            digest.update(entry.encode() + b"\0")
     skip = False
     for arg in pyi_args:
         if skip:

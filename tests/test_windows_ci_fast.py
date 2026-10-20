@@ -111,6 +111,22 @@ def test_layered_key_ignores_star_data_and_script_but_not_analysis_options():
     assert key("star/data;star/data", "av") != key("star/data;star/data", "pptx")
 
 
+def test_layered_key_is_the_same_for_every_runner_folder(monkeypatch, tmp_path):
+    pytest.importorskip("PyInstaller")
+    layered = _layered()
+    shared = [str(tmp_path / "python" / "Lib"), str(tmp_path / "cache" / "py" / "k" / "Lib" / "site-packages")]
+    keys = set()
+    for runner in ("actions-runner", "actions-runner-2"):
+        venv = tmp_path / runner / "_work" / "_temp" / "job-venv"
+        monkeypatch.setattr(layered.sys, "prefix", str(venv))
+        monkeypatch.setattr(layered.sys, "path", [str(tmp_path / runner / "_work" / "src" / "scripts" / "ci"),
+                                                  shared[0], str(venv), str(venv / "Lib" / "site-packages"), shared[1]])
+        keys.add(layered.base_key(["--noconfirm", "star_desktop.py"], "star_desktop.py"))
+    assert len(keys) == 1
+    monkeypatch.setattr(layered.sys, "path", [layered.sys.path[0], shared[0], str(tmp_path / "other-base")])
+    assert layered.base_key(["--noconfirm", "star_desktop.py"], "star_desktop.py") not in keys
+
+
 def test_saved_analysis_keeps_work_folder_files_and_is_replaced_only_when_asked(tmp_path):
     layered = _layered()
     work = tmp_path / "build" / "STAR"
