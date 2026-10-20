@@ -1,3 +1,6 @@
+import {applyResearchActivity, researchEventName, researchPhase, settleResearchActivity} from './research-activity'
+import type {ResearchActivityPayload, ResearchActivityState} from './research-activity'
+
 /** Activity model for one STAR run (a chat turn, an agent task or a team).
  *
  *  This is a pure reducer over the `progress` payloads that
@@ -45,10 +48,12 @@ export type ActivityRun = {
   firstTokenMs?: number
   tokensPerSecond?: number
   estimatedTokens?: boolean
+  /** Optional, real backend research session. Ordinary chat turns never create one. */
+  research?: ResearchActivityState
 }
 
 /** The sanitized `activity` object from the backend. All fields are enumerated or bounded there. */
-export type ActivityPayload = {
+export type ActivityPayload = ResearchActivityPayload & {
   type?: string
   group?: string
   id?: string
@@ -185,6 +190,13 @@ export function applyProgress(run: ActivityRun, data: ProgressPayload | string |
   const phase = typeof data.phase === 'string' && data.phase ? data.phase.slice(0, 120) : run.phase
   const activity = data.activity
   if (!activity || typeof activity !== 'object') return phase === run.phase ? run : {...run, phase}
+  const researchEvent = researchEventName(activity)
+  if (researchEvent) {
+    const research = applyResearchActivity(run.research, activity, now)
+    if (research === run.research || !research) return run
+    return {...run, research, steps: closeThinking(run.steps, now),
+      phase: researchEvent === 'research_citations_checked' ? 'Checking citation references' : researchPhase(research)}
+  }
   let steps = run.steps
   const next: ActivityRun = {...run, phase}
   switch (activity.type) {
@@ -412,11 +424,13 @@ export function settleRun(run: ActivityRun, outcome: Exclude<RunOutcome, 'runnin
     if (step.state === 'queued') return {...step, state: 'cancelled' as const}
     return step
   })
-  return {...run, steps, outcome, endedAt: now, streaming: false}
+  return {...run, steps, outcome, endedAt: now, streaming: false,
+    ...(run.research ? {research: settleResearchActivity(run.research, outcome, now)} : {})}
 }
 
 /** Only multi-step work earns a timeline; a plain answer keeps the one-line status. */
 export function isRich(run: ActivityRun): boolean {
+  if (run.research) return true
   if (run.mode === 'team') return true
   return (
     run.steps.some(step => step.kind === 'tool' || step.kind === 'agent' || step.kind === 'search') ||
