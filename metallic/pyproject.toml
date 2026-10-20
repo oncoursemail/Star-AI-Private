@@ -1,0 +1,11 @@
+[project]
+name = "metallic"
+version = "0.1.0"
+description = "Metallic layer: merge queue on the combined tree, test-impact selection, result cache, built-in checks"
+requires-python = ">=3.11"
+
+[project.scripts]
+metallic = "metallic.cli:main"
+
+[tool.setuptools]
+packages = ["metallic"]

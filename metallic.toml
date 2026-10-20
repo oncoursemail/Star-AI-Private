@@ -1,0 +1,53 @@
+# Metallic layer configuration for STAR (metallic/ package; docs/research/metallic-layer-20261020.md).
+# Versioned with the code: a gate added here in a branch is enforced on the combined tree the merge queue tests.
+
+[project]
+name = "STAR"
+target = "origin/star/next"
+
+[python]
+interpreter = "python"            # METALLIC_PYTHON overrides (each machine has its own venv)
+roots = [".", "server/night_school", "metallic"]
+
+[tests]
+files = ["tests/test_*.py", "metallic/tests/test_*.py"]
+cmd = ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+env = { APPDATA = "{tmp}" }       # never the owner's %APPDATA%\STAR
+full_on = ["pyproject.toml", "requirements*.txt", "metallic.toml"]
+no_tests = ["*.md", ".gitignore", ".gitattributes", "LICENSE", "assets/**"]
+
+[checks]
+# Same lists as star/protected_paths.py and tools/star.py (protected closure W2).
+generator_branches = ["star/chatgpt-*", "star/autopilot-*", "star/night-school-outbox-*", "star/outbox-*",
+                      "star/selfbuild-*", "star/genesis-*", "star/gen-*"]
+protected_paths = ["evals/**", "star/eval_gate.py", "star/eval_runner.py", "star/eval_checks.py",
+                   "star/eval_sandbox.py", "star/eval_stats.py", "star/protected_paths.py",
+                   "server/night_school/nightschool/pool.py", "server/night_school/nightschool/engine.py",
+                   "server/night_school/nightschool/config.py", "tests/test_eval_*.py",
+                   "tests/test_protected_closure.py", ".github/workflows/**"]
+forbidden_files = ["pnpm-lock.yaml", "pnpm-workspace.yaml", "*.tsbuildinfo"]
+max_file_mb = 5
+luau_api_dump = "data/roblox_api/roblox_api.json"
+
+[eval_gate]
+# Changes to what STAR says need a paired-session verdict (star/eval_gate.py --paired-session --json).
+paths = ["star/skill_packs/**", "star/skill_routing.py", "star/instant_route.py", "star/cascade_router.py",
+         "star/brain_router.py"]
+blocking = false                  # report only until the owner makes it blocking
+
+[[gate]]
+name = "ruff"
+cmd = ["{python}", "-m", "ruff", "check", "star", "metallic"]
+inputs = ["star/**/*.py", "metallic/**/*.py", "pyproject.toml"]
+
+[[gate]]
+name = "frontend-types"
+cmd = ["npm", "--prefix", "frontend", "run", "typecheck"]
+inputs = ["frontend/**"]
+requires = ["frontend/node_modules"]
+
+[[gate]]
+name = "frontend-tests"
+cmd = ["npm", "--prefix", "frontend", "test"]
+inputs = ["frontend/**"]
+requires = ["frontend/node_modules"]
