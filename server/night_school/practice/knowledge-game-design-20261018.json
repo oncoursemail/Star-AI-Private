@@ -1,0 +1,1631 @@
+[
+ {
+  "id": "KN-GD-001",
+  "topic": "frameworks",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "In the MDA framework for game design, what do the letters M, D and A stand for? Give the three words. End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/MDA_framework"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Mechanics, Dynamics, Aesthetics",
+     "Mechanics Dynamics Aesthetics"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-002",
+  "topic": "flow",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "Which psychologist described the mental state of 'flow', the basis of the flow channel between boredom and anxiety used in difficulty design? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Flow_(psychology)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Csikszentmihalyi",
+     "Mihaly Csikszentmihalyi"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-003",
+  "topic": "balance",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "A positive feedback loop in a game economy tends to:\nA) bring players who fall behind back towards the leader\nB) widen the gap between a leading player and the rest\nC) keep every player at the same resource level\nD) remove randomness from outcomes Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Positive_feedback",
+   "https://en.wikipedia.org/wiki/Game_balance"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "bring players who fall behind back towards the leader",
+     "B": "widen the gap between a leading player and the rest",
+     "C": "keep every player at the same resource level",
+     "D": "remove randomness from outcomes"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-004",
+  "topic": "psychology",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "Which reward schedule produces the most persistent behaviour and is the model for loot drops and slot machines?\nA) fixed interval\nB) fixed ratio\nC) variable ratio\nD) continuous reinforcement Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Variable_ratio_schedule",
+   "https://en.wikipedia.org/wiki/Reinforcement"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "fixed interval",
+     "B": "fixed ratio",
+     "C": "variable ratio",
+     "D": "continuous reinforcement"
+    },
+    "correct": "C"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-005",
+  "topic": "loops",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What is the name of the game-design pattern where a loop of anticipation, activity and reward is repeated to keep players engaged, often criticised when used to manipulate? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Compulsion_loop"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "compulsion loop",
+     "core loop"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-006",
+  "topic": "narrative",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What term describes a conflict between what a game's story says about a character and what its mechanics reward the player for doing? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Ludonarrative_dissonance"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "ludonarrative dissonance"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-007",
+  "topic": "systems",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "Permadeath in a game means:\nA) the player loses progress to the last checkpoint\nB) a dead character is gone for good and cannot be reloaded\nC) enemies respawn permanently\nD) the game ends after one death with a cutscene Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Permadeath"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the player loses progress to the last checkpoint",
+     "B": "a dead character is gone for good and cannot be reloaded",
+     "C": "enemies respawn permanently",
+     "D": "the game ends after one death with a cutscene"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-008",
+  "topic": "matchmaking",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "In the Elo rating system, if two players have equal ratings, what is each player's expected score for a game (as a decimal)? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Elo_rating_system"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "0.5",
+     ".5",
+     "50%"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-009",
+  "topic": "balance",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "Rubber banding in racing games refers to:\nA) cars snapping back to the track after a crash\nB) AI opponents speeding up or slowing down to stay close to the player\nC) the elastic physics of tyres\nD) the player's controller cable Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Rubber_banding_(video_games)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "cars snapping back to the track after a crash",
+     "B": "AI opponents speeding up or slowing down to stay close to the player",
+     "C": "the elastic physics of tyres",
+     "D": "the player's controller cable"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-010",
+  "topic": "history",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "Which 1993 id Software shooter popularised the first-person shooter genre and shareware distribution of its first episode? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Doom_(1993_video_game)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Doom"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-011",
+  "topic": "history",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What falling-block puzzle game, created by Alexey Pajitnov in 1984, has pieces called tetrominoes? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Tetris"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Tetris"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-012",
+  "topic": "production",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "A 'vertical slice' in game development is:\nA) a prototype of one feature with placeholder art\nB) a fully polished slice of the game showing every system at final quality\nC) the first level only, unfinished\nD) the technical design document Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Vertical_slice"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a prototype of one feature with placeholder art",
+     "B": "a fully polished slice of the game showing every system at final quality",
+     "C": "the first level only, unfinished",
+     "D": "the technical design document"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-013",
+  "topic": "difficulty",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What is the term for the hidden mechanic where a game's difficulty adjusts itself to the player's measured performance? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dynamic_game_difficulty_balancing"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "dynamic difficulty adjustment",
+     "dynamic game difficulty balancing",
+     "dynamic difficulty"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-014",
+  "topic": "systems",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "Fog of war in strategy games hides:\nA) the player's own units from themselves\nB) parts of the map the player has no units observing\nC) the user interface during cutscenes\nD) the enemy's score Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Fog_of_war"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the player's own units from themselves",
+     "B": "parts of the map the player has no units observing",
+     "C": "the user interface during cutscenes",
+     "D": "the enemy's score"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-015",
+  "topic": "history",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "Which 2007 Valve puzzle game is built on a gun that creates two linked portals? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Portal_(video_game)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Portal"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-016",
+  "topic": "level-flow",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "In Nintendo's platformer design, what is the name of the structure where a mechanic is introduced safely, developed, twisted and then concluded, often described with four Japanese narrative beats? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Kishōtenketsu"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "kishotenketsu",
+     "kishōtenketsu",
+     "ki-sho-ten-ketsu"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-017",
+  "topic": "monetisation",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "A loot box is best described as:\nA) a chest placed in the level with fixed contents\nB) a purchasable item with a randomised set of rewards\nC) the inventory screen\nD) a daily login bonus Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Loot_box"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a chest placed in the level with fixed contents",
+     "B": "a purchasable item with a randomised set of rewards",
+     "C": "the inventory screen",
+     "D": "a daily login bonus"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-018",
+  "topic": "monetisation",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "A battle pass monetisation model typically rewards players for: End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Battle_pass"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "completing challenges and levelling the pass during a season",
+     "progressing through tiers during a season"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-019",
+  "topic": "production",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What is the name for the smallest version of a product with just enough features to learn from real players? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Minimum_viable_product"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "minimum viable product",
+     "MVP"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-020",
+  "topic": "systems",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "In a roguelike, what structural feature means every run presents a different dungeon? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Roguelike",
+   "https://en.wikipedia.org/wiki/Procedural_generation"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "procedural generation",
+     "procedurally generated levels",
+     "random generation"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-021",
+  "topic": "systems",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "Emergent gameplay means:\nA) gameplay scripted by designers for a cutscene\nB) complex situations arising from simple rules interacting, not authored directly\nC) the tutorial level\nD) the final boss encounter Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Emergent_gameplay"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "gameplay scripted by designers for a cutscene",
+     "B": "complex situations arising from simple rules interacting, not authored directly",
+     "C": "the tutorial level",
+     "D": "the final boss encounter"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-022",
+  "topic": "literature",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "Which Chilean-born designer's book 'The Art of Game Design' is organised as a deck of 'lenses'? Give the surname. End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Game_design"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Schell",
+     "Jesse Schell"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-023",
+  "topic": "systems",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "The 'cooldown' mechanic exists mainly to:\nA) make a strong ability unavailable for a time so it cannot be spammed\nB) slow the game's frame rate\nC) cool the player's hardware\nD) hide the ability from the UI Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Cooldown_(video_games)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "make a strong ability unavailable for a time so it cannot be spammed",
+     "B": "slow the game's frame rate",
+     "C": "cool the player's hardware",
+     "D": "hide the ability from the UI"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-024",
+  "topic": "difficulty",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "Which 2018 platformer by Maddy Thorson about climbing a mountain is praised for an 'Assist Mode' that lets players tune difficulty? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Celeste_(video_game)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Celeste"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-025",
+  "topic": "genres",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What do you call a mode where many players compete until one player or team remains, with a shrinking play area? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Battle_royale_game"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "battle royale"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-026",
+  "topic": "concepts",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "Gamification is:\nA) making a game harder\nB) applying game-like elements such as points and badges to non-game activities\nC) the testing phase of a game\nD) porting a game to a new console Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Gamification"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "making a game harder",
+     "B": "applying game-like elements such as points and badges to non-game activities",
+     "C": "the testing phase of a game",
+     "D": "porting a game to a new console"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-027",
+  "topic": "theory",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "In game theory, what is the name for a situation where no player can improve their outcome by changing only their own strategy? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Game_theory"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Nash equilibrium"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-028",
+  "topic": "production",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "A game design document (GDD) is:\nA) the legal contract with the publisher\nB) a living description of the game's vision, mechanics and content for the team\nC) the source code repository\nD) the marketing trailer script Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Game_design_document"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the legal contract with the publisher",
+     "B": "a living description of the game's vision, mechanics and content for the team",
+     "C": "the source code repository",
+     "D": "the marketing trailer script"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-029",
+  "topic": "production",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What is the term for a short, intense development event where teams make a game in about 48 hours? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Game_jam"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "game jam"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-030",
+  "topic": "level-flow",
+  "category": "knowledge-game-design",
+  "difficulty": 2,
+  "goal": "Answer a game-design question correctly (order key).",
+  "prompt": "Put these difficulty-curve stages in the order a well-designed level introduces a new mechanic (Nintendo-style). End with one line `Answer: ...` listing them in order, separated by commas.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Kishōtenketsu",
+   "https://en.wikipedia.org/wiki/Level_design"
+  ],
+  "scoring_scope": "knowledge check: the required items appear in order; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the order key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "order",
+    "items": [
+     "introduce|safe",
+     "develop|variation",
+     "twist|surprise",
+     "conclude|final test"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-031",
+  "topic": "economy",
+  "category": "knowledge-game-design",
+  "difficulty": 2,
+  "goal": "Answer a game-design question correctly (match key).",
+  "prompt": "Match each term from game economics to its meaning. Write one line per pair as `term: meaning`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Virtual_economy",
+   "https://en.wikipedia.org/wiki/Game_economy"
+  ],
+  "scoring_scope": "knowledge check: each pair appears together in one line or sentence; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the match key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "match",
+    "pairs": [
+     [
+      "faucet",
+      "creat|source|reward"
+     ],
+     [
+      "sink",
+      "remove|cost|destroy"
+     ],
+     [
+      "inflation",
+      "price|rising|too much"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-032",
+  "topic": "economy",
+  "category": "knowledge-game-design",
+  "difficulty": 2,
+  "goal": "Answer a game-design question correctly (short key).",
+  "prompt": "Name two reasons designers add a 'sink' to a virtual economy.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Virtual_economy"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "inflation|too much (currency|gold|money)|value of (currency|gold|money)"
+     ],
+     [
+      "sink|remove|drain|take .* out"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-033",
+  "topic": "feel",
+  "category": "knowledge-game-design",
+  "difficulty": 2,
+  "goal": "Answer a game-design question correctly (short key).",
+  "prompt": "Explain what 'juice' or 'game feel' adds to a jump without changing its logic. Name at least two techniques.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Game_feel"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "screen ?shake|particles?|squash|stretch|sound|animation|hit ?stop|freeze"
+     ],
+     [
+      "feedback|responsive|feel|satisfying"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-034",
+  "topic": "loops",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "The 'core gameplay loop' is:\nA) the main menu flow\nB) the short cycle of actions a player repeats most of the time, such as explore, fight, loot\nC) the game's save system\nD) the credits sequence Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Core_gameplay_loop",
+   "https://en.wikipedia.org/wiki/Gameplay"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the main menu flow",
+     "B": "the short cycle of actions a player repeats most of the time, such as explore, fight, loot",
+     "C": "the game's save system",
+     "D": "the credits sequence"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-035",
+  "topic": "matchmaking",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What rating system, newer than Elo, also tracks a rating deviation (uncertainty) for each player? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Glicko_rating_system"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Glicko",
+     "Glicko rating system",
+     "Glicko-2"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-036",
+  "topic": "ui",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "Which of these is a diegetic UI element?\nA) a health bar at the top of the screen\nB) an ammo count displayed on the in-world gun\nC) the pause menu\nD) a tooltip Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Diegesis",
+   "https://en.wikipedia.org/wiki/Game_user_interface"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a health bar at the top of the screen",
+     "B": "an ammo count displayed on the in-world gun",
+     "C": "the pause menu",
+     "D": "a tooltip"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-037",
+  "topic": "production",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "What 2016 Roblox-era term describes a game that keeps players returning with scheduled events and updates after launch, treated as an ongoing service? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Games_as_a_service"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "live service",
+     "games as a service",
+     "live-service game",
+     "GaaS"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-038",
+  "topic": "history",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "Which free-to-play social deduction game of 2018 has crewmates and impostors on a spaceship? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Among_Us"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Among Us"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-GD-039",
+  "topic": "production",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (choice key).",
+  "prompt": "'Scope creep' describes:\nA) the camera zooming in slowly\nB) features being added beyond the agreed plan so the project grows uncontrolled\nC) the player's view narrowing when aiming\nD) a bug that spreads between levels Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Scope_creep"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the camera zooming in slowly",
+     "B": "features being added beyond the agreed plan so the project grows uncontrolled",
+     "C": "the player's view narrowing when aiming",
+     "D": "a bug that spreads between levels"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-GD-040",
+  "topic": "psychology",
+  "category": "knowledge-game-design",
+  "difficulty": 1,
+  "goal": "Answer a game-design question correctly (exact key).",
+  "prompt": "In a Skinner box, the animal learns to press a lever for a reward; what field of psychology does this experiment belong to? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Skinner_box",
+   "https://en.wikipedia.org/wiki/Reinforcement"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "operant conditioning",
+     "behaviourism",
+     "behaviorism"
+    ]
+   }
+  }
+ }
+]

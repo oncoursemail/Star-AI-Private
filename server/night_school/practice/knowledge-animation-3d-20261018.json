@@ -1,0 +1,1646 @@
+[
+ {
+  "id": "KN-AN-001",
+  "topic": "principles",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "How many basic principles of animation did Disney animators Ollie Johnston and Frank Thomas describe in 'The Illusion of Life'? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Twelve_basic_principles_of_animation"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "12",
+     "twelve"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-002",
+  "topic": "principles",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "Which animation principle prepares the audience for an action, like a crouch before a jump? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Anticipation_(animation)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "anticipation"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-003",
+  "topic": "principles",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "Which animation principle makes a bouncing ball flatten on impact and lengthen in the air while keeping its volume? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Squash_and_stretch"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "squash and stretch"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-004",
+  "topic": "principles",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "'Follow through and overlapping action' means:\nA) everything stops at the same frame\nB) parts of a body keep moving after the main body stops, and move at different rates\nC) the camera follows the character\nD) two animations play at once Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Twelve_basic_principles_of_animation"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "everything stops at the same frame",
+     "B": "parts of a body keep moving after the main body stops, and move at different rates",
+     "C": "the camera follows the character",
+     "D": "two animations play at once"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-005",
+  "topic": "process",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "What is the term for the drawings between keyframes that fill in the motion? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Inbetweening"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "inbetweens",
+     "in-betweens",
+     "inbetweening",
+     "tweening",
+     "tweens"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-006",
+  "topic": "rigging",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "In skeletal animation, what is the process of binding mesh vertices to bones with weights called? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Skinning_(animation)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "skinning",
+     "weight painting",
+     "rigging"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-007",
+  "topic": "rigging",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "Inverse kinematics (IK) computes:\nA) joint rotations from a desired end-effector position\nB) the end position from given joint rotations\nC) the colour of a bone\nD) the frame rate Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Inverse_kinematics"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "joint rotations from a desired end-effector position",
+     "B": "the end position from given joint rotations",
+     "C": "the colour of a bone",
+     "D": "the frame rate"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-008",
+  "topic": "rigging",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "Forward kinematics (FK) computes:\nA) joint rotations from a desired hand position\nB) the position of the hand from the chain of joint rotations\nC) the mesh topology\nD) the texture coordinates Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Forward_kinematics"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "joint rotations from a desired hand position",
+     "B": "the position of the hand from the chain of joint rotations",
+     "C": "the mesh topology",
+     "D": "the texture coordinates"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-009",
+  "topic": "math",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "What rotation representation with four components avoids gimbal lock and interpolates smoothly with slerp? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Quaternion",
+   "https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "quaternion",
+     "quaternions"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-010",
+  "topic": "math",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "What is the name of the problem where two rotation axes of an Euler-angle rig align and a degree of freedom is lost? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Gimbal_lock"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "gimbal lock"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-011",
+  "topic": "facial",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "A blend shape (morph target) stores:\nA) a second skeleton\nB) per-vertex offsets from a base mesh for a target pose, such as a smile\nC) a texture layer\nD) a physics constraint Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Blend_shape",
+   "https://en.wikipedia.org/wiki/Morph_target_animation"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a second skeleton",
+     "B": "per-vertex offsets from a base mesh for a target pose, such as a smile",
+     "C": "a texture layer",
+     "D": "a physics constraint"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-012",
+  "topic": "blender",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "In Blender, what is the shortcut key for Grab/move in the 3D Viewport? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://docs.blender.org/manual/en/latest/scene_layout/object/editing/transform/move.html"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "G"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-013",
+  "topic": "blender",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "In Blender, which key toggles between Object Mode and Edit Mode? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://docs.blender.org/manual/en/latest/editors/3dview/modes.html"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Tab"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-014",
+  "topic": "blender",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "In Blender, what is the shortcut for Extrude in Edit Mode? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://docs.blender.org/manual/en/latest/modeling/meshes/editing/edge/extrude_edges.html"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "E"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-015",
+  "topic": "modeling",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "A subdivision surface modifier:\nA) removes faces to lower the polygon count\nB) smooths a mesh by subdividing its faces (Catmull-Clark by default)\nC) adds a skeleton\nD) bakes lighting Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://docs.blender.org/manual/en/latest/modeling/modifiers/generate/subdivision_surface.html",
+   "https://en.wikipedia.org/wiki/Subdivision_surface"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "removes faces to lower the polygon count",
+     "B": "smooths a mesh by subdividing its faces (Catmull-Clark by default)",
+     "C": "adds a skeleton",
+     "D": "bakes lighting"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-016",
+  "topic": "topology",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "What do modellers call a continuous ring of edges that follows the muscle flow of a face, important for clean deformation? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Edge_loop"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "edge loop",
+     "edge loops"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-017",
+  "topic": "topology",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "Retopology is:\nA) recolouring a texture\nB) rebuilding a high-poly sculpt as a clean, lower-poly mesh with good edge flow\nC) deleting the UV map\nD) converting a mesh to a point cloud Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Retopology"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "recolouring a texture",
+     "B": "rebuilding a high-poly sculpt as a clean, lower-poly mesh with good edge flow",
+     "C": "deleting the UV map",
+     "D": "converting a mesh to a point cloud"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-018",
+  "topic": "texturing",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "UV mapping flattens a 3D surface into which 2D space so a texture can be painted on it? Name the two coordinate letters. End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/UV_mapping"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "U and V",
+     "UV",
+     "u v"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-019",
+  "topic": "texturing",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "A normal map:\nA) changes the silhouette of the mesh\nB) fakes small surface detail by perturbing lighting normals without adding geometry\nC) stores the mesh's weights\nD) is only used for shadows Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Normal_mapping"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "changes the silhouette of the mesh",
+     "B": "fakes small surface detail by perturbing lighting normals without adding geometry",
+     "C": "stores the mesh's weights",
+     "D": "is only used for shadows"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-020",
+  "topic": "texturing",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "Which map actually moves vertices to add real geometric detail?\nA) normal map\nB) bump map\nC) displacement map\nD) ambient occlusion map Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Displacement_mapping"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "normal map",
+     "B": "bump map",
+     "C": "displacement map",
+     "D": "ambient occlusion map"
+    },
+    "correct": "C"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-021",
+  "topic": "shading",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "In physically based rendering, which two main workflows describe surfaces: metallic/roughness and ...? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Physically_based_rendering"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "specular/glossiness",
+     "specular glossiness",
+     "spec/gloss"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-022",
+  "topic": "physics",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "Ragdoll physics animates a character's fall by treating the body as what? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Ragdoll_physics"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "connected rigid bodies",
+     "rigid bodies joined by constraints",
+     "articulated rigid bodies",
+     "rigid bodies"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-023",
+  "topic": "process",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "Motion capture (mocap) records:\nA) the artist's keyframes\nB) the movement of real actors or objects to drive digital characters\nC) camera shutter speed\nD) mesh topology Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Motion_capture"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the artist's keyframes",
+     "B": "the movement of real actors or objects to drive digital characters",
+     "C": "camera shutter speed",
+     "D": "mesh topology"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-024",
+  "topic": "process",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "What is the term for the path a value takes between keyframes, edited as a curve with handles in a graph editor? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Bézier_curve",
+   "https://en.wikipedia.org/wiki/Keyframe"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "f-curve",
+     "animation curve",
+     "interpolation curve",
+     "spline",
+     "bezier curve",
+     "fcurve"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-025",
+  "topic": "cycles",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "A walk cycle usually loops after how many steps (one with each foot)? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Walk_cycle"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "2",
+     "two"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-026",
+  "topic": "timing",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "Easing in animation refers to:\nA) making an object translucent\nB) speeding up at the start or slowing down at the end instead of constant speed\nC) making the UI simpler\nD) removing frames Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Easing",
+   "https://en.wikipedia.org/wiki/Twelve_basic_principles_of_animation"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "making an object translucent",
+     "B": "speeding up at the start or slowing down at the end instead of constant speed",
+     "C": "making the UI simpler",
+     "D": "removing frames"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-027",
+  "topic": "principles",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "Which animation principle says a character should hold a pose that reads clearly in silhouette? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Twelve_basic_principles_of_animation"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "staging",
+     "solid drawing",
+     "appeal"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-028",
+  "topic": "math",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "What transformation matrix dimension is used for 3D rotation plus translation in homogeneous coordinates? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Homogeneous_coordinates",
+   "https://en.wikipedia.org/wiki/Transform_matrix"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "4x4",
+     "4 by 4",
+     "4×4"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-029",
+  "topic": "math",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "The dot product of two unit vectors gives:\nA) a vector perpendicular to both\nB) the cosine of the angle between them\nC) their sum\nD) their cross-sectional area Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dot_product"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a vector perpendicular to both",
+     "B": "the cosine of the angle between them",
+     "C": "their sum",
+     "D": "their cross-sectional area"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-030",
+  "topic": "math",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "The cross product of two 3D vectors gives:\nA) a scalar\nB) a vector perpendicular to both, with length equal to the parallelogram area\nC) their angle in degrees\nD) their average Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Cross_product"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a scalar",
+     "B": "a vector perpendicular to both, with length equal to the parallelogram area",
+     "C": "their angle in degrees",
+     "D": "their average"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-031",
+  "topic": "math",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "What is the name for the spherical interpolation between two rotations that keeps constant angular speed? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Slerp"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "slerp",
+     "spherical linear interpolation"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-032",
+  "topic": "process",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "Onion skinning lets an animator:\nA) peel textures off a mesh\nB) see faint copies of previous and next frames while drawing the current one\nC) export to video\nD) bake physics Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Onion_skinning"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "peel textures off a mesh",
+     "B": "see faint copies of previous and next frames while drawing the current one",
+     "C": "export to video",
+     "D": "bake physics"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-033",
+  "topic": "blender",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "Which 3D application has a 'Dope Sheet' and 'Graph Editor', uses Cycles and EEVEE render engines, and is free software? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Blender_(software)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Blender"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-034",
+  "topic": "rendering",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "Which rendering technique traces the path of light rays per pixel to compute reflections and shadows physically? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Ray_tracing_(graphics)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "ray tracing",
+     "raytracing",
+     "path tracing"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-035",
+  "topic": "rendering",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (choice key).",
+  "prompt": "Rasterisation renders a triangle by:\nA) tracing rays from the camera\nB) determining which pixels the projected triangle covers and shading them\nC) subdividing it until it is a point\nD) solving a wave equation Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Rasterisation"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "tracing rays from the camera",
+     "B": "determining which pixels the projected triangle covers and shading them",
+     "C": "subdividing it until it is a point",
+     "D": "solving a wave equation"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AN-036",
+  "topic": "process",
+  "category": "knowledge-animation-3d",
+  "difficulty": 2,
+  "goal": "Answer a animation-3d question correctly (order key).",
+  "prompt": "Order these stages of a typical 3D character pipeline. End with one line `Answer: ...` listing them in order, separated by commas.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/3D_modeling",
+   "https://en.wikipedia.org/wiki/Rigging_(animation)"
+  ],
+  "scoring_scope": "knowledge check: the required items appear in order; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the order key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "order",
+    "items": [
+     "concept",
+     "model",
+     "uv|textur",
+     "rig",
+     "animat"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-037",
+  "topic": "blender",
+  "category": "knowledge-animation-3d",
+  "difficulty": 2,
+  "goal": "Answer a animation-3d question correctly (match key).",
+  "prompt": "Match each Blender mode to what it edits. Write one line per pair as `term: meaning`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://docs.blender.org/manual/en/latest/editors/3dview/modes.html"
+  ],
+  "scoring_scope": "knowledge check: each pair appears together in one line or sentence; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the match key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "match",
+    "pairs": [
+     [
+      "object mode",
+      "whole|position|rotation|scale|transform"
+     ],
+     [
+      "edit mode",
+      "vert|edge|face|mesh"
+     ],
+     [
+      "sculpt mode",
+      "brush|clay|surface"
+     ],
+     [
+      "pose mode",
+      "bone|armature|pos"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-038",
+  "topic": "topology",
+  "category": "knowledge-animation-3d",
+  "difficulty": 2,
+  "goal": "Answer a animation-3d question correctly (short key).",
+  "prompt": "Explain why a game character mesh is usually built from quads rather than triangles during modelling, even though the GPU renders triangles.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Polygon_mesh",
+   "https://en.wikipedia.org/wiki/Edge_loop"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "edge ?loop|edge flow|topology|deform|subdiv"
+     ],
+     [
+      "triangl|convert|render"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-039",
+  "topic": "modeling",
+  "category": "knowledge-animation-3d",
+  "difficulty": 2,
+  "goal": "Answer a animation-3d question correctly (short key).",
+  "prompt": "Name two reasons to keep a game mesh 'low poly' and one technique that keeps it looking detailed.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Low_poly",
+   "https://en.wikipedia.org/wiki/Normal_mapping"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "performance|frame ?rate|memory|draw|budget|faster|vertex count|cheap"
+     ],
+     [
+      "normal map|bake|baking|texture|lod|level of detail"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AN-040",
+  "topic": "blender",
+  "category": "knowledge-animation-3d",
+  "difficulty": 1,
+  "goal": "Answer a animation-3d question correctly (exact key).",
+  "prompt": "What is the name of the Blender render engine designed for real-time viewport rendering, introduced in 2.80? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://docs.blender.org/manual/en/latest/render/eevee/introduction.html"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "EEVEE",
+     "Eevee"
+    ]
+   }
+  }
+ }
+]

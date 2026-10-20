@@ -1,0 +1,1649 @@
+[
+ {
+  "id": "KN-LD-001",
+  "topic": "process",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What is the level-design term for a rough blockout of a level made from untextured grey geometry to test layout and flow? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Level_design"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "greybox",
+     "greyboxing",
+     "graybox",
+     "blockout",
+     "whitebox"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-002",
+  "topic": "wayfinding",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "Walt Disney's Imagineers used the word 'weenie' for what level-design idea? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Weenie_(architecture)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "a visual magnet that draws visitors toward a landmark",
+     "landmark",
+     "a landmark that draws people onward",
+     "visual magnet"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-003",
+  "topic": "layout",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "A 'choke point' in a multiplayer map is:\nA) a wide open arena\nB) a narrow passage all traffic must pass through, concentrating fights\nC) the spawn room\nD) an invisible wall Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Choke_point"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a wide open arena",
+     "B": "a narrow passage all traffic must pass through, concentrating fights",
+     "C": "the spawn room",
+     "D": "an invisible wall"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-004",
+  "topic": "narrative",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "Environmental storytelling tells the story through:\nA) voiced cutscenes\nB) the arrangement of objects and traces in the world that players read themselves\nC) the pause menu lore tab\nD) loading-screen tips Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Environmental_storytelling"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "voiced cutscenes",
+     "B": "the arrangement of objects and traces in the world that players read themselves",
+     "C": "the pause menu lore tab",
+     "D": "loading-screen tips"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-005",
+  "topic": "navigation",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "Which pathfinding algorithm extends Dijkstra's algorithm with a heuristic estimate of the remaining distance? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/A*_search_algorithm"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "A*",
+     "A star",
+     "A-star"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-006",
+  "topic": "navigation",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What data structure made of connected convex polygons do game engines use to describe where characters can walk? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Navigation_mesh"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "navigation mesh",
+     "navmesh",
+     "nav mesh"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-007",
+  "topic": "performance",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "Occlusion culling improves performance by:\nA) lowering texture resolution far away\nB) not rendering objects hidden behind other objects\nC) deleting objects the player has passed\nD) freezing physics off-screen Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Occlusion_culling"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "lowering texture resolution far away",
+     "B": "not rendering objects hidden behind other objects",
+     "C": "deleting objects the player has passed",
+     "D": "freezing physics off-screen"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-008",
+  "topic": "procedural",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What is the name of the gradient-noise function invented by Ken Perlin in 1983 and widely used for terrain? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Perlin_noise"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Perlin noise"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-009",
+  "topic": "structure",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "A metroidvania level structure is characterised by:\nA) strictly linear stages\nB) an interconnected map where new abilities unlock earlier blocked paths\nC) randomly generated rooms every run\nD) one giant open field with no gating Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Metroidvania"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "strictly linear stages",
+     "B": "an interconnected map where new abilities unlock earlier blocked paths",
+     "C": "randomly generated rooms every run",
+     "D": "one giant open field with no gating"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-010",
+  "topic": "wayfinding",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What is the term for the design practice of guiding players with light, colour and shape so they find the path without a map? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Wayfinding"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "wayfinding",
+     "signposting"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-011",
+  "topic": "structure",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "A 'hub' level is:\nA) the first tutorial room\nB) a central area the player returns to in order to reach other areas\nC) the final boss arena\nD) a hidden bonus stage Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Hub_(video_games)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the first tutorial room",
+     "B": "a central area the player returns to in order to reach other areas",
+     "C": "the final boss arena",
+     "D": "a hidden bonus stage"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-012",
+  "topic": "composition",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What photographic composition rule places points of interest on the lines that divide the frame into three equal parts each way? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Rule_of_thirds"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "rule of thirds"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-013",
+  "topic": "procedural",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "Which cellular automaton by John Conway is often used as a first example of procedural cave or pattern generation? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Conway's_Game_of_Life"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Game of Life",
+     "Conway's Game of Life",
+     "Life"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-014",
+  "topic": "layout",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "Line of sight blockers in a shooter map are placed mainly to:\nA) make the map load faster\nB) break long sight lines so players can move without being shot from across the map\nC) hide secrets\nD) mark team bases Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Line_of_sight_(video_games)",
+   "https://en.wikipedia.org/wiki/Cover_system"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "make the map load faster",
+     "B": "break long sight lines so players can move without being shot from across the map",
+     "C": "hide secrets",
+     "D": "mark team bases"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-015",
+  "topic": "data",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What invisible 2D tree structure divides space recursively into four quadrants, used for culling and collision in 2D? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Quadtree"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "quadtree"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-016",
+  "topic": "data",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What is the 3D equivalent of a quadtree, dividing space into eight children? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Octree"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "octree"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-017",
+  "topic": "procedural",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "A Voronoi diagram partitions a plane into regions based on:\nA) distance to the nearest of a set of seed points\nB) colour\nC) elevation above sea level\nD) player spawn order Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Voronoi_diagram"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "distance to the nearest of a set of seed points",
+     "B": "colour",
+     "C": "elevation above sea level",
+     "D": "player spawn order"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-018",
+  "topic": "procedural",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "The wave function collapse algorithm for level generation works by:\nA) simulating quantum physics\nB) placing tiles so that each neighbour pair is allowed by the sample, collapsing the least-constrained cell first\nC) random walks only\nD) hand-placed rooms connected by corridors Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Wave_function_collapse"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "simulating quantum physics",
+     "B": "placing tiles so that each neighbour pair is allowed by the sample, collapsing the least-constrained cell first",
+     "C": "random walks only",
+     "D": "hand-placed rooms connected by corridors"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-019",
+  "topic": "camera",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "In a game camera, what name is given to the angle that defines how much of the scene is visible, often set around 60 to 90 degrees? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Field_of_view"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "field of view",
+     "FOV"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-020",
+  "topic": "flow",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What is the term for the stage-by-stage division of a platformer where a sequence of obstacles is designed as a unit with a save point at the end? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Checkpoint_(video_games)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "checkpoint",
+     "checkpoints"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-021",
+  "topic": "multiplayer",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "'Spawn camping' is:\nA) waiting at a spawn point to attack players as they appear\nB) building a tent in the game\nC) respawning quickly\nD) a spawn point for campfires Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Spawn_camping"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "waiting at a spawn point to attack players as they appear",
+     "B": "building a tent in the game",
+     "C": "respawning quickly",
+     "D": "a spawn point for campfires"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-022",
+  "topic": "art",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What is the name of the painting technique, also used in level art, where distant objects are paler, bluer and lower in contrast? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Atmospheric_perspective"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "atmospheric perspective",
+     "aerial perspective"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-023",
+  "topic": "open-world",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "Which Nintendo franchise's 2017 open-world entry used a 'triangle rule' of placing landmarks so that terrain hides and reveals destinations? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/The_Legend_of_Zelda:_Breath_of_the_Wild"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "The Legend of Zelda: Breath of the Wild",
+     "Breath of the Wild",
+     "Zelda"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-024",
+  "topic": "flow",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "Fast travel exists primarily to:\nA) make the world smaller to render\nB) reduce repeated traversal time once an area has been explored\nC) add a loading screen\nD) stop players from exploring Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Fast_travel"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "make the world smaller to render",
+     "B": "reduce repeated traversal time once an area has been explored",
+     "C": "add a loading screen",
+     "D": "stop players from exploring"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-025",
+  "topic": "process",
+  "category": "knowledge-level-design",
+  "difficulty": 2,
+  "goal": "Answer a level-design question correctly (order key).",
+  "prompt": "Order these steps of a typical level production pipeline from first to last. End with one line `Answer: ...` listing them in order, separated by commas.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Level_design",
+   "https://en.wikipedia.org/wiki/Playtest"
+  ],
+  "scoring_scope": "knowledge check: the required items appear in order; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the order key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "order",
+    "items": [
+     "paper|sketch",
+     "grey|gray|blockout",
+     "playtest|iterate",
+     "art pass|art"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-026",
+  "topic": "wayfinding",
+  "category": "knowledge-level-design",
+  "difficulty": 2,
+  "goal": "Answer a level-design question correctly (match key).",
+  "prompt": "Match each level-design term to its definition. Write one line per pair as `term: meaning`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Breadcrumb_(navigation)",
+   "https://en.wikipedia.org/wiki/Level_design"
+  ],
+  "scoring_scope": "knowledge check: each pair appears together in one line or sentence; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the match key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "match",
+    "pairs": [
+     [
+      "critical path",
+      "must|finish|required|main route"
+     ],
+     [
+      "golden path",
+      "intended|ideal|expect"
+     ],
+     [
+      "breadcrumb",
+      "trail|lead|onward|rewards?"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-027",
+  "topic": "layout",
+  "category": "knowledge-level-design",
+  "difficulty": 2,
+  "goal": "Answer a level-design question correctly (short key).",
+  "prompt": "Explain why a kill zone or 'arena' in a shooter level usually has at least two entrances for the defenders' opponents.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Choke_point",
+   "https://en.wikipedia.org/wiki/Kill_zone"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "flank|second (entrance|route)|alternative|another (way|entrance|route)"
+     ],
+     [
+      "camp|stalemate|hold|defend|choke"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-028",
+  "topic": "structure",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What term describes a locked door or gap that can only be passed once the player gains a specific ability (a 'gate')? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Metroidvania"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "ability gate",
+     "gating",
+     "gate",
+     "ability gating",
+     "lock and key"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-029",
+  "topic": "performance",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "Level of detail (LOD) means:\nA) more detailed textures for important enemies\nB) swapping to simpler meshes as objects get farther from the camera\nC) the depth of the story\nD) how many secrets a level has Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Level_of_detail_(computer_graphics)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "more detailed textures for important enemies",
+     "B": "swapping to simpler meshes as objects get farther from the camera",
+     "C": "the depth of the story",
+     "D": "how many secrets a level has"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-030",
+  "topic": "layout",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What is the common term for a loop in a 3D maze or dungeon that lets players return without retracing the same corridor, improving flow? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Level_design",
+   "https://en.wikipedia.org/wiki/Maze"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "loop",
+     "loops",
+     "circular route",
+     "circuit"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-031",
+  "topic": "wayfinding",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "In urban design, 'desire lines' are:\nA) the paths people actually take, visible as worn tracks, often cutting corners\nB) painted lane markings\nC) the architect's sketch lines\nD) lines of sight to a monument Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Urban_design"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the paths people actually take, visible as worn tracks, often cutting corners",
+     "B": "painted lane markings",
+     "C": "the architect's sketch lines",
+     "D": "lines of sight to a monument"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-032",
+  "topic": "navigation",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "Which Dijkstra-era shortest-path algorithm guarantees the optimal path on a graph with non-negative edge weights and no heuristic? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dijkstra's_algorithm"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Dijkstra's algorithm",
+     "Dijkstra"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-033",
+  "topic": "procedural",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What simple algorithm fills a connected region of cells of the same value, used to find rooms or islands in a tile map? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Flood_fill"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "flood fill"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-034",
+  "topic": "genres",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "An obby (obstacle course) in Roblox terms is closest to which classic genre?\nA) puzzle\nB) platformer\nC) racing\nD) strategy Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Obstacle_course",
+   "https://en.wikipedia.org/wiki/Platform_game"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "puzzle",
+     "B": "platformer",
+     "C": "racing",
+     "D": "strategy"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-035",
+  "topic": "procedural",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "Which triangulation of a point set maximises the minimum angle of its triangles and is the dual of the Voronoi diagram? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Delaunay_triangulation"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Delaunay triangulation",
+     "Delaunay"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-036",
+  "topic": "flow",
+  "category": "knowledge-level-design",
+  "difficulty": 2,
+  "goal": "Answer a level-design question correctly (short key).",
+  "prompt": "Give two ways to make a jump in a platformer feel fair when the player misses it.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Platform_game",
+   "https://en.wikipedia.org/wiki/Checkpoint_(video_games)"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "coyote time|grace|late jump|jump buffer|forgiv|generous hitbox|smaller hitbox"
+     ],
+     [
+      "checkpoint|respawn (nearby|quickly|close)|short (retry|restart)|instant"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-037",
+  "topic": "data",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "Binary space partitioning (BSP) was famously used in Doom to:\nA) compress textures\nB) sort and render wall segments quickly by splitting the map with lines\nC) generate enemies\nD) store save games Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Binary_space_partitioning"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "compress textures",
+     "B": "sort and render wall segments quickly by splitting the map with lines",
+     "C": "generate enemies",
+     "D": "store save games"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-038",
+  "topic": "flow",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "What name is given to a large, mostly empty area at the start of a map where players can learn controls without danger? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Tutorial_(video_games)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "safe zone",
+     "safe area",
+     "tutorial area",
+     "sandbox",
+     "hub"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-LD-039",
+  "topic": "terrain",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (choice key).",
+  "prompt": "A heightmap stores terrain as:\nA) a list of triangles\nB) a grayscale image where brightness is elevation\nC) a text description\nD) a navigation mesh Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Heightmap"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a list of triangles",
+     "B": "a grayscale image where brightness is elevation",
+     "C": "a text description",
+     "D": "a navigation mesh"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-LD-040",
+  "topic": "flow",
+  "category": "knowledge-level-design",
+  "difficulty": 1,
+  "goal": "Answer a level-design question correctly (exact key).",
+  "prompt": "In pacing terms, what does a 'breather' section after a hard fight provide? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Pacing"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "rest",
+     "relief",
+     "a rest",
+     "release of tension",
+     "recovery"
+    ]
+   }
+  }
+ }
+]

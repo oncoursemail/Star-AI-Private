@@ -65,7 +65,9 @@ def test_existing_baseline_source_and_embedding_are_preserved(tmp_path):
         assert db.execute("SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH 'persistent question'").fetchall() == [(row,)]
         assert db.execute("SELECT value FROM meta WHERE name='candidate_only'").fetchone()[0] == "true"
     live = (Path(__file__).resolve().parents[1] / "corpora.json").read_text()
-    assert "godot" not in live
+    # knowledge school (2026-10-18): the live catalogue lists further open-licensed sources, each with its licence
+    import json as _json
+    assert all(src.get("licence") and src.get("attribution") for src in _json.loads(live)["sources"])
 
 
 def test_incremental_changes_deletions_and_unchanged_hashes(tmp_path):

@@ -1,0 +1,1642 @@
+[
+ {
+  "id": "KN-UX-001",
+  "topic": "laws",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "Fitts's law predicts the time to reach a target from its distance and what other property? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Fitts's_law"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "size",
+     "width"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-002",
+  "topic": "laws",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "Hick's law says decision time grows with the number of what? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Hick's_law"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "choices",
+     "options",
+     "alternatives"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-003",
+  "topic": "laws",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "Miller's law gives the approximate number of items a person can hold in working memory as seven plus or minus how many? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Miller's_law"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "2",
+     "two"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-004",
+  "topic": "concepts",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "An affordance is:\nA) a discount\nB) a property of an object that suggests how it can be used, like a handle that invites pulling\nC) a colour scheme\nD) a bug Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Affordance"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a discount",
+     "B": "a property of an object that suggests how it can be used, like a handle that invites pulling",
+     "C": "a colour scheme",
+     "D": "a bug"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-005",
+  "topic": "literature",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "Who wrote 'The Design of Everyday Things' and popularised the terms affordance and signifier in design? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Don_Norman",
+   "https://en.wikipedia.org/wiki/The_Design_of_Everyday_Things"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Don Norman",
+     "Donald Norman",
+     "Norman"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-006",
+  "topic": "literature",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "Which usability consultant published the ten usability heuristics widely used for heuristic evaluation? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Jakob_Nielsen_(usability_consultant)",
+   "https://en.wikipedia.org/wiki/Heuristic_evaluation"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Jakob Nielsen",
+     "Nielsen"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-007",
+  "topic": "concepts",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "Progressive disclosure means:\nA) showing everything at once\nB) showing only the most needed options first and revealing advanced ones on request\nC) hiding the save button\nD) a slow animation Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Progressive_disclosure"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "showing everything at once",
+     "B": "showing only the most needed options first and revealing advanced ones on request",
+     "C": "hiding the save button",
+     "D": "a slow animation"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-008",
+  "topic": "ethics",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "A dark pattern is:\nA) a dark colour theme\nB) an interface designed to trick users into doing things they did not intend\nC) a loading spinner\nD) a UX research method Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dark_pattern"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a dark colour theme",
+     "B": "an interface designed to trick users into doing things they did not intend",
+     "C": "a loading spinner",
+     "D": "a UX research method"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-009",
+  "topic": "accessibility",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "WCAG recommends a minimum contrast ratio for normal body text of what value (AA level)? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Web_Content_Accessibility_Guidelines",
+   "https://en.wikipedia.org/wiki/Contrast_ratio"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "4.5:1",
+     "4.5 to 1",
+     "4.5"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-010",
+  "topic": "accessibility",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What does WCAG stand for? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Web_Content_Accessibility_Guidelines"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Web Content Accessibility Guidelines"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-011",
+  "topic": "accessibility",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "A screen reader is:\nA) a bigger monitor\nB) software that reads interface text aloud for blind or low-vision users\nC) a QR code app\nD) a reading app for ebooks only Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Screen_reader"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a bigger monitor",
+     "B": "software that reads interface text aloud for blind or low-vision users",
+     "C": "a QR code app",
+     "D": "a reading app for ebooks only"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-012",
+  "topic": "mobile",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What is the recommended minimum touch target size in Apple's and Google's guidelines, roughly, in points or dp (give the common figure of 44-48)? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Touchscreen",
+   "https://en.wikipedia.org/wiki/Material_Design"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "44",
+     "48",
+     "44 pt",
+     "48 dp",
+     "44x44",
+     "48x48"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-013",
+  "topic": "research",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "In the System Usability Scale (SUS), how many questions does the questionnaire have? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/System_usability_scale"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "10",
+     "ten"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-014",
+  "topic": "research",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "A SUS score above roughly what value is considered above average? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/System_usability_scale"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "68"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-015",
+  "topic": "research",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "A/B testing compares:\nA) two fonts on paper\nB) two versions of a design shown to different users to measure which performs better\nC) the designer against the developer\nD) alpha and beta releases Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/A/B_testing"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "two fonts on paper",
+     "B": "two versions of a design shown to different users to measure which performs better",
+     "C": "the designer against the developer",
+     "D": "alpha and beta releases"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-016",
+  "topic": "research",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "Card sorting is used to:\nA) play games with users\nB) learn how users group and label content, informing information architecture\nC) sort bug reports\nD) pick a colour palette Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Card_sorting",
+   "https://en.wikipedia.org/wiki/Information_architecture"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "play games with users",
+     "B": "learn how users group and label content, informing information architecture",
+     "C": "sort bug reports",
+     "D": "pick a colour palette"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-017",
+  "topic": "research",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What do we call a fictional, research-based representation of a target user with a name, goals and frustrations? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Persona_(user_experience)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "persona",
+     "user persona"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-018",
+  "topic": "process",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What low-fidelity sketch of a screen's layout, without colour or final content, is used early in design? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Wireframe_(website)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "wireframe"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-019",
+  "topic": "patterns",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "The 'empty state' of a screen is:\nA) a crash\nB) what users see when there is no data yet, which should guide them to a first action\nC) the logout page\nD) a blank error Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Empty_state"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a crash",
+     "B": "what users see when there is no data yet, which should guide them to a first action",
+     "C": "the logout page",
+     "D": "a blank error"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-020",
+  "topic": "patterns",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "A modal window:\nA) can be ignored while using the rest of the app\nB) blocks interaction with the rest of the app until it is dismissed\nC) is always full screen\nD) cannot have buttons Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Modal_window"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "can be ignored while using the rest of the app",
+     "B": "blocks interaction with the rest of the app until it is dismissed",
+     "C": "is always full screen",
+     "D": "cannot have buttons"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-021",
+  "topic": "perception",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What is the Gestalt principle that elements close together are perceived as a group? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Gestalt_psychology"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "proximity"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-022",
+  "topic": "layout",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What is the design term for consistent spacing and alignment columns that structure a layout? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Grid_(graphic_design)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "grid",
+     "grid system",
+     "layout grid"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-023",
+  "topic": "layout",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "Visual hierarchy is created mainly through:\nA) random placement\nB) size, contrast, colour, spacing and position so the eye reads the most important thing first\nC) the file format\nD) the programming language Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Visual_hierarchy"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "random placement",
+     "B": "size, contrast, colour, spacing and position so the eye reads the most important thing first",
+     "C": "the file format",
+     "D": "the programming language"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-024",
+  "topic": "concepts",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What is the term for the gap between how a system works and how the user believes it works? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Mental_model"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "mental model mismatch",
+     "mental model",
+     "gulf of evaluation",
+     "mismatch of mental models"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-025",
+  "topic": "patterns",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "Onboarding in an app is:\nA) the hiring process\nB) the first-run experience that teaches users what the product does and gets them to value quickly\nC) a boat feature\nD) the settings page Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Onboarding"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the hiring process",
+     "B": "the first-run experience that teaches users what the product does and gets them to value quickly",
+     "C": "a boat feature",
+     "D": "the settings page"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-026",
+  "topic": "principles",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "Which 'KISS' principle advises designers to avoid unnecessary complexity? Expand the acronym's first two words. End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/KISS_principle"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "keep it simple",
+     "keep it simple, stupid",
+     "keep it simple stupid"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-027",
+  "topic": "layout",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "Responsive web design means a layout that:\nA) answers emails\nB) adapts to different screen sizes using flexible grids and media queries\nC) loads in under a second\nD) uses only images Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Responsive_web_design"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "answers emails",
+     "B": "adapts to different screen sizes using flexible grids and media queries",
+     "C": "loads in under a second",
+     "D": "uses only images"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-028",
+  "topic": "patterns",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What is a 'microinteraction'? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Microinteraction"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "a small, single-purpose interaction with feedback, like a toggle animating",
+     "a tiny moment of feedback",
+     "a small interaction"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-029",
+  "topic": "games",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "In game UI, what is the name of the overlay showing health, ammo and map while playing? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Heads-up_display_(video_games)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "HUD",
+     "heads-up display"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-030",
+  "topic": "style",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "Skeuomorphism is:\nA) a flat style\nB) making digital elements imitate real-world materials and objects, like a leather-bound notes app\nC) an accessibility tool\nD) a typeface Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Skeuomorph"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a flat style",
+     "B": "making digital elements imitate real-world materials and objects, like a leather-bound notes app",
+     "C": "an accessibility tool",
+     "D": "a typeface"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-031",
+  "topic": "concepts",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What term describes an interface's quality of letting users discover what actions are possible? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Discoverability"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "discoverability"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-032",
+  "topic": "research",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What research method observes users in their own environment while they do real tasks? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Contextual_inquiry",
+   "https://en.wikipedia.org/wiki/Ethnography"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "contextual inquiry",
+     "field study",
+     "ethnography",
+     "ethnographic research"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-033",
+  "topic": "concepts",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (choice key).",
+  "prompt": "Cognitive load in UX refers to:\nA) the server CPU\nB) the mental effort a user must spend to use the interface\nC) the number of images\nD) the page weight in kilobytes Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Cognitive_load"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the server CPU",
+     "B": "the mental effort a user must spend to use the interface",
+     "C": "the number of images",
+     "D": "the page weight in kilobytes"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-UX-034",
+  "topic": "research",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What five-point agreement scale (strongly disagree to strongly agree) is common in UX surveys? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Likert_scale"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Likert scale",
+     "Likert"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-035",
+  "topic": "process",
+  "category": "knowledge-ux-design",
+  "difficulty": 2,
+  "goal": "Answer a ux-design question correctly (order key).",
+  "prompt": "Order these steps of the design-thinking process (Stanford d.school version). End with one line `Answer: ...` listing them in order, separated by commas.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Design_thinking"
+  ],
+  "scoring_scope": "knowledge check: the required items appear in order; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the order key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "order",
+    "items": [
+     "empath",
+     "define",
+     "ideate",
+     "prototype",
+     "test"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-036",
+  "topic": "principles",
+  "category": "knowledge-ux-design",
+  "difficulty": 2,
+  "goal": "Answer a ux-design question correctly (match key).",
+  "prompt": "Match each Nielsen heuristic to an example. Write one line per pair as `term: meaning`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Heuristic_evaluation"
+  ],
+  "scoring_scope": "knowledge check: each pair appears together in one line or sentence; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the match key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "match",
+    "pairs": [
+     [
+      "status",
+      "progress|upload|loading"
+     ],
+     [
+      "error prevention|prevent",
+      "confirm|delete"
+     ],
+     [
+      "recognition|recall",
+      "recent|show|instead"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-037",
+  "topic": "mobile",
+  "category": "knowledge-ux-design",
+  "difficulty": 2,
+  "goal": "Answer a ux-design question correctly (short key).",
+  "prompt": "A player repeatedly misses the 'Ready' button in your lobby menu on phones. Name two likely causes and a fix for each.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Fitts's_law",
+   "https://en.wikipedia.org/wiki/Touchscreen"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "small|size|target|44|48|thumb|reach|bottom|edge"
+     ],
+     [
+      "contrast|colour|color|affordance|look like a button|label|visual"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-038",
+  "topic": "patterns",
+  "category": "knowledge-ux-design",
+  "difficulty": 2,
+  "goal": "Answer a ux-design question correctly (short key).",
+  "prompt": "Why should error messages say what went wrong and how to fix it, rather than showing a code like 'Error 0x8004'?",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Error_message",
+   "https://en.wikipedia.org/wiki/Heuristic_evaluation"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "recover|fix|next step|what to do|action"
+     ],
+     [
+      "plain|understand|human|language|meaning|readable"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-039",
+  "topic": "concepts",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "What is the usability term for how quickly a new user can accomplish basic tasks the first time? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Learnability",
+   "https://en.wikipedia.org/wiki/Usability"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "learnability"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-UX-040",
+  "topic": "accessibility",
+  "category": "knowledge-ux-design",
+  "difficulty": 1,
+  "goal": "Answer a ux-design question correctly (exact key).",
+  "prompt": "Which colour-vision issue means UI must never rely on colour alone (e.g. red vs green status) to convey information? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Color_blindness",
+   "https://en.wikipedia.org/wiki/Web_accessibility"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "colour blindness",
+     "color blindness",
+     "colour vision deficiency",
+     "red-green colour blindness"
+    ]
+   }
+  }
+ }
+]

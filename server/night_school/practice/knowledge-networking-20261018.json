@@ -1,0 +1,1668 @@
+[
+ {
+  "id": "KN-NET-001",
+  "topic": "models",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "How many layers does the OSI reference model have? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/OSI_model"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "7",
+     "seven"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-002",
+  "topic": "models",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "Which OSI layer is the transport layer (give its number)? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/OSI_model"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "4",
+     "four",
+     "layer 4"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-003",
+  "topic": "transport",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "TCP differs from UDP because TCP:\nA) is connectionless and unreliable\nB) provides reliable, ordered, connection-oriented delivery\nC) has smaller headers and no acknowledgements\nD) is used only for video Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Transmission_Control_Protocol",
+   "https://en.wikipedia.org/wiki/User_Datagram_Protocol"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "is connectionless and unreliable",
+     "B": "provides reliable, ordered, connection-oriented delivery",
+     "C": "has smaller headers and no acknowledgements",
+     "D": "is used only for video"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-004",
+  "topic": "games",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "Fast-paced game state updates usually use UDP because:\nA) it is encrypted\nB) a late retransmitted packet is useless, so no retransmission and lower latency is preferred\nC) it guarantees ordering\nD) it is newer Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/User_Datagram_Protocol",
+   "https://en.wikipedia.org/wiki/Netcode"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "it is encrypted",
+     "B": "a late retransmitted packet is useless, so no retransmission and lower latency is preferred",
+     "C": "it guarantees ordering",
+     "D": "it is newer"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-005",
+  "topic": "transport",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What three-step exchange opens a TCP connection? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Three-way_handshake"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "three-way handshake",
+     "SYN, SYN-ACK, ACK",
+     "3-way handshake"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-006",
+  "topic": "addressing",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "How many bits are in an IPv4 address? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/IPv4"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "32"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-007",
+  "topic": "addressing",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "How many bits are in an IPv6 address? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/IPv6"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "128"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-008",
+  "topic": "naming",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What system translates human-readable names like example.com into IP addresses? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Domain_Name_System"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "DNS",
+     "Domain Name System"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-009",
+  "topic": "addressing",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What protocol automatically assigns IP addresses to devices joining a network? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "DHCP",
+     "Dynamic Host Configuration Protocol"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-010",
+  "topic": "addressing",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What does NAT stand for? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Network_address_translation"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "network address translation"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-011",
+  "topic": "ports",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "The default port of HTTPS is:\nA) 80\nB) 443\nC) 22\nD) 8080 Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/HTTPS",
+   "https://en.wikipedia.org/wiki/Port_(computer_networking)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "80",
+     "B": "443",
+     "C": "22",
+     "D": "8080"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-012",
+  "topic": "ports",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "The default port of HTTP is:\nA) 80\nB) 443\nC) 25\nD) 53 Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/HTTP",
+   "https://en.wikipedia.org/wiki/Port_(computer_networking)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "80",
+     "B": "443",
+     "C": "25",
+     "D": "53"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-013",
+  "topic": "ports",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What is the default port of SSH? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Secure_Shell"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "22"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-014",
+  "topic": "latency",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What is round-trip time (RTT)? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Round-trip_delay"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "the time for a packet to go to the destination and a reply to come back",
+     "time to go and come back",
+     "the time for a request and its response to travel there and back"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-015",
+  "topic": "latency",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "Jitter in networking is:\nA) the average delay\nB) the variation in packet delay\nC) packet loss\nD) bandwidth Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Jitter"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the average delay",
+     "B": "the variation in packet delay",
+     "C": "packet loss",
+     "D": "bandwidth"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-016",
+  "topic": "capacity",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "Bandwidth measures:\nA) how long a packet takes\nB) how much data can be transferred per unit time\nC) the number of hops\nD) the cable length Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Bandwidth_(computing)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "how long a packet takes",
+     "B": "how much data can be transferred per unit time",
+     "C": "the number of hops",
+     "D": "the cable length"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-017",
+  "topic": "ip",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What header field decremented at each router prevents packets from looping forever? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Time_to_live"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "TTL",
+     "time to live",
+     "hop limit"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-018",
+  "topic": "ip",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What does MTU stand for? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Maximum_transmission_unit"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "maximum transmission unit"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-019",
+  "topic": "ip",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What is the standard Ethernet MTU in bytes? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Maximum_transmission_unit",
+   "https://en.wikipedia.org/wiki/Ethernet"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "1500",
+     "1,500"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-020",
+  "topic": "tools",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What protocol does the 'ping' utility use? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Ping_(networking_utility)",
+   "https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "ICMP",
+     "Internet Control Message Protocol"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-021",
+  "topic": "link",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "Which protocol maps an IP address to a MAC address on a local network? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Address_Resolution_Protocol"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "ARP",
+     "Address Resolution Protocol"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-022",
+  "topic": "link",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "A MAC address is:\nA) assigned by DHCP\nB) a hardware address of a network interface\nC) a web address\nD) a routing table entry Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/MAC_address"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "assigned by DHCP",
+     "B": "a hardware address of a network interface",
+     "C": "a web address",
+     "D": "a routing table entry"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-023",
+  "topic": "routing",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "Which routing protocol connects autonomous systems across the Internet? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Border_Gateway_Protocol"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "BGP",
+     "Border Gateway Protocol"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-024",
+  "topic": "web",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What protocol provides full-duplex, persistent two-way messaging over a single TCP connection, used by many web games? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/WebSocket"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "WebSocket",
+     "WebSockets"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-025",
+  "topic": "web",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "Which transport protocol, built on UDP, underlies HTTP/3? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/QUIC",
+   "https://en.wikipedia.org/wiki/HTTP/3"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "QUIC"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-026",
+  "topic": "transport",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "Head-of-line blocking means:\nA) the first player in a queue wins\nB) a lost or delayed packet holds up delivery of later packets behind it\nC) the router drops the head of the queue\nD) the first byte is encrypted Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Head-of-line_blocking"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the first player in a queue wins",
+     "B": "a lost or delayed packet holds up delivery of later packets behind it",
+     "C": "the router drops the head of the queue",
+     "D": "the first byte is encrypted"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-027",
+  "topic": "transport",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "Nagle's algorithm:\nA) encrypts packets\nB) delays small TCP sends to combine them, which can add latency to games\nC) doubles bandwidth\nD) compresses headers Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Nagle's_algorithm"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "encrypts packets",
+     "B": "delays small TCP sends to combine them, which can add latency to games",
+     "C": "doubles bandwidth",
+     "D": "compresses headers"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-028",
+  "topic": "games",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What netcode technique lets a client show its own movement immediately instead of waiting for the server's confirmation? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Client-side_prediction"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "client-side prediction",
+     "client prediction",
+     "prediction"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-029",
+  "topic": "games",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What netcode technique has the server rewind the world to the time a shot was fired, so a laggy client's aim is judged fairly? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Lag_compensation"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "lag compensation",
+     "server-side rewind",
+     "server rewind"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-030",
+  "topic": "games",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "Dead reckoning in multiplayer games means:\nA) killing lagging players\nB) extrapolating an object's position from its last known velocity until an update arrives\nC) counting dead players\nD) resetting the clock Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dead_reckoning"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "killing lagging players",
+     "B": "extrapolating an object's position from its last known velocity until an update arrives",
+     "C": "counting dead players",
+     "D": "resetting the clock"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-031",
+  "topic": "games",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "A lockstep protocol:\nA) sends only inputs and waits for every peer's input before advancing a simulation step\nB) sends full world state every frame\nC) locks the server\nD) uses no synchronisation Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Lockstep_protocol"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "sends only inputs and waits for every peer's input before advancing a simulation step",
+     "B": "sends full world state every frame",
+     "C": "locks the server",
+     "D": "uses no synchronisation"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-032",
+  "topic": "security",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What type of attack floods a server with traffic from many machines to make it unavailable? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Denial-of-service_attack"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "DDoS",
+     "distributed denial of service",
+     "distributed denial-of-service"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-033",
+  "topic": "security",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What device or software filters traffic by rules such as allowed ports and addresses? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Firewall_(computing)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "firewall"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-034",
+  "topic": "infra",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (choice key).",
+  "prompt": "A reverse proxy:\nA) hides clients from servers\nB) sits in front of servers, forwarding client requests to them (load balancing, TLS termination)\nC) resolves names\nD) assigns IPs Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Reverse_proxy"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "hides clients from servers",
+     "B": "sits in front of servers, forwarding client requests to them (load balancing, TLS termination)",
+     "C": "resolves names",
+     "D": "assigns IPs"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-NET-035",
+  "topic": "infra",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What does CDN stand for? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Content_delivery_network"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "content delivery network",
+     "content distribution network"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-036",
+  "topic": "time",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "Which protocol keeps computer clocks synchronised over a network? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Network_Time_Protocol"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "NTP",
+     "Network Time Protocol"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-037",
+  "topic": "security",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "What does a certificate authority (CA) do? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Certificate_authority"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "issues and signs digital certificates that vouch for a server's identity",
+     "signs certificates",
+     "vouches for identities by issuing certificates"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-038",
+  "topic": "addressing",
+  "category": "knowledge-networking",
+  "difficulty": 1,
+  "goal": "Answer a networking question correctly (exact key).",
+  "prompt": "In CIDR notation, how many host addresses does a /24 IPv4 network have in total (including network and broadcast)? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "256"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-039",
+  "topic": "models",
+  "category": "knowledge-networking",
+  "difficulty": 2,
+  "goal": "Answer a networking question correctly (order key).",
+  "prompt": "Order these layers of the Internet protocol suite from bottom to top. End with one line `Answer: ...` listing them in order, separated by commas.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Internet_protocol_suite"
+  ],
+  "scoring_scope": "knowledge check: the required items appear in order; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the order key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "order",
+    "items": [
+     "link",
+     "internet|\\bip\\b",
+     "transport|tcp",
+     "application|http"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-040",
+  "topic": "protocols",
+  "category": "knowledge-networking",
+  "difficulty": 2,
+  "goal": "Answer a networking question correctly (match key).",
+  "prompt": "Match each protocol to its job. Write one line per pair as `term: meaning`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Domain_Name_System",
+   "https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol",
+   "https://en.wikipedia.org/wiki/Transport_Layer_Security",
+   "https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol"
+  ],
+  "scoring_scope": "knowledge check: each pair appears together in one line or sentence; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the match key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "match",
+    "pairs": [
+     [
+      "dns",
+      "name|address|lookup|resolv"
+     ],
+     [
+      "dhcp",
+      "hand|assign|config|lease"
+     ],
+     [
+      "tls",
+      "encrypt|secure"
+     ],
+     [
+      "icmp",
+      "control|error|ping|unreachable"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-NET-041",
+  "topic": "games",
+  "category": "knowledge-networking",
+  "difficulty": 2,
+  "goal": "Answer a networking question correctly (short key).",
+  "prompt": "Explain why interpolating remote players slightly in the past (e.g. 100 ms) makes their movement smooth, and what it costs.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Interpolation",
+   "https://en.wikipedia.org/wiki/Netcode"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "buffer|between (two )?(updates|snapshots)|two (known )?(positions|states)|interpolat"
+     ],
+     [
+      "delay|behind|latency|cost|later|lag"
+     ]
+    ]
+   }
+  }
+ }
+]

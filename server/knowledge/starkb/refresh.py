@@ -44,16 +44,23 @@ def wait_for_quiet(max_wait: float, stop, log) -> bool:
 def fetch_all(sources_dir: Path, config: dict, git=_git, *, wait=None) -> list[dict]:
     """Fetch every source without moving any checkout. Raises RuntimeError if one fetch fails."""
     found = []
+    seen: set[str] = set()
     for source in config["sources"]:
+        if source.get("kind", "git") != "git":
+            continue        # fetched pages (fetch_pages.py) are refreshed by their own job, not by git
+        checkout = source.get("checkout", source["name"])
+        if checkout in seen:
+            continue        # two sources (licences) in one checkout: fetched once
+        seen.add(checkout)
         if wait is not None and not wait():
             raise QuietTimeout("server lock held during repository fetch")
-        repo = sources_dir / source["name"]
+        repo = sources_dir / checkout
         if not (repo / ".git").is_dir():
             raise RuntimeError(f"no checkout for {source['name']} (run fetch.sh once)")
         old = git(repo, "rev-parse", "HEAD")
         git(repo, "fetch", "--quiet", "--depth", "1", "origin", source["branch"])
         new = git(repo, "rev-parse", "FETCH_HEAD")
-        found.append({"name": source["name"], "repo": repo, "old": old, "new": new})
+        found.append({"name": checkout, "repo": repo, "old": old, "new": new})
     return found
 
 
