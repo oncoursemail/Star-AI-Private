@@ -1,0 +1,962 @@
+[
+ {
+  "id": "EDIT-01",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Fix a reload that overdraws the reserve and cap the reserve",
+  "prompt": "In my Roblox paintball game: when a player's reserve is low, reload takes more paintballs than they have and the reserve goes negative. Fix reload so it only moves what the reserve has, and make addReserve cap the reserve at a new constant MAX_RESERVE = 120. Keep everything else the same.\n\n```lua\n--!strict\n-- AmmoService: magazine + reserve paintballs per player for the paintball markers.\nlocal AmmoService = {}\n\nexport type AmmoState = {\n\tmagazine: number,\n\treserve: number,\n\treloading: boolean,\n}\n\nlocal MAGAZINE_SIZE = 20\nlocal START_RESERVE = 60\nlocal states: { [any]: AmmoState } = {}\n\nlocal function newState(): AmmoState\n\treturn { magazine = MAGAZINE_SIZE, reserve = START_RESERVE, reloading = false }\nend\n\nfunction AmmoService.get(player: any): AmmoState\n\tlocal state = states[player]\n\tif state == nil then\n\t\tstate = newState()\n\t\tstates[player] = state\n\tend\n\treturn state\nend\n\n-- Fires one paintball. Returns true when a shot was fired.\nfunction AmmoService.fire(player: any): boolean\n\tlocal state = AmmoService.get(player)\n\tif state.reloading or state.magazine <= 0 then\n\t\treturn false\n\tend\n\tstate.magazine -= 1\n\treturn true\nend\n\n-- Refills the magazine from the reserve. Returns how many paintballs were moved.\nfunction AmmoService.reload(player: any): number\n\tlocal state = AmmoService.get(player)\n\tif state.reloading then\n\t\treturn 0\n\tend\n\tstate.reloading = true\n\tlocal missing = MAGAZINE_SIZE - state.magazine\n\tstate.magazine += missing\n\tstate.reserve -= missing\n\tstate.reloading = false\n\treturn missing\nend\n\nfunction AmmoService.addReserve(player: any, amount: number)\n\tlocal state = AmmoService.get(player)\n\tstate.reserve += amount\nend\n\nfunction AmmoService.reset(player: any)\n\tstates[player] = newState()\nend\n\nfunction AmmoService.remove(player: any)\n\tstates[player] = nil\nend\n\nreturn AmmoService\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-01.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-01.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 65
+ },
+ {
+  "id": "EDIT-02",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Harden a team score object and add reset",
+  "prompt": "In my Roblox paintball game: change this TeamScore class. addPoints must ignore unknown team names (right now it errors), no team may get points once a winner exists, and add a reset() method that puts every team back to 0 and clears the winner. Keep the rest as it is.\n\n```lua\n-- TeamScore: points per team for one paintball round, with a change callback for the HUD.\nlocal TeamScore = {}\nTeamScore.__index = TeamScore\n\nfunction TeamScore.new(teamNames, winScore)\n\tlocal self = setmetatable({}, TeamScore)\n\tself.scores = {}\n\tself.winScore = winScore or 50\n\tself.winner = nil\n\tself.listeners = {}\n\tfor _, name in ipairs(teamNames) do\n\t\tself.scores[name] = 0\n\tend\n\treturn self\nend\n\nfunction TeamScore:onChanged(fn)\n\ttable.insert(self.listeners, fn)\nend\n\nfunction TeamScore:_emit(team)\n\tfor _, fn in ipairs(self.listeners) do\n\t\tfn(team, self.scores[team])\n\tend\nend\n\nfunction TeamScore:addPoints(team, amount)\n\tself.scores[team] = self.scores[team] + amount\n\tif self.scores[team] >= self.winScore then\n\t\tself.winner = team\n\tend\n\tself:_emit(team)\nend\n\nfunction TeamScore:get(team)\n\treturn self.scores[team]\nend\n\nfunction TeamScore:leader()\n\tlocal best, bestScore = nil, -1\n\tfor team, score in pairs(self.scores) do\n\t\tif score > bestScore then\n\t\t\tbest, bestScore = team, score\n\t\tend\n\tend\n\treturn best\nend\n\nfunction TeamScore:standings()\n\tlocal list = {}\n\tfor team, score in pairs(self.scores) do\n\t\ttable.insert(list, { team = team, score = score })\n\tend\n\ttable.sort(list, function(a, b)\n\t\tif a.score == b.score then\n\t\t\treturn a.team < b.team\n\t\tend\n\t\treturn a.score > b.score\n\tend)\n\treturn list\nend\n\nreturn TeamScore\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-02.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-02.luau",
+    "checks": 9
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 63
+ },
+ {
+  "id": "EDIT-03",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Fix a round timer that runs past zero and formats seconds wrong",
+  "prompt": "In my Roblox paintball game: this round timer keeps counting below zero and calls the finished handlers on every step after the end, and format() shows 1:5 instead of 1:05. Fix both: the time stops at 0, the timer stops running, onFinished handlers run exactly once, onSecond never reports a negative number, and format() is m:ss.\n\n```lua\n-- RoundTimer: counts a paintball round down. The server calls step(dt) from RunService.Heartbeat.\nlocal RoundTimer = {}\nRoundTimer.__index = RoundTimer\n\nfunction RoundTimer.new(duration)\n\treturn setmetatable({\n\t\tduration = duration,\n\t\tremaining = duration,\n\t\trunning = false,\n\t\tfinishedHandlers = {},\n\t\tsecondHandlers = {},\n\t\tlastWhole = math.ceil(duration),\n\t}, RoundTimer)\nend\n\nfunction RoundTimer:start()\n\tself.running = true\nend\n\nfunction RoundTimer:pause()\n\tself.running = false\nend\n\nfunction RoundTimer:isRunning()\n\treturn self.running\nend\n\nfunction RoundTimer:onFinished(fn)\n\ttable.insert(self.finishedHandlers, fn)\nend\n\nfunction RoundTimer:onSecond(fn)\n\ttable.insert(self.secondHandlers, fn)\nend\n\nfunction RoundTimer:addTime(seconds)\n\tself.remaining += seconds\nend\n\nfunction RoundTimer:reset()\n\tself.remaining = self.duration\n\tself.lastWhole = math.ceil(self.duration)\n\tself.running = false\nend\n\nfunction RoundTimer:step(dt)\n\tif not self.running then\n\t\treturn\n\tend\n\tself.remaining -= dt\n\tlocal whole = math.ceil(self.remaining)\n\tif whole ~= self.lastWhole then\n\t\tself.lastWhole = whole\n\t\tfor _, fn in ipairs(self.secondHandlers) do\n\t\t\tfn(whole)\n\t\tend\n\tend\n\tif self.remaining <= 0 then\n\t\tfor _, fn in ipairs(self.finishedHandlers) do\n\t\t\tfn()\n\t\tend\n\tend\nend\n\nfunction RoundTimer:format()\n\tlocal seconds = math.ceil(self.remaining)\n\treturn string.format(\"%d:%d\", seconds // 60, seconds % 60)\nend\n\nreturn RoundTimer\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-03.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-03.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 70
+ },
+ {
+  "id": "EDIT-04",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Stop double releases in an object pool and cap its free list",
+  "prompt": "In my Roblox paintball game: my splat decal pool breaks when the same splat is released twice: it goes into the free list twice and two hits end up sharing one decal. Make release ignore splats that are not active, and never keep more than maxSize splats in the free list: extra released splats go to an optional destroy callback, a new third parameter of SplatPool.new.\n\n```lua\n-- SplatPool: reuses paint splat decals instead of creating a new one for every hit.\nlocal SplatPool = {}\nSplatPool.__index = SplatPool\n\nfunction SplatPool.new(create, maxSize)\n\tlocal self = setmetatable({}, SplatPool)\n\tself.create = create\n\tself.maxSize = maxSize or 50\n\tself.free = {}\n\tself.active = {}\n\tself.created = 0\n\treturn self\nend\n\nfunction SplatPool:acquire()\n\tlocal splat = table.remove(self.free)\n\tif splat == nil then\n\t\tsplat = self.create()\n\t\tself.created += 1\n\tend\n\tself.active[splat] = true\n\treturn splat\nend\n\nfunction SplatPool:release(splat)\n\tself.active[splat] = nil\n\ttable.insert(self.free, splat)\nend\n\nfunction SplatPool:activeCount()\n\tlocal n = 0\n\tfor _ in pairs(self.active) do\n\t\tn += 1\n\tend\n\treturn n\nend\n\nfunction SplatPool:freeCount()\n\treturn #self.free\nend\n\nfunction SplatPool:releaseAll()\n\tlocal list = {}\n\tfor splat in pairs(self.active) do\n\t\ttable.insert(list, splat)\n\tend\n\tfor _, splat in ipairs(list) do\n\t\tself:release(splat)\n\tend\nend\n\nfunction SplatPool:prewarm(count)\n\tfor _ = 1, count do\n\t\tlocal splat = self.create()\n\t\tself.created += 1\n\t\ttable.insert(self.free, splat)\n\tend\nend\n\nreturn SplatPool\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-04.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-04.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 60
+ },
+ {
+  "id": "EDIT-05",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Make ability cooldowns per player and tolerate unknown abilities",
+  "prompt": "In my Roblox paintball game: when one player uses dash, every other player's dash goes on cooldown too. Fix it so cooldowns are per player. Unknown ability names must make ready and use return false instead of erroring, and clear(player) must forget only that player's cooldowns.\n\n```lua\n-- Cooldowns: ability cooldowns for the paintball abilities (dash, shield, grenade). Server only.\nlocal Cooldowns = {}\n\nlocal DURATIONS = {\n\tdash = 3,\n\tshield = 12,\n\tgrenade = 8,\n}\n\nlocal lastUsed = {}\n\n-- Replaced in tests; os.clock on the server.\nCooldowns.clock = os.clock\n\nfunction Cooldowns.duration(ability)\n\treturn DURATIONS[ability]\nend\n\nfunction Cooldowns.ready(player, ability)\n\tlocal last = lastUsed[ability]\n\tif last == nil then\n\t\treturn true\n\tend\n\treturn Cooldowns.clock() - last >= DURATIONS[ability]\nend\n\nfunction Cooldowns.use(player, ability)\n\tif not Cooldowns.ready(player, ability) then\n\t\treturn false\n\tend\n\tlastUsed[ability] = Cooldowns.clock()\n\treturn true\nend\n\nfunction Cooldowns.remaining(player, ability)\n\tlocal last = lastUsed[ability]\n\tif last == nil then\n\t\treturn 0\n\tend\n\treturn math.max(0, DURATIONS[ability] - (Cooldowns.clock() - last))\nend\n\nfunction Cooldowns.clear(player)\n\tlastUsed = {}\nend\n\nreturn Cooldowns\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-05.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-05.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 47
+ },
+ {
+  "id": "EDIT-06",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Fix leaderboard ordering, a divide by zero and caller mutation",
+  "prompt": "In my Roblox paintball game: fix this leaderboard. rank() must sort by kills highest first, ties by fewer deaths, then by name A to Z, and it must not write rank into the caller's entry tables (return new tables). kdr must not divide by zero: with 0 deaths it is the kill count.\n\n```lua\n-- Leaderboard: end-of-round table for the paintball scoreboard GUI.\n-- entries = { { name = \"Alex\", kills = 7, deaths = 2 }, ... }\nlocal Leaderboard = {}\n\nfunction Leaderboard.kdr(entry)\n\treturn entry.kills / entry.deaths\nend\n\nfunction Leaderboard.rank(entries)\n\tlocal list = table.clone(entries)\n\ttable.sort(list, function(a, b)\n\t\treturn a.kills < b.kills\n\tend)\n\tfor i, entry in ipairs(list) do\n\t\tentry.rank = i\n\tend\n\treturn list\nend\n\nfunction Leaderboard.top(entries, n)\n\tlocal ranked = Leaderboard.rank(entries)\n\tlocal out = {}\n\tfor i = 1, math.min(n, #ranked) do\n\t\tout[i] = ranked[i]\n\tend\n\treturn out\nend\n\nfunction Leaderboard.format(entry)\n\treturn string.format(\"%d. %s  %d/%d  (%.2f)\", entry.rank, entry.name, entry.kills, entry.deaths,\n\t\tLeaderboard.kdr(entry))\nend\n\nfunction Leaderboard.lines(entries)\n\tlocal lines = {}\n\tfor _, entry in ipairs(Leaderboard.rank(entries)) do\n\t\ttable.insert(lines, Leaderboard.format(entry))\n\tend\n\treturn lines\nend\n\nfunction Leaderboard.mvp(entries)\n\tlocal ranked = Leaderboard.rank(entries)\n\treturn ranked[1] and ranked[1].name or nil\nend\n\nreturn Leaderboard\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-06.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-06.luau",
+    "checks": 9
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 47
+ },
+ {
+  "id": "EDIT-07",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Rename a method everywhere and make remove fail safely",
+  "prompt": "In my Roblox paintball game: in this Inventory class, rename the method GetCount to countOf everywhere (it is also called inside the class), and make RemoveItem return false without changing anything when there are not enough items. Do not keep the old name.\n\n```lua\n-- Inventory: paint grenades, health packs and power-ups a player carries between rounds.\nlocal Inventory = {}\nInventory.__index = Inventory\n\nlocal MAX_STACK = 99\n\nfunction Inventory.new(owner)\n\tlocal self = setmetatable({}, Inventory)\n\tself.owner = owner\n\tself.items = {}\n\tself.changed = {}\n\treturn self\nend\n\nfunction Inventory:OnChanged(fn)\n\ttable.insert(self.changed, fn)\nend\n\nfunction Inventory:_notify(item)\n\tfor _, fn in ipairs(self.changed) do\n\t\tfn(item, self:GetCount(item))\n\tend\nend\n\nfunction Inventory:GetCount(item)\n\treturn self.items[item] or 0\nend\n\nfunction Inventory:HasItem(item, amount)\n\treturn self:GetCount(item) >= (amount or 1)\nend\n\nfunction Inventory:AddItem(item, amount)\n\tlocal total = math.min(MAX_STACK, self:GetCount(item) + amount)\n\tself.items[item] = total\n\tself:_notify(item)\n\treturn total\nend\n\nfunction Inventory:RemoveItem(item, amount)\n\tlocal left = self:GetCount(item) - amount\n\tif left <= 0 then\n\t\tself.items[item] = nil\n\telse\n\t\tself.items[item] = left\n\tend\n\tself:_notify(item)\n\treturn true\nend\n\nfunction Inventory:Snapshot()\n\tlocal copy = {}\n\tfor item in pairs(self.items) do\n\t\tcopy[item] = self:GetCount(item)\n\tend\n\treturn copy\nend\n\nfunction Inventory:Clear()\n\tfor item in pairs(self.items) do\n\t\tself.items[item] = nil\n\t\tself:_notify(item)\n\tend\nend\n\nreturn Inventory\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-07.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-07.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 66
+ },
+ {
+  "id": "EDIT-08",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Add headshots to a damage calculator and clamp armor",
+  "prompt": "In my Roblox paintball game: add headshots to this damage module. compute gets a 4th parameter headshot (boolean). A headshot multiplies the damage by HEADSHOT_MULTIPLIER = 2 before armor is applied, except the shotgun, which uses 1.25. Also clamp armor to 0..0.8 so armor can never block everything.\n\n```lua\n-- Damage: hit damage for the paintball markers, with distance falloff and armor.\nlocal Damage = {}\n\nDamage.BASE = {\n\tpistol = 20,\n\trifle = 34,\n\tshotgun = 12,\n\tsniper = 80,\n}\nDamage.PELLETS = {\n\tshotgun = 8,\n}\nDamage.FALLOFF_START = 40\nDamage.FALLOFF_END = 120\nDamage.MIN_FACTOR = 0.4\n\n-- 1 up to FALLOFF_START studs, then linear down to MIN_FACTOR at FALLOFF_END.\nfunction Damage.falloff(distance)\n\tif distance <= Damage.FALLOFF_START then\n\t\treturn 1\n\tend\n\tif distance >= Damage.FALLOFF_END then\n\t\treturn Damage.MIN_FACTOR\n\tend\n\tlocal t = (distance - Damage.FALLOFF_START) / (Damage.FALLOFF_END - Damage.FALLOFF_START)\n\treturn 1 - t * (1 - Damage.MIN_FACTOR)\nend\n\nfunction Damage.pellets(weapon)\n\treturn Damage.PELLETS[weapon] or 1\nend\n\n-- Damage of one hit (one pellet for the shotgun). armor is 0..1 (fraction blocked).\nfunction Damage.compute(weapon, distance, armor)\n\tlocal base = Damage.BASE[weapon]\n\tif base == nil then\n\t\terror(\"unknown weapon \" .. tostring(weapon))\n\tend\n\tlocal dmg = base * Damage.falloff(distance)\n\tdmg = dmg * (1 - (armor or 0))\n\treturn math.floor(dmg + 0.5)\nend\n\n-- Total damage when every pellet hits.\nfunction Damage.volley(weapon, distance, armor)\n\treturn Damage.compute(weapon, distance, armor) * Damage.pellets(weapon)\nend\n\nreturn Damage\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-08.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-08.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 49
+ },
+ {
+  "id": "EDIT-09",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Scale projectile gravity by dt and stop at max range",
+  "prompt": "In my Roblox paintball game: my paintballs fall too slowly when the frame rate is high, because gravity is added once per step instead of being scaled by dt. Fix step so the velocity changes by GRAVITY * dt and the position by velocity * dt, and make step return false (and stop moving the ball) once the ball has travelled more than MAX_RANGE studs in total.\n\n```lua\n-- Projectile: client-side paintball flight. Vectors are plain {x, y, z} tables so the server can share it.\nlocal Projectile = {}\nProjectile.__index = Projectile\n\nProjectile.GRAVITY = -60\nProjectile.MAX_RANGE = 300\n\nlocal function length(v)\n\treturn math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)\nend\n\nfunction Projectile.new(origin, velocity)\n\tlocal self = setmetatable({}, Projectile)\n\tself.position = { x = origin.x, y = origin.y, z = origin.z }\n\tself.velocity = { x = velocity.x, y = velocity.y, z = velocity.z }\n\tself.travelled = 0\n\tself.alive = true\n\treturn self\nend\n\n-- Advances the ball by dt seconds. Returns true while the ball is still flying.\nfunction Projectile:step(dt)\n\tif not self.alive then\n\t\treturn false\n\tend\n\tself.velocity.y += Projectile.GRAVITY\n\tlocal move = {\n\t\tx = self.velocity.x * dt,\n\t\ty = self.velocity.y * dt,\n\t\tz = self.velocity.z * dt,\n\t}\n\tself.position.x += move.x\n\tself.position.y += move.y\n\tself.position.z += move.z\n\tself.travelled += length(move)\n\treturn true\nend\n\nfunction Projectile:speed()\n\treturn length(self.velocity)\nend\n\nfunction Projectile:kill()\n\tself.alive = false\nend\n\n-- Simulates until the ball dies or `seconds` pass; returns the positions for a debug beam.\nfunction Projectile:trace(seconds, dt)\n\tlocal points = {}\n\tlocal t = 0\n\twhile t < seconds and self:step(dt) do\n\t\ttable.insert(points, { x = self.position.x, y = self.position.y, z = self.position.z })\n\t\tt += dt\n\tend\n\treturn points\nend\n\nreturn Projectile\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-09.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-09.luau",
+    "checks": 6
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 58
+ },
+ {
+  "id": "EDIT-10",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Bound a kill feed and expire old entries",
+  "prompt": "In my Roblox paintball game: the kill feed list grows forever. Keep at most maxEntries entries (drop the oldest when a new one comes in), and make visible(now) also remove the expired entries from the list instead of only skipping them.\n\n```lua\n-- KillFeed: the top-right \"X splatted Y\" list. Newest entry first.\nlocal KillFeed = {}\nKillFeed.__index = KillFeed\n\nfunction KillFeed.new(maxEntries, lifetime)\n\tlocal self = setmetatable({}, KillFeed)\n\tself.maxEntries = maxEntries or 5\n\tself.lifetime = lifetime or 6\n\tself.entries = {}\n\treturn self\nend\n\nfunction KillFeed:push(killer, victim, weapon, now)\n\ttable.insert(self.entries, 1, {\n\t\tkiller = killer,\n\t\tvictim = victim,\n\t\tweapon = weapon,\n\t\ttime = now,\n\t})\nend\n\n-- Entries still on screen at time `now`, newest first.\nfunction KillFeed:visible(now)\n\tlocal out = {}\n\tfor _, entry in ipairs(self.entries) do\n\t\tif now - entry.time < self.lifetime then\n\t\t\ttable.insert(out, entry)\n\t\tend\n\tend\n\treturn out\nend\n\nfunction KillFeed:format(entry)\n\tif entry.weapon == \"paintball\" then\n\t\treturn entry.killer .. \" splatted \" .. entry.victim\n\tend\n\treturn entry.killer .. \" eliminated \" .. entry.victim .. \" (\" .. entry.weapon .. \")\"\nend\n\nfunction KillFeed:lines(now)\n\tlocal lines = {}\n\tfor _, entry in ipairs(self:visible(now)) do\n\t\ttable.insert(lines, self:format(entry))\n\tend\n\treturn lines\nend\n\nfunction KillFeed:clear()\n\ttable.clear(self.entries)\nend\n\nfunction KillFeed:count()\n\treturn #self.entries\nend\n\nreturn KillFeed\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-10.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-10.luau",
+    "checks": 7
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 56
+ },
+ {
+  "id": "EDIT-11",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Fix an off-by-one rate limiter and stop blocked calls counting",
+  "prompt": "In my Roblox paintball game: my RemoteEvent rate limiter lets 11 calls through per window when the limit is 10. Fix that, make blocked calls not count toward the window, and add a forget(player) method that I can call from Players.PlayerRemoving.\n\n```lua\n-- RateLimiter: per-player limit for RemoteEvent calls (fire, reload, chat ping). Server only.\nlocal RateLimiter = {}\nRateLimiter.__index = RateLimiter\n\nfunction RateLimiter.new(limit, window, clock)\n\tlocal self = setmetatable({}, RateLimiter)\n\tself.limit = limit\n\tself.window = window\n\tself.clock = clock or os.clock\n\tself.records = {}\n\tself.blocked = 0\n\treturn self\nend\n\n-- Returns true when this call is allowed.\nfunction RateLimiter:allow(player)\n\tlocal now = self.clock()\n\tlocal record = self.records[player]\n\tif record == nil or now - record.start >= self.window then\n\t\trecord = { start = now, count = 0 }\n\t\tself.records[player] = record\n\tend\n\trecord.count += 1\n\tif record.count <= self.limit + 1 then\n\t\treturn true\n\tend\n\tself.blocked += 1\n\treturn false\nend\n\nfunction RateLimiter:remaining(player)\n\tlocal record = self.records[player]\n\tif record == nil or self.clock() - record.start >= self.window then\n\t\treturn self.limit\n\tend\n\treturn math.max(0, self.limit - record.count)\nend\n\nfunction RateLimiter:wrap(handler)\n\treturn function(player, ...)\n\t\tif not self:allow(player) then\n\t\t\treturn\n\t\tend\n\t\treturn handler(player, ...)\n\tend\nend\n\nfunction RateLimiter:stats()\n\tlocal players = 0\n\tfor _ in pairs(self.records) do\n\t\tplayers += 1\n\tend\n\treturn { players = players, blocked = self.blocked }\nend\n\nreturn RateLimiter\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-11.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-11.luau",
+    "checks": 7
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 56
+ },
+ {
+  "id": "EDIT-12",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Fix colour mixing and hex output, add fromHex",
+  "prompt": "In my Roblox paintball game: the paint colour helpers are wrong. mix(a, b, t) must be a real linear blend with t clamped to 0..1, toHex must round and clamp each channel (it prints things like 'ff.8' or more than two digits now), and add fromHex('#ff8800') that returns a colour table. Colours are {r, g, b} tables with 0..1 channels.\n\n```lua\n-- PaintColor: team paint colours as {r, g, b} tables with channels 0..1 (shared by client and server).\nlocal PaintColor = {}\n\nPaintColor.TEAMS = {\n\tRed = { r = 0.9, g = 0.15, b = 0.15 },\n\tBlue = { r = 0.15, g = 0.35, b = 0.95 },\n\tGreen = { r = 0.2, g = 0.8, b = 0.3 },\n\tYellow = { r = 0.95, g = 0.85, b = 0.1 },\n}\n\nfunction PaintColor.new(r, g, b)\n\treturn { r = r, g = g, b = b }\nend\n\n-- Blend from a to b; t = 0 gives a, t = 1 gives b.\nfunction PaintColor.mix(a, b, t)\n\treturn {\n\t\tr = a.r + b.r * t,\n\t\tg = a.g + b.g * t,\n\t\tb = a.b + b.b * t,\n\t}\nend\n\nfunction PaintColor.darken(c, amount)\n\treturn PaintColor.new(c.r * (1 - amount), c.g * (1 - amount), c.b * (1 - amount))\nend\n\nlocal function channel(x)\n\treturn string.format(\"%x\", x * 255)\nend\n\nfunction PaintColor.toHex(c)\n\treturn \"#\" .. channel(c.r) .. channel(c.g) .. channel(c.b)\nend\n\nfunction PaintColor.equal(a, b)\n\treturn math.abs(a.r - b.r) < 1e-3 and math.abs(a.g - b.g) < 1e-3 and math.abs(a.b - b.b) < 1e-3\nend\n\nfunction PaintColor.forTeam(name)\n\treturn PaintColor.TEAMS[name] or PaintColor.new(1, 1, 1)\nend\n\nreturn PaintColor\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-12.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-12.luau",
+    "checks": 9
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 44
+ },
+ {
+  "id": "EDIT-13",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Break team-size ties by score and add rebalance",
+  "prompt": "In my Roblox paintball game: when both teams have the same number of players, assign() should put the new player on the team with the lower score (it always picks the last team now). Also add rebalance(teams) that moves players from the biggest team to the smallest until the sizes differ by at most 1, moving the most recently joined players first; it returns the list of moved players.\n\n```lua\n-- TeamBalancer: picks a team for players who join mid-match.\n-- teams = { { name = \"Red\", players = { ... }, score = 0 }, ... }; players are in join order.\nlocal TeamBalancer = {}\n\nlocal function sizeOf(team)\n\treturn #team.players\nend\n\nfunction TeamBalancer.smallest(teams)\n\tlocal target = teams[1]\n\tfor _, team in ipairs(teams) do\n\t\tif sizeOf(team) <= sizeOf(target) then\n\t\t\ttarget = team\n\t\tend\n\tend\n\treturn target\nend\n\nfunction TeamBalancer.assign(teams, player)\n\tlocal team = TeamBalancer.smallest(teams)\n\ttable.insert(team.players, player)\n\treturn team\nend\n\nfunction TeamBalancer.remove(teams, player)\n\tfor _, team in ipairs(teams) do\n\t\tlocal index = table.find(team.players, player)\n\t\tif index then\n\t\t\ttable.remove(team.players, index)\n\t\t\treturn team\n\t\tend\n\tend\n\treturn nil\nend\n\nfunction TeamBalancer.teamOf(teams, player)\n\tfor _, team in ipairs(teams) do\n\t\tif table.find(team.players, player) then\n\t\t\treturn team\n\t\tend\n\tend\n\treturn nil\nend\n\nfunction TeamBalancer.sizes(teams)\n\tlocal out = {}\n\tfor _, team in ipairs(teams) do\n\t\tout[team.name] = sizeOf(team)\n\tend\n\treturn out\nend\n\nreturn TeamBalancer\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-13.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-13.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 53
+ },
+ {
+  "id": "EDIT-14",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Add a validated sensitivity setting and clamp fov",
+  "prompt": "In my Roblox paintball game: add a new setting sensitivity to this settings validator: a number, default 1, allowed 0.1 to 5; values outside the range are clamped and non-numbers become the default. Also fix fov: values outside 60..110 must be clamped to the range, not reset to the default.\n\n```lua\n-- SettingsValidator: cleans the settings table a client sends with RemoteFunction SaveSettings.\n-- Never trust the client: unknown keys are dropped and every value is checked.\nlocal SettingsValidator = {}\n\nlocal DEFAULTS = {\n\tfov = 70,\n\tvolume = 0.8,\n\tinvertY = false,\n\tcrosshair = \"dot\",\n}\n\nlocal CROSSHAIRS = {\n\tdot = true,\n\tcross = true,\n\tcircle = true,\n}\n\nlocal function number(value, default)\n\tif type(value) ~= \"number\" or value ~= value then\n\t\treturn default\n\tend\n\treturn value\nend\n\nfunction SettingsValidator.defaults()\n\treturn table.clone(DEFAULTS)\nend\n\nfunction SettingsValidator.clean(raw)\n\tlocal out = SettingsValidator.defaults()\n\tif type(raw) ~= \"table\" then\n\t\treturn out\n\tend\n\tlocal fov = number(raw.fov, DEFAULTS.fov)\n\tif fov < 60 or fov > 110 then\n\t\tfov = DEFAULTS.fov\n\tend\n\tout.fov = fov\n\tout.volume = math.clamp(number(raw.volume, DEFAULTS.volume), 0, 1)\n\tif type(raw.invertY) == \"boolean\" then\n\t\tout.invertY = raw.invertY\n\tend\n\tif type(raw.crosshair) == \"string\" and CROSSHAIRS[raw.crosshair] then\n\t\tout.crosshair = raw.crosshair\n\tend\n\treturn out\nend\n\nfunction SettingsValidator.changed(old, new)\n\tlocal keys = {}\n\tfor key, value in pairs(new) do\n\t\tif old[key] ~= value then\n\t\t\ttable.insert(keys, key)\n\t\tend\n\tend\n\ttable.sort(keys)\n\treturn keys\nend\n\nreturn SettingsValidator\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-14.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-14.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 60
+ },
+ {
+  "id": "EDIT-15",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Reset streaks on death, track the best streak, reward exact milestones",
+  "prompt": "In my Roblox paintball game: fix this kill streak tracker. A death must reset that player's streak to 0. Add bestOf(player) that returns the best streak the player ever had (it survives deaths). Rewards must only be given when the streak reaches exactly 3, 5 or 10, not on every kill after 3.\n\n```lua\n-- Streaks: kill streak rewards for paintball (3 = radar ping, 5 = paint grenade, 10 = airstrike).\nlocal Streaks = {}\nStreaks.__index = Streaks\n\nlocal REWARDS = {\n\t[3] = \"RadarPing\",\n\t[5] = \"PaintGrenade\",\n\t[10] = \"Airstrike\",\n}\n\nfunction Streaks.new()\n\tlocal self = setmetatable({}, Streaks)\n\tself.current = {}\n\tself.given = {}\n\treturn self\nend\n\nfunction Streaks:streakOf(player)\n\treturn self.current[player] or 0\nend\n\n-- The reward the streak earns at this kill count, or nil.\nfunction Streaks:rewardFor(streak)\n\tlocal best = nil\n\tfor count, reward in pairs(REWARDS) do\n\t\tif streak >= count and (best == nil or count > best.count) then\n\t\t\tbest = { count = count, reward = reward }\n\t\tend\n\tend\n\treturn best and best.reward\nend\n\n-- Call when `player` gets a kill. Returns the reward to give now, or nil.\nfunction Streaks:kill(player)\n\tlocal streak = self:streakOf(player) + 1\n\tself.current[player] = streak\n\tlocal reward = self:rewardFor(streak)\n\tif reward then\n\t\tself.given[player] = (self.given[player] or 0) + 1\n\tend\n\treturn reward\nend\n\nfunction Streaks:death(player)\n\tself.given[player] = 0\nend\n\nfunction Streaks:rewardsGiven(player)\n\treturn self.given[player] or 0\nend\n\nfunction Streaks:remove(player)\n\tself.current[player] = nil\n\tself.given[player] = nil\nend\n\nreturn Streaks\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-15.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-15.luau",
+    "checks": 8
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 57
+ },
+ {
+  "id": "EDIT-16",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Pick the safest spawn instead of the most dangerous one",
+  "prompt": "In my Roblox paintball game: pick() returns the spawn that is closest to the enemies. It must return the spawn whose nearest enemy is farthest away. Also skip spawns marked blocked = true, and with no enemies return the first spawn that is not blocked.\n\n```lua\n-- SpawnPicker: chooses where a respawning paintball player appears.\n-- Positions are {x, y, z} tables; spawns = { { name = \"A\", position = {...}, blocked = false }, ... }\nlocal SpawnPicker = {}\n\nlocal function distance(a, b)\n\tlocal dx, dy, dz = a.x - b.x, a.y - b.y, a.z - b.z\n\treturn math.sqrt(dx * dx + dy * dy + dz * dz)\nend\n\n-- Distance from `position` to the closest enemy (math.huge without enemies).\nfunction SpawnPicker.nearestEnemy(position, enemies)\n\tlocal best = math.huge\n\tfor _, enemy in ipairs(enemies) do\n\t\tlocal d = distance(position, enemy)\n\t\tif d < best then\n\t\t\tbest = d\n\t\tend\n\tend\n\treturn best\nend\n\nfunction SpawnPicker.pick(spawns, enemies)\n\tlocal best, bestDistance = nil, math.huge\n\tfor _, spawn in ipairs(spawns) do\n\t\tlocal d = SpawnPicker.nearestEnemy(spawn.position, enemies)\n\t\tif d < bestDistance then\n\t\t\tbest, bestDistance = spawn, d\n\t\tend\n\tend\n\treturn best\nend\n\n-- Spawns sorted from safest to most dangerous, for the debug overlay.\nfunction SpawnPicker.ranked(spawns, enemies)\n\tlocal list = table.clone(spawns)\n\ttable.sort(list, function(a, b)\n\t\treturn SpawnPicker.nearestEnemy(a.position, enemies) > SpawnPicker.nearestEnemy(b.position, enemies)\n\tend)\n\treturn list\nend\n\nfunction SpawnPicker.distance(a, b)\n\treturn distance(a, b)\nend\n\nreturn SpawnPicker\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-16.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-16.luau",
+    "checks": 7
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 46
+ },
+ {
+  "id": "EDIT-17",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Fix clock formatting: padding, hours and negative input",
+  "prompt": "In my Roblox paintball game: clock(seconds) prints 1:5 instead of 1:05. Fix it, show h:mm:ss when the time is an hour or more, and treat negative input as 0 (0:00). words() has the same negative problem: it should say 0 s.\n\n```lua\n-- TimeFormat: text for the round timer, the lobby countdown and the match history screen.\nlocal TimeFormat = {}\n\n-- 65 -> \"1:05\"\nfunction TimeFormat.clock(seconds)\n\tlocal whole = math.floor(seconds)\n\tlocal minutes = whole // 60\n\tlocal rest = whole % 60\n\treturn minutes .. \":\" .. rest\nend\n\n-- 125 -> \"2 min 5 s\"\nfunction TimeFormat.words(seconds)\n\tlocal whole = math.floor(seconds)\n\tlocal minutes = whole // 60\n\tlocal rest = whole % 60\n\tif minutes == 0 then\n\t\treturn rest .. \" s\"\n\tend\n\tif rest == 0 then\n\t\treturn minutes .. \" min\"\n\tend\n\treturn minutes .. \" min \" .. rest .. \" s\"\nend\n\n-- \"1:05\" -> 65; nil for text that is not a clock.\nfunction TimeFormat.parse(text)\n\tlocal m, s = string.match(text, \"^(%d+):(%d%d)$\")\n\tif m == nil then\n\t\treturn nil\n\tend\n\treturn tonumber(m) * 60 + tonumber(s)\nend\n\n-- Countdown text with tenths in the last ten seconds: \"9.4\".\nfunction TimeFormat.countdown(seconds)\n\tif seconds < 10 then\n\t\treturn string.format(\"%.1f\", math.max(0, seconds))\n\tend\n\treturn TimeFormat.clock(seconds)\nend\n\nfunction TimeFormat.ago(seconds)\n\tif seconds < 60 then\n\t\treturn \"just now\"\n\tend\n\treturn TimeFormat.words(seconds) .. \" ago\"\nend\n\nreturn TimeFormat\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-17.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-17.luau",
+    "checks": 9
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 50
+ },
+ {
+  "id": "EDIT-18",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Add once() to an event bus and fix skipped handlers",
+  "prompt": "In my Roblox paintball game: add once(name, fn) to this event bus: the handler runs for the next emit of that event only. Also, when a handler disconnects itself during emit, the handler after it is skipped; fix that so every handler that was connected when emit started still runs once.\n\n```lua\n-- EventBus: in-game events (RoundStarted, PlayerSplatted, FlagCaptured) shared by server modules.\nlocal EventBus = {}\nEventBus.__index = EventBus\n\nfunction EventBus.new()\n\tlocal self = setmetatable({}, EventBus)\n\tself.handlers = {}\n\tself.counts = {}\n\treturn self\nend\n\nfunction EventBus:on(name, fn)\n\tlocal list = self.handlers[name]\n\tif list == nil then\n\t\tlist = {}\n\t\tself.handlers[name] = list\n\tend\n\ttable.insert(list, fn)\n\tlocal connection = {}\n\tfunction connection.disconnect()\n\t\tlocal index = table.find(list, fn)\n\t\tif index then\n\t\t\ttable.remove(list, index)\n\t\tend\n\tend\n\treturn connection\nend\n\nfunction EventBus:emit(name, ...)\n\tself.counts[name] = (self.counts[name] or 0) + 1\n\tlocal list = self.handlers[name]\n\tif list == nil then\n\t\treturn 0\n\tend\n\tlocal ran = 0\n\tlocal i = 1\n\twhile i <= #list do\n\t\tlist[i](...)\n\t\tran += 1\n\t\ti += 1\n\tend\n\treturn ran\nend\n\nfunction EventBus:count(name)\n\treturn self.counts[name] or 0\nend\n\nfunction EventBus:listeners(name)\n\tlocal list = self.handlers[name]\n\treturn list and #list or 0\nend\n\nfunction EventBus:clear(name)\n\tself.handlers[name] = nil\nend\n\nreturn EventBus\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-18.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-18.luau",
+    "checks": 7
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 58
+ },
+ {
+  "id": "EDIT-19",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Count stack weight and refuse overweight adds",
+  "prompt": "In my Roblox paintball game: totalWeight() ignores how many of each item the backpack holds. Fix it, and make add() refuse (return false and change nothing) when the new total weight would go over self.maxWeight. Unknown items weigh 1.\n\n```lua\n-- Backpack: what a player carries into a paintball round. Weight limits how much gear they can take.\nlocal Backpack = {}\nBackpack.__index = Backpack\n\nlocal WEIGHTS = {\n\tpaintball_pod = 0.5,\n\tgrenade = 2,\n\tmedkit = 3,\n\tshield = 6,\n}\n\nfunction Backpack.new(maxWeight)\n\tlocal self = setmetatable({}, Backpack)\n\tself.maxWeight = maxWeight or 20\n\tself.items = {}\n\treturn self\nend\n\nfunction Backpack.weightOf(item)\n\treturn WEIGHTS[item]\nend\n\nfunction Backpack:count(item)\n\treturn self.items[item] or 0\nend\n\nfunction Backpack:totalWeight()\n\tlocal total = 0\n\tfor item in pairs(self.items) do\n\t\ttotal += Backpack.weightOf(item)\n\tend\n\treturn total\nend\n\nfunction Backpack:add(item, count)\n\tcount = count or 1\n\tself.items[item] = self:count(item) + count\n\treturn true\nend\n\nfunction Backpack:remove(item, count)\n\tcount = count or 1\n\tif self:count(item) < count then\n\t\treturn false\n\tend\n\tlocal left = self:count(item) - count\n\tself.items[item] = if left > 0 then left else nil\n\treturn true\nend\n\nfunction Backpack:freeWeight()\n\treturn self.maxWeight - self:totalWeight()\nend\n\nfunction Backpack:list()\n\tlocal out = {}\n\tfor item, count in pairs(self.items) do\n\t\ttable.insert(out, { item = item, count = count })\n\tend\n\ttable.sort(out, function(a, b)\n\t\treturn a.item < b.item\n\tend)\n\treturn out\nend\n\nreturn Backpack\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-19.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-19.luau",
+    "checks": 7
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 66
+ },
+ {
+  "id": "EDIT-20",
+  "category": "edit-luau",
+  "difficulty": 2,
+  "goal": "Return dropped flags home and handle teammates touching them",
+  "prompt": "In my Roblox paintball capture-the-flag mode: a dropped flag never returns home. Fix drop/update so a flag that stays dropped for returnTime seconds goes home (state 'home', no carrier). Also only the enemy team may pick a flag up; a teammate touching their own dropped flag returns it home at once (touch should return 'returned' in that case).\n\n```lua\n-- Flag: one team's flag in capture the flag. States: \"home\", \"carried\", \"dropped\".\nlocal Flag = {}\nFlag.__index = Flag\n\nfunction Flag.new(team, returnTime)\n\tlocal self = setmetatable({}, Flag)\n\tself.team = team\n\tself.returnTime = returnTime or 30\n\tself.state = \"home\"\n\tself.carrier = nil\n\tself.droppedAt = nil\n\tself.dropPosition = nil\n\treturn self\nend\n\n-- A player of `playerTeam` touches the flag at time `now`. Returns what happened, or nil.\nfunction Flag:touch(player, playerTeam, now)\n\tif self.state == \"carried\" then\n\t\treturn nil\n\tend\n\tself.state = \"carried\"\n\tself.carrier = player\n\treturn \"taken\"\nend\n\n-- The carrier was splatted at `position`.\nfunction Flag:drop(position, now)\n\tif self.state ~= \"carried\" then\n\t\treturn\n\tend\n\tself.state = \"dropped\"\n\tself.carrier = nil\n\tself.dropPosition = position\nend\n\n-- Called every second by the round script.\nfunction Flag:update(now)\n\tif self.state == \"dropped\" and self.droppedAt and now - self.droppedAt >= self.returnTime then\n\t\tself:returnHome()\n\tend\nend\n\nfunction Flag:returnHome()\n\tself.state = \"home\"\n\tself.carrier = nil\n\tself.droppedAt = nil\n\tself.dropPosition = nil\nend\n\n-- The carrier reached their own base.\nfunction Flag:capture()\n\tif self.state ~= \"carried\" then\n\t\treturn false\n\tend\n\tself:returnHome()\n\treturn true\nend\n\nfunction Flag:isHome()\n\treturn self.state == \"home\"\nend\n\nreturn Flag\n```\n",
+  "run_mode": "automated",
+  "helps": [
+   "edit-diff"
+  ],
+  "budget": {
+   "model_calls": 3,
+   "tool_calls": 0,
+   "output_tokens": 2000,
+   "wall_seconds": 600
+  },
+  "hard_fail": [
+   "A required behaviour is missing",
+   "Unrelated behaviour broke"
+  ],
+  "fixture_status": "implemented",
+  "fixtures": [
+   "tests/EDIT-20.luau"
+  ],
+  "auto": {
+   "strict": false,
+   "unit_test": {
+    "file": "tests/EDIT-20.luau",
+    "checks": 7
+   }
+  },
+  "pass_conditions": [
+   "All automated checks pass (see auto)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "grader": {
+   "type": "static+vm",
+   "checks": [
+    "Fenced Luau compiles and type-checks through the knowledge service /luau/check",
+    "Unit tests run in the server's standalone Luau VM (see fixtures); they also re-check unchanged behaviour"
+   ]
+  },
+  "split": "development",
+  "source_lines": 63
+ }
+]
