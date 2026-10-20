@@ -27,15 +27,17 @@ On the exact commit that will be tagged (after the version bump, section 4):
 
 - [ ] Full Python suite on this PC, one suite at a time, fresh profile:
       `APPDATA=<temp> worktrees/pr39/.venv-audit/Scripts/python.exe -m pytest -q -p no:cacheprovider` -> 0 failed.
-      Known on `798d88e7`: `tests/test_night_conductor.py::test_cycle_accepts_valid_tasks_dedups_and_writes_report`
-      fails (`created 0 == 4`) on an untouched checkout; fix or explain it before tagging.
+      On `798d88e7` `tests/test_night_conductor.py::test_cycle_accepts_valid_tasks_dedups_and_writes_report` failed
+      (`created 0 == 4`) on an untouched checkout; PR #501 (merged 2026-10-20) fixes it: confirm with a full run on
+      the head that gets tagged.
 - [ ] `frontend/`: `tsc`, `vitest`, `vite build` (Node at
       `~/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe`) -> all green.
 - [ ] GitHub CI green on the PR head: `tests.yml`, `windows-desktop.yml` (`frontend`, `windows-tests`,
       `windows-build`), `luau-specs.yml`, `protected-closure.yml`, `dependency-audit.yml`.
 - [ ] Dependabot PRs #461-#472 against `star/next` (frontend majors: TypeScript 7, Vite 8, Vitest 5, motion 14,
-      lucide 1.x; pip minimums; actions) are either merged green or explicitly deferred to v2.1 in the notes. Do not
-      take a major bump into the release commit without the frontend checks above.
+      lucide 1.x; pip minimums; actions) are either merged green or explicitly deferred to v2.1 in the notes. Vite 8 +
+      Vitest 5 (#507) and Lucide 1.x + pip minimums (#506) were merged on 2026-10-20; TypeScript 7 + motion 14 (#509)
+      is still a draft. Do not take a major bump into the release commit without the frontend checks above.
 
 ## 2. Real-window acceptance on the head (ledger check 2)
 
