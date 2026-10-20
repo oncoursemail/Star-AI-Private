@@ -34,6 +34,9 @@ On the exact commit that will be tagged (after the version bump, section 4):
       `~/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe`) -> all green.
 - [ ] GitHub CI green on the PR head: `tests.yml`, `windows-desktop.yml` (`frontend`, `windows-tests`,
       `windows-build`), `luau-specs.yml`, `protected-closure.yml`, `dependency-audit.yml`.
+      BLOCKED 2026-10-20 since 09:58Z: every Actions job on the private repository fails at start with "recent account
+      payments have failed or your spending limit needs to be increased" (private repositories use paid Actions
+      minutes). Owner: GitHub Billing & plans. No PR can show green CI until then.
 - [ ] Dependabot PRs #461-#472 against `star/next` (frontend majors: TypeScript 7, Vite 8, Vitest 5, motion 14,
       lucide 1.x; pip minimums; actions) are either merged green or explicitly deferred to v2.1 in the notes. Vite 8 +
       Vitest 5 (#507) and Lucide 1.x + pip minimums (#506) were merged on 2026-10-20; TypeScript 7 + motion 14 (#509)
