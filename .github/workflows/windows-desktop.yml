@@ -15,7 +15,10 @@ on:
       - 'scripts/smoke_windows_installer.ps1'
       - '.github/workflows/windows-desktop.yml'
       - 'tests/**'
+  # The Windows runner is the owner's PC and is started only on demand, so a pull request runs these
+  # jobs only when it carries the label windows-ci (adding the label starts the run).
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - 'star/**'
       - 'frontend/**'
@@ -51,7 +54,8 @@ concurrency:
 jobs:
   frontend:
     name: React desktop assets
-    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'windows-ci') && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: [self-hosted, linux, star-ci]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -68,15 +72,14 @@ jobs:
         working-directory: frontend
         run: |
           npm install --no-audit --no-fund
-          npm run typecheck
-          npm run test
-          npm run build
+          sh ../scripts/ci_heavy.sh sh -c 'npm run typecheck && npm run test && npm run build'
           test -s dist/index.html
 
   windows-tests:
     name: Windows offline tests (${{ matrix.shard }}/2)
     needs: frontend
-    runs-on: windows-latest
+    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'windows-ci') && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: [self-hosted, windows, star-win]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -85,6 +88,15 @@ jobs:
       matrix:
         shard: [1, 2]
     steps:
+      # Self-hosted Windows runner = the owner's PC: never let a job see the real user profile
+      # (%APPDATA%\STAR holds the owner's chats and settings).
+      - name: Use a throwaway user profile for this job
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'ci-profile'
+          New-Item -ItemType Directory -Force -Path "$root/Roaming", "$root/Local" | Out-Null
+          "APPDATA=$root\Roaming" >> $env:GITHUB_ENV
+          "LOCALAPPDATA=$root\Local" >> $env:GITHUB_ENV
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -96,6 +108,9 @@ jobs:
             requirements.txt
             requirements-desktop.txt
             requirements-dev.txt
+      # Self-hosted runners keep the tool-cache Python between jobs: give this job its own venv.
+      - name: Fresh Python environment for this job
+        run: python -c "import os,venv; d=os.path.join(os.environ['RUNNER_TEMP'],'job-venv'); venv.create(d, with_pip=True); open(os.environ['GITHUB_PATH'],'a').write(os.path.join(d,'Scripts' if os.name=='nt' else 'bin')+chr(10))"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
@@ -150,16 +165,26 @@ jobs:
           name: windows-tests-shard-${{ matrix.shard }}
           path: test-results/windows-shard.xml
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3
 
   windows-build:
     needs: frontend
-    runs-on: windows-latest
+    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'windows-ci') && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: [self-hosted, windows, star-win]
     timeout-minutes: 65
     permissions:
       contents: read
       actions: read
     steps:
+      # Self-hosted Windows runner = the owner's PC: never let a job see the real user profile
+      # (%APPDATA%\STAR holds the owner's chats and settings).
+      - name: Use a throwaway user profile for this job
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'ci-profile'
+          New-Item -ItemType Directory -Force -Path "$root/Roaming", "$root/Local" | Out-Null
+          "APPDATA=$root\Roaming" >> $env:GITHUB_ENV
+          "LOCALAPPDATA=$root\Local" >> $env:GITHUB_ENV
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Stamp exact source provenance for app diagnostics
         shell: pwsh
@@ -185,6 +210,9 @@ jobs:
             requirements.txt
             requirements-desktop.txt
             requirements-dev.txt
+      # Self-hosted runners keep the tool-cache Python between jobs: give this job its own venv.
+      - name: Fresh Python environment for this job
+        run: python -c "import os,venv; d=os.path.join(os.environ['RUNNER_TEMP'],'job-venv'); venv.create(d, with_pip=True); open(os.environ['GITHUB_PATH'],'a').write(os.path.join(d,'Scripts' if os.name=='nt' else 'bin')+chr(10))"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
@@ -349,14 +377,14 @@ jobs:
           name: STAR-OLED-GUI-Previews
           path: ui-previews/*.png
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
 
   # The PR build receives NO attestation or publishing permissions. Only
   # verified main-branch artifacts enter this trusted provenance job.
   attest-release:
     needs: [windows-build, windows-tests]
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -389,7 +417,8 @@ jobs:
   publish-release:
     needs: [windows-build, attest-release]
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    timeout-minutes: 15
     permissions:
       contents: write
       attestations: read
