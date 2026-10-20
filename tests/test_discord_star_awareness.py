@@ -194,14 +194,14 @@ def test_summary_has_specific_numbers_and_names_missing_sources(tmp_path):
     aware = Awareness(gates, pc_feed=lambda: (30.0, FEED), clock=clock_at(NOW))
     asyncio.run(aware.refresh())
     text = aware.summary()
-    assert "(10:30 owner-local" in text                        # UTC-5 from the PC feed
+    assert "at 10:30 owner-local" in text                        # UTC-5 from the PC feed
     assert "today 4 tries, 2 passed, 1 could not run" in text  # owner-local day = all of today's UTC buckets here
     assert "1 of 1 lesson retries fixed the task" in aware.detail("night_school")
     assert "last lesson gate L109 inconclusive (10-20)" in text
     assert "conductor night 20261019: 30 of 186 new practice tasks accepted" in text
     assert "watchdog restarted it at 13:44 UTC" in text
     assert "1 PRs merged today; 2 open, 1 with failing checks" in text and "(finetune-20261020)" in text
-    assert "MISSING" in text and "brain 2 (could not reach brain 2" in text
+    assert "not visible right now" in text and "brain 2 (could not reach brain 2" in text
     assert len(text) <= 1600
 
 
@@ -226,7 +226,7 @@ def test_detail_sections_and_unknown_section_fall_back_to_overview(tmp_path):
     assert "#531 b | draft | checks failing" in aware.detail("prs")
     assert "finetune-20261020" in aware.detail("work") and "KNOWLEDGE-FIX" in aware.detail("work")
     assert "quick eval: running" in aware.detail("jobs")
-    assert aware.detail("nonsense").startswith("LIVE STATUS")
+    assert aware.detail("nonsense").startswith("[Your live status")
 
 
 def test_events_for_down_restart_gate_lab_watchdog_and_release(tmp_path):
@@ -538,13 +538,13 @@ def test_private_turns_carry_status_prefs_and_tools_public_ones_do_not(tmp_path,
         await service.ask(key, "hello", private=False)
     asyncio.run(run())
     private_live, private_tools = brain.lives[0]
-    assert "LIVE STATUS" in private_live and "call me boss" in private_live
+    assert "[Your live status" in private_live and "call me boss" in private_live
     assert private_live.rstrip().splitlines()[-1].startswith("Now:")            # the clock stays last
     assert "Now: Tuesday 2026-10-20 10:" in private_live or "owner's local time (UTC-05:00" in private_live
     assert [t["function"]["name"] for t in private_tools] == ["star_lookup", "star_action"]
     public_live, public_tools = brain.lives[1]
-    assert "LIVE STATUS" not in public_live and "call me boss" not in public_live and public_tools is None
-    assert all("LIVE STATUS" not in turn["content"] for turn in service.memory.history(service.authorized(OWNER, None, 5)))
+    assert "[Your live status" not in public_live and "call me boss" not in public_live and public_tools is None
+    assert all("[Your live status" not in turn["content"] for turn in service.memory.history(service.authorized(OWNER, None, 5)))
 
 
 def test_tool_actions_start_jobs_and_disruptive_ones_wait_for_the_button(tmp_path, monkeypatch):
@@ -725,11 +725,13 @@ def test_dm_quiet_remember_and_confirm_button_through_the_real_bot(tmp_path, mon
             await bot.on_message(dm(channel, "remember: I like short answers"))
             assert channel.sent[-1][0] == "Got it, I'll remember that."
             assert service.prefs.items() == ["I like short answers"]
-            await bot.on_message(dm(channel, "restart the brain please"))
+            await bot.on_message(dm(channel, "restart the brain please"))     # a plain command: no model
             text, options = channel.sent[-1]
             assert text is None and options["embed"].title == "Confirm: restart a service (star-brain) on brain 1?"
             assert options["embed"].colour.value == embeds.AMBER and type(options["view"]).__name__ == "ActionConfirm"
-            assert "confirm button" in channel.sent[-2][0]
+            assert brain.lives == []
+            await bot.on_message(dm(channel, "could you give the brain a fresh start"))   # chat: the model's tool
+            assert "confirm button" in channel.sent[-2][0] and channel.sent[-1][1]["embed"].title.startswith("Confirm")
             assert ("restart:star-brain", "") not in gates["1"].calls
             names = {c.name for c in bot.tree.get_commands()}
             assert {"quiet", "run"} <= names
@@ -812,3 +814,27 @@ def test_team_notes_come_only_from_the_private_corpus():
     public = Client({"corpus": "public", "passages": [{"title": "Roblox FAQ", "text": "x"}]})
     assert asyncio.run(search_notes("night school", client=public)) == NOT_SET_UP
     assert asyncio.run(search_notes("night school", client=Client(ValueError("404")))) == NOT_SET_UP
+
+
+def test_plain_commands_skip_the_model():
+    from star.discord_bot.intents import command
+    assert command("pause night school on brain 1") == ("night_school_pause", "1", "")
+    assert command("Star, stop night school") == ("night_school_stop", "", "")
+    assert command("resume night school on both") == ("night_school_resume", "both", "")
+    assert command("restart the knowledge service on brain 1") == ("restart_service", "1", "knowledge")
+    assert command("what's the status of PR 526?") == ("pr_status", "", "526")
+    assert command("queue a practice idea: a shop that refuses to sell when broke") == (
+        "practice_idea", "", "a shop that refuses to sell when broke")
+    assert command("run a quick eval") == ("quick_eval", "", "")
+    assert command("start a studio lab run") == ("studio_lab_run", "", "")
+    for chat in ("how's night school going?", "what did you learn today?", "I restarted my PC", "hey"):
+        assert command(chat) is None, chat
+
+
+def test_reasoning_leaks_are_caught_and_stripped():
+    from star.persona import leaked_reasoning, strip_reasoning
+    leak = ("Brain 2 had 123 tries today. The owner asks how it's going. I should answer based on the live status "
+            "line. It's busy but most tries couldn't run.")
+    assert leaked_reasoning(leak)
+    assert strip_reasoning(leak) == "Brain 2 had 123 tries today. It's busy but most tries couldn't run."
+    assert not leaked_reasoning("Brain 2 had 123 tries today, 9 passed. Rough day.")

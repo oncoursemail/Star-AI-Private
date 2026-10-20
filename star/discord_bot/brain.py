@@ -18,7 +18,7 @@ import json
 import logging
 import time
 
-from ..persona import CORE
+from ..persona import CORE, leaked_reasoning, strip_reasoning
 from .core import MAX_PROMPT, MAX_REPLY, clean_text
 
 _LOG = logging.getLogger(__name__)
@@ -37,11 +37,15 @@ _SYSTEM_TAIL = """- Time: the app adds the current date and time at the end of t
   you have no internet access; if the app says the search failed, say that.
 - Voice: `/star speak` posts a voice message; `/star hear` answers an audio file (when the
   voice engine is installed; `/star doctor` shows it).
-- Yourself: in his private chat the app adds a LIVE STATUS block (real sources) at the end of his message. When he
-  asks what you are doing, how it is going or what you learned, answer from it with specifics and numbers, never a
-  list of capabilities; call star_lookup for more detail. If a part is MISSING, say you can't see it.
-- Doing things: only when the star_action tool is attached can you start something, and only what he asks (the app
-  asks him to confirm restarts and other disruptive actions). Merges and releases stay his.
+- Yourself: in his private chat the app adds "[Your live status ...]" lines at the end of his message: that is
+  everything you are doing and have done, from your own systems. When he asks what you are doing, how it's going,
+  what you learned or what broke, answer from it with specifics and numbers (star_lookup has more detail; for
+  "what changed" or "how does X work" use its notes section). For small talk, jokes and other questions use at most
+  one detail from it, or none. Never mention the status lines themselves, and never write your reasoning or plans:
+  reply only with what you would say to him. If a part is "not visible right now", say you can't see it.
+- Doing things: only when the star_action tool is attached can you start something, and only what he asks:
+  night school start/stop/pause/resume, a practice idea for tonight's conductor, research, a quick eval, a Studio Lab
+  run, a picture, PR status, a restart (the app asks him to confirm). Merges and releases stay his.
 If something STAR can do is switched off, say so plainly and say how to turn it on (the switch
 named above, in ~/.star/discord-settings.env, then restart the bot). If the owner asks for
 something this bot really cannot do from Discord, say what STAR Desktop can do instead.
@@ -58,7 +62,8 @@ def system_prompt(*, draw: bool = True, vision: bool = True) -> str:
     if draw:
         drawing = ("- Making images: ON. STAR draws pictures on the PC's graphics card. The app sends\n"
                    "  messages like 'draw a dragon' or 'generate an image of ...' and `/draw` straight to the\n"
-                   "  image engine. If a picture request reaches you, say: write `draw <what you want>` or use `/draw`.\n")
+                   "  image engine. Only if he asks you for a picture, tell him to write `draw <what he wants>` or use\n"
+                   "  `/draw`.\n")
     else:
         drawing = ("- Making images: OFF in this bot (switch STAR_DISCORD_DRAW=1). STAR Desktop can still\n"
                    "  make images with Create image.\n")
@@ -223,6 +228,18 @@ class DiscordBrain:
             server_roles.mark_failed(settings, route.model)
             route = ChatRoute(route.fallback, False, "fallback")
             answer = await self._complete(settings, route, messages, on_delta, tools, tool_handler)
+        if leaked_reasoning(answer):
+            # A small model sometimes writes its plan into the reply ("I should answer..."). Ask once more for the
+            # message only, then drop any sentence that still talks to itself.
+            _LOG.info("Discord reply: reasoning leaked; asking again")
+            retry = [*messages[:-1], {"role": "user", "content": messages[-1]["content"]
+                                      + "\n\n(Reply with only your message to him: no plans, no notes to yourself.)"}]
+            try:
+                again = await self._complete(settings, route, retry, None, tools, tool_handler)
+            except Exception:
+                again = answer
+            answer = again if not leaked_reasoning(again) else (strip_reasoning(again) or strip_reasoning(answer)
+                                                                 or "Sorry, I tangled that one. Ask me again?")
         return clean_text(answer, max_chars=MAX_REPLY)
 
     async def _complete(self, settings, route: ChatRoute, messages, on_delta, tools=None, tool_handler=None) -> str:

@@ -57,7 +57,7 @@ def lookup_schema() -> dict:
     from .awareness import SECTIONS
     return {"type": "function", "function": {
         "name": "star_lookup",
-        "description": ("Only when the LIVE STATUS block does not already answer him: look up one part of your "
+        "description": ("Only when your live status lines do not already answer him: look up one part of your "
                         "live status in detail (services, night school hours, lesson gate results, conductor, Studio "
                         "Lab, knowledge search, his work board, PRs, jobs he started, speed), or section 'notes' with "
                         "a query to search the team's private notes (what changed today, how a part of STAR works)."),
@@ -154,7 +154,7 @@ class DiscordService:
             try:
                 parts.append(self.awareness.summary())
             except Exception as exc:      # a broken status source must not break chat
-                parts.append(f"LIVE STATUS: unavailable ({type(exc).__name__}); say you can't see your status.")
+                parts.append(f"[Your live status: unavailable ({type(exc).__name__})]")
         if self.prefs is not None:
             try:
                 parts.append(self.prefs.context())

@@ -194,8 +194,7 @@ class Awareness:
         snap = snap or self.snapshot()
         now = datetime.fromtimestamp(snap.taken, timezone.utc)
         zone = "owner-local" if self.owner_tz(snap) is not None else "UTC"
-        lines = [f"LIVE STATUS ({self.local(now, snap):%H:%M} {zone}, real sources). This is ALL you know about "
-                 "your own work right now: never add activities or numbers that are not here; star_lookup has detail."]
+        lines = [f"[Your live status at {self.local(now, snap):%H:%M} {zone}, from your own systems]"]
         missing = []
         for name in sorted(snap.brains):
             facts = self._fresh(snap, name)
@@ -255,11 +254,17 @@ class Awareness:
             lines.append("- work: " + "; ".join(bits))
         else:
             missing.append("PC feed (" + ("never received" if snap.pc_age is None else f"{_ago(snap.pc_age)} old") + ")")
+        rates = [f"brain {n} night school {((self._fresh(snap, n) or {}).get('night_school') or {}).get('report', {}).get('answers_per_active_hour')} answers per active hour"
+                 for n in sorted(snap.brains) if self._fresh(snap, n)]
+        if snap.speed:
+            rates.append(f"your last chat reply started after {snap.speed.get('first_text_s')} s ({snap.speed.get('model')})")
+        if rates:
+            lines.append("- speed: " + "; ".join(rates))
         if snap.jobs:
             lines.append("- jobs he started from Discord: " + "; ".join(
                 f"{j.get('label')} {j.get('state')}" for j in snap.jobs[-3:]))
         if missing:
-            lines.append("- MISSING (say you can't see these): " + "; ".join(missing))
+            lines.append("- not visible right now: " + "; ".join(missing))
         return "\n".join(lines)[:1600]
 
     def status_fields(self, snap: Snapshot | None = None) -> tuple[list[dict], list[str]]:

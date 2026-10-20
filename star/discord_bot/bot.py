@@ -1103,6 +1103,38 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
         except ValueError as exc:
             await problem(interaction, str(exc))
 
+    async def run_command(channel, text: str) -> bool:
+        """A plain owner command in a DM (intents.py) runs without the model. True when it was one."""
+        from .intents import command, started_text
+        found = command(text)
+        if found is None:
+            return False
+        from .embeds import confirm_card, pr_card
+        try:
+            request = parse_request(*found, gates=service.runner.gates)
+        except ValueError as exc:
+            await channel.send(str(exc), allowed_mentions=discord.AllowedMentions.none())
+            return True
+        if request.action.name == "pr_status":
+            feed = service.runner.feed() if service.runner.feed else None
+            if feed is not None and feed[0] <= 600:
+                pc = feed[1]
+                await send_card(channel, pr_card(feed[0], pc.get("open_prs") or [], pc.get("merged_today") or [],
+                                                 number=int(request.text) if request.text else None),
+                                text=await service.runner.run_now(request) if request.text else "")
+            else:
+                await channel.send(await service.runner.run_now(request), allowed_mentions=discord.AllowedMentions.none())
+        elif request.action.disruptive:
+            await send_card(channel, confirm_card(request.label), view=ActionConfirm(request))
+        else:
+            try:
+                job = service.runner.start(request)
+                reply = started_text(job.label)
+            except ValueError as exc:
+                reply = str(exc)
+            await channel.send(reply, allowed_mentions=discord.AllowedMentions.none())
+        return True
+
     async def awareness_loop():
         """Every minute: refresh the live status, then let the proactive part decide whether to DM."""
         from .awareness import REFRESH_SECONDS
@@ -1171,6 +1203,8 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
             hours = quiet_request(text_in)
             if hours is not None and proactive is not None:
                 await message.channel.send(proactive.set_quiet(hours), allowed_mentions=discord.AllowedMentions.none())
+                return
+            if service.runner is not None and await run_command(message.channel, text_in):
                 return
             wish = prefs_request(text_in) if service.prefs is not None else None
             if wish is not None:
