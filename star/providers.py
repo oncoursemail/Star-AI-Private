@@ -496,6 +496,15 @@ def llama_request_fields(settings, *, conversation: str = "", tools: bool = Fals
         return {}
     fields: dict = {"cache_prompt": True, "chat_template_kwargs": {"preserve_thinking": True}}
     slots = server_slots(settings, model or None) if kind == "lan" else 0
+    from . import background_cap
+    if kind == "lan" and background_cap.process_is_background() and background_cap.is_capped(
+            _instance(settings, model or None)[1]):
+        # A background process (evals): every star-fast request names the highest background slot, so the
+        # server runs at most background_cap.limit() background requests and slot 0 stays free for chat.
+        allowed = background_cap.background_slots(slots)
+        if allowed or not slots:            # slot count unknown: slot 1; a single-slot model: no pin
+            fields["id_slot"] = (allowed or [background_cap.FALLBACK_SLOT])[-1]
+        return fields
     if slots >= 2 and conversation and not background and not _server_places_every_request():
         fields["id_slot"] = _conversation_slot(_instance(settings, model or None), str(conversation), slots,
                                                prime=prime)

@@ -1217,8 +1217,11 @@ class BrainCritic:
         for label, data, mime in images[:self.max_images]:
             content.append({"type": "text", "text": f"Camera: {label}"})
             content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64," + base64.b64encode(data).decode()}})
+        from .background_cap import slot_for
+        slot = slot_for(self.url, self._key, self.model, opener=self._open)   # background: never the chat's slot
         body = json.dumps({"model": self.model, "temperature": 0.1, "max_tokens": 700,
-                           "messages": [{"role": "user", "content": content}]}).encode()
+                           "messages": [{"role": "user", "content": content}],
+                           **({"id_slot": slot} if slot is not None else {})}).encode()
         request = urllib.request.Request(self.url + "/v1/chat/completions", data=body, method="POST", headers={
             "Content-Type": "application/json", **({"Authorization": "Bearer " + self._key} if self._key else {})})
         started = time.monotonic()
