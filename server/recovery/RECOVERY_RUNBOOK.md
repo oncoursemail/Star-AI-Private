@@ -58,7 +58,7 @@ Run the following commands on Brain 2 as the Brain 2 backup user.
 | Protected baseline repository | `~/.local/share/star-recovery/repositories/starai-baseline` |
 | Rolling password file | `~/.config/star-recovery/starai-password` |
 | Baseline password file | `~/.config/star-recovery/starai-baseline-password` |
-| kb workload: configuration, status | `~/.config/star-recovery/starai-kb.json`, `~/.local/state/star-recovery/starai-kb-status.json` |
+| kb workload: configuration, status | `~/.config/star-recovery/starai-kb.json`, `~/.local/state/star-recovery/kb/status.json` (its own folder: every operation clears abandoned `restore-check-*` staging in its state folder, so two workloads must not share one) |
 | kb workload: repositories | `~/.local/share/star-recovery/repositories/starai-kb`, `starai-kb-baseline` |
 | kb workload: password files | `~/.config/star-recovery/starai-kb-password`, `starai-kb-baseline-password` |
 | Temporary export staging, on Brain 1 | `/data/star-re/knowledge/.star-recovery-staging` |
