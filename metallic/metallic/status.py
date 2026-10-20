@@ -6,6 +6,7 @@ missing ("not connected", "no runs yet", "not reporting"), never filled in.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import datetime as dt
 import json
 import os
@@ -95,5 +96,8 @@ def collect(current: Path | None = None) -> dict:
                    for e in entries if e.get("path")):
             entries.insert(0, {"path": cur})
     runners = list(_toml(home / "runners.toml").get("runner", [])) or [{"name": "this machine", "local": True}]
-    return {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-            "projects": [project(e) for e in entries], "runners": [runner(e) for e in runners]}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        probes = pool.map(runner, runners)              # runner probes (ssh) start now, side by side
+        projects = [project(e) for e in entries]
+        return {"generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                "projects": projects, "runners": list(probes)}

@@ -113,8 +113,10 @@ function Dashboard({ data, fetchedAt, now, pick, setPick }: {
           </label>
           <div className={`freshness ${stale ? "is-stale" : ""}`} role="status">
             <span className="dot" aria-hidden="true" />
-            {stale ? "Stale data" : "Live"}: <span className="tnum">{ago(data.generated, now)}</span>
-            <span className="fresh-detail">, fetched {fetchedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            <span className="tnum">
+              {stale ? "Stale data" : "Live"}: {ago(data.generated, now)}
+              <span className="fresh-detail">, fetched {fetchedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            </span>
           </div>
         </header>
 
@@ -368,12 +370,12 @@ function History({ runs, now }: { runs: CheckRun[]; now: Date }) {
     <section className="panel" aria-label="Recent checks">
       <div className="panel-head"><h2>Recent checks</h2></div>
       <table className="dense">
-        <thead><tr><th>Verdict</th><th>Branch</th><th>When</th><th className="num">Selected</th><th className="num">Total</th></tr></thead>
+        <thead><tr><th>Verdict</th><th className="hide-sm">Branch</th><th>When</th><th className="num">Selected</th><th className="num">Total</th></tr></thead>
         <tbody>
           {runs.map((r) => (
             <tr key={r.started + r.tree}>
               <td className="result"><Shape kind={r.verdict === "green" ? "pass" : "fail"} /> {r.verdict === "green" ? "Green" : "Red"}</td>
-              <td className="mono">{r.branch}</td>
+              <td className="mono hide-sm">{r.branch}</td>
               <td className="tnum">{ago(r.started, now)}</td>
               <td className="num tnum">{r.tests.selected}/{r.tests.total_files}</td>
               <td className="num tnum">{seconds(r.timings.total)}</td>

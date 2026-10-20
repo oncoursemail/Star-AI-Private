@@ -181,7 +181,8 @@ def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | N
                                    for r in bad]
                                   + [checks.finding(r.path, 0, "order-dependent", "failed after other test files in "
                                                     "the same process, passed alone: " + "; ".join(r.failures[:2]),
-                                                    checks.WARN) for r in order]))
+                                                    checks.WARN) for r in order],
+                                  seconds=round(time.monotonic() - tg, 2)))
     elif not only or "tests" in only:
         record(checks.CheckResult("tests", checks.SKIP, "no [tests] in metallic.toml"))
 
