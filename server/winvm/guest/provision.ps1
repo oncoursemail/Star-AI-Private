@@ -1,6 +1,6 @@
 # First-logon provisioning of the golden Windows CI image (runs once, elevated, as the local user `ci`).
-# Everything comes from the config ISO (tools already SHA-256 checked by winvm.py fetch). Ends with a reboot;
-# after the reboot autologon starts agent.ps1, whose first poll tells the host to save the running state.
+# Everything comes from the config ISO (tools already SHA-256 checked by winvm.py fetch). Ends with a power-off;
+# winvm.py boots it again without the ISOs, autologon starts agent.ps1, whose first poll lets the host save the state.
 param([Parameter(Mandatory = $true)][string]$Source)
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force C:\winvm, C:\tools, C:\a, C:\cache | Out-Null
@@ -120,4 +120,4 @@ Step 'agent at logon' {
 
 Step 'trim free space' { Optimize-Volume -DriveLetter C -ReTrim }
 Stop-Transcript
-shutdown /r /t 5
+shutdown /s /t 5  # winvm.py then boots it without the ISOs and saves the running state

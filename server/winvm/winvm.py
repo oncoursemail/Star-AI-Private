@@ -56,7 +56,7 @@ def qemu_args(vm_id, run_dir, disk, cpus, mem_mb, mode, isos=(), helper=None):
          "-drive", "if=pflash,format=raw,readonly=on,file=" + OVMF_CODE,
          "-drive", "if=pflash,format=raw,file=" + os.path.join(run_dir, "vars.fd"),
          "-drive", "if=none,id=d0,format=qcow2,cache=unsafe,discard=unmap,aio=threads,file=" + disk,
-         "-device", "nvme,serial=winvm0,drive=d0,bootindex=1",
+         "-device", "ide-hd,drive=d0,bus=ide.2,bootindex=1",  # AHCI: inbox driver and migratable (QEMU nvme is not)
          "-netdev", "user,id=n0," + fwd, "-device", "e1000e,netdev=n0,mac=52:54:00:57:49:4e",
          "-device", "qemu-xhci", "-device", "usb-tablet", "-vga", "std", "-display", "none",
          "-rtc", "base=utc", "-qmp", "unix:%s,server=on,wait=off" % os.path.join(run_dir, "qmp.sock"),
@@ -300,11 +300,23 @@ def cmd_build_image(a):
             sent += 1
         time.sleep(1)
     d = run_dir(vm_id)
-    log("installing; waiting for the guest agent (setup + provisioning, up to %d min)" % a.timeout_min)
-    if not wait_file(os.path.join(d, "first_poll"), a.timeout_min * 60, poll=5):
-        q.cmd("screendump", filename=os.path.join(ROOT, "install-timeout.ppm"))
-        sys.exit("guest agent never polled; screen saved to install-timeout.ppm")
-    log("agent up after %.0f s; settling %d s before saving the state" % (time.time() - t0, a.settle))
+    pid = int(open(os.path.join(d, "qemu.pid")).read())
+    log("installing; waiting for setup + provisioning to power the VM off (up to %d min)" % a.timeout_min)
+    deadline = time.time() + a.timeout_min * 60
+    while os.path.exists("/proc/%d" % pid):
+        if time.time() > deadline:
+            q.cmd("screendump", filename=os.path.join(ROOT, "install-timeout.ppm"))
+            sys.exit("install did not finish; screen saved to install-timeout.ppm")
+        time.sleep(5)
+    # Boot once more without the ISOs (the device set must match the clones), let the agent come up, save.
+    shutil.copyfile(os.path.join(d, "vars.fd"), os.path.join(GOLDEN, "vars.fd"))  # keeps Windows' boot entry
+    shutil.rmtree(d, ignore_errors=True)
+    log("installed after %.0f min; booting the golden VM" % ((time.time() - t0) / 60))
+    q = launch(vm_id, disk, "golden", cfg)
+    if not wait_file(os.path.join(d, "first_poll"), 1800, poll=2):
+        q.cmd("screendump", filename=os.path.join(ROOT, "golden-timeout.ppm"))
+        sys.exit("guest agent never polled; screen saved to golden-timeout.ppm")
+    log("agent up after %.0f s total; settling %d s before saving the state" % (time.time() - t0, a.settle))
     time.sleep(a.settle)
     save_state(q, state)
     destroy(vm_id)
@@ -347,19 +359,21 @@ def start(vm_id, cfg):
                     os.path.join(GOLDEN, "golden.qcow2"), disk], check=True)
     q = launch(vm_id, disk, "resume", cfg)
     q.cmd("migrate-incoming", uri="exec:cat " + os.path.join(GOLDEN, "golden.state"))
-    t_resume = None
-    while t_resume is None:
+    while True:  # the state was saved from a stopped VM, so it arrives paused: wait for the load, then cont
         if time.time() - t0 > 600:
-            raise RuntimeError("resume did not finish within 600 s")
-        st = q.cmd("query-status")  # blocks while the gate has the VM frozen
-        if st.get("status") == "running":
-            t_resume = time.time() - t0
-        elif st.get("status") in ("internal-error", "shutdown", "guest-panicked"):
-            raise RuntimeError("resume failed: " + st.get("status"))
-        else:
-            time.sleep(0.05)
-    if not wait_file(os.path.join(run_dir(vm_id), "first_poll"), 600, poll=0.05):  # the chat gate may hold it
-        raise RuntimeError("guest agent did not poll within 600 s of resume")
+            raise RuntimeError("state load did not finish within 600 s")
+        m = q.cmd("query-migrate").get("status")  # blocks while the gate has the VM frozen
+        if m == "completed":
+            break
+        if m in ("failed", "cancelled"):
+            raise RuntimeError("state load " + m)
+        time.sleep(0.05)
+    if q.cmd("query-status").get("status") != "running":
+        q.cmd("cont")
+    t_resume = time.time() - t0
+    limit = cfg.get("agent_timeout", 600)  # generous: the gate may hold the VM frozen
+    if not wait_file(os.path.join(run_dir(vm_id), "first_poll"), limit, poll=0.05):
+        raise RuntimeError("guest agent did not poll within %d s of resume" % limit)
     ready = time.time() - t0
     with open(os.path.join(run_dir(vm_id), "ready"), "w") as f:
         f.write("%.2f %.2f" % (t_resume, ready))
