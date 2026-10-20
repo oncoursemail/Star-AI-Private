@@ -93,7 +93,9 @@ def _number(text: str, pattern: str):
 def services(run=_run) -> list[dict]:
     listed = run(["systemctl", "list-units", "--all", "--plain", "--no-legend", "--type=service,timer",
                   "star-*", "searxng*"])
-    names = sorted({line.split()[0] for line in listed.stdout.splitlines() if line.strip()})
+    # Per-connection instances (star-discord-gate@...) are this gate's own requests, not services.
+    names = sorted({line.split()[0] for line in listed.stdout.splitlines() if line.strip()} - {""})
+    names = [name for name in names if "@" not in name]
     if not names:
         return []
     shown = run(["systemctl", "show", "--timestamp=unix", "-p", "Id,ActiveState,SubState,ActiveEnterTimestamp,"

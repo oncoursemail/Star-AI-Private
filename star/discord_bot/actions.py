@@ -113,8 +113,11 @@ def parse_request(action: str, brain: str = "", text: str = "", *, gates=()) -> 
         if name not in SERVICES:
             raise ValueError("I can restart: " + ", ".join(SERVICES) + ".")
         text = name
-    if spec.name == "pr_status" and text and not re.fullmatch(r"#?\d{1,6}", text):
-        raise ValueError("Give me a PR number like #526, or nothing for all open PRs.")
+    if spec.name == "pr_status" and text:
+        number = re.search(r"\d{1,6}", text)
+        if not number:
+            raise ValueError("Give me a PR number like #526, or nothing for all open PRs.")
+        text = number.group(0)
     return Request(spec, brains, text)
 
 
@@ -143,9 +146,9 @@ def pr_status(feed: tuple[float, dict] | None, text: str) -> str:
             f". Merged today: {len(pc.get('merged_today', []))}.")
 
 
-def _gate_text(brain: str, answer: dict) -> str:
+def _gate_text(brain: str, answer: dict, *, numbers: bool = True) -> str:
     text = str(answer.get("text", ""))[:400]
-    if isinstance(answer.get("summary"), dict):
+    if numbers and isinstance(answer.get("summary"), dict):
         text += " " + json.dumps(answer["summary"], separators=(",", ":"))[:900]
     return f"brain {brain}: {'ok' if answer.get('ok') else 'FAILED'}: {text}"
 
@@ -185,7 +188,7 @@ class ActionRunner:
         return job
 
     async def _run(self, job: Job, request: Request) -> None:
-        name, file = request.action.name, None
+        name, file, summary, card_parts = request.action.name, None, None, None
         try:
             if name in _VERB:
                 payload = request.text if name == "practice_idea" else ""
@@ -198,8 +201,13 @@ class ActionRunner:
                         parts.append(f"brain {brain}: FAILED: {str(answer)[:200] or type(answer).__name__}")
                     else:
                         ok = ok and answer.get("ok") is True
-                        parts.append(_gate_text(brain, answer))
+                        parts.append(_gate_text(brain, answer, numbers=False))
+                        summary = answer.get("summary") if isinstance(answer.get("summary"), dict) else summary
                 job.result, job.state = "; ".join(parts), "done" if ok else "failed"
+                if summary:
+                    from .embeds import _numbers
+                    job.result += " | " + ", ".join(f"{k} {v}" for k, v in _numbers(summary)[:8])
+                card_parts = parts
             elif name == "restart_service":
                 answers = [await self.gates[b].call("restart:" + request.text, timeout=180) for b in request.brains]
                 job.result = "; ".join(_gate_text(b, a) for b, a in zip(request.brains, answers))
@@ -223,7 +231,14 @@ class ActionRunner:
             _LOG.info("Discord job %s failed (%s)", job.id, type(exc).__name__)
         if self.notify is not None:
             word = "Done" if job.state == "done" else "That didn't work"
+            from .embeds import drawing_card, job_card
+            if file is not None and hasattr(file, "png"):
+                card = drawing_card(file.prompt, file.filename, seconds=getattr(file, "seconds", None))
+            elif name == "research" and job.state == "done":
+                card = None                     # a research answer is prose: plain text in her voice
+            else:
+                card = job_card(job.label, job.state == "done", card_parts or [job.result], summary=summary)
             try:
-                await self.notify(f"{word}: {job.label}.\n{job.result}"[:1900], file)
+                await self.notify(f"{word}: {job.label}.\n{job.result}"[:1900], file, card)
             except Exception as exc:
                 _LOG.warning("Job report DM failed (%s)", type(exc).__name__)

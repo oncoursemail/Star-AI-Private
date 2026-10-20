@@ -5,6 +5,7 @@ Opt-in (STAR_DISCORD_LEARNING_DM_OPT_IN=1, the owner's switch) and only with a l
     from the live facts; a draft that uses a number not in the facts, or fails the persona check, is replaced by a
     plain template, so a digest never invents anything;
   * immediate DMs for awareness.events (service down/restarted/back, lesson gate result, Studio Lab run finished,
+    a restart while someone holds the quiet lock is maintenance and only goes into the next note;
     knowledge watchdog restart, release); several at once become one DM; at most STAR_DISCORD_EVENT_DMS_PER_HOUR
     (default 3) and 12 a day, the same unit at most once per 30 minutes; each event once (SQLite ledger);
   * `/quiet` (or a DM "quiet for 3 hours") holds everything except replies and jobs he started; held events are
@@ -154,7 +155,8 @@ def template_digest(when: str, facts: str) -> str:
 class Proactive:
     def __init__(self, config: ProactiveConfig, awareness, send, *, writer=None, ledger: Ledger | None = None,
                  clock=lambda: datetime.now(timezone.utc)) -> None:
-        """`send(text)` DMs the owner; `writer(system, user)` returns a model draft (None: templates only)."""
+        """`send(text, picture, card)` DMs the owner (the card, or the text when there is none); `writer(system,
+        user)` returns a model draft (None: templates only)."""
         self.config, self.awareness, self.send, self.writer = config, awareness, send, writer
         self.ledger = ledger or Ledger(config.state_path)
         self._clock = clock
@@ -195,7 +197,7 @@ class Proactive:
             similar = ":".join(event_id.split(":")[:3])
             if self.ledger.known(event_id):
                 continue
-            if self.ledger.similar_since(similar, now - timedelta(minutes=SAME_UNIT_MINUTES)):
+            if event_id.startswith("maint:") or self.ledger.similar_since(similar, now - timedelta(minutes=SAME_UNIT_MINUTES)):
                 self.ledger.record(event_id, "event", "held", now, similar=similar, text=text)
                 continue
             fresh.append((event_id, similar, text))
@@ -214,8 +216,9 @@ class Proactive:
             body = "Heads up: " + fresh[0][2]
         else:
             body = "Heads up, a few things just happened:\n" + "\n".join(f"- {t}" for _, _, t in fresh[:8])
+        from .embeds import alert_card
         try:
-            await self.send(body[:1900])
+            await self.send(body[:1900], None, alert_card([t for _, _, t in fresh[:20]], now=now))
         except BaseException:
             for event_id, _, _ in fresh:
                 self.ledger.mark(event_id, "unknown")
@@ -260,8 +263,13 @@ class Proactive:
         text = await self.compose(when, facts)
         if not self.ledger.record(digest_id, "digest", "pending", now):
             return ""
+        card = None
+        fields_for = getattr(self.awareness, "status_fields", None)
+        if fields_for is not None:
+            from .embeds import digest_card
+            card = digest_card(when, text, *fields_for(snap), now=now)
         try:
-            await self.send(text)
+            await self.send(text, None, card)
         except BaseException:
             self.ledger.mark(digest_id, "unknown")
             raise

@@ -57,9 +57,9 @@ def lookup_schema() -> dict:
     from .awareness import SECTIONS
     return {"type": "function", "function": {
         "name": "star_lookup",
-        "description": ("Look up your own live status in detail, from real sources (services on both brains, night "
-                        "school counts, lesson gate results, conductor, Studio Lab, knowledge search, the owner's "
-                        "work board and PRs, jobs he started, speed)."),
+        "description": ("Only when the LIVE STATUS block does not already answer him: look up one part of your "
+                        "live status in detail (services, night school hours, lesson gate results, conductor, Studio "
+                        "Lab, knowledge search, his work board, PRs, jobs he started, speed)."),
         "parameters": {"type": "object", "properties": {"section": {"type": "string", "enum": list(SECTIONS)}},
                        "required": ["section"]}}}
 
@@ -177,8 +177,8 @@ class DiscordService:
                 return (f"A confirm button for '{request.label}' is now shown under your reply. Nothing has started; "
                         "tell him briefly what it will do and to press it.")
             job = self.runner.start(request)
-            return (f"Started '{job.label}' as a background job (job {job.id}). It has NOT finished; you will DM him "
-                    "the result when it ends.")
+            return (f"Started '{job.label}' (job {job.id}); it is still running. Tell him you're on it and will "
+                    "message him when it's done. Do not say it is done or paused yet.")
         return f"Unknown tool {name[:40]}"
 
     def speed(self) -> dict:

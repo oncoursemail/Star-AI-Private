@@ -26,6 +26,7 @@ from .local_config import bot_host
 from .gate_client import gates_from_env
 from .proactive import ProactiveConfig, quiet_request
 from .prefs import prefs_request
+from .awareness import status_question
 
 _LOG = logging.getLogger(__name__)
 SCREEN_NEEDS_PC = ("Looking at your screen needs the STAR app on your PC: this Discord bot runs on a STAR "
@@ -339,12 +340,46 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
 
     owner_user = []
 
-    async def dm_owner(text: str, picture=None):
-        """One DM to the owner (proactive notes, job reports). The user object is fetched once."""
+    def rich(card: dict):
+        """A card from embeds.py as a discord.Embed, with Star's own avatar as the small thumbnail."""
+        result = discord.Embed.from_dict(card)
+        avatar = getattr(getattr(bot.user, "display_avatar", None), "url", None)
+        if avatar:
+            result.set_thumbnail(url=avatar)
+        return result
+
+    async def send_card(target, card: dict, *, text: str = "", picture=None, view=None):
+        """Send a card (embeds.py) to a channel or user; if Discord refuses the embed, send the same content as
+        plain text. `text` goes above the card (her own words)."""
+        from .embeds import card_text
+        extra = {"file": drawing_file(picture)} if picture is not None and hasattr(picture, "png") else {}
+        if view is not None:
+            extra["view"] = view
+        try:
+            return await target.send(content=text[:1990] or None, embed=rich(card),
+                                     allowed_mentions=discord.AllowedMentions.none(), **extra)
+        except (discord.HTTPException, ValueError, TypeError) as exc:
+            _LOG.info("Card not sent (%s); sending text instead", type(exc).__name__)
+            extra.pop("file", None)
+            if picture is not None and hasattr(picture, "png"):
+                extra["file"] = drawing_file(picture)
+            body = ((text + "\n\n") if text else "") + card_text(card)
+            return await target.send(content=body[:1990], allowed_mentions=discord.AllowedMentions.none(), **extra)
+
+    async def dm_owner(text: str, picture=None, card=None):
+        """One DM to the owner (proactive notes, alerts, job reports). The user object is fetched once."""
         if not owner_user:
             owner_user.append(await bot.fetch_user(owner_id))
+        if card is not None:
+            await send_card(owner_user[0], card, picture=picture)
+            return
         extra = {"file": drawing_file(picture)} if picture is not None and hasattr(picture, "png") else {}
         await owner_user[0].send(content=text[:1990], allowed_mentions=discord.AllowedMentions.none(), **extra)
+
+    def status_card(description: str = ""):
+        from .embeds import status_card as build
+        fields, missing = service.awareness.status_fields()
+        return build(fields, missing, description=description)
 
     async def research_job(question: str) -> str:
         """A research job off the chat lock: web search + the quick model on a background slot."""
@@ -389,21 +424,29 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
                 return
             self.used = True
             self.stop()
+            from .embeds import GOLD, card
             try:
                 job = service.runner.start(self.request)
-                text = f"On it: {job.label}. I'll message you when it's done."
+                done = card(f"On it: {job.label}", description="I'll message you when it's done.", color=GOLD,
+                            source="you pressed yes")
             except ValueError as exc:
-                text = str(exc)
-            await interaction.response.edit_message(content=text, view=None)
+                done = card("Not started", description=str(exc), source="you pressed yes")
+            await interaction.response.edit_message(content=None, embed=rich(done), view=None)
 
         @discord.ui.button(label="No", style=discord.ButtonStyle.secondary)
         async def no(self, interaction: discord.Interaction, button: discord.ui.Button):
             self.used = True
             self.stop()
-            await interaction.response.edit_message(content=f"Okay, leaving it: {self.request.label}.", view=None)
+            from .embeds import card
+            await interaction.response.edit_message(
+                content=None, embed=rich(card(f"Left alone: {self.request.label}", source="you said no")), view=None)
 
     def confirm_prompt(request) -> str:
         return f"Confirm: {request.label}? This can interrupt work in progress."
+
+    def confirm_embed(request):
+        from .embeds import confirm_card
+        return rich(confirm_card(request.label))
 
     star = app_commands.Group(name="star", description="STAR Intelligence AI and speech tools",
                               allowed_contexts=app_commands.AppCommandContext(guild=True, dm_channel=True,
@@ -549,6 +592,9 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
 
     async def send_work(interaction):
         if await permit(interaction) is None:
+            return
+        if service.awareness is not None:
+            await interaction.response.send_message(embed=rich(status_card()), ephemeral=True)
             return
         await interaction.response.defer(thinking=True, ephemeral=True)
         content = await asyncio.to_thread(work_overview)
@@ -774,7 +820,7 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
                                        confirm=confirm)
             await publish_answer(interaction, answer, ephemeral=private, key=key, live=live)
             for request in pending:
-                await interaction.followup.send(confirm_prompt(request), view=ActionConfirm(request), ephemeral=True)
+                await interaction.followup.send(embed=confirm_embed(request), view=ActionConfirm(request), ephemeral=True)
         except Exception as exc:
             await handle_failure(interaction, exc)
 
@@ -874,8 +920,9 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
             await status_message.edit(content="⚠️ STAR could not make the picture. The bot's log on the PC has "
                                       "the error type.", allowed_mentions=discord.AllowedMentions.none())
             return
-        await channel.send(content=picture.caption(), file=drawing_file(picture),
-                           allowed_mentions=discord.AllowedMentions.none())
+        from .embeds import drawing_card
+        await send_card(channel, drawing_card(picture.prompt, picture.filename, seconds=getattr(picture, "seconds", None)),
+                        picture=picture)
         try:
             await status_message.delete()
         except Exception:
@@ -898,8 +945,14 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
                                                      allowed_mentions=discord.AllowedMentions.none())
         try:
             picture = await drawer.draw(prompt, on_status=on_status)
-            await interaction.edit_original_response(content=picture.caption(), attachments=[drawing_file(picture)],
-                                                     allowed_mentions=discord.AllowedMentions.none())
+            from .embeds import drawing_card
+            card = drawing_card(picture.prompt, picture.filename, seconds=getattr(picture, "seconds", None))
+            try:
+                await interaction.edit_original_response(content=None, embed=rich(card), attachments=[drawing_file(picture)],
+                                                         allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                await interaction.edit_original_response(content=picture.caption(), attachments=[drawing_file(picture)],
+                                                         allowed_mentions=discord.AllowedMentions.none())
         except ValueError as exc:
             await interaction.edit_original_response(content="⚠️ " + str(exc)[:1800],
                                                      allowed_mentions=discord.AllowedMentions.none())
@@ -1031,10 +1084,17 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
             return
         try:
             request = parse_request(action, brain, text, gates=service.runner.gates)
-            if request.action.name == "pr_status":
+            feed = service.runner.feed() if service.runner.feed else None
+            if request.action.name == "pr_status" and feed is not None and feed[0] <= 600:
+                from .embeds import pr_card
+                pc = feed[1]
+                number = int(request.text.lstrip("#")) if request.text else None
+                await interaction.response.send_message(embed=rich(pr_card(
+                    feed[0], pc.get("open_prs") or [], pc.get("merged_today") or [], number=number)), ephemeral=True)
+            elif request.action.name == "pr_status":
                 await interaction.response.send_message(await service.runner.run_now(request), ephemeral=True)
             elif request.action.disruptive:
-                await interaction.response.send_message(confirm_prompt(request), view=ActionConfirm(request),
+                await interaction.response.send_message(embed=confirm_embed(request), view=ActionConfirm(request),
                                                         ephemeral=True)
             else:
                 job = service.runner.start(request)
@@ -1247,9 +1307,12 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
                     io.BytesIO(reply_text.encode("utf-8")), filename="star-dm-answer.txt")
                 part = part[:1900] + "\n\n*Full answer attached.*"
             await message.channel.send(content=part, **options)
+        if (service.awareness is not None and action.kind == "text" and not pending
+                and status_question(action.prompt)):
+            await send_card(message.channel, status_card())
         for request in pending:
-            await message.channel.send(confirm_prompt(request), view=ActionConfirm(request),
-                                       allowed_mentions=discord.AllowedMentions.none())
+            from .embeds import confirm_card
+            await send_card(message.channel, confirm_card(request.label), view=ActionConfirm(request))
 
     def report_status():
         if reporter is None:

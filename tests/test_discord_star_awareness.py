@@ -12,7 +12,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from star.discord_bot import actions, awareness, gate_client, pc_feed, proactive
+from star.discord_bot import actions, awareness, embeds, gate_client, pc_feed, proactive
 from star.discord_bot.actions import ActionRunner, parse_request, pr_status
 from star.discord_bot.awareness import Awareness, Snapshot, Source
 from star.discord_bot.core import AccessPolicy
@@ -221,7 +221,7 @@ def test_detail_sections_and_unknown_section_fall_back_to_overview(tmp_path):
     aware = Awareness({"1": FakeGate(brain_facts(tmp_path))}, pc_feed=lambda: (5.0, FEED), clock=clock_at(NOW),
                       jobs=lambda: [{"label": "quick eval", "state": "running", "started": "15:20 UTC"}])
     asyncio.run(aware.refresh())
-    assert "star-brain.service: active/running" in aware.detail("services")
+    assert "star-brain: running since" in aware.detail("services")
     assert "L109 lesson gate INCONCLUSIVE: Ensure formatting" in aware.detail("gates")
     assert "#531 b | draft | checks failing" in aware.detail("prs")
     assert "finetune-20261020" in aware.detail("work") and "KNOWLEDGE-FIX" in aware.detail("work")
@@ -250,6 +250,9 @@ def test_events_for_down_restart_gate_lab_watchdog_and_release(tmp_path):
     assert "L200 active" in joined and "12 passed" in joined
     assert "restart FAILED" in joined and "v2.0.0 is ready as a draft" in joined
     assert aware.events(new, new) == []                                            # nothing changed, nothing to say
+    after["night_school"]["report"]["status"] = "quiet lock held, waiting"           # a timing run: maintenance
+    maint = dict(aware.events(old, Snapshot({"1": Source(after, NOW.timestamp())}, new_feed, 1, taken=NOW.timestamp())))
+    assert any(k.startswith("maint:1:star-brain") for k in maint) and not any(k.startswith("restart:") for k in maint)
 
 
 # ------------------------------------------------------------------ actions
@@ -264,6 +267,7 @@ def test_parse_request_allows_only_the_list_and_checks_arguments():
                 ("studio_lab_run", "1", ""), ("pr_status", "", "drop table")):
         with pytest.raises(ValueError):
             parse_request(*bad, gates=gates)
+    assert parse_request("pr_status", "", "PR 526", gates=gates).text == "526"
     with pytest.raises(ValueError, match="no control line to brain 2"):
         parse_request("night_school_stop", "2", gates={"1": object()})
 
@@ -273,8 +277,11 @@ def test_jobs_run_in_the_background_and_report_back():
              "2": FakeGate()}
     reports = []
 
-    async def notify(text, file=None):
+    cards = []
+
+    async def notify(text, file=None, card=None):
         reports.append(text)
+        cards.append(card)
 
     async def run():
         runner = ActionRunner(gates, notify=notify)
@@ -288,10 +295,13 @@ def test_jobs_run_in_the_background_and_report_back():
         assert job.state == "done" and "recall@5" in job.result
         assert gates["2"].calls == [("ns-pause", "")] and ("ns-pause", "") in gates["1"].calls
         assert any(r.startswith("Done: run the quick knowledge-search eval") for r in reports)
+        eval_card = next(c for c in cards if c and c["title"].startswith("Done: run the quick"))
+        assert eval_card["color"] == embeds.GREEN and {"name": "bm25 recall@5", "value": "0.87", "inline": True} in eval_card["fields"]
         failing = ActionRunner({"1": FakeGate(error="could not reach brain 1")}, notify=notify)
         bad = failing.start(parse_request("quick_eval", gates={"1": 1}))
         await bad.task
         assert bad.state == "failed" and reports[-1].startswith("That didn't work")
+        assert cards[-1]["color"] == embeds.RED and cards[-1]["title"].startswith("Didn't work")
     asyncio.run(run())
 
 
@@ -306,10 +316,11 @@ def test_pr_status_answers_from_the_feed_or_says_it_is_missing():
 
 class Sent:
     def __init__(self):
-        self.texts = []
+        self.texts, self.cards = [], []
 
-    async def __call__(self, text, picture=None):
+    async def __call__(self, text, picture=None, card=None):
         self.texts.append(text)
+        self.cards.append(card)
 
 
 def make_proactive(tmp_path, aware, *, writer=None, per_hour=3, now=None, times=((8, 30), (20, 30))):
@@ -343,7 +354,8 @@ class ScriptedAwareness:
 
 
 def test_events_are_merged_deduplicated_rate_limited_and_held_when_quiet(tmp_path):
-    batch = [("restart:1:star-brain.service:a", "star-brain on brain 1 restarted at 15:11 UTC."),
+    batch = [("maint:1:star-brain.service:z", "restarted during a timing run"),
+             ("restart:1:star-brain.service:a", "star-brain on brain 1 restarted at 15:11 UTC."),
              ("gate:1:t:L109", "Lesson gate on brain 1: L109 gate INCONCLUSIVE.")]
     aware = ScriptedAwareness([batch, batch, [("restart:1:star-brain.service:b", "again")],
                                [("down:2:x.service:c", "x DOWN")], [("down:2:y.service:d", "y DOWN")],
@@ -360,13 +372,16 @@ def test_events_are_merged_deduplicated_rate_limited_and_held_when_quiet(tmp_pat
         assert len(sent.texts) == 1
         await bot.tick()
         assert sent.texts[-1] == "Heads up: x DOWN"
+        assert sent.cards[-1]["color"] == embeds.RED and sent.cards[-1]["title"] == "Something's down"
+        assert sent.cards[0]["color"] == embeds.AMBER and "restarted" in sent.cards[0]["description"]
         await bot.tick()                                    # third DM in the hour: over the limit, held
         assert len(sent.texts) == 2
         bot.set_quiet(2)
         moment[0] += timedelta(hours=1, minutes=5)
         await bot.tick()
         assert len(sent.texts) == 2 and bot.quiet() is not None
-        assert bot.ledger.held_since(NOW - timedelta(days=1)) == ["again", "y DOWN", "z DOWN"]
+        assert bot.ledger.held_since(NOW - timedelta(days=1)) == ["restarted during a timing run", "again", "y DOWN",
+                                                                "z DOWN"]
         assert "back" in bot.set_quiet(0) and bot.quiet() is None
     asyncio.run(run())
 
@@ -556,7 +571,7 @@ def test_tool_actions_start_jobs_and_disruptive_ones_wait_for_the_button(tmp_pat
         return answer
     answer = asyncio.run(run())
     assert shown == ["restart a service (star-brain) on brain 1"]
-    assert "confirm button" in answer and "has NOT finished" in answer and "pause night school on brain 2: running" in answer
+    assert "confirm button" in answer and "still running" in answer and "pause night school on brain 2: running" in answer
     assert ("restart:star-brain", "") not in gates["1"].calls and ("ns-pause", "") in gates["2"].calls
 
 
@@ -712,8 +727,8 @@ def test_dm_quiet_remember_and_confirm_button_through_the_real_bot(tmp_path, mon
             assert service.prefs.items() == ["I like short answers"]
             await bot.on_message(dm(channel, "restart the brain please"))
             text, options = channel.sent[-1]
-            assert text.startswith("Confirm: restart a service (star-brain) on brain 1")
-            assert type(options["view"]).__name__ == "ActionConfirm"
+            assert text is None and options["embed"].title == "Confirm: restart a service (star-brain) on brain 1?"
+            assert options["embed"].colour.value == embeds.AMBER and type(options["view"]).__name__ == "ActionConfirm"
             assert "confirm button" in channel.sent[-2][0]
             assert ("restart:star-brain", "") not in gates["1"].calls
             names = {c.name for c in bot.tree.get_commands()}
@@ -721,3 +736,55 @@ def test_dm_quiet_remember_and_confirm_button_through_the_real_bot(tmp_path, mon
         finally:
             await bot.close()
     asyncio.run(run())
+
+
+# ------------------------------------------------------------------ cards (embeds)
+
+def test_cards_respect_discord_limits_and_fall_back_to_text():
+    huge = embeds.card("t" * 400, description="d" * 5000,
+                       fields=[embeds.field("n" * 300, "v" * 2000) for _ in range(30)], now=NOW)
+    assert len(huge["title"]) == 256 and len(huge["description"]) <= 4096 and len(huge["fields"]) <= 25
+    assert all(len(f["name"]) <= 256 and len(f["value"]) <= 1024 for f in huge["fields"])
+    assert embeds.total_chars(huge) <= 6000
+    assert huge["color"] == embeds.GOLD and huge["footer"]["text"] == "Star" and huge["timestamp"].startswith("2026-10-20")
+    text = embeds.card_text(embeds.card("Done: x", fields=[embeds.field("Tries", 41)], now=NOW))
+    assert text == "**Done: x**\nTries: 41"
+
+
+def test_status_digest_alert_pr_drawing_and_confirm_cards(tmp_path):
+    aware = Awareness({"1": FakeGate(brain_facts(tmp_path)), "2": FakeGate(error="could not reach brain 2")},
+                      pc_feed=lambda: (5.0, FEED), clock=clock_at(NOW))
+    asyncio.run(aware.refresh())
+    fields, missing = aware.status_fields()
+    names = [f["name"] for f in fields]
+    assert names[:2] == ["Brain 1 \u00b7 night school", "Brain 1 \u00b7 lessons"] and "Work" in names
+    assert "**4** tries \u00b7 **2** passed today" in fields[0]["value"]
+    assert missing == ["brain 2: could not reach brain 2"]
+    status = embeds.status_card(fields, missing, now=NOW)
+    assert status["color"] == embeds.AMBER and status["fields"][-1]["name"] == "Can't see"
+    digest = embeds.digest_card("evening", "Busy day.", fields, [], now=NOW)
+    assert digest["title"] == "Evening note" and digest["description"] == "Busy day." and digest["color"] == embeds.GREEN
+    failed = embeds.status_card(fields + [embeds.field("Brain 2 \u00b7 FAILED", "star-ns-brain")], [], now=NOW)
+    assert failed["color"] == embeds.RED
+    assert embeds.alert_card(["Lesson gate on brain 1: L200 active."], now=NOW)["color"] == embeds.GREEN
+    prs = embeds.pr_card(12.0, FEED["open_prs"], FEED["merged_today"], now=NOW)
+    assert [f["value"] for f in prs["fields"][:3]] == ["2", "1", "1"] and prs["color"] == embeds.RED
+    one = embeds.pr_card(12.0, FEED["open_prs"], FEED["merged_today"], number=530, now=NOW)
+    assert one["title"] == "PR #530" and one["color"] == embeds.GREEN and len(one["fields"]) == 1
+    drawing = embeds.drawing_card("a red dragon", "star-drawing.png", seconds=14.2, now=NOW)
+    assert drawing["image"] == {"url": "attachment://star-drawing.png"} and drawing["description"] == "a red dragon"
+    assert embeds.confirm_card("restart a service (star-brain) on brain 1", now=NOW)["color"] == embeds.AMBER
+
+
+def test_cards_become_real_discord_embeds():
+    discord = pytest.importorskip("discord")
+    built = discord.Embed.from_dict(embeds.status_card([embeds.field("Brain 1 \u00b7 night school", "x")], [], now=NOW))
+    assert built.title == "What I'm up to" and built.colour.value == embeds.GREEN and len(built) <= 6000
+    assert built.fields[0].inline is True and built.footer.text.startswith("Star")
+
+
+def test_status_questions_get_the_card():
+    for text in ("what are you doing?", "What did you learn today", "how's night school", "anything I should know?"):
+        assert awareness.status_question(text), text
+    for text in ("hey", "write me a round timer", "what is a RemoteEvent"):
+        assert not awareness.status_question(text), text
