@@ -93,6 +93,47 @@ def test_the_gate_waits_while_the_brain_is_busy_and_needs_ten_quiet_minutes(tmp_
     assert gate.look() == ""
 
 
+class ProxiedSlots(Slots):
+    """The same brain seen through STAR's priority proxy (star/priority_proxy.py answers /priority/v1/status)."""
+
+    def __init__(self):
+        super().__init__()
+        self.proxy_up = True
+
+    def fetch(self, path):
+        if path == "/priority/v1/status":
+            if not self.proxy_up:
+                raise OSError("no proxy")
+            return {"p0_active": False, "classes": {"P0": {}, "P3": {}}, "models": {}}
+        return super().fetch(path)
+
+
+def test_priority_gate_works_beside_other_clients_when_the_proxy_schedules(tmp_path):
+    from nightschool.idle import PriorityGate
+    slots, clock, said = ProxiedSlots(), Clock(), []
+    settings = settings_for(tmp_path, gate="priority")
+    gate = PriorityGate(settings, BrainWatch("http://brain", fetch=slots.fetch), log=said.append, clock=clock,
+                        sleep=clock.sleep)
+    slots.table[("star-fast", 0)][0] = True                     # the owner is chatting on another slot
+    assert gate.look() == ""                                    # no ten-minute wait: the proxy pauses us for chat
+    assert gate.intruder(1) == ""                               # and a chat does not cancel our request
+    Path(settings.hold_file).write_text("hold")
+    assert gate.look() == "HOLD file present, paused" and gate.intruder(1) == "HOLD file"
+    Path(settings.hold_file).unlink()
+    slots.proxy_up = False                                      # brain URL not behind the proxy: the old idle gate
+    clock.sleep(60)
+    assert gate.look() == "brain busy, waiting"
+    assert gate.intruder(1).startswith("another client")
+
+
+def test_priority_gate_is_chosen_by_setting(tmp_path):
+    from nightschool.__main__ import make_gate
+    from nightschool.idle import PlannedGate, PriorityGate
+    watch = BrainWatch("http://brain", fetch=ProxiedSlots().fetch)
+    assert isinstance(make_gate(settings_for(tmp_path, gate="priority"), watch, planner=None), PriorityGate)
+    assert type(make_gate(settings_for(tmp_path), watch, planner=None)) is PlannedGate
+
+
 def test_wait_logs_brain_busy_once_and_returns_after_the_quiet_period(tmp_path):
     slots, clock, said = Slots(), Clock(), []
     slots.table[("star-fast", 1)][0] = True

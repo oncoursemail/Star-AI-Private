@@ -22,7 +22,7 @@ import time
 from . import report
 from .config import Settings
 from .engine import Engine, Result, Store, Yielded
-from .idle import BrainWatch, IdleGate, PlannedGate, make_planner
+from .idle import BrainWatch, IdleGate, PlannedGate, PriorityGate, make_planner
 
 
 def log(text: str) -> None:
@@ -45,6 +45,14 @@ class Stopper:
         return self.requested
 
 
+def make_gate(settings: Settings, watch: BrainWatch, *, planner, log=print, holder: str = "nightschool",
+              slot: int | None = None, extra_lane: bool = False):
+    """STAR_NS_GATE=priority: the priority-proxy gate (works beside other clients); otherwise the planner/idle gate."""
+    if settings.gate.lower() == "priority":
+        return PriorityGate(settings, watch, log=log)
+    return PlannedGate(settings, watch, planner=planner, holder=holder, slot=slot, extra_lane=extra_lane, log=log)
+
+
 def run(settings: Settings) -> int:
     from .pool import load_pool
     from .real import RealModel, bootstrap, export_outbox
@@ -64,14 +72,14 @@ def run(settings: Settings) -> int:
     # The resource planner admits night school while chat is quiet and asks it to yield otherwise; when the planner
     # is off or unreachable this is exactly the old idle gate.
     planner = make_planner(settings, key)
-    gate = PlannedGate(settings, BrainWatch(settings.brain_url, key), planner=planner, log=gate_log)
+    gate = make_gate(settings, BrainWatch(settings.brain_url, key), planner=planner, log=gate_log)
     pool = load_pool(settings.pool)
     log("night school started; " + pool.summary() + f"; lanes {settings.lanes}")
     model = RealModel(settings, gate, knowledge=settings.knowledge_url, stop=stop)
     for k in range(1, settings.lanes):
-        model.add_lane(PlannedGate(settings, BrainWatch(settings.brain_url, key), planner=planner,
-                                   holder=f"nightschool-{k}", slot=settings.slot + k, extra_lane=True,
-                                   log=lambda text, k=k: log(f"lane {k + 1}: {text}")), settings.slot + k)
+        model.add_lane(make_gate(settings, BrainWatch(settings.brain_url, key), planner=planner,
+                                 holder=f"nightschool-{k}", slot=settings.slot + k, extra_lane=True,
+                                 log=lambda text, k=k: log(f"lane {k + 1}: {text}")), settings.slot + k)
     lanes = [lambda work, k=k: model.in_lane(k, work) for k in range(settings.lanes)] if settings.lanes > 1 else None
     engine = Engine(settings, pool, store, solve=model.solve, diagnose=model.diagnose,
                     check_lesson=model.check_lesson, log=log)

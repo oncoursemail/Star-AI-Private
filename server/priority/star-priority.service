@@ -1,0 +1,33 @@
+[Unit]
+Description=STAR priority proxy (owner requests first: pauses and resumes background generations on star-fast/star-voice)
+After=network-online.target star-brain.service
+
+# Port 8097 in front of the router on 8080. Clients choose their class with the URL prefix: /p0 owner chat, voice,
+# Discord; /p1 owner tasks; /p2 conductor, agents, games; /p3 night school, evals, indexing. A client still on 8080
+# is not scheduled (nothing changes for it). Status: curl -s http://127.0.0.1:8097/priority/v1/status
+# Log: /opt/star/logs/priority.jsonl (one line per scheduled request), journalctl -u star-priority.
+# Settings: /opt/star/config/priority.json (server/priority/priority.json). Undo: server/priority/deploy.sh --undo.
+[Service]
+Type=simple
+User=star
+Group=star
+WorkingDirectory=/opt/star/priority
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/star/priority/priority_proxy.py --config /opt/star/config/priority.json
+Nice=-5
+Restart=always
+RestartSec=5
+MemoryMax=256M
+TasksMax=256
+LimitCORE=0
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/star/logs
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

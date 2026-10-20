@@ -250,6 +250,31 @@ def test_yield_propagates_and_other_errors_do_not_stop_the_cycle(tmp_path):
     assert result["accepted"] == 0 and any("no reply" in n for n in result["notes"])
 
 
+def test_a_yielded_cycle_resumes_without_asking_finished_steps_again(tmp_path):
+    s = settings_for(tmp_path)
+    Path(s.data, "failures.jsonl").write_text("\n".join(json.dumps(failure(i)) for i in range(3)), encoding="utf-8")
+    first_prompts, second_prompts = [], []
+
+    def ask_then_yield(model, system, user):
+        first_prompts.append(user)
+        if "student failed" in user:
+            return "DIAGNOSIS: needs return types\n" + block(1) + block(2, prompt="In my Roblox game: write a ModuleScript Queue with push(value: number) and pop(): number? using a table, keeping first in first out order and returning nil when empty.")
+        raise Yielded("owner chat")
+    with pytest.raises(Yielded):
+        conductor.run_cycle(s, ask_then_yield, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    assert len(json.loads(conductor.pool_file(s, "20261017").read_text(encoding="utf-8"))) == 2
+
+    def ask(model, system, user):
+        second_prompts.append(user)
+        return "DIAGNOSIS: none\n"
+    result = conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    assert not any("student failed" in p for p in second_prompts)          # the finished step is not asked again
+    assert len(second_prompts) == len(first_prompts) - 1 + 1               # the yielded step is asked again
+    assert result["accepted"] == 2 and result["night_total"] == 2          # its tasks still count tonight
+    assert len(json.loads(conductor.pool_file(s, "20261017").read_text(encoding="utf-8"))) == 2
+    assert not (s.conductor_dir / "checkpoint.json").exists()             # a finished cycle leaves no checkpoint
+
+
 def test_infrastructure_failure_stops_cycle_without_rejecting(tmp_path):
     from star.eval_checks import InfraError
     s = settings_for(tmp_path)
