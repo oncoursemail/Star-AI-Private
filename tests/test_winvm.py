@@ -46,7 +46,7 @@ def test_guestfwd_routes_to_this_vm_and_disk_is_throwaway():
     netdev = a[a.index("-netdev") + 1]
     assert netdev.endswith("guestfwd=tcp:%s:80-cmd:py w.py guest-http v1" % winvm.GUEST_IP)
     drive = [x for x in a if x.startswith("if=none,id=d0")][0]
-    assert "cache=unsafe" in drive and drive.endswith("file=/srv/d.qcow2")
+    assert "cache=none" in drive and drive.endswith("file=/srv/d.qcow2")  # direct I/O: no write-back during chat
 
 
 def test_bad_mode_rejected():

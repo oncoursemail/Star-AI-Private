@@ -41,12 +41,14 @@ DEFAULTS = {"cpus": 8, "mem_mb": 8192, "disk_gb": 64, "pool": 1, "max_vms": 2, "
 
 
 # ----------------------------------------------------------------------------------------------- pure helpers (tested)
-def qemu_args(vm_id, run_dir, disk, cpus, mem_mb, mode, isos=(), helper=None, disk_cache="unsafe"):
+def qemu_args(vm_id, run_dir, disk, cpus, mem_mb, mode, isos=(), helper=None, disk_cache="none"):
     """QEMU command line. mode: 'install' (boot the ISOs), 'golden' (boot the golden disk) or 'resume' (-incoming).
 
     The device list must be identical between the golden run that saved the state and every resumed clone, so the
     ISOs are only attached in install mode and everything else is shared.
     """
+    # disk_cache "none" (direct I/O): with "unsafe" the overlay writes piled up in the host page cache and their
+    # write-back slowed star-fast 42-66 % even while the VM was frozen (measured 2026-10-20); "none": ~0 %.
     if mode not in ("install", "golden", "resume"):
         raise ValueError("mode must be install, golden or resume")
     helper = helper or [sys.executable, os.path.abspath(__file__)]
@@ -214,7 +216,7 @@ def launch(vm_id, disk, mode, cfg, isos=(), vars_src=None):
     os.makedirs(d, exist_ok=True)
     shutil.copyfile(vars_src or os.path.join(GOLDEN, "vars.fd"), os.path.join(d, "vars.fd"))
     subprocess.run(qemu_args(vm_id, d, disk, cfg["cpus"], cfg["mem_mb"], mode, isos,
-                              disk_cache=cfg.get("disk_cache", "unsafe")), check=True)
+                              disk_cache=cfg.get("disk_cache", "none")), check=True)
     return QMP(os.path.join(d, "qmp.sock"))
 
 
