@@ -838,3 +838,9 @@ def test_reasoning_leaks_are_caught_and_stripped():
     assert leaked_reasoning(leak)
     assert strip_reasoning(leak) == "Brain 2 had 123 tries today. It's busy but most tries couldn't run."
     assert not leaked_reasoning("Brain 2 had 123 tries today, 9 passed. Rough day.")
+
+
+def test_status_mentions_are_dropped_from_her_words():
+    from star.persona import drop_status_mentions
+    assert drop_status_mentions("From my status, night school is running. I can see from my status that brain 2 "
+                                "is busy.") == "Night school is running. Brain 2 is busy."

@@ -18,7 +18,7 @@ import json
 import logging
 import time
 
-from ..persona import CORE, leaked_reasoning, strip_reasoning
+from ..persona import CORE, drop_status_mentions, leaked_reasoning, strip_reasoning
 from .core import MAX_PROMPT, MAX_REPLY, clean_text
 
 _LOG = logging.getLogger(__name__)
@@ -240,7 +240,7 @@ class DiscordBrain:
                 again = answer
             answer = again if not leaked_reasoning(again) else (strip_reasoning(again) or strip_reasoning(answer)
                                                                  or "Sorry, I tangled that one. Ask me again?")
-        return clean_text(answer, max_chars=MAX_REPLY)
+        return clean_text(drop_status_mentions(answer) if tools else answer, max_chars=MAX_REPLY)
 
     async def _complete(self, settings, route: ChatRoute, messages, on_delta, tools=None, tool_handler=None) -> str:
         from ..providers import open_client

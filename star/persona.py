@@ -47,6 +47,15 @@ _REASONING = re.compile(
     r"\bLIVE STATUS\b|\bKeep it short\b|\bstatus lines?\b", re.I)
 
 
+_META_PREFIX = re.compile(r"(?:\bI can see |\b)from (?:my|the) (?:live )?status(?: lines?)?(?: that)?,?\s*", re.I)
+
+
+def drop_status_mentions(reply: str) -> str:
+    """'From my status, night school is running' -> 'Night school is running' (she just knows it)."""
+    out = _META_PREFIX.sub("", reply or "")
+    return re.sub(r"(^|[.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), out)
+
+
 def leaked_reasoning(reply: str) -> bool:
     """True when the reply contains the model talking to itself about how to answer (a small model does that)."""
     return bool(_REASONING.search(reply or ""))
