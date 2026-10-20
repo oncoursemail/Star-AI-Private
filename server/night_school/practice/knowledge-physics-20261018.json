@@ -1,0 +1,1644 @@
+[
+ {
+  "id": "KN-PHY-001",
+  "topic": "mechanics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Newton's second law relates force, mass and acceleration as F = ? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Newton's_laws_of_motion"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "ma",
+     "m a",
+     "m×a",
+     "mass times acceleration",
+     "m*a"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-002",
+  "topic": "units",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the SI unit of force? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Newton_(unit)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "newton",
+     "N"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-003",
+  "topic": "units",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the SI unit of energy? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Joule"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "joule",
+     "J"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-004",
+  "topic": "units",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the SI unit of power? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Watt"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "watt",
+     "W"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-005",
+  "topic": "units",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the SI unit of pressure? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Pascal_(unit)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "pascal",
+     "Pa"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-006",
+  "topic": "mechanics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the acceleration due to gravity near Earth's surface, to one decimal place in m/s^2? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Gravitational_acceleration"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "9.8",
+     "9.81"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-007",
+  "topic": "energy",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the formula for kinetic energy? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Kinetic_energy"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "1/2 m v^2",
+     "½mv²",
+     "0.5 m v^2",
+     "(1/2)mv^2",
+     "half m v squared",
+     "1/2mv^2"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-008",
+  "topic": "energy",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the formula for gravitational potential energy near Earth's surface? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Potential_energy"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "mgh",
+     "m g h",
+     "m*g*h"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-009",
+  "topic": "mechanics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "Momentum is:\nA) mass times velocity\nB) mass times acceleration\nC) force times distance\nD) velocity squared Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Momentum"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "mass times velocity",
+     "B": "mass times acceleration",
+     "C": "force times distance",
+     "D": "velocity squared"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-010",
+  "topic": "collisions",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "In an elastic collision:\nA) only momentum is conserved\nB) both momentum and kinetic energy are conserved\nC) only kinetic energy is conserved\nD) neither is conserved Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Elastic_collision"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "only momentum is conserved",
+     "B": "both momentum and kinetic energy are conserved",
+     "C": "only kinetic energy is conserved",
+     "D": "neither is conserved"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-011",
+  "topic": "collisions",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the coefficient of restitution of a perfectly elastic collision? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Coefficient_of_restitution"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "1",
+     "one",
+     "1.0"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-012",
+  "topic": "mechanics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Newton's third law: for every action there is an equal and opposite ...? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Newton's_laws_of_motion"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "reaction"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-013",
+  "topic": "mechanics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "Newton's first law says an object with no net force on it:\nA) slows to a stop\nB) keeps its velocity (stays at rest or moves uniformly)\nC) accelerates\nD) falls Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Newton's_laws_of_motion"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "slows to a stop",
+     "B": "keeps its velocity (stays at rest or moves uniformly)",
+     "C": "accelerates",
+     "D": "falls"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-014",
+  "topic": "oscillation",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Hooke's law states the force of a spring is proportional to its what? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Hooke's_law"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "extension",
+     "displacement",
+     "stretch",
+     "deformation",
+     "extension from rest length"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-015",
+  "topic": "mechanics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Terminal velocity is reached when the drag force equals what other force? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Terminal_velocity"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "weight",
+     "gravity",
+     "gravitational force",
+     "the force of gravity"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-016",
+  "topic": "mechanics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "At what launch angle (in degrees, no air resistance, level ground) does a projectile travel farthest? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Projectile_motion"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "45"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-017",
+  "topic": "mechanics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "Centripetal force on an object in circular motion points:\nA) outward from the centre\nB) toward the centre of the circle\nC) along the velocity\nD) opposite to gravity Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Centripetal_force"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "outward from the centre",
+     "B": "toward the centre of the circle",
+     "C": "along the velocity",
+     "D": "opposite to gravity"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-018",
+  "topic": "rotation",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Torque equals force times what? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Torque"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "lever arm",
+     "distance",
+     "perpendicular distance",
+     "moment arm",
+     "radius"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-019",
+  "topic": "fluids",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What principle says a floating body displaces its own weight of fluid? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Archimedes'_principle",
+   "https://en.wikipedia.org/wiki/Buoyancy"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Archimedes' principle",
+     "Archimedes"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-020",
+  "topic": "fluids",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "Bernoulli's principle states that in a flowing fluid, where speed is higher:\nA) pressure is higher\nB) pressure is lower\nC) density is lower\nD) temperature is higher Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Bernoulli's_principle"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "pressure is higher",
+     "B": "pressure is lower",
+     "C": "density is lower",
+     "D": "temperature is higher"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-021",
+  "topic": "fluids",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the density of water in kg/m^3, approximately? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Density"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "1000",
+     "1,000"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-022",
+  "topic": "thermo",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is absolute zero in degrees Celsius? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Kelvin",
+   "https://en.wikipedia.org/wiki/Temperature"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "-273.15",
+     "-273",
+     "−273.15"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-023",
+  "topic": "thermo",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "The second law of thermodynamics says the total entropy of an isolated system never does what? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Laws_of_thermodynamics",
+   "https://en.wikipedia.org/wiki/Entropy"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "decreases",
+     "decrease",
+     "goes down"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-024",
+  "topic": "thermo",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "Heat transfer by convection happens through:\nA) electromagnetic waves\nB) the bulk movement of a fluid\nC) vibration through a solid\nD) sound Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Convection",
+   "https://en.wikipedia.org/wiki/Heat_transfer"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "electromagnetic waves",
+     "B": "the bulk movement of a fluid",
+     "C": "vibration through a solid",
+     "D": "sound"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-025",
+  "topic": "optics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the speed of light in vacuum, to three significant figures, in m/s? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Speed_of_light"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "3.00e8",
+     "3e8",
+     "300000000",
+     "3 x 10^8",
+     "3×10^8",
+     "299792458",
+     "2.998e8",
+     "300,000,000"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-026",
+  "topic": "optics",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Which law relates angles of incidence and refraction: n1 sin θ1 = n2 sin θ2? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Snell's_law"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Snell's law",
+     "Snell"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-027",
+  "topic": "electricity",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Ohm's law relates voltage, current and resistance as V = ? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Ohm's_law"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "IR",
+     "I R",
+     "I×R",
+     "current times resistance",
+     "I*R"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-028",
+  "topic": "electricity",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Electrical power equals voltage times what? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Electric_power"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "current"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-029",
+  "topic": "electricity",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "In a series circuit, the total resistance of two resistors is:\nA) their sum\nB) their product\nC) the reciprocal of the sum of reciprocals\nD) the smaller one Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Series_and_parallel_circuits"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "their sum",
+     "B": "their product",
+     "C": "the reciprocal of the sum of reciprocals",
+     "D": "the smaller one"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-030",
+  "topic": "electricity",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "In a parallel circuit, adding another resistor:\nA) raises the total resistance\nB) lowers the total resistance\nC) does not change it\nD) doubles it Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Series_and_parallel_circuits"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "raises the total resistance",
+     "B": "lowers the total resistance",
+     "C": "does not change it",
+     "D": "doubles it"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-031",
+  "topic": "magnetism",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Which law says a changing magnetic flux through a loop induces an electromotive force? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Faraday's_law_of_induction"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Faraday's law",
+     "Faraday's law of induction",
+     "Faraday"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-032",
+  "topic": "waves",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the SI unit of frequency? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Frequency"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "hertz",
+     "Hz"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-033",
+  "topic": "waves",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Wave speed equals frequency times what? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Wave",
+   "https://en.wikipedia.org/wiki/Wavelength"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "wavelength"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-034",
+  "topic": "waves",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "The Doppler effect changes the observed:\nA) amplitude\nB) frequency\nC) speed of light\nD) mass Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Doppler_effect"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "amplitude",
+     "B": "frequency",
+     "C": "speed of light",
+     "D": "mass"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-035",
+  "topic": "nuclear",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "What is the name of the time it takes half of a radioactive sample to decay? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Half-life"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "half-life",
+     "half life"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-036",
+  "topic": "relativity",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (exact key).",
+  "prompt": "Einstein's mass-energy equivalence is written E = ? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Mass–energy_equivalence"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "mc^2",
+     "mc²",
+     "m c^2",
+     "mc2"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-037",
+  "topic": "simulation",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "Verlet integration is popular in game physics because it:\nA) needs no time step\nB) is stable and handles constraints well by storing previous positions instead of velocities\nC) is exact for all forces\nD) uses no memory Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Verlet_integration"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "needs no time step",
+     "B": "is stable and handles constraints well by storing previous positions instead of velocities",
+     "C": "is exact for all forces",
+     "D": "uses no memory"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-038",
+  "topic": "simulation",
+  "category": "knowledge-physics",
+  "difficulty": 1,
+  "goal": "Answer a physics question correctly (choice key).",
+  "prompt": "The simple (explicit) Euler method for a falling object:\nA) is exact\nB) accumulates error and can gain energy with large time steps\nC) needs no derivative\nD) cannot be used for velocity Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Euler_method",
+   "https://en.wikipedia.org/wiki/Numerical_integration"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "is exact",
+     "B": "accumulates error and can gain energy with large time steps",
+     "C": "needs no derivative",
+     "D": "cannot be used for velocity"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-039",
+  "topic": "waves",
+  "category": "knowledge-physics",
+  "difficulty": 2,
+  "goal": "Answer a physics question correctly (order key).",
+  "prompt": "Order these from lowest to highest frequency in the electromagnetic spectrum. End with one line `Answer: ...` listing them in order, separated by commas.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Electromagnetic_spectrum"
+  ],
+  "scoring_scope": "knowledge check: the required items appear in order; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the order key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "order",
+    "items": [
+     "radio",
+     "infrared",
+     "visible",
+     "x-?ray"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-PHY-040",
+  "topic": "units",
+  "category": "knowledge-physics",
+  "difficulty": 2,
+  "goal": "Answer a physics question correctly (match key).",
+  "prompt": "Match each quantity to its SI unit. Write one line per pair as `term: meaning`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/International_System_of_Units"
+  ],
+  "scoring_scope": "knowledge check: each pair appears together in one line or sentence; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the match key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "match",
+    "pairs": [
+     [
+      "force",
+      "newton"
+     ],
+     [
+      "energy",
+      "joule"
+     ],
+     [
+      "power",
+      "watt"
+     ],
+     [
+      "pressure",
+      "pascal"
+     ]
+    ]
+   }
+  }
+ }
+]

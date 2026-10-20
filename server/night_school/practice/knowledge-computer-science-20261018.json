@@ -1,0 +1,2047 @@
+[
+ {
+  "id": "KN-CS-001",
+  "topic": "algorithms",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the worst-case time complexity of binary search on a sorted array of n items? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Binary_search_algorithm"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "O(log n)",
+     "log n",
+     "logarithmic"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-002",
+  "topic": "algorithms",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the average time complexity of quicksort? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Quicksort"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "O(n log n)",
+     "n log n"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-003",
+  "topic": "algorithms",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the worst-case time complexity of bubble sort? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Bubble_sort"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "O(n^2)",
+     "O(n²)",
+     "n^2",
+     "quadratic",
+     "n squared"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-004",
+  "topic": "data-structures",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "A stack is a data structure with which access order?\nA) first in, first out\nB) last in, first out\nC) random\nD) sorted Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Stack_(abstract_data_type)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "first in, first out",
+     "B": "last in, first out",
+     "C": "random",
+     "D": "sorted"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-005",
+  "topic": "data-structures",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "A queue is:\nA) last in, first out\nB) first in, first out\nC) sorted by key\nD) a tree Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Queue_(abstract_data_type)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "last in, first out",
+     "B": "first in, first out",
+     "C": "sorted by key",
+     "D": "a tree"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-006",
+  "topic": "data-structures",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What data structure gives average O(1) lookup by key using a hash function? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Hash_table"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "hash table",
+     "hash map",
+     "dictionary",
+     "hashmap"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-007",
+  "topic": "graphs",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "Which graph search explores all neighbours at the current depth before going deeper, and finds shortest paths in unweighted graphs? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Breadth-first_search"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "breadth-first search",
+     "BFS"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-008",
+  "topic": "graphs",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "Which graph search goes as deep as possible along each branch before backtracking? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Depth-first_search"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "depth-first search",
+     "DFS"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-009",
+  "topic": "algorithms",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "Dynamic programming solves problems by:\nA) random guessing\nB) storing solutions to overlapping subproblems so each is computed once\nC) always taking the locally best choice\nD) parallel threads Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dynamic_programming"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "random guessing",
+     "B": "storing solutions to overlapping subproblems so each is computed once",
+     "C": "always taking the locally best choice",
+     "D": "parallel threads"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-010",
+  "topic": "algorithms",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the technique of caching a function's results for repeated inputs called? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Memoization"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "memoization",
+     "memoisation"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-011",
+  "topic": "theory",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the name of the problem Alan Turing proved undecidable: whether an arbitrary program will finish running? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Halting_problem"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "halting problem"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-012",
+  "topic": "theory",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "P versus NP asks whether:\nA) every problem can be parallelised\nB) every problem whose solution can be verified quickly can also be solved quickly\nC) computers can halt\nD) programs can be compiled Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/P_versus_NP_problem"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "every problem can be parallelised",
+     "B": "every problem whose solution can be verified quickly can also be solved quickly",
+     "C": "computers can halt",
+     "D": "programs can be compiled"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-013",
+  "topic": "theory",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What model of computation with states and transitions is used for parsers, game AI and regular expressions? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Finite-state_machine"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "finite-state machine",
+     "finite state machine",
+     "state machine",
+     "FSM",
+     "finite automaton"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-014",
+  "topic": "memory",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What memory-management technique automatically frees objects no longer reachable, used by Lua, Java and C#? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Garbage_collection_(computer_science)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "garbage collection"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-015",
+  "topic": "memory",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What memory-management technique frees an object when its count of references drops to zero? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Reference_counting"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "reference counting"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-016",
+  "topic": "concurrency",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "A race condition occurs when:\nA) a program runs too fast\nB) the result depends on the unpredictable timing of concurrent operations\nC) two cars collide in a game\nD) the CPU overheats Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Race_condition"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a program runs too fast",
+     "B": "the result depends on the unpredictable timing of concurrent operations",
+     "C": "two cars collide in a game",
+     "D": "the CPU overheats"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-017",
+  "topic": "concurrency",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the situation where two threads each wait for a lock the other holds, so neither proceeds? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Deadlock"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "deadlock"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-018",
+  "topic": "concurrency",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What primitive guarantees that only one thread at a time runs a critical section? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Mutual_exclusion"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "mutex",
+     "mutual exclusion",
+     "lock"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-019",
+  "topic": "concurrency",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "A coroutine differs from a thread because it:\nA) runs on another CPU core\nB) yields control cooperatively at explicit points instead of being preempted\nC) cannot hold state\nD) always runs forever Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Coroutine"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "runs on another CPU core",
+     "B": "yields control cooperatively at explicit points instead of being preempted",
+     "C": "cannot hold state",
+     "D": "always runs forever"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-020",
+  "topic": "languages",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What do we call a function that captures variables from the scope where it was created? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Closure_(computer_programming)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "closure"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-021",
+  "topic": "languages",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "A pure function:\nA) always returns the same output for the same input and has no side effects\nB) modifies global state\nC) reads the clock\nD) writes to a file Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Pure_function"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "always returns the same output for the same input and has no side effects",
+     "B": "modifies global state",
+     "C": "reads the clock",
+     "D": "writes to a file"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-022",
+  "topic": "patterns",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "Which design pattern lets one object notify many subscribers when its state changes, the basis of events and signals? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Observer_pattern"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "observer",
+     "observer pattern",
+     "publish-subscribe"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-023",
+  "topic": "patterns",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "Which design pattern ensures a class has only one instance with a global access point? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Singleton_pattern"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "singleton"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-024",
+  "topic": "architecture",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What architecture pattern used by many game engines stores data in components attached to entities and logic in systems? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Entity_component_system"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "entity component system",
+     "ECS",
+     "entity-component-system"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-025",
+  "topic": "principles",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What does the 'S' in SOLID stand for? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/SOLID"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "single responsibility",
+     "single responsibility principle",
+     "single-responsibility"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-026",
+  "topic": "principles",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What does the acronym DRY stand for? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Don't_repeat_yourself"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "don't repeat yourself",
+     "do not repeat yourself"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-027",
+  "topic": "patterns",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "In the model-view-controller pattern, which part holds the data and rules? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Model–view–controller"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "model"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-028",
+  "topic": "databases",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "The ACID properties of a database transaction are:\nA) atomicity, consistency, isolation, durability\nB) accuracy, cost, integrity, delivery\nC) async, cache, index, data\nD) add, create, insert, delete Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/ACID"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "atomicity, consistency, isolation, durability",
+     "B": "accuracy, cost, integrity, delivery",
+     "C": "async, cache, index, data",
+     "D": "add, create, insert, delete"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-029",
+  "topic": "databases",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What language is used to query relational databases? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/SQL"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "SQL"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-030",
+  "topic": "databases",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What database structure speeds up lookups on a column at the cost of extra writes and storage? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Database_index"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "index"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-031",
+  "topic": "distributed",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "The CAP theorem says a distributed store can guarantee at most two of:\nA) cost, availability, performance\nB) consistency, availability, partition tolerance\nC) cache, API, protocol\nD) compression, accuracy, parallelism Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/CAP_theorem"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "cost, availability, performance",
+     "B": "consistency, availability, partition tolerance",
+     "C": "cache, API, protocol",
+     "D": "compression, accuracy, parallelism"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-032",
+  "topic": "data",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "How many bits are in a byte? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Byte"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "8",
+     "eight"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-033",
+  "topic": "data",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the decimal value of the hexadecimal number FF? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Hexadecimal"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "255"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-034",
+  "topic": "data",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the binary representation of decimal 10? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Binary_number"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "1010"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-035",
+  "topic": "data",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What representation lets computers store negative integers so that addition works unchanged? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Two's_complement"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "two's complement"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-036",
+  "topic": "data",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "Which character encoding is backward compatible with ASCII and uses one to four bytes per code point? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/UTF-8"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "UTF-8"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-037",
+  "topic": "data",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the term for the byte order where the most significant byte comes first? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Endianness"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "big-endian",
+     "big endian"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-038",
+  "topic": "numerics",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "Why can 0.1 + 0.2 differ from 0.3 in floating-point arithmetic?\nA) the CPU is faulty\nB) 0.1 and 0.2 have no exact binary representation, so rounding error appears\nC) addition is not defined for decimals\nD) the numbers overflow Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Floating-point_arithmetic",
+   "https://en.wikipedia.org/wiki/Round-off_error"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the CPU is faulty",
+     "B": "0.1 and 0.2 have no exact binary representation, so rounding error appears",
+     "C": "addition is not defined for decimals",
+     "D": "the numbers overflow"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-039",
+  "topic": "security",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What attack injects malicious database commands through unsanitised user input? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/SQL_injection"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "SQL injection"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-040",
+  "topic": "security",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What web attack injects scripts into pages viewed by other users? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Cross-site_scripting"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "cross-site scripting",
+     "XSS"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-041",
+  "topic": "security",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What should be added to each password before hashing so identical passwords get different hashes? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Salt_(cryptography)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "salt",
+     "a salt"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-042",
+  "topic": "security",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "The principle of least privilege says:\nA) give every user admin rights\nB) give each component only the permissions it needs to do its job\nC) privileges should be hidden\nD) the server has fewest rights Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Principle_of_least_privilege"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "give every user admin rights",
+     "B": "give each component only the permissions it needs to do its job",
+     "C": "privileges should be hidden",
+     "D": "the server has fewest rights"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-043",
+  "topic": "security",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "In public-key cryptography, which key is used to decrypt a message encrypted with your public key? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Public-key_cryptography"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "private key",
+     "your private key",
+     "the private key"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-044",
+  "topic": "security",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "What is the name of the protocol that encrypts HTTP traffic, giving HTTPS its S? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Transport_Layer_Security",
+   "https://en.wikipedia.org/wiki/HTTPS"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "TLS",
+     "Transport Layer Security",
+     "SSL/TLS"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-045",
+  "topic": "ml",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "Which neural network architecture introduced in 2017 ('Attention Is All You Need') underlies large language models? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Transformer_(deep_learning_architecture)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "transformer"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-046",
+  "topic": "ml",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (choice key).",
+  "prompt": "Overfitting means a model:\nA) is too small to learn\nB) fits the training data too closely and generalises poorly to new data\nC) trains too slowly\nD) has no parameters Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Overfitting"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "is too small to learn",
+     "B": "fits the training data too closely and generalises poorly to new data",
+     "C": "trains too slowly",
+     "D": "has no parameters"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-CS-047",
+  "topic": "ml",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "Which optimisation method updates parameters in the direction that decreases the loss, step by step? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Gradient_descent"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "gradient descent"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-048",
+  "topic": "languages",
+  "category": "knowledge-computer-science",
+  "difficulty": 1,
+  "goal": "Answer a computer-science question correctly (exact key).",
+  "prompt": "Which lightweight scripting language from Brazil (1993) uses tables as its only data-structuring mechanism and is the ancestor of Luau? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Lua_(programming_language)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Lua"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-049",
+  "topic": "hardware",
+  "category": "knowledge-computer-science",
+  "difficulty": 2,
+  "goal": "Answer a computer-science question correctly (order key).",
+  "prompt": "Order these by typical speed, fastest first. End with one line `Answer: ...` listing them in order, separated by commas.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Cache_(computing)",
+   "https://en.wikipedia.org/wiki/Random-access_memory"
+  ],
+  "scoring_scope": "knowledge check: the required items appear in order; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the order key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "order",
+    "items": [
+     "register",
+     "l1|cache",
+     "ram|main memory",
+     "ssd|disk"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-050",
+  "topic": "data-structures",
+  "category": "knowledge-computer-science",
+  "difficulty": 2,
+  "goal": "Answer a computer-science question correctly (match key).",
+  "prompt": "Match each data structure to a typical use. Write one line per pair as `term: meaning`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Priority_queue",
+   "https://en.wikipedia.org/wiki/Trie",
+   "https://en.wikipedia.org/wiki/Linked_list"
+  ],
+  "scoring_scope": "knowledge check: each pair appears together in one line or sentence; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the match key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "match",
+    "pairs": [
+     [
+      "priority queue|heap",
+      "smallest|urgent|next|min"
+     ],
+     [
+      "trie",
+      "prefix|autocomplete|word"
+     ],
+     [
+      "linked list",
+      "insert|remov|middle"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-CS-051",
+  "topic": "data-structures",
+  "category": "knowledge-computer-science",
+  "difficulty": 2,
+  "goal": "Answer a computer-science question correctly (short key).",
+  "prompt": "Explain why a hash table lookup can degrade from O(1) to O(n) and how to prevent it.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Hash_table",
+   "https://en.wikipedia.org/wiki/Hash_function"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "collision|same bucket|same hash|bucket"
+     ],
+     [
+      "resize|load factor|rehash|good hash|distribut|balanced tree|treeif"
+     ]
+    ]
+   }
+  }
+ }
+]

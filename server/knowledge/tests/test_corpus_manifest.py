@@ -15,7 +15,10 @@ def test_shipped_catalogue_has_no_usable_pins_or_live_activation():
     assert all(s["revision"] is None for s in catalog["sources"])
     assert all(s["permission"] != "reviewed-copy" for s in catalog["sources"])
     live = (root / "corpora.json").read_text()
-    assert '"creator-docs"' in live and '"luau-site"' in live and '"godot' not in live
+    assert '"creator-docs"' in live and '"luau-site"' in live
+    # knowledge school (2026-10-18): the live catalogue lists further open-licensed sources, each with its licence
+    import json as _json
+    assert all(src.get("licence") and src.get("attribution") for src in _json.loads(live)["sources"])
 
 
 @pytest.mark.parametrize("change", [

@@ -38,7 +38,10 @@ LOOKUP_TIMEOUT = 5.0
 CHECK_TIMEOUT = 25.0
 CONNECT_TIMEOUT = 2.0
 # Hosts a documentation link may point at. Anything else is dropped, not shown.
-_SOURCE_HOSTS = frozenset({"create.roblox.com", "luau.org", "github.com"})
+_SOURCE_HOSTS = frozenset({"create.roblox.com", "luau.org", "github.com",
+                           # knowledge school (2026-10-18): open-licensed sources beyond Roblox
+                           "docs.godotengine.org", "docs.blender.org", "en.wikipedia.org", "simple.wikipedia.org",
+                           "openstax.org", "www.computer-networking.info"})
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f​-‏‪-‮⁦-⁩]")
 # A documentation link is written by STAR into the prompt and into the Markdown sources list, so
 # it may only contain characters that cannot end a line, a Markdown link or the data region.
@@ -179,14 +182,21 @@ class KnowledgeClient:
                 "embedded": data.get("embedded") if type(data.get("embedded")) is int else 0,
                 "luau_check": data.get("luau_check") is True}
 
-    def search(self, query: str, *, top: int = 4, mode: str = "vector") -> list[dict]:
-        """Passages most relevant to `query`, best first. Each is plain, bounded data."""
+    def search(self, query: str, *, top: int = 4, mode: str = "vector", scope: str | None = None) -> list[dict]:
+        """Passages most relevant to `query`, best first. Each is plain, bounded data.
+
+        `scope` (knowledge school): "all" searches every indexed source, "roblox" only the Roblox and Luau
+        documentation; None lets the service decide from the query (Roblox words -> Roblox documentation)."""
         if not isinstance(query, str) or not query.strip():
             raise ValueError("Search query is empty")
         if type(top) is not int or not 1 <= top <= 10 or mode not in ("vector", "bm25", "hybrid"):
             raise ValueError("Invalid documentation search options")
-        data = self._request("POST", "/search", {"query": clean_text(query, MAX_QUERY_CHARS).strip(),
-                                                 "mode": mode, "top": top}, SEARCH_TIMEOUT)
+        if scope is not None and (not isinstance(scope, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", scope)):
+            raise ValueError("Invalid documentation search scope")
+        body = {"query": clean_text(query, MAX_QUERY_CHARS).strip(), "mode": mode, "top": top}
+        if scope is not None:
+            body["scope"] = scope
+        data = self._request("POST", "/search", body, SEARCH_TIMEOUT)
         passages = []
         for raw in (data.get("passages") if isinstance(data.get("passages"), list) else [])[:top]:
             item = _passage(raw, len(passages) + 1)

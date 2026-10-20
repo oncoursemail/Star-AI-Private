@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import json
 import threading
 import time
 
@@ -74,6 +75,24 @@ def merge_facets(whole: list[tuple[int, float]], parts: list[list[tuple[int, flo
     return sorted(fused.items(), key=lambda item: -item[1])
 
 
+# Source scope. The index may hold more than the Roblox documentation (Godot and Blender manuals, textbooks,
+# encyclopaedia pages; see corpora.json `group`). A Roblox or Luau question is answered from the "roblox" group
+# only, so the mixed index cannot push a Roblox page down (eval30 stays what it was); anything else searches all
+# groups. A client may pass `scope` ("roblox", "all" or a group name) explicitly; None means this detection.
+ROBLOX_QUERY = re.compile(
+    r"\b(?:roblox|luau|studio|workspace|LocalScript|ModuleScript|ServerScriptService|ServerStorage|ReplicatedStorage|"
+    r"StarterGui|StarterPlayer\w*|PlayerGui|ScreenGui|Instance\.new|game:GetService|Humanoid|RemoteEvent|RemoteFunction|"
+    r"DataStore\w*|OnServerEvent|BindToClose|TweenService|BasePart|Workspace|Players\.|CFrame|UDim2|R6|R15)\b", re.I)
+OTHER_ENGINE_QUERY = re.compile(r"\b(?:godot|gdscript|blender|unity|unreal|openstax|wikipedia|textbook)\b", re.I)
+DEFAULT_GROUP = "roblox"
+
+
+def auto_scope(query: str) -> str:
+    if ROBLOX_QUERY.search(query) and not OTHER_ENGINE_QUERY.search(query):
+        return "roblox"
+    return "all"
+
+
 # Off unless STAR_KB_QUESTIONS=1 (set in the unit file once the measured effect justified it); `questions=` overrides per call.
 USE_QUESTIONS = os.environ.get("STAR_KB_QUESTIONS", "0") == "1"
 RERANK_DOC_CHARS = 1000         # the reranker shares the 512-token physical batch limit (query + document + template)
@@ -129,6 +148,22 @@ class Vectors:
         self.allowed: set[int] = set(int(i) for i in ids)
         self.q_rows: np.ndarray = q_rows
         self.q_matrix: np.ndarray = q_matrix
+        self.source_of: np.ndarray | None = None      # source name per row of `ids` (filled on first scoped search)
+        self.masks: dict[frozenset, np.ndarray] = {}   # scope (set of source names) -> row mask
+        self._mask_lock = threading.Lock()
+
+    def mask_for(self, db, sources: frozenset) -> np.ndarray:
+        with self._mask_lock:
+            mask = self.masks.get(sources)
+            if mask is None:
+                if self.source_of is None:
+                    of = {int(r[0]): r[1] for r in db.execute("SELECT c.id, d.source FROM chunks c JOIN docs d ON d.id=c.doc_id")}
+                    self.source_of = np.array([of.get(int(i), "") for i in self.ids], dtype=object)
+                mask = np.isin(self.source_of, list(sources))
+                if len(self.masks) > 16:
+                    self.masks.clear()
+                self.masks[sources] = mask
+            return mask
 
     def __iter__(self):   # (ids, matrix, allowed): the shape older callers unpack
         return iter((self.ids, self.matrix, self.allowed))
@@ -233,6 +268,19 @@ class Searcher:
         self._chunks: int | None = None
         self._extra: dict[str, np.ndarray] = {}
         self.sources = {r["name"]: dict(r) for r in self.db.execute("SELECT * FROM sources")}
+        row = self.db.execute("SELECT value FROM meta WHERE name='source_groups'").fetchone()
+        groups = json.loads(row[0]) if row else {}
+        # an index built before groups existed: every source counts as the Roblox documentation
+        self.groups: dict[str, str] = {name: groups.get(name, DEFAULT_GROUP) for name in self.sources}
+
+    def scope_sources(self, scope: str | None, query: str = "") -> frozenset | None:
+        """The source names a search is limited to, or None for the whole index."""
+        if scope is None:
+            scope = auto_scope(query)
+        if scope == "all" or len(set(self.groups.values())) <= 1:
+            return None
+        chosen = frozenset(name for name, group in self.groups.items() if group == scope or name == scope)
+        return chosen or None
 
     # -- candidate generators -------------------------------------------------------------
     def _load_vectors(self) -> None:
@@ -262,7 +310,8 @@ class Searcher:
         self._load_vectors()
         return int(len(self._ids))
 
-    def bm25(self, query: str, k: int = 50, questions: bool = False) -> list[tuple[int, float]]:
+    def bm25(self, query: str, k: int = 50, questions: bool = False,
+             sources: frozenset | None = None) -> list[tuple[int, float]]:
         match = fts_query(query)
         if not match:
             return []
@@ -270,6 +319,8 @@ class Searcher:
             self._load_vectors()
         scoped = self._scope is not None
         fetch = k if not scoped else -1
+        if sources is not None and not scoped:
+            fetch = k * 6          # a mixed index: over-fetch, then keep the rows of the wanted sources
         if not questions:   # the questions column must neither match nor score
             match = f"{BASE_COLUMNS} : ({match})"
         weights = (*BM25_WEIGHTS, BM25_QUESTION_WEIGHT if questions else 0.0)
@@ -277,10 +328,16 @@ class Searcher:
                "ORDER BY s LIMIT ?")
         rows = self.db.execute(sql, (*weights, match, fetch)).fetchall()
         out = [(int(r[0]), -float(r[1])) for r in rows if not scoped or int(r[0]) in self._scope]
+        if sources is not None and out:
+            marks = ",".join("?" * len(out))
+            keep = {int(r[0]) for r in self.db.execute(
+                f"SELECT c.id FROM chunks c JOIN docs d ON d.id=c.doc_id WHERE c.id IN ({marks}) AND d.source IN ("
+                + ",".join("?" * len(sources)) + ")", [cid for cid, _ in out] + sorted(sources))}
+            out = [item for item in out if item[0] in keep]
         return out[:k]
 
     def vector(self, query: str, k: int = 50, qvec: np.ndarray | None = None,
-               questions: bool = False) -> list[tuple[int, float]]:
+               questions: bool = False, sources: frozenset | None = None) -> list[tuple[int, float]]:
         self._load_vectors()
         if not len(self._ids):
             return []
@@ -290,9 +347,13 @@ class Searcher:
         if questions and len(self._vectors.q_rows):
             # a chunk is as good as its best generated question (scaled), if that beats its own text
             np.maximum.at(scores, self._vectors.q_rows, (self._vectors.q_matrix @ qvec) * self.question_scale)
-        if self._scope_mask is not None:
-            scores = np.where(self._scope_mask, scores, -2.0)
-            k = min(k, int(self._scope_mask.sum()))
+        mask = self._scope_mask
+        if sources is not None:
+            source_mask = self._vectors.mask_for(self.db, sources)
+            mask = source_mask if mask is None else (mask & source_mask)
+        if mask is not None:
+            scores = np.where(mask, scores, -2.0)
+            k = min(k, int(mask.sum()))
             if k <= 0:
                 return []
         k = min(k, len(scores))
@@ -336,7 +397,7 @@ class Searcher:
     def search(self, query: str, *, mode: str = "hybrid+rerank", top: int = 5, per_doc: int = 2,
                candidates: int = 50, rerank_n: int = 15, fallback: bool = False,
                degrade: bool = False, questions: bool | None = None, facets: bool | None = None,
-               facet_merge: str = "max") -> tuple[list[Passage], dict]:
+               facet_merge: str = "max", scope: str | None = None) -> tuple[list[Passage], dict]:
         """fallback=True (the service default): in `vector` mode on a partly embedded index, the
         chunks without an embedding that BM25 ranks in its top FALLBACK_DEPTH over the whole corpus
         are embedded at query time (at most FALLBACK_EMBED) and ranked by cosine with the rest.
@@ -346,6 +407,7 @@ class Searcher:
             raise ValueError("mode must be one of " + ", ".join(MODES))
         if questions is None:
             questions = USE_QUESTIONS
+        sources = self.scope_sources(scope, query)
         parts = split_facets(query) if (USE_FACETS if facets is None else facets) else []
         timing: dict[str, float] = {}
         if parts:
@@ -369,16 +431,17 @@ class Searcher:
             else:
                 timing["embed_query_ms"] = (time.perf_counter() - t) * 1000
                 t = time.perf_counter()
-                dense = self.vector(query, candidates, qvec=qvec, questions=questions)
+                dense = self.vector(query, candidates, qvec=qvec, questions=questions, sources=sources)
                 if parts:
-                    dense = merge_facets(dense, [self.vector(p, candidates, qvec=v, questions=questions)
+                    dense = merge_facets(dense, [self.vector(p, candidates, qvec=v, questions=questions, sources=sources)
                                                  for p, v in zip(parts, part_vectors)], facet_merge)
                 timing["vector_ms"] = (time.perf_counter() - t) * 1000
         if mode != "vector" or partial:
             t = time.perf_counter()
-            lexical = self.bm25(query, candidates, questions=questions)
+            lexical = self.bm25(query, candidates, questions=questions, sources=sources)
             if parts and mode != "vector":
-                lexical = merge_facets(lexical, [self.bm25(p, candidates, questions=questions) for p in parts], "rrf")
+                lexical = merge_facets(lexical, [self.bm25(p, candidates, questions=questions, sources=sources)
+                                                 for p in parts], "rrf")
             timing["bm25_ms"] = (time.perf_counter() - t) * 1000
         if mode == "bm25":
             ranked = lexical
@@ -430,14 +493,17 @@ class Searcher:
         passages = []
         for rank, (row, score) in enumerate(chosen, 1):
             src = self.sources[row["source"]]
-            repo = src["repo"][:-4] if src["repo"].endswith(".git") else src["repo"]
+            is_git = src["repo"].endswith(".git")
+            repo = src["repo"][:-4] if is_git else src["repo"]
             passages.append(Passage(
                 rank=rank, score=round(score, 6), chunk_id=row["id"], source=row["source"], path=row["path"],
                 title=row["title"], heading=row["heading"], kind=row["kind"],
                 url=row["url"] + ("#" + row["anchor"] if row["anchor"] else ""),
-                permalink=f"{repo}/blob/{src['commit_sha']}/{row['path']}",
+                permalink=f"{repo}/blob/{src['commit_sha']}/{row['path']}" if is_git else row["url"],
                 commit=src["commit_sha"], licence=src["licence"], retrieved_at=stamp, text=row["text"]))
         timing["total_ms"] = (time.perf_counter() - t0) * 1000
+        if sources is not None:
+            timing["scoped_sources"] = float(len(sources))
         return passages, {k: round(v, 1) for k, v in timing.items()}
 
     def _embed_queries(self, texts: list[str]) -> list[np.ndarray]:

@@ -1,0 +1,1645 @@
+[
+ {
+  "id": "KN-AUD-001",
+  "topic": "pitch",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "How many semitones are in an octave? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Octave",
+   "https://en.wikipedia.org/wiki/Semitone"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "12",
+     "twelve"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-002",
+  "topic": "pitch",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What is the standard tuning frequency of the A above middle C (A4) in hertz? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/A440_(pitch_standard)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "440",
+     "440 Hz"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-003",
+  "topic": "intervals",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "A perfect fifth spans how many semitones? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Interval_(music)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "7",
+     "seven"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-004",
+  "topic": "intervals",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "A major third spans how many semitones? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Interval_(music)",
+   "https://en.wikipedia.org/wiki/Major_chord"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "4",
+     "four"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-005",
+  "topic": "chords",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "A major triad is built from:\nA) root, minor third, perfect fifth\nB) root, major third, perfect fifth\nC) root, fourth, fifth\nD) root, major second, major third Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Major_chord",
+   "https://en.wikipedia.org/wiki/Triad_(music)"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "root, minor third, perfect fifth",
+     "B": "root, major third, perfect fifth",
+     "C": "root, fourth, fifth",
+     "D": "root, major second, major third"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-006",
+  "topic": "chords",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "A minor triad differs from a major triad by:\nA) a lowered fifth\nB) a lowered third\nC) a raised root\nD) an added seventh Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Minor_chord"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a lowered fifth",
+     "B": "a lowered third",
+     "C": "a raised root",
+     "D": "an added seventh"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-007",
+  "topic": "scales",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "Which scale has the pattern whole, whole, half, whole, whole, whole, half? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Major_scale"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "major scale",
+     "major",
+     "Ionian"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-008",
+  "topic": "scales",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "How many notes does a pentatonic scale have per octave? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Pentatonic_scale"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "5",
+     "five"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-009",
+  "topic": "keys",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What diagram arranges the twelve keys so that neighbours are a perfect fifth apart? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Circle_of_fifths"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "circle of fifths"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-010",
+  "topic": "rhythm",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "In 4/4 time, the top number means:\nA) a quarter note gets the beat\nB) four beats per bar\nC) four bars per phrase\nD) the tempo is 4 Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Time_signature"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a quarter note gets the beat",
+     "B": "four beats per bar",
+     "C": "four bars per phrase",
+     "D": "the tempo is 4"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-011",
+  "topic": "rhythm",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "In 3/4 time, the bottom number means:\nA) three beats per bar\nB) the quarter note gets one beat\nC) three quarter notes per piece\nD) the key has three flats Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Time_signature"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "three beats per bar",
+     "B": "the quarter note gets one beat",
+     "C": "three quarter notes per piece",
+     "D": "the key has three flats"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-012",
+  "topic": "dynamics",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What is the Italian term for a gradual increase in loudness? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dynamics_(music)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "crescendo"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-013",
+  "topic": "tempo",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What musical term means to play gradually slower? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Tempo"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "ritardando",
+     "rallentando",
+     "rit.",
+     "rall."
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-014",
+  "topic": "rhythm",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "Syncopation is:\nA) playing exactly on the beat\nB) stressing beats or parts of beats that are normally weak\nC) playing very loudly\nD) tuning the instrument Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Syncopation"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "playing exactly on the beat",
+     "B": "stressing beats or parts of beats that are normally weak",
+     "C": "playing very loudly",
+     "D": "tuning the instrument"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-015",
+  "topic": "sound",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "Timbre is:\nA) how high or low a note is\nB) the tone colour that makes a violin sound different from a flute at the same pitch\nC) how loud a note is\nD) the length of a note Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Timbre"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "how high or low a note is",
+     "B": "the tone colour that makes a violin sound different from a flute at the same pitch",
+     "C": "how loud a note is",
+     "D": "the length of a note"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-016",
+  "topic": "digital",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "The Nyquist-Shannon theorem says the sample rate must be at least how many times the highest frequency you want to capture? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Nyquist–Shannon_sampling_theorem"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "2",
+     "two",
+     "twice"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-017",
+  "topic": "digital",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "CD-quality audio uses a sample rate of how many hertz? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Sample_rate",
+   "https://en.wikipedia.org/wiki/Compact_Disc_Digital_Audio"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "44100",
+     "44,100",
+     "44.1 kHz",
+     "44100 Hz"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-018",
+  "topic": "digital",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "CD-quality audio uses how many bits per sample? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Audio_bit_depth"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "16",
+     "sixteen"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-019",
+  "topic": "digital",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "Aliasing in digital audio happens when:\nA) the volume is too high\nB) frequencies above half the sample rate fold back as false lower tones\nC) the file is compressed\nD) two tracks play together Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Aliasing"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "the volume is too high",
+     "B": "frequencies above half the sample rate fold back as false lower tones",
+     "C": "the file is compressed",
+     "D": "two tracks play together"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-020",
+  "topic": "loudness",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "Roughly how many decibels louder is a sound with ten times the power? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Decibel"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "10",
+     "10 dB",
+     "ten"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-021",
+  "topic": "loudness",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "A doubling of sound pressure corresponds to about how many decibels? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Decibel",
+   "https://en.wikipedia.org/wiki/Sound_pressure"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "6",
+     "6 dB",
+     "six"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-022",
+  "topic": "acoustics",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What is the approximate speed of sound in air at 20 °C, in metres per second? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Speed_of_sound"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "343",
+     "343 m/s",
+     "340",
+     "344"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-023",
+  "topic": "acoustics",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What effect makes a siren sound higher as it approaches and lower as it moves away? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Doppler_effect"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Doppler effect",
+     "Doppler"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-024",
+  "topic": "processing",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "A low-pass filter:\nA) lets low frequencies through and attenuates high ones\nB) lets high frequencies through\nC) boosts the midrange\nD) removes silence Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Low-pass_filter"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "lets low frequencies through and attenuates high ones",
+     "B": "lets high frequencies through",
+     "C": "boosts the midrange",
+     "D": "removes silence"
+    },
+    "correct": "A"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-025",
+  "topic": "processing",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "Reverb (reverberation) simulates:\nA) a single distinct echo\nB) the many reflections of a room that blur together into a tail\nC) pitch shifting\nD) distortion Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Reverberation"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "a single distinct echo",
+     "B": "the many reflections of a room that blur together into a tail",
+     "C": "pitch shifting",
+     "D": "distortion"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-026",
+  "topic": "processing",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "A compressor in audio:\nA) makes files smaller\nB) reduces the dynamic range by lowering loud parts above a threshold\nC) adds reverb\nD) raises the pitch Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Dynamic_range_compression"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "makes files smaller",
+     "B": "reduces the dynamic range by lowering loud parts above a threshold",
+     "C": "adds reverb",
+     "D": "raises the pitch"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-027",
+  "topic": "synthesis",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What four-stage envelope shape (attack, decay, sustain, ...) describes how a synth note evolves? Name the fourth stage. End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Envelope_(music)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "release"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-028",
+  "topic": "synthesis",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What synthesis method shapes a bright waveform by filtering out harmonics? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Subtractive_synthesis"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "subtractive synthesis",
+     "subtractive"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-029",
+  "topic": "synthesis",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "Frequency modulation (FM) synthesis creates timbres by:\nA) filtering noise\nB) modulating one oscillator's frequency with another at audio rate\nC) recording real instruments\nD) adding reverb Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Frequency_modulation_synthesis"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "filtering noise",
+     "B": "modulating one oscillator's frequency with another at audio rate",
+     "C": "recording real instruments",
+     "D": "adding reverb"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-030",
+  "topic": "sound-design",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What is the name of the art of recreating everyday sound effects (footsteps, cloth) in sync with picture? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Foley_(filmmaking)"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Foley"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-031",
+  "topic": "game-audio",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "Adaptive music in games:\nA) is always the same loop\nB) changes layers, intensity or transitions in response to gameplay state\nC) is only used in menus\nD) is recorded live each session Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Adaptive_music"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "is always the same loop",
+     "B": "changes layers, intensity or transitions in response to gameplay state",
+     "C": "is only used in menus",
+     "D": "is recorded live each session"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-032",
+  "topic": "composition",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What is a short recurring musical theme tied to a character or idea called (a term from Wagner's operas)? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Leitmotif"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "leitmotif",
+     "leitmotiv"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-033",
+  "topic": "game-audio",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What music format of early consoles uses the console's own sound chip and is now a genre? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Chiptune"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "chiptune",
+     "chip music",
+     "8-bit"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-034",
+  "topic": "acoustics",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "The inverse-square law for sound means that doubling the distance from a point source:\nA) halves the intensity\nB) quarters the intensity\nC) doubles the intensity\nD) does not change the intensity Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Inverse-square_law",
+   "https://en.wikipedia.org/wiki/Sound_attenuation"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "halves the intensity",
+     "B": "quarters the intensity",
+     "C": "doubles the intensity",
+     "D": "does not change the intensity"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-035",
+  "topic": "digital",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (exact key).",
+  "prompt": "What transform turns a time-domain audio signal into its frequency components? End your reply with one line of the form `Answer: ...`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Fourier_transform"
+  ],
+  "scoring_scope": "knowledge check: the final answer line names the expected value; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the exact key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "exact",
+    "accept": [
+     "Fourier transform",
+     "FFT",
+     "fast Fourier transform",
+     "discrete Fourier transform"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-036",
+  "topic": "sound",
+  "category": "knowledge-audio-music",
+  "difficulty": 1,
+  "goal": "Answer a audio-music question correctly (choice key).",
+  "prompt": "White noise has:\nA) equal power per octave\nB) equal power per hertz across the spectrum\nC) only low frequencies\nD) a single frequency Reply with the letter of the correct option on a final line `Answer: X`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/White_noise",
+   "https://en.wikipedia.org/wiki/Pink_noise"
+  ],
+  "scoring_scope": "knowledge check: the chosen option letter or text; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the choice key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "choice",
+    "options": {
+     "A": "equal power per octave",
+     "B": "equal power per hertz across the spectrum",
+     "C": "only low frequencies",
+     "D": "a single frequency"
+    },
+    "correct": "B"
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-037",
+  "topic": "rhythm",
+  "category": "knowledge-audio-music",
+  "difficulty": 2,
+  "goal": "Answer a audio-music question correctly (order key).",
+  "prompt": "Order these note durations from longest to shortest. End with one line `Answer: ...` listing them in order, separated by commas.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Rhythm",
+   "https://en.wikipedia.org/wiki/Musical_note"
+  ],
+  "scoring_scope": "knowledge check: the required items appear in order; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the order key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "order",
+    "items": [
+     "whole",
+     "half",
+     "quarter",
+     "eighth"
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-038",
+  "topic": "processing",
+  "category": "knowledge-audio-music",
+  "difficulty": 2,
+  "goal": "Answer a audio-music question correctly (match key).",
+  "prompt": "Match each audio effect to what it does. Write one line per pair as `term: meaning`.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Equalization_(audio)",
+   "https://en.wikipedia.org/wiki/Delay_(audio_effect)",
+   "https://en.wikipedia.org/wiki/Limiter"
+  ],
+  "scoring_scope": "knowledge check: each pair appears together in one line or sentence; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the match key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "match",
+    "pairs": [
+     [
+      "\\bEQ\\b|equali",
+      "frequenc|band|boost|cut"
+     ],
+     [
+      "delay",
+      "repeat|echo|time"
+     ],
+     [
+      "limiter",
+      "peak|ceiling|exceed|clip"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-039",
+  "topic": "sound-design",
+  "category": "knowledge-audio-music",
+  "difficulty": 2,
+  "goal": "Answer a audio-music question correctly (short key).",
+  "prompt": "Explain why a game footstep sound should have several randomly chosen variations with slight pitch changes.",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Sound_design",
+   "https://en.wikipedia.org/wiki/Sound_effect"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "repetiti|same|monoton|machine ?gun|fatigue|robotic|identical"
+     ],
+     [
+      "variation|vary|random|pitch"
+     ]
+    ]
+   }
+  }
+ },
+ {
+  "id": "KN-AUD-040",
+  "topic": "game-audio",
+  "category": "knowledge-audio-music",
+  "difficulty": 2,
+  "goal": "Answer a audio-music question correctly (short key).",
+  "prompt": "Why do sounds placed far from the listener in a 3D game usually get a low-pass filter as well as lower volume?",
+  "run_mode": "automated",
+  "fixture_status": "not_needed",
+  "fixtures": [],
+  "split": "development",
+  "source_urls": [
+   "https://en.wikipedia.org/wiki/Sound_attenuation",
+   "https://en.wikipedia.org/wiki/Sound_localization"
+  ],
+  "scoring_scope": "knowledge check: required facts (regexes) are present; not code",
+  "budget": {
+   "model_calls": 1,
+   "tool_calls": 2,
+   "output_tokens": 300,
+   "wall_seconds": 240
+  },
+  "pass_conditions": [
+   "The answer satisfies the short key (star.knowledge_checks)"
+  ],
+  "required_evidence": [
+   "answer.md",
+   "check-results.json"
+  ],
+  "auto": {
+   "code": false,
+   "answer": {
+    "type": "short",
+    "required": [
+     [
+      "high frequenc|air|absorb|attenuat|treble|muffl"
+     ],
+     [
+      "distance|far|realistic|cue"
+     ]
+    ]
+   }
+  }
+ }
+]
