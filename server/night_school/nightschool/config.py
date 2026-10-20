@@ -64,6 +64,10 @@ class Settings:
     # A worker outside the server (the PC's graphics card): run the unit tests in the server container's sandbox over
     # SSH (star/eval_sandbox.ContainerSandbox, "user@address"), never on this machine. "" = the local Luau VM.
     sandbox_ssh: str = field(default_factory=lambda: _env("STAR_NS_SANDBOX_SSH", ""))
+    # Anti-slop check (star/slop.py) of every answer: "off" (default), "measure" (the score is recorded in the
+    # attempt's checks, pass/fail unchanged) or "gate" (a slop answer fails: it cannot become a verified example).
+    slop: str = field(default_factory=lambda: _env("STAR_NS_SLOP", "off"))
+    slop_max: int = field(default_factory=lambda: int(_env("STAR_NS_SLOP_MAX", "30")))
 
     # The night conductor (conductor.py): turns last night's failures and the newest notes into new practice tasks.
     # On by default for nights; "off" (or the file data/CONDUCTOR_OFF) switches it off. Models are tried in order; a

@@ -439,6 +439,20 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
                     started=started, on_event=on_event)
             if runs:
                 archive = [*archive, {"star_luau_run": {"blocks": runs}}]
+        slop_mode = getattr(settings, "slop_check", "off")
+        if slop_mode in ("flag", "trim"):
+            # Opt-in anti-slop post-check (star/slop.py): deterministic, no model call. `trim` removes whole filler
+            # lines outside code; both modes add a plain note only when a reader must know (invented API names,
+            # claims of testing, stubs, tests that assert nothing). The note is prose, not a STAR marker.
+            from . import slop
+            report = slop.score_answer(answer, prompt=prompt)
+            removed: list[str] = []
+            if slop_mode == "trim":
+                answer, removed = slop.trim_filler(answer)
+            note = slop.answer_note(report)
+            if note:
+                answer = answer.rstrip() + "\n\nSlop check by STAR: " + note + "\n"
+            archive = [*archive, {"star_slop": {**report.record(), "trimmed_lines": len(removed)}}]
         answer = answer.rstrip() + sources_footer(grounding.passages, answer) if grounding.passages else answer
         if grounding.status != "off" or grounding.checks:
             archive = [*archive, {"star_knowledge": grounding.record()}]

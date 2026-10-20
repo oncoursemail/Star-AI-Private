@@ -296,8 +296,15 @@ class RealModel:
 
     def score(self, task: dict, answer: str):
         from star import eval_checks as checks
-        return checks.score_answer(task, answer, luau_check=self.luau_check, sandbox=self._sandbox,
-                                   prelude=self.prelude, test_body=task.get("_test_body", ""))
+        score = checks.score_answer(task, answer, luau_check=self.luau_check, sandbox=self._sandbox,
+                                    prelude=self.prelude, test_body=task.get("_test_body", ""))
+        mode = getattr(self.settings, "slop", "off")
+        if mode in ("measure", "gate") and answer.strip():
+            from star import slop
+            report = slop.score_answer(answer, prompt=task.get("prompt", ""))
+            is_slop = report.hard or report.score >= int(getattr(self.settings, "slop_max", 30))
+            score.checks.append(checks.Check("slop", mode == "measure" or not is_slop, scrub(report.summary())))
+        return score
 
     # --- the two calls the engine needs --------------------------------------------------------------------
     def _solve_in_child(self, task: dict, lessons: list[dict]) -> Result:
