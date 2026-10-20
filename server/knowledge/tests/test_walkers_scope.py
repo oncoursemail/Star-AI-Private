@@ -100,6 +100,17 @@ def test_cnxml_module_becomes_text_with_math_lists_and_exercises(tmp_path):
     assert docs[0].url == "https://github.com/x/y/blob/abc/modules/m1/index.cnxml"
 
 
+def test_jsonl_pages_leave_out_excluded_titles(tmp_path):
+    body = "A passage long enough to be kept as a chunk of the index. " * 3
+    rows = [{"id": i, "title": t, "url": "u/" + t, "text": body} for i, t in enumerate(
+        ["Potassium", "March 3", "1920s", "List of lakes", "Eagle (disambiguation)", "2006 Winter Olympics", "Game design"])]
+    (tmp_path / "simplewiki-001.jsonl").write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    source = {"name": "simplewiki", "walker": "jsonl-pages", "exclude_titles": [
+        r"^(January|March)( \d{1,2})?$", r"^\d{1,4}s?$", r"^List of ", r"\(disambiguation\)$", r"^\d{4} .*\bOlympics\b"]}
+    titles = [d.title for d in walkers.walker_for(source)(tmp_path, "https://simple.wikipedia.org/wiki")]
+    assert titles == ["Potassium", "Game design"]
+
+
 def test_jsonl_pages_keep_their_own_url_and_skip_short_rows(tmp_path):
     rows = [{"id": 7, "title": "Level design", "url": "https://en.wikipedia.org/wiki/Level_design",
              "text": "# Level design\n\nLevel design is the creation of levels. " * 8},

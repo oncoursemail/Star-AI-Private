@@ -380,7 +380,10 @@ def cnxml_tree(root: Path, base: str, *, include: list[str] = (), exclude: list[
 
 # ---------------------------------------------------------------- fetched pages (JSONL)
 
-def jsonl_pages(root: Path, base: str, *, include: list[str] = (), exclude: list[str] = (), kind: str = "encyclopedia"):
+def jsonl_pages(root: Path, base: str, *, include: list[str] = (), exclude: list[str] = (), kind: str = "encyclopedia",
+                exclude_titles: list[str] = ()):
+    """`exclude_titles`: regular expressions; a page whose title matches one is left out (date, list pages...)."""
+    skip = re.compile("|".join(f"(?:{p})" for p in exclude_titles)) if exclude_titles else None
     for file in sorted(root.rglob("*.jsonl")):
         rel = file.relative_to(root).as_posix()
         if not _selected(rel, list(include), list(exclude)):
@@ -398,6 +401,8 @@ def jsonl_pages(root: Path, base: str, *, include: list[str] = (), exclude: list
                 text, title, url = page.get("text") or "", page.get("title") or "", page.get("url") or base
                 if not isinstance(text, str) or len(text.strip()) < 80 or not isinstance(title, str):
                     continue
+                if skip is not None and skip.search(title):
+                    continue
                 key = str(page.get("id") or number)
                 yield chunk_markdown(text, path=f"{rel}#{key}", url=url, kind=page.get("kind") or kind, fallback_title=title)
 
@@ -413,7 +418,7 @@ def walker_for(source: dict):
     if name not in WALKERS:
         raise KeyError(f"source {source.get('name')!r} has no walker (known: {', '.join(sorted(WALKERS))})")
     fn = WALKERS[name]
-    options = {key: source[key] for key in ("include", "exclude", "kind", "url_suffix") if key in source}
+    options = {key: source[key] for key in ("include", "exclude", "kind", "url_suffix", "exclude_titles") if key in source}
 
     def walk(root: Path, base: str):
         return fn(root, base, **options)
