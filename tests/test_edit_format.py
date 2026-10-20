@@ -66,6 +66,12 @@ def test_a_fenced_script_with_a_change_request_is_an_edit():
     assert request.prompt.startswith(PROMPT.rstrip()) and request.prompt.endswith(ef.INSTRUCTION)
 
 
+def test_a_bug_report_without_an_edit_verb_is_an_edit_too():
+    # EDIT-16's wording: no "fix" or "change", only what the code must do instead.
+    prompt = "take() returns the wrong count. It must stop at zero.\n\n" + FENCE + "lua\n" + SOURCE + FENCE
+    assert ef.find_edit(prompt) is not None
+
+
 @pytest.mark.parametrize("prompt", [
     "Explain what this module does.\n\n" + FENCE + "lua\n" + SOURCE + FENCE,              # no change asked
     "Fix this:\n\n" + FENCE + "lua\nlocal x = 1\nreturn x\n" + FENCE,                      # too short to gain
