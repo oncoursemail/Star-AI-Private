@@ -21,15 +21,32 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   discord-offline:
     name: Discord gateway / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    # The Windows leg needs the owner's PC runner (started on demand), so it runs only on a manual dispatch.
+    runs-on: ${{ matrix.os == 'windows' && fromJSON('["self-hosted","windows","star-win"]') || fromJSON('["self-hosted","linux","star-ci"]') }}
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["linux","windows"]' || '["linux"]') }}
     steps:
+      # Self-hosted Windows runner = the owner's PC: never let a job see the real user profile
+      # (%APPDATA%\STAR holds the owner's chats and settings).
+      - if: runner.os == 'Windows'
+        name: Use a throwaway user profile for this job
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'ci-profile'
+          New-Item -ItemType Directory -Force -Path "$root/Roaming", "$root/Local" | Out-Null
+          "APPDATA=$root\Roaming" >> $env:GITHUB_ENV
+          "LOCALAPPDATA=$root\Local" >> $env:GITHUB_ENV
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

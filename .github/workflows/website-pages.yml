@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -55,13 +56,13 @@ jobs:
           name: STAR-React-Visual-QA
           path: site-captures/*.png
           if-no-files-found: ignore
-          retention-days: 30
+          retention-days: 3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: STAR-React-Website-Preview
           path: frontend/dist/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: frontend/dist
@@ -70,7 +71,8 @@ jobs:
     # One-time owner action: Settings → Pages → Source: GitHub Actions.
     # Set repository variable STAR_DEPLOY_PAGES=false to pause deployment.
     if: ${{ vars.STAR_DEPLOY_PAGES != 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

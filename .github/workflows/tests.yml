@@ -16,7 +16,8 @@ jobs:
   # release checklists, agent notes...) still runs the tests.
   checks:
     name: Offline Python checks
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,7 +55,8 @@ jobs:
 
   react:
     name: React UI compile and tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 12
     permissions:
       contents: read
@@ -120,11 +122,12 @@ jobs:
           name: STAR-v08-React-Visual-QA
           path: react-qa/*.png
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3
 
   pyright:
     name: Python types (pyright basic, baseline gate)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 12
     permissions:
       contents: read

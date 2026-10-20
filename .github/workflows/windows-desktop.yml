@@ -15,19 +15,6 @@ on:
       - 'scripts/smoke_windows_installer.ps1'
       - '.github/workflows/windows-desktop.yml'
       - 'tests/**'
-  pull_request:
-    paths:
-      - 'star/**'
-      - 'frontend/**'
-      - 'star_desktop.py'
-      - 'assets/**'
-      - 'installer/**'
-      - 'requirements*.txt'
-      - 'scripts/build_windows.ps1'
-      - 'scripts/check_windows_preview_budget.py'
-      - 'scripts/smoke_windows_installer.ps1'
-      - '.github/workflows/windows-desktop.yml'
-      - 'tests/**'
   workflow_dispatch:
     inputs:
       preview_format:
@@ -51,7 +38,7 @@ concurrency:
 jobs:
   frontend:
     name: React desktop assets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -76,7 +63,7 @@ jobs:
   windows-tests:
     name: Windows offline tests (${{ matrix.shard }}/2)
     needs: frontend
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, star-win]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -85,6 +72,15 @@ jobs:
       matrix:
         shard: [1, 2]
     steps:
+      # Self-hosted Windows runner = the owner's PC: never let a job see the real user profile
+      # (%APPDATA%\STAR holds the owner's chats and settings).
+      - name: Use a throwaway user profile for this job
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'ci-profile'
+          New-Item -ItemType Directory -Force -Path "$root/Roaming", "$root/Local" | Out-Null
+          "APPDATA=$root\Roaming" >> $env:GITHUB_ENV
+          "LOCALAPPDATA=$root\Local" >> $env:GITHUB_ENV
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -150,16 +146,25 @@ jobs:
           name: windows-tests-shard-${{ matrix.shard }}
           path: test-results/windows-shard.xml
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3
 
   windows-build:
     needs: frontend
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, star-win]
     timeout-minutes: 65
     permissions:
       contents: read
       actions: read
     steps:
+      # Self-hosted Windows runner = the owner's PC: never let a job see the real user profile
+      # (%APPDATA%\STAR holds the owner's chats and settings).
+      - name: Use a throwaway user profile for this job
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'ci-profile'
+          New-Item -ItemType Directory -Force -Path "$root/Roaming", "$root/Local" | Out-Null
+          "APPDATA=$root\Roaming" >> $env:GITHUB_ENV
+          "LOCALAPPDATA=$root\Local" >> $env:GITHUB_ENV
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Stamp exact source provenance for app diagnostics
         shell: pwsh
@@ -269,6 +274,8 @@ jobs:
         shell: pwsh
         run: |
           $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          $userIscc = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc) -and (Test-Path $userIscc)) { $iscc = $userIscc }
           if (-not (Test-Path $iscc)) { choco install innosetup --yes --no-progress }
           if (-not (Test-Path $iscc)) { throw 'Inno Setup was not installed' }
           $version = (python -c "from star.version import __version__;print(__version__)").Trim()
@@ -276,7 +283,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'STAR installer build failed' }
           $setup = "dist/STAR-Setup-v$version.exe"
           if (-not (Test-Path $setup)) { throw "Missing $setup" }
+      # Setup writes a marker into the real %APPDATA%\STAR and registers STAR's uninstall entry, so it
+      # runs only on a disposable GitHub-hosted runner, never on the owner's PC.
       - name: Install and smoke test the exact Setup output on the disposable Windows runner
+        if: runner.environment == 'github-hosted'
         shell: pwsh
         env:
           STAR_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -349,14 +359,14 @@ jobs:
           name: STAR-OLED-GUI-Previews
           path: ui-previews/*.png
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
 
   # The PR build receives NO attestation or publishing permissions. Only
   # verified main-branch artifacts enter this trusted provenance job.
   attest-release:
     needs: [windows-build, windows-tests]
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -389,7 +399,8 @@ jobs:
   publish-release:
     needs: [windows-build, attest-release]
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    timeout-minutes: 15
     permissions:
       contents: write
       attestations: read
