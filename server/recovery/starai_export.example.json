@@ -85,6 +85,7 @@
     "knowledge-sources/osbooks-statistics",
     "knowledge-sources/wikipedia-topics",
     "knowledge-sources/osbooks-university-physics-bundle",
-    "knowledge-sources/godot-docs"
+    "knowledge-sources/godot-docs",
+    "knowledge-data/kb.sqlite3*"
   ]
 }
