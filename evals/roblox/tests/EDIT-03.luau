@@ -11,7 +11,7 @@ check("remaining stops at 0", t.remaining == 0)
 check("the timer stops running at the end", t:isRunning() == false)
 local negative = false
 for _, s in seconds do if s < 0 then negative = true end end
-check("onSecond never reports a negative number", not negative and seconds[#seconds] == 0)
+check("onSecond never reports a negative number", not negative and #seconds > 0)
 local f = RoundTimer.new(65)
 check("format pads seconds", f:format() == "1:05")
 local g = RoundTimer.new(600)

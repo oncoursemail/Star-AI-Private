@@ -124,6 +124,9 @@ def test_a_unified_diff_is_accepted_too():
     ("<<<<<<< SEARCH\n\treturn counts[player]\n=======\n\treturn 0\n>>>>>>> REPLACE\n", "did not apply"),  # 2 places
     ("<<<<<<< SEARCH\n=======\nlocal y = 2\n>>>>>>> REPLACE\n", "did not apply"),                             # empty
     ("I would clamp both values.", "no SEARCH/REPLACE blocks"),
+    # seen from star-fast: a second separator inside a block would put "=======" into the code
+    ("<<<<<<< SEARCH\n\tcounts[player] = now + amount\n=======\n\tcounts[player] = now\n=======\n\tcounts[player] = now\n"
+     ">>>>>>> REPLACE\n", "malformed"),
 ])
 def test_an_edit_that_cannot_be_placed_safely_falls_back(answer, reason):
     done = ef.finish(ef.find_edit(PROMPT), answer, lint=no_lint)

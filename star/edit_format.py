@@ -28,10 +28,12 @@ _CODE_START = re.compile(r"^[ \t]*(?:--|local\b|function\b|export\b|type\b|retur
                          r"def\b|class\b|import\b|from\b|const\b|let\b|var\b|#include\b|@)")
 _PROSE_LINE = re.compile(r"^[A-Z][^(){}=\[\]<>;]{40,}[.?!:]\s*$")
 _EDIT_WORDS = re.compile(r"(?i)\b(?:fix|fixes|change|modify|update|add|remove|delete|rename|refactor|replace|"
-                         r"make|edit|debug|optimi[sz]e|convert|clean|improve|adjust|tweak|patch|correct|move)\b")
+                         r"make|edit|debug|optimi[sz]e|convert|clean|improve|adjust|tweak|patch|correct|move|"
+                         r"must|should|instead|bug|wrong|broken|skip)\b")
 _LUAU_HINT = re.compile(r"(?m)^\s*(?:local\b|end\b|function\b|return\b)|\bthen\b|:Connect\(|game:GetService\(")
 _BLOCK = re.compile(r"^<{5,9}[ \t]*SEARCH[^\n]*\n(.*?)^={5,9}[ \t]*\n(.*?)^>{5,9}[ \t]*REPLACE[^\n]*$", re.M | re.S)
 _HUNK = re.compile(r"^@@[^\n]*@@[^\n]*$", re.M)
+_MARKER_LINE = re.compile(r"(?m)^(?:<{5,9}|={5,9}|>{5,9})[ \t]*(?:SEARCH|REPLACE)?[ \t]*$")
 _EMPTY_FENCE = re.compile(r"^[ \t]*" + FENCE + r"[\w+#.-]*[ \t]*\n(?:[ \t]*\n)*[ \t]*" + FENCE + r"[ \t]*$\n?", re.M)
 
 INSTRUCTION = (
@@ -43,9 +45,11 @@ INSTRUCTION = (
     "=======\n"
     "the new lines that replace them\n"
     ">>>>>>> REPLACE\n\n"
-    "Use one short block per place you change. To add code, SEARCH for the line just above where it goes and "
-    "repeat that line at the top of REPLACE. To delete code, leave REPLACE empty. STAR applies the blocks to the "
-    "code and shows the full result."
+    "Keep blocks short: SEARCH only the lines that change plus one unchanged line above or below when it is "
+    "needed to make the match unique; do not copy a whole function when only part of it changes. Use one block "
+    "per place you change. To add code, SEARCH for the line just above where it goes and repeat that line at the "
+    "top of REPLACE. To delete code, leave REPLACE empty. STAR applies the blocks to the code and shows the full "
+    "result."
 )
 
 
@@ -115,6 +119,8 @@ def apply_edits(source: str, edits: list[tuple[str, str]]) -> str:
 def finish(request: EditRequest, answer: str, *, check=None, lint=None) -> Outcome:
     """Apply the model's edit answer to the pasted code and check it; see the module text."""
     edits = parse_edits(answer)
+    if any(_MARKER_LINE.search(part) for pair in edits for part in pair):
+        return Outcome(False, "", "malformed SEARCH/REPLACE block")
     if not edits:
         if _has_full_code(answer, request.source):
             return Outcome(True, answer, "full")
