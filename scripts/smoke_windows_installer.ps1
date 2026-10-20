@@ -2,8 +2,10 @@
 # This supplements native human acceptance; it does not claim a real-user upgrade.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# MEASUREMENT BRANCH ONLY (winvm-20261020), never merge: also accept the throwaway server VM (marker file + user ci).
+$winvm = (Test-Path 'C:\ProgramData\STAR-CI\disposable-vm.txt') -and $env:USERNAME -eq 'ci'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or
-    $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or -not $env:RUNNER_TEMP) {
+    ($env:RUNNER_ENVIRONMENT -ne 'github-hosted' -and -not $winvm) -or -not $env:RUNNER_TEMP) {
   throw 'Installer smoke checks require a disposable GitHub-hosted Windows runner'
 }
 if ($env:STAR_EXPECTED_HEAD_SHA -notmatch '^[0-9a-f]{40}$') {

@@ -79,7 +79,7 @@ jobs:
     name: Windows offline tests (${{ matrix.shard }}/2)
     needs: frontend
     if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'windows-ci') && github.event.pull_request.head.repo.full_name == github.repository) }}
-    runs-on: [self-hosted, windows, star-win]
+    runs-on: [self-hosted, windows, star-win-vm]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -170,7 +170,7 @@ jobs:
   windows-build:
     needs: frontend
     if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'windows-ci') && github.event.pull_request.head.repo.full_name == github.repository) }}
-    runs-on: [self-hosted, windows, star-win]
+    runs-on: [self-hosted, windows, star-win-vm]
     timeout-minutes: 65
     permissions:
       contents: read
