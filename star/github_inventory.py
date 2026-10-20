@@ -349,6 +349,8 @@ async def cli_result(command: str, *, repository_id: int | None = None, path: st
     reader = from_env(credential_source=credential_source)
     if command == "github-inventory":
         return await reader.inventory()
+    if repository_id is None:
+        raise ValueError("A repository id is required for this command")
     if command == "github-resolve":
         return await reader.resolve(repository_id, revision=revision)
     if command == "github-read":

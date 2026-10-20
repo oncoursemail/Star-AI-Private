@@ -419,7 +419,8 @@ class MCPGateway:
             raise PermissionError("Enable this MCP connection in Star settings first")
         tools = await self._discover(name)
         if name == "github_repositories":
-            result = await self.factory(self.servers[name]).probe()
+            connector_probe = getattr(self.factory(self.servers[name]), "probe")   # only the GitHub connector has one
+            result = await connector_probe()
             if not result.get("complete"):
                 raise RuntimeError("GitHub inventory was incomplete; additional repositories may be visible")
             return {"name": name, "connected": True, "protocol": "internal-v1",

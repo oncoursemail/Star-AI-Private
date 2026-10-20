@@ -313,6 +313,9 @@ async def _drive(client: _Client, program: Path, root: Path, breakpoints: list[i
 
 class _WindowsJob:
     """An OS kill-on-close job, assigned before sending any launch request."""
+    kernel: Any
+    handle: Any
+
     def __init__(self, pid: int):
         import ctypes
         from ctypes import wintypes
