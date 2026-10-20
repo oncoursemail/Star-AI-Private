@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "created": "2026-10-20",
+  "kind": "reconstructed_subset_not_original_payload",
+  "base_commit": "80bf8540b75633c065437036baf75614afe68f74",
+  "checks": {
+    "python_fixture_tests": {
+      "passed": 30,
+      "failed": 0
+    },
+    "portable_luau_tests": {
+      "passed": 25,
+      "failed": 0,
+      "version": "0.743"
+    },
+    "luau_analyze_exit": 0,
+    "luau_compile_files": 3,
+    "luau_compile_exit": 0,
+    "python_compileall_exit": 0
+  },
+  "not_run": [
+    "full_star_regressions",
+    "installed_app_discovery",
+    "native_blender",
+    "roblox_studio",
+    "bone_binding",
+    "multiplayer",
+    "physical_mobile",
+    "smartbone2_comparison",
+    "visual_owner_review",
+    "promotion_gate"
+  ],
+  "files": {
+    "docs/research/SECONDARY_MOTION_RECOVERY_20261020.md": {
+      "sha256": "8af53ebea1917405c9a36ecdef1c03712f527c7c84ef767a0fba77df2dd92abd",
+      "bytes": 4130
+    },
+    "scripts/secondary_rig_audit.py": {
+      "sha256": "8a19920d7621f5dcc17f31c87b979f6012b99a8db2f6104381bc4fdb85ef2c91",
+      "bytes": 7450
+    },
+    "scripts/test_secondary_motion.luau": {
+      "sha256": "0388823adf015c250972e6289998a6d8e3f5426f1e97a5d9bf461b605b6d2a08",
+      "bytes": 6100
+    },
+    "star/skill_packs/roblox-secondary-motion-lab/SKILL.md": {
+      "sha256": "b323ff18bc7876c51ad5537119c95c2b1af91a3c29e9f4e65aa032b5ae896497",
+      "bytes": 4322
+    },
+    "star/skill_packs/roblox-secondary-motion-lab/assets/FixedStepper.luau": {
+      "sha256": "c0c5faccc3113b83b47de914e5a8dfbff7dd1c1b342ec1aecfa792236c82be8c",
+      "bytes": 1479
+    },
+    "star/skill_packs/roblox-secondary-motion-lab/assets/StarSpringXPBD.luau": {
+      "sha256": "498a0f27a6d7533e2b4a9eb04fe26c5bf88b1a6d8afb4d263912dbb52f57c73a",
+      "bytes": 7799
+    },
+    "star/skill_packs/roblox-secondary-motion-lab/references/benchmark-plan.md": {
+      "sha256": "7f2f0ef49fc968b3fb271d1abf9b63b9a9e51e2320a12eff13f512b9194e7c2a",
+      "bytes": 3076
+    },
+    "star/skill_packs/roblox-secondary-motion-lab/references/sources.md": {
+      "sha256": "c4328378d7b8204c152601f42f94b3fb7333011a5a1c3f5faac4dd5a629d4458",
+      "bytes": 2345
+    },
+    "tests/test_secondary_rig_audit.py": {
+      "sha256": "38febfea0461b28432c7d91aefdebd67169f3824db652a282ac4d64e6cbbda9f",
+      "bytes": 4066
+    }
+  }
+}
