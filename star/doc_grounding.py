@@ -68,6 +68,20 @@ _REPAIR_SYSTEM = (
     "come from the official Luau compiler and type checker."
 )
 
+# slop_check = repair (flag + one repair pass): an answer whose slop report names possibly unknown Roblox members,
+# a hard finding (stub, invented class, claim of testing, empty test) or a slop score gets ONE model call that lists
+# the exact findings (rule, line, message) and the real member list of each class concerned. The revision is kept
+# only when its own report is strictly better and it lost no code block; otherwise the first answer stays.
+SLOP_REPAIR_MAX_FINDINGS = 10
+SLOP_REPAIR_MAX_TOKENS = 6000
+_SLOP_REPAIR_SYSTEM = (
+    "You revise an answer about Roblox and Luau. Fix exactly the listed problems and nothing else: keep the "
+    "structure, the explanation and the behaviour of the code. A member that is not in its class's member list does "
+    "not exist: use a real member from the list or a real API that does the job, or remove that use. Never claim the "
+    "code was tested or run. Replace stubs and TODO comments with real code. Reply with the whole revised answer only."
+)
+_MEMBER_OF = re.compile(r"possible unknown member (\S+) of (\w+)$")
+
 
 @dataclass
 class Grounding:
@@ -377,6 +391,68 @@ async def review_luau(answer: str, check, *, repair=None, retry=None, on_event=N
     return answer.rstrip() + "\n\n" + CHECK_MARKER + " " + " ".join(notes) + joiner + scope + "\n", records
 
 
+def _slop_badness(report) -> tuple[int, int]:
+    """(findings that warrant a repair, score): lower is better."""
+    return (sum(1 for f in report.findings if f.hard or f.rule.startswith("C08.")), report.score)
+
+
+def needs_slop_repair(report) -> bool:
+    return _slop_badness(report)[0] > 0 or report.slop
+
+
+def slop_repair_request(answer: str, report, dump=None) -> str:
+    """The user message of the repair call: the answer, then each finding by line, then the real member lists."""
+    from . import api_hints
+    lines, classes = [], []
+    for f in report.findings[:SLOP_REPAIR_MAX_FINDINGS]:
+        lines.append(f"- {'line ' + str(f.line) if f.line else 'whole answer'}: {f.message} ({f.rule})")
+        found = _MEMBER_OF.search(f.message)
+        if found and found.group(2) not in classes:
+            classes.append(found.group(2))
+    members = []
+    if dump is not None:
+        for name in classes[:api_hints.MAX_CLASSES]:
+            names = api_hints.members_of(name, dump)
+            if names:
+                members.append(f"{name}: " + ", ".join(names))
+    text = ("Answer (line numbers count from its first line):\n" + answer.rstrip()
+            + "\n\nProblems found by STAR's checker:\n" + "\n".join(lines))
+    if members:
+        text += "\n\nReal members (local Roblox API dump):\n" + "\n".join(members)
+    return text
+
+
+async def repair_slop(answer: str, report, *, model_client, model: str, timeout: float | None, dump=None,
+                      prompt: str = "") -> tuple[str, dict]:
+    """One repair call for a slop answer. Returns (answer to keep, record). A failed call keeps the answer."""
+    from . import slop
+    from .eval_checks import looks_truncated
+    record = {"attempted": True, "accepted": False, "before": report.summary()}
+    tokens = min(SLOP_REPAIR_MAX_TOKENS, max(1600, len(answer) // 3 + 400))
+    try:
+        response = await asyncio.wait_for(model_client.chat.completions.create(
+            model=model, temperature=0, max_tokens=tokens,
+            messages=[{"role": "system", "content": _SLOP_REPAIR_SYSTEM},
+                      {"role": "user", "content": f"The request was:\n{prompt[:1200]}\n\n"
+                                                  + slop_repair_request(answer, report, dump)}]), timeout=timeout)
+        revised = _THINK.sub("", response.choices[0].message.content or "").strip()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        record["error"] = type(exc).__name__
+        return answer, record
+    if not revised or looks_truncated(revised) or len(luau_blocks(revised)) < len(luau_blocks(answer)):
+        record["rejected"] = "empty, cut off or lost a code block"
+        return answer, record
+    after = slop.score_answer(revised, prompt=prompt, api_dump=dump)
+    record["after"] = after.summary()
+    if _slop_badness(after) >= _slop_badness(report):
+        record["rejected"] = "not better"
+        return answer, record
+    record["accepted"] = True
+    return revised + "\n", record
+
+
 async def finalize(grounding: Grounding, route, result, *, model_client=None, prompt: str = "",
                    started: float | None = None, on_event=None, settings=None, retry_ladder: bool = False,
                    thinking: bool = False):
@@ -393,6 +469,20 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
 
         def left() -> float:
             return budget - (monotonic() - started) if timed else 0.0
+
+        slop_mode = getattr(settings, "slop_check", "off")
+        slop_record: dict = {}
+        if (slop_mode == "repair" and model_client is not None and not getattr(route, "quick", True)
+                and (not timed or left() >= max(90, 0.35 * budget))):
+            from . import slop
+            dump = slop.bundled_api_dump()
+            first = slop.score_answer(answer, prompt=prompt, api_dump=dump)
+            if needs_slop_repair(first):
+                _emit(on_event, {"event": "slop_repair_started", "findings": len(first.findings)})
+                answer, slop_record = await repair_slop(
+                    answer, first, model_client=model_client, model=route.model, dump=dump, prompt=prompt,
+                    timeout=max(0.05, left() - REPAIR_RESERVE_SECONDS) if timed else None)
+                _emit(on_event, {"event": "slop_repair", "accepted": slop_record["accepted"]})
 
         if (grounding.plan.check_luau and knowledge is not None and luau_blocks(answer)
                 and (not timed or left() > REVIEW_RESERVE_SECONDS)):
@@ -439,8 +529,7 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
                     started=started, on_event=on_event)
             if runs:
                 archive = [*archive, {"star_luau_run": {"blocks": runs}}]
-        slop_mode = getattr(settings, "slop_check", "off")
-        if slop_mode in ("flag", "trim"):
+        if slop_mode in ("flag", "trim", "repair"):
             # Opt-in anti-slop post-check (star/slop.py): deterministic, no model call. `trim` removes whole filler
             # lines outside code; both modes add a plain note only when a reader must know (invented API names,
             # claims of testing, stubs, tests that assert nothing). The note is prose, not a STAR marker.
@@ -451,8 +540,9 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
                 answer, removed = slop.trim_filler(answer)
             note = slop.answer_note(report)
             if note:
-                answer = answer.rstrip() + "\n\nSlop check by STAR: " + note + "\n"
-            archive = [*archive, {"star_slop": {**report.record(), "trimmed_lines": len(removed)}}]
+                answer = answer.rstrip() + slop.NOTE_MARKER + " " + note + "\n"
+            archive = [*archive, {"star_slop": {**report.record(), "trimmed_lines": len(removed),
+                                                **({"repair": slop_record} if slop_record else {})}}]
         answer = answer.rstrip() + sources_footer(grounding.passages, answer) if grounding.passages else answer
         if grounding.status != "off" or grounding.checks:
             archive = [*archive, {"star_knowledge": grounding.record()}]

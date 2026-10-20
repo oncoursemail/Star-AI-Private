@@ -155,7 +155,8 @@ class Settings:
     project_rules_enabled: bool = False    # opt-in: add the workspace's AGENTS.md (star/project_rules.py) to each turn
     luau_retry_ladder: bool = False        # opt-in: a second, thinking repair after a failed Luau repair
     # Anti-slop post-check of the answer (star/slop.py): 'off', 'flag' (a note on invented APIs, unverifiable claims
-    # and stubs) or 'trim' (the note, and filler lines outside code are removed). Off until the owner opts in.
+    # and stubs), 'trim' (the note, and filler lines outside code are removed) or 'repair' (the note, after one model
+    # call that fixes the exact findings; star/doc_grounding.repair_slop). Off until the owner opts in.
     slop_check: str = 'off'
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
     # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
@@ -218,8 +219,8 @@ class Settings:
             raise ValueError('Choose an existing workspace directory')
         if self.best_of_n not in ('off', 'auto') or type(self.best_of_n_max) is not int                 or not 2 <= self.best_of_n_max <= 8:
             raise ValueError('Best-of-N must be off or auto, with 2 to 8 candidates')
-        if self.slop_check not in ('off', 'flag', 'trim'):
-            raise ValueError('Slop check must be off, flag or trim')
+        if self.slop_check not in ('off', 'flag', 'trim', 'repair'):
+            raise ValueError('Slop check must be off, flag, trim or repair')
         if type(self.specialist_parallelism) is not int or self.specialist_parallelism not in (1,2):
             raise ValueError('Limit specialists to 1 or 2 concurrent model calls')
         if (type(self.team_timeout_min) is not int or type(self.team_timeout_max) is not int
