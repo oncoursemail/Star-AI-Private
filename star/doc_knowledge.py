@@ -38,10 +38,7 @@ LOOKUP_TIMEOUT = 5.0
 CHECK_TIMEOUT = 25.0
 CONNECT_TIMEOUT = 2.0
 # Hosts a documentation link may point at. Anything else is dropped, not shown.
-_SOURCE_HOSTS = frozenset({"create.roblox.com", "luau.org", "github.com",
-                           # knowledge school (2026-10-18): open-licensed sources beyond Roblox
-                           "docs.godotengine.org", "docs.blender.org", "en.wikipedia.org", "simple.wikipedia.org",
-                           "openstax.org", "www.computer-networking.info"})
+_SOURCE_HOSTS = frozenset({"create.roblox.com", "luau.org", "github.com"})
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f​-‏‪-‮⁦-⁩]")
 # A documentation link is written by STAR into the prompt and into the Markdown sources list, so
 # it may only contain characters that cannot end a line, a Markdown link or the data region.
@@ -185,8 +182,8 @@ class KnowledgeClient:
     def search(self, query: str, *, top: int = 4, mode: str = "vector", scope: str | None = None) -> list[dict]:
         """Passages most relevant to `query`, best first. Each is plain, bounded data.
 
-        `scope` (knowledge school): "all" searches every indexed source, "roblox" only the Roblox and Luau
-        documentation; None lets the service decide from the query (Roblox words -> Roblox documentation)."""
+        `scope`: "roblox" searches only the Roblox and Luau documentation, "all" or a group name other indexed
+        sources; None leaves the field out (an older service ignores it; a newer one decides from the query)."""
         if not isinstance(query, str) or not query.strip():
             raise ValueError("Search query is empty")
         if type(top) is not int or not 1 <= top <= 10 or mode not in ("vector", "bm25", "hybrid"):

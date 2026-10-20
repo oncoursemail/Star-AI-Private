@@ -7,7 +7,6 @@ A single-model llama-server remains fully supported when aliases are left blank.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 import re
 
 from .providers import provider_kind
@@ -120,7 +119,6 @@ class GroundingPlan:
     check_luau: bool = False          # statically check fenced Luau in the answer
     symbols: tuple[str, ...] = ()     # exact engine names found in the prompt
     reasons: tuple[str, ...] = ()
-    scope: str = "roblox"             # which part of the index: "roblox" (the documentation) or "all" (knowledge school)
 
 
 NO_GROUNDING = GroundingPlan()
@@ -139,32 +137,8 @@ def is_roblox_dev_prompt(prompt: str) -> bool:
     return len(shared) + studio + api_name >= 2
 
 
-# Knowledge school (2026-10-18): the index also holds open-licensed sources beyond Roblox (engine manuals, textbooks,
-# encyclopaedia pages). Retrieving them for every ordinary question costs prompt time, so it is OPT-IN:
-# STAR_GENERAL_GROUNDING=1 (or the `general_grounding` flag of the caller). A knowledge question is one that asks
-# something (a question mark or a question word) and has a few words of substance; code requests are left alone.
-_KNOWLEDGE_QUESTION = re.compile(
-    r"\?|^\s*(?:what|which|who|when|where|why|how|explain|describe|define|compare|list|name|calculate|compute|"
-    r"estimate|convert|solve|derive|outline|plan|design|diagnose|summari[sz]e)\b", re.IGNORECASE)
-_CODE_REQUEST = re.compile(r"```|\b(?:fix|refactor|debug|compile|implement|write (?:a|the|some) (?:code|script|function))\b",
-                           re.IGNORECASE)
-GENERAL_BUDGET = {"fast": (1, 1200), "auto": (2, 2400), "agent": (3, 3600)}
-
-
-def general_grounding_enabled(flag: bool | None = None) -> bool:
-    if flag is not None:
-        return bool(flag)
-    return os.environ.get("STAR_GENERAL_GROUNDING", "").strip().lower() in ("1", "true", "on", "yes")
-
-
-def is_knowledge_question(prompt: str) -> bool:
-    text = prompt.strip()
-    return (len(text.split()) >= 4 and bool(_KNOWLEDGE_QUESTION.search(text)) and not _CODE_REQUEST.search(text)
-            and not _TRIVIAL.match(text))
-
-
 def grounding_plan(prompt: str, *, mode: str = "auto", image_count: int = 0, research: bool = False,
-                   roblox_context: bool = False, general_grounding: bool | None = None) -> GroundingPlan:
+                   roblox_context: bool = False) -> GroundingPlan:
     """Deterministic: should this prompt be answered from the official documentation?
 
     First match wins. No model call, no network, no clock.
@@ -175,10 +149,6 @@ def grounding_plan(prompt: str, *, mode: str = "auto", image_count: int = 0, res
     if _TRIVIAL.match(text):
         return GroundingPlan(reasons=("greeting or acknowledgement",))
     if not (is_roblox_dev_prompt(text) or roblox_context):
-        if general_grounding_enabled(general_grounding) and is_knowledge_question(text):
-            passages, max_chars = GENERAL_BUDGET[mode]
-            return GroundingPlan(retrieve="docs", passages=passages, max_chars=max_chars, check_luau=False,
-                                 scope="all", reasons=("general knowledge question (opt-in grounding)", f"{mode} mode budget"))
         return GroundingPlan(reasons=("not a Roblox or Luau development question",))
     if _GAME_STATS.search(text) and not _WANTS_CODE.search(text):
         return GroundingPlan(reasons=("public game statistics, not documentation",))

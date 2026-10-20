@@ -41,6 +41,7 @@ import time
 from typing import Any
 
 from . import eval_checks as checks
+from .knowledge_checks import validate_key
 
 SCHEMA = 1
 ROOT = Path(__file__).resolve().parents[1]
@@ -130,6 +131,8 @@ def validate_tasks(tasks: list[dict], directory: Path) -> list[str]:
                         re.compile(pattern)
                 except (re.error, KeyError):
                     problems.append(f"{tid}: bad {key} pattern {item.get('id')}")
+        if "answer" in auto:
+            problems.extend(f"{tid}: bad answer key: {p}" for p in validate_key(auto["answer"]))
     return problems
 
 

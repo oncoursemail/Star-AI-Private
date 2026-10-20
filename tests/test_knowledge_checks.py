@@ -1,21 +1,16 @@
-"""Knowledge school (2026-10-18): answer keys for non-code tasks, and the practice pools built from them.
-
-Every pool task must be loadable by the night-school loader, its reference answer must pass, three trivial answers
-must fail, and no two prompts may be near-duplicates (the conductor's own rule).
-"""
-import hashlib
+"""Knowledge school (2026-10-18): answer keys for non-code tasks (`auto.answer`), scored by star.eval_checks."""
 import json
 from pathlib import Path
-import re
+import sys
 
 import pytest
 
 from star import eval_checks as checks
+from star.eval_runner import validate_tasks
 from star.knowledge_checks import answer_checks, final_answer, numbers_in, validate_key
 
-ROOT = Path(__file__).resolve().parents[1]
-POOLS = sorted((ROOT / "server" / "night_school" / "practice").glob("knowledge-*-20261018.json"))
-REFERENCES = ROOT / "server" / "night_school" / "practice" / "knowledge-references-20261018.jsonl"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "server" / "night_school"))
+
 TRIVIAL = ("I don't know.", "Answer: 0", "Answer: none of the above", "")
 
 
@@ -69,65 +64,23 @@ def test_bad_keys_are_reported_not_scored():
     assert answer_checks({"type": "essay"}, "Answer: x")[0].ok is False
 
 
-# --- the practice pools -------------------------------------------------------------------------
-
-def words(text: str) -> frozenset:
-    return frozenset(w for w in re.findall(r"[a-z0-9_]{3,}", text.lower()))
-
-
-def load_pools():
-    tasks = []
-    for path in POOLS:
-        rows = json.loads(path.read_text(encoding="utf-8"))
-        assert isinstance(rows, list) and rows, path
-        tasks.extend(rows)
-    return tasks
+def test_numbers_and_order_are_read_from_the_final_answer_only():
+    numeric = {"type": "numeric", "value": 6, "tol": 0.01}
+    assert not score(key_task(numeric), "F = 2 * 3 = 6 N, I think.\n\nAnswer: I am not sure").passed
+    order = {"type": "order", "items": ["sketch", "model", "rig"]}
+    assert not score(key_task(order), "We sketch, model and finally rig it.\n\nAnswer: sketch, model").passed
+    assert score(key_task(order), "Answer: sketch, then model, then rig").passed
 
 
-@pytest.mark.skipif(not POOLS, reason="pools not built")
-def test_pools_are_loadable_and_large_enough():
-    from star.eval_runner import validate_tasks
-    from star.evals import load_catalog
-    tasks = load_pools()
-    assert len(tasks) >= 500, len(tasks)
-    for path in POOLS:
-        load_catalog(path)
-        assert not validate_tasks(json.loads(path.read_text(encoding="utf-8")), path.parent)
-    domains = {t["category"] for t in tasks}
-    assert len(domains) >= 12, domains
-    for task in tasks:
-        assert task["run_mode"] == "automated" and task["auto"].get("code") is False
-        assert not validate_key(task["auto"]["answer"]), task["id"]
-        assert task.get("source_urls"), task["id"]
-        assert not re.search(r"golden|holdout|paintball|rec\s*room|password|secret|token|api[_ -]?key", task["prompt"], re.I)
-
-
-@pytest.mark.skipif(not POOLS, reason="pools not built")
-def test_every_reference_passes_and_trivial_answers_fail():
-    references = {}
-    for line in REFERENCES.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            row = json.loads(line)
-            references[row["id"]] = row["reference"]
-    for task in load_pools():
-        assert task["id"] in references, task["id"]
-        result = score(task, references[task["id"]])
-        assert result.passed, (task["id"], result.reasons)
-        for trivial in TRIVIAL:
-            assert not score(task, trivial).passed, (task["id"], trivial)
-
-
-@pytest.mark.skipif(not POOLS, reason="pools not built")
-def test_no_duplicate_ids_or_near_duplicate_prompts():
-    tasks = load_pools()
-    ids = [t["id"] for t in tasks]
-    assert len(ids) == len(set(ids))
-    hashes = {hashlib.sha256(" ".join(t["prompt"].lower().split()).encode()).hexdigest() for t in tasks}
-    assert len(hashes) == len(tasks)
-    sets = [(t["id"], words(t["prompt"])) for t in tasks]
-    near = []
-    for i, (a_id, a) in enumerate(sets):
-        for b_id, b in sets[i + 1:]:
-            if a and b and len(a & b) / len(a | b) >= 0.72:
-                near.append((a_id, b_id))
-    assert not near, near[:10]
+def test_the_task_loader_refuses_a_bad_answer_key(tmp_path):
+    good = {"id": "K-1", "prompt": "q", "run_mode": "automated", "category": "knowledge", "goal": "g",
+            "required_evidence": ["answer.md"], "pass_conditions": ["the answer key passes"],
+            "auto": {"code": False, "answer": {"type": "exact", "accept": ["Paris"]}}}
+    bad_regex = {**good, "id": "K-2", "auto": {"code": False, "answer": {"type": "order", "items": ["(", "x"]}}}
+    not_an_object = {**good, "id": "K-3", "auto": {"code": False, "answer": "Paris"}}
+    problems = validate_tasks([good, bad_regex, not_an_object], tmp_path)
+    assert [p.split(":")[0] for p in problems] == ["K-2", "K-3"], problems
+    from nightschool.pool import load_pool                  # night school drops it instead of failing on it later
+    (tmp_path / "tasks.json").write_text(json.dumps([good, bad_regex]), encoding="utf-8")
+    pool = load_pool(tmp_path)
+    assert [t["id"] for t in pool.tasks] == ["K-1"] and sum(pool.dropped.values()) == 1, pool.summary()

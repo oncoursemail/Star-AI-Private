@@ -107,6 +107,22 @@ def test_search_sends_the_key_to_the_validated_address_and_reshapes_passages():
     assert set(passages[1]) == set(passages[0])                            # only the known fields survive
 
 
+def test_search_sends_a_scope_only_when_given_and_refuses_a_malformed_one():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"passages": [PASSAGE]})
+
+    client = client_with(handler)
+    client.search("tween a part", scope="roblox")
+    assert bodies == [{"query": "tween a part", "mode": "vector", "top": 4, "scope": "roblox"}]
+    for bad in ("Roblox", "all docs", "x" * 40, 5, ""):
+        with pytest.raises(ValueError):
+            client.search("tween a part", scope=bad)
+    assert len(bodies) == 1                                                # nothing malformed reached the service
+
+
 def test_only_documentation_hosts_are_linkable():
     assert safe_source_url("https://create.roblox.com/docs/x#y") and safe_source_url("https://luau.org/typecheck")
     for bad in ("http://create.roblox.com/docs", "https://create.roblox.com.evil.io/x", "https://u:p@luau.org/",
@@ -240,7 +256,7 @@ class FakeDocs:
     def __init__(self, fail=False):
         self.calls, self.fail = [], fail
 
-    def search(self, query, *, top=4, mode="vector"):
+    def search(self, query, *, top=4, mode="vector", scope=None):
         self.calls.append(("search", query, top))
         if self.fail:
             raise KnowledgeUnavailable("STAR Knowledge is unreachable (ConnectTimeout)")

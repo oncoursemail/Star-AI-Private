@@ -1,6 +1,6 @@
 """CLI: python -m starkb {build|stats|subset|embed|search|ask|api-lookup|luau-check|serve|eval|
                          study-plan|study|study-status|refresh|api-coverage|
-                         offload-export|offload-import|offload-sample}
+                         offload-export|offload-import|offload-sample|watchdog}
 
 Paths default to the deployed layout in the container:
   /opt/star/knowledge/app      this code
@@ -66,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("api-lookup", help="exact engine API symbol check, e.g. TweenService:Create")
     p.add_argument("symbols", nargs="+")
 
+    sub.add_parser("watchdog", help="one health check of the running service; restarts it after 2 failures (timer)")
     p = sub.add_parser("serve", help="run the HTTP service (127.0.0.1:8091 by default; the unit binds 0.0.0.0)")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8091)
@@ -193,6 +194,10 @@ def main(argv: list[str] | None = None) -> int:
         from .luaucheck import check
         print(json.dumps(check(args.file.read_text(encoding="utf-8"), mode=args.mode), indent=2))
         return 0
+
+    if args.cmd == "watchdog":
+        from .watchdog import main as watchdog_main
+        return watchdog_main()
 
     if args.cmd == "serve":
         from .serve import serve

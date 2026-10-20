@@ -76,9 +76,10 @@ def merge_facets(whole: list[tuple[int, float]], parts: list[list[tuple[int, flo
 
 
 # Source scope. The index may hold more than the Roblox documentation (Godot and Blender manuals, textbooks,
-# encyclopaedia pages; see corpora.json `group`). A Roblox or Luau question is answered from the "roblox" group
-# only, so the mixed index cannot push a Roblox page down (eval30 stays what it was); anything else searches all
-# groups. A client may pass `scope` ("roblox", "all" or a group name) explicitly; None means this detection.
+# encyclopaedia pages; see corpora.json `group`). A client may pass `scope` ("roblox", "all" or a group name); None
+# means auto_scope: a query with Roblox/Luau words is answered from the "roblox" group only, one that names another
+# engine or a general source searches everything, and any other query is "auto": Roblox first, and the other
+# corpora only when one of them is clearly better (ROBLOX_MARGIN), so general text cannot push a Roblox page down.
 ROBLOX_QUERY = re.compile(
     r"\b(?:roblox|luau|studio|workspace|LocalScript|ModuleScript|ServerScriptService|ServerStorage|ReplicatedStorage|"
     r"StarterGui|StarterPlayer\w*|PlayerGui|ScreenGui|Instance\.new|game:GetService|Humanoid|RemoteEvent|RemoteFunction|"
@@ -87,10 +88,19 @@ OTHER_ENGINE_QUERY = re.compile(r"\b(?:godot|gdscript|blender|unity|unreal|opens
 DEFAULT_GROUP = "roblox"
 
 
+# "auto": the other corpora win only when their best cosine beats the best Roblox cosine by this much (BM25 mode:
+# their best score is ROBLOX_BM25_RATIO times the best Roblox score). Set on 2026-10-20 from the cosine gaps of the
+# four eval sets (knowledge-fix-20261020.md): Roblox questions without a Roblox word trail by at most 0.03, general
+# questions without a domain word lead by 0.15 or more.
+ROBLOX_MARGIN = 0.08
+ROBLOX_BM25_RATIO = 1.3
+
+
 def auto_scope(query: str) -> str:
-    if ROBLOX_QUERY.search(query) and not OTHER_ENGINE_QUERY.search(query):
-        return "roblox"
-    return "all"
+    """"roblox", "all" or "auto" (decided after the search, see ROBLOX_MARGIN)."""
+    if OTHER_ENGINE_QUERY.search(query):
+        return "all"
+    return "roblox" if ROBLOX_QUERY.search(query) else "auto"
 
 
 # Off unless STAR_KB_QUESTIONS=1 (set in the unit file once the measured effect justified it); `questions=` overrides per call.
@@ -273,14 +283,17 @@ class Searcher:
         # an index built before groups existed: every source counts as the Roblox documentation
         self.groups: dict[str, str] = {name: groups.get(name, DEFAULT_GROUP) for name in self.sources}
 
-    def scope_sources(self, scope: str | None, query: str = "") -> frozenset | None:
-        """The source names a search is limited to, or None for the whole index."""
+    def scope_plan(self, scope: str | None, query: str = "") -> tuple[frozenset | None, frozenset | None]:
+        """(sources, prefer): `sources` limits the search (None: the whole index); `prefer` is the Roblox group
+        when the scope is "auto" (search everything, then keep only Roblox unless another corpus is clearly better)."""
         if scope is None:
             scope = auto_scope(query)
         if scope == "all" or len(set(self.groups.values())) <= 1:
-            return None
+            return None, None
+        if scope == "auto":
+            return None, frozenset(name for name, group in self.groups.items() if group == DEFAULT_GROUP) or None
         chosen = frozenset(name for name, group in self.groups.items() if group == scope or name == scope)
-        return chosen or None
+        return chosen or None, None
 
     # -- candidate generators -------------------------------------------------------------
     def _load_vectors(self) -> None:
@@ -319,21 +332,19 @@ class Searcher:
             self._load_vectors()
         scoped = self._scope is not None
         fetch = k if not scoped else -1
-        if sources is not None and not scoped:
-            fetch = k * 6          # a mixed index: over-fetch, then keep the rows of the wanted sources
         if not questions:   # the questions column must neither match nor score
             match = f"{BASE_COLUMNS} : ({match})"
         weights = (*BM25_WEIGHTS, BM25_QUESTION_WEIGHT if questions else 0.0)
-        sql = ("SELECT rowid, bm25(chunks_fts, ?, ?, ?, ?, ?) AS s FROM chunks_fts WHERE chunks_fts MATCH ? "
-               "ORDER BY s LIMIT ?")
-        rows = self.db.execute(sql, (*weights, match, fetch)).fetchall()
+        where, extra = "", ()
+        if sources is not None:    # exact: rank only the rows of the wanted sources
+            # "+rowid": an expression, so FTS5 does not get it as a rowid constraint (it would run the MATCH once per id)
+            where = (" AND +rowid IN (SELECT c.id FROM chunks c JOIN docs d ON d.id=c.doc_id WHERE d.source IN ("
+                     + ",".join("?" * len(sources)) + "))")
+            extra = tuple(sorted(sources))
+        sql = ("SELECT rowid, bm25(chunks_fts, ?, ?, ?, ?, ?) AS s FROM chunks_fts WHERE chunks_fts MATCH ?"
+               + where + " ORDER BY s LIMIT ?")
+        rows = self.db.execute(sql, (*weights, match, *extra, fetch)).fetchall()
         out = [(int(r[0]), -float(r[1])) for r in rows if not scoped or int(r[0]) in self._scope]
-        if sources is not None and out:
-            marks = ",".join("?" * len(out))
-            keep = {int(r[0]) for r in self.db.execute(
-                f"SELECT c.id FROM chunks c JOIN docs d ON d.id=c.doc_id WHERE c.id IN ({marks}) AND d.source IN ("
-                + ",".join("?" * len(sources)) + ")", [cid for cid, _ in out] + sorted(sources))}
-            out = [item for item in out if item[0] in keep]
         return out[:k]
 
     def vector(self, query: str, k: int = 50, qvec: np.ndarray | None = None,
@@ -343,10 +354,16 @@ class Searcher:
             return []
         if qvec is None:
             qvec = np.asarray(self.brain.embed_query(query), dtype=np.float32)
+        return self._top(self._scores(qvec, questions), k, sources)
+
+    def _scores(self, qvec: np.ndarray, questions: bool) -> np.ndarray:
         scores = self._matrix @ qvec
         if questions and len(self._vectors.q_rows):
             # a chunk is as good as its best generated question (scaled), if that beats its own text
             np.maximum.at(scores, self._vectors.q_rows, (self._vectors.q_matrix @ qvec) * self.question_scale)
+        return scores
+
+    def _top(self, scores: np.ndarray, k: int, sources: frozenset | None) -> list[tuple[int, float]]:
         mask = self._scope_mask
         if sources is not None:
             source_mask = self._vectors.mask_for(self.db, sources)
@@ -407,7 +424,7 @@ class Searcher:
             raise ValueError("mode must be one of " + ", ".join(MODES))
         if questions is None:
             questions = USE_QUESTIONS
-        sources = self.scope_sources(scope, query)
+        sources, prefer = self.scope_plan(scope, query)
         parts = split_facets(query) if (USE_FACETS if facets is None else facets) else []
         timing: dict[str, float] = {}
         if parts:
@@ -416,6 +433,9 @@ class Searcher:
         ranked: list[tuple[int, float]]
         lexical: list[tuple[int, float]] = []
         dense: list[tuple[int, float]] = []
+        lexical_pref: list[tuple[int, float]] = []     # scope "auto": the same lists limited to `prefer`
+        dense_pref: list[tuple[int, float]] = []
+        gate: tuple[list, list, bool] | None = None    # scope "auto": (Roblox list, whole-index list, cosine scores?)
         partial = False
         if mode != "bm25":
             self._load_vectors()
@@ -431,34 +451,61 @@ class Searcher:
             else:
                 timing["embed_query_ms"] = (time.perf_counter() - t) * 1000
                 t = time.perf_counter()
-                dense = self.vector(query, candidates, qvec=qvec, questions=questions, sources=sources)
-                if parts:
-                    dense = merge_facets(dense, [self.vector(p, candidates, qvec=v, questions=questions, sources=sources)
-                                                 for p, v in zip(parts, part_vectors)], facet_merge)
+                if len(self._ids):
+                    scores = self._scores(qvec, questions)
+                    dense = self._top(scores, candidates, sources)
+                    if prefer is not None:
+                        dense_pref = self._top(scores, candidates, prefer)
+                        gate = (dense_pref, dense, True)
+                    if parts:
+                        part_scores = [self._scores(v, questions) for v in part_vectors]
+                        dense = merge_facets(dense, [self._top(ps, candidates, sources) for ps in part_scores],
+                                             facet_merge)
+                        if prefer is not None:
+                            dense_pref = merge_facets(dense_pref, [self._top(ps, candidates, prefer) for ps in part_scores],
+                                                      facet_merge)
                 timing["vector_ms"] = (time.perf_counter() - t) * 1000
         if mode != "vector" or partial:
             t = time.perf_counter()
             lexical = self.bm25(query, candidates, questions=questions, sources=sources)
+            if prefer is not None and mode != "vector":
+                lexical_pref = self.bm25(query, candidates, questions=questions, sources=prefer)
+            if gate is None and prefer is not None:
+                gate = (lexical_pref, lexical, False)
             if parts and mode != "vector":
                 lexical = merge_facets(lexical, [self.bm25(p, candidates, questions=questions, sources=sources)
                                                  for p in parts], "rrf")
+                if prefer is not None:
+                    lexical_pref = merge_facets(lexical_pref, [self.bm25(p, candidates, questions=questions,
+                                                                         sources=prefer) for p in parts], "rrf")
             timing["bm25_ms"] = (time.perf_counter() - t) * 1000
+        scored: list[tuple[int, float]] = []
+        if mode == "vector" and partial:
+            extra = [cid for cid, _ in lexical[:FALLBACK_DEPTH] if cid not in self._allowed][:FALLBACK_EMBED]
+            if extra:
+                t = time.perf_counter()
+                try:
+                    scored = self._score_unembedded(extra, qvec)
+                except Exception:   # the fallback must never cost the embedding results
+                    scored = []
+                    timing["fallback_failed"] = 1.0
+                timing["fallback_embed_ms"] = (time.perf_counter() - t) * 1000
+                timing["fallback_unembedded"] = float(len(scored))
+                dense = sorted(dense + scored, key=lambda item: -item[1])
+        if gate is not None:
+            if self._roblox_first(gate[0], gate[1], extra=scored if gate[2] else [], cosine=gate[2]):
+                sources = prefer
+                keep = ({int(r[0]) for r in self.db.execute(
+                    f"SELECT c.id FROM chunks c JOIN docs d ON d.id=c.doc_id WHERE c.id IN ({','.join('?' * len(scored))})"
+                    f" AND d.source IN ({','.join('?' * len(prefer))})", [c for c, _ in scored] + sorted(prefer))}
+                    if scored else set())
+                dense = sorted(dense_pref + [item for item in scored if item[0] in keep], key=lambda item: -item[1])
+                lexical = lexical_pref
+            timing["roblox_first"] = 1.0 if sources is not None else 0.0
         if mode == "bm25":
             ranked = lexical
         elif mode == "vector":
             ranked = dense
-            if partial:
-                extra = [cid for cid, _ in lexical[:FALLBACK_DEPTH] if cid not in self._allowed][:FALLBACK_EMBED]
-                if extra:
-                    t = time.perf_counter()
-                    try:
-                        scored = self._score_unembedded(extra, qvec)
-                    except Exception:   # the fallback must never cost the embedding results
-                        scored = []
-                        timing["fallback_failed"] = 1.0
-                    timing["fallback_embed_ms"] = (time.perf_counter() - t) * 1000
-                    timing["fallback_unembedded"] = float(len(scored))
-                    ranked = sorted(dense + scored, key=lambda item: -item[1])
         else:
             ranked = self.rrf(lexical, dense)
         if mode == "hybrid+rerank" and ranked:
@@ -505,6 +552,17 @@ class Searcher:
         if sources is not None:
             timing["scoped_sources"] = float(len(sources))
         return passages, {k: round(v, 1) for k, v in timing.items()}
+
+    @staticmethod
+    def _roblox_first(preferred: list[tuple[int, float]], whole: list[tuple[int, float]], *,
+                      extra: list[tuple[int, float]] = (), cosine: bool = True) -> bool:
+        """Scope "auto": keep the Roblox results unless the whole index has a clearly better one. The best of the
+        whole-index list either is a Roblox chunk (then Roblox wins) or beats every Roblox chunk."""
+        best = max([score for _, score in whole[:1]] + [score for _, score in extra], default=None)
+        if not preferred or best is None:
+            return bool(preferred)
+        top = preferred[0][1]
+        return best - top <= ROBLOX_MARGIN if cosine else best <= top * ROBLOX_BM25_RATIO
 
     def _embed_queries(self, texts: list[str]) -> list[np.ndarray]:
         """Query vectors for the texts, in one embedding request for all that are not known yet."""

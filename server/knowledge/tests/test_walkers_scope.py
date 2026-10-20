@@ -162,12 +162,13 @@ def test_roblox_queries_stay_on_the_roblox_group_and_others_see_everything(tmp_p
     searcher = search.Searcher(db_path, brain=object())
     assert searcher.groups == {"creator-docs": "roblox", "wiki": "general"}
     assert search.auto_scope("How do I use TweenService to tween a part in Roblox?") == "roblox"
-    assert search.auto_scope("What is tweening in animation?") == "all"
+    assert search.auto_scope("What is tweening in animation?") == "auto"
     assert search.auto_scope("Godot equivalent of a Roblox RemoteEvent") == "all"
     roblox, _ = searcher.search("tween a part with TweenService in Roblox", mode="bm25", top=5)
     assert {p.source for p in roblox} == {"creator-docs"}
-    general, _ = searcher.search("what is tweening between keyframes", mode="bm25", top=5)
-    assert {p.source for p in general} == {"creator-docs", "wiki"}
+    # "auto", BM25: the encyclopaedia page matches every word and wins clearly, so everything is searched
+    general, timing = searcher.search("what is tweening between keyframes", mode="bm25", top=5)
+    assert {p.source for p in general} == {"creator-docs", "wiki"} and timing["roblox_first"] == 0
     forced, timing = searcher.search("tweening", mode="bm25", top=5, scope="general")
     assert {p.source for p in forced} == {"wiki"} and timing["scoped_sources"] == 1
     wiki = next(p for p in forced)
@@ -178,3 +179,61 @@ def test_roblox_queries_stay_on_the_roblox_group_and_others_see_everything(tmp_p
 def test_a_source_needs_a_known_walker():
     with pytest.raises(KeyError):
         walkers.walker_for({"name": "x", "walker": "pdf-tree"})
+
+
+class QueryBrain:
+    """Returns a fixed query vector (the index's vectors are written by the test)."""
+
+    def __init__(self, vector):
+        self.vector = vector
+
+    def embed(self, texts):
+        return [self.vector for _ in texts], 0
+
+
+def _vectors(db_path: Path, by_source: dict[str, list[float]]) -> None:
+    import sqlite3
+    import numpy as np
+    from starkb.client import EMBED_MODEL
+    db = sqlite3.connect(db_path)
+    for sha, source in db.execute("SELECT c.text_sha, d.source FROM chunks c JOIN docs d ON d.id=c.doc_id").fetchall():
+        vec = np.asarray(by_source[source], dtype=np.float32)
+        db.execute("INSERT OR REPLACE INTO embeddings VALUES(?,?,?,?,?)",
+                   (sha, EMBED_MODEL, len(vec), (vec / np.linalg.norm(vec)).tobytes(), "t"))
+    db.commit()
+    db.close()
+
+
+@pytest.mark.parametrize("roblox_cos, wiki_cos, roblox_only", [
+    (0.50, 0.50 + search.ROBLOX_MARGIN - 0.02, True),     # the other corpus is a little better: Roblox stays first
+    (0.30, 0.30 + search.ROBLOX_MARGIN + 0.05, False),    # clearly better: the whole index answers
+    (0.60, 0.20, True),
+])
+def test_auto_scope_keeps_roblox_unless_another_corpus_is_clearly_better(tmp_path, roblox_cos, wiki_cos, roblox_only):
+    import math
+    db_path = _index(tmp_path)
+    _vectors(db_path, {"creator-docs": [1, 0, 0], "wiki": [0, 1, 0]})
+    query = [roblox_cos, wiki_cos, math.sqrt(max(0.0, 1 - roblox_cos ** 2 - wiki_cos ** 2))]
+    searcher = search.Searcher(db_path, brain=QueryBrain(query))
+    passages, timing = searcher.search("how does an object move smoothly between two states", mode="vector", top=5)
+    assert timing["roblox_first"] == (1.0 if roblox_only else 0.0)
+    assert [p.source for p in passages][0] == ("creator-docs" if roblox_only or roblox_cos > wiki_cos else "wiki")
+    assert ({p.source for p in passages} == {"creator-docs"}) is roblox_only
+    # an explicit scope is never second-guessed
+    everything, timing = searcher.search("how does an object move smoothly between two states", mode="vector",
+                                         top=5, scope="all")
+    assert {p.source for p in everything} == {"creator-docs", "wiki"} and "roblox_first" not in timing
+
+
+def test_eval_refuses_a_question_whose_verbatim_answer_is_not_in_its_expected_page(tmp_path, monkeypatch):
+    from starkb.evaluate import run_eval
+    db_path = _index(tmp_path)
+    monkeypatch.setattr(search, "Brain", lambda: object())       # BM25 only: no model
+    good = {"id": "g1", "question": "what is inbetweening between keyframes", "answer": "intermediate frames between two keyframes",
+            "expected": ["p.jsonl#1"]}
+    questions = tmp_path / "q.jsonl"
+    questions.write_text(json.dumps(good) + "\n", encoding="utf-8")
+    assert run_eval(db_path, questions, ["bm25"], details=False)["summary"]["bm25"]["hits@5"] == 1
+    questions.write_text(json.dumps({**good, "answer": "a sentence the page does not contain"}) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="answer not found"):
+        run_eval(db_path, questions, ["bm25"], details=False)

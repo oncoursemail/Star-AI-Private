@@ -33,8 +33,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import os
+import faulthandler
 from pathlib import Path
 import re
+import signal
 import sys
 import threading
 import time
@@ -589,6 +591,9 @@ def serve(db_path: Path, host: str = "127.0.0.1", port: int = 8091, key_file: st
         raise SystemExit("refusing to start without an API key file")
     if not db_path.is_file():
         raise SystemExit("refusing to start without an index (run: python -m starkb build)")
+    # `systemctl kill --signal=SIGUSR1 star-knowledge` (the watchdog, before a restart) prints every thread's stack
+    # to the journal: a hung service can be diagnosed afterwards.
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
     service = Service(db_path, keys)
     service.health()   # load the vectors once before accepting requests; fails fast on a broken index
     server = Server((host, port), make_handler(service))

@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from .eval_checks import Check, prose_of
+from .eval_checks import Check, prose_of, split_answer
 
 KINDS = ("exact", "numeric", "choice", "order", "match", "short", "rubric")
 _MARKER = re.compile(r"(?:^|\n)\s*\**\s*(?:final\s+answer|answer)\s*\**\s*[:\-]\s*\**", re.IGNORECASE)
@@ -32,7 +32,6 @@ _LETTER = re.compile(r"(?<![A-Za-z])\(?([A-H])(?:\)|\.|:|\b)")
 
 def model_text(answer: str) -> str:
     """The model's own prose: no thinking block, no fenced code, no STAR footer."""
-    from .eval_checks import split_answer
     body, _ = split_answer(answer or "")
     return prose_of(_THINK.sub(" ", body))
 
@@ -84,8 +83,6 @@ def check_exact(key: dict, text: str) -> Check:
 def check_numeric(key: dict, text: str) -> Check:
     region = final_answer(text)
     values = numbers_in(region)
-    if not values:                       # no marker and a one-line answer: look at the whole text once
-        values = numbers_in(text)
     want = float(key["value"])
     tol = float(key.get("tol", 0.0))
     if "rel" in key:
@@ -118,9 +115,7 @@ def check_order(key: dict, text: str) -> Check:
     for item in items:
         hit = _regex(item).search(region)
         if hit is None:
-            hit = _regex(item).search(text) if len(region) < 40 else None
-            if hit is None:
-                return Check("answer:order", False, f"item /{item}/ is missing from the final answer")
+            return Check("answer:order", False, f"item /{item}/ is missing from the final answer")
         positions.append(hit.start())
     ok = all(a < b for a, b in zip(positions, positions[1:]))
     return Check("answer:order", ok, "" if ok else "the items are not in the required order")
@@ -179,7 +174,10 @@ def answer_checks(key: dict, answer: str) -> list[Check]:
 
 
 def validate_key(key: dict) -> list[str]:
-    """Problems with an answer key (used by the task tests): bad type, missing fields, regexes that do not compile."""
+    """Problems with an answer key (star.eval_runner.validate_tasks refuses the task): bad type, missing fields,
+    regexes that do not compile."""
+    if not isinstance(key, dict):
+        return ["the answer key is not an object"]
     problems = []
     kind = str(key.get("type", "")).lower()
     if kind not in KINDS:

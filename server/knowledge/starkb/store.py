@@ -244,6 +244,17 @@ def _luau_site(root: Path, base: str):
 WALKERS = {"creator-docs": _creator_docs, "luau-site": _luau_site}
 
 
+NON_COMMERCIAL = re.compile(r"(?:^|-)NC(?:-|$)")
+
+
+def check_licences(config: dict) -> None:
+    """A non-commercial licence (CC BY-NC-*) may be indexed for private use but must never reach a public bundle:
+    its source must say `"public_bundle": false`, the flag any export to the app or the public site has to honour."""
+    for source in config["sources"]:
+        if NON_COMMERCIAL.search(source.get("licence", "")) and source.get("public_bundle") is not False:
+            raise ValueError(f"{source['name']}: licence {source['licence']} needs \"public_bundle\": false")
+
+
 def build(db_path: Path, sources_dir: Path, manifest: Path, *, force: bool = False,
           walkers: dict | None = None, source_metadata: dict | None = None,
           preserve_other_sources: bool = False, log=None) -> dict:
@@ -259,6 +270,7 @@ def build(db_path: Path, sources_dir: Path, manifest: Path, *, force: bool = Fal
 
     gate()
     config = json.loads(manifest.read_text(encoding="utf-8"))
+    check_licences(config)
     db = connect(db_path)
     before = db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
     old_shas = {r[0] for r in db.execute("SELECT DISTINCT text_sha FROM chunks")}

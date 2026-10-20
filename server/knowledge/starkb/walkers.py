@@ -7,7 +7,6 @@ Every further source is described by data instead:
      "include": ["getting_started/", "tutorials/"], "exclude": ["tutorials/assets_pipeline/"], ...}
 
 Walkers (all pure text processing, no network, no model):
-  markdown-tree  *.md / *.mdx under the content root (frontmatter title, URL from the path)
   rst-tree       Sphinx reStructuredText trees (Godot docs, Blender manual, CNP3): converted to a
                  Markdown-like text (headings, fenced code, admonitions kept, images/toctrees dropped)
   cnxml-tree     OpenStax books: modules/<id>/index.cnxml with the collection files for book and chapter titles
@@ -24,7 +23,7 @@ import re
 import sys
 from xml.etree import ElementTree
 
-from .chunking import Doc, chunk_markdown, frontmatter
+from .chunking import chunk_markdown
 from .quiet import wait_while_locked
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -50,17 +49,6 @@ def _slug_url(base: str, rel_no_ext: str, suffix: str = "") -> str:
 
 
 # ---------------------------------------------------------------- Markdown trees
-
-def markdown_tree(root: Path, base: str, *, include: list[str] = (), exclude: list[str] = (), kind: str = "guide"):
-    files = sorted(list(root.rglob("*.md")) + list(root.rglob("*.mdx")))
-    for file in files:
-        rel = file.relative_to(root).as_posix()
-        if not _selected(rel, list(include), list(exclude)) or file.stat().st_size > MAX_FILE_BYTES:
-            continue
-        _gate()
-        raw = file.read_text(encoding="utf-8", errors="replace")
-        yield chunk_markdown(raw, path=rel, url=_slug_url(base, rel.rsplit(".", 1)[0]), kind=kind)
-
 
 # ---------------------------------------------------------------- reStructuredText -> Markdown-like text
 
@@ -409,7 +397,7 @@ def jsonl_pages(root: Path, base: str, *, include: list[str] = (), exclude: list
 
 # ---------------------------------------------------------------- registry
 
-WALKERS = {"markdown-tree": markdown_tree, "rst-tree": rst_tree, "cnxml-tree": cnxml_tree, "jsonl-pages": jsonl_pages}
+WALKERS = {"rst-tree": rst_tree, "cnxml-tree": cnxml_tree, "jsonl-pages": jsonl_pages}
 
 
 def walker_for(source: dict):

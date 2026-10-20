@@ -11,10 +11,11 @@
 #     existing build in /opt/star/bench/tools/luau into /opt/star/knowledge/tools and records
 #     the Luau source revision in tools/VERSION (no compiling, no downloads);
 #   * installs /etc/systemd/system/star-knowledge.service and enables + (re)starts it.
-#   * installs the nightly refresh: star-knowledge-refresh.service + .timer (timer enabled).
+#   * installs the nightly refresh: star-knowledge-refresh.service + .timer (timer enabled)
+#     and the watchdog: star-knowledge-watchdog.service + .timer (every minute, enabled).
 # It does not touch star-brain, /opt/star/config, /opt/star/models or the index.
-# Uninstall: systemctl disable --now star-knowledge star-knowledge-refresh.timer
-#            rm /etc/systemd/system/star-knowledge*.service /etc/systemd/system/star-knowledge-refresh.timer
+# Uninstall: systemctl disable --now star-knowledge star-knowledge-refresh.timer star-knowledge-watchdog.timer
+#            rm /etc/systemd/system/star-knowledge*.service /etc/systemd/system/star-knowledge-*.timer
 set -eu
 HOME_DIR=/opt/star/knowledge
 LUAU_BUILD="${STAR_LUAU_BUILD:-/opt/star/bench/tools/luau}"
@@ -44,12 +45,14 @@ install -o root -g root -m 0644 "$HOME_DIR/app/$UNIT" "/etc/systemd/system/$UNIT
 # The study job (star-knowledge-study.service) is NOT installed: measured on 2026-10-11 it did not
 # improve retrieval (see starkb/study.py). To run the experiment further, copy that unit to
 # /etc/systemd/system by hand and `systemctl start --no-block star-knowledge-study`.
-for extra in star-knowledge-refresh.service star-knowledge-refresh.timer; do
+for extra in star-knowledge-refresh.service star-knowledge-refresh.timer \n             star-knowledge-watchdog.service star-knowledge-watchdog.timer; do
   install -o root -g root -m 0644 "$HOME_DIR/app/$extra" "/etc/systemd/system/$extra"
 done
 systemctl daemon-reload
 systemctl enable "$UNIT" >/dev/null 2>&1
 systemctl enable --now star-knowledge-refresh.timer >/dev/null 2>&1
+# one real search a minute; restarts star-knowledge after 2 failures in a row (starkb/watchdog.py)
+systemctl enable --now star-knowledge-watchdog.timer >/dev/null 2>&1
 systemctl restart "$UNIT"
 sleep 3
 systemctl is-active "$UNIT"
