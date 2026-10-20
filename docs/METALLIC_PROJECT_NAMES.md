@@ -61,10 +61,7 @@ The owner reports purchasing **Metallic.club**. Its normalized domain name is
 ability to connect remotely are separate facts.
 
 The static catalog records the purchase statement without claiming to verify
-DNS or deployment. Consult the dated
-[domain readiness record](METALLIC_DOMAIN_READINESS_20261019.md) for observed
-network state and remaining hosting decisions. Suggested hostnames in that
-record are proposals until configured and verified.
+DNS or deployment; hosting decisions are the owner's and are not recorded here.
 
 ## Retrieval and access
 

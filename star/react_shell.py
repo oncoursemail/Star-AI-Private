@@ -131,7 +131,7 @@ PERMITTED_SETTINGS = frozenset({
     'context_chars','reduced_motion','comfy_workflow','comfy_prompt_node','comfy_port',
     'obsidian_vault','obsidian_enabled','skills_enabled','graphify_enabled',
     'mcp_graphify_docs','mcp_graphify_local','mcp_graphify_port','mcp_obsidian_live',
-    'mcp_github_repositories','github_repository_credential_source',
+    'mcp_github_repositories','github_repository_access_source',
     'blender_enabled','blender_edit','blender_executable','blender_brain2',
     'server_endpoint','server_timeout','server_parallel','server_context_tokens','allow_cgnat',
     'instant_route_enabled','web_auto_search',

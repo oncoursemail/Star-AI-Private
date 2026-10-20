@@ -22,7 +22,7 @@ function Harness({settings=backendSettings as AppSettings,disabled=false}:{setti
  const [draft,setDraft]=useState(settings)
  return <McpPanel draft={draft} onChange={setDraft} invoke={invoke} disabled={disabled}/>
 }
-const enabled={...backendSettings,mcp_github_repositories:true,github_repository_credential_source:'gh'} as AppSettings
+const enabled={...backendSettings,mcp_github_repositories:true,github_repository_access_source:'gh'} as AppSettings
 
 beforeEach(()=>{invoke.mockClear();watchers.clear()})
 afterEach(()=>{cleanup();watchers.clear()})

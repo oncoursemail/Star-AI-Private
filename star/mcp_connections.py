@@ -66,7 +66,7 @@ def presets(settings: Any) -> list[Server]:
     results = []
     if getattr(settings, "mcp_github_repositories", False) is True:
         from .github_repository_tools import REPOSITORY_TOOL_NAMES
-        source = getattr(settings, "github_repository_credential_source", "gh")
+        source = getattr(settings, "github_repository_access_source", "gh")
         if not isinstance(source, str) or source not in {"gh", "env"}:
             raise ValueError("GitHub repository credential source must be gh or env")
         results.append(Server("github_repositories", "GitHub repository discovery",

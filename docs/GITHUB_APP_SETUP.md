@@ -93,6 +93,5 @@ Do not restore the retired `Star-Intelligence-Downloads` mirror. Do not paste ke
 tokens, private logs, or operator configuration into issues, chat, or public files.
 
 See [the repository map](REPOSITORY_GUIDE.md),
-[Metallic project names](METALLIC_PROJECT_NAMES.md),
-[Metallic domain readiness](METALLIC_DOMAIN_READINESS_20261019.md), and
+[Metallic project names](METALLIC_PROJECT_NAMES.md), and
 [GitHub's installation authentication documentation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation).

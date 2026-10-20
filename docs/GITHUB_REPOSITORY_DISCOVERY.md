@@ -95,7 +95,7 @@ The new fields are:
 ```json
 {
   "mcp_github_repositories": false,
-  "github_repository_credential_source": "gh"
+  "github_repository_access_source": "gh"
 }
 ```
 

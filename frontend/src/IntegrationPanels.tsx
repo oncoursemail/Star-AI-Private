@@ -310,8 +310,8 @@ export function McpPanel({draft,onChange,status,invoke,disabled=false}:{draft:Ap
        return <div className="integrated-connector" key={target.name}>
          <div><strong>{target.label}</strong><small>{target.note}</small>
            {target.name==='github_repositories'&&<label className="integrated-field">GitHub credential source
-             <select disabled={disabled||pending===target.name} value={draft.github_repository_credential_source??'gh'}
-               onChange={e=>{setResults(prev=>({...prev,github_repositories:'',error:''}));onChange({...draft,github_repository_credential_source:e.target.value as 'gh'|'env'})}}>
+             <select disabled={disabled||pending===target.name} value={draft.github_repository_access_source??'gh'}
+               onChange={e=>{setResults(prev=>({...prev,github_repositories:'',error:''}));onChange({...draft,github_repository_access_source:e.target.value as 'gh'|'env'})}}>
                <option value="gh">GitHub CLI account (gh)</option>
                <option value="env">Configured environment token</option>
              </select>

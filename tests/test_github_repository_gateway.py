@@ -14,13 +14,13 @@ from star.mcp_connections import GitHubRepositoryConnector, MCPGateway, Server, 
 
 
 def settings(enabled=True, source="gh"):
-    return SimpleNamespace(mcp_github_repositories=enabled, github_repository_credential_source=source)
+    return SimpleNamespace(mcp_github_repositories=enabled, github_repository_access_source=source)
 
 
 def test_settings_default_off_and_explicit_credential_choice():
     cfg = Settings()
     cfg.validate()
-    assert cfg.mcp_github_repositories is False and cfg.github_repository_credential_source == "gh"
+    assert cfg.mcp_github_repositories is False and cfg.github_repository_access_source == "gh"
     assert "github_repositories" not in {item.name for item in presets(cfg)}
     assert MCPGateway(cfg).definitions("Read my GitHub repositories") == []
     cfg.mcp_github_repositories = True
@@ -30,7 +30,7 @@ def test_settings_default_off_and_explicit_credential_choice():
 
 @pytest.mark.parametrize("source", ["shell", "oauth", "", [], {}, True])
 def test_invalid_credential_source_is_refused_by_settings_and_gateway(source):
-    cfg = Settings(github_repository_credential_source=source)
+    cfg = Settings(github_repository_access_source=source)
     with pytest.raises(ValueError):
         cfg.validate()
     with pytest.raises(ValueError):
@@ -57,18 +57,18 @@ def test_desktop_settings_bridge_saves_the_explicit_reader_choice_without_creden
 
     cfg = Settings()
     apply_setting_changes(cfg, {"mcp_github_repositories": True,
-                               "github_repository_credential_source": "env",
+                               "github_repository_access_source": "env",
                                "STAR_GITHUB_READ_TOKEN": "must-not-be-persisted"})
     path = tmp_path / "settings.json"
     cfg.save(path)
     restored = Settings.load(path)
     assert restored.mcp_github_repositories is True
-    assert restored.github_repository_credential_source == "env"
+    assert restored.github_repository_access_source == "env"
     assert "must-not-be-persisted" not in path.read_text()
-    apply_setting_changes(restored, {"github_repository_credential_source": "unapproved"})
+    apply_setting_changes(restored, {"github_repository_access_source": "unapproved"})
     with pytest.raises(ValueError):
         restored.save(path)
-    assert Settings.load(path).github_repository_credential_source == "env"
+    assert Settings.load(path).github_repository_access_source == "env"
 
 
 def test_gateway_discovery_precedes_calls_and_does_not_lookup_credentials(monkeypatch):

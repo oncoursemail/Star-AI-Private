@@ -112,7 +112,7 @@ class Settings:
     mcp_graphify_port: int = 8931
     mcp_obsidian_live: bool = False
     mcp_github_repositories: bool = False  # explicit opt-in; fixed read-only repository discovery
-    github_repository_credential_source: str = 'gh'  # existing GitHub CLI account, or explicit env token
+    github_repository_access_source: str = 'gh'  # existing GitHub CLI account, or explicit env token
     blender_enabled: bool = False          # only attach STAR's local Blender MCP when requested
     blender_edit: bool = False             # explicit owner permission for new isolated scene jobs
     blender_executable: str = ''           # installed local executable; '' = discover without downloading
@@ -201,8 +201,8 @@ class Settings:
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
                             'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled')):
             raise ValueError('Tool access settings must be true or false')
-        if (not isinstance(self.github_repository_credential_source, str)
-                or self.github_repository_credential_source not in {'gh', 'env'}):
+        if (not isinstance(self.github_repository_access_source, str)
+                or self.github_repository_access_source not in {'gh', 'env'}):
             raise ValueError('GitHub repository credential source must be gh or env')
         if self.obsidian_vault and not Path(self.obsidian_vault).expanduser().is_dir():
             raise ValueError('Obsidian vault must be an existing folder')
