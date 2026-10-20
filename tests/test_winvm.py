@@ -161,3 +161,8 @@ def test_must_yield(tmp_path, state, expect):
     p.write_text(json.dumps(state))
     assert winvm.must_yield(str(p)) is expect
     assert winvm.must_yield(str(tmp_path / "missing.json")) is True
+
+
+def test_guest_log_is_decoded(tmp_path):
+    winvm.guest_reply(str(tmp_path), "/log", {"m": "STEP%20ok%20pip%20180s"}, 5.0)
+    assert (tmp_path / "guest.log").read_text() == "5 STEP ok pip 180s\n"

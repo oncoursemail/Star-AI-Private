@@ -52,7 +52,9 @@ Step 'python 3.11.9 (tool cache)' {
     New-Item -ItemType Directory -Force $dst | Out-Null
     Copy-Item (Join-Path $env:TEMP 'py\tools\*') $dst -Recurse -Force
     New-Item -ItemType File -Force "$dst.complete" | Out-Null
-    & (Join-Path $dst 'python.exe') -m pip --version
+    # The nuget package has pip but no Scripts\pip.exe; setup-python runs `pip cache dir` (failed run 39481758008).
+    & (Join-Path $dst 'python.exe') -m ensurepip --upgrade
+    if (-not (Test-Path (Join-Path $dst 'Scripts\pip.exe'))) { throw 'pip.exe missing after ensurepip' }
 }
 
 Step 'node 22.23.3 (tool cache)' {

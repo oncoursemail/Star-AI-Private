@@ -27,6 +27,7 @@ import string
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -108,7 +109,7 @@ def guest_reply(run_dir, path, query, now):
         return {"ok": True}
     if path == "/log":
         with open(os.path.join(run_dir, "guest.log"), "a") as f:
-            f.write("%.0f %s\n" % (now, query.get("m", "")[:300]))
+            f.write("%.0f %s\n" % (now, urllib.parse.unquote(query.get("m", ""))[:300]))
         return {"ok": True}
     return {"error": "unknown path"}
 
@@ -276,37 +277,41 @@ def cmd_build_image(a):
     spec = json.load(open(os.path.join(HERE, "tools.json")))
     os.makedirs(GOLDEN, exist_ok=True)
     disk, state = os.path.join(GOLDEN, "golden.qcow2"), os.path.join(GOLDEN, "golden.state")
-    for p in (disk, state):
-        if os.path.exists(p):
-            os.chmod(p, 0o644)
-            os.unlink(p)
-    pw_file = os.path.join(ROOT, "guest-password")  # local throwaway account of the image; 0600, never printed
-    if not os.path.exists(pw_file):
-        alphabet = string.ascii_letters + string.digits
-        with open(os.open(pw_file, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
-            f.write("W1n-" + "".join(random.SystemRandom().choice(alphabet) for _ in range(20)))
-    cfg_iso = os.path.join(ROOT, "iso", "winvmcfg.iso")
-    make_config_iso(a.repo, cfg_iso, open(pw_file).read().strip())
-    shutil.copyfile(OVMF_VARS, os.path.join(GOLDEN, "vars.fd"))
-    subprocess.run(["qemu-img", "create", "-q", "-f", "qcow2", disk, "%dG" % cfg["disk_gb"]], check=True)
     vm_id = "golden"
-    destroy(vm_id)
     t0 = time.time()
-    q = launch(vm_id, disk, "install", cfg, isos=(os.path.join(ROOT, "iso", spec["windows_iso"]["name"]), cfg_iso))
-    sent = 0
-    while sent < 30:  # "Press any key to boot from CD or DVD": 30 s of key presses while the VM really runs
-        if q.cmd("query-status").get("status") == "running":  # the chat/lock gate may hold it paused
-            q.cmd("send-key", keys=[{"type": "qcode", "data": "ret"}])
-            sent += 1
-        time.sleep(1)
+    if a.resume_install:  # an earlier build-image process died; the install VM is still running
+        q = None
+    else:
+        if not a.repo:
+            sys.exit("--repo is required for a new image")
+        for p in (disk, state):
+            if os.path.exists(p):
+                os.chmod(p, 0o644)
+                os.unlink(p)
+        pw_file = os.path.join(ROOT, "guest-password")  # local throwaway account of the image; 0600, never printed
+        if not os.path.exists(pw_file):
+            alphabet = string.ascii_letters + string.digits
+            with open(os.open(pw_file, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
+                f.write("W1n-" + "".join(random.SystemRandom().choice(alphabet) for _ in range(20)))
+        cfg_iso = os.path.join(ROOT, "iso", "winvmcfg.iso")
+        make_config_iso(a.repo, cfg_iso, open(pw_file).read().strip())
+        shutil.copyfile(OVMF_VARS, os.path.join(GOLDEN, "vars.fd"))
+        subprocess.run(["qemu-img", "create", "-q", "-f", "qcow2", disk, "%dG" % cfg["disk_gb"]], check=True)
+        destroy(vm_id)
+        q = launch(vm_id, disk, "install", cfg, isos=(os.path.join(ROOT, "iso", spec["windows_iso"]["name"]), cfg_iso))
+        sent = 0
+        while sent < 30:  # "Press any key to boot from CD or DVD": 30 s of key presses while the VM really runs
+            if q.cmd("query-status").get("status") == "running":  # the chat/lock gate may hold it paused
+                q.cmd("send-key", keys=[{"type": "qcode", "data": "ret"}])
+                sent += 1
+            time.sleep(1)
     d = run_dir(vm_id)
     pid = int(open(os.path.join(d, "qemu.pid")).read())
     log("installing; waiting for setup + provisioning to power the VM off (up to %d min)" % a.timeout_min)
     deadline = time.time() + a.timeout_min * 60
     while os.path.exists("/proc/%d" % pid):
         if time.time() > deadline:
-            q.cmd("screendump", filename=os.path.join(ROOT, "install-timeout.ppm"))
-            sys.exit("install did not finish; screen saved to install-timeout.ppm")
+            sys.exit("install did not finish; look at it with: winvm.py screen golden FILE.ppm")
         time.sleep(5)
     # Boot once more without the ISOs (the device set must match the clones), let the agent come up, save.
     shutil.copyfile(os.path.join(d, "vars.fd"), os.path.join(GOLDEN, "vars.fd"))  # keeps Windows' boot entry
@@ -562,8 +567,9 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("fetch").set_defaults(fn=cmd_fetch)
     p = sub.add_parser("build-image")
-    p.add_argument("--repo", required=True, help="checkout with requirements*.txt and frontend/package.json")
-    p.add_argument("--timeout-min", type=int, default=120)
+    p.add_argument("--repo", help="checkout with requirements*.txt and frontend/package.json (new image)")
+    p.add_argument("--timeout-min", type=int, default=600, help="wall clock; the gate freezes the VM during locks")
+    p.add_argument("--resume-install", action="store_true", help="re-attach to a running install VM")
     p.add_argument("--settle", type=int, default=90, help="seconds to let the guest go idle before saving")
     p.set_defaults(fn=cmd_build_image)
     sub.add_parser("save-state").set_defaults(fn=cmd_save_state)
