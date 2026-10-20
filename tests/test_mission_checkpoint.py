@@ -8,6 +8,7 @@ import sqlite3
 
 import pytest
 
+from star import agent_runtime
 from star.agent_runtime import run_plan
 from star.mission_checkpoint import MissionCheckpoint
 from star.orchestration import Task, TaskPlan
@@ -50,17 +51,21 @@ def test_completed_steps_restore_without_reexecuting_workers(tmp_path):
         assert len(calls) == 3
 
 
-def test_incomplete_work_is_rerun_but_finished_dependency_is_reused(tmp_path):
+def test_incomplete_work_is_rerun_but_finished_dependency_is_reused(tmp_path, monkeypatch):
     plan = TaskPlan([
         Task("quick", "research", "Read document"),
         Task("slow", "review", "Audit result", dependencies=("quick",)),
         Task("final", "integration", "Synthesize", dependencies=("slow",)),
     ])
+    # Freeze run_plan's clock so a loaded runner cannot spend the team budget
+    # before "slow" starts; the budget then expires in asyncio.wait while
+    # "slow" waits on an event that is never set.
+    monkeypatch.setattr(agent_runtime, "monotonic", lambda: 0.0)
     calls = []
     async def slow_worker(task, prior):
         calls.append(task.id)
         if task.id == "slow":
-            await asyncio.sleep(0.4)
+            await asyncio.Event().wait()
         return task.goal
 
     with checkpoint(tmp_path / "c.sqlite3") as mission:
