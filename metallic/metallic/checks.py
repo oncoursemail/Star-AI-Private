@@ -228,7 +228,7 @@ SLOP_RULES = [
      r"|assertTrue\(\s*True\s*\)|assert\.ok\(\s*true\s*\)", "fail", "assertion that can never fail"),
     ("S05.debugger", r"\.py$", r"^\s*(breakpoint\(\)|import pdb|pdb\.set_trace\(\))", "fail", "debugger left in"),
     ("S05.debugger", r"\.[jt]sx?$", r"^\s*debugger\s*;?\s*$", "fail", "debugger left in"),
-    ("S06.placeholder", r".", r"(?i)lorem ipsum|your code here|implement (this|me)\b"  # metallic:allow
+    ("S06.placeholder", r".", r"(?i)lorem ipsum|your code here|implement (this|me)\b"
      r"|\bplaceholder implementation", "warn", "placeholder text"),
     ("S07.swallowed", r"\.py$", r"^\s*except(\s+(Exception|BaseException))?\s*:\s*pass\s*$", "warn",
      "exception swallowed silently"),
@@ -254,6 +254,14 @@ def _commented_code(line: str) -> bool:
                for n in ast.walk(tree))
 
 
+_STRING = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'')
+
+
+def _in_string(line: str, pos: int) -> bool:
+    """A match inside a quoted literal is a fixture or a message (checker code, tests of checkers), not slop."""
+    return any(m.start() < pos < m.end() for m in _STRING.finditer(line))
+
+
 ALLOW = "metallic:allow"          # on a line: the diff checks skip it (a fixture that must contain the pattern)
 
 
@@ -266,7 +274,7 @@ def check_slop(ctx: Context) -> CheckResult:
             for rule, frx, lrx, sev, msg in _SLOP_COMPILED:
                 if rule == "S04.vacuous-assert" and not is_test:
                     continue
-                if frx.search(f) and lrx.search(text):
+                if frx.search(f) and any(not _in_string(text, m.start()) for m in lrx.finditer(text)):
                     out.append(finding(f, n, rule, msg, sev))
         if f.endswith(".py"):
             run = []

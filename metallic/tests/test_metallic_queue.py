@@ -98,6 +98,15 @@ def test_gate_added_by_one_branch_is_enforced_on_the_next(repo):
     assert st["noisy"] == ("rejected", "red on the combined tree: no-print")
 
 
+def test_red_builtin_check_rejects_without_running_the_suite(repo):
+    _branch(repo, "leak", {"deploy/.env": "A=1\n"})
+    rep = _run(repo, ["leak"])
+    entry = rep["entries"][0]
+    assert entry["status"] == "rejected" and entry["reason"] == "red on the combined tree: files"
+    tests = next(c for c in entry["check"]["checks"] if c["name"] == "tests")
+    assert tests["status"] == "skip" and "files already failed" in tests["summary"]
+
+
 def test_queue_lock_refuses_a_second_integrator(repo):
     from metallic import gitutil
     lock = gitutil.state_dir(repo) / "queue.lock"

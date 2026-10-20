@@ -118,7 +118,10 @@ def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | N
 
     tests_info: dict = {"selected": 0, "total_files": 0, "cached": 0, "ran": 0, "failed": [], "full_reason": "",
                         "untested": [], "direct": []}
-    if cfg.test_cmd and (not only or "tests" in only):
+    already_red = [r.name for r in results if r.status == checks.FAIL and r.blocking]
+    if fail_fast and already_red and cfg.test_cmd:
+        record(checks.CheckResult("tests", checks.SKIP, "not run: " + ", ".join(already_red) + " already failed"))
+    elif cfg.test_cmd and (not only or "tests" in only):
         tg = time.monotonic()
         graph = impact.build(root, files, cfg, cache)
         timings["graph"] = round(time.monotonic() - tg, 3)
