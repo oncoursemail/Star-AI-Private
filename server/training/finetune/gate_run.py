@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import gc
 import os
 from pathlib import Path
 import sys
@@ -41,7 +42,13 @@ def patch_run_task(knowledge: str, bank: Path | None, bank_chars: int) -> None:
         if bank is not None:
             worked_examples.import_file(bank, home=desktop_core.app_data(), project=settings.project)
             changes["worked_examples_enabled"] = True
-        return original(dataclasses.replace(settings, **changes), prompt, **kwargs)
+        try:
+            return original(dataclasses.replace(settings, **changes), prompt, **kwargs)
+        finally:
+            if bank is not None:
+                # worked_examples uses `with sqlite3.connect()`, which commits but does not close; on Windows the
+                # task's throw-away APPDATA cannot be deleted until the connection is collected (W3 notes).
+                gc.collect()
 
     desktop_core.run_task = run_task
 

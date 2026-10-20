@@ -211,3 +211,35 @@ def test_kto_loss_direction():
     lo, hi = torch.tensor(-1.0), torch.tensor(1.0)
     assert kto.kto_loss(hi, True, 0.0, 0.5) < kto.kto_loss(lo, True, 0.0, 0.5)
     assert kto.kto_loss(hi, False, 0.0, 0.5) > kto.kto_loss(lo, False, 0.0, 0.5)
+
+
+def test_report_counts_model_caused_errors_as_fails_but_not_server_errors():
+    rep = _load("ft_gate_report", "server/training/finetune/gate_report.py")
+    result = {"tasks": {
+        "A": {"status": "error", "passed": False, "error": "CompactionLimitError: provider did not complete the summary"},
+        "B": {"status": "error", "passed": False, "error": "ConnectError: server down"},
+        "C": {"status": "pass", "passed": True}}}
+    assert rep.product_errors_as_fail(result, "CompactionLimitError") == 1
+    assert result["tasks"]["A"]["status"] == "fail" and result["tasks"]["A"]["checks"] == []
+    assert result["tasks"]["B"]["status"] == "error"
+
+
+def test_kb_replica_runs_luau_tools_in_the_container(tmp_path, monkeypatch):
+    sys.path.insert(0, str(ROOT / "server" / "knowledge"))
+    kb = _load("ft_kb_replica", "server/training/finetune/kb_replica.py")
+    from starkb import luaucheck
+    (tmp_path / luaucheck.FILE_NAME).write_text("return 1", encoding="utf-8")
+    seen = {}
+
+    def fake_run(cmd, input, capture_output, timeout):
+        seen["cmd"], seen["tar"] = cmd, input
+        return type("P", (), {"returncode": 0, "stdout": b"snippet.luau(1,1): TypeError: x"})()
+
+    monkeypatch.setattr(kb.subprocess, "run", fake_run)
+    code, text, timed_out = kb.remote_runner("u@h", "/opt/t")(["C:/tools/luau-analyze", "--mode=strict",
+                                                                luaucheck.FILE_NAME], tmp_path, timeout=5,
+                                                               memory_bytes=1 << 28)
+    assert (code, timed_out) == (0, False) and "TypeError" in text
+    assert seen["cmd"][:4] == ["ssh", "-o", "BatchMode=yes", "u@h"]
+    assert "/opt/t/luau-analyze --mode=strict snippet.luau" in seen["cmd"][4] and "prlimit" in seen["cmd"][4]
+    assert len(seen["tar"]) > 0

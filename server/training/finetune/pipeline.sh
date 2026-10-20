@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fine-tune pipeline on the PC GPU (docs/agents/finetune-20261020.md). Git Bash. Steps, in order:
-#   pipeline.sh sft            QLoRA SFT of the 4B apprentice on $DATA/sft, export the adapter to GGUF
+#   pipeline.sh sft            QLoRA SFT of the 4B apprentice on $DATA/sft, export the adapter to GGUF (SFT_NAME names the run)
 #   pipeline.sh kto            KTO from the SFT adapter on $DATA/kto, export to GGUF
 #   pipeline.sh gate ARM...    run the gate suites for the arms (base, bank, sft, kto) on a temporary llama-server
 #   pipeline.sh report CONTROL CANDIDATE   paired verdict per suite and combined
@@ -26,20 +26,24 @@ mkdir -p "$W/runs" "$W/lora" "$W/gate" "$W/logs"
 best_epoch() { "$PYT" -c "import json,sys;print(json.load(open(sys.argv[1])).get('best_epoch') or '')" "$(cygpath -w "$1/train-log.json")"; }
 log() { echo "$(date -u +%H:%M:%SZ) $*" | tee -a "$W/logs/pipeline.log"; }
 
-blocked() {
+blocked() {   # [RAM floor GB, default 6 (training); the gate uses 4]
   tasklist //FI "IMAGENAME eq RobloxStudioBeta.exe" 2>/dev/null | grep -qi robloxstudio && { echo "Roblox Studio is running"; return 0; }
   # OWN_LLAMA=1: the only other llama-server is our kb_replica.py embedding server (port 8095)
   [ "${OWN_LLAMA:-0}" = 1 ] || { tasklist //FI "IMAGENAME eq llama-server.exe" 2>/dev/null | grep -qi llama-server && { echo "another llama-server is running"; return 0; }; }
-  local busy; busy=$(cd "$APP/server/training/apprentice" && "$PYT" -c "from train_qlora import owner_busy; print(owner_busy(6.0))")
-  [ -n "$busy" ] && { echo "$busy"; return 0; }      # a game in use, or free RAM below 6 GB
+  local busy; busy=$(cd "$APP/server/training/apprentice" && "$PYT" -c "from train_qlora import owner_busy; print(owner_busy(${1:-6.0}))")
+  [ -n "$busy" ] && { echo "$busy"; return 0; }      # a game in use, or free RAM below the floor
   return 1
 }
 
-blocked_game() {   # the checks that also apply while our own server runs
+blocked_game() {   # the checks that also apply while our own server runs; a short RAM dip gets a second look
   tasklist //FI "IMAGENAME eq RobloxStudioBeta.exe" 2>/dev/null | grep -qi robloxstudio && { echo "Roblox Studio is running"; return 0; }
-  local busy; busy=$(cd "$APP/server/training/apprentice" && "$PYT" -c "from train_qlora import owner_busy; print(owner_busy(6.0))")
-  [ -n "$busy" ] && { echo "$busy"; return 0; }
-  return 1
+  local busy try
+  for try in 1 2 3; do
+    busy=$(cd "$APP/server/training/apprentice" && "$PYT" -c "from train_qlora import owner_busy; print(owner_busy(4.0))")
+    [ -z "$busy" ] && return 1
+    sleep 60
+  done
+  echo "$busy"; return 0
 }
 
 export_lora() {   # run-dir epoch name
@@ -49,11 +53,11 @@ export_lora() {   # run-dir epoch name
 sft() {
   why=$(blocked) && { log "sft REFUSED: $why"; return 1; }
   log "sft: start ($(wc -l < "$DATA/sft/train.jsonl") train / $(wc -l < "$DATA/sft/val.jsonl") val, ${EPOCHS:-2} epochs)"
-  (cd "$APP/server/training/apprentice" && "$PYT" train_qlora.py --model "$HF" --data "$DATA/sft" --out "$W/runs/sft" \
-      --epochs "${EPOCHS:-2}" --stop-procs robloxstudio --ram-floor 6 > "$W/logs/train-sft.log" 2>&1)
-  best=$(best_epoch "$W/runs/sft")
+  (cd "$APP/server/training/apprentice" && "$PYT" train_qlora.py --model "$HF" --data "$DATA/sft" --out "$W/runs/${SFT_NAME:-sft}" \
+      --epochs "${EPOCHS:-2}" --stop-procs robloxstudio --ram-floor 6 > "$W/logs/train-${SFT_NAME:-sft}.log" 2>&1)
+  best=$(best_epoch "$W/runs/${SFT_NAME:-sft}")
   [ -n "$best" ] || { log "sft: no finished epoch"; return 1; }
-  export_lora "$W/runs/sft" "$best" sft && log "sft: exported lora/sft.gguf (epoch $best)"
+  export_lora "$W/runs/${SFT_NAME:-sft}" "$best" "${SFT_NAME:-sft}" && log "sft: exported lora/${SFT_NAME:-sft}.gguf (epoch $best)"
 }
 
 kto() {
@@ -83,12 +87,13 @@ stop_server() {
 gate() {   # arms...
   : "${STAR_EVAL_SSH:?set STAR_EVAL_SSH}" "${STAR_EVAL_KNOWLEDGE:?set STAR_EVAL_KNOWLEDGE}"
   for arm in "$@"; do
-    why=$(blocked) && { log "gate $arm REFUSED: $why"; return 1; }
+    why=$(blocked 4.0) && { log "gate $arm REFUSED: $why"; return 1; }
     case $arm in
-      base|bank) model=q3-4b-base; serve $model || return 1 ;;
+      base|bank*) model=q3-4b-base; serve $model || return 1 ;;
       *) model=apprentice-$arm; serve $model --lora "$W/lora/$arm.gguf" || return 1 ;;
     esac
-    extra=(); [ "$arm" = bank ] && extra=(--bank "$DATA/bank.jsonl")
+    extra=()
+    case $arm in bank) extra=(--bank "$DATA/bank.jsonl") ;; bank-gold) extra=(--bank "$W/data-gold/bank.jsonl") ;; esac
     for suite in $SUITES; do
       name=$(basename "$suite" .json | sed 's/golden-tasks-//')
       why=$(blocked_game) && { log "gate $arm REFUSED: $why"; stop_server; return 1; }
