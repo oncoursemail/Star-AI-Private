@@ -38,6 +38,7 @@ class Graph:
     tests: list[str]
     modules: dict[str, set[str]] = field(default_factory=dict)
     _closure: dict[str, frozenset] = field(default_factory=dict)
+    global_inputs: frozenset | None = None      # files matching full_on: part of every test key
 
     def closure(self, f: str) -> frozenset:
         got = self._closure.get(f)
@@ -226,8 +227,8 @@ def select(graph: Graph, changed: list[str], cfg: Config) -> Selection:
 def test_key(graph: Graph, test: str, cfg: Config, toolchain: str, extra=()) -> str:
     """Cache key of one test file: command, toolchain, and the content of its whole dependency closure plus the
     files that affect every test (full_on)."""
-    inputs = set(graph.closure(test))
-    if cfg.full_on:
-        inputs |= {p for p in graph.files if matches(p, cfg.full_on)}
+    if graph.global_inputs is None:
+        graph.global_inputs = frozenset(p for p in graph.files if cfg.full_on and matches(p, cfg.full_on))
+    inputs = graph.closure(test) | graph.global_inputs
     return cache_mod.key("test", cfg.test_cmd, sorted(cfg.test_env), toolchain, list(extra),
                          sorted((p, graph.files[p]) for p in inputs if p in graph.files))

@@ -118,9 +118,11 @@ def test_forbidden_files(repo):
 
 
 def test_anti_slop_rules_on_added_lines(repo):
-    write(repo, "web/app.test.ts", "it.only('x', () => {\n  expect(true).toBe(true)\n})\n")
-    write(repo, "tests/test_core.py", "from pkg.core import add\n\n\ndef test_add():\n    assert True\n"
-                                      "    # TODO make this real\n")
+    # These fixtures contain the patterns on purpose; "metallic:allow" keeps this file's own diff clean.
+    write(repo, "web/app.test.ts", "it.only('x', () => {\n  expect(true).toBe(true)\n})\n")  # metallic:allow
+    write(repo, "tests/test_core.py", "from pkg.core import add\n\n\ndef test_add():\n"
+                                      "    assert True\n"  # metallic:allow
+                                      "    # TODO make this real\n")  # metallic:allow
     write(repo, "pkg/other.py", "def name():\n    # x = compute(1)\n    # y = x + 2\n    # return y\n"
                                 "    return 'x'  # TODO #12 tracked\n")
     sl = _by_name(_check(repo, only=["anti-slop"]), "anti-slop")
@@ -131,6 +133,9 @@ def test_anti_slop_rules_on_added_lines(repo):
     assert ("tests/test_core.py", "S01.todo") in rules
     assert ("pkg/other.py", "S08.commented-code") in rules
     assert ("pkg/other.py", "S01.todo") not in rules            # has an issue number
+    write(repo, "pkg/core.py", "def add(a, b):\n    return a + b  # TODO later  metallic:allow\n")
+    assert not [f for f in _by_name(_check(repo, only=["anti-slop"]), "anti-slop")["findings"]
+                if f["file"] == "pkg/core.py"]
     assert sl["status"] == "fail"
 
 

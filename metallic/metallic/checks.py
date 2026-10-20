@@ -228,8 +228,8 @@ SLOP_RULES = [
      r"|assertTrue\(\s*True\s*\)|assert\.ok\(\s*true\s*\)", "fail", "assertion that can never fail"),
     ("S05.debugger", r"\.py$", r"^\s*(breakpoint\(\)|import pdb|pdb\.set_trace\(\))", "fail", "debugger left in"),
     ("S05.debugger", r"\.[jt]sx?$", r"^\s*debugger\s*;?\s*$", "fail", "debugger left in"),
-    ("S06.placeholder", r".", r"(?i)lorem ipsum|your code here|implement (this|me)\b|\bplaceholder implementation",
-     "warn", "placeholder text"),
+    ("S06.placeholder", r".", r"(?i)lorem ipsum|your code here|implement (this|me)\b"  # metallic:allow
+     r"|\bplaceholder implementation", "warn", "placeholder text"),
     ("S07.swallowed", r"\.py$", r"^\s*except(\s+(Exception|BaseException))?\s*:\s*pass\s*$", "warn",
      "exception swallowed silently"),
 ]
@@ -254,10 +254,14 @@ def _commented_code(line: str) -> bool:
                for n in ast.walk(tree))
 
 
+ALLOW = "metallic:allow"          # on a line: the diff checks skip it (a fixture that must contain the pattern)
+
+
 def check_slop(ctx: Context) -> CheckResult:
     out = []
     for f, lines in ctx.added().items():
         is_test = bool(_TEST_FILE.search(f))
+        lines = [(n, t) for n, t in lines if ALLOW not in t]
         for n, text in lines:
             for rule, frx, lrx, sev, msg in _SLOP_COMPILED:
                 if rule == "S04.vacuous-assert" and not is_test:
@@ -313,6 +317,8 @@ def check_luau(ctx: Context) -> CheckResult:
     api = _api(Path(dump)) if dump and Path(dump).exists() else None
     for f, lines in luau.items():
         for n, text in lines:
+            if ALLOW in text:
+                continue
             code = text.split("--", 1)[0]
             if api:
                 classes, services, creatable = api
