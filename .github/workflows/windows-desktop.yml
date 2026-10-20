@@ -78,7 +78,7 @@ jobs:
   windows-tests:
     name: Windows offline tests (${{ matrix.shard }}/2)
     needs: frontend
-    if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'windows-ci') && github.event.pull_request.head.repo.full_name == github.repository) }}
+    if: false  # measurement branch: time windows-build alone on one VM
     runs-on: [self-hosted, windows, star-win-vm]
     timeout-minutes: 30
     permissions:
