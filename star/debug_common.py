@@ -5,6 +5,8 @@ permission to execute code, change a setting, or certify a repair.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import hashlib
 import json
 import math
@@ -83,7 +85,7 @@ def redact_debug(value, limit: int = 2000) -> str:
     return text if len(text) <= limit else text[:limit] + " [TRUNCATED]"
 
 
-def sanitize_tree(value, *, depth: int = 0):
+def sanitize_tree(value, *, depth: int = 0) -> Any:
     if depth > 16:
         raise ValueError("Diagnostic data is nested too deeply")
     if value is None or type(value) in (bool, int):

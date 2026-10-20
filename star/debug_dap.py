@@ -328,6 +328,8 @@ class _WindowsJob:
                 ("process_memory", ctypes.c_size_t), ("job_memory", ctypes.c_size_t),
                 ("peak_process_memory", ctypes.c_size_t), ("peak_job_memory", ctypes.c_size_t)]
 
+        if sys.platform != "win32":
+            raise RuntimeError("Windows job objects are only available on Windows")
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
         kernel.CreateJobObjectW.restype = wintypes.HANDLE

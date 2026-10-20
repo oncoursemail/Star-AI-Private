@@ -94,7 +94,7 @@ Playwright traces connect an action to source, DOM snapshots, console messages, 
 
 The implemented browser recorder strips credential-shaped values and URL query/fragment data, selects explicit fields, and keeps retry attempts. A passing retry does not erase a failed first attempt. Normal Playwright terminal output and separately configured raw traces retain their usual behavior; the small JSON evidence artifact is the sanitized input for STAR.
 
-Use the developer runner from the repository root, with an already installed repository-local Playwright package:
+Use the developer runner from the repository root, with an already installed repository-local Playwright package: The runner and reporter under `scripts/` are source-checkout tools; they are not bundled into the packaged STAR.exe.
 
 ```sh
 node scripts/debug_playwright_run.cjs --output artifacts/debug/before.json --timeout-ms 120000 -- --config=playwright.config.ts e2e/star.spec.ts --workers=1
