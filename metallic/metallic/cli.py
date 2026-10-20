@@ -61,7 +61,9 @@ def cmd_check(a) -> int:
     else:
         t = report["timings"]
         print(f"\n{report['verdict'].upper()}  {cfg.name}  {report['changed']} changed file(s) vs {report['base'][:10]}"
-              f"  first signal {t.get('first_signal', 0):.1f}s, first test {t.get('first_test', 0):.1f}s, "
+              f"  first signal {t.get('first_signal', 0):.1f}s, "
+              + (f"first test {t['first_test']:.1f}s, " if "first_test" in t else "")
+              + (f"nearest tests {t['near_done']:.1f}s, " if "near_done" in t else "") +
               f"total {t['total']:.1f}s, cache {report['cache']['hits']}/{report['cache']['hits'] + report['cache']['misses']}"
               f" hits\nreport: {path}")
     return 0 if report["verdict"] == "green" else 1

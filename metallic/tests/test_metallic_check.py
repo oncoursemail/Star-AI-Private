@@ -56,6 +56,19 @@ def test_fail_fast_starts_no_new_batch_after_a_failure(repo):
     assert [(r.path, r.status) for r in got] == [("tests/test_core.py", "fail")]
 
 
+def test_order_dependent_failure_is_retried_alone_and_flagged(repo):
+    import sys
+    from metallic import testrun
+    write(repo, "pkg/state.py", "SEEN = []\n")
+    write(repo, "tests/test_a_writer.py", "from pkg import state\n\n\ndef test_w():\n    state.SEEN.append(1)\n")
+    write(repo, "tests/test_b_reader.py", "from pkg import state\n\n\ndef test_r():\n    assert state.SEEN == []\n")
+    got = testrun.run_files(repo, ["tests/test_core.py", "tests/test_a_writer.py", "tests/test_b_reader.py"],
+                            load(repo).test_cmd, sys.executable, {}, jobs=1,
+                            durations=testrun.Durations(repo / "d.json"), priority={"tests/test_core.py": 0})
+    reader = next(r for r in got if r.path == "tests/test_b_reader.py")
+    assert reader.status == "pass" and reader.order_dependent and "assert" in reader.failures[0]
+
+
 def test_rerun_is_all_cache_hits_and_change_reruns_only_affected(repo):
     first = _check(repo, full=True)
     assert first["verdict"] == "green"

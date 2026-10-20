@@ -31,6 +31,7 @@ class FileResult:
     output: str = ""
     cached: bool = False
     failures: list[str] = field(default_factory=list)
+    order_dependent: bool = False   # failed next to other files, passed when re-run alone: a test-isolation bug
 
 
 def _expand(cmd: list[str], python: str, tmp: str) -> list[str]:
@@ -117,7 +118,15 @@ def run_files(root: Path, files: list[str], cmd: list[str], python: str, env: di
             if not batch:
                 return
             done += 1
-            for r in _run_batch(root, batch, cmd, python, env, timeout):
+            got = _run_batch(root, batch, cmd, python, env, timeout)
+            if len(batch) > 1:
+                for i, r in enumerate(got):
+                    if r.status != "pass":
+                        alone = _run_batch(root, [r.path], cmd, python, env, timeout)[0]
+                        if alone.status == "pass":
+                            alone.order_dependent, alone.failures, alone.output = True, r.failures, r.output
+                            got[i] = alone
+            for r in got:
                 if fail_fast and r.status != "pass":
                     stop.set()
                 durations.set(r.path, r.seconds)

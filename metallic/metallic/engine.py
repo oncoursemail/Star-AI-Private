@@ -144,10 +144,12 @@ def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | N
                 file_results.append(r)
                 timings.setdefault("first_test", round(time.monotonic() - t0, 3))
                 timings.setdefault("first_signal", round(time.monotonic() - t0, 3))
+                if r.status != "pass":
+                    timings.setdefault("first_fail", round(time.monotonic() - t0, 3))
                 near.discard(r.path)
                 if not near:            # the changed tests and their direct importers have all answered
                     timings.setdefault("near_done", round(time.monotonic() - t0, 3))
-            if r.status == "pass":
+            if r.status == "pass" and not r.order_dependent:
                 cache.put(keys[r.path], {"tests": r.tests, "seconds": r.seconds})
             emit("test", r, time.monotonic() - t0)
 
@@ -160,6 +162,8 @@ def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | N
         tests_info["failed"] = [{"file": r.path, "status": r.status, "failures": r.failures, "output": r.output[-3000:]}
                                 for r in bad]
         tests_info["tests_run"] = sum(r.tests for r in file_results)
+        order = [r for r in file_results if r.order_dependent]
+        tests_info["order_dependent"] = [{"file": r.path, "failures": r.failures} for r in order]
         status = checks.FAIL if bad else checks.PASS
         skipped = len(to_run) - len(file_results)
         tests_info["not_run"] = skipped
@@ -167,9 +171,14 @@ def run_check(root: Path, cfg: Config, *, base: str | None = None, tree: str | N
                    + (f" ({sel.full_reason})" if sel.full_reason else "")
                    + f", {len(cached)} cached, {len(file_results)} ran, {len(bad)} failed"
                    + (f", {skipped} not run (fail fast)" if skipped else ""))
+        if order:
+            summary += f", {len(order)} order-dependent (failed in a batch, passed alone)"
         record(checks.CheckResult("tests", status, summary,
                                   [checks.finding(r.path, 0, "test", "; ".join(r.failures[:3]) or r.status)
-                                   for r in bad]))
+                                   for r in bad]
+                                  + [checks.finding(r.path, 0, "order-dependent", "failed after other test files in "
+                                                    "the same process, passed alone: " + "; ".join(r.failures[:2]),
+                                                    checks.WARN) for r in order]))
     elif not only or "tests" in only:
         record(checks.CheckResult("tests", checks.SKIP, "no [tests] in metallic.toml"))
 

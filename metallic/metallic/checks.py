@@ -342,6 +342,8 @@ def check_luau(ctx: Context) -> CheckResult:
 def check_eval(ctx: Context, verdict_file: str | None, state: Path) -> CheckResult:
     hit = [f for f in ctx.changed if ctx.cfg.eval_paths and matches(f, ctx.cfg.eval_paths)]
     blocking = ctx.cfg.eval_blocking
+    if not ctx.cfg.eval_paths:
+        return CheckResult("eval-gate", SKIP, "no eval-sensitive paths configured", blocking=blocking)
     if not hit:
         return CheckResult("eval-gate", PASS, "no eval-sensitive file changed", blocking=blocking)
     path = Path(verdict_file) if verdict_file else state / "eval" / (ctx.tree + ".json")
