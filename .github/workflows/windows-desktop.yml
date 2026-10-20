@@ -96,14 +96,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # No `cache: pip`: restoring it downloaded a 526 MB archive (~30 s) that the base venv makes useless.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-desktop.txt
-            requirements-dev.txt
       # main (release) and requested previews: clean install, clean build, maximum compression.
       # Every other run validates the same source with the runner's host caches and fast packaging.
       - name: Choose a clean release build or a cached validation build
@@ -200,14 +196,10 @@ jobs:
             run_id = [string]$env:GITHUB_RUN_ID
           } | ConvertTo-Json -Compress
           [System.IO.File]::WriteAllText('star/build-info.json', $payload, (New-Object System.Text.UTF8Encoding $false))
+      # No `cache: pip`: restoring it downloaded a 526 MB archive (~30 s) that the base venv makes useless.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-desktop.txt
-            requirements-dev.txt
       # main (release) and requested previews: clean install, clean build, maximum compression.
       # Every other run validates the same source with the runner's host caches and fast packaging.
       - name: Choose a clean release build or a cached validation build
