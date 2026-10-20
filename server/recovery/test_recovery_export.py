@@ -235,6 +235,41 @@ class RecoveryExportTests(unittest.TestCase):
         self.assertEqual(result.stdout, b"")
         self.assertEqual((valuable / "keep").read_text(), "keep")
 
+    def test_excluded_live_database_takes_its_wal_sidecars_with_it(self):
+        writer = sqlite3.connect(self.source / "kb.sqlite3")
+        try:
+            writer.execute("PRAGMA journal_mode=WAL")
+            writer.execute("PRAGMA wal_autocheckpoint=0")
+            writer.execute("CREATE TABLE chunks(id INTEGER PRIMARY KEY)")
+            writer.commit()
+            (self.source / "keep.json").write_text("{}")
+            self.config["exclude_patterns"] = ["star/kb.sqlite3*"]  # the hourly export; kb goes in its own daily one
+            _, files = self.capture()
+            self.assertEqual(set(files), {exporter.MANIFEST, "star/keep.json"})
+            self.config["sources"] = [{"name": "knowledge-kb", "path": str(self.source / "kb.sqlite3")}]
+            self.config.pop("exclude_patterns")
+            _, files = self.capture()
+            self.assertEqual(set(files), {exporter.MANIFEST, "knowledge-kb/kb.sqlite3"})
+        finally:
+            writer.close()
+
+    def test_source_gate_routes_each_command_to_one_fixed_config(self):
+        gate = Path(__file__).resolve().parent / "source_gate.py"
+        env = {**os.environ, "HOME": str(self.root)}
+
+        def run(command):
+            return subprocess.run([sys.executable, str(gate)], env={**env, "SSH_ORIGINAL_COMMAND": command},
+                                  capture_output=True, text=True, timeout=30)
+
+        self.assertEqual(run("health").stdout.strip(), "star-recovery-export-v1")
+        for command in ("", "id", "export-kb ", "export;id", "export --config /tmp/x"):
+            with self.subTest(command=command):
+                self.assertEqual(run(command).returncode, 126)
+        # No ~/.config/star-recovery/export-kb.json in this HOME: the exporter itself runs and fails closed.
+        result = run("export-kb")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Recovery export failed", result.stderr)
+
     def test_single_file_source(self):
         path = self.source / "state.json"
         path.write_text('{"ready":true}')

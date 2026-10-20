@@ -27,6 +27,8 @@ The Brain 1 scope is the 16 source roots below. Minecraft/Metallic world data is
 
 The exact exclusion patterns are recorded in `starai_export.example.json`: Python bytecode caches, `.pyc`, `.log`, `.bak-*`, and 11 named raw-document symlinks under `knowledge-sources`. Those excluded bundles include the OpenStax bundles, Blender and Godot manuals, ebook, SimpleWiki, and Wikipedia topics. The archive manifest records the source paths and configured exclusions for restoration review.
 
+The knowledge database `knowledge-data/kb.sqlite3` (with its `-wal`/`-shm` files) is excluded from the hourly job since 2026-10-20: it is about 1.9 GB, can be rebuilt from the sources plus embeddings, and while it was being rewritten each hourly copy added about 1 GB. It has its own daily workload `starai-kb` (source name `knowledge-kb`; `starai_kb_export.example.json` on Brain 1, `starai_kb_backup.example.json` on Brain 2, SSH command `export-kb` through the same restricted gate). Budgets: 12 GiB for `starai` and 8 GiB for `starai-kb`, 20 GiB together.
+
 The baseline below has passed a full repository data read, extraction, file hashes, and SQLite integrity checks. These checks establish that the saved bytes can be recovered. They do not establish that the application boots, that a Minecraft world is clean, or that the original content was free of griefing or compromise. A DDoS can still prevent access while the network is under attack.
 
 ### Recorded first verified checkpoint
@@ -56,6 +58,9 @@ Run the following commands on Brain 2 as the Brain 2 backup user.
 | Protected baseline repository | `~/.local/share/star-recovery/repositories/starai-baseline` |
 | Rolling password file | `~/.config/star-recovery/starai-password` |
 | Baseline password file | `~/.config/star-recovery/starai-baseline-password` |
+| kb workload: configuration, status | `~/.config/star-recovery/starai-kb.json`, `~/.local/state/star-recovery/starai-kb-status.json` |
+| kb workload: repositories | `~/.local/share/star-recovery/repositories/starai-kb`, `starai-kb-baseline` |
+| kb workload: password files | `~/.config/star-recovery/starai-kb-password`, `starai-kb-baseline-password` |
 | Temporary export staging, on Brain 1 | `/data/star-re/knowledge/.star-recovery-staging` |
 
 Keep the two password files private. Arrange an owner-controlled, offline copy of **both passwords and the corresponding encrypted repositories**. The passwords are different, and losing a repository's password makes that repository unusable. A password copy alone cannot recover a failed disk. Do not put these passwords on Brain 1 or publish them in logs or support messages.
@@ -71,6 +76,7 @@ The configured user timers are:
 | `star-recovery-backup.timer` | Every hour at minute 10, with a boot trigger after about 3 minutes | Pull a fresh encrypted snapshot |
 | `star-recovery-verify.timer` | Daily at 07:35 | Verify the latest rolling restore, then the fixed original baseline, in disposable private staging |
 | `star-recovery-retention.timer` | Daily at 00:40 | Apply rolling retention and compact unused data |
+| `star-recovery-kb.timer` | Daily at 04:00 America/Chicago | Back up `kb.sqlite3`, verify the latest restore, verify (first run: create) its baseline, apply the same retention |
 
 All three timers were enabled during deployment, and a service-triggered backup completed at 19:52:01 UTC on 2026-10-19. That incremental backup added 1,895,144 packed bytes; future growth depends on changed data. Check the current timer state and next run:
 

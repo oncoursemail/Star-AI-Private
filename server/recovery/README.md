@@ -29,6 +29,8 @@ Measurements after deployment, in decimal bytes:
 
 The first STAR archive was approximately 1.09 GB before storage compression. Observed subsequent backups added approximately 1.8–2.2 MB each. Actual growth depends on changed data. Main's selected payload was 20,643,824 bytes; its initial packed backup added 8,966,479 bytes.
 
+The knowledge database `kb.sqlite3` is backed up once a day (04:00 owner time) by its own `starai-kb` workload instead of hourly; see `RECOVERY_RUNBOOK.md`.
+
 Rolling history keeps every available snapshot from the latest **two days**, plus **seven daily, four weekly, and two monthly** selections. Those groups overlap. Baselines are outside this rotation. The hourly schedule targets about one hour of recoverable data loss while the relevant machines and connections are available; the last successful snapshot is the actual recovery point.
 
 Models, downloadable engines, package caches, disposable logs, and explicitly identified reproducible reference bundles are excluded. Required selected files cannot disappear or fail to read silently. Transfers, temporary staging, disk reserves, and repository size budgets are checked. The repository budget is a preflight guard, not an exact filesystem quota; growth can cross the budget within one bounded backup before another backup is refused. Existing snapshots and baselines are retained when a guard fails.
