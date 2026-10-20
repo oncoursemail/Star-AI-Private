@@ -203,7 +203,7 @@ class RobloxIntelligenceHub:
             raise ValueError("Roblox response is too large for STAR")
         try:
             data = response.json()
-        except (ValueError, UnicodeError) as exc:
+        except (ValueError, UnicodeError):
             raise ValueError("Roblox sent invalid JSON") from None
         if not isinstance(data, dict):
             raise ValueError("Roblox response is not an object")
