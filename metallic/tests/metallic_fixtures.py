@@ -31,6 +31,7 @@ blocking = true
 
 FILES = {
     "metallic.toml": CONFIG,
+    ".gitignore": "__pycache__/\n",         # the tested files write .pyc: not a change
     "README.md": "demo\n",
     "pkg/__init__.py": "",
     "pkg/core.py": "def add(a, b):\n    return a + b\n",

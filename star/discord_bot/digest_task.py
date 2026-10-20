@@ -151,7 +151,8 @@ def watchdog_alerts(state: object, *, now: datetime) -> list[tuple[str, str]]:
 
 async def send_watchdog_alerts(config: DigestConfig, send, *, runner=subprocess.run, now=None) -> int:
     """DM each new knowledge-service restart once (own ledger table, outside the digest cooldown)."""
-    if not config.ssh_target:
+    state_path = config.state_path
+    if not config.ssh_target or state_path is None:
         return 0
     now = now or datetime.now(timezone.utc)
     ssh = shutil.which("ssh")
@@ -166,8 +167,8 @@ async def send_watchdog_alerts(config: DigestConfig, send, *, runner=subprocess.
         alerts = watchdog_alerts(json.loads(result.stdout.decode("utf-8", errors="replace")), now=now)
     except ValueError:
         return 0
-    config.state_path.parent.mkdir(parents=True, exist_ok=True)
-    ledger = DeliveryLedger(config.state_path, config.owner_id)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger = DeliveryLedger(state_path, config.owner_id)
     sent = 0
     try:
         for alert_id, text in alerts:

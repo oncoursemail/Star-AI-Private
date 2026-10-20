@@ -379,9 +379,9 @@ def check_code(code: str, language: str, *, api_dump=None, first_block: bool = T
             body = [l for l in lines[start + 1:end - 1] if l.strip()]
             if body and all(l.strip().startswith("--") for l in body):
                 out.append(Finding("C02.empty_body", 6, "a function body holds only comments", start + line_base, hard=True))
-    if _VACUOUS.search(code):
+    if vacuous := _VACUOUS.search(code):
         out.append(Finding("C07.vacuous_assert", 6, "an assertion that is always true",
-                           code.count("\n", 0, _VACUOUS.search(code).start()) + line_base, hard=True))
+                           code.count("\n", 0, vacuous.start()) + line_base, hard=True))
     for number in _lines_with(_PLACEHOLDER, code)[:3]:
         out.append(Finding("C03.placeholder_value", 3 if first_block else 1, "placeholder value left in the code",
                            number + line_base - 1))
@@ -439,9 +439,9 @@ def check_ui(code: str, *, line_base: int = 1, findings: list[Finding] | None = 
     emoji = _EMOJI.findall(code)
     if len(emoji) >= 2:
         out.append(Finding("U02.emoji_icons", 3, f"{len(emoji)} emoji used as icons or bullets", line_base))
-    if _VIOLET.search(code):
+    if violet := _VIOLET.search(code):
         out.append(Finding("U03.gradient_violet", 4, "violet/indigo gradient, the default AI palette",
-                           code.count("\n", 0, _VIOLET.search(code).start()) + line_base))
+                           code.count("\n", 0, violet.start()) + line_base))
     if len(_GLASS.findall(code)) >= 2:
         out.append(Finding("U04.glass", 3, "backdrop-blur glass panels", line_base))
     if len(_CTA.findall(code)) >= 2:
@@ -595,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import random
 
-    parser = argparse.ArgumentParser(prog="python -m star.slop", description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(prog="python -m star.slop", description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("paths", nargs="+", help="eval result .json, answers .jsonl, or text files")
     parser.add_argument("--prompts", action="append", default=[], help="suite JSON (id -> prompt) for the restating rule")
     parser.add_argument("--sample", type=int, default=0, help="write N random flagged findings for hand-checking")
