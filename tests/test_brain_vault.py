@@ -231,3 +231,11 @@ def test_private_names_come_from_the_environment_the_file_and_the_account(monkey
     assert brain_vault.private_names() == ("envuser", "other", "fileuser", "short")
     monkeypatch.setattr(brain_vault.getpass, "getuser", lambda: "account")
     assert brain_vault.private_names()[-1] == "account"
+
+
+def test_a_build_without_a_graph_keeps_the_last_code_map(built):
+    out, _, workspace, repo = built
+    (repo / "graphify-out" / "graph.json").unlink()
+    manifest = brain_vault.build(out, workspace=workspace, repo=repo, now=NOW)
+    assert (out / "code/star/slop_py.md").is_file() and manifest["code"]["files"] == 2
+    assert "Code map: 2 source files" in (out / "Home.md").read_text(encoding="utf-8")

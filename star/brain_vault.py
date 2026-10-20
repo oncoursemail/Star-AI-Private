@@ -476,6 +476,9 @@ def build(out: Path, *, workspace: Path | None = None, repo: Path | None = None,
         notes = build_notes(stage, workspace, repo, totals)
         daily = build_daily(stage, notes, repo, totals, days=days, today=now)
         code = build_code_map(stage, graph, totals) if graph is not None and graph.is_file() else None
+        keep_code = code is None and (out / "code").is_dir()      # no graph this time: the last code map stays
+        if keep_code:
+            code = (_marker(out) or {}).get("code")
         built = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
         by_group = Counter(n["group"] for n in notes)
         _home(stage, notes, daily, code, built, by_group)
@@ -484,6 +487,8 @@ def build(out: Path, *, workspace: Path | None = None, repo: Path | None = None,
         (stage / MARKER).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         out.mkdir(parents=True, exist_ok=True)
         for name in OWNED:
+            if name == "code" and keep_code:
+                continue
             old, new = out / name, stage / name
             if old.is_dir():
                 shutil.rmtree(old)
