@@ -72,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tasks", default="")
     ap.add_argument("--bank", type=Path, default=None)
     ap.add_argument("--bank-chars", type=int, default=8000)
+    ap.add_argument("--retry-errors", action="store_true", help="run tasks that ended in an error again")
     args = ap.parse_args(argv)
     if not args.knowledge:
         raise SystemExit("give --knowledge or STAR_EVAL_KNOWLEDGE (the docs search and Luau check run there)")
@@ -84,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
         run += ["--ssh", args.ssh]
     if args.tasks:
         run += ["--tasks", args.tasks]
+    if args.retry_errors:
+        run.append("--retry-errors")
     return eval_runner.main(run)
 
 

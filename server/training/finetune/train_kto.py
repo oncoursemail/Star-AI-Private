@@ -40,7 +40,7 @@ def main() -> None:
     ap.add_argument("--data", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--epochs", type=int, default=1)
-    ap.add_argument("--lr", type=float, default=5e-6)
+    ap.add_argument("--lr", type=float, default=5e-5)   # 5e-6 (full fine-tune scale) left the LoRA unchanged: loss 0.494 flat over 232 rows
     ap.add_argument("--beta", type=float, default=0.1)
     ap.add_argument("--accum", type=int, default=8)
     ap.add_argument("--max-len", type=int, default=3072)
@@ -86,15 +86,21 @@ def main() -> None:
     model = PeftModel.from_pretrained(model, args.adapter, is_trainable=True)
 
     def seq_logp(row):
-        labels = row["labels"][:, 1:].cuda()
-        mask = labels != -100
-        logits = model(input_ids=row["ids"].cuda()).logits[:, :-1][mask].float()   # answer positions only
-        return -torch.nn.functional.cross_entropy(logits, labels[mask], reduction="sum")
+        # The answer is the tail of the sequence: ask for logits of those positions only (the full [L, 151k] logits
+        # pushed the 8 GB card into shared system memory, 11 GB of RAM, in the first run).
+        n = int((row["labels"] != -100).sum())
+        logits = model(input_ids=row["ids"].cuda(), logits_to_keep=n + 1).logits[0, :-1].float()
+        return -torch.nn.functional.cross_entropy(logits, row["labels"][0, -n:].cuda(), reduction="sum")
 
     model.eval()
     with torch.no_grad():
-        for row in train + val:
+        for i, row in enumerate(train + val):
             row["ref"] = float(seq_logp(row))
+            if i % 16 == 15:
+                torch.cuda.empty_cache()
+                why = "STOP-TRAIN file" if stop_file.exists() else owner_busy(args.ram_floor, stop_procs)
+                if why:
+                    raise SystemExit("stopped during the reference pass: " + why)
     ref_s = round(time.monotonic() - t0, 1)
 
     def evaluate(z0: float) -> dict:
@@ -137,7 +143,7 @@ def main() -> None:
             z0 = max(0.0, sum(recent) / len(recent)) if recent else 0.0
             loss = kto_loss(r, row["label"], z0, args.beta, w_good, w_bad) / args.accum
             loss.backward()
-            recent.append(float(r))
+            recent.append(float(r.detach()))
             run_loss += float(loss) * args.accum
             if i % args.accum == 0 or i == len(order):
                 torch.nn.utils.clip_grad_norm_(params, 1.0)
