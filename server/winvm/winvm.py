@@ -41,7 +41,7 @@ DEFAULTS = {"cpus": 8, "mem_mb": 8192, "disk_gb": 64, "pool": 1, "max_vms": 2, "
 
 
 # ----------------------------------------------------------------------------------------------- pure helpers (tested)
-def qemu_args(vm_id, run_dir, disk, cpus, mem_mb, mode, isos=(), helper=None):
+def qemu_args(vm_id, run_dir, disk, cpus, mem_mb, mode, isos=(), helper=None, disk_cache="unsafe"):
     """QEMU command line. mode: 'install' (boot the ISOs), 'golden' (boot the golden disk) or 'resume' (-incoming).
 
     The device list must be identical between the golden run that saved the state and every resumed clone, so the
@@ -56,7 +56,7 @@ def qemu_args(vm_id, run_dir, disk, cpus, mem_mb, mode, isos=(), helper=None):
          "-cpu", "host," + hv, "-smp", str(cpus), "-m", str(mem_mb),
          "-drive", "if=pflash,format=raw,readonly=on,file=" + OVMF_CODE,
          "-drive", "if=pflash,format=raw,file=" + os.path.join(run_dir, "vars.fd"),
-         "-drive", "if=none,id=d0,format=qcow2,cache=unsafe,discard=unmap,aio=threads,file=" + disk,
+         "-drive", "if=none,id=d0,format=qcow2,cache=%s,discard=unmap,aio=threads,file=%s" % (disk_cache, disk),
          "-device", "ide-hd,drive=d0,bus=ide.2,bootindex=1",  # AHCI: inbox driver and migratable (QEMU nvme is not)
          "-netdev", "user,id=n0," + fwd, "-device", "e1000e,netdev=n0,mac=52:54:00:57:49:4e",
          "-device", "qemu-xhci", "-device", "usb-tablet", "-vga", "std", "-display", "none",
@@ -126,6 +126,17 @@ def want_pool(brain_busy, brain_idle_s, running, ready, demand, cfg):
     if not brain_busy and brain_idle_s >= 60:
         need = max(need, cfg["pool"] - ready)
     return min(room, need)
+
+
+def guest_file(run_dir, path):
+    """Path of a host file offered to the guest as /file/NAME (only plain names inside run_dir/files), else None."""
+    if not path or not path.startswith("/file/"):
+        return None
+    name = path[len("/file/"):]
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        return None
+    p = os.path.join(run_dir, "files", name)
+    return p if os.path.isfile(p) else None
 
 
 def gate_want(chat, quiet_s, hold=1.0):
@@ -202,7 +213,8 @@ def launch(vm_id, disk, mode, cfg, isos=(), vars_src=None):
     d = run_dir(vm_id)
     os.makedirs(d, exist_ok=True)
     shutil.copyfile(vars_src or os.path.join(GOLDEN, "vars.fd"), os.path.join(d, "vars.fd"))
-    subprocess.run(qemu_args(vm_id, d, disk, cfg["cpus"], cfg["mem_mb"], mode, isos), check=True)
+    subprocess.run(qemu_args(vm_id, d, disk, cfg["cpus"], cfg["mem_mb"], mode, isos,
+                              disk_cache=cfg.get("disk_cache", "unsafe")), check=True)
     return QMP(os.path.join(d, "qmp.sock"))
 
 
@@ -429,6 +441,14 @@ def cmd_guest_http(a):
             break
         raw += b
     path, query = parse_request(raw)
+    f = guest_file(run_dir(a.id), path)
+    if f:  # host-provided input files (e.g. a built Setup for the installer test), streamed
+        sys.stdout.buffer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n"
+                                b"Content-Length: %d\r\n\r\n" % os.path.getsize(f))
+        with open(f, "rb") as src:
+            shutil.copyfileobj(src, sys.stdout.buffer, 1 << 20)
+        sys.stdout.buffer.flush()
+        return
     body = json.dumps(guest_reply(run_dir(a.id), path, query, time.time())).encode()
     sys.stdout.buffer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n"
                             b"Content-Length: %d\r\n\r\n" % len(body) + body)

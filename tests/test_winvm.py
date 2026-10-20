@@ -143,7 +143,7 @@ def test_brain_watch_state():
     idle = [{"id": 0, "is_processing": False}, {"id": 1, "is_processing": False}]
     assert bw.state(idle, idle) == (False, False)
     background = [{"id": 0, "is_processing": False}, {"id": 1, "is_processing": True}]
-    assert bw.state(background, idle) == (False, True)   # night school on slot 1 is not chat
+    assert bw.state(background, idle) == (True, True)    # slot 1 may be the owner too: freeze
     owner = [{"id": 0, "is_processing": True}, {"id": 1, "is_processing": False}]
     assert bw.state(owner, idle) == (True, True)
     assert bw.state(idle, owner) == (True, True)          # voice counts as chat
@@ -166,3 +166,22 @@ def test_must_yield(tmp_path, state, expect):
 def test_guest_log_is_decoded(tmp_path):
     winvm.guest_reply(str(tmp_path), "/log", {"m": "STEP%20ok%20pip%20180s"}, 5.0)
     assert (tmp_path / "guest.log").read_text() == "5 STEP ok pip 180s\n"
+
+
+def test_guest_file_only_serves_plain_names_from_files_dir(tmp_path):
+    (tmp_path / "files").mkdir()
+    (tmp_path / "files" / "dist.zip").write_bytes(b"zip")
+    (tmp_path / "secret").write_text("x")
+    assert winvm.guest_file(str(tmp_path), "/file/dist.zip") == str(tmp_path / "files" / "dist.zip")
+    for bad in ("/file/../secret", "/file/", "/file/.hidden", "/file/a\b", "/task", None, "/file/missing"):
+        assert winvm.guest_file(str(tmp_path), bad) is None
+
+
+def test_guest_http_streams_a_file(tmp_path):
+    env = dict(os.environ, WINVM_RUN=str(tmp_path))
+    (tmp_path / "v8" / "files").mkdir(parents=True)
+    (tmp_path / "v8" / "files" / "a.bin").write_bytes(b"\x00\x01" * 1000)
+    r = subprocess.run([sys.executable, str(ROOT / "winvm.py"), "guest-http", "v8"], env=env, timeout=30,
+                       input=b"GET /file/a.bin HTTP/1.1\r\n\r\n", capture_output=True, check=True)
+    head, body = r.stdout.split(b"\r\n\r\n", 1)
+    assert b"Content-Length: 2000" in head and body == b"\x00\x01" * 1000

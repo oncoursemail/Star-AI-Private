@@ -30,4 +30,34 @@ lxc exec "$NAME" -- mkdir -p /opt/winvm/guest /srv/winvm/iso /srv/winvm/golden /
 lxc file push -q "$HERE/winvm.py" "$HERE/tools.json" "$NAME/opt/winvm/"
 lxc file push -q "$HERE"/guest/* "$NAME/opt/winvm/guest/"
 lxc exec "$NAME" -- chmod 755 /opt/winvm/winvm.py
+
+# Chat/lock gate: brain_watch.py inside the brain container publishes {chat, busy, lock}; the gate in this container
+# freezes every VM while it says so. Shared folder: /data/star-re/winvm/shared (rw in starai, ro here).
+BRAIN=${WINVM_BRAIN:-starai}
+lxc exec "$BRAIN" -- mkdir -p /opt/star/winvm /data/star-re/winvm/shared
+lxc file push -q "$HERE/brain_watch.py" "$BRAIN/opt/star/winvm/brain_watch.py"
+lxc exec "$BRAIN" -- bash -c 'cat > /etc/systemd/system/star-winvm-watch.service <<EOF
+[Unit]
+Description=STAR brain state for the Windows CI VM gate (server/winvm/brain_watch.py)
+[Service]
+ExecStart=/usr/bin/python3 /opt/star/winvm/brain_watch.py /data/star-re/winvm/shared/brain-state.json
+Nice=10
+MemoryMax=64M
+Restart=always
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload; systemctl stop star-winvm-watch 2>/dev/null; systemctl enable --now star-winvm-watch'
+lxc config device show "$NAME" | grep -q '^shared:' || \
+  lxc config device add "$NAME" shared disk source=/data/star-re/winvm/shared path=/srv/winvm/shared readonly=true -q
+lxc exec "$NAME" -- bash -c 'cat > /etc/systemd/system/winvm-gate.service <<EOF
+[Unit]
+Description=Freeze the Windows CI VMs while STAR serves chat or a quiet lock is held (winvm.py gate)
+[Service]
+ExecStart=/usr/bin/python3 /opt/winvm/winvm.py gate
+Restart=always
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload; systemctl stop winvm-gate 2>/dev/null; systemctl enable --now winvm-gate'
 lxc exec "$NAME" -- test -r /dev/kvm && echo "$NAME ready: $(lxc exec "$NAME" -- qemu-system-x86_64 --version | head -1)"

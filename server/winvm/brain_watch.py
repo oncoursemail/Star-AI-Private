@@ -5,8 +5,9 @@
 
 Every 0.25 s it reads /slots of star-fast and star-voice through the local router and writes (atomically)
     {"t": epoch, "chat": bool, "busy": bool, "idle_s": seconds since anything was busy, "lock": quiet-lock owner}
-chat = star-fast slot 0 (kept for the owner's chat, see star/background_cap.py) or any star-voice slot is working.
-busy = any star-fast/star-voice slot is working. lock = owner of the server quiet lock (/opt/star/lock) or "".
+chat = any star-fast or star-voice slot is working. (Slot 0 alone is not enough: background clients never use slot 0,
+but an unnamed owner request may land on slot 1 too; measured 2026-10-20, the slot-0 rule froze 2 of 5 requests.)
+busy = the same today; kept separate so the pool policy can differ later. lock = owner of the server quiet lock (/opt/star/lock) or "".
 Only these fields leave the container; the API key stays here.
 """
 import json
@@ -27,9 +28,8 @@ def slots(model, key):
 
 def state(fast, voice):
     """(chat, busy) from the two /slots lists."""
-    fast_busy = [s.get("id") for s in fast if s.get("is_processing")]
-    voice_busy = any(s.get("is_processing") for s in voice)
-    return (0 in fast_busy) or voice_busy, bool(fast_busy) or voice_busy
+    busy = any(s.get("is_processing") for s in fast) or any(s.get("is_processing") for s in voice)
+    return busy, busy
 
 
 def lock_owner():

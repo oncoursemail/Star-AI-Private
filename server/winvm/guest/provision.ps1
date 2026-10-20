@@ -53,8 +53,8 @@ Step 'python 3.11.9 (tool cache)' {
     Copy-Item (Join-Path $env:TEMP 'py\tools\*') $dst -Recurse -Force
     New-Item -ItemType File -Force "$dst.complete" | Out-Null
     # The nuget package has pip but no Scripts\pip.exe; setup-python runs `pip cache dir` (failed run 39481758008).
-    & (Join-Path $dst 'python.exe') -m ensurepip --upgrade
-    if (-not (Test-Path (Join-Path $dst 'Scripts\pip.exe'))) { throw 'pip.exe missing after ensurepip' }
+    & (Join-Path $dst 'python.exe') -m pip install --disable-pip-version-check --force-reinstall --no-deps pip==24.0
+    if (-not (Test-Path (Join-Path $dst 'Scripts\pip.exe'))) { throw 'pip.exe missing after reinstalling pip' }
 }
 
 Step 'node 22.23.3 (tool cache)' {
@@ -82,6 +82,8 @@ Step 'machine environment' {
     [Environment]::SetEnvironmentVariable('AGENT_TOOLSDIRECTORY', $TC, 'Machine')
     [Environment]::SetEnvironmentVariable('PIP_CACHE_DIR', $env:PIP_CACHE_DIR, 'Machine')
     [Environment]::SetEnvironmentVariable('npm_config_cache', $env:npm_config_cache, 'Machine')
+    # The installer smoke guard (scripts/smoke_windows_installer.ps1, PR #529) wants this plus user ci + the marker.
+    [Environment]::SetEnvironmentVariable('STAR_DISPOSABLE_WINDOWS', '1', 'Machine')
     $path = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     [Environment]::SetEnvironmentVariable('Path', "C:\tools\pwsh;C:\tools\git\cmd;$path", 'Machine')
     New-Item -ItemType Directory -Force C:\ProgramData\STAR-CI | Out-Null
