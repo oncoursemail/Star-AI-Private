@@ -38,7 +38,7 @@ Owner question 2026-10-20: does STAR have Obsidian and Graphify, and would they 
      subjects; 12 days); `code/<dir>/<file>_<ext>.md` (671 source files: docstring, definitions with line numbers, imports,
      imported-by, tested-by as wiki-links) and `_overview.md` per folder; `Home.md`; `.brain-vault.json` manifest.
    - Redaction of every note: private network addresses (10/8, 172.16/12, 192.168/16, 100.64/10, link-local), server user
-     names and the OS account, keys and tokens (same patterns as `star commit`), e-mail addresses, home-folder paths. Placeholders
+     names (listed in `~/.star/vault-private-names.txt` or `STAR_VAULT_PRIVATE_NAMES`, never in the repo) and the OS account, keys and tokens (same patterns as `star commit`), e-mail addresses, home-folder paths. Placeholders
      are `[private-ip]`, `[user]`, `[email]`, `[redacted-key]` (square brackets, so Obsidian does not hide them as HTML).
      Today's build: 82 addresses, 184 user names, 20 e-mails replaced; `tools/star.py scan_line` finds nothing in the vault.
    - Safe regeneration: builds into `<vault>.building`, replaces only `notes/ daily/ code/ Home.md`, never touches
