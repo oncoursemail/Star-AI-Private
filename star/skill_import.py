@@ -154,6 +154,9 @@ def import_reviewed_skill(
         raise PermissionError("Skill destination must not be a symlink")
     root.mkdir(parents=True, exist_ok=True)
     target = root / info["name"]
+    built_in = Path(__file__).resolve().parent / "skill_packs" / info["name"] / "SKILL.md"
+    if built_in.is_file():
+        raise FileExistsError(f"Cannot shadow a bundled STAR skill: {info['name']}")
     if target.exists() or target.is_symlink():
         raise FileExistsError(f"Existing skill is unchanged: {info['name']}")
     staging = Path(tempfile.mkdtemp(prefix=".star-reviewed-", dir=root))
