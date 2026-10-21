@@ -543,20 +543,21 @@ class LocalIntelligence:
             raise PermissionError("Intelligence tool is not enabled for this task")
         Draft202012Validator(ALL_TOOLS[name]["inputSchema"]).validate(args)
         if name in _HUB_TOOL_NAMES:
-            if self.roblox_hub is None:
+            hub = self.roblox_hub
+            if hub is None:
                 raise PermissionError("Roblox intelligence hub is not enabled")
             handlers = {
-                "star_roblox_marketplace_search": lambda: self.roblox_hub.marketplace_search(
+                "star_roblox_marketplace_search": lambda: hub.marketplace_search(
                     args["query"], category=args.get("category", 1)),
-                "star_roblox_creator_store_search": lambda: self.roblox_hub.creator_store_search(
+                "star_roblox_creator_store_search": lambda: hub.creator_store_search(
                     args["query"], category=args.get("category", "Model")),
-                "star_roblox_creator_asset": lambda: self.roblox_hub.creator_asset(args["asset_id"]),
-                "star_roblox_analytics_metrics": lambda: self.roblox_hub.analytics_metrics(
+                "star_roblox_creator_asset": lambda: hub.creator_asset(args["asset_id"]),
+                "star_roblox_analytics_metrics": lambda: hub.analytics_metrics(
                     args["universe_id"], args["metric"], args["start_day"], args["end_day"],
                     granularity=args.get("granularity", "OneDay"), breakdown=args.get("breakdown", "")),
-                "star_roblox_analytics_poll": lambda: self.roblox_hub.analytics_poll(
+                "star_roblox_analytics_poll": lambda: hub.analytics_poll(
                     args["universe_id"], args["operation_id"], metric=args["metric"]),
-                "star_roblox_gameplay_telemetry_plan": self.roblox_hub.gameplay_plan,
+                "star_roblox_gameplay_telemetry_plan": hub.gameplay_plan,
             }
             return handlers[name]()
         if name == "star_architecture_preview":
