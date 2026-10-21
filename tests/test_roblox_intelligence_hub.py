@@ -159,18 +159,60 @@ def test_public_marketplace_search_fixed_host_and_bounded_metadata():
     assert "x-api-key" not in client.calls[0]["headers"]
 
 
-def test_creator_store_beta_search_and_asset_details_have_no_uploads():
-    hub, client = setup_hub(Response({"assets": [{"id": 999, "name": "Asset"}]}),
-                            Response({"name": "Asset", "description": "Just sample metadata"}))
+# Response shapes recorded from the live public endpoints on 2026-10-21 (no sign-in), trimmed.
+LIVE_STORE_SEARCH = {"nextPageToken": "opaque", "totalResults": 25, "queryFacets": {"availableFacets": ["pine"]},
+                     "creatorStoreAssets": [
+                         {"creator": {"creator": "user/24773541", "userId": 24773541, "name": "SheriffTaco", "verified": True},
+                          "asset": {"id": 580221169, "name": "Tree", "description": "", "hasScripts": False,
+                                    "assetTypeId": 10, "categoryPath": "3d__nature"}},
+                         {"asset": {"id": "-5", "name": "BAD"}}, {"id": 7, "name": "flat item is not the live shape"}]}
+LIVE_STORE_ASSET = {"creator": {"name": "SheriffTaco"},
+                    "asset": {"id": 580221169, "name": "Tree", "description": "Just sample metadata", "hasScripts": False}}
+
+
+def test_creator_store_search_and_asset_details_use_live_get_shapes_and_no_uploads():
+    hub, client = setup_hub(Response(LIVE_STORE_SEARCH), Response(LIVE_STORE_ASSET))
     result = hub.creator_store_search("trees", category="Model")
-    details = hub.creator_asset(999)
-    assert result["beta"] and result["results"][0]["asset_id"] == 999
+    details = hub.creator_asset(580221169)
+    assert result["beta"] and result["results"] == [
+        {"asset_id": 580221169, "name": "Tree", "creator": "SheriffTaco",
+         "url": "https://create.roblox.com/store/asset/580221169"}]
     assert client.calls[0]["url"] == BASE + "/toolbox-service/v2/assets:search"
-    assert client.calls[0]["method"] == "POST"
-    assert client.calls[0]["json"] == {"searchCategoryType": "Model", "query": "trees"}
-    assert client.calls[1]["method"] == "GET" and client.calls[1]["url"].endswith("/assets/999")
+    assert client.calls[0]["method"] == "GET" and client.calls[0]["json"] is None
+    assert client.calls[0]["params"] == {"searchCategoryType": "Model", "query": "trees"}
+    assert client.calls[1]["method"] == "GET" and client.calls[1]["url"].endswith("/assets/580221169")
+    assert details["name"] == "Tree" and details["description_excerpt"] == "Just sample metadata"
     assert details["data_kind"].startswith("untrusted public")
     assert all("x-api-key" not in item["headers"] for item in client.calls)
+
+
+@pytest.mark.parametrize("payload", [{"data": [{"id": 1, "name": "old shape"}]}, {"creatorStoreAssets": {}}, {}])
+def test_creator_store_search_fails_closed_on_an_unrecognized_shape(payload):
+    hub, _ = setup_hub(Response(payload))
+    with pytest.raises(ValueError, match="unrecognized shape"):
+        hub.creator_store_search("trees")
+
+
+@pytest.mark.parametrize("payload", [{"name": "Tree"}, {"asset": []}, {"asset": {"id": 5, "name": "Other asset"}}])
+def test_creator_asset_fails_closed_when_details_do_not_match_the_request(payload):
+    hub, _ = setup_hub(Response(payload))
+    with pytest.raises(ValueError, match="unrecognized shape"):
+        hub.creator_asset(580221169)
+
+
+def test_public_endpoint_needing_sign_in_says_so_and_never_sends_a_key():
+    hub, client = setup_hub(Response({"errors": [{"code": 0, "message": "XSRF token invalid"}]}, code=403))
+    with pytest.raises(PermissionError, match="does not sign in"):
+        hub.creator_store_search("trees")
+    assert "x-api-key" not in client.calls[0]["headers"]
+
+
+@pytest.mark.parametrize("category", [2, 4, 5, 13])
+def test_marketplace_categories_roblox_rejects_live_are_refused_before_any_request(category):
+    hub, client = setup_hub()
+    with pytest.raises(ValueError, match="Unknown Marketplace category"):
+        hub.marketplace_search("hat", category=category)
+    assert not client.calls
 
 
 @pytest.mark.parametrize("name,keyword", [
@@ -210,6 +252,42 @@ def test_tool_router_lists_public_catalog_and_telemetry_but_not_analytics_by_def
         data = hub.call("star_roblox_gameplay_telemetry_plan", {},
                         enabled={"star_roblox_gameplay_telemetry_plan"})
         assert not data["tested"]
+    finally:
+        hub.close()
+
+
+@pytest.mark.parametrize("prompt", [
+    "Write Luau for a Roblox Studio plugin settings panel",
+    "Roblox obby: explain the game mechanics and level progression",
+    "Roblox server: track session state and metrics in a DataStore",
+    "Roblox tycoon statistics leaderboard with a catalog of upgrades",
+])
+def test_ordinary_roblox_chats_do_not_pay_for_hub_tool_schemas(tmp_path, monkeypatch, prompt):
+    from star.intelligence import LocalIntelligence
+
+    monkeypatch.setenv("STAR_ROBLOX_ANALYTICS_UNIVERSES", "1234")
+    hub = LocalIntelligence(home=tmp_path, skills_enabled=False, graphify_enabled=False,
+                            design_enabled=False, roblox_research_enabled=True)
+    try:
+        names = {t["name"] for t in hub.definitions(prompt)}
+        assert not {t for t in names if t.startswith(("star_roblox_marketplace", "star_roblox_creator_",
+                                                      "star_roblox_analytics", "star_roblox_gameplay"))}
+    finally:
+        hub.close()
+
+
+@pytest.mark.parametrize("prompt", [
+    "Find a Roblox plugin for terrain",
+    "Search the Creator Store for tree models for my Roblox game",
+    "Roblox avatar accessories on the marketplace",
+])
+def test_explicit_catalog_requests_still_get_the_catalog_tools(tmp_path, prompt):
+    from star.intelligence import LocalIntelligence
+
+    hub = LocalIntelligence(home=tmp_path, skills_enabled=False, graphify_enabled=False,
+                            design_enabled=False, roblox_research_enabled=True)
+    try:
+        assert "star_roblox_creator_store_search" in {t["name"] for t in hub.definitions(prompt)}
     finally:
         hub.close()
 

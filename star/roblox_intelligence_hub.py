@@ -8,8 +8,9 @@ Analytics requests are *aggregated metrics*, not individual player records.
 
 Roblox sources (2026-10): create.roblox.com/docs/cloud/guides/analytics,
 cloud/guides/analytics/metrics, projects/assets/api, and
-cloud/reference/features/creator-store. Live API behavior requires real consented
-integration testing on the user's Roblox account.
+cloud/reference/features/creator-store. The public Marketplace and Creator Store
+responses were checked live (no sign-in) on 2026-10-21; the analytics endpoints were
+not and still need a real consented test on the user's own Roblox account.
 """
 from __future__ import annotations
 
@@ -28,7 +29,8 @@ STORE_DOCS = "https://create.roblox.com/docs/cloud/reference/features/creator-st
 BASE = "https://apis.roblox.com"
 MARKET = "https://catalog.roblox.com"
 MAX_BODY_BYTES = 240_000
-_ALLOWED_CATEGORIES = frozenset({1, 2, 3, 4, 5, 11, 12, 13})
+# Live check 2026-10-21: Category 1, 3, 11, 12 answer 200; 2, 4, 5, 13 answer 400 ("subcategory selection not supported").
+_ALLOWED_CATEGORIES = frozenset({1, 3, 11, 12})
 _CREATOR_TYPES = frozenset({"Audio", "Model", "Decal", "Plugin", "MeshPart", "Video", "FontFamily"})
 # Explicit, documented metric+granularity combinations; never let a model
 # supply an arbitrary metric name, filter expression or optional breakdown.
@@ -194,6 +196,9 @@ class RobloxIntelligenceHub:
         if response.status_code == 429:
             raise ValueError("Roblox rate-limited the request (429); retry later")
         if response.status_code in (401, 403):
+            if not key:
+                raise PermissionError("Roblox now requires sign-in for this public endpoint (401/403); "
+                                      "STAR does not sign in, so this tool is unavailable")
             raise PermissionError("Roblox declined access (401/403); check API key, universe scope and permissions")
         if response.status_code not in (200, 202):
             raise ValueError(f"Roblox returned HTTP {response.status_code}; no data verified")
@@ -237,30 +242,33 @@ class RobloxIntelligenceHub:
                 "source": CATALOG_DOCS, "note": "Public listing metadata only; no ownership, downloads or purchases."}
 
     def creator_store_search(self, query: str, *, category: str = "Model") -> dict:
-        """Beta Creator Store search. 2026 reference documents a POST endpoint.
+        """Creator Store search (public GET, no sign-in).
 
-        Roblox's older published toolbox OpenAPI used GET/query params. Keep
-        compatibility status explicit, and fail on 4xx rather than silent fallback
-        to undocumented cookie-protected endpoints.
+        Live check 2026-10-21: GET /toolbox-service/v2/assets:search?searchCategoryType=..&query=..
+        answers 200 with {"creatorStoreAssets": [{"asset": {"id", "name", ...}, "creator": {"name", ...}}],
+        "nextPageToken", "totalResults"}. The POST form answers 403 "XSRF token invalid", so it is not used.
+        Any other shape fails closed; there is no fallback to cookie-protected endpoints.
         """
         query = _query(query)
         if type(category) is not str or category not in _CREATOR_TYPES:
             raise ValueError("Unknown Creator Store category")
-        data = self._request(BASE, "POST", "/toolbox-service/v2/assets:search",
-                             payload={"searchCategoryType": category, "query": query})
-        items = data.get("data", data.get("results", data.get("assets", [])))
+        data = self._request(BASE, "GET", "/toolbox-service/v2/assets:search",
+                             params={"searchCategoryType": category, "query": query})
+        items = data.get("creatorStoreAssets")
         if not isinstance(items, list):
-            raise ValueError("Unrecognized Creator Store beta search result")
+            raise ValueError("Creator Store search returned an unrecognized shape; no results verified")
         results = []
         for item in items[:10]:
-            if not isinstance(item, dict):
+            asset = item.get("asset") if isinstance(item, dict) else None
+            if not isinstance(asset, dict):
                 continue
-            ident = item.get("id", item.get("assetId"))
+            ident = asset.get("id")
             if type(ident) not in (str, int) or not _ID.fullmatch(str(ident)):
                 continue
+            creator = item.get("creator")
             results.append({"asset_id": int(ident),
-                            "name": _small(item.get("name", item.get("displayName")), 140),
-                            "creator": _small(item.get("creatorName"), 100),
+                            "name": _small(asset.get("name"), 140),
+                            "creator": _small(creator.get("name") if isinstance(creator, dict) else "", 100),
                             "url": f"https://create.roblox.com/store/asset/{int(ident)}"})
         return {"catalog": "Creator Store", "query": query, "asset_type": category,
                 "results": results, "source": STORE_DOCS, "beta": True,
@@ -269,9 +277,12 @@ class RobloxIntelligenceHub:
     def creator_asset(self, asset_id: int) -> dict:
         asset_id = _positive_id(asset_id, "asset_id")
         data = self._request(BASE, "GET", f"/toolbox-service/v2/assets/{asset_id}")
+        asset = data.get("asset")
+        if not isinstance(asset, dict) or str(asset.get("id")) != str(asset_id):
+            raise ValueError("Creator Store asset details returned an unrecognized shape; nothing verified")
         # A public result can contain embedded code or claims. Only short display metadata crosses the boundary.
-        return {"asset_id": asset_id, "name": _small(data.get("name", data.get("displayName")), 140),
-                "description_excerpt": _small(data.get("description"), 400),
+        return {"asset_id": asset_id, "name": _small(asset.get("name"), 140),
+                "description_excerpt": _small(asset.get("description"), 400),
                 "source": f"{BASE}/toolbox-service/v2/assets/{asset_id}",
                 "data_kind": "untrusted public Creator Store metadata",
                 "note": "Asset details are not permission to download or execute its contents."}

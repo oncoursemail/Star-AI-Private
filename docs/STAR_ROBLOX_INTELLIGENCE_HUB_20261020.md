@@ -6,9 +6,9 @@
 
 | Tool | Kind | Source | What it actually does |
 |---|---|---|---|
-| `star_roblox_marketplace_search` | Public avatar catalog | https://create.roblox.com/docs/projects/assets/api | Fixed `GET https://catalog.roblox.com/v1/search/items/details` with keyword, documented category and first 10 items; limited sanitized public metadata, no pagination/cookies/purchases |
-| `star_roblox_creator_store_search` | Beta creator asset search | https://create.roblox.com/docs/cloud/reference/features/creator-store | Fixed `POST https://apis.roblox.com/toolbox-service/v2/assets:search`, bounded query/type; does not import assets. **Real live schema/access verification pending** because older published OpenAPI shows GET while 2026 feature reference says POST. Failures are visible; no undocumented fallback. |
-| `star_roblox_creator_asset` | Public asset details | same official feature reference | Fixed `GET /toolbox-service/v2/assets/{id}`; bounded display metadata, not asset source/mesh/scripts |
+| `star_roblox_marketplace_search` | Public avatar catalog | https://create.roblox.com/docs/projects/assets/api | Fixed `GET https://catalog.roblox.com/v1/search/items/details` with keyword, category (live-verified 1, 3, 11, 12; Roblox answers 400 for 2, 4, 5, 13, so STAR refuses those) and first 10 items; limited sanitized public metadata, no pagination/cookies/purchases |
+| `star_roblox_creator_store_search` | Beta creator asset search | https://create.roblox.com/docs/cloud/reference/features/creator-store | Fixed `GET https://apis.roblox.com/toolbox-service/v2/assets:search?searchCategoryType=..&query=..`, bounded query/type; does not import assets. Live-verified 2026-10-21 (below): the POST form answers 403 XSRF, so GET is used. Any other response shape fails closed; no undocumented fallback. |
+| `star_roblox_creator_asset` | Public asset details | same official feature reference | Fixed `GET /toolbox-service/v2/assets/{id}`; reads the nested `asset` object, refuses a response whose id differs from the request; bounded display metadata, not asset source/mesh/scripts |
 | `star_roblox_analytics_metrics` | **Private** creator analytics | https://create.roblox.com/docs/cloud/guides/analytics | Authenticated, allowlisted API key `POST /analytics-query-api/v1/universes/{id}/metrics`; distinct private time-series, not inferred from public visits |
 | `star_roblox_analytics_poll` | Authenticated long-query status | same | Exact, validated fixed-universe operation `GET`; never follows an arbitrary response URL |
 | `star_roblox_gameplay_telemetry_plan` | Offline methodology | https://create.roblox.com/docs/reference/engine/classes/AnalyticsService | Provides event types and requirements for owner-authored in-game event instrumentation; **does not watch games, instrument Studio, or collect users** |
@@ -26,6 +26,14 @@ The existing `star/roblox_research.py` remains the live public-experience data p
 
 **Security:** The code accepts only two fixed hosts (`apis.roblox.com` and `catalog.roblox.com`), fixed paths, numeric resource IDs, bounded outputs, no redirects, no cookies, no arbitrary tool-chosen URLs, and never adds secrets to JSON tool responses. The pending operation path is accepted only if it matches the original authorized universe ID. Cloud errors are sanitized. Owner approval grants analytics to explicit IDs, not other experiences.
 
+## Live check of the public endpoints (2026-10-21, curl, no sign-in, no cookies)
+
+- Marketplace `GET catalog.roblox.com/v1/search/items/details?Keyword=&Category=&Limit=10`: 200 `application/json`; body `{keyword, previousPageCursor, nextPageCursor, data: [{id (int), name, creatorName, price (int), itemType, assetType, ...}]}`, 10 items. The code already matched this shape. `Category` 1, 3, 11 and 12 answered 200; 2, 4, 5 and 13 answered 400 `Category subcategory selection not supported.` (so the tool enum is now `[1, 3, 11, 12]`). A burst of requests then got 429, which the client reports as a rate limit.
+- Creator Store search `POST apis.roblox.com/toolbox-service/v2/assets:search` (the 2026 reference form): 403 `XSRF token invalid` without a browser session. Not usable, so not used.
+- Creator Store search `GET .../toolbox-service/v2/assets:search?searchCategoryType=Model&query=tree`: 200; body `{nextPageToken, totalResults, queryFacets, filteredKeyword?, creatorStoreAssets: [{asset: {id, name, description, hasScripts, assetTypeId, ...}, creator: {name, userId, verified}, voting, creatorStoreProduct}]}`, 25 items. The old code read top-level `data/results/assets` and `id/name`, which this response does not have. `Audio`, `Model`, `Decal`, `Plugin`, `MeshPart` returned items; `Video` and `FontFamily` returned 200 with an empty list for the test query; an unknown type returned 400.
+- Asset details `GET .../toolbox-service/v2/assets/{id}`: 200; the same `{asset, creator, ...}` nesting (the old code read top-level `name`).
+- Not checked: the analytics endpoints (they need an owner key), Marketplace pagination, other queries. Roblox can change these beta shapes; the parsers refuse anything else instead of guessing.
+
 ## Private player statistics: explicitly *not* enabled
 
 Roblox stores player inventory/progression under each developer's own DataStores, with developer-defined schemas. There is **no global public endpoint** to query every user's private XP, inventory or save data. STAR's existing cloud implementation can list **data store names** for the selected authorized private test experience but does not expose raw entry contents. Future optional DataStore entry reading would need per-experience scope, an owner-only UI, privacy/retention, redacted previews, precise entry IDs, no model generalization of one person's record, and protected tests. No production player-data access is granted by this PR.
@@ -42,7 +50,7 @@ Roblox stores player inventory/progression under each developer's own DataStores
 - [x] New fixed-endpoint client and STAR-chat tool registration implemented in private branch; no hosted cloud key stored in source.
 - [x] Offline mock tests added for fixed hosts, public catalog metadata, schema bounds, authorization deny, unknown metric and granularity, 401/403/429/error, async operation path-binding, no fabricated telemetry.
 - [ ] Run focused pytest, Ruff, Pyright, whole test suite in owner environment. **Private GitHub Actions may be blocked by billing; do not mark green without evidence.**
-- [ ] Test **real** GET public Marketplace and POST Creator Store in a disposable authorized setup; beta body/response format must be corrected if the API disagrees (no guessed success).
+- [x] Live read-only check of the public Marketplace and Creator Store endpoints, 2026-10-21, no sign-in, no writes (details below). The beta format was corrected where the API disagreed.
 - [ ] Test analytics with an actual owner key restricted to a private test experience, including a valid metric, 202 operation polling, 401/403/429/error, no personal data and revocation.
 - [ ] Test Windows packaged STAR chat, provider-boundary/privacy behavior, keyboard and tool output rendering, no leaked key or output.
 - [ ] Only after test acceptance, prototype a visual **Roblox Intelligence** panel and analytics charts sourced from actual tool receipts (no fake graphs).

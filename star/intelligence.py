@@ -107,7 +107,7 @@ ROBLOX_GAME_TOOLS = (
 ROBLOX_HUB_TOOLS = (
     _tool("star_roblox_marketplace_search",
           "Search public Roblox avatar Marketplace item metadata and prices; no purchase, import or ownership claims.",
-          {"query": _s(100), "category": {"type": "integer", "enum": [1, 2, 3, 4, 5, 11, 12, 13], "default": 1}}, ("query",)),
+          {"query": _s(100), "category": {"type": "integer", "enum": [1, 3, 11, 12], "default": 1}}, ("query",)),
     _tool("star_roblox_creator_store_search",
           "Search beta Roblox Creator Store by type. Public metadata only; never install or run untrusted assets.",
           {"query": _s(100), "category": {"type": "string", "enum": ["Audio", "Model", "Decal", "Plugin", "MeshPart", "Video", "FontFamily"], "default": "Model"}}, ("query",)),
@@ -303,9 +303,13 @@ _OFF_VALUES = {"0", "off", "false", "no"}
 _DESIGN_NAMES = frozenset(tool["name"] for tool in DESIGN_TOOLS)
 _DOCS_LIVE_NAMES = frozenset(tool["name"] for tool in ROBLOX_DOCS_LIVE_TOOLS)
 MAX_TOOL_TEXT = 20000
-_HUB_CATALOG_TRIGGER = re.compile(r"\b(catalog|creator.store|marketplace|avatar.items?|accessories|asset.store|plugins?)\b", re.I)
-_HUB_ANALYTICS_TRIGGER = re.compile(r"\b(analytics|dau|mau|retention|revenue|monetiz|engagement|playtime|sessions?|metrics?|statistics)\b", re.I)
-_HUB_GAMEPLAY_TRIGGER = re.compile(r"\b(gameplay|telemetry|progression|funnel|player.behavio\w*|mechanics?|instrumentation)\b", re.I)
+_HUB_CATALOG_TRIGGER = re.compile(r"\b(creator.store|toolbox|marketplace|avatar.(?:catalog|items?|accessor\w*)|"
+                                  r"roblox.catalog|catalog.(?:items?|search)|asset.store|"
+                                  r"(?:find|search|browse)\w*\W+(?:\w+\W+){0,3}plugins?)\b", re.I)
+_HUB_ANALYTICS_TRIGGER = re.compile(r"\b(analytics|dau|mau|retention|revenue|monetiz\w*|engagement|play.?time|"
+                                    r"session.length|creator.metrics?)\b", re.I)
+_HUB_GAMEPLAY_TRIGGER = re.compile(r"\b(telemetry|instrumentation|funnel|analytics.?service|player.behavio\w*|"
+                                   r"gameplay.(?:events?|analytics))\b", re.I)
 _CLOUD_TRIGGER = re.compile(r"\b(open.?cloud|owned.universe|owner.analytics|authorized.universe|api.key|publish\w*|headless|"
                             r"test.(?:place|experience|run)|run.(?:the.)?tests?|luau.execution|data.?stores?|"
                             r"(?:place|experience|universe).(?:info\w*|id))\b", re.I)
