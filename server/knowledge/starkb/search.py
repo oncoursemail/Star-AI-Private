@@ -414,12 +414,17 @@ class Searcher:
     def search(self, query: str, *, mode: str = "hybrid+rerank", top: int = 5, per_doc: int = 2,
                candidates: int = 50, rerank_n: int = 15, fallback: bool = False,
                degrade: bool = False, questions: bool | None = None, facets: bool | None = None,
-               facet_merge: str = "max", scope: str | None = None) -> tuple[list[Passage], dict]:
+               facet_merge: str = "max", scope: str | None = None,
+               remote_rerank_n: int = 0) -> tuple[list[Passage], dict]:
         """fallback=True (the service default): in `vector` mode on a partly embedded index, the
         chunks without an embedding that BM25 ranks in its top FALLBACK_DEPTH over the whole corpus
         are embedded at query time (at most FALLBACK_EMBED) and ranked by cosine with the rest.
         With every chunk embedded this is plain `vector`. degrade=True: if the embedding model
-        cannot be reached, answer with BM25 and report `timing["degraded"]` instead of failing."""
+        cannot be reached, answer with BM25 and report `timing["degraded"]` instead of failing.
+        remote_rerank_n=N (`vector` mode, only when the brain has a remote reranker): the top N are reranked on the
+        remote GPU and the reranked order is fused with the vector order by RRF (scores stay cosines). There is no
+        fallback to the brain's slow reranker here: if the remote fails, the vector order stands
+        (`timing["rerank_skipped"]`). Measured 2026-10-21 (docs/agents/laptop-rerank-20261021.md)."""
         if mode not in MODES:
             raise ValueError("mode must be one of " + ", ".join(MODES))
         if questions is None:
@@ -508,6 +513,21 @@ class Searcher:
             ranked = dense
         else:
             ranked = self.rrf(lexical, dense)
+        if remote_rerank_n and mode == "vector" and ranked and getattr(self.brain, "remote_rerank", None):
+            head = ranked[:remote_rerank_n]
+            rows = self._rows([cid for cid, _ in head])
+            docs = [(rows[cid]["heading"] + "\n" + rows[cid]["text"])[:RERANK_DOC_CHARS] for cid, _ in head]
+            t = time.perf_counter()
+            try:
+                order = self.brain.rerank(query, docs, local_fallback=False)
+            except RuntimeError:
+                timing["rerank_skipped"] = 1.0
+            else:
+                cosine = dict(head)
+                fused = self.rrf(head, [head[i] for i, _ in sorted(order, key=lambda x: -x[1])])
+                ranked = [(cid, cosine[cid]) for cid, _ in fused] + ranked[remote_rerank_n:]
+                timing["rerank_remote"] = 1.0
+            timing["rerank_ms"] = (time.perf_counter() - t) * 1000
         if mode == "hybrid+rerank" and ranked:
             head = ranked[:rerank_n]
             rows = self._rows([cid for cid, _ in head])
@@ -522,6 +542,7 @@ class Searcher:
                 order = self.brain.rerank(query, [d[: RERANK_DOC_CHARS * 6 // 10] for d in docs])
                 timing["rerank_retry"] = 1.0
             timing["rerank_ms"] = (time.perf_counter() - t) * 1000
+            timing["rerank_remote"] = 1.0 if getattr(self.brain, "last_rerank_source", "") == "remote" else 0.0
             ranked = [(head[i][0], score) for i, score in sorted(order, key=lambda x: -x[1])] + ranked[rerank_n:]
         # per-document cap keeps the short context diverse (same rule for every mode)
         chosen, per = [], {}
