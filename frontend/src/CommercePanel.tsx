@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useMemo, useState} from 'react'
 import {ArrowRight, Check, CircleAlert, ClipboardCheck, FilePenLine, FolderOpen, LockKeyhole, Plus, RefreshCw, ShieldCheck, Store, X} from 'lucide-react'
 import {request} from './bridge'
+import {CommerceMissionControl, type MissionSnapshot} from './CommerceMissionControl'
 import './commerce.css'
 
 type Channel = 'etsy' | 'shopify' | 'fiverr' | 'payhip' | 'gumroad' | 'printify'
@@ -21,12 +22,13 @@ type Candidate = {
   title: string
   concept: string
   status: 'draft' | 'changes_requested' | 'approved_for_export'
+  business_id?: string | null
   evidence: Evidence
   review: {ready: boolean; blockers: string[]; owner_approval_required: boolean; external_actions_performed: false}
   created_at: string
   updated_at: string
 }
-type Board = {
+type Board = MissionSnapshot & {
   project: string
   data_source: 'local_app_data_only'
   automation: {state: string; description: string}
@@ -89,6 +91,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
   const [selectedId, setSelectedId] = useState('')
   const [evidence, setEvidence] = useState<Evidence>(emptyEvidence)
   const [showCreate, setShowCreate] = useState(false)
+  const [selectedBusinessId, setSelectedBusinessId] = useState('')
 
   const refresh = useCallback(async () => {
     if (preview) return
@@ -104,6 +107,11 @@ export function CommercePanel({project, preview = false}: {project: string; prev
   }, [preview])
 
   useEffect(() => {void refresh()}, [refresh, project])
+  useEffect(() => {
+    setSelectedBusinessId('')
+    setSelectedId('')
+    setFilter('all')
+  }, [project])
   const selected = useMemo(
     () => board?.ideas.find(item => item.id === selectedId) ?? null,
     [board, selectedId],
@@ -111,13 +119,14 @@ export function CommercePanel({project, preview = false}: {project: string; prev
   useEffect(() => {
     setEvidence({...emptyEvidence, ...(selected?.evidence ?? {})})
   }, [selected])
-  const ideas = board?.ideas.filter(item => filter === 'all' || item.channel === filter) ?? []
+  const ideas = board?.ideas.filter(item => (filter === 'all' || item.channel === filter)
+    && (!selectedBusinessId || item.business_id === selectedBusinessId)) ?? []
   const changeEvidence = <K extends keyof Evidence>(key: K, value: Evidence[K]) => {
     setEvidence(current => ({...current, [key]: value}))
   }
 
   async function mutate(action: string, payload: Record<string, unknown>, success: string) {
-    if (preview || busy) return
+    if (preview || busy) return false
     setBusy(true)
     setError('')
     const answer = await request<Board>(action, payload)
@@ -131,6 +140,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
       }
     } else setError(answer.error || 'The local operation was not completed.')
     setBusy(false)
+    return !!(answer.ok && answer.data)
   }
 
   return <div className="commerce-layout">
@@ -157,15 +167,26 @@ export function CommercePanel({project, preview = false}: {project: string; prev
       <div><span>VERIFIED SALES</span><strong>—</strong><small>No sales feed connected</small></div>
     </section>
 
+    <CommerceMissionControl board={board} preview={preview} busy={busy}
+      selectedBusinessId={selectedBusinessId}
+      onSelectBusiness={id => {
+        setSelectedBusinessId(id)
+        const found = board?.businesses?.find(business => business.id === id)
+        if (found) setChannel(found.channel as Channel)
+      }}
+      onAction={(action, payload, message) => mutate(action, payload, message)}/>
     <div className="commerce-workspace">
       <section className="commerce-main" aria-label="Product pipeline">
         {showCreate && !preview && <form className="commerce-create" onSubmit={event => {
           event.preventDefault()
-          void mutate('commerceCreate', {title, concept, channel}, 'Candidate saved privately.')
+          void mutate('commerceCreate', {title, concept, channel,
+            ...(selectedBusinessId ? {business_id: selectedBusinessId} : {})}, 'Candidate saved privately.')
         }}>
           <div className="commerce-section-heading"><div><p className="commerce-kicker">01 / CONCEPT</p><h2>Start with a real buyer problem</h2></div></div>
           <label className="commerce-field"><span>Marketplace</span>
-            <select aria-label="Choose marketplace" value={channel} onChange={event => setChannel(event.target.value as Channel)}>
+            <select aria-label="Choose marketplace" value={channel}
+              disabled={!!selectedBusinessId}
+              onChange={event => setChannel(event.target.value as Channel)}>
               {platforms.map(platform => <option value={platform.id} key={platform.id}>{platform.label}</option>)}
             </select>
           </label>
@@ -213,6 +234,25 @@ export function CommercePanel({project, preview = false}: {project: string; prev
           <p className="commerce-kicker">03 / APPROVAL DESK</p>
           <h2>{selected.title}</h2>
           <p className="commerce-concept">{selected.concept}</p>
+          <label className="commerce-field">Assigned business
+            <select aria-label="Assign candidate to business" value={selected.business_id || ''}
+              disabled={busy} onChange={event => {
+                const businessId = event.target.value
+                if (businessId) void mutate('commerceAssignBusiness',
+                  {idea_id:selected.id,business_id:businessId},
+                  'Candidate assigned. Previous export approval, if any, was reset.')
+              }}>
+              <option value="">Not assigned</option>
+              {(board?.businesses ?? []).filter(b => b.channel===selected.channel)
+                .map(b => <option value={b.id} key={b.id}>{b.name}</option>)}
+            </select>
+          </label>
+          <button type="button" className="commerce-action-secondary"
+            disabled={busy || !selected.business_id}
+            onClick={() => void mutate('commerceQueuePreflight', {idea_id:selected.id},
+              'Local evidence checklist queued. No marketplace action occurred.')}>
+            <ClipboardCheck size={16}/> Queue local QA checklist
+          </button>
           <div className="commerce-review-status">
             <ClipboardCheck size={17}/>
             <div><strong>{selected.review.ready ? 'Ready for owner review' : 'Evidence incomplete'}</strong><span>{statusText[selected.status]} · Not published</span></div>
