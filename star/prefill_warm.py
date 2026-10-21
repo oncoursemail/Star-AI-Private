@@ -18,7 +18,8 @@ Harmless by construction, like the post-answer warm-up (star/warmup.py):
 
   * own hardware only (STAR Server or the on-PC brain); a cloud provider is never sent anything;
   * nothing is saved and the answer text cannot change: the request only fills the server's prompt cache;
-  * at most one draft request at a time; a newer draft waits and replaces older ones (no queue);
+  * at most one draft request at a time; a newer draft waits and replaces older ones (no queue); a long draft
+    (a paste) goes in chunks of CHUNK_CHARS, so the server is never more than one chunk away from a real request;
   * any real request cancels it (react_shell WARM_UP_STOPPERS). The server finishes the batch it is reading
     and keeps it (measured on build 11541: a request cut off after 8 s left 1,927 of 2,443 tokens cached),
     and the turn stays on that slot (providers.own_warm_started) instead of taking it for another client's;
@@ -51,6 +52,32 @@ MIN_CHARS = 12
 # While another request is generating on that model, only drafts up to this size are sent (about 400 tokens:
 # a few seconds of shared CPU on STAR Server, and only when the owner is about to send anyway).
 BUSY_MAX_CHARS = 1600
+# One draft request adds at most this much new text after what the previous draft primed (about 110 tokens, ~3 s
+# of prompt reading on star-fast). The server reads a request to the end of its batch even after a cancel, and
+# star-fast's batch is 2048 tokens: an unchunked long paste could hold the server ~55 s before the turn on Enter
+# or any other client's request could start. Chunks bound that wait to one chunk.
+CHUNK_CHARS = 400
+
+# The draft text the last request primed, and where: (chat, model, slot) -> text. Only the newest is kept.
+_PRIMED: dict = {}
+
+
+def chunk_ends(draft: str, start: int, size: int = CHUNK_CHARS) -> list[int]:
+    """Cut points in `draft` after its first `start` characters (already primed): each at most `size` characters
+    after the previous one, moved back to just after a space or line break in the second half of the step when
+    there is one. The last cut point is the end of the draft."""
+    ends, at = [], max(0, min(start, len(draft)))
+    while len(draft) - at > size:
+        end = at + size
+        space = max(draft.rfind(' ', at + size // 2, end), draft.rfind('\n', at + size // 2, end))
+        at = space + 1 if space >= 0 else end
+        ends.append(at)
+    return ends + [len(draft)]
+
+
+def _common_length(a: str, b: str) -> int:
+    n = min(len(a), len(b))
+    return next((i for i in range(n) if a[i] != b[i]), n)
 
 
 def _text_of(message: dict) -> str:
@@ -105,8 +132,10 @@ def _on_pc(settings: Settings, request: dict):
     return {**request, 'model': gpu_helper.NAME, 'extras': extras}, base
 
 
-async def _send_prefix(settings: Settings, request: dict, cancel_event, pc_base: str | None) -> dict:
-    """Render `request` with the server's chat template, cut it after the draft, send that text for one token.
+async def _send_prefix(settings: Settings, request: dict, cancel_event, pc_base: str | None,
+                       chat_key: str = '') -> dict:
+    """Render `request` with the server's chat template, cut it after the draft, send that text for one token:
+    in chunks (`chunk_ends`) from what the previous draft of this chat primed on this model and slot.
 
     Stops the moment `cancel_event` is set (the connection is closed; the server keeps what it read)."""
     import httpx
@@ -130,15 +159,24 @@ async def _send_prefix(settings: Settings, request: dict, cancel_event, pc_base:
         cut = prompt.rfind(draft)
         if cut < 0:
             return {'skipped': 'template'}
-        reply = await http.post(endpoint + '/completions', headers=headers, json={
-            'model': request['model'], 'prompt': prompt[:cut + len(draft)], 'max_tokens': 1, 'temperature': 0,
-            **extras})
-        reply.raise_for_status()
-        timings = reply.json().get('timings') or {}
+        where = (chat_key, request['model'], extras.get('id_slot'), pc_base)
+        before = _PRIMED.get(where, '')
         found: dict = {'primed': True}
-        for name, field in (('prompt_n', 'prompt_tokens_read'), ('cache_n', 'prompt_tokens_cached')):
-            if type(timings.get(name)) is int:
-                found[field] = timings[name]
+        ends = chunk_ends(draft, _common_length(before, draft))
+        for number, end in enumerate(ends):
+            reply = await http.post(endpoint + '/completions', headers=headers, json={
+                'model': request['model'], 'prompt': prompt[:cut + end], 'max_tokens': 1, 'temperature': 0,
+                **extras})
+            reply.raise_for_status()
+            _PRIMED.clear()
+            _PRIMED[where] = draft[:end]
+            timings = reply.json().get('timings') or {}
+            if type(timings.get('prompt_n')) is int:
+                found['prompt_tokens_read'] = found.get('prompt_tokens_read', 0) + timings['prompt_n']
+            if number == 0 and type(timings.get('cache_n')) is int:
+                found['prompt_tokens_cached'] = timings['cache_n']
+        if len(ends) > 1:
+            found['chunks'] = len(ends)
         return found
 
     stopped = False
@@ -188,7 +226,7 @@ def warm_draft(settings: Settings, home: Path, chat_id: str | None, text: str, *
         return done(skipped=why)
     request, pc_base = _on_pc(settings, request)
     try:
-        busy_note = {}
+        busy_note: dict = {}
         if pc_base is None and kind == 'lan':
             # Budget: while the server answers someone else (night school, another client, a helper), only a short
             # draft goes, and never into a busy slot. Asked like the turn asks (`look_for_busy_slots`), so a chat
@@ -212,8 +250,20 @@ def warm_draft(settings: Settings, home: Path, chat_id: str | None, text: str, *
                 busy_note = {'server_busy': True}
         if cancel_event is not None and cancel_event.is_set():
             return done(cancelled=True)
+        if pc_base is None and kind == 'lan':
+            # Saved project memory (opt-in): an empty slot (model restarted) gets the banked start back first.
+            from . import cache_banks
+            if cache_banks.enabled():
+                mark = own_warm_started(settings, request['model'], (request.get('extras') or {}).get('id_slot'))
+                try:
+                    busy_note['cache_bank'] = asyncio.run(cache_banks.prepare(settings, home, request,
+                                                                              cancel_event=cancel_event))
+                except Exception:
+                    busy_note['cache_bank'] = {'bank': 'skipped', 'reason': 'unavailable'}
+                finally:
+                    own_warm_ended(mark, cancelled=cancel_event is not None and cancel_event.is_set())
         try:
-            result = asyncio.run(_send_prefix(settings, request, cancel_event, pc_base))
+            result = asyncio.run(_send_prefix(settings, request, cancel_event, pc_base, str(chat_id or '')))
         except Exception as exc:
             return done(error=type(exc).__name__)
         return done(**result, model=str(request['model'])[:180], on_pc=pc_base is not None,

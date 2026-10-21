@@ -325,3 +325,49 @@ def test_host_allows_the_action_and_the_setting():
     assert "warmDraft" in shell.ALLOWED_ACTIONS and "warmDraft" not in shell.WARM_UP_STOPPERS
     assert "prefill_while_typing" in shell.PERMITTED_SETTINGS
     assert "sendMessage" in shell.WARM_UP_STOPPERS
+
+
+def test_chunk_ends_bound_each_step_and_prefer_a_space():
+    text = ("word " * 300).strip()                       # 1,499 characters
+    ends = prefill.chunk_ends(text, 0, 400)
+    assert ends[-1] == len(text) and ends == sorted(ends)
+    steps = [b - a for a, b in zip([0] + ends, ends)]
+    assert max(steps) <= 400 and all(text[end - 1] == " " for end in ends[:-1])
+    assert prefill.chunk_ends(text, len(text) - 10, 400) == [len(text)]
+    assert prefill.chunk_ends("x" * 900, 0, 400) == [400, 800, 900]   # no space: a hard cut
+    assert prefill.chunk_ends("short", 0, 400) == [5]
+
+
+def test_a_long_paste_goes_in_chunks_and_the_next_draft_sends_only_the_rest(desk, server):
+    settings = on(desk.settings)
+    script = "local part = workspace.Part\n" + "part.Size = Vector3.new(4, 1, 2) -- size\n" * 30
+    draft = "Fix this script so the part spins:\n" + script      # ~1,300 characters
+    report = warm_draft(settings, desk.home, desk.chat, draft, mode="fast")
+    sent = [call["body"]["prompt"] for call in server.sent()]
+    assert report["primed"] is True and report["chunks"] == len(sent) >= 4
+    assert sent[-1].endswith("<|im_start|>user\n" + draft)
+    # Each request extends the one before by at most CHUNK_CHARS: the server is never far from a real request.
+    assert all(b.startswith(a) and 0 < len(b) - len(a) <= prefill.CHUNK_CHARS for a, b in zip(sent, sent[1:]))
+    assert report["prompt_tokens_read"] == 12 * len(sent)
+    # The owner adds a few words: one request, from where the paste ended.
+    server.calls.clear()
+    report = warm_draft(settings, desk.home, desk.chat, draft + "Also make it red.", mode="fast")
+    assert len(server.sent()) == 1 and "chunks" not in report
+
+
+def test_a_cancel_between_chunks_sends_no_more(desk, monkeypatch):
+    settings = on(desk.settings)
+    cancel, sent = threading.Event(), []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if request.url.path == "/apply-template":
+            return httpx.Response(200, json={"prompt": "<|im_start|>user\n" + _text(body["messages"][-1])})
+        sent.append(body["prompt"])
+        cancel.set()                                      # Enter arrives while the first chunk is read
+        await asyncio.sleep(0.3)
+        return httpx.Response(200, json={"timings": {"prompt_n": 100}})
+    monkeypatch.setattr(prefill, "_TRANSPORT", httpx.MockTransport(handler))
+    report = warm_draft(settings, desk.home, desk.chat, "Explain this:\n" + "x = x + 1\n" * 200, mode="fast",
+                        cancel_event=cancel)
+    assert report.get("cancelled") is True and len(sent) == 1
