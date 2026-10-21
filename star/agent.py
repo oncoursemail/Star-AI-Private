@@ -349,14 +349,15 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
     registry = allowed_registry(discovered or [], may_edit, allow_luau=allow_luau)
     definitions = [{"type": "function", "function": {"name": name, "description": t.get("description", ""), "parameters": t["inputSchema"]}} for name, t in registry.items()]
     from .calc import TOOL as CALCULATOR_TOOL, numerical_request
-    calculator_enabled = numerical_request(prompt)
+    pinned = tool_memory.pinned if tool_memory is not None and tool_memory.sticky else ()
+    calculator_enabled = any(numerical_request(text) for text in (prompt, *pinned))
     if calculator_enabled:
         definitions.append({"type": "function", "function": {"name": CALCULATOR_TOOL["name"],
                             "description": CALCULATOR_TOOL["description"],
                             "parameters": CALCULATOR_TOOL["inputSchema"]}})
     # Like the calculator: offered only to a prompt about times, zones or dates (star/clock.py).
     from .clock import TOOL as CLOCK_TOOL, wants_clock
-    clock_enabled = wants_clock(prompt)
+    clock_enabled = any(wants_clock(text) for text in (prompt, *pinned))
     if clock_enabled:
         definitions.append({"type": "function", "function": {"name": CLOCK_TOOL["name"],
                             "description": CLOCK_TOOL["description"],

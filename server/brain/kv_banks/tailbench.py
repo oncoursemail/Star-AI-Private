@@ -3,7 +3,8 @@
 
 Runs STAR's real code on the PC (run_task, warmup.warm_up, prefill_warm.warm_draft) against a SIDE star-fast (srv.sh
 with HOST set, reached through an ssh tunnel), never the live brain, and the real knowledge service. Per task, two fresh
-chats with the same earlier Roblox exchange (its tool list recorded by a model-free seed turn):
+chats with the same earlier Roblox exchange (its tool list recorded by a model-free seed turn, run with the arm's own
+settings: a chat started with type-ahead on has the fixed Roblox tool list from its first message on):
 
   cold     the post-answer warm-up primed the chat's start; Enter -> run_task reads the owner's words + reference block
   enabled  the same warm-up, then "Start thinking while I type" with the finished text (draft + reference block up to
@@ -130,12 +131,12 @@ def main() -> int:
                 return
             time.sleep(0.5)
 
-    def seeded_chat() -> str:
+    def seeded_chat(settings) -> str:
         chat = chats.new_chat("STAR")
         chats.add("STAR", "user", SEED_PROMPT, chat_id=chat)
         core.open_client = Canned
         try:
-            run_task(base, SEED_PROMPT, mode="auto", chat_id=chat)
+            run_task(settings, SEED_PROMPT, mode="auto", chat_id=chat)
         finally:
             core.open_client = real_open
         chats.add("STAR", "assistant", SEED_ANSWER, chat_id=chat)
@@ -182,7 +183,7 @@ def main() -> int:
         row = {"id": task["id"], "chars": len(text)}
         for arm in arms:
             settings = replace(base, prefill_while_typing=arm == "enabled")
-            chat = seeded_chat()
+            chat = seeded_chat(settings)
             row[arm + "_warm_up"] = {k: v for k, v in warmup.warm_up(settings, home=home, chat_id=chat).items()
                                      if k in ("primed", "skipped", "prompt_tokens_read", "prompt_tokens_cached", "ms")}
             if arm == "enabled":

@@ -30,7 +30,7 @@ from .providers import (ALL_PROVIDERS, background_client, call_limits, connectio
                         model_unavailable, open_client,
                         provider_kind, server_context_tokens, validate_lan_endpoint)
 from .brain_router import (select_route, validate_alias, is_roblox_task, deep_request, ROBLOX_QUALITY_NOTES,
-                           busy_downgrade_allowed)
+                           busy_downgrade_allowed, is_roblox_dev_prompt)
 from .instant_route import decide_instant_route, loaded_local_model, answer_on_pc
 from . import server_roles, turn_memory
 from .doc_knowledge import validate_knowledge_endpoint
@@ -1396,6 +1396,11 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         # Server), and the shape of this request is kept for the post-answer warm-up.
         tools_kept = (turn_memory.for_conversation(memory_scope, sticky=kind == 'lan')
                       if kind != 'cloud' else None)
+        if (tools_kept is not None and tools_kept.sticky and use_tools and settings.prefill_while_typing is True
+                and (is_roblox_task(prompt) or is_roblox_dev_prompt(prompt))):
+            # Type-ahead only pays when the start of the prompt does not change: a Roblox chat gets one fixed tool
+            # list from its first Roblox message on (star/turn_memory.py), not one to three more per message.
+            tools_kept.pin(turn_memory.ROBLOX_FIXED_TOOLS)
         answered_by = ''
         model_stats = {}
         instant_answer = None
