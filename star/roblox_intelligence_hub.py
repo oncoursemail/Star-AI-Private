@@ -58,7 +58,7 @@ _Q = re.compile(r"^[^\x00-\x1f\x7f]{1,100}$")
 def _positive_id(value: object, label: str = "id") -> int:
     if type(value) not in (int, str) or not _ID.fullmatch(str(value)):
         raise ValueError(f"{label} must be a positive numeric Roblox identifier")
-    return int(value)
+    return int(str(value))
 
 
 def _query(value: object) -> str:
@@ -123,7 +123,7 @@ def _metric_response(body: dict, metric: str, universe_id: int) -> dict:
                 continue
             val = point.get("value")
             when = point.get("time")
-            if type(val) not in (float, int) or not math.isfinite(val) or not (
+            if val is None or type(val) not in (float, int) or not math.isfinite(val) or not (
                     isinstance(when, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T[^\x00-\x1f]{1,36}", when)):
                 continue
             clean_points.append({"time": when[:36], "value": val,
@@ -266,10 +266,11 @@ class RobloxIntelligenceHub:
             if type(ident) not in (str, int) or not _ID.fullmatch(str(ident)):
                 continue
             creator = item.get("creator")
-            results.append({"asset_id": int(ident),
+            asset_id = int(str(ident))
+            results.append({"asset_id": asset_id,
                             "name": _small(asset.get("name"), 140),
                             "creator": _small(creator.get("name") if isinstance(creator, dict) else "", 100),
-                            "url": f"https://create.roblox.com/store/asset/{int(ident)}"})
+                            "url": f"https://create.roblox.com/store/asset/{asset_id}"})
         return {"catalog": "Creator Store", "query": query, "asset_type": category,
                 "results": results, "source": STORE_DOCS, "beta": True,
                 "note": "Untrusted catalog metadata. Do not install scripts/plugins/models automatically."}
@@ -307,7 +308,7 @@ class RobloxIntelligenceHub:
             raise ValueError("Unsupported analytics breakdown")
         start, end = _range(start_day, end_day)
         key = self._analytics_key(ident)
-        payload = {"metric": metric, "granularity": granularity, "startTime": start, "endTime": end}
+        payload: dict[str, object] = {"metric": metric, "granularity": granularity, "startTime": start, "endTime": end}
         if breakdown:
             payload["breakdown"] = [breakdown]
         response = self._request(BASE, "POST",
