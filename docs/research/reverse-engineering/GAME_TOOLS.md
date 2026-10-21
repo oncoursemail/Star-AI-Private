@@ -1,10 +1,11 @@
 # Game engineering tools in the RE gateway
 
 These tools live in `star/reverse_engineering.py` with the other `re_*` tools. Like them they are
-OFF until the owner turns on Settings > reverse-engineering tools (`reverse_engineering_enabled`) and
-selects a workspace folder. They read only workspace-relative files the user points at, never run them,
-and never use the network. A prompt about asset manifests, WebAssembly, WebGPU or porting a game to the
-web offers only these game tools; a binary-analysis prompt offers the full RE set.
+OFF until the owner sets `reverse_engineering_enabled` in the settings file and selects a workspace
+folder. They read only files the user points at (workspace-relative, or inside `re_game_path`), never
+run them, and never use the network. A prompt about asset manifests, WebAssembly, WebGPU, porting a
+game to the web, PS3 or recompilation offers only these game tools; a binary-analysis prompt offers the
+full RE set.
 
 ## `re_verify_asset_manifest`
 
@@ -34,3 +35,26 @@ runtime or browser shim, SIMD/exception-handling need target support. It does no
 GPU and does not prove the module runs anywhere.
 
 Background research: `docs/research/STAR_GRAND_V_RESEARCH_20261019.md`.
+
+## PS3 tools: your own ISO or game folder
+
+Set `re_game_path` in the settings file to your PS3 ISO image (`.iso`) or extracted game folder (for
+example the folder holding `PS3_GAME/` or `PARAM.SFO`). The tools read it in place: nothing is copied
+into the workspace or the repo, nothing is extracted, nothing is downloaded. Use `"source": "game_path"`
+to target it; `"source": "workspace"` (default) reads the workspace, where an `.iso` file can be read
+with `iso_member`.
+
+- `re_ps3_game_scan` lists PARAM.SFO fields (TITLE, TITLE_ID, versions) and every executable
+  (EBOOT.BIN, .self, .sprx, .elf, .prx) as `elf_ppu`, `elf_spu`, `sce_encrypted` or `unknown`
+  (inside an ISO, `unknown` usually means an encrypted disc region).
+- `re_ps3_elf_preflight` checks one PPU/SPU ELF: header, load map, PS3 profile limits (SPU 256 KiB local
+  store, PPU 32-bit effective addresses), entry mapping and `.opd` metadata. For an ISO game path,
+  `path` names the file inside the ISO, e.g. `PS3_GAME/USRDIR/EBOOT.ELF`.
+- `re_verify_recompilation_evidence` compares a semantic contract with reference and candidate JSON
+  observation records from a recompilation run and returns the first counterexample.
+
+Encrypted SELF/EBOOT.BIN files are reported as `encrypted_container`: STAR has no console keys and
+decrypts nothing; point the preflight at a decrypted ELF if you have one. The repo `.gitignore` keeps
+ISOs, SELF/SPRX, EBOOT, PUP/RAP and key files out of commits.
+
+Background research: `docs/research/STAR_PS3RECOMP_RESEARCH_20261019.md`.

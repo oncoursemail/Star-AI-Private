@@ -39,6 +39,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from .re_recompilation import RECOMPILATION_NAMES, RECOMPILATION_TOOLS, dispatch_recompilation
 
 # --- Limits ------------------------------------------------------------------
 MAX_FILE_BYTES = 128 * 1024 * 1024      # refuse to parse anything larger
@@ -97,6 +98,11 @@ _GAME_TRIGGER = re.compile(
     re.IGNORECASE,
 )
 
+# Console recompilation/emulation requests get only the recompilation tools.
+_RECOMPILATION_TRIGGER = re.compile(
+    r"\b(?:ps3recomp|ps3|ppu|spu|static\s+recompil\w*|recompilation|"
+    r"semantic\s+(?:evidence|contract|trace)|elf\s+preflight)\b", re.IGNORECASE,
+)
 
 def check_intent(text: str) -> str | None:
     """Return a refusal reason if the text asks for a forbidden RE use, else None."""
@@ -580,15 +586,18 @@ RE_TOOLS = (
     _tool("re_crash_dump",
           "Triage a Windows crash dump (.dmp/minidump) with cdb headless (!analyze -v) if the Debugging Tools for Windows "
           "are installed. Read-only analysis of your own dump.", {"path": _PATH}, ("path",)),
-) + GAME_TOOLS
+) + GAME_TOOLS + RECOMPILATION_TOOLS
 _RE_NAMES = {tool["name"] for tool in RE_TOOLS}
 
 
 class ReverseEngineering:
     """Local RE gateway. Analysis is confined to the owner-selected workspace."""
 
-    def __init__(self, *, workspace: Path | None, sandbox: Path | None = None):
+    def __init__(self, *, workspace: Path | None, sandbox: Path | None = None,
+                 game_path: Path | None = None):
         self.root = workspace.expanduser().resolve() if workspace else None
+        # Optional owner-chosen PS3 ISO or extracted game folder, read in place by the PS3 tools.
+        self.game_path = game_path.expanduser().resolve() if game_path else None
         # External tools run with cwd inside this throwaway sandbox, never the workspace.
         self.sandbox = (sandbox or (Path(os.environ.get("TEMP", ".")) / "star_re_sandbox"))
 
@@ -602,9 +611,12 @@ class ReverseEngineering:
             return []
         if _RE_TRIGGER.search(prompt):
             return list(RE_TOOLS)
+        offered: list[dict] = []
         if _GAME_TRIGGER.search(prompt):
-            return list(GAME_TOOLS)
-        return []
+            offered += GAME_TOOLS
+        if _RECOMPILATION_TRIGGER.search(prompt):
+            offered += RECOMPILATION_TOOLS
+        return offered
 
     def status(self) -> dict:
         tools = {}
@@ -614,19 +626,22 @@ class ReverseEngineering:
                                "install": "" if found else tool.install, "purpose": tool.purpose}
         return {
             "workspace_bound": self.root is not None,
+            "game_path_set": self.game_path is not None,
             "python_libs": {name: _python_module(name)
                             for name in ("capstone", "pefile", "lief", "unicorn", "angr", "dnfile")},
             "external_tools": tools,
             "builtin": ["re_identify", "re_strings", "re_pe_info"],
             "verification_tools": ["re_compare_artifacts", "re_verify_asset_manifest"],
-            "game_tools": ["re_wasm_portability"],
+            "game_tools": ["re_wasm_portability", *sorted(RECOMPILATION_NAMES)],
             "builtin_note": "Identify, strings and PE parsing are pure-Python and always available.",
             "policy": ("Local, defensive use on your own or permitted binaries only. No anti-cheat/client-protection "
                        "bypass, game cheats, DRM/licence cracking, or malware creation."),
         }
 
-    def _resolve(self, relative: str) -> Path:
-        if self.root is None:
+    def _resolve(self, relative: str, *, root: Path | None = None, allow_dir: bool = False,
+                 size_cap: bool = True) -> Path:
+        root = root or self.root
+        if root is None:
             raise PermissionError("Select a workspace folder before using reverse-engineering tools")
         if not relative or len(relative) > 500:
             raise ValueError("Invalid file path")
@@ -636,17 +651,19 @@ class ReverseEngineering:
         if value.is_absolute():
             raise PermissionError("Absolute paths are blocked; give a workspace-relative path")
         # Non-strict resolve so '..' normalises and the escape check fires before touching disk.
-        candidate = (self.root / value).resolve()
-        if not candidate.is_relative_to(self.root):
+        candidate = (root / value).resolve()
+        if not candidate.is_relative_to(root):
             raise PermissionError("Path escapes the selected workspace")
-        parts = candidate.relative_to(self.root).parts
+        parts = candidate.relative_to(root).parts
         if any(part.lower() in DENIED_NAMES for part in parts):
             raise PermissionError("Credential directories/files are protected")
         if candidate.suffix.lower() in DENIED_SUFFIXES:
             raise PermissionError("Sensitive file type blocked")
+        if allow_dir and candidate.is_dir():
+            return candidate
         if not candidate.is_file():
             raise ValueError("Path is not a file")
-        if candidate.stat().st_size > MAX_FILE_BYTES:
+        if size_cap and candidate.stat().st_size > MAX_FILE_BYTES:
             raise ValueError(f"File exceeds the {MAX_FILE_BYTES // (1024 * 1024)} MB analysis cap")
         return candidate
 
@@ -692,6 +709,10 @@ class ReverseEngineering:
                 length=args.get("length"),
                 expected_reference_sha256=args.get("expected_reference_sha256"),
             )
+
+        if name in RECOMPILATION_NAMES:
+            return dispatch_recompilation(name, args, workspace=self.root, resolve=self._resolve,
+                                          game_path=self.game_path)
 
         path = self._resolve(args["path"])
         self.sandbox.mkdir(parents=True, exist_ok=True)
@@ -764,4 +785,5 @@ def for_settings(settings, home: Path | None = None) -> "ReverseEngineering | No
     if workspace is None:
         return None
     sandbox = (home / "re_sandbox") if home is not None else None
-    return ReverseEngineering(workspace=workspace, sandbox=sandbox)
+    game = str(getattr(settings, "re_game_path", "") or "").strip()
+    return ReverseEngineering(workspace=workspace, sandbox=sandbox, game_path=Path(game) if game else None)
