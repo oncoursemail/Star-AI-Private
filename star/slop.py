@@ -28,6 +28,7 @@ from .eval_checks import split_answer
 MAX_SCORE = 100
 SLOP_SCORE = 30          # at or above: the answer is slop (also when any hard finding is present)
 MAX_API_CHARS = 60_000   # the API checker is skipped on absurdly long code
+NOTE_MARKER = "\n\nSlop check by STAR:"   # the note doc_grounding.finalize appends; never scored as the model's text
 
 _FENCE = re.compile(r"^[ \t]*```[ \t]*([\w+-]*)[^\n]*\n(.*?)^[ \t]*```[ \t]*$", re.S | re.M)
 _WORD = re.compile(r"[A-Za-z][A-Za-z'_-]*")
@@ -469,6 +470,7 @@ def score_answer(answer: str, *, prompt: str = "", api_dump=None, use_api_dump: 
     if not isinstance(answer, str):
         raise TypeError("answer must be str")
     body, _ = split_answer(answer)
+    body = body.split(NOTE_MARKER, 1)[0]
     prose, blocks = _parts(body)
     report = Report(prose_words=len(_WORD.findall(prose)), code_chars=sum(len(c) for _, c, _ in blocks),
                     blocks=len(blocks))
