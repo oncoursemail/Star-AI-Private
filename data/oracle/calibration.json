@@ -1,0 +1,802 @@
+{
+ "model": {
+  "slope": -0.001706,
+  "sigma": 0.057973,
+  "sxx": 56.179097,
+  "n": 9,
+  "df": 8
+ },
+ "entries": [
+  {
+   "name": "ft20 sft vs base",
+   "kinds": [
+    "model"
+   ],
+   "full": {
+    "tasks": 50,
+    "base_pass": 11,
+    "cand_pass": 12,
+    "delta": 0.02,
+    "wins": 5,
+    "losses": 4,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 15.1133,
+    "cand_margin": 11.4444,
+    "base_pref_acc": 0.9643,
+    "cand_pref_acc": 0.9694,
+    "delta": -3.6689,
+    "delta_ci90": [
+     -4.9042,
+     -2.5239
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": -3.5245
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": -4.8931
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": -6.1203
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": -8.9573
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": -1.8251
+     },
+     "slop": {
+      "twins": 100,
+      "delta": -112.1992
+     }
+    }
+   },
+   "eval_hours": 0.48,
+   "oracle_hours": 0.204,
+   "loo": {
+    "delta": 0.0019,
+    "interval": [
+     -0.1321,
+     0.136
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "ft20 sft-gold vs base",
+   "kinds": [
+    "model"
+   ],
+   "full": {
+    "tasks": 50,
+    "base_pass": 11,
+    "cand_pass": 8,
+    "delta": -0.06,
+    "wins": 2,
+    "losses": 5,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 15.1133,
+    "cand_margin": 12.489,
+    "base_pref_acc": 0.9643,
+    "cand_pref_acc": 0.9847,
+    "delta": -2.6243,
+    "delta_ci90": [
+     -4.0343,
+     -1.2132
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": -3.4115
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": -3.607
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": -5.0584
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": -1.004
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": -1.0997
+     },
+     "slop": {
+      "twins": 100,
+      "delta": -104.2068
+     }
+    }
+   },
+   "eval_hours": 0.49,
+   "oracle_hours": 0.185,
+   "loo": {
+    "delta": 0.0135,
+    "interval": [
+     -0.1003,
+     0.1273
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "ft20 sft-gold vs sft",
+   "kinds": [
+    "model"
+   ],
+   "full": {
+    "tasks": 57,
+    "base_pass": 14,
+    "cand_pass": 11,
+    "delta": -0.0526,
+    "wins": 1,
+    "losses": 4,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 11.4444,
+    "cand_margin": 12.489,
+    "base_pref_acc": 0.9694,
+    "cand_pref_acc": 0.9847,
+    "delta": 1.0446,
+    "delta_ci90": [
+     0.5634,
+     1.5072
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": 0.1129
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": 1.286
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": 1.0619
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": 7.9534
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": 0.7254
+     },
+     "slop": {
+      "twins": 100,
+      "delta": 7.9924
+     }
+    }
+   },
+   "eval_hours": 0.56,
+   "oracle_hours": 0.185,
+   "loo": {
+    "delta": -0.0008,
+    "interval": [
+     -0.1134,
+     0.1119
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "ft20 bank vs base",
+   "kinds": [
+    "prompt"
+   ],
+   "full": {
+    "tasks": 49,
+    "base_pass": 11,
+    "cand_pass": 13,
+    "delta": 0.0408,
+    "wins": 6,
+    "losses": 4,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 15.1133,
+    "cand_margin": 14.7058,
+    "base_pref_acc": 0.9643,
+    "cand_pref_acc": 0.9592,
+    "delta": -0.4075,
+    "delta_ci90": [
+     -0.8141,
+     -0.0476
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": -0.3211
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": -0.3739
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": -1.1899
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": -4.1394
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": -0.1237
+     },
+     "slop": {
+      "twins": 100,
+      "delta": 8.6054
+     }
+    }
+   },
+   "eval_hours": 0.46,
+   "oracle_hours": 0.217,
+   "loo": {
+    "delta": 0.0006,
+    "interval": [
+     -0.1135,
+     0.1146
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "ft20 bank-gold vs base",
+   "kinds": [
+    "prompt"
+   ],
+   "full": {
+    "tasks": 47,
+    "base_pass": 10,
+    "cand_pass": 14,
+    "delta": 0.0851,
+    "wins": 6,
+    "losses": 2,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 15.1133,
+    "cand_margin": 14.606,
+    "base_pref_acc": 0.9643,
+    "cand_pref_acc": 0.9541,
+    "delta": -0.5073,
+    "delta_ci90": [
+     -1.3244,
+     0.1884
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": -0.5322
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": -0.2624
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": -1.4569
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": -7.0124
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": -0.1817
+     },
+     "slop": {
+      "twins": 100,
+      "delta": 7.0854
+     }
+    }
+   },
+   "eval_hours": 0.45,
+   "oracle_hours": 0.199,
+   "loo": {
+    "delta": 0.0005,
+    "interval": [
+     -0.1004,
+     0.1014
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "ft20 bank-gold vs bank",
+   "kinds": [
+    "prompt"
+   ],
+   "full": {
+    "tasks": 49,
+    "base_pass": 13,
+    "cand_pass": 14,
+    "delta": 0.0204,
+    "wins": 4,
+    "losses": 3,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 14.7058,
+    "cand_margin": 14.606,
+    "base_pref_acc": 0.9592,
+    "cand_pref_acc": 0.9541,
+    "delta": -0.0998,
+    "delta_ci90": [
+     -0.6384,
+     0.3931
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": -0.2111
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": 0.1115
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": -0.267
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": -2.873
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": -0.058
+     },
+     "slop": {
+      "twins": 100,
+      "delta": -1.52
+     }
+    }
+   },
+   "eval_hours": 0.51,
+   "oracle_hours": 0.213,
+   "loo": {
+    "delta": 0.0002,
+    "interval": [
+     -0.1164,
+     0.1167
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "ft20 sft vs bank",
+   "kinds": [
+    "model",
+    "prompt"
+   ],
+   "full": {
+    "tasks": 52,
+    "base_pass": 14,
+    "cand_pass": 13,
+    "delta": -0.0192,
+    "wins": 4,
+    "losses": 5,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 14.7058,
+    "cand_margin": 11.4444,
+    "base_pref_acc": 0.9592,
+    "cand_pref_acc": 0.9694,
+    "delta": -3.2614,
+    "delta_ci90": [
+     -4.283,
+     -2.2362
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": -3.2034
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": -4.5191
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": -4.9304
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": -4.8179
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": -1.7014
+     },
+     "slop": {
+      "twins": 100,
+      "delta": -120.8046
+     }
+    }
+   },
+   "eval_hours": 0.53,
+   "oracle_hours": 0.218,
+   "loo": {
+    "delta": 0.0113,
+    "interval": [
+     -0.1172,
+     0.1399
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "ft20 sft-gold vs bank",
+   "kinds": [
+    "model",
+    "prompt"
+   ],
+   "full": {
+    "tasks": 52,
+    "base_pass": 14,
+    "cand_pass": 10,
+    "delta": -0.0769,
+    "wins": 3,
+    "losses": 7,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 14.7058,
+    "cand_margin": 12.489,
+    "base_pref_acc": 0.9592,
+    "cand_pref_acc": 0.9847,
+    "delta": -2.2168,
+    "delta_ci90": [
+     -3.4487,
+     -0.951
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": -3.0904
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": -3.2331
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": -3.8686
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": 3.1355
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": -0.976
+     },
+     "slop": {
+      "twins": 100,
+      "delta": -112.8122
+     }
+    }
+   },
+   "eval_hours": 0.54,
+   "oracle_hours": 0.198,
+   "loo": {
+    "delta": 0.0115,
+    "interval": [
+     -0.0939,
+     0.1169
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "apprentice e1 vs base (117 practice tasks)",
+   "kinds": [
+    "model"
+   ],
+   "full": {
+    "tasks": 117,
+    "base_pass": 35,
+    "cand_pass": 43,
+    "delta": 0.0684,
+    "wins": 20,
+    "losses": 12,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": {
+    "answers": 100,
+    "twins": 196,
+    "base_margin": 15.1133,
+    "cand_margin": 10.7826,
+    "base_pref_acc": 0.9643,
+    "cand_pref_acc": 0.9745,
+    "delta": -4.3308,
+    "delta_ci90": [
+     -5.6045,
+     -3.074
+    ],
+    "per_kind": {
+     "off_by_one": {
+      "twins": 31,
+      "delta": -4.7163
+     },
+     "wrong_comparison": {
+      "twins": 75,
+      "delta": -5.6275
+     },
+     "missing_nil_check": {
+      "twins": 10,
+      "delta": -6.359
+     },
+     "server_trust": {
+      "twins": 5,
+      "delta": -10.8716
+     },
+     "invented_api": {
+      "twins": 75,
+      "delta": -2.1682
+     },
+     "slop": {
+      "twins": 100,
+      "delta": -119.7001
+     }
+    }
+   },
+   "eval_hours": 0.0,
+   "oracle_hours": 0.181,
+   "loo": {
+    "delta": -0.0232,
+    "interval": [
+     -0.1513,
+     0.1049
+    ],
+    "verdict": "ESCALATE"
+   }
+  },
+  {
+   "name": "qab A api hints vs base",
+   "kinds": [
+    "prompt"
+   ],
+   "full": {
+    "tasks": 57,
+    "base_pass": 25,
+    "cand_pass": 31,
+    "delta": 0.1053,
+    "wins": 8,
+    "losses": 2,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 6.08,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  },
+  {
+   "name": "qab B hints+retry ladder vs base",
+   "kinds": [
+    "prompt",
+    "loop"
+   ],
+   "full": {
+    "tasks": 57,
+    "base_pass": 25,
+    "cand_pass": 30,
+    "delta": 0.0877,
+    "wins": 9,
+    "losses": 4,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 6.8,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  },
+  {
+   "name": "qab C hints+ladder+slop repair vs base",
+   "kinds": [
+    "prompt",
+    "loop"
+   ],
+   "full": {
+    "tasks": 57,
+    "base_pass": 25,
+    "cand_pass": 28,
+    "delta": 0.0526,
+    "wins": 7,
+    "losses": 4,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 7.24,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  },
+  {
+   "name": "qab A api hints vs base (holdout)",
+   "kinds": [
+    "prompt"
+   ],
+   "full": {
+    "tasks": 24,
+    "base_pass": 10,
+    "cand_pass": 8,
+    "delta": -0.0833,
+    "wins": 3,
+    "losses": 5,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 2.74,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  },
+  {
+   "name": "model-eval cand1 vs star-fast (v2)",
+   "kinds": [
+    "model"
+   ],
+   "full": {
+    "tasks": 34,
+    "base_pass": 15,
+    "cand_pass": 14,
+    "delta": -0.0294,
+    "wins": 4,
+    "losses": 5,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 3.78,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  },
+  {
+   "name": "gold examples vs none (hit tasks)",
+   "kinds": [
+    "prompt"
+   ],
+   "full": {
+    "tasks": 18,
+    "base_pass": 11,
+    "cand_pass": 10,
+    "delta": -0.0556,
+    "wins": 1,
+    "losses": 2,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 2.9,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  },
+  {
+   "name": "worked examples vs none (hit tasks)",
+   "kinds": [
+    "prompt"
+   ],
+   "full": {
+    "tasks": 12,
+    "base_pass": 5,
+    "cand_pass": 5,
+    "delta": 0.0,
+    "wins": 2,
+    "losses": 2,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 2.33,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  },
+  {
+   "name": "v1.0 vs v0.9.0 (dev+creation)",
+   "kinds": [
+    "app"
+   ],
+   "full": {
+    "tasks": 57,
+    "base_pass": 24,
+    "cand_pass": 26,
+    "delta": 0.0351,
+    "wins": 7,
+    "losses": 5,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 7.59,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  },
+  {
+   "name": "v1.0 vs v0.9.0 (holdout)",
+   "kinds": [
+    "app"
+   ],
+   "full": {
+    "tasks": 24,
+    "base_pass": 8,
+    "cand_pass": 9,
+    "delta": 0.0417,
+    "wins": 4,
+    "losses": 3,
+    "decision": "INCONCLUSIVE"
+   },
+   "l2": null,
+   "eval_hours": 4.47,
+   "oracle_hours": null,
+   "loo": {
+    "verdict": "ESCALATE",
+    "why": "no L0-L2 signal for this kind of change"
+   }
+  }
+ ],
+ "summary": {
+  "abs": 18,
+  "with_l2": 9,
+  "decided_at_l0_l2": 0,
+  "decided_agree": 0,
+  "agree_or_inconclusive": 18,
+  "full_inconclusive": 18,
+  "sign_match": "5/9",
+  "spearman_l2_vs_observed": -0.067,
+  "spearman_pref_acc_vs_observed": -0.817,
+  "spearman_slop_vs_observed": 0.233,
+  "time_ratio": 0.4027
+ }
+}
