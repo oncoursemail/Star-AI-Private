@@ -88,14 +88,14 @@ The change does not fabricate a stream of internal thoughts or post progress int
 
 | File | Responsibility |
 | --- | --- |
-| [`star/workspace_validation.py`](../star/workspace_validation.py) | Pure, nonexecuting checks and bounded baseline comparisons. |
-| [`star/workspace.py`](../star/workspace.py) | Attach validation after successful atomic writes/edits, retaining existing Luau lint and path restrictions. |
-| [`star/incremental_repair.py`](../star/incremental_repair.py) | Turn-local evidence, retry budgets, queued mutation deferral, fresh-check matching and final status. It executes no tools itself. |
-| [`star/agent.py`](../star/agent.py) | Apply the controller after authorization, preserve receipts, handle uncertain outcomes and integrate the bounded follow-up into the current model loop. |
-| [`star/react_shell.py`](../star/react_shell.py) and [`frontend/src/activity.ts`](../frontend/src/activity.ts) | Sanitize and render narrowly scoped repair progress. |
-| [`tests/test_incremental_repair.py`](../tests/test_incremental_repair.py) | Scripted model choices driving real workspace effects through the live agent loop. |
-| [`tests/test_workspace_validation.py`](../tests/test_workspace_validation.py) | Parser behavior, bounded failures, baseline comparisons and exact saved bytes. |
-| [`tests/test_incremental_repair_activity.py`](../tests/test_incremental_repair_activity.py) and [`frontend/src/incremental-repair-activity.test.ts`](../frontend/src/incremental-repair-activity.test.ts) | Event privacy, malformed input and truthful activity transitions. |
+| [`star/workspace_validation.py`](../../star/workspace_validation.py) | Pure, nonexecuting checks and bounded baseline comparisons. |
+| [`star/workspace.py`](../../star/workspace.py) | Attach validation after successful atomic writes/edits, retaining existing Luau lint and path restrictions. |
+| [`star/incremental_repair.py`](../../star/incremental_repair.py) | Turn-local evidence, retry budgets, queued mutation deferral, fresh-check matching and final status. It executes no tools itself. |
+| [`star/agent.py`](../../star/agent.py) | Apply the controller after authorization, preserve receipts, handle uncertain outcomes and integrate the bounded follow-up into the current model loop. |
+| [`star/react_shell.py`](../../star/react_shell.py) and [`frontend/src/activity.ts`](../../frontend/src/activity.ts) | Sanitize and render narrowly scoped repair progress. |
+| [`tests/test_incremental_repair.py`](../../tests/test_incremental_repair.py) | Scripted model choices driving real workspace effects through the live agent loop. |
+| [`tests/test_workspace_validation.py`](../../tests/test_workspace_validation.py) | Parser behavior, bounded failures, baseline comparisons and exact saved bytes. |
+| [`tests/test_incremental_repair_activity.py`](../../tests/test_incremental_repair_activity.py) and [`frontend/src/incremental-repair-activity.test.ts`](../../frontend/src/incremental-repair-activity.test.ts) | Event privacy, malformed input and truthful activity transitions. |
 
 There is no automatic rollback in this patch. If a successful save leaves an invalid file and the repair limit is reached, the last saved work remains available and the unresolved status is reported. Existing path confinement, write authorization, cancellation and untrusted-source restrictions remain authoritative.
 
