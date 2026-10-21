@@ -28,7 +28,7 @@ def test_the_luau_script_requires_files_that_exist():
 @pytest.mark.skipif(LUAU is None, reason="needs the Luau CLI on PATH (not available here)")
 def test_xpbd_kernel_and_fixed_stepper_pass_their_luau_tests():
     # cwd is scripts/ so the "../star/..." requires resolve whether the CLI is script- or cwd-relative.
-    done = subprocess.run([LUAU, SCRIPT.name], cwd=SCRIPT.parent, capture_output=True, text=True,
+    done = subprocess.run([str(LUAU), SCRIPT.name], cwd=SCRIPT.parent, capture_output=True, text=True,
                           timeout=60, check=False)
     cases = len(re.findall(r"^test\(", SCRIPT.read_text(encoding="utf-8"), re.MULTILINE))
     assert cases >= 25
