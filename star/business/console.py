@@ -15,7 +15,7 @@ from urllib.parse import urlparse, unquote
 from .workforce import (artifact_path, init_db, queue_pipeline, record_expense,
                         review_offer, run_all, snapshot)
 
-UI = Path(__file__).with_name("console_ui.html")
+UI = Path(__file__).resolve().parent.parent / "data" / "business" / "console_ui.html"  # star/data is bundled by both Windows builds
 MAX_BODY = 24_000
 
 

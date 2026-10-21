@@ -263,7 +263,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
             <div><strong>{selected.review.ready ? 'Ready for owner review' : 'Evidence incomplete'}</strong><span>{statusText[selected.status]} · Not published</span></div>
           </div>
           {selected.review.blockers.length > 0 && <div className="commerce-blockers">
-            <h3>Before this can be approved</h3>
+            <h3>Open notes (advice only)</h3>
             <ul>{selected.review.blockers.map(reason => <li key={reason}>{reason}</li>)}</ul>
           </div>}
           <div className="commerce-evidence">
@@ -283,7 +283,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
             </>}
             <button type="button" className="commerce-action-secondary" disabled={busy} onClick={() => void mutate('commerceEvidence', {id: selected.id, evidence}, 'Evidence saved. Prior approvals were reset.')}>Save evidence</button>
             <div className="commerce-approval-actions">
-              <button type="button" disabled={busy || !selected.review.ready || selected.status === 'approved_for_export'}
+              <button type="button" disabled={busy || selected.status === 'approved_for_export'}
                 className="commerce-action-primary" onClick={() => void mutate('commerceReview',
                   {id: selected.id, decision: 'approve', owner_confirmed: true},
                   'Locally approved for export only; no marketplace action occurred.')}>

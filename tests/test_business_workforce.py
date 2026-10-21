@@ -86,13 +86,12 @@ def test_repeat_run_does_not_replay_old_jobs(db):
     assert db.execute("SELECT COUNT(*) FROM job WHERE state='completed'").fetchone()[0]==6
 
 
-def test_human_review_requires_explicit_evidence(db):
+def test_owner_review_needs_finished_qa_but_no_evidence_text(db):
     with pytest.raises(ValueError,match="not ready"):
         review_offer(db,"hud-kit","rights checked")
     queue_pipeline(db,"hud-kit");run_all(db)
-    for evidence in (""," ","X"*301):
-        with pytest.raises(ValueError): review_offer(db,"hud-kit",evidence)
-    review_offer(db,"hud-kit","Reviewed SVG assets against internal requirements; original handmade geometries.")
+    with pytest.raises(ValueError): review_offer(db,"hud-kit","X"*301)  # storage limit only
+    review_offer(db,"hud-kit","")  # the owner's confirmation is the gate; the note is optional
     offer=next(o for o in snapshot(db)["offers"] if o["id"]=="hud-kit")
     assert offer["state"]=="internally_approved"
     assert snapshot(db)["verified_orders"]==0

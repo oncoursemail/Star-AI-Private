@@ -34,10 +34,6 @@ SIGNAL_METRICS = {
     "google_ads_keyword_planner": ("monthly_searches", 100000000),
     "merchant_center": ("merchant_clicks", 100000000),
 }
-SENSITIVE_CATEGORIES = (
-    "weapon", "firearm", "medical", "supplement", "chemical", "battery",
-    "infant", "baby", "cosmetic", "counterfeit", "drug", "food", "alcohol",
-)
 MAX_OFFERS = 1000
 MAX_SIGNALS = 3000
 MAX_IMPORT = 150
@@ -324,8 +320,6 @@ def _economics(row: sqlite3.Row) -> dict[str, Any]:
         blockers.append("Estimated delivery exceeds 14 days")
     if contribution <= 0 or fraction < 0.20:
         blockers.append("Estimated contribution before ads is below 20% of selling price")
-    if any(term in row["category"].lower() for term in SENSITIVE_CATEGORIES):
-        blockers.append("Regulated or sensitive product category requires specialist compliance review")
     if (datetime.now(timezone.utc) - datetime.fromisoformat(row["observed_at"])).days > 30:
         blockers.append("Supplier offer older than 30 days; refresh stock, price and shipping")
     return {

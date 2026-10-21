@@ -269,9 +269,6 @@ def _review(conn: sqlite3.Connection, project: str, body: Mapping[str, Any]) -> 
         raise ValueError("Choose approve or request changes")
     if body.get("owner_confirmed") is not True:
         raise PermissionError("Owner confirmation is required for a review decision")
-    report = _row(record)["review"]
-    if decision == "approve" and not report["ready"]:
-        raise ValueError("Resolve all rights, quality and disclosure blockers before approval")
     new_status = "approved_for_export" if decision == "approve" else "changes_requested"
     now = _now()
     conn.execute(

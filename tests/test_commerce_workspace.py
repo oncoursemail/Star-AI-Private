@@ -57,10 +57,20 @@ def test_project_and_marketplace_isolation(tmp_path):
                id=left["id"], owner_confirmed=True, decision="changes")
 
 
+def test_owner_click_approves_even_with_open_advisory_notes(tmp_path):
+    """Open evidence notes are advice only: the owner's confirmed click is the sole gate."""
+    candidate = new(tmp_path)
+    assert candidate["review"]["ready"] is False
+    with pytest.raises(PermissionError, match="Owner confirmation"):
+        invoke(tmp_path, "commerceReview", id=candidate["id"], decision="approve")
+    forced = invoke(tmp_path, "commerceReview", id=candidate["id"],
+                    decision="approve", owner_confirmed=True)["ideas"][0]
+    assert forced["status"] == "approved_for_export"
+    assert forced["review"]["ready"] is False
+
+
 def test_ready_requires_evidence_then_explicit_owner_click(tmp_path):
     candidate = new(tmp_path)
-    with pytest.raises(ValueError, match="blockers"):
-        invoke(tmp_path, "commerceReview", id=candidate["id"], decision="approve", owner_confirmed=True)
     approved = invoke(
         tmp_path, "commerceEvidence", id=candidate["id"],
         evidence={

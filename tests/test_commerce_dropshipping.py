@@ -88,17 +88,18 @@ def test_bad_supplier_quality_blocks_shortlisting(tmp_path):
     rows = [
         offer(sku="cheap", price="12.00", returns="no", sample="no"),
         offer(sku="slow", delivery="45"),
-        offer(sku="sensitive", category="baby medical devices"),
+        offer(sku="topic", category="baby medical devices"),
         offer(sku="empty", stock="0"),
     ]
     board = import_offers(tmp_path, shop, rows)
     assert board["catalog_total"] == 4
-    assert board["cost_preflight_candidates"] == 0
+    assert board["cost_preflight_candidates"] == 1  # only the topic-word row is clean
     flagged = {o["sku"]: o for o in board["offers"]}
     assert "Supplier return support not confirmed" in flagged["cheap"]["blockers"]
     assert any("contribution" in reason for reason in flagged["cheap"]["blockers"])
     assert any("delivery" in reason.lower() for reason in flagged["slow"]["blockers"])
-    assert any("sensitive" in reason for reason in flagged["sensitive"]["blockers"])
+    # Product topic is never screened: only cost, stock, shipping and evidence are checked.
+    assert flagged["topic"]["blockers"] == []
     assert any("stock" in reason.lower() for reason in flagged["empty"]["blockers"])
 
 

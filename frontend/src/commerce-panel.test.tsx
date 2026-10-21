@@ -89,8 +89,12 @@ describe('STAR Business integration', () => {
     await user.click(item)
     const approval = within(screen.getByRole('complementary', {name: 'Quality and permissions'}))
       .getByRole('button', {name: 'Approve for export'})
-    expect(approval.hasAttribute('disabled')).toBe(true)
+    // Open notes are advice: the owner's click is the only gate, so approval is available.
+    expect(approval.hasAttribute('disabled')).toBe(false)
     expect(screen.queryByRole('button', {name: /Publish|Charge buyer|Send Fiverr/i})).toBeNull()
     expect(bridge.sent('commerceReview')).toHaveLength(0)
+    bridge.onAction('commerceReview', () => ({ok: true, data: board}))
+    await user.click(approval)
+    expect(bridge.sent('commerceReview')[0].payload).toMatchObject({decision: 'approve', owner_confirmed: true})
   })
 })

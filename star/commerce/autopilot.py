@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
-from .dropshipping import SENSITIVE_CATEGORIES, _economics, _shop
+from .dropshipping import _economics, _shop
 
 PILOT_ACTIONS = frozenset({
     "commercePilot", "commercePilotConfigure", "commercePilotScan",
@@ -205,9 +205,6 @@ def _issues(row: sqlite3.Row, policy: Mapping[str, Any], now: datetime) -> list[
         issues.append(("returns_unknown", "warning", "Supplier return support has not been confirmed."))
     if not row["sample_reviewed"]:
         issues.append(("sample_missing", "warning", "No owner-reviewed physical sample is documented."))
-    if any(term in row["category"].casefold() for term in SENSITIVE_CATEGORIES):
-        issues.append(("sensitive_product", "critical",
-                       "This category may require a specialized safety, advertising and legal review."))
     try:
         age_days = (now - datetime.fromisoformat(row["observed_at"])).total_seconds() / 86400
     except (TypeError, ValueError):

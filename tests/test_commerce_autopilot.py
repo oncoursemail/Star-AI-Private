@@ -24,9 +24,9 @@ def shop(home, name="Commerce Store", *, project="STAR"):
 
 
 def offer(*, sku="SKU-1", stock="2", sample="no", returns="no",
-          delivery="21", unit="12.00", price="25.00"):
+          delivery="21", unit="12.00", price="25.00", category="office organizer"):
     return ",".join((
-        "Example Approved Supplier", sku, "Original desk shelf", "office organizer",
+        "Example Approved Supplier", sku, "Original desk shelf", category,
         "https://catalog.example/items/"+sku,
         unit, "3.00", price, stock, delivery, returns, sample,
     ))
@@ -179,9 +179,11 @@ def test_business_project_permissions_and_missing_shop_refuse_writes(tmp_path):
              id=pilot(tmp_path, a)["findings"][0]["id"], owner_confirmed=True)
 
 
-def test_stale_vendor_information_and_sensitive_category_are_flagged(tmp_path):
+def test_stale_vendor_information_is_flagged_and_product_topic_is_not(tmp_path):
     b = shop(tmp_path)
-    imported(tmp_path, b, offer(stock="15", sample="yes", returns="yes", delivery="8"))
+    imported(tmp_path, b, offer(stock="15", sample="yes", returns="yes", delivery="8"),
+             offer(sku="SKU-2", stock="15", sample="yes", returns="yes", delivery="8",
+                   category="baby supplement alcohol"))
     call(tmp_path, "commercePauseBusiness", id=b["id"], paused=False)
     with sqlite3.connect(tmp_path/"commerce"/"workspace.sqlite3") as conn:
         conn.execute("UPDATE commerce_supplier_offers SET observed_at=? WHERE business_id=?",
@@ -189,7 +191,7 @@ def test_stale_vendor_information_and_sensitive_category_are_flagged(tmp_path):
         conn.commit()
     config(tmp_path, b)
     flagged = scan(tmp_path, b)
-    assert "supplier_stale" in {f["code"] for f in flagged["findings"]}
+    assert {f["code"] for f in flagged["findings"]} == {"supplier_stale"}  # topic words raise nothing
     # No fake merchant connection/status/financial activity is ever created.
     assert flagged["auto_spend"] is False
     assert flagged["auto_fulfill"] is False

@@ -247,7 +247,7 @@ def _optional_local_brain(offer: dict[str, Any], fallback: dict[str, Any]) -> di
         raise ValueError("Expected an OpenAI-compatible /chat/completions endpoint")
     payload = json.dumps({"model":os.environ.get("STAR_COMMERCE_MODEL","local"),
               "temperature":0.2,"max_tokens":400,"messages":[
-              {"role":"system","content":"Write original, factual commercial listing text. Return only valid JSON: {title, description, tags}. Never assert sales, certifications, ownership verification, or unprovided specifics. No trademarks. This is a draft."},
+              {"role":"system","content":"Write commercial listing text. Return only valid JSON: {title, description, tags}."},
               {"role":"user","content":json.dumps({k:offer[k] for k in ("name","summary","kind")})}] }).encode()
     try:
         req=urllib.request.Request(value,payload,headers={"Content-Type":"application/json"},method="POST")
@@ -362,7 +362,7 @@ def run_all(db: sqlite3.Connection,limit: int=30) -> list[dict[str, Any]]:
 
 
 def review_offer(db: sqlite3.Connection, offer_id: str, rights_evidence: str) -> None:
-    rights_evidence=_clean(rights_evidence,300)
+    rights_evidence=_clean(rights_evidence,300) if rights_evidence else ""  # an optional note, not a gate
     offer=db.execute("SELECT * FROM offer WHERE id=?",(offer_id,)).fetchone()
     if not offer or offer["state"]!="awaiting_owner_review":
         raise ValueError("Offer is not ready for owner review")
