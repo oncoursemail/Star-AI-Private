@@ -1,0 +1,58 @@
+# Metallic Control collector config (the real one lives only in the container: /etc/metallic-control/control.toml;
+# it names private hosts, so it is never committed). Placeholders in <angle brackets>.
+db = "/var/lib/metallic-control/control.sqlite3"
+audit_file = "/var/lib/metallic-control/audit.jsonl"
+ui = "/opt/metallic-control/ui"
+listen = "0.0.0.0"
+port = 8470
+tls_port = 8471
+tls_cert = "/etc/metallic-control/tls/cert.pem"
+tls_key = "/etc/metallic-control/tls/key.pem"
+login_token_file = "/etc/metallic-control/login-token"
+push_token_file = "/etc/metallic-control/push-token"
+ssh_key = "/etc/metallic-control/ssh/id_ed25519"
+known_hosts = "/etc/metallic-control/ssh/known_hosts"
+
+[brain_models]          # request timings logged without a router port belong to this model
+brain2 = "star-ns-brain"
+
+[brain]
+machine = "brain1"
+url = "http://<brain1 container address>:8080"
+key_file = "/etc/metallic-control/brain-key"
+every = 10
+
+[forge]
+url = "http://<forge address>:3000"
+token_file = "/etc/metallic-control/forge-token"
+org = "metallic"
+
+[[machine]]
+id = "pc"
+name = "PC"
+kind = "pc"
+role = "Windows, RTX 3060 Ti: the owner's PC"
+actions = ["sunshine-start", "sunshine-stop", "runner-start:pc-win", "runner-stop:pc-win", "backup-now:pc"]
+
+[[machine]]
+id = "brain1"
+name = "Brain 1"
+role = "EPYC, 48 threads, 128 GB: STAR's brain, forge, Windows VMs"
+ssh = "<user>@<brain1 host as seen from the container>"
+actions = ["restart:star-brain", "restart:star-knowledge", "restart:star-search-gateway", "restart:star-night-school",
+           "ns-pause", "ns-resume", "backup-now:forge"]
+
+[[machine]]
+id = "brain2"
+name = "Brain 2"
+role = "i7, 8 threads, 16 GB: second brain, CI runners, backups"
+ssh = "<user>@<brain2 host>"
+actions = ["restart:star-night-school", "restart:star-ns-brain", "restart:star-discord", "ns-pause", "ns-resume",
+           "runner-start:github", "runner-stop:github", "runner-start:forge", "runner-stop:forge",
+           "backup-now:starai", "backup-now:kb"]
+
+[[machine]]
+id = "server3"
+name = "New server"
+role = "Xeon E5-2660, 16 vCPU, 31 GB: game servers"
+pending = "Not connected yet: needs key access (owner: ssh-copy-id once), then the gate install."
