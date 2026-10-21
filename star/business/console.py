@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-import os
 from pathlib import Path
 import threading
 from urllib.parse import urlparse, unquote
@@ -24,7 +23,7 @@ def create_handler(db, lock: threading.RLock):
     class Handler(BaseHTTPRequestHandler):
         server_version = "STAR-Commerce/0.1"
 
-        def log_message(self, format, *args):
+        def log_message(self, fmt, *args):
             # Avoid persisting browser requests / potential query data.
             pass
 

@@ -11,14 +11,12 @@ import json
 import os
 import re
 import sqlite3
-import time
 import urllib.error
 from contextlib import contextmanager
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
-from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -139,7 +137,10 @@ def queue_pipeline(db: sqlite3.Connection, offer_id: str) -> list[int]:
         for step in ALLOWED_STEPS:
             cur = db.execute("INSERT INTO job(offer_id,step,state,dedupe_key,created_at,updated_at) VALUES (?,?,?,?,?,?)",
                              (offer_id,step,"queued",f"{offer_id}:{revision}:{step}",utc_now(),utc_now()))
-            created.append(int(cur.lastrowid))
+            job_id = cur.lastrowid
+            if job_id is None:
+                raise RuntimeError("Inserted job has no row ID")
+            created.append(job_id)
         db.execute("UPDATE offer SET state='producing',qa_json='{}',rights_review='',updated_at=? WHERE id=?",
                    (utc_now(),offer_id))
         audit(db,offer_id,"pipeline","Queued three internal production stages. No marketplace actions.")
@@ -154,7 +155,6 @@ def _safe_base(db: sqlite3.Connection) -> Path:
 
 def _svgs(name: str) -> dict[str, str]:
     # Hand-authored geometries, not replicas of any game/brand artwork.
-    title = name.replace("&","and").replace("<", "").replace(">", "")
     return {
       "scene-frame.svg": '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
 <defs><linearGradient id="t" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D7B692"/><stop offset="1" stop-color="#E4E7DC"/></linearGradient></defs>
@@ -268,7 +268,7 @@ def _optional_local_brain(offer: dict[str, Any], fallback: dict[str, Any]) -> di
         tags=[_clean(t,28) for t in tags]
         return {"title":title,"description":description,"tags":tags,
                 "ai_disclosure_required":True,"source":"local_model_unverified","approved":False}
-    except (urllib.error.URLError, KeyError, IndexError, TypeError, json.JSONDecodeError, ValueError) as e:
+    except (urllib.error.URLError, KeyError, IndexError, TypeError, json.JSONDecodeError, ValueError):
         return {**fallback,"warning":"Local model unavailable or invalid; used offline draft"}
 
 
