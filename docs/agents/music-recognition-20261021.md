@@ -31,12 +31,12 @@ into one feature on `star/music-recognition-20261021`, from origin/star/next 990
 
 ## Tests run (2026-10-21)
 - `pytest tests/test_music_recognition.py` + web_fetch, audio_understanding, bridge exec, agent, settings, provider,
-  chat-path suites: 597 passed. `tests/test_server_first_flow.py` fails only when run after
+  chat-path suites: 581 passed after rebasing on star/next 6ad9725f (+17 in test_server_first_flow run alone). `tests/test_server_first_flow.py` fails only when run after
   `tests/test_server_provider.py`; the same pair fails on clean origin/star/next (pre-existing, not this branch).
 - `ruff check` on changed Python: clean. Pyright 1.1.414: `star/music_recognition.py` no errors; the baseline
   check reports overages in files this branch does not change in those lines (providers.py:227, vision.py,
   image_gen.py, desktop_core instant-route lines): the local venv's package versions differ from CI.
-- Frontend: `npm run typecheck` clean, `npm test` 67 files / 628 tests passed, `npm run build` OK.
+- Frontend: `npm run typecheck` clean, `npm test` 72 files / 654 tests passed (after the rebase), `npm run build` OK.
 - `tests/test_night_conductor.py` (the #481 review failure): 31 passed on current star/next.
 
 ## Not verified
