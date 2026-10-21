@@ -8,6 +8,8 @@
 #                                                     restarted: run it under `./star.cmd lock run --owner claude --holder g1
 #                                                     --server 1 --max-minutes 10 -- bash server/api_lock/deploy.sh --enable`)
 #   STAR_SERVER_SSH=... bash server/api_lock/deploy.sh --undo     runs /opt/star/api_lock/undo.sh (same lock rule)
+#   STAR_SERVER_SSH=... bash server/api_lock/deploy.sh --side LABEL ab|ba   side.sh: a temporary copy on :8096 + bench.py
+#                                                     (timing: under `star lock run`, like --enable)
 #   STAR_SERVER_SSH=... bash server/api_lock/deploy.sh --status
 #
 # The enabled server still answers exactly as before unless a request carries "api_lock": true, which the app sends
@@ -23,7 +25,7 @@ remote() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$target" "lxc exec $contai
 case "${1:-}" in
   --build)
     tmp="$(mktemp -d)"
-    for f in 0004-api-lock-sampler.patch build.sh enable.sh cases.json; do
+    for f in 0004-api-lock-sampler.patch build.sh enable.sh cases.json bench.py side.sh; do
       git show "HEAD:server/api_lock/$f" > "$tmp/$f"      # the committed (LF) text, not a CRLF checkout
     done
     python -m star.api_lock table "$tmp/api-lock-table.json"
@@ -32,6 +34,8 @@ case "${1:-}" in
     rm -rf "$tmp"
     remote chown -R star:star /opt/star/api_lock
     remote runuser -u star -- bash /opt/star/api_lock/build.sh ;;
+  --side)          # timing: only under `star lock run` (see side.sh)
+    remote runuser -u star -- bash /opt/star/api_lock/side.sh "${2:?label}" "${3:-ab}" ;;
   --enable)
     remote bash /opt/star/api_lock/enable.sh ;;
   --undo)
@@ -40,6 +44,6 @@ case "${1:-}" in
     remote grep -h -e /opt/star/bin- -e LLAMA_API_LOCK /etc/systemd/system/star-brain.service.d/ramforge.conf || true
     remote systemctl is-active star-brain || true ;;
   *)
-    echo "usage: deploy.sh --build|--enable|--undo|--status" >&2
+    echo "usage: deploy.sh --build|--side LABEL [ab|ba]|--enable|--undo|--status" >&2
     exit 2 ;;
 esac
