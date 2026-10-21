@@ -420,8 +420,10 @@ def test_the_reference_block_is_primed_up_to_the_time_line(desk, tail_server, mo
     report = warm_draft(settings, desk.home, desk.chat, draft, mode=mode)
     assert report["primed"] is True and report["tail"]["primed"] is True, report
     assert report["with_tools"] is (mode == "auto")
-    primed = tail_server.sent()[-1]["body"]["prompt"]
+    *_, primed, whole = [call["body"]["prompt"] for call in tail_server.sent()]
     assert "OFFICIAL DOCUMENTATION" in primed and "Now: " not in primed.rsplit("<|im_start|>user", 1)[1]
+    # Then the whole request once, this minute's time line and the closing tokens included.
+    assert whole.startswith(primed) and whole.endswith("<|im_start|>assistant\n")
     # Enter with the same text: the real request starts with every byte that was primed, and only the time
     # line and the closing tokens come after it.
     desk.chats.add("STAR", "user", draft, chat_id=desk.chat)
@@ -430,6 +432,8 @@ def test_the_reference_block_is_primed_up_to_the_time_line(desk, tail_server, mo
     assert real.startswith(primed), (real[:len(primed)][-300:], primed[-300:])
     rest = real[len(primed):]
     assert rest.startswith("Now: ") and "OFFICIAL DOCUMENTATION" not in rest and len(rest) < 200
+    # Within the same minute it is exactly the whole request that was primed (only a minute change differs).
+    assert real == whole or whole[len(primed):].split(",")[0] != rest.split(",")[0]
 
 
 def test_no_reference_block_when_the_turn_adds_what_the_draft_cannot_know(desk, tail_server, monkeypatch):
@@ -451,3 +455,19 @@ def test_the_reference_block_leaves_no_trace(desk, tail_server):
     before = footprint(desk.home)
     report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?", mode="fast")
     assert report["tail"]["primed"] is True and footprint(desk.home) == before
+
+
+def test_the_reference_block_stops_between_chunks_when_the_owner_types_on(desk, tail_server, monkeypatch):
+    from star import doc_grounding
+    from test_doc_grounding import FakeKnowledge, passage
+    monkeypatch.setattr(doc_grounding, "client_for", lambda settings: FakeKnowledge(
+        [passage(n, "Tween a part with TweenService:Create. " * 20) for n in range(1, 5)]))
+    draft = "How do I tween a part in my Roblox game so it moves up 5 studs over 2 seconds?"
+    calls = []
+
+    def superseded():
+        calls.append(len(tail_server.sent()))
+        return len(calls) > 1          # free when the tail starts, then a newer draft arrives
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, draft, mode="fast", superseded=superseded)
+    assert report["tail"]["primed"] is True and report["tail"]["yielded"] is True
+    assert len(tail_server.sent()) == 2          # the draft, then one chunk of the block

@@ -20,7 +20,6 @@ APPDATA must not be the owner's STAR folder. The side server needs no key; the k
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import sys
@@ -76,6 +75,7 @@ def main() -> int:
 
     real_open = core.open_client
     captured: list[dict] = []
+    requested: list[float] = []
 
     class SpyCompletions:
         def __init__(self, inner):
@@ -83,6 +83,7 @@ def main() -> int:
 
         async def create(self, **kwargs):
             captured.append(json.loads(json.dumps(kwargs, default=str)))
+            requested.append(time.perf_counter())
             return await self.inner.create(**kwargs)
 
     class Spy:
@@ -151,6 +152,7 @@ def main() -> int:
             if event.get("event") == "knowledge_finished":
                 seen["knowledge_ms"] = event.get("elapsed_ms")
         captured.clear()
+        requested.clear()
         core.open_client = Spy
         began = time.perf_counter()
         try:
@@ -163,7 +165,9 @@ def main() -> int:
             core.open_client = real_open
         idle()
         out = {"first_token_s": round(seen["first"] - began, 3) if "first" in seen else None,
-               "knowledge_ms": seen.get("knowledge_ms")}
+               "knowledge_ms": seen.get("knowledge_ms"),
+               # PC side: run_task's work before the model request (history, lessons, docs, route).
+               "request_s": round(requested[0] - began, 3) if requested else None}
         if "error" in seen:
             out["error"] = seen["error"]
         out["request"] = captured[0] if captured else None

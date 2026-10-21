@@ -32,8 +32,9 @@ Harmless by construction, like the post-answer warm-up (star/warmup.py):
 The turn's reference block (documentation passages, skill packs, lessons, notes: ~1,000-1,500 tokens for a Roblox
 question) also comes after the owner's words. Once the draft is primed and no newer draft waits, `turn_tail` builds
 that block for the draft with the functions the turn uses (desktop_core.base_sections / reference_sections) and
-primes it too, up to the time line (the only part that changes every minute). On Enter with the same text the
-server then reads only the time line and the template's closing tokens. Skipped when the turn would add something
+primes it too, up to the time line (the only part that changes every minute), then the whole request once with
+this minute's time line. On Enter with the same text in the same minute the server reads ~4 tokens; in a later
+minute, the time line and the template's closing tokens. Skipped when the turn would add something
 the draft cannot know (web search, attached documents, a Studio connection, a diff-only edit); a mismatch costs a
 cache miss, never a different answer.
 """
@@ -142,11 +143,14 @@ def _on_pc(settings: Settings, request: dict):
 
 
 async def _send_prefix(settings: Settings, request: dict, cancel_event, pc_base: str | None,
-                       chat_key: str = '', others_busy=None, primed: str | None = None) -> dict:
+                       chat_key: str = '', others_busy=None, primed: str | None = None,
+                       whole: bool = False) -> dict:
     """Render `request` with the server's chat template, cut it after the draft, send that text for one token:
     in chunks (`chunk_ends`) from what the previous draft of this chat primed on this model and slot.
     `primed` (default: the whole last message) is the start of the last message to send, when the message
-    goes on past what may be primed (`turn_tail`: the time line).
+    goes on past what may be primed (`turn_tail`: the time line). `whole`: after the chunks, the whole rendered
+    request too, closing tokens included (`turn_tail`: Enter within the same minute then reads ~4 tokens; in a
+    later minute the server goes back to the previous chunk's checkpoint, before the time line).
 
     Stops the moment `cancel_event` is set (the connection is closed; the server keeps what it read), and before
     the next chunk when `await others_busy()` says another client's request is running: a chunk read beside a
@@ -176,17 +180,20 @@ async def _send_prefix(settings: Settings, request: dict, cancel_event, pc_base:
         where = (chat_key, request['model'], extras.get('id_slot'), pc_base)
         before = _PRIMED.get(where, '')
         found: dict = {'primed': True}
-        ends = chunk_ends(draft, _common_length(before, draft))
+        ends: list = chunk_ends(draft, _common_length(before, draft))
+        if whole:
+            ends.append(None)
         for number, end in enumerate(ends):
             if number and others_busy is not None and await others_busy():
                 found['yielded'] = True
                 break
             reply = await http.post(endpoint + '/completions', headers=headers, json={
-                'model': request['model'], 'prompt': prompt[:cut + end], 'max_tokens': 1, 'temperature': 0,
-                **extras})
+                'model': request['model'], 'prompt': prompt if end is None else prompt[:cut + end], 'max_tokens': 1,
+                'temperature': 0, **extras})
             reply.raise_for_status()
-            _PRIMED.clear()
-            _PRIMED[where] = draft[:end]
+            if end is not None:
+                _PRIMED.clear()
+                _PRIMED[where] = draft[:end]
             timings = reply.json().get('timings') or {}
             if type(timings.get('prompt_n')) is int:
                 found['prompt_tokens_read'] = found.get('prompt_tokens_read', 0) + timings['prompt_n']
@@ -389,8 +396,13 @@ def warm_draft(settings: Settings, home: Path, chat_id: str | None, text: str, *
                 if message and not (cancel_event is not None and cancel_event.is_set()):
                     full = {**request, 'messages': [*request['messages'][:-1], {
                         **request['messages'][-1], 'content': [{'type': 'text', 'text': message}]}]}
+
+                    async def stop_between_chunks() -> bool:
+                        # The owner typed on (a newer draft waits) or another client is generating.
+                        return bool((superseded is not None and superseded())
+                                    or (others_busy is not None and await others_busy()))
                     more = asyncio.run(_send_prefix(settings, full, cancel_event, pc_base, str(chat_id or ''),
-                                                    others_busy, primed=message[:length]))
+                                                    stop_between_chunks, primed=message[:length], whole=True))
                     result['tail'] = {key: more[key] for key in ('primed', 'yielded', 'cancelled', 'skipped',
                                                                  'prompt_tokens_read', 'chunks') if key in more}
                 else:
