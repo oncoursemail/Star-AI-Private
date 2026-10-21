@@ -128,7 +128,7 @@ try {
     {id:'phone',width:390,height:844},
   ]
   for (const viewport of viewports) {
-    for (const tab of ['chat','tools']) {
+    for (const tab of ['chat','tools','business']) {
       const id = tab + '-' + viewport.id
       const context = await browser.newContext({
         viewport: {width:viewport.width,height:viewport.height},

@@ -112,6 +112,10 @@ CLIP_INTEROP_ACTIONS = frozenset({
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_INTEROP_ACTIONS
 # A static read-only source index; no arbitrary fetch/install/execute capability.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | {'gameLabCatalog'}
+# Business uses only local draft and review actions; it cannot publish, spend or contact buyers.
+# Do not import the commerce package at desktop startup: its art scanner uses Pillow.
+COMMERCE_ACTIONS = frozenset({'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview'})
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
 
 # A background warm-up (server check + prompt-cache priming) gives way at once to
 # anything that talks to the model server or changes what it would talk to.
@@ -1191,6 +1195,13 @@ def launch():
                         self._run(rid, action, research_task)
                         return json.dumps({'ok':True,'pending':True,'requestId':rid})
                     return json.dumps({'ok':True,'data':research_task()},default=str)
+                # String literals preserve the standalone Qt bridge test harness that
+                # extracts invoke() without its module globals. Keep in sync with the allowlist.
+                if action in ('commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview'):
+                    from .commerce.workspace import handle_commerce
+                    current = Settings.load(self.settings_file)
+                    result = handle_commerce(action, body, project=current.project, home=app_data())
+                    return json.dumps({'ok':True,'data':result})
                 if action=='bootstrap':return json.dumps({'ok':True,'data':_get_state(self.settings_file,self.runtime,busy=self.active_task,studio_status=self.studio_status)})
                 if action=='brainSnapshot':return json.dumps({'ok':True,'data':brain_snapshot(self.settings_file,app_data())})
                 if action=='plannerStatus':return json.dumps({'ok':True,'data':planner_snapshot(self.settings_file)})
