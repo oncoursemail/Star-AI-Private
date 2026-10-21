@@ -334,7 +334,6 @@ class Awareness:
         snap = snap or self.snapshot()
         if section not in SECTIONS:
             return self.summary(snap)
-        now = datetime.fromtimestamp(snap.taken, timezone.utc)
         out: list[str] = []
         if section in {"work", "prs"}:
             pc = snap.pc
