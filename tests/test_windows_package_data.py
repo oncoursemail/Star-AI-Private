@@ -70,7 +70,7 @@ PENDING_OWNER_REVIEW = frozenset({
 def _commands(local_text: str, workflow_text: str) -> tuple[list[str], list[str]]:
     local = re.search(r"Invoke-CheckedNative \$python @\(('-m',\s*'PyInstaller'.*?)\) 'PyInstaller'",
                       local_text, flags=re.DOTALL)
-    workflow = re.search(r"(?ms)^\s*python -m PyInstaller\s+(.*?)^\s*if \(\$LASTEXITCODE",
+    workflow = re.search(r"(?ms)^\s*python @pyinstaller\s+(.*?)^\s*if \(\$LASTEXITCODE",
                          workflow_text)
     assert local is not None and workflow is not None, "PyInstaller command changed"
     local_argv = re.findall(r"'([^']*)'", local.group(1))

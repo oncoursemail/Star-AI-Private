@@ -28,8 +28,8 @@ def test_pr_windows_build_never_receives_publish_or_attestation_tokens():
 
 def test_attestation_is_main_only_and_producer_is_trusted():
     _build, attest, publish = _jobs()
-    # The release is attested only after the build AND every Windows test shard passed.
-    assert "needs: [windows-build, windows-tests]" in attest
+    # The release is attested only after the build, the Windows tests AND the Linux React validation passed.
+    assert "needs: [windows-build, windows-tests, frontend]" in attest
     assert "if: github.ref == 'refs/heads/main'" in attest
     assert re.search(r"actions/download-artifact@[0-9a-f]{40} # v8\.", attest)  # pinned commit
     assert "name: STAR-Windows-vNext" in attest
