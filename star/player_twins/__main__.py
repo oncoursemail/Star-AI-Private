@@ -15,7 +15,7 @@ def main(argv: list[str] | None = None) -> int:
                                      description="Simulated human players that playtest a Roblox game's server logic.")
     sub = parser.add_subparsers(dest="cmd", required=True)
     run = sub.add_parser("run", help="play a game folder and write report.md + report.json")
-    run.add_argument("game_dir", type=Path, help="folder with twin.json (e.g. examples/roblox/twin_tycoon)")
+    run.add_argument("game_dir", type=Path, help="folder with twin.json (e.g. star/player_twins/games/twin_tycoon)")
     run.add_argument("--sessions", type=int, default=1000, help="number of twins; each plays day 1, more if it returns")
     run.add_argument("--days", type=int, default=2, help="max sessions per twin (returning players)")
     run.add_argument("--personas", default="all", help=f"all, or a list/weights of: {', '.join(PERSONAS)}")

@@ -1,6 +1,6 @@
 """Load a Rojo-style game folder and build one self-contained Luau bundle for the twin driver.
 
-Game folder layout (as in ``examples/roblox/twin_tycoon``)::
+Game folder layout (as in ``star/player_twins/games/twin_tycoon``)::
 
     twin.json                      {"name": ..., "adapter": "twin.luau", "base": "../other"?}
     twin.luau                      client-side adapter (what a player sees and can do)

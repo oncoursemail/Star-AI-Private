@@ -12,8 +12,9 @@ from star.player_twins import analysis, bundle, runner
 from star.player_twins.personas import PERSONAS, assign, parse_personas
 
 ROOT = Path(__file__).resolve().parents[1]
-FLAWED = ROOT / "examples" / "roblox" / "twin_tycoon"
-FIXED = ROOT / "examples" / "roblox" / "twin_tycoon_fixed"
+GAMES = ROOT / "star" / "player_twins" / "games"
+FLAWED = GAMES / "twin_tycoon"
+FIXED = GAMES / "twin_tycoon_fixed"
 
 
 def _runtime():
