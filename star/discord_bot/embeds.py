@@ -149,7 +149,7 @@ def pr_card(feed_age: float, prs: list[dict], merged: list[dict], *, number: int
     failing = sum(1 for p in prs if p.get("checks") == "failing")
     fields = [field("Open", len(prs)), field("Failing checks", failing), field("Merged today", len(merged))] if number is None else []
     for p in shown[:8]:            # the overview lists the first eight; ask for one number for its detail
-        state = {"passing": "✅ passing", "failing": "❌ failing", "pending": "⏳ pending"}.get(p.get("checks"), "no checks")
+        state = {"passing": "✅ passing", "failing": "❌ failing", "pending": "⏳ pending"}.get(p.get("checks") or "", "no checks")
         fields.append(field(f"#{p.get('number')} {p.get('title', '')}"[:250],
                             f"{'draft' if p.get('draft') else 'ready'} · {state} · {p.get('merge') or '?'}", inline=False))
     color = RED if any(p.get("checks") == "failing" for p in shown) else GREEN if shown else GOLD

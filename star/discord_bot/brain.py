@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import json
 import logging
 import time
+from typing import Any
 
 from ..persona import CORE, drop_status_mentions, leaked_reasoning, strip_reasoning
 from .core import MAX_PROMPT, MAX_REPLY, clean_text
@@ -246,7 +247,7 @@ class DiscordBrain:
         from ..providers import open_client
         client_factory = self._client_factory or open_client
         extras = _request_extras(settings, route.model, quick=route.quick)
-        request = dict(model=route.model, messages=list(messages),
+        request: dict[str, Any] = dict(model=route.model, messages=list(messages),
                        max_tokens=QUICK_MAX_TOKENS if route.quick else FULL_MAX_TOKENS,
                        temperature=0.6)
         if extras:
@@ -351,7 +352,7 @@ class DiscordBrain:
         extras = _request_extras(settings, model, quick=True)
         if extras:
             extras = {**extras, **_background_slot(settings, model)}
-        request = dict(model=model, messages=[{"role": "system", "content": system},
+        request: dict[str, Any] = dict(model=model, messages=[{"role": "system", "content": system},
                                               {"role": "user", "content": user}],
                        max_tokens=max_tokens, temperature=0.7)
         if extras:

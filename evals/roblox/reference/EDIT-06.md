@@ -47,11 +47,11 @@ function Leaderboard.format(entry)
 end
 
 function Leaderboard.lines(entries)
-	local lines = {}
+	local rows = {}
 	for _, entry in ipairs(Leaderboard.rank(entries)) do
-		table.insert(lines, Leaderboard.format(entry))
+		table.insert(rows, Leaderboard.format(entry))
 	end
-	return lines
+	return rows
 end
 
 function Leaderboard.mvp(entries)

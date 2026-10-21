@@ -9,6 +9,7 @@ import io
 import logging
 import math
 import os
+from typing import Any
 
 from .audio import MAX_ATTACHMENT_BYTES, ffmpeg_path, post_voice_message, validate_attachment, pcm_to_wav
 from .core import (AccessPolicy, MAX_AUDIO_TEXT, MAX_EMBED_DESCRIPTION, RateLimited, RateLimiter, embed_parts,
@@ -126,6 +127,7 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
         else:   # on a server the picture is made by the STAR GPU worker on the owner's PC (gpu_link.py)
             from .gpu_link import remote_drawer
             drawer = remote_drawer(config.draw)
+    draw_engine: Any = drawer
     if service is None:
         from .brain import DiscordBrain, system_prompt
         # The system prompt names exactly the features this bot was started with (byte-stable per process).
@@ -398,7 +400,7 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
     if service.runner is not None:
         service.runner.notify = service.runner.notify or dm_owner
         service.runner.research = service.runner.research or research_job
-        service.runner.draw = service.runner.draw or drawer.draw
+        service.runner.draw = service.runner.draw or draw_engine.draw
     if config.proactive.enabled and service.awareness is not None:
         from .proactive import Proactive
 
@@ -537,7 +539,7 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
                 f"**DM chat:** {onoff(config.dm.enabled)} · **Images:** {onoff(config.dm.images)} · "
                 f"**Remember:** {onoff(config.dm.learning_candidates)} · "
                 f"**PC screenshots:** {onoff(config.screen_capture)} (each needs a button press)\n"
-                f"**Draw (make images):** {drawer.describe()} · **@mentions:** {onoff(config.draw.mentions)}\n"
+                f"**Draw (make images):** {draw_engine.describe()} · **@mentions:** {onoff(config.draw.mentions)}\n"
                 f"**Night School digests:** {digest}\n"
                 f"**Live status:** {'brain ' + ' + '.join(sorted(config.gates)) if config.gates else 'off'} · "
                 f"**My own DMs:** {proactive_text()}\n"
@@ -911,7 +913,7 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
         async def on_status(text):
             await status_message.edit(content="🎨 " + text, allowed_mentions=discord.AllowedMentions.none())
         try:
-            picture = await drawer.draw(prompt, on_status=on_status)
+            picture = await draw_engine.draw(prompt, on_status=on_status)
         except ValueError as exc:
             await status_message.edit(content="⚠️ " + str(exc)[:1800], allowed_mentions=discord.AllowedMentions.none())
             return
@@ -944,7 +946,7 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
             await interaction.edit_original_response(content="🎨 " + text,
                                                      allowed_mentions=discord.AllowedMentions.none())
         try:
-            picture = await drawer.draw(prompt, on_status=on_status)
+            picture = await draw_engine.draw(prompt, on_status=on_status)
             from .embeds import drawing_card
             card = drawing_card(picture.prompt, picture.filename, seconds=getattr(picture, "seconds", None))
             try:
@@ -1206,11 +1208,12 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
                 return
             if service.runner is not None and await run_command(message.channel, text_in):
                 return
-            wish = prefs_request(text_in) if service.prefs is not None else None
-            if wish is not None:
+            prefs = service.prefs
+            wish = prefs_request(text_in) if prefs is not None else None
+            if prefs is not None and wish is not None:
                 kind, value = wish
-                answer = (service.prefs.remember(value) if kind == "remember" else
-                          service.prefs.forget(value) if kind == "forget" else service.prefs.listing())
+                answer = (prefs.remember(value) if kind == "remember" else
+                          prefs.forget(value) if kind == "forget" else prefs.listing())
                 await message.channel.send(answer, allowed_mentions=discord.AllowedMentions.none())
                 return
         if (config.work.enabled and service.awareness is None and not message.attachments

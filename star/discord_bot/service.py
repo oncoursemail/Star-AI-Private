@@ -9,6 +9,7 @@ from datetime import datetime
 import json
 from hashlib import sha256
 from dataclasses import dataclass
+from typing import Any
 
 from .audio import decode_attachment, ffmpeg_path, synthesize_pcm, validate_attachment, voice_message
 from .brain import DiscordBrain
@@ -69,7 +70,7 @@ def lookup_schema() -> dict:
 class DiscordService:
     def __init__(self, policy: AccessPolicy, *, brain=None, memory: SessionMemory | None = None,
                  ffmpeg_dir: str = "", searcher=None, rate_limiter: RateLimiter | None = None,
-                 queue_seconds: float = 60.0, awareness=None, runner=None, prefs=None) -> None:
+                 queue_seconds: float = 60.0, awareness: Any = None, runner: Any = None, prefs: Any = None) -> None:
         self.policy = policy
         # Owner-private turns only: live status (awareness.Awareness), allow-listed actions (actions.ActionRunner)
         # and what he asked Star to remember (prefs.OwnerPrefs). All optional; without them chat is as before.

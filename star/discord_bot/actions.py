@@ -99,7 +99,7 @@ def parse_request(action: str, brain: str = "", text: str = "", *, gates=()) -> 
     brains: tuple[str, ...] = ()
     if spec.brains:
         wanted = str(brain or "").strip() or ("both" if len(spec.brains) > 1 and spec.name.startswith("night_school")
-                                               else spec.brains[0])
+                                               else next(iter(spec.brains)))
         brains = spec.brains if wanted == "both" else (wanted,)
         if any(b not in spec.brains for b in brains):
             raise ValueError(f"{spec.label} only works on brain {' or '.join(spec.brains)}.")

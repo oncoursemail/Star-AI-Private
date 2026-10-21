@@ -158,7 +158,11 @@ class Proactive:
         """`send(text, picture, card)` DMs the owner (the card, or the text when there is none); `writer(system,
         user)` returns a model draft (None: templates only)."""
         self.config, self.awareness, self.send, self.writer = config, awareness, send, writer
-        self.ledger = ledger or Ledger(config.state_path)
+        if ledger is None:
+            if config.state_path is None:
+                raise ValueError("The proactive ledger needs a state path")
+            ledger = Ledger(config.state_path)
+        self.ledger = ledger
         self._clock = clock
         self._previous = None
 

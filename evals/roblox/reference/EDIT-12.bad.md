@@ -41,7 +41,7 @@ function PaintColor.equal(a, b)
 end
 
 function PaintColor.forTeam(name)
-	return PaintColor.TEAMS[name] or PaintColor.new(1, 1, 1)
+	return PaintColor.TEAMS[name] or PaintColor.new(1.0, 1.0, 1.0)
 end
 
 return PaintColor

@@ -1606,7 +1606,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     if several is not None:
                         await several.run.cancel()
                     raise
-                if edit is not None and not tools_ran:
+                if edit is not None and not tools_ran and result is not None:
                     done = await asyncio.to_thread(edit_format.finish, edit, result[0],
                                                    check=docs.client.luau_check if docs.client is not None else None)
                     audited_event({'event': 'edit_diff_finished', 'ok': done.ok, 'reason': done.reason[:160],
