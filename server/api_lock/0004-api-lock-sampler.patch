@@ -1,0 +1,1287 @@
+diff --git a/common/CMakeLists.txt b/common/CMakeLists.txt
+index 2b307c5..163b52a 100644
+--- a/common/CMakeLists.txt
++++ b/common/CMakeLists.txt
+@@ -57,6 +57,8 @@ include(parsers/sources.cmake)
+
+ add_library(${TARGET}
+     ${LLAMA_CHAT_PARSERS_SOURCES}
++    api-lock.cpp
++    api-lock.h
+     arg.cpp
+     arg.h
+     base64.hpp
+diff --git a/common/api-lock.cpp b/common/api-lock.cpp
+new file mode 100644
+index 0000000..23ee4a8
+--- /dev/null
++++ b/common/api-lock.cpp
+@@ -0,0 +1,832 @@
++// STAR patch 0004 (G1 "API lock"). A C++ copy of the state machine in star/api_lock.py; both run the shared cases
++// in server/api_lock/cases.json. Keep the regular expressions and rules in step with the Python file.
++
++#include "api-lock.h"
++
++#include "log.h"
++
++#include <nlohmann/json.hpp>
++
++#include <algorithm>
++#include <cmath>
++#include <cstdlib>
++#include <fstream>
++#include <map>
++#include <mutex>
++#include <regex>
++#include <set>
++#include <sstream>
++#include <unordered_map>
++
++using json = nlohmann::ordered_json;
++
++using names_t = std::vector<std::string>;  // sorted, unique
++
++struct api_lock_table {
++    std::unordered_map<std::string, names_t> members;  // inherited
++    std::unordered_map<std::string, names_t> methods;  // inherited Function members
++    std::set<std::string> services;
++    std::set<std::string> dot_closed;
++    std::unordered_map<std::string, names_t> enums;
++    names_t enum_names;
++    names_t game_dot;                                  // DataModel members + service names
++};
++
++static const size_t MAX_EXTRA = 2000;
++static const size_t TAIL      = 300;
++
++static names_t sorted_unique(std::vector<std::string> v) {
++    std::sort(v.begin(), v.end());
++    v.erase(std::unique(v.begin(), v.end()), v.end());
++    return v;
++}
++
++api_lock_table * api_lock_table_parse(const std::string & json_text, std::string & error) {
++    try {
++        const json data = json::parse(json_text);
++        const json & raw = data.at("classes");
++        auto * t = new api_lock_table();
++        auto chain = [&](const std::string & name, const char * key) {
++            std::vector<std::string> out;
++            std::set<std::string> seen;
++            std::string current = name;
++            while (raw.contains(current) && !seen.count(current)) {
++                seen.insert(current);
++                for (const auto & m : raw.at(current).at(key)) {
++                    out.push_back(m.get<std::string>());
++                }
++                current = raw.at(current).at("super").get<std::string>();
++            }
++            return sorted_unique(std::move(out));
++        };
++        for (auto it = raw.begin(); it != raw.end(); ++it) {
++            t->members[it.key()] = chain(it.key(), "members");
++            t->methods[it.key()] = chain(it.key(), "methods");
++        }
++        for (const auto & s : data.at("services")) {
++            t->services.insert(s.get<std::string>());
++        }
++        for (const auto & s : data.at("dot_closed")) {
++            t->dot_closed.insert(s.get<std::string>());
++        }
++        for (auto it = data.at("enums").begin(); it != data.at("enums").end(); ++it) {
++            t->enums[it.key()] = sorted_unique(it.value().get<std::vector<std::string>>());
++            t->enum_names.push_back(it.key());
++        }
++        t->enum_names = sorted_unique(t->enum_names);
++        std::vector<std::string> game_dot(t->services.begin(), t->services.end());
++        const auto dm = t->members.find("DataModel");
++        if (dm != t->members.end()) {
++            game_dot.insert(game_dot.end(), dm->second.begin(), dm->second.end());
++        }
++        t->game_dot = sorted_unique(std::move(game_dot));
++        return t;
++    } catch (const std::exception & e) {
++        error = e.what();
++        return nullptr;
++    }
++}
++
++void api_lock_table_free(api_lock_table * table) {
++    delete table;
++}
++
++const api_lock_table * api_lock_table_default() {
++    static std::once_flag once;
++    static api_lock_table * table = nullptr;
++    std::call_once(once, []() {
++        const char * path = std::getenv("LLAMA_API_LOCK_TABLE");
++        if (path == nullptr || *path == '\0') {
++            return;
++        }
++        std::ifstream f(path, std::ios::binary);
++        std::stringstream ss;
++        ss << f.rdbuf();
++        std::string error;
++        table = f ? api_lock_table_parse(ss.str(), error) : nullptr;
++        if (table == nullptr) {
++            LOG_WRN("api lock: cannot load table '%s': %s\n", path, f ? error.c_str() : "cannot open file");
++        } else {
++            LOG_INF("api lock: table '%s' loaded (%zu classes, %zu enums)\n", path, table->members.size(), table->enums.size());
++        }
++    });
++    return table;
++}
++
++//
++// the state machine (star/api_lock.py: class Lock)
++//
++
++static const std::string IDENT = "[A-Za-z_][A-Za-z0-9_]*";
++
++struct api_lock_regexes {
++    std::regex getservice  { R"RE(game\s*:\s*GetService\s*\(\s*["']([A-Za-z0-9_]+)["']\s*\)$)RE" };
++    std::regex inst_new    { R"RE(Instance\s*\.\s*new\s*\(\s*["']([A-Za-z0-9_]+)["']\s*(?:,[^()]*)?\)$)RE" };
++    std::regex game_dot    { "game\\s*\\.\\s*(" + IDENT + ")$" };
++    std::regex enum_dot    { "Enum\\s*\\.\\s*(" + IDENT + ")$" };
++    std::regex name        { "(" + IDENT + ")$" };
++    std::regex member_tail { "([.:])(" + IDENT + ")?$" };
++    std::regex local_one   { "^\\s*local\\s+(" + IDENT + ")\\s*(?::\\s*(" + IDENT + ")\\s*)?=(?!=)\\s*(.*)$" };
++    std::regex local_many  { R"RE(^\s*local\s+(?!function\b)([A-Za-z_][A-Za-z0-9_\s,:]*?)\s*(?:=|$))RE" };
++    std::regex assign      { "^\\s*(" + IDENT + ")\\s*=(?!=)\\s*(.*)$" };
++    std::regex for_vars    { R"RE(^\s*for\s+([A-Za-z_][A-Za-z0-9_\s,:]*?)\s*(?:=|\bin\b))RE" };
++    std::regex function    { R"RE(\bfunction\b\s*([A-Za-z0-9_.:]*)\s*\(([^)]*)\))RE" };
++    std::regex rhs_getsvc  { R"RE(^game\s*:\s*GetService\s*\(\s*["']([A-Za-z0-9_]+)["']\s*\)\s*;?\s*$)RE" };
++    std::regex rhs_new     { "^Instance\\s*\\.\\s*new\\s*\\(\\s*[\"']([A-Za-z0-9_]+)[\"']\\s*(,\\s*(" + IDENT + "))?\\s*\\)\\s*;?\\s*$" };
++    std::regex parent_set  { "\\.\\s*Parent\\s*=(?!=)\\s*(" + IDENT + ")" };
++    std::regex new_parent  { "Instance\\s*\\.\\s*new\\s*\\(\\s*[\"'][A-Za-z0-9_]+[\"']\\s*,\\s*(" + IDENT + ")\\s*\\)" };
++    std::regex dot_name    { "\\.(" + IDENT + ")" };
++    std::regex type_line   { R"RE(^\s*(?:export\s+)?type\s)RE" };
++    std::regex ident       { IDENT };
++};
++
++static const api_lock_regexes & rx() {
++    static const api_lock_regexes r;
++    return r;
++}
++
++static bool is_word(char c) {
++    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
++}
++
++static std::string lstrip(const std::string & s) {
++    size_t i = 0;
++    while (i < s.size() && std::isspace((unsigned char) s[i])) {
++        i++;
++    }
++    return s.substr(i);
++}
++
++static std::string strip(const std::string & s) {
++    std::string out = lstrip(s);
++    while (!out.empty() && std::isspace((unsigned char) out.back())) {
++        out.pop_back();
++    }
++    return out;
++}
++
++// "[" "="* "[" at i: the matching closing bracket, else ""
++static std::string long_open_at(const std::string & line, size_t i, size_t & end) {
++    if (i >= line.size() || line[i] != '[') {
++        return "";
++    }
++    size_t j = i + 1;
++    while (j < line.size() && line[j] == '=') {
++        j++;
++    }
++    if (j >= line.size() || line[j] != '[') {
++        return "";
++    }
++    end = j + 1;
++    return "]" + std::string(j - i - 1, '=') + "]";
++}
++
++struct scan_result {
++    bool code_end;
++    size_t cut;
++    std::string long_close;
++};
++
++static scan_result scan(const std::string & line) {
++    size_t i = 0;
++    const size_t n = line.size();
++    while (i < n) {
++        const char c = line[i];
++        if (c == '-' && line.compare(i, 2, "--") == 0) {
++            size_t end = 0;
++            const std::string close = long_open_at(line, i + 2, end);
++            if (close.empty()) {
++                return { false, i, "" };
++            }
++            const size_t j = line.find(close, end);
++            if (j == std::string::npos) {
++                return { false, i, close };
++            }
++            i = j + close.size();
++            continue;
++        }
++        if (c == '"' || c == '\'' || c == '`') {
++            const size_t start = i;
++            i++;
++            while (i < n && line[i] != c) {
++                i += line[i] == '\\' ? 2 : 1;
++            }
++            if (i >= n) {
++                return { false, start, "" };
++            }
++            i++;
++            continue;
++        }
++        if (c == '[') {
++            size_t end = 0;
++            const std::string close = long_open_at(line, i, end);
++            if (!close.empty()) {
++                const size_t j = line.find(close, end);
++                if (j == std::string::npos) {
++                    return { false, i, close };
++                }
++                i = j + close.size();
++                continue;
++            }
++        }
++        i++;
++    }
++    return { true, n, "" };
++}
++
++static bool starts_clean(const std::string & text, size_t start) {
++    return start == 0 || !(is_word(text[start - 1]) || text[start - 1] == '.' || text[start - 1] == ':');
++}
++
++static bool type_position(const std::string & text, size_t start) {
++    std::string before = text.substr(0, start);
++    while (!before.empty() && std::isspace((unsigned char) before.back())) {
++        before.pop_back();
++    }
++    if (!before.empty() && (before.back() == ':' || before.back() == '>')) {
++        return true;
++    }
++    return std::regex_search(text, rx().type_line);
++}
++
++// a set of allowed names: the union of up to two sorted lists
++struct allowed_t {
++    const names_t * a = nullptr;
++    const names_t * b = nullptr;
++
++    bool has_prefix(const std::string & p) const {
++        for (const names_t * v : { a, b }) {
++            if (v == nullptr) {
++                continue;
++            }
++            auto it = std::lower_bound(v->begin(), v->end(), p);
++            if (it != v->end() && it->compare(0, p.size(), p) == 0) {
++                return true;
++            }
++        }
++        return false;
++    }
++
++    bool contains(const std::string & s) const {
++        for (const names_t * v : { a, b }) {
++            if (v != nullptr && std::binary_search(v->begin(), v->end(), s)) {
++                return true;
++            }
++        }
++        return false;
++    }
++
++    // the distinct names starting with p, at most `limit`
++    std::set<std::string> with_prefix(const std::string & p, size_t limit) const {
++        std::set<std::string> out;
++        for (const names_t * v : { a, b }) {
++            if (v == nullptr) {
++                continue;
++            }
++            for (auto it = std::lower_bound(v->begin(), v->end(), p); it != v->end() && it->compare(0, p.size(), p) == 0; ++it) {
++                out.insert(*it);
++                if (out.size() > limit) {
++                    return out;
++                }
++            }
++        }
++        return out;
++    }
++};
++
++struct receiver_t {
++    enum kind_t { NONE, CLASS, GAME, ENUM_NS, ENUM } kind = NONE;
++    std::string name;
++    bool closed = false;
++};
++
++struct binding_t {
++    std::string cls;
++    bool closed;
++};
++
++struct api_lock_state {
++    const api_lock_table * table;
++    int mode;
++    names_t extra;
++
++    std::string line;
++    bool in_fence   = false;
++    bool fence_luau = false;
++    std::string in_long;
++    std::map<std::string, binding_t> bindings;
++    std::set<std::string> killed;
++
++    // cached contexts, valid until the next feed
++    bool ctx_valid = false;
++    bool has_member = false;
++    allowed_t member_allowed;
++    std::string partial;
++    bool has_dot = false, has_colon = false;
++    allowed_t dot_allowed, colon_allowed;
++
++    bool luau() const {
++        return mode == 2 || (in_fence && fence_luau);
++    }
++
++    void kill(const std::string & name) {
++        bindings.erase(name);
++        if (name == "game" || name == "workspace" || name == "script" || name == "Enum" || name == "Instance") {
++            killed.insert(name);
++        }
++    }
++
++    bool bind_rhs(const std::string & name, const std::string & rhs) {
++        std::smatch m;
++        if (std::regex_search(rhs, m, rx().rhs_getsvc) && !killed.count("game") && table->services.count(m[1].str())) {
++            bindings[name] = { m[1].str(), table->dot_closed.count(m[1].str()) > 0 };
++            return true;
++        }
++        if (std::regex_search(rhs, m, rx().rhs_new) && !killed.count("Instance") && table->members.count(m[1].str())) {
++            bindings[name] = { m[1].str(), true };
++            if (m[3].matched && bindings.count(m[3].str())) {
++                bindings[m[3].str()].closed = false;
++            }
++            return true;
++        }
++        return false;
++    }
++
++    void kill_items(const std::string & items) {
++        std::stringstream ss(items);
++        std::string item;
++        while (std::getline(ss, item, ',')) {
++            const std::string name = strip(item.substr(0, item.find(':')));
++            if (std::regex_match(name, rx().ident)) {
++                kill(name);
++            }
++        }
++    }
++
++    void bind(const std::string & code) {
++        std::smatch m;
++        if (std::regex_search(code, m, rx().local_one)) {
++            kill(m[1].str());
++            bind_rhs(m[1].str(), m[3].str());
++        } else if (std::regex_search(code, m, rx().local_many)) {
++            kill_items(m[1].str());
++        } else if (std::regex_search(code, m, rx().assign)) {
++            kill(m[1].str());
++            bind_rhs(m[1].str(), m[2].str());
++        }
++        if (std::regex_search(code, m, rx().for_vars)) {
++            kill_items(m[1].str());
++        }
++        for (std::sregex_iterator it(code.begin(), code.end(), rx().function), end; it != end; ++it) {
++            const std::string fname = (*it)[1].str();
++            if (std::regex_match(fname, rx().ident)) {
++                kill(fname);
++            }
++            kill_items((*it)[2].str());
++        }
++        for (const std::regex * r : { &rx().parent_set, &rx().new_parent }) {
++            for (std::sregex_iterator it(code.begin(), code.end(), *r), end; it != end; ++it) {
++                auto b = bindings.find((*it)[1].str());
++                if (b != bindings.end()) {
++                    b->second.closed = false;
++                }
++            }
++        }
++    }
++
++    void end_line(const std::string & l) {
++        const std::string stripped = lstrip(l);
++        if (stripped.compare(0, 3, "```") == 0) {
++            if (mode == 1) {
++                if (in_fence) {
++                    in_fence = fence_luau = false;
++                } else {
++                    std::string info = strip(stripped.substr(3));
++                    std::transform(info.begin(), info.end(), info.begin(), [](unsigned char c) { return (char) std::tolower(c); });
++                    info = info.substr(0, info.find_first_of(" \t"));
++                    in_fence   = true;
++                    fence_luau = info == "lua" || info == "luau";
++                    bindings.clear();
++                    killed.clear();
++                    in_long.clear();
++                }
++            }
++            return;
++        }
++        if (!luau()) {
++            return;
++        }
++        if (!in_long.empty()) {
++            if (l.find(in_long) != std::string::npos) {
++                in_long.clear();
++            }
++            return;
++        }
++        const scan_result s = scan(l);
++        in_long = s.long_close;
++        bind(l.substr(0, s.cut));
++    }
++
++    void feed(const std::string & text) {
++        for (const char ch : text) {
++            if (ch == '\r') {
++                continue;
++            }
++            if (ch == '\n') {
++                end_line(line);
++                line.clear();
++            } else {
++                line += ch;
++            }
++        }
++        ctx_valid = false;
++    }
++
++    receiver_t receiver(const std::string & text) const {
++        receiver_t r;
++        const size_t offset = text.size() > TAIL ? text.size() - TAIL : 0;
++        const std::string tail = text.substr(offset);
++        std::smatch m;
++        if (std::regex_search(tail, m, rx().getservice) && starts_clean(text, offset + m.position(0))) {
++            if (!killed.count("game") && table->services.count(m[1].str())) {
++                r.kind = receiver_t::CLASS;
++                r.name = m[1].str();
++                r.closed = table->dot_closed.count(r.name) > 0;
++            }
++            return r;
++        }
++        if (std::regex_search(tail, m, rx().inst_new) && starts_clean(text, offset + m.position(0))) {
++            if (!killed.count("Instance") && table->members.count(m[1].str())) {
++                r.kind = receiver_t::CLASS;
++                r.name = m[1].str();
++                r.closed = true;
++            }
++            return r;
++        }
++        if (std::regex_search(tail, m, rx().game_dot) && starts_clean(text, offset + m.position(0))) {
++            if (!killed.count("game") && table->services.count(m[1].str())) {
++                r.kind = receiver_t::CLASS;
++                r.name = m[1].str();
++                r.closed = table->dot_closed.count(r.name) > 0;
++            }
++            return r;
++        }
++        if (std::regex_search(tail, m, rx().enum_dot) && starts_clean(text, offset + m.position(0))) {
++            if (!killed.count("Enum") && table->enums.count(m[1].str())) {
++                r.kind = receiver_t::ENUM;
++                r.name = m[1].str();
++            }
++            return r;
++        }
++        if (std::regex_search(tail, m, rx().name) && starts_clean(text, offset + m.position(0)) &&
++                !type_position(text, offset + m.position(0))) {
++            const std::string name = m[1].str();
++            const auto b = bindings.find(name);
++            if (b != bindings.end()) {
++                r.kind = receiver_t::CLASS;
++                r.name = b->second.cls;
++                r.closed = b->second.closed;
++            } else if (killed.count(name)) {
++                // switched off
++            } else if (name == "game") {
++                r.kind = receiver_t::GAME;
++            } else if (name == "workspace") {
++                r.kind = receiver_t::CLASS;
++                r.name = "Workspace";
++            } else if (name == "script") {
++                r.kind = receiver_t::CLASS;
++                r.name = "Script";
++            } else if (name == "Enum") {
++                r.kind = receiver_t::ENUM_NS;
++            }
++        }
++        return r;
++    }
++
++    bool allowed_for(const receiver_t & r, char sep, allowed_t & out) const {
++        out = {};
++        auto find = [](const std::unordered_map<std::string, names_t> & map, const std::string & key) -> const names_t * {
++            const auto it = map.find(key);
++            return it == map.end() ? nullptr : &it->second;
++        };
++        const names_t * extra_p = extra.empty() ? nullptr : &extra;
++        switch (r.kind) {
++            case receiver_t::CLASS:
++                if (sep == ':') {
++                    out.a = find(table->methods, r.name);
++                    return out.a != nullptr;
++                }
++                if (r.closed) {
++                    out.a = find(table->members, r.name);
++                    out.b = extra_p;
++                    return out.a != nullptr || out.b != nullptr;
++                }
++                return false;
++            case receiver_t::GAME:
++                if (sep == ':') {
++                    out.a = find(table->methods, "DataModel");
++                    return out.a != nullptr;
++                }
++                out.a = &table->game_dot;
++                out.b = extra_p;
++                return true;
++            case receiver_t::ENUM_NS:
++                if (sep == '.') {
++                    out.a = &table->enum_names;
++                    return true;
++                }
++                return false;
++            case receiver_t::ENUM:
++                if (sep == '.') {
++                    out.a = find(table->enums, r.name);
++                    return out.a != nullptr;
++                }
++                return false;
++            default:
++                return false;
++        }
++    }
++
++    bool code_now() const {
++        return luau() && in_long.empty() && lstrip(line).compare(0, 3, "```") != 0 && scan(line).code_end;
++    }
++
++    void compute() {
++        if (ctx_valid) {
++            return;
++        }
++        ctx_valid = true;
++        has_member = has_dot = has_colon = false;
++        partial.clear();
++        if (!code_now()) {
++            return;
++        }
++        const size_t offset = line.size() > TAIL ? line.size() - TAIL : 0;
++        const std::string tail = line.substr(offset);
++        std::smatch m;
++        if (std::regex_search(tail, m, rx().member_tail)) {
++            const size_t start = offset + m.position(0);
++            const receiver_t r = receiver(line.substr(0, start));
++            const std::string p = m[2].matched ? m[2].str() : "";
++            if (r.kind != receiver_t::NONE && allowed_for(r, m[1].str()[0], member_allowed) && member_allowed.has_prefix(p)) {
++                has_member = true;
++                partial = p;
++                return;
++            }
++        }
++        const receiver_t r = receiver(line);
++        if (r.kind != receiver_t::NONE) {
++            has_dot   = allowed_for(r, '.', dot_allowed);
++            has_colon = allowed_for(r, ':', colon_allowed);
++        }
++    }
++
++    bool active() {
++        compute();
++        return has_member || has_dot || has_colon;
++    }
++};
++
++static size_t ident_len(const std::string & piece) {
++    size_t k = 0;
++    while (k < piece.size() && is_word(piece[k])) {
++        k++;
++    }
++    return k;
++}
++
++static bool piece_ok(const allowed_t & allowed, const std::string & partial, const std::string & piece) {
++    const size_t k = ident_len(piece);
++    if (k == 0) {
++        return partial.empty() || allowed.contains(partial);
++    }
++    if (partial.empty() && piece[0] >= '0' && piece[0] <= '9') {
++        return true;
++    }
++    const std::string word = partial + piece.substr(0, k);
++    if (k == piece.size()) {
++        return allowed.has_prefix(word);
++    }
++    return allowed.contains(word);
++}
++
++api_lock_state * api_lock_state_init(const api_lock_table * table, int mode, const std::vector<std::string> & extra) {
++    auto * s = new api_lock_state();
++    s->table = table;
++    s->mode  = mode;
++    s->extra = sorted_unique(extra);
++    if (s->extra.size() > MAX_EXTRA) {
++        s->extra.resize(MAX_EXTRA);
++    }
++    return s;
++}
++
++api_lock_state * api_lock_state_clone(const api_lock_state * state) {
++    auto * s = new api_lock_state(*state);
++    s->ctx_valid = false;  // the cached allowed_t pointers may point into the old state's `extra`
++    return s;
++}
++
++void api_lock_state_free(api_lock_state * state) {
++    delete state;
++}
++
++void api_lock_state_feed(api_lock_state * state, const std::string & text) {
++    state->feed(text);
++}
++
++bool api_lock_state_allows(api_lock_state * s, const std::string & piece) {
++    if (piece.empty()) {
++        return true;
++    }
++    s->compute();
++    if (s->has_member) {
++        return piece_ok(s->member_allowed, s->partial, piece);
++    }
++    if (piece[0] == '.' && s->has_dot) {
++        return piece_ok(s->dot_allowed, "", piece.substr(1));
++    }
++    if (piece[0] == ':' && s->has_colon) {
++        return piece_ok(s->colon_allowed, "", piece.substr(1));
++    }
++    return true;
++}
++
++std::string api_lock_state_forced(api_lock_state * s) {
++    s->compute();
++    if (!s->has_member || s->partial.empty()) {
++        return "";
++    }
++    const auto names = s->member_allowed.with_prefix(s->partial, 1);
++    if (names.size() != 1 || *names.begin() == s->partial) {
++        return "";
++    }
++    return names.begin()->substr(s->partial.size());
++}
++
++std::vector<std::string> api_lock_prompt_symbols(const std::string & prompt) {
++    std::vector<std::string> out;
++    for (std::sregex_iterator it(prompt.begin(), prompt.end(), rx().dot_name), end; it != end; ++it) {
++        out.push_back((*it)[1].str());
++    }
++    out = sorted_unique(std::move(out));
++    if (out.size() > MAX_EXTRA) {
++        out.resize(MAX_EXTRA);
++    }
++    return out;
++}
++
++//
++// the sampler
++//
++
++static const std::vector<std::string> & vocab_pieces(const llama_vocab * vocab) {
++    static std::mutex mtx;
++    static std::map<const llama_vocab *, std::vector<std::string>> cache;
++    std::lock_guard<std::mutex> lock(mtx);
++    auto it = cache.find(vocab);
++    if (it != cache.end()) {
++        return it->second;
++    }
++    const int n = llama_vocab_n_tokens(vocab);
++    std::vector<std::string> pieces(n);
++    std::vector<char> buf(256);
++    for (int i = 0; i < n; i++) {
++        int len = llama_token_to_piece(vocab, i, buf.data(), (int) buf.size(), 0, false);
++        if (len < 0) {
++            buf.resize(-len);
++            len = llama_token_to_piece(vocab, i, buf.data(), (int) buf.size(), 0, false);
++        }
++        pieces[i] = len > 0 ? std::string(buf.data(), len) : std::string();
++    }
++    return cache.emplace(vocab, std::move(pieces)).first->second;
++}
++
++struct api_lock_sampler_ctx {
++    const llama_vocab * vocab;
++    const std::vector<std::string> * pieces;
++    api_lock_state * state;
++    const api_lock_table * table;
++    int mode;
++    std::vector<std::string> extra;
++};
++
++static std::vector<llama_token> forced_tokens(api_lock_sampler_ctx * ctx) {
++    const std::string rest = api_lock_state_forced(ctx->state);
++    if (rest.empty()) {
++        return {};
++    }
++    std::vector<llama_token> tokens(rest.size() + 4);
++    const int n = llama_tokenize(ctx->vocab, rest.c_str(), (int) rest.size(), tokens.data(), (int) tokens.size(), false, false);
++    if (n <= 0) {
++        return {};
++    }
++    tokens.resize(n);
++    // a tokenizer that adds a space prefix would change the text: then no forcing
++    std::string text;
++    for (const llama_token t : tokens) {
++        text += (*ctx->pieces)[t];
++    }
++    return text == rest ? tokens : std::vector<llama_token>();
++}
++
++static const char * api_lock_name(const llama_sampler * /*smpl*/) {
++    return "api-lock";
++}
++
++static void api_lock_accept(llama_sampler * smpl, llama_token token) {
++    auto * ctx = (api_lock_sampler_ctx *) smpl->ctx;
++    if (token >= 0 && token < (llama_token) ctx->pieces->size()) {
++        api_lock_state_feed(ctx->state, (*ctx->pieces)[token]);
++    }
++}
++
++static void api_lock_apply(llama_sampler * smpl, llama_token_data_array * cur_p) {
++    auto * ctx = (api_lock_sampler_ctx *) smpl->ctx;
++    if (!ctx->state->active()) {
++        return;
++    }
++    const auto & pieces = *ctx->pieces;
++    // one name left: only the first token of its canonical spelling, so a forced draft is always accepted
++    const std::vector<llama_token> forced = forced_tokens(ctx);
++    if (!forced.empty()) {
++        bool present = false;
++        for (size_t i = 0; i < cur_p->size; ++i) {
++            present = present || cur_p->data[i].id == forced[0];
++        }
++        // a single candidate that is not it (the sampler's quick check) is rejected, so the full resample picks it
++        if (present || cur_p->size == 1) {
++            for (size_t i = 0; i < cur_p->size; ++i) {
++                if (cur_p->data[i].id != forced[0]) {
++                    cur_p->data[i].logit = -INFINITY;
++                }
++            }
++            return;
++        }
++    }
++    std::vector<size_t> blocked;
++    for (size_t i = 0; i < cur_p->size; ++i) {
++        const llama_token id = cur_p->data[i].id;
++        if (id >= 0 && id < (llama_token) pieces.size() && !api_lock_state_allows(ctx->state, pieces[id])) {
++            blocked.push_back(i);
++        }
++    }
++    if (cur_p->size > 1 && blocked.size() == cur_p->size) {
++        return;  // nothing would be left: never leave the sampler without a candidate
++    }
++    for (size_t i : blocked) {
++        cur_p->data[i].logit = -INFINITY;
++    }
++}
++
++static void api_lock_reset(llama_sampler * smpl) {
++    auto * ctx = (api_lock_sampler_ctx *) smpl->ctx;
++    api_lock_state_free(ctx->state);
++    ctx->state = api_lock_state_init(ctx->table, ctx->mode, ctx->extra);
++}
++
++static llama_sampler * api_lock_clone(const llama_sampler * smpl);
++
++static void api_lock_free(llama_sampler * smpl) {
++    auto * ctx = (api_lock_sampler_ctx *) smpl->ctx;
++    if (ctx) {
++        api_lock_state_free(ctx->state);
++        delete ctx;
++    }
++}
++
++static llama_sampler_i api_lock_iface = {
++    /* .name              = */ api_lock_name,
++    /* .accept            = */ api_lock_accept,
++    /* .apply             = */ api_lock_apply,
++    /* .reset             = */ api_lock_reset,
++    /* .clone             = */ api_lock_clone,
++    /* .free              = */ api_lock_free,
++};
++
++static llama_sampler * api_lock_clone(const llama_sampler * smpl) {
++    const auto * src = (const api_lock_sampler_ctx *) smpl->ctx;
++    auto * ctx = new api_lock_sampler_ctx(*src);
++    ctx->state = api_lock_state_clone(src->state);
++    return llama_sampler_init(&api_lock_iface, ctx);
++}
++
++llama_sampler * common_api_lock_sampler_init(const llama_vocab * vocab, const api_lock_table * table, int mode,
++                                             const std::vector<std::string> & extra) {
++    if (vocab == nullptr || table == nullptr || mode <= 0) {
++        return nullptr;
++    }
++    auto * ctx = new api_lock_sampler_ctx { vocab, &vocab_pieces(vocab), api_lock_state_init(table, mode, extra), table, mode, extra };
++    return llama_sampler_init(&api_lock_iface, ctx);
++}
++
++std::vector<llama_token> common_api_lock_forced(llama_sampler * smpl, int n_max) {
++    if (smpl == nullptr || n_max <= 0) {
++        return {};
++    }
++    std::vector<llama_token> tokens = forced_tokens((api_lock_sampler_ctx *) smpl->ctx);
++    if ((int) tokens.size() > n_max) {
++        tokens.resize(n_max);
++    }
++    return tokens;
++}
+diff --git a/common/api-lock.h b/common/api-lock.h
+new file mode 100644
+index 0000000..56223a9
+--- /dev/null
++++ b/common/api-lock.h
+@@ -0,0 +1,36 @@
++// STAR patch 0004 (G1 "API lock"): after a Roblox receiver whose class is known, only real member names may follow.
++// Reference implementation and shared test cases: star/api_lock.py and server/api_lock/cases.json in the STAR repo.
++#pragma once
++
++#include "llama.h"
++
++#include <string>
++#include <vector>
++
++struct api_lock_table;
++struct api_lock_state;
++
++// parse the table written by `python -m star.api_lock table`; nullptr and a message on error
++api_lock_table * api_lock_table_parse(const std::string & json_text, std::string & error);
++void             api_lock_table_free(api_lock_table * table);
++// the table named by the environment variable LLAMA_API_LOCK_TABLE, loaded once; nullptr when unset or invalid
++const api_lock_table * api_lock_table_default();
++
++// mode 1: only inside ```lua / ```luau fences, mode 2: the whole output is Luau
++api_lock_state * api_lock_state_init(const api_lock_table * table, int mode, const std::vector<std::string> & extra);
++api_lock_state * api_lock_state_clone(const api_lock_state * state);
++void             api_lock_state_free(api_lock_state * state);
++void             api_lock_state_feed(api_lock_state * state, const std::string & text);
++// may `piece` come next?
++bool             api_lock_state_allows(api_lock_state * state, const std::string & piece);
++// the rest of the identifier when exactly one allowed name starts with the partial one, else ""
++std::string      api_lock_state_forced(api_lock_state * state);
++
++// names that follow a dot in the prompt: the project's own symbols, allowed after a masked `.`
++std::vector<std::string> api_lock_prompt_symbols(const std::string & prompt);
++
++// the sampler: masks candidates; accept() feeds the generated text
++llama_sampler * common_api_lock_sampler_init(const llama_vocab * vocab, const api_lock_table * table, int mode,
++                                             const std::vector<std::string> & extra);
++// the forced continuation as tokens (at most n_max), for use as a draft that verification accepts
++std::vector<llama_token> common_api_lock_forced(llama_sampler * smpl, int n_max);
+diff --git a/common/common.h b/common/common.h
+index d2fe10f..bf8bca2 100644
+--- a/common/common.h
++++ b/common/common.h
+@@ -298,6 +298,10 @@ struct common_params_sampling {
+
+     bool backend_sampling = false;
+
++    // STAR patch 0004 (G1 API lock, common/api-lock.h): 0 off, 1 inside ```lua fences, 2 the whole output is Luau
++    int32_t                  api_lock = 0;
++    std::vector<std::string> api_lock_extra; // names allowed after a masked `.` (the prompt's own symbols)
++
+     // print the parameters into a string
+     std::string print() const;
+ };
+diff --git a/common/sampling.cpp b/common/sampling.cpp
+index 9e16693..69a95ed 100644
+--- a/common/sampling.cpp
++++ b/common/sampling.cpp
+@@ -4,6 +4,7 @@
+ #include "fit.h"
+ #include "log.h"
+ #include "reasoning-budget.h"
++#include "api-lock.h"
+
+ #include "ggml.h"
+
+@@ -170,6 +171,8 @@ struct common_sampler {
+     }
+
+     mutable int64_t t_total_us = 0;
++
++    struct llama_sampler * alock = nullptr; // STAR patch 0004: API lock (common/api-lock.h)
+ };
+
+ std::string common_params_sampling::print() const {
+@@ -431,6 +434,16 @@ struct common_sampler * common_sampler_init(
+         params.backend_sampling = false;
+     }
+
++    llama_sampler * alock = nullptr;
++    if (params.api_lock > 0) {
++        alock = common_api_lock_sampler_init(vocab, api_lock_table_default(), params.api_lock, params.api_lock_extra);
++        if (!alock) {
++            LOG_WRN("%s: api_lock requested but no table is loaded (LLAMA_API_LOCK_TABLE), ignoring\n", __func__);
++        } else if (params.backend_sampling) {
++            params.backend_sampling = false;
++        }
++    }
++
+     auto * result = new common_sampler {
+         /* .params  = */ params,
+         /* .grmr    = */ grmr,
+@@ -442,6 +455,7 @@ struct common_sampler * common_sampler_init(
+         // mix it, the chain and the draft are seeded from this one too
+         /* .rng     = */ std::mt19937(llama_sampler_get_seed(chain) ^ 0x9e3779b9u),
+     };
++    result->alock = alock;
+
+     return result;
+ }
+@@ -454,6 +468,7 @@ void common_sampler_free(struct common_sampler * gsmpl) {
+     llama_sampler_free(gsmpl->grmr);
+     llama_sampler_free(gsmpl->rbudget);
+     llama_sampler_free(gsmpl->chain);
++    llama_sampler_free(gsmpl->alock);
+
+     delete gsmpl;
+ }
+@@ -502,6 +517,10 @@ void common_sampler_accept(struct common_sampler * gsmpl, llama_token token, boo
+         llama_sampler_accept(gsmpl->grmr, token);
+     }
+
++    if (gsmpl->alock && is_generated) {
++        llama_sampler_accept(gsmpl->alock, token);
++    }
++
+     llama_sampler_accept(gsmpl->chain, token);
+
+     gsmpl->prev.push_back(token);
+@@ -516,7 +535,7 @@ void common_sampler_reset(struct common_sampler * gsmpl) {
+ }
+
+ struct common_sampler * common_sampler_clone(common_sampler * gsmpl) {
+-    return new common_sampler {
++    auto * result = new common_sampler {
+         /* .params  = */ gsmpl->params,
+         /* .grmr    = */ llama_sampler_clone(gsmpl->grmr),
+         /* .rbudget = */ llama_sampler_clone(gsmpl->rbudget),
+@@ -526,6 +545,8 @@ struct common_sampler * common_sampler_clone(common_sampler * gsmpl) {
+         /* .cur_p   = */ gsmpl->cur_p,
+         /* .rng     = */ gsmpl->rng,
+     };
++    result->alock = llama_sampler_clone(gsmpl->alock);
++    return result;
+ }
+
+ void common_sampler_copy(const common_sampler * src, common_sampler * dst) {
+@@ -535,10 +556,12 @@ void common_sampler_copy(const common_sampler * src, common_sampler * dst) {
+
+     GGML_ASSERT((src->grmr == nullptr) == (dst->grmr == nullptr));
+     GGML_ASSERT((src->rbudget == nullptr) == (dst->rbudget == nullptr));
++    GGML_ASSERT((src->alock == nullptr) == (dst->alock == nullptr));
+
+     llama_sampler_copy(src->grmr,    dst->grmr);
+     llama_sampler_copy(src->rbudget, dst->rbudget);
+     llama_sampler_copy(src->chain,   dst->chain);
++    llama_sampler_copy(src->alock,   dst->alock);
+
+     dst->params     = src->params;
+     dst->prev       = src->prev;
+@@ -646,20 +669,32 @@ llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_co
+         llama_sampler_apply(grmr, &cur_p);
+     }
+
++    if (grammar_first && gsmpl->alock) {
++        llama_sampler_apply(gsmpl->alock, &cur_p);
++    }
++
+     llama_sampler_apply(chain, &cur_p);
+
+     id = cur_p.data[cur_p.selected].id;
+
+-    if (grammar_first || !grammar_should_apply(gsmpl)) {
++    const bool check_grammar = !grammar_first && grammar_should_apply(gsmpl);
++    const bool check_lock    = !grammar_first && gsmpl->alock;
++
++    if (!check_grammar && !check_lock) {
+         return id;
+     }
+
+-    // check if it the sampled token fits the grammar (grammar-based rejection sampling)
++    // check if the sampled token fits the grammar and the API lock (rejection sampling)
+     {
+         llama_token_data       single_token_data       = { id, 1.0f, 0.0f };
+         llama_token_data_array single_token_data_array = { &single_token_data, 1, -1, false };
+
+-        llama_sampler_apply(grmr, &single_token_data_array);
++        if (check_grammar) {
++            llama_sampler_apply(grmr, &single_token_data_array);
++        }
++        if (check_lock) {
++            llama_sampler_apply(gsmpl->alock, &single_token_data_array);
++        }
+
+         const bool is_valid = single_token_data_array.data[0].logit != -INFINITY;
+         if (is_valid) {
+@@ -677,6 +712,10 @@ llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_co
+         llama_sampler_apply(grmr,  &cur_p);
+     }
+
++    if (gsmpl->alock) {
++        llama_sampler_apply(gsmpl->alock, &cur_p);
++    }
++
+     llama_sampler_apply(chain, &cur_p);
+
+     GGML_ASSERT(cur_p.selected != -1 && "no selected token during sampling - check your sampling configuration");
+@@ -754,11 +793,16 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection(struct com
+         const auto * cur_p = common_sampler_get_candidates(gsmpl, true);
+         const auto & q     = draft_q[i];
+
+-        const bool masked = !grammar_first && grammar_should_apply(gsmpl);
++        const bool masked = !grammar_first && (grammar_should_apply(gsmpl) || gsmpl->alock);
+         if (masked) {
+             cand.assign(cur_p->data, cur_p->data + cur_p->size);
+             llama_token_data_array arr = { cand.data(), cand.size(), -1, false };
+-            llama_sampler_apply(gsmpl->grmr, &arr);
++            if (grammar_should_apply(gsmpl)) {
++                llama_sampler_apply(gsmpl->grmr, &arr);
++            }
++            if (gsmpl->alock) {
++                llama_sampler_apply(gsmpl->alock, &arr);
++            }
+         }
+
+         // a candidate the grammar rejects carries no probability, whatever the target thinks
+@@ -851,6 +895,10 @@ uint32_t common_sampler_get_seed(const struct common_sampler * gsmpl) {
+     return llama_sampler_get_seed(gsmpl->chain);
+ }
+
++std::vector<llama_token> common_sampler_api_lock_forced(struct common_sampler * gsmpl, int n_max) {
++    return gsmpl ? common_api_lock_forced(gsmpl->alock, n_max) : std::vector<llama_token>();
++}
++
+ bool common_sampler_reasoning_budget_force(struct common_sampler * gsmpl) {
+     if (!gsmpl) {
+         return false;
+diff --git a/common/sampling.h b/common/sampling.h
+index f19bd27..7bdb04b 100644
+--- a/common/sampling.h
++++ b/common/sampling.h
+@@ -96,6 +96,9 @@ uint32_t common_sampler_get_seed(const struct common_sampler * gsmpl);
+ // force the reasoning budget sampler (if any) to begin forcing its end sequence now.
+ bool common_sampler_reasoning_budget_force(struct common_sampler * gsmpl);
+
++// STAR patch 0004: the rest of the only member name the API lock allows, as tokens (at most n_max); empty when none
++std::vector<llama_token> common_sampler_api_lock_forced(struct common_sampler * gsmpl, int n_max);
++
+ // helpers
+
+ // access the internal list of current candidate tokens
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 5f9bd03..b2f0115 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -238,6 +238,8 @@ llama_build_and_test(test-chat-auto-parser.cpp WORKING_DIRECTORY ${PROJECT_SOURC
+ llama_build_and_test(test-chat-template.cpp)
+ # debug tool for chat template differential analysis (not registered as a test, run it manually)
+ llama_build(test-chat-analysis.cpp)
++# STAR patch 0004: API lock cases (run manually: test-api-lock <STAR repo>/server/api_lock/cases.json)
++llama_build(test-api-lock.cpp)
+ llama_build_and_test(test-log.cpp)
+ llama_build_and_test(
+     test-peg-parser.cpp
+diff --git a/tests/test-api-lock.cpp b/tests/test-api-lock.cpp
+new file mode 100644
+index 0000000..0e1d366
+--- /dev/null
++++ b/tests/test-api-lock.cpp
+@@ -0,0 +1,71 @@
++// STAR patch 0004: runs the shared API lock cases (server/api_lock/cases.json in the STAR repo) against the C++ state
++// machine. The same file is run against star/api_lock.py by tests/test_api_lock.py.
++//   test-api-lock <cases.json>
++
++#include "api-lock.h"
++
++#include <nlohmann/json.hpp>
++
++#include <cstdio>
++#include <fstream>
++#include <sstream>
++
++using json = nlohmann::ordered_json;
++
++int main(int argc, char ** argv) {
++    if (argc != 2) {
++        fprintf(stderr, "usage: %s <cases.json>\n", argv[0]);
++        return 2;
++    }
++    std::ifstream f(argv[1], std::ios::binary);
++    std::stringstream ss;
++    ss << f.rdbuf();
++    const json data = json::parse(ss.str());
++
++    std::string error;
++    api_lock_table * table = api_lock_table_parse(data.at("table").dump(), error);
++    if (table == nullptr) {
++        fprintf(stderr, "table: %s\n", error.c_str());
++        return 1;
++    }
++
++    int failures = 0;
++    int checks   = 0;
++    for (const auto & c : data.at("cases")) {
++        const std::string name = c.at("name").get<std::string>();
++        api_lock_state * st = api_lock_state_init(table, c.at("mode").get<int>(), c.at("extra").get<std::vector<std::string>>());
++        api_lock_state_feed(st, c.at("text").get<std::string>());
++        for (const auto & p : c.at("allow")) {
++            checks++;
++            if (!api_lock_state_allows(st, p.get<std::string>())) {
++                printf("FAIL %s: should allow '%s'\n", name.c_str(), p.get<std::string>().c_str());
++                failures++;
++            }
++        }
++        for (const auto & p : c.at("deny")) {
++            checks++;
++            if (api_lock_state_allows(st, p.get<std::string>())) {
++                printf("FAIL %s: should deny '%s'\n", name.c_str(), p.get<std::string>().c_str());
++                failures++;
++            }
++        }
++        checks++;
++        const std::string forced = api_lock_state_forced(st);
++        if (forced != c.at("forced").get<std::string>()) {
++            printf("FAIL %s: forced '%s', expected '%s'\n", name.c_str(), forced.c_str(), c.at("forced").get<std::string>().c_str());
++            failures++;
++        }
++        // a clone answers the same
++        api_lock_state * copy = api_lock_state_clone(st);
++        checks++;
++        if (api_lock_state_forced(copy) != forced) {
++            printf("FAIL %s: clone differs\n", name.c_str());
++            failures++;
++        }
++        api_lock_state_free(copy);
++        api_lock_state_free(st);
++    }
++    api_lock_table_free(table);
++    printf("%d checks, %d failures\n", checks, failures);
++    return failures == 0 ? 0 : 1;
++}
+diff --git a/tools/server/server-common.cpp b/tools/server/server-common.cpp
+index 5f77d43..7c90707 100644
+--- a/tools/server/server-common.cpp
++++ b/tools/server/server-common.cpp
+@@ -101,6 +101,10 @@ json server_slot_stats::to_json() const {
+         base["draft_n_accepted"] = n_draft_accepted;
+     }
+
++    if (n_api_lock_forced > 0) {
++        base["api_lock_forced"] = n_api_lock_forced;
++    }
++
+     return base;
+ }
+
+diff --git a/tools/server/server-common.h b/tools/server/server-common.h
+index 5bd2ed5..c052c50 100644
+--- a/tools/server/server-common.h
++++ b/tools/server/server-common.h
+@@ -401,6 +401,7 @@ struct server_slot_stats {
+     // note: the per-position breakdown lives in server_slot, it is not needed in a task result
+     uint64_t n_draft_tokens      = 0;
+     uint64_t n_draft_accepted    = 0;
++    uint64_t n_api_lock_forced   = 0; // STAR patch 0004: draft tokens put in by the API lock
+     uint64_t n_draft_verif_steps = 0;
+
+     // these are absolute timestamps (in us)
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index 44aaadd..f11468b 100644
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -265,6 +265,7 @@ struct server_slot {
+     std::vector<int32_t> spec_i_batch;
+     common_prompt_checkpoint spec_ckpt;
+     bool spec_is_replay = false;
++    bool spec_draft_forced_only = false; // STAR patch 0004: the draft is the API lock's alone, no drafter proposed it
+     std::mt19937 spec_synth_rng;
+
+     // TODO: move members that belong to the task (such as `generated`, `has_new_line`) to task_results_state
+@@ -3415,6 +3416,20 @@ private:
+             auto & draft = slot.spec_draft;
+             auto & ckpt  = slot.spec_ckpt;
+
++            // STAR patch 0004: when the API lock leaves one member name, its remaining tokens are the draft. The
++            // lock is part of the slot's sampler, so verification samples the same tokens and accepts them all.
++            slot.spec_draft_forced_only = false;
++            {
++                const int n_max = std::min(slot.get_n_draft_max(), common_speculative_n_max(spec.get()));
++                std::vector<llama_token> forced = common_sampler_api_lock_forced(slot.smpl.get(), n_max);
++                if (!forced.empty()) {
++                    slot.spec_draft_forced_only = draft.empty();
++                    draft = std::move(forced);
++                    slot.spec_draft_q.clear();
++                    slot.stats.n_api_lock_forced += draft.size();
++                }
++            }
++
+             slot.stats.n_draft_tokens += draft.size();
+
+             // TODO: avoid restoring the draft context and re-evaluating the drafted tokens when not needed [TAG_SPEC_AVOID_DRAFT_REEVAL]
+@@ -4473,7 +4488,10 @@ private:
+                     SLT_INF(slot, "accepted %2zu/%2zu draft tokens\n", accepted.size() - 1, n_draft);
+                 }
+
+-                common_speculative_accept(spec.get(), slot.id, accepted.size() - 1);
++                if (!slot.spec_draft_forced_only) {
++                    common_speculative_accept(spec.get(), slot.id, accepted.size() - 1);
++                }
++                slot.spec_draft_forced_only = false;
+
+                 slot.spec_draft = std::move(accepted);
+             }
+diff --git a/tools/server/server-schema.cpp b/tools/server/server-schema.cpp
+index 54e126a..43bd305 100644
+--- a/tools/server/server-schema.cpp
++++ b/tools/server/server-schema.cpp
+@@ -1,6 +1,7 @@
+ #include "server-schema.h"
+
+ #include "json-schema-to-grammar.h"
++#include "api-lock.h"
+
+ namespace server_schema {
+
+@@ -284,6 +285,17 @@ std::vector<std::unique_ptr<field>> make_llama_cmpl_schema(const common_params &
+             }
+         }));
+
++    add((new field_json("api_lock"))
++        ->set_desc("STAR patch 0004 (G1 API lock): true = after a known Roblox receiver inside ```lua fences only real API members may follow, \"all\" = the whole output is Luau. Needs LLAMA_API_LOCK_TABLE")
++        ->set_handler([&](field_eval_context & ctx, const json & data) {
++            const json & v = data.at("api_lock");
++            auto & sp = ctx.params.sampling;
++            sp.api_lock = v.is_boolean() ? (v.get<bool>() ? 1 : 0) : (v.is_string() && v.get<std::string>() == "all" ? 2 : 0);
++            if (sp.api_lock > 0 && data.contains("prompt") && data.at("prompt").is_string()) {
++                sp.api_lock_extra = api_lock_prompt_symbols(data.at("prompt").get<std::string>());
++            }
++        }));
++
+     add((new field_bool("grammar_lazy", params.sampling.grammar_lazy))
+         ->set_desc("Whether to apply grammar constraints lazily, only when triggered (instead of at every step)"));
+

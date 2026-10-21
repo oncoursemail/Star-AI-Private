@@ -495,6 +495,8 @@ def llama_request_fields(settings, *, conversation: str = "", tools: bool = Fals
     if kind == "cloud":
         return {}
     fields: dict = {"cache_prompt": True, "chat_template_kwargs": {"preserve_thinking": True}}
+    if getattr(settings, "api_lock_enabled", False) is True:
+        fields["api_lock"] = True       # star/api_lock.py; a server without llama.cpp patch 0004 ignores it
     slots = server_slots(settings, model or None) if kind == "lan" else 0
     from . import background_cap
     if kind == "lan" and background_cap.process_is_background() and background_cap.is_capped(
