@@ -313,7 +313,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   history=None, turn_sections=None, mode="", guidance="",
                   turn_context_chars=10000, request_extras=None, today=None,
                   tool_memory=None, helper_client=None, document_tools=None, image_max_side=None,
-                  reverse_engineering=None, debug_evidence=None,
+                  reverse_engineering=None, debug_evidence=None, live_show=None,
                   preserve_history=False, complete_code_answers=None,
                   tool_discovery_enabled=False, candidate_code_team_enabled=False, now=None,
                   web_settings=None, on_first_request=None):
@@ -490,6 +490,11 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
                        for tool in debug_definitions)
     enabled_debug = {tool["name"] for tool in debug_definitions}
+    live_show_definitions = selected(live_show)
+    definitions.extend({"type": "function", "function": {"name": tool["name"],
+                       "description": tool["description"], "parameters": tool["inputSchema"]}}
+                       for tool in live_show_definitions)
+    enabled_live_show = {tool["name"] for tool in live_show_definitions}
     # Qwen templates render the tool list before the system text. Tools that are attached on
     # every turn stay first and the Studio tools (present only for a Studio request) go last,
     # so a change at the end of the list leaves the start of the request cached.
@@ -804,6 +809,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif debug_evidence is not None and debug_evidence.owns(name):
                         if name not in enabled_debug:
                             raise PermissionError("Debug evidence tool not authorized for this task")
+                    elif live_show is not None and live_show.owns(name):
+                        if name not in enabled_live_show:
+                            raise PermissionError("Live show tool not authorized for this task")
                     elif name not in TOOL_NAMES:
                         enforce(name, args, registry, studio_id, may_edit, allow_luau=allow_luau)
                         if name == "execute_luau" and untrusted_read:
@@ -948,6 +956,14 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         except (ValueError, PermissionError, OSError, UnicodeError) as exc:
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Debug evidence unavailable: {type(exc).__name__}"}]}
+                    elif live_show is not None and live_show.owns(name):
+                        try:
+                            local_output = await asyncio.to_thread(live_show.call, name, args, enabled=enabled_live_show)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except (ValueError, PermissionError, OSError, UnicodeError) as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Live show planner failed: {type(exc).__name__}: {exc}"}]}
                     elif blender is not None and blender.owns(name):
                         try:
                             data = await blender.call(name, args)
