@@ -1,0 +1,5 @@
+{
+  "name": "Twin Tycoon (fixed)",
+  "base": "../twin_tycoon",
+  "adapter": "twin.luau"
+}

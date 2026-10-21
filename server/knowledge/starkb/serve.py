@@ -48,6 +48,9 @@ from .store import now
 
 SERVICE_MODES = ("vector", "bm25", "hybrid")   # rerank costs about 14 s per query and is not offered
 DEFAULT_MODE = "vector"
+# With STAR_KB_RERANK_URL set (starkb.client.RemoteReranker, the laptop GPU), `vector` searches rerank their top N
+# there and fuse the two orders; a remote that is off or slow leaves plain `vector` (never brain 1's reranker).
+REMOTE_RERANK_N = 10
 MAX_BODY = 16_384
 MAX_LUAU_BODY = 96 * 1024
 MAX_QUERY = 600
@@ -317,6 +320,7 @@ class Service:
                 "limits": {"max_body": MAX_BODY, "max_luau_body": MAX_LUAU_BODY, "max_query": MAX_QUERY,
                            "max_top": MAX_TOP, "max_per_page": MAX_PER_PAGE, "default_per_page": DEFAULT_PER_PAGE,
                            "embed_timeout_s": EMBED_TIMEOUT,
+                           "remote_rerank": getattr(self.brain, "remote_rerank", None) is not None,
                            "max_connections": MAX_CONNECTIONS, "max_per_client": MAX_PER_CLIENT,
                            "header_deadline_s": HEADER_DEADLINE, "body_deadline_s": BODY_DEADLINE},
                 "connections": self.server.connection_stats() if self.server is not None else {},
@@ -357,7 +361,7 @@ class Service:
                 return 200, {**hit, "cached": True,
                              "timing_ms": {"total_ms": round((time.perf_counter() - started) * 1000, 1)}}
             passages, timing = s.search(query, mode=mode, top=top, per_doc=per_page, fallback=True, degrade=True,
-                                        scope=scope)
+                                        scope=scope, remote_rerank_n=REMOTE_RERANK_N)
             degraded = bool(timing.pop("degraded", 0))
             reply = {
                 "mode": mode, "mode_used": "bm25" if degraded else mode, "degraded": degraded,
@@ -367,7 +371,8 @@ class Service:
                 "scope": scope or ("roblox" if timing.get("scoped_sources") else "all"),
                 "corpus": corpus or "public",
                 "passages": [p.as_dict() for p in passages]}
-            if not degraded and not timing.get("fallback_failed"):   # only a full-quality reply is worth repeating
+            if not degraded and not timing.get("fallback_failed") and not timing.get("rerank_skipped"):
+                # only a full-quality reply is worth repeating
                 self.cache.put(key, reply)
             return 200, reply
         finally:
