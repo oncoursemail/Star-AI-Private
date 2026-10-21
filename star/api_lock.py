@@ -26,7 +26,7 @@ import sys
 
 TABLE_VERSION = 1
 MODE_OFF, MODE_FENCES, MODE_ALL = 0, 1, 2
-DATA = Path(__file__).resolve().parents[1] / "data" / "roblox_api" / "roblox_api.json"
+from .roblox_api_dataset import DATA  # noqa: E402  (the bundled API dump; one package-data anchor for it)
 
 # Services whose `.` is followed by a member, not by a child's name: `.` is masked on these. Container services
 # (Workspace, ReplicatedStorage, Lighting, StarterGui, Teams, SoundService, ...) are left out on purpose: their
