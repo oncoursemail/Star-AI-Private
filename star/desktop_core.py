@@ -72,6 +72,7 @@ class Settings:
     workspace_edit: bool = False
     debug_evidence_enabled: bool = False  # opt-in report analysis; never grants process execution or attachment
     live_show_enabled: bool = False       # opt-in offline episode-manifest planner (star/live_show.py); no posting or rendering
+    minecraft_tools_enabled: bool = False  # opt-in offline pack/server-folder tools (star/minecraft_tools.py)
     max_calls: int = 12
     context_chars: int = 26000
     llama_server: str = ''
@@ -208,7 +209,7 @@ class Settings:
         if not self.project.strip() or len(self.project) > 100:
             raise ValueError('Project name is invalid')
         if any(type(getattr(self, key)) is not bool
-               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled', 'live_show_enabled',
+               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled', 'live_show_enabled', 'minecraft_tools_enabled',
                             'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
@@ -1233,6 +1234,10 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         if workspace is not None and settings.live_show_enabled is True:
             from .live_show import LiveShowTools
             live_show = LiveShowTools(workspace, enabled=True)
+        minecraft_tools = None
+        if workspace is not None and settings.minecraft_tools_enabled is True:
+            from .minecraft_tools import MinecraftTools
+            minecraft_tools = MinecraftTools(workspace, enabled=True, allow_write=settings.workspace_edit is True)
         if use_tools and settings.tool_workshop_enabled:
             workshop = ToolWorkshop(home=home,project=settings.project,knowledge=knowledge,
                                     workspace=workspace,intelligence=intelligence)
@@ -1498,6 +1503,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     kwargs['debug_evidence'] = debug_evidence
                 if live_show is not None:
                     kwargs['live_show'] = live_show
+                if minecraft_tools is not None:
+                    kwargs['minecraft_tools'] = minecraft_tools
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.

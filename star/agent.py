@@ -54,6 +54,7 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_roblox_game_image", "search_asset",
     "star_github_tree", "star_github_read", "star_mcp_search", "star_mcp_call", "star_delegate_research",
     "star_debug_report", "star_debug_compare", "star_debug_source",
+    "workspace_minecraft_audit", "workspace_minecraft_inspect",
 })
 LUAU_AFTER_UNTRUSTED = ("Full Luau execution is off for the rest of this turn because it read web or "
                         "third-party content. Ask again in a new message to run Luau.")
@@ -313,7 +314,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   history=None, turn_sections=None, mode="", guidance="",
                   turn_context_chars=10000, request_extras=None, today=None,
                   tool_memory=None, helper_client=None, document_tools=None, image_max_side=None,
-                  reverse_engineering=None, debug_evidence=None, live_show=None,
+                  reverse_engineering=None, debug_evidence=None, minecraft_tools=None, live_show=None,
                   preserve_history=False, complete_code_answers=None,
                   tool_discovery_enabled=False, candidate_code_team_enabled=False, now=None,
                   web_settings=None, on_first_request=None):
@@ -495,6 +496,11 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
                        for tool in live_show_definitions)
     enabled_live_show = {tool["name"] for tool in live_show_definitions}
+    minecraft_definitions = selected(minecraft_tools)
+    definitions.extend({"type": "function", "function": {"name": tool["name"],
+                       "description": tool["description"], "parameters": tool["inputSchema"]}}
+                       for tool in minecraft_definitions)
+    enabled_minecraft = {tool["name"] for tool in minecraft_definitions}
     # Qwen templates render the tool list before the system text. Tools that are attached on
     # every turn stay first and the Studio tools (present only for a Studio request) go last,
     # so a change at the end of the list leaves the start of the request cached.
@@ -812,6 +818,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif live_show is not None and live_show.owns(name):
                         if name not in enabled_live_show:
                             raise PermissionError("Live show tool not authorized for this task")
+                    elif minecraft_tools is not None and minecraft_tools.owns(name):
+                        if name not in enabled_minecraft:
+                            raise PermissionError("Minecraft tool not authorized for this task")
                     elif name not in TOOL_NAMES:
                         enforce(name, args, registry, studio_id, may_edit, allow_luau=allow_luau)
                         if name == "execute_luau" and untrusted_read:
@@ -964,6 +973,14 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         except (ValueError, PermissionError, OSError, UnicodeError) as exc:
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Live show planner failed: {type(exc).__name__}: {exc}"}]}
+                    elif minecraft_tools is not None and minecraft_tools.owns(name):
+                        try:
+                            local_output = await asyncio.to_thread(minecraft_tools.call, name, args, enabled=enabled_minecraft)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except (ValueError, PermissionError, OSError, UnicodeError) as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Minecraft tool failed: {type(exc).__name__}: {exc}"}]}
                     elif blender is not None and blender.owns(name):
                         try:
                             data = await blender.call(name, args)
