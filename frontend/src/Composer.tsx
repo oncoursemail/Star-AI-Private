@@ -3,6 +3,7 @@ import type {KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject} from 're
 import {AnimatePresence, motion} from 'motion/react'
 import {ArrowRight, ArrowUp, BookOpen, Check, ChevronDown, File as FileIcon, Globe, ImagePlus, Mic, MonitorUp, Paperclip, Plus, Square, Users, X} from 'lucide-react'
 import {VoiceCallButton} from './VoiceCall'
+import {MusicRecognitionButton,SongLookupRow,type SongLookup} from './MusicRecognition'
 import type {Connection} from './connection'
 import {menuIn} from './motion'
 import {useMotionVariants,useStarReducedMotion} from './MotionPolicy'
@@ -145,6 +146,9 @@ export type ComposerProps = {
   onLookAtScreen?: () => void
   /** Small thumbnails for attachments that have one (a screenshot), keyed by path. */
   previews?: Record<string, string>
+  /** Song recognition, present only while Settings > Song recognition is on: the dialog button and the
+   *  per-message approval for an attached WAV. */
+  song?: {lookup: SongLookup | null; onLookup: (value: SongLookup | null) => void}
 }
 
 /** The sizes the host offers (star/image_gen.py SIZES). An attached picture keeps its own shape; Draft makes it small and fast. */
@@ -231,6 +235,7 @@ export function Composer(props: ComposerProps) {
           ))}
         </ul>
       )}
+      {props.song && !special && <SongLookupRow files={files} lookup={props.song.lookup} onLookup={props.song.onLookup} disabled={busy} />}
       <label className="sr-only" htmlFor="star-prompt">
         Message STAR
       </label>
@@ -413,6 +418,7 @@ export function Composer(props: ComposerProps) {
               )}
             </AnimatePresence>
           </div>
+          {props.song && <MusicRecognitionButton disabled={busy} />}
           <VoiceCallButton disabled={busy} />
           {busy ? (
             <button type="button" className="cmp-send is-stop" title="Stop" aria-label="Stop response" disabled={stopping} onClick={event => {

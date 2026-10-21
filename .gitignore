@@ -22,3 +22,16 @@ star/build-info.json
 /STAR.spec
 /STAR-Genesis-Windows-x64.zip
 /STAR-PREVIEW-SHA256SUMS.txt
+
+# Console game files, firmware and keys never belong in this repo (the PS3 RE tools read them in place).
+*.iso
+*.pup
+*.rap
+*.self
+*.sprx
+prod.keys
+title.keys
+EBOOT.BIN
+EBOOT.ELF
+PS3_GAME/
+PS3_UPDATE/

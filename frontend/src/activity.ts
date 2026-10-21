@@ -79,9 +79,13 @@ export type ActivityPayload = ResearchActivityPayload & {
   passages?: number
   /** Local checked practice, only a bounded count, never code or IDs. */
   count?: number
-  /** Luau check: passed | failed | repaired | unavailable. */
+  /** Luau check or incremental repair outcome, from the backend's fixed event codes. */
   result?: string
   repair?: boolean
+  /** Incremental repair: allowlisted checker/category and bounded observed attempt. */
+  checker?: string
+  kind?: string
+  attempt?: number
 }
 export type ProgressPayload = {phase?: string; delta?: string; activity?: ActivityPayload}
 
@@ -118,6 +122,16 @@ const STATES: readonly StepState[] = ['queued', 'running', 'waiting', 'done', 'f
 const asState = (value: unknown, fallback: StepState): StepState =>
   STATES.includes(value as StepState) ? (value as StepState) : fallback
 const isOpen = (state: StepState) => state === 'running' || state === 'waiting'
+
+const REPAIR_CHECKS: Record<string, {label: string; scope: string}> = {
+  'python.compile': {label: 'Python syntax check', scope: 'Checks Python syntax without running the code.'},
+  'json.loads': {label: 'JSON syntax check', scope: 'Checks JSON syntax. Application behavior and schema requirements are unverified.'},
+  'tomllib.loads': {label: 'TOML syntax check', scope: 'Checks TOML syntax. Application behavior and settings are unverified.'},
+  'luau.lint': {label: 'Luau advisory check', scope: 'Checks selected Luau patterns. It does not compile or run the code.'},
+  'tool.result': {label: 'Tool result check', scope: 'A tool result describes this call only; it does not verify the whole task.'},
+  none: {label: 'Repair check', scope: 'A successful check has not been confirmed.'},
+}
+const REPAIR_KINDS = ['syntax', 'advisory', 'tool_error', 'unknown_outcome', 'budget']
 
 export const roleLabel = (role?: string) => ROLES[role || ''] || 'Specialist'
 
@@ -265,6 +279,46 @@ export function applyProgress(run: ActivityRun, data: ProgressPayload | string |
           startedAt: now, endedAt: now}]
         next.phase = 'Using local practice examples'
       }
+      break
+    }
+    case 'repair': {
+      if (!['detected', 'check_passed', 'blocked'].includes(activity.result || '')) break
+      const checker = typeof activity.checker === 'string' && Object.prototype.hasOwnProperty.call(REPAIR_CHECKS, activity.checker)
+        ? activity.checker : 'none'
+      const category = REPAIR_KINDS.includes(activity.kind || '') ? activity.kind : 'unknown_outcome'
+      const check = REPAIR_CHECKS[checker]
+      const result = activity.result === 'check_passed' && (checker === 'none' || category === 'unknown_outcome' || category === 'budget')
+        ? 'blocked' : activity.result
+      const advisory = result === 'detected' && category === 'advisory' && checker === 'luau.lint'
+      const state: StepState = result === 'check_passed' || advisory ? 'done' : result === 'detected' ? 'failed' : 'blocked'
+      const title = result === 'check_passed'
+        ? checker === 'tool.result' ? 'Tool call returned successfully' : check.label + ' passed'
+        : result === 'blocked'
+          ? category === 'budget' ? activity.attempt === 2 ? 'Focused repair limit reached' : 'Work paused for a repair'
+            : category === 'unknown_outcome' ? 'Tool outcome needs inspection' : 'Automatic repair paused'
+          : advisory ? 'Luau advisory check reported possible issues'
+            : category === 'tool_error' ? 'A tool reported a problem'
+            : category === 'unknown_outcome' ? 'A tool outcome is unconfirmed' : check.label + ' reported a problem'
+      const count = typeof activity.count === 'number' && Number.isInteger(activity.count) && activity.count >= 1 && activity.count <= 100
+        ? activity.count : 0
+      const attempt = typeof activity.attempt === 'number' && Number.isInteger(activity.attempt) && activity.attempt >= 1 && activity.attempt <= 2
+        ? ` Repair attempt ${activity.attempt}.` : ''
+      const detail = result === 'detected'
+        ? advisory
+          ? `${count ? `${count} possible issue${count === 1 ? '' : 's'} reported. ` : ''}Review whether the findings apply. These patterns do not prove a defect or verify runtime behavior.`
+          : `${count ? `${count} finding${count === 1 ? '' : 's'} reported. ` : ''}A repair has not yet passed a check. ${check.scope}${attempt}`
+        : result === 'check_passed'
+          ? `${check.scope}${attempt}`
+          : category === 'unknown_outcome'
+            ? 'The earlier action may have taken effect. Its result needs inspection before another mutation.'
+            : category === 'budget' && activity.attempt !== 2
+              ? 'Work is paused so STAR can inspect an earlier result. No fix is confirmed.'
+              : `This repair is paused and its result remains unverified.${attempt}`
+      // Each row records an observed outcome, never an open promise to repair it.
+      // A later successful task completion cannot promote an unresolved error.
+      steps = [...closeThinking(steps, now), {id: 'repair-' + steps.length, kind: 'tool', state,
+        title, detail, endedAt: now}]
+      next.phase = title
       break
     }
     case 'luau_check': {

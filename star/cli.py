@@ -78,6 +78,15 @@ async def main(args):
     if args.command == "doctor":
         doctor()
         return
+    if args.command == "live-show":
+        # An explicit request: validate and plan only. Reads the named files, writes and sends nothing.
+        from .live_show import _read_bounded, plan_report
+        report = plan_report(_read_bounded(Path(args.manifest)),
+                             _read_bounded(Path(args.reviews)) if args.reviews else None,
+                             _read_bounded(Path(args.questions)) if args.questions else None,
+                             post_episode=args.post_episode)
+        print(json.dumps(report, indent=2, allow_nan=False))
+        return
     if args.command == "evals":
         from .evals import load_catalog, summarize_verdicts
         catalog = load_catalog(ROOT / "evals" / "roblox_cases.json")
@@ -122,6 +131,14 @@ async def main(args):
                 print("Locally stored image:", digest, "at", dest)
         finally:
             store.close()
+        return
+    if args.command == "anime-check":
+        # Local planning files only; prints the problems found and exits 1 when there are any.
+        from .anime_production import check_file
+        kind, errors = check_file(Path(args.file), plan=Path(args.plan) if args.plan else None)
+        print(json.dumps({"file": Path(args.file).name, "kind": kind, "valid": not errors, "errors": errors}, indent=2))
+        if errors:
+            raise SystemExit(1)
         return
     if args.command == "memory":
         from .memory import Memory
@@ -257,6 +274,11 @@ def cli():
     sub.add_parser("doctor")
     sub.add_parser("evals", help="List Roblox evaluation definitions and their not-run status")
     sub.add_parser("tools")
+    show = sub.add_parser("live-show", help="Validate and plan an episode manifest offline (no rendering, posting or network)")
+    show.add_argument("manifest")
+    show.add_argument("--reviews", help="JSON list of review records for the readiness check")
+    show.add_argument("--questions", help="JSON list of moderated audience questions")
+    show.add_argument("--post-episode", action="store_true")
     sub.add_parser("studios")
     know = sub.add_parser("knowledge-add", help="Store a candidate project note for later review")
     know.add_argument("--project", required=True)
@@ -293,6 +315,9 @@ def cli():
             read.add_argument("path")
     sync = sub.add_parser("github-sync")
     sync.add_argument("--branch", required=True, help="star/<development-branch>")
+    anime = sub.add_parser("anime-check", help="Validate an anime planning file (pilot.json, benchmark_template.json or a cue sheet .csv)")
+    anime.add_argument("file")
+    anime.add_argument("--plan", help="for a .csv: the pilot.json it must match")
     ask = sub.add_parser("ask")
     ask.add_argument("prompt")
     ask.add_argument("--image", action="append", default=[])

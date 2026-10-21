@@ -1,0 +1,91 @@
+[
+  {
+    "detector": "floating",
+    "kind": "floating",
+    "note": "Book lifted 2.72 studs",
+    "targets": [
+      "Workspace.House_1.Book"
+    ]
+  },
+  {
+    "detector": "near_miss_gap",
+    "kind": "gap",
+    "note": "Mug moved 0.090 studs off its support",
+    "targets": [
+      "Workspace.House_1.Mug"
+    ]
+  },
+  {
+    "detector": "z_fighting",
+    "kind": "zfight",
+    "note": "3x2 plate flush with WallN_L",
+    "targets": [
+      "Workspace.House_1.Plate"
+    ]
+  },
+  {
+    "detector": "interpenetration",
+    "kind": "interpenetration",
+    "note": "2-stud crate across WallN_L",
+    "targets": [
+      "Workspace.House_1.Intruder"
+    ]
+  },
+  {
+    "detector": "off_grid",
+    "kind": "offgrid",
+    "note": "Chimney shifted 0.403 studs along x",
+    "targets": [
+      "Workspace.House_1.Chimney"
+    ]
+  },
+  {
+    "detector": "scale",
+    "kind": "scale",
+    "note": "door 5.15 studs tall",
+    "targets": [
+      "Workspace.House_1.Door",
+      "Workspace.House_1.Door.Door"
+    ]
+  },
+  {
+    "detector": "stretched_texture",
+    "kind": "texture",
+    "note": "decal on Shelf Right face",
+    "targets": [
+      "Workspace.House_1.Shelf.Sticker"
+    ]
+  },
+  {
+    "detector": "text_overflow",
+    "kind": "overflow",
+    "note": "ActionButton text set to 75 characters",
+    "targets": [
+      "StarterGui.HUD.ActionButton"
+    ]
+  },
+  {
+    "detector": "ui_off_screen",
+    "kind": "offscreen",
+    "note": "ShopPanel moved to 0, 963, 0, 100",
+    "targets": [
+      "StarterGui.HUD.ShopPanel"
+    ]
+  },
+  {
+    "detector": "contrast",
+    "kind": "contrast",
+    "note": "SettingsButton text contrast 1.48:1",
+    "targets": [
+      "StarterGui.HUD.SettingsButton"
+    ]
+  },
+  {
+    "detector": "touch_target",
+    "kind": "touch",
+    "note": "BuyShield 40 px on phones",
+    "targets": [
+      "StarterGui.HUD.ShopPanel.BuyShield"
+    ]
+  }
+]

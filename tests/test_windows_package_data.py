@@ -32,6 +32,7 @@ PACKAGE_DATA_SITES = {
     "star/learned_week.py": "star/skill_packs",
     "star/luau_record_type_lessons.py": "docs/lessons/luau-record-types.md",
     "star/lesson_import.py": "star/skill_packs",
+    "star/player_twins/bundle.py": "star/player_twins/luau",  # Player Twins engine doubles + driver
     "star/react_shell.py": "frontend/dist",
     "star/reverse_engineering.py": "star/re_scripts",  # Ghidra scripts (PR #344), not in the PyInstaller lists
     "star/roblox_api_confusions.py": "data/roblox_api_confusions.json",
@@ -58,6 +59,7 @@ OTHER_FILE_ANCHORS = {
     "star/media_actions.py": "owner-installed external ComfyUI",
     "star/playtest_learning.py": "server-only playtest learning: robot + specs in server/studio_lab/playtest (brain 2)",
     "star/roblox_benchmark.py": "server-only Roblox benchmark: tasks + harness in benchmarks/roblox (repo checkout, brain 2)",
+    "star/xray.py": "X-ray Eyes CLI (needs Lune or Studio MCP); its Luau is star/data/xray, bundled with star/data",
     "star/shared_brain/improve.py": "development verifier source hash",
 }
 PENDING_OWNER_REVIEW = frozenset({
@@ -165,7 +167,7 @@ def test_runtime_missing_resources_are_recorded_and_not_claimed_bundled():
     assert missing == PENDING_OWNER_REVIEW
     bundled = set(PACKAGE_DATA_SITES.values()) - missing
     assert all(_bundle_has(resource, local_data) for resource in bundled)
-    assert len(bundled) == 8  # five readers share the skill-pack directory
+    assert len(bundled) == 9  # five readers share the skill-pack directory
 
 
 def test_actual_packaged_root_readers_resolve_resources(tmp_path):

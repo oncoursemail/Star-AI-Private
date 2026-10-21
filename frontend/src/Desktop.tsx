@@ -24,6 +24,7 @@ import type {ModelTeamReport} from './ModelFleetPanel'
 import {ReviewToolsPanel} from './ReviewToolsPanel'
 import {SettingsPage,type UpdateInfo} from './SettingsPage'
 import {Composer,type Availability,type ChatMode} from './Composer'
+import type {SongLookup} from './MusicRecognition'
 import {imageReadiness,webSearchAvailability} from './availability'
 import {overLimitMessage,promptKind} from './promptLimits'
 import {StarPet,type PetState} from './StarPet'
@@ -47,6 +48,11 @@ import {useDraftWarm} from './draftWarm'
 import {MotionPolicy,useEffectiveReducedMotion} from './MotionPolicy'
 import {MotionSurface} from './MotionSurface'
 import type {Fixture,FixtureScript} from './previewFixtures'
+import {StudioFrame,StudioInputHint,StudioProjectSwitch,StudioWelcome,useCompactStudio} from './StudioChrome'
+import {AppearanceControls,AppearancePanel} from './AppearancePanel'
+import {useAppearance} from './useAppearance'
+import {CompanionControls,CompanionShelf} from './CompanionShelf'
+import {useCompanionPreferences} from './companion-catalog'
 
 type Tab='chat'|'projects'|'business'|'brain'|'brain-overview'|'analytics'|'tools'|'library'|'settings'
 const sections:[Tab,string,typeof MessageCircleMore][]=[['chat','Chat',MessageCircleMore],['projects','Projects',Boxes],['business','Business',Store],['library','Library',BookOpen],['tools','Tools',Workflow],['analytics','Analytics',Activity],['brain-overview','Brain',BrainCircuit],['brain','Model & connection',Gauge],['settings','Settings',Settings2]]
@@ -94,6 +100,11 @@ function groupChats(chats:ChatThread[]):Array<{label:string;chats:ChatThread[]}>
 }
 
 export function Desktop({initial=null,preview=false}:{initial?:BootData|null;preview?:boolean}) {
+ // Studio layout (workspace switch, Appearance menu, companion shelf): off until turned on in Settings > Interface.
+ const [studioLayout,setStudioLayout]=useState(()=>readPreference('star.studio.layout')==='on')
+ const {preferences:appearance,updateAppearance,resetAppearance,persisted:appearancePersisted}=useAppearance(studioLayout)
+ const [companionPreferences,setCompanionPreferences]=useCompanionPreferences()
+ const compactStudio=useCompactStudio()
  const [tab,setTab]=useState<Tab>(()=>initialPreviewTab(preview))
  const [data,setData]=useState<BootData>(initial??{version:'1.0.0',project:'STAR',projects:[],messages:[],active_chat:'',chats:[],settings:defaultSettings,brain_installed:false,brain_running:false,analytics:emptyAnalytics,release_url:WEBSITE_RELEASES,credentials:{}})
  const [messages,setMessages]=useState<ChatMessage[]>(initial?.messages??[])
@@ -103,6 +114,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  const [clipsOn,setClipsOn]=useState(()=>readPreference('star.clips.panels')==='on')
  const [petTerminal,setPetTerminal]=useState<{kind:PetState;at:number}|null>(null)
  const [files,setFiles]=useState<string[]>([])
+ const [songLookup,setSongLookup]=useState<SongLookup|null>(null)   // one approved song lookup for this message
  const [busy,setBusy]=useState(false)
  const [stopping,setStopping]=useState(false)
  const [chatMode,setChatMode]=useState<ChatMode>('auto')
@@ -182,6 +194,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  const inactive=preview||!initial
  useEffect(()=>{writePreference('star.pet.visible',showStar?'on':'off')},[showStar])
  useEffect(()=>{writePreference('star.home.workbench',newHome?'on':'off')},[newHome])
+ useEffect(()=>{writePreference('star.studio.layout',studioLayout?'on':'off')},[studioLayout])
  useEffect(()=>{writePreference('star.clips.panels',clipsOn?'on':'off')},[clipsOn])
  useEffect(()=>{if(!petTerminal)return;const timer=setTimeout(()=>setPetTerminal(null),petTerminal.kind==='finished'?2000:4000);return ()=>clearTimeout(timer)},[petTerminal])
  // The collapsed sidebar is a view preference: it survives restarts.
@@ -432,9 +445,10 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
    const intent=!teamMode&&!imageMode&&chatMode!=='agent'&&data.settings.media_chat_auto!==false?chatImageRequest(value,selected,messages,retryMessageId!==undefined):null
    const makeImage=imageMode||!!intent
    const mine=beginRun(value,selected,makeImage?'image':teamMode?'team':'chat')
-   if(retryMessageId===undefined)setMessages(m=>[...m,mine]);setFiles([]);setPrompt('')
+   const song=data.settings.music_recognition_enabled===true&&songLookup&&selected.includes(songLookup.file)?{songLookup:{...songLookup,consent:true}}:{}
+   if(retryMessageId===undefined)setMessages(m=>[...m,mine]);setFiles([]);setPrompt('');setSongLookup(null)
    const action=intent?'generateImage':imageMode?'generateImage':teamMode?'runTeam':'sendMessage'
-   const res=await act(action,intent?{prompt:intent.prompt,display_prompt:value,files:selected,size:imageSize,followup:intent.followup,...(retryMessageId===undefined?{}:{retryMessageId})}:imageMode?{prompt:value,files:selected,size:imageSize}:teamMode?{prompt:value,research}:{prompt:value,files:selected,mode:chatMode,research,github:chatMode==='agent'&&githubSource,...(retryMessageId===undefined?{}:{retryMessageId})})
+   const res=await act(action,intent?{prompt:intent.prompt,display_prompt:value,files:selected,size:imageSize,followup:intent.followup,...(retryMessageId===undefined?{}:{retryMessageId})}:imageMode?{prompt:value,files:selected,size:imageSize}:teamMode?{prompt:value,research}:{prompt:value,files:selected,mode:chatMode,research,github:chatMode==='agent'&&githubSource,...song,...(retryMessageId===undefined?{}:{retryMessageId})})
    if(!res){
      // The host refused before a turn started. Nothing was lost: the question stays with Retry and Edit.
      sending.current=false
@@ -444,7 +458,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
      fresh.current.add(row.id)
      setMessages(m=>[...m,row])
    }
- },[prompt,busy,files,inactive,act,beginRun,updateRun,imageMode,imageSize,data.settings,chatMode,teamMode,research,githubSource,messages])
+ },[prompt,busy,files,inactive,act,beginRun,updateRun,imageMode,imageSize,data.settings,chatMode,teamMode,research,githubSource,messages,songLookup])
 
  const stop=useCallback(()=>{
    if(!busy||stopping)return
@@ -728,13 +742,15 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  const petState:PetState=update?.available?'update':busy?(streamingText?'streaming':'thinking'):petTerminal?.kind??(prompt.trim()?'typing':'idle')
  const announce=busy?'STAR is working on your message.':failedLast?classifyFailure(lastMessage.text).title:lastStar>lastUser&&lastStar>=0?'STAR replied.':''
  const timelineNode=timeline&&<ActivityTimeline key={'run-'+timeline.id} run={timeline} onStop={busy?stop:undefined} stopping={stopping}/>
- return <MotionPolicy reduced={reducedMotion}><div className={wrapper} data-preview={preview} data-reduced-motion={reducedMotion}>
+ const companionSettings=<CompanionControls preferences={companionPreferences} onPreferencesChange={setCompanionPreferences} reducedMotion={reducedMotion}/>
+ return <MotionPolicy reduced={reducedMotion}><div className={wrapper} data-star-studio={studioLayout||undefined} data-preview={preview} data-reduced-motion={reducedMotion}>
    <a className="skip-link" href="#star-main" onClick={e=>{e.preventDefault();const main=document.getElementById('star-main');main?.focus();if(tab==='chat')composerRef.current?.focus()}}>Skip to {tab==='chat'?'message box':'page content'}</a>
    <aside className="rail" aria-label="STAR navigation">
      <div className="rail-head">
        <button className="rail-brand" type="button" aria-label="STAR, back to chat" onClick={()=>nav('chat')}><StarMark size={20}/><span className="rail-brand-lockup"><strong>STAR</strong><small>Intelligence</small></span></button>
        <button className="rail-icon" type="button" aria-label="Hide sidebar" title="Hide sidebar" onClick={()=>{if(narrow())setLeftOpen(false);else setSidebarCollapsed(true)}}><PanelLeftClose size={17}/></button>
      </div>
+     {studioLayout&&<StudioProjectSwitch project={data.project} onOpen={()=>nav('projects')}/>}
      <div className="rail-group">
        <button className="rail-item rail-new" type="button" onClick={()=>void startNewChat()}><SquarePen size={16}/><span>New chat</span></button>
        <button className="rail-item" type="button" aria-expanded={historySearchOpen} onClick={()=>{setHistorySearchOpen(v=>!v);setHistoryQuery('')}}><Search size={16}/><span>Search chats</span></button>
@@ -747,7 +763,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
          {sections.filter(([id])=>extraPages.includes(id)).map(([id,name,Icon])=><button className={'rail-item '+(tab===id?'is-current':'')} type="button" key={id} aria-current={tab===id?'page':undefined} onClick={()=>nav(id)}><Icon size={16}/><span>{id==='brain'?'Model':name}</span></button>)}
        </div>}
      </nav>
-     <div className="rail-chats" aria-label="Saved conversations">
+     <div className="rail-chats" role="region" aria-label="Saved conversations">
        {chatGroups.length<=1&&<div className="rail-label">Chats</div>}
        {chatGroups.map(group=><Fragment key={group.label}>
          {chatGroups.length>1&&<div className="rail-sublabel">{group.label}</div>}
@@ -777,6 +793,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
            :<div className="bar-title"><button className="bar-back" type="button" onClick={()=>nav('chat')}>Chat</button><span className="bar-sep" aria-hidden="true">/</span>{/* Pages with their own <h1> get a plain breadcrumb here; Brain draws no page title, so the bar keeps its h1. */}{tab==='brain-overview'?<h1>{sections.find(x=>x[0]===tab)?.[1]}</h1>:<span className="bar-page" aria-current="page">{sections.find(x=>x[0]===tab)?.[1]}</span>}</div>}
        </div>
        <div className="bar-right">
+         {studioLayout&&<AppearancePanel preferences={appearance} onChange={updateAppearance} onReset={resetAppearance} companionSettings={companionSettings} persisted={appearancePersisted}/>}
          {tab==='chat'&&<>
            {showChatSearch&&<input className="bar-find" type="search" aria-label="Search messages in this chat" placeholder="Find in this chat" autoFocus value={chatSearch} onChange={e=>setChatSearch(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setShowChatSearch(false);setChatSearch('')}}}/>}
            <button className="bar-action" type="button" title="Find in this chat" aria-label="Find in this chat" aria-pressed={showChatSearch} disabled={!messages.length} onClick={()=>{setShowChatSearch(v=>!v);setChatSearch('')}}><Search size={17}/></button>
@@ -797,10 +814,12 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
      {preview&&<div className="preview-ribbon" role="region" aria-label="Preview notice"><Info size={14} aria-hidden="true"/><span>{fixture?'Preview fixture: scripted events for design review. No model is running.':'Interface preview. Chat needs STAR Desktop.'}</span></div>}
      <AnimatePresence mode="wait" initial={false}>
        <MotionSurface as="main" id="star-main" tabIndex={-1} key={tab} className="page-stage" variants={pageFade}>
-         {tab==='chat'&&<div className={'thread'+(empty?' is-empty':'')+(empty&&!classicHome?' is-crafted-home':'')}>
+         {tab==='chat'&&<StudioFrame enabled={studioLayout} compact={compactStudio} companionVisible={companionPreferences.visible}
+           companion={<CompanionShelf state={petState} reducedMotion={reducedMotion} preferences={companionPreferences} onPreferencesChange={setCompanionPreferences} compact={compactStudio}/>}>
+           <div className={'thread'+(empty?' is-empty':'')+(empty&&!classicHome?' is-crafted-home':'')}>
            <div className="thread-scroll" ref={chatScroll} onScroll={onChatScroll}>
              <div className="thread-column">
-               {empty?(classicHome?<div className="thread-hello"><StarFace mood={faceMood} size={104} follow className="thread-hello-star" label="Star, STAR's mascot"/><h2>What are we making?</h2></div>:<StartCanvas project={data.project} mood={faceMood} onStart={fillComposer}/>)
+               {empty?(classicHome?(studioLayout?<StudioWelcome mood={faceMood}/>:<div className="thread-hello"><StarFace mood={faceMood} size={104} follow className="thread-hello-star" label="Star, STAR's mascot"/><h2>What are we making?</h2></div>):<StartCanvas project={data.project} mood={faceMood} onStart={fillComposer}/>)
                :<section className="thread-turns" role="log" aria-live="off" aria-label="Conversation">
                  {turns.map((m,index)=>{
                    const live=m.id==='stream-live'
@@ -837,13 +856,15 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
                teamMode={teamMode} onTeamMode={on=>{setTeamMode(on);composerRef.current?.focus()}} team={team}
                research={research} onResearch={setResearch} web={web} githubSource={githubSource} onGithubSource={setGithubSource}
                connection={connection} onOpenConnection={()=>nav('brain')}
-               onLookAtScreen={()=>{consentConfirmed.current=false;setScreenAsk(true)}} previews={previews}/>
-             {empty?(classicHome?<div className="starters" aria-label="Starting points">{starters.map(item=><button key={item.label} type="button" className="starter" onClick={()=>fillComposer(item.prompt)}><item.icon size={15} aria-hidden="true"/><span>{item.label}</span></button>)}</div>:null)
+               onLookAtScreen={()=>{consentConfirmed.current=false;setScreenAsk(true)}} previews={previews}
+               song={data.settings.music_recognition_enabled===true?{lookup:songLookup&&files.includes(songLookup.file)?songLookup:null,onLookup:setSongLookup}:undefined}/>
+             {empty?(classicHome?<div className="starters" role="group" aria-label="Starting points">{starters.map(item=><button key={item.label} type="button" className="starter" onClick={()=>fillComposer(item.prompt)}><item.icon size={15} aria-hidden="true"/><span>{item.label}</span></button>)}</div>:null)
                :<p className="dock-hint">{teamMode?`Team: four read-only stages on ${serverMode?'your STAR Server':'this PC'}, ${teamSlots===1?'one':'at most two'} at a time.${research?' Web search sends your objective and queries to your configured search provider.':''}`:'Review generated changes and tests before using them in your project.'}</p>}
+             {studioLayout&&empty&&classicHome&&<StudioInputHint/>}
            </div>
            <div className="thread-rest" aria-hidden="true"/>
            <div className="sr-only" role="status" aria-live="polite">{announce}</div>
-         </div>}
+         </div></StudioFrame>}
           {tab==='analytics'&&<AnalyticsView data={data.analytics}/>}
          {tab==='business'&&<div className="scroll-region"><div className="page-wrap commerce-page"><CommercePanel project={data.project} preview={inactive} enabled={data.settings.commerce_enabled===true}/></div></div>}
          {tab==='brain-overview'&&<div className="scroll-region"><div className="page-wrap"><BrainOverview load={!inactive}/></div></div>}
@@ -909,6 +930,8 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
            modelChecking={modelChecking} modelCheck={modelCheck} modelList={modelList} testActualModel={()=>void testActualModel()} routerBusy={routerBusy} teamChecking={teamChecking} teamResult={teamResult}
            selectRouterFolder={()=>void selectRouterFolder()} startLocalRouter={()=>void startLocalRouter()} stopLocalBrain={()=>void stopLocalBrain()} testSpecialists={()=>void testSpecialists()}
            imageMode={imageMode} chooseWorkflow={()=>void chooseWorkflow()} showStar={showStar} setShowStar={setShowStar} newHome={newHome} setNewHome={setNewHome} clipsOn={clipsOn} setClipsOn={setClipsOn} setReducedMotion={setReducedMotion}
+           studioLayout={studioLayout} setStudioLayout={setStudioLayout}
+           appearance={studioLayout&&<AppearanceControls preferences={appearance} onChange={updateAppearance} onReset={resetAppearance} companionSettings={companionSettings} persisted={appearancePersisted}/>}
            update={update} updateBusy={updateBusy} updateProgress={updateProgress} checkForUpdates={()=>void checkForUpdates()} installVerifiedUpdate={()=>void installVerifiedUpdate()} saveSettings={()=>void saveSettings()}
            initialSection={preview?new URLSearchParams(window.location.search).get('section')||undefined:undefined}/></div></div>}
        </MotionSurface>
