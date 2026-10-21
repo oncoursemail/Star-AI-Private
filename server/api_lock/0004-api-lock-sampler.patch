@@ -1211,7 +1211,7 @@ index 5bd2ed5..c052c50 100644
 
      // these are absolute timestamps (in us)
 diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
-index 44aaadd..f11468b 100644
+index 44aaadd..a4e3d92 100644
 --- a/tools/server/server-context.cpp
 +++ b/tools/server/server-context.cpp
 @@ -265,6 +265,7 @@ struct server_slot {
@@ -1222,7 +1222,7 @@ index 44aaadd..f11468b 100644
      std::mt19937 spec_synth_rng;
 
      // TODO: move members that belong to the task (such as `generated`, `has_new_line`) to task_results_state
-@@ -3415,6 +3416,20 @@ private:
+@@ -3415,6 +3416,22 @@ private:
              auto & draft = slot.spec_draft;
              auto & ckpt  = slot.spec_ckpt;
 
@@ -1232,7 +1232,9 @@ index 44aaadd..f11468b 100644
 +            {
 +                const int n_max = std::min(slot.get_n_draft_max(), common_speculative_n_max(spec.get()));
 +                std::vector<llama_token> forced = common_sampler_api_lock_forced(slot.smpl.get(), n_max);
-+                if (!forced.empty()) {
++                // a drafter's (often longer) draft that already starts with the forced tokens is kept as it is
++                const bool agrees = draft.size() >= forced.size() && std::equal(forced.begin(), forced.end(), draft.begin());
++                if (!forced.empty() && !agrees) {
 +                    slot.spec_draft_forced_only = draft.empty();
 +                    draft = std::move(forced);
 +                    slot.spec_draft_q.clear();
@@ -1243,7 +1245,7 @@ index 44aaadd..f11468b 100644
              slot.stats.n_draft_tokens += draft.size();
 
              // TODO: avoid restoring the draft context and re-evaluating the drafted tokens when not needed [TAG_SPEC_AVOID_DRAFT_REEVAL]
-@@ -4473,7 +4488,10 @@ private:
+@@ -4473,7 +4490,10 @@ private:
                      SLT_INF(slot, "accepted %2zu/%2zu draft tokens\n", accepted.size() - 1, n_draft);
                  }
 

@@ -25,7 +25,7 @@ remote() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$target" "lxc exec $contai
 case "${1:-}" in
   --build)
     tmp="$(mktemp -d)"
-    for f in 0004-api-lock-sampler.patch build.sh enable.sh cases.json bench.py side.sh; do
+    for f in 0004-api-lock-sampler.patch build.sh enable.sh cases.json bench.py side.sh eval_side.sh; do
       git show "HEAD:server/api_lock/$f" > "$tmp/$f"      # the committed (LF) text, not a CRLF checkout
     done
     python -m star.api_lock table "$tmp/api-lock-table.json"
