@@ -36,6 +36,7 @@ from . import server_roles, turn_memory
 from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
+from . import edit_format
 from . import studio_loop, studio_tool_examples
 from . import project_rules
 from . import gpu_helper
@@ -161,6 +162,9 @@ class Settings:
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
     # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
     api_hints_enabled: bool = False
+    # Opt-in (star/edit_format.py): pasted code + "fix/change this" is answered with SEARCH/REPLACE blocks that STAR
+    # applies and checks, instead of the whole file written again; a block that does not apply falls back to that.
+    edit_diff: bool = False
     skill_pack_embeddings: bool = False    # opt-in: STAR Server embeddings pick a skill pack the keywords missed
     # Settings > "Use my GPU" (star/gpu_helper.py): STAR's code model on this PC's NVIDIA card, per request, the
     # server as fallback. Off by default. Paths '' = <app data>/gpu-helper/llama-server.exe and star-fast.gguf.
@@ -206,7 +210,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled')):
+                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled', 'edit_diff')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -1492,6 +1496,15 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     on_event=audited_event)
                 if several is not None:
                     kwargs['on_first_request'] = several.on_first_request
+                # Opt-in diff-only edits (star/edit_format.py): pasted code plus a change request is answered with
+                # SEARCH/REPLACE blocks that STAR applies and checks here. Plain chat turns only, not with best-of-N.
+                edit = (edit_format.find_edit(prompt)
+                        if settings.edit_diff is True and several is None and mode != 'agent' and not images
+                        and document_tools is None and not document_block and not allow_studio
+                        and not allow_blender else None)
+                if edit is not None:
+                    kwargs['prompt'] = edit.prompt
+                    audited_event({'event': 'edit_diff_started', 'lines': edit.source.count('\n')})
                 audited_event({'event': 'model_started'})
                 async def answer_with(model):
                     nonlocal prepared_conversation
@@ -1593,6 +1606,20 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     if several is not None:
                         await several.run.cancel()
                     raise
+                if edit is not None and not tools_ran and result is not None:
+                    done = await asyncio.to_thread(edit_format.finish, edit, result[0],
+                                                   check=docs.client.luau_check if docs.client is not None else None)
+                    audited_event({'event': 'edit_diff_finished', 'ok': done.ok, 'reason': done.reason[:160],
+                                   'edits': done.edits})
+                    if done.ok:
+                        result = (done.answer, *result[1:])
+                    else:
+                        # The edit did not apply or checked worse: the normal full answer, asked once.
+                        kwargs['prompt'] = prompt
+                        if stream_tokens:
+                            audited_event({'event': 'assistant_delta', 'text':
+                                           '\n\n*(The edit did not apply cleanly; STAR is writing the full code.)*\n\n'})
+                        result = await answer_with(used.model)
                 if several is not None:
                     # The best of the candidates (the main answer above is candidate 1) replaces the answer.
                     result = await several.apply(result, used.model, started=started, budget=route.task_timeout,

@@ -6,7 +6,8 @@ The relay joins that SSH session to the bot's Unix socket (in a 0700 folder of t
 and the one worker meet there. Messages are JSON lines:
 
     worker -> bot   {"type": "hello"} once, {"type": "alive"} every 15 s, {"type": "status", "id", "text"},
-                    {"type": "result", "id", "ok": true, "image": base64, ...} or {"ok": false, "error"}
+                    {"type": "result", "id", "ok": true, "image": base64, ...} or {"ok": false, "error"},
+                    {"type": "pcfeed", "feed": {...}} every minute (pc_feed.py: what only the PC knows)
     bot -> worker   {"type": "job", "job": {"id", "prompt", "ts"}, "sig": HMAC-SHA256}
 
 Jobs are signed with a key both sides hold (secrets/gpu-worker.key on the server, ~/.star/gpu-worker.key on the
@@ -40,6 +41,7 @@ MAX_LINE = 12 * 1024 * 1024            # one result line: an 8 MB picture in bas
 ALIVE_SECONDS = 15
 STALE_SECONDS = 45                      # no word from the worker for this long = offline (PC asleep, network gone)
 JOB_MAX_AGE = 300
+MAX_FEED = 64 * 1024                    # one pcfeed line
 OFFLINE = ("My drawing GPU (your PC) is offline right now, so I can't draw this. When the PC is on and signed in, "
            "its STAR GPU worker reconnects by itself; then ask again.")
 NO_KEY = ("Drawing through the PC is not set up on this server yet (no gpu-worker.key). "
@@ -140,6 +142,13 @@ class RemoteDrawer:
         self._pending: dict[str, tuple[asyncio.Future, object]] = {}
         self._lock = asyncio.Lock()
         self._server = None
+        self._feed: tuple[float, dict] | None = None
+
+    def latest_feed(self) -> tuple[float, dict] | None:
+        """(age in seconds, the PC feed) from the last pcfeed message, or None."""
+        if self._feed is None:
+            return None
+        return time.time() - self._feed[0], self._feed[1]
 
     @property
     def busy(self) -> bool:
@@ -199,6 +208,10 @@ class RemoteDrawer:
                 try:
                     message = decode(line)
                 except (ValueError, UnicodeError):
+                    continue
+                if message["type"] == "pcfeed":
+                    if isinstance(message.get("feed"), dict) and len(line) <= MAX_FEED:
+                        self._feed = (time.time(), message["feed"])
                     continue
                 entry = self._pending.get(str(message.get("id", "")))
                 if entry is None:

@@ -1,0 +1,16 @@
+local ret, env = load_answer()
+local Inventory = ret
+local inv = Inventory.new("p")
+local events = 0
+inv:OnChanged(function() events += 1 end)
+check("countOf exists", type(inv.countOf) == "function")
+check("the old name is gone", inv.GetCount == nil)
+inv:AddItem("grenade", 3)
+check("AddItem and countOf work", inv:countOf("grenade") == 3 and inv:HasItem("grenade", 3))
+check("not enough items: RemoveItem returns false", inv:RemoveItem("grenade", 5) == false)
+check("not enough items: nothing changed", inv:countOf("grenade") == 3)
+check("enough items: RemoveItem returns true and removes", inv:RemoveItem("grenade", 2) == true and inv:countOf("grenade") == 1)
+inv:AddItem("medkit", 200)
+check("the stack cap still holds", inv:countOf("medkit") == 99)
+local snap = inv:Snapshot()
+check("Snapshot works", snap.grenade == 1 and snap.medkit == 99 and events >= 3)

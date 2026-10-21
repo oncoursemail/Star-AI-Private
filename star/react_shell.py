@@ -143,6 +143,7 @@ PERMITTED_SETTINGS = frozenset({
     # Use my GPU: where its files are and when it unloads. The switch itself is `gpuHelperSet`, saved at once.
     'gpu_helper_server','gpu_helper_model','gpu_idle_minutes',
     'prefill_while_typing',   # star/prefill_warm.py: warm the prompt cache with the draft, off by default
+    'edit_diff',              # star/edit_format.py: changed lines only for pasted-code edits, off by default
 })
 
 # Settings > Media "session capabilities" line: put before the owner's words of every turn (and of a draft warm-up).

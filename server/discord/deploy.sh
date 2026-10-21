@@ -17,6 +17,14 @@
 #   stop       stop the bot
 #   status     service state, the running release and the last journal lines
 #   rollback   current <-> previous release, then restart if it was running
+#   gate       Star's live status + allow-listed actions (server/discord/gate/): installs star_gate.py in this
+#              container with the star-discord-gate socket (only star-discord can open it), creates the bot's own
+#              SSH key (secrets/gate_ed25519, never printed) and, with STAR_GATE1_SSH=<user@brain 1 LXD host>,
+#              installs star_gate.py in brain 1's container plus ~/.local/bin/star-bot-gate on that host and adds
+#              the bot's public key to its authorized_keys as restrict,command=star-bot-gate (the key can do nothing
+#              else; known_hosts comes from this PC's). Then set STAR_DISCORD_GATE_1=ssh:<user@host> and
+#              STAR_DISCORD_GATE_2=unix:/run/star-discord-gate.sock in discord-settings.env.
+#              Undo: STAR_GATE1_SSH=... bash deploy.sh gate-remove
 #
 # The address is operator configuration and is never stored in the repository. Commands run as root inside the
 # container through `lxc exec`; the bot itself runs as the unprivileged user star-discord.
@@ -104,7 +112,49 @@ rollback)
   remote "install -m 644 $base/current/server/discord/$unit /etc/systemd/system/$unit && systemctl daemon-reload"
   if running; then remote "systemctl restart $unit"; echo "restarted"; fi
   ;;
+gate)
+  root="$(git rev-parse --show-toplevel)"; cd "$root"
+  g=server/discord/gate
+  echo "== brain 2 (this container): star_gate.py + socket"
+  remote "install -d -o root -g root -m 755 /opt/star/discord-gate"
+  ssh -o BatchMode=yes "$target" "lxc exec $container -- bash -c 'cat > /opt/star/discord-gate/star_gate.py && chmod 755 /opt/star/discord-gate/star_gate.py'" < "$g/star_gate.py"
+  ssh -o BatchMode=yes "$target" "lxc exec $container -- bash -c 'cat > /etc/systemd/system/star-discord-gate.socket'" < "$g/star-discord-gate.socket"
+  ssh -o BatchMode=yes "$target" "lxc exec $container -- bash -c 'cat > /etc/systemd/system/star-discord-gate@.service'" < "$g/star-discord-gate@.service"
+  remote "systemctl daemon-reload && systemctl enable --now star-discord-gate.socket && systemctl is-active star-discord-gate.socket"
+  echo "== the bot's own SSH key (secrets/gate_ed25519)"
+  remote "test -s $base/secrets/gate_ed25519 || runuser -u star-discord -- ssh-keygen -q -t ed25519 -N '' -C star-discord-gate -f $base/secrets/gate_ed25519"
+  pub="$(remote "cat $base/secrets/gate_ed25519.pub")"
+  case "$pub" in ssh-ed25519\ *\ star-discord-gate) ;; *) echo "no usable public key" >&2; exit 2;; esac
+  if [ -n "${STAR_GATE1_SSH:-}" ]; then
+    host1="${STAR_GATE1_SSH#*@}"
+    echo "== brain 1: star_gate.py in its container, star-bot-gate on its host"
+    ssh -o BatchMode=yes "$STAR_GATE1_SSH" "lxc exec $container -- install -d -m 755 /opt/star/discord-gate"
+    ssh -o BatchMode=yes "$STAR_GATE1_SSH" "lxc exec $container -- bash -c 'cat > /opt/star/discord-gate/star_gate.py && chmod 755 /opt/star/discord-gate/star_gate.py'" < "$g/star_gate.py"
+    lxc1="$(ssh -o BatchMode=yes "$STAR_GATE1_SSH" 'command -v lxc')"
+    sed -e "s#@LXC@#$lxc1#" -e "s#@CONTAINER@#$container#" "$g/star-bot-gate.sh" |
+      ssh -o BatchMode=yes "$STAR_GATE1_SSH" 'mkdir -p ~/.local/bin && cat > ~/.local/bin/star-bot-gate && chmod 755 ~/.local/bin/star-bot-gate'
+    # One line per key comment: replace an older star-discord-gate line, keep every other key untouched.
+    home1="$(ssh -o BatchMode=yes "$STAR_GATE1_SSH" 'printf %s "$HOME"')"
+    printf 'restrict,command="%s/.local/bin/star-bot-gate" %s\n' "$home1" "$pub" |
+      ssh -o BatchMode=yes "$STAR_GATE1_SSH" 'f=~/.ssh/authorized_keys; cp -p "$f" "$f.bak-star-gate"; { grep -v " star-discord-gate$" "$f.bak-star-gate"; cat; } > "$f.tmp" && chmod 600 "$f.tmp" && mv "$f.tmp" "$f"; grep -c . "$f"'
+    echo "== brain 1 host key for the bot (from this PC's known_hosts)"
+    ssh-keygen -F "$host1" | grep -v '^#' | push_secret gate_known_hosts
+    remote "runuser -u star-discord -- install -d -m 700 $base/state/.ssh && printf 'Host %s\n  IdentityFile %s\n  IdentitiesOnly yes\n  UserKnownHostsFile %s\n' '$host1' $base/secrets/gate_ed25519 $base/secrets/gate_known_hosts > $base/state/.ssh/config && chown star-discord:star-discord $base/state/.ssh/config && chmod 600 $base/state/.ssh/config"
+    echo "== check: the bot asks brain 1 for facts through its key"
+    remote "cd /tmp && runuser -u star-discord -- ssh -T -o BatchMode=yes '$STAR_GATE1_SSH' facts | head -c 120; echo"
+  fi
+  echo "== check: the bot asks brain 2 for facts through the socket"
+  remote "cd $base/current && runuser -u star-discord -- $base/venv/bin/python -c 'import asyncio; from star.discord_bot.gate_client import Gate; print(str(asyncio.run(Gate(\"brain 2\", \"unix\", \"/run/star-discord-gate.sock\").call(\"facts\")).get(\"ok\")))'"
+  ;;
+gate-remove)
+  remote "systemctl disable --now star-discord-gate.socket; rm -f /etc/systemd/system/star-discord-gate.socket /etc/systemd/system/star-discord-gate@.service; systemctl daemon-reload; rm -rf /opt/star/discord-gate"
+  if [ -n "${STAR_GATE1_SSH:-}" ]; then
+    ssh -o BatchMode=yes "$STAR_GATE1_SSH" 'f=~/.ssh/authorized_keys; grep -v " star-discord-gate$" "$f" > "$f.tmp"; chmod 600 "$f.tmp"; mv "$f.tmp" "$f"; rm -f ~/.local/bin/star-bot-gate'
+    ssh -o BatchMode=yes "$STAR_GATE1_SSH" "lxc exec $container -- rm -rf /opt/star/discord-gate"
+  fi
+  echo "gate removed (the bot's key stays in secrets/; delete gate_ed25519* there to drop it)"
+  ;;
 *)
-  sed -n '2,24p' "$0"; exit 2
+  sed -n '2,32p' "$0"; exit 2
   ;;
 esac

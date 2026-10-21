@@ -250,10 +250,11 @@ export function SettingsPage(props:SettingsPageProps) {
        <Switch label="Find guidance packs by meaning" hint="Off by default. With STAR Server, when no guidance pack matches your words, its embedding model picks the closest one. Falls back to word matching if the server does not answer." checked={draft.skill_pack_embeddings===true} onChange={on=>set({skill_pack_embeddings:on})}/>
      </Panel>
    </Block>
-   <Block id="roblox-code" keywords="luau code studio tools examples retry fix thinking">
+   <Block id="roblox-code" keywords="luau code studio tools examples retry fix thinking edit diff changed lines">
      <Panel className="settings-section"><h3 className="settings-group-title">Roblox code help</h3>
        <Switch label="Show example Studio tool calls" hint="Off by default. Adds one fixed example call to each Studio tool so the model makes fewer refused calls. Permissions do not change." checked={draft.studio_tool_examples===true} onChange={on=>set({studio_tool_examples:on})}/>
        <Switch label="Retry a failed Luau fix with more thinking" hint="Off by default. When STAR's fix still fails the Luau check, it tries once more with the new errors (thinking on with your own brain). Answers can take longer." checked={draft.luau_retry_ladder===true} onChange={on=>set({luau_retry_ladder:on})}/>
+       <Switch label="Write only the changed lines when I paste code" hint="Off by default. When you paste code and ask for a fix or change, STAR asks the model for the changed lines only, applies them to your code, checks the result and shows the full code. Faster on long scripts. If the change does not apply cleanly, STAR writes the full code as usual." checked={draft.edit_diff===true} onChange={on=>set({edit_diff:on})}/>
      </Panel>
    </Block>
    <Block id="studio-target" keywords="studio place practice host this pc mcp">

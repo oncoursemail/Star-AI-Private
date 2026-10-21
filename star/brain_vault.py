@@ -536,7 +536,7 @@ def status(out: Path) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m star.brain_vault", description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(prog="python -m star.brain_vault", description=(__doc__ or "").split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
     b = sub.add_parser("build", help="(re)generate the vault")
     b.add_argument("--out", type=Path, required=True)
