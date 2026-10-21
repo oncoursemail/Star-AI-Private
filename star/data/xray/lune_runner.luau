@@ -52,7 +52,7 @@ local function isModel(path: string): boolean
 end
 
 local function newGame(): any
-	return roblox.Instance.new("DataModel")
+	return roblox.Instance.new("DataModel") -- metallic:allow: Lune creates a DataModel headlessly (not creatable inside Roblox)
 end
 
 local function load(path: string): (any, boolean)
