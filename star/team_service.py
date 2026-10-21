@@ -21,7 +21,7 @@ from .agent_runtime import TeamResult, run_plan
 from .autonomous_research import (EvidenceBook, begin_research, finish_research,
                                    followup_question)
 from .deep_research import research_web
-from .web_fetch import Page
+from .web_fetch import Page, fetch_page
 from .web_search import _safe_results, search_web
 from .orchestration import Task, TaskPlan
 from .learning import learned_context
@@ -284,6 +284,9 @@ async def run_research_team(
                         return await search_web(query, limit=limit, settings=settings)
 
                     searcher = configured_search
+                if settings.scholarly_research_enabled is True:
+                    from .public_research import with_scholarly_metadata
+                    searcher = with_scholarly_metadata(searcher, fetcher=page_provider or fetch_page)
 
                 remaining = max(.01, total_seconds - (monotonic() - started))
                 budget = research_budget or ResearchBudget(

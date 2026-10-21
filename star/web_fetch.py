@@ -14,6 +14,8 @@ Any public http(s) URL may be read (no allowlist), with these guards:
     Blocking DNS and parsing use separate bounded worker pools, never the shared default executor.
   * The page is reduced to its readable text (title + main content; scripts, styles, navigation,
     headers, footers and forms dropped) and returned inside an UNTRUSTED DATA frame.
+
+`post_form` reuses the same address checks for a JSON form POST to a fixed public API (song recognition).
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from html.parser import HTMLParser
 import ipaddress
+import json
 import re
 import socket
 import threading
@@ -305,6 +308,53 @@ def _reduce_page(url: str, body: bytes, declared_type: str, max_chars: int) -> P
                 truncated=len(text) > max_chars)
 
 
+def _pinned(url: str, host: str, port: int, address: str) -> tuple[str, str, dict]:
+    """(URL naming the checked address, Host header, request extensions). The request goes to the
+    address check_url approved; the name goes in Host and in TLS SNI (certificate check)."""
+    parts = urlsplit(url)
+    default_port = 443 if parts.scheme == "https" else 80
+    target_host = f"[{address}]" if ":" in address else address
+    netloc = target_host if port == default_port else f"{target_host}:{port}"
+    host_header = host if port == default_port else f"{host}:{port}"
+    extensions = {"sni_hostname": host} if parts.scheme == "https" and address != host else {}
+    return parts._replace(netloc=netloc).geturl(), host_header, extensions
+
+
+async def post_form(url: str, form: dict[str, str], *, files: dict | None = None, max_bytes: int = 96 * 1024,
+                    transport: httpx.AsyncBaseTransport | None = None, resolver=_resolve) -> object:
+    """POST a form (and optional file parts) to one fixed public API and return its JSON reply.
+
+    For services STAR calls with the owner's key (song recognition). Same address checks and
+    pinning as fetch_page, one 15 s budget, no redirects, no proxy, reply capped at `max_bytes`.
+    Raises FetchRefused (also for a non-200 status or a reply that is not JSON) or httpx.HTTPError.
+    """
+    deadline = time.monotonic() + TOTAL_TIMEOUT
+    host, port, address = await _DNS_WORKERS.run(check_url, url, resolver=resolver, deadline=deadline)
+    pinned, host_header, extensions = _pinned(url, host, port, address)
+    headers = {"Host": host_header, "User-Agent": _USER_AGENT, "Accept": "application/json"}
+    async with httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False,
+                                 timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+        request = client.build_request("POST", pinned, data=form, files=files, headers=headers,
+                                       extensions=extensions)
+        response = await asyncio.wait_for(client.send(request, stream=True), timeout=_remaining(deadline))
+        try:
+            if response.status_code != 200:
+                raise FetchRefused(f"The service answered HTTP {response.status_code}")
+            body = bytearray()
+            async def read_all():
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > max_bytes:
+                        raise FetchRefused("The reply was larger than allowed")
+            await asyncio.wait_for(read_all(), timeout=_remaining(deadline))
+        finally:
+            await response.aclose()
+    try:
+        return json.loads(bytes(body))
+    except ValueError:
+        raise FetchRefused("The reply was not JSON") from None
+
+
 async def fetch_page(url: str, *, transport: httpx.AsyncBaseTransport | None = None, resolver=_resolve,
                      exempt: frozenset[tuple[str, int]] = frozenset(), max_chars: int = MAX_TEXT_CHARS) -> Page:
     """Fetch and reduce within one budget. Raises FetchRefused or httpx.HTTPError.
@@ -321,17 +371,10 @@ async def fetch_page(url: str, *, transport: httpx.AsyncBaseTransport | None = N
             # target: a public page must not be able to bounce the fetch onto the LAN.
             host, port, address = await _DNS_WORKERS.run(
                 check_url, current, resolver=resolver, exempt=exempt if hop == 0 else frozenset(), deadline=deadline)
-            parts = urlsplit(current)
-            # Connect to the checked address; the name goes in Host and in TLS SNI (certificate check).
-            target_host = f"[{address}]" if ":" in address else address
-            netloc = target_host if port in (80, 443) and port == (443 if parts.scheme == "https" else 80) \
-                else f"{target_host}:{port}"
-            pinned = parts._replace(netloc=netloc).geturl()
-            host_header = host if port == (443 if parts.scheme == "https" else 80) else f"{host}:{port}"
+            pinned, host_header, extensions = _pinned(current, host, port, address)
             headers = {"Host": host_header, "User-Agent": _USER_AGENT,
                        "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
                        "Accept-Language": "en;q=0.9"}
-            extensions = {"sni_hostname": host} if parts.scheme == "https" and address != host else {}
             request = client.build_request("GET", pinned, headers=headers, extensions=extensions)
             left = _remaining(deadline)
             response = await asyncio.wait_for(client.send(request, stream=True), timeout=left)

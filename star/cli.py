@@ -78,6 +78,15 @@ async def main(args):
     if args.command == "doctor":
         doctor()
         return
+    if args.command == "live-show":
+        # An explicit request: validate and plan only. Reads the named files, writes and sends nothing.
+        from .live_show import _read_bounded, plan_report
+        report = plan_report(_read_bounded(Path(args.manifest)),
+                             _read_bounded(Path(args.reviews)) if args.reviews else None,
+                             _read_bounded(Path(args.questions)) if args.questions else None,
+                             post_episode=args.post_episode)
+        print(json.dumps(report, indent=2, allow_nan=False))
+        return
     if args.command == "evals":
         from .evals import load_catalog, summarize_verdicts
         catalog = load_catalog(ROOT / "evals" / "roblox_cases.json")
@@ -265,6 +274,11 @@ def cli():
     sub.add_parser("doctor")
     sub.add_parser("evals", help="List Roblox evaluation definitions and their not-run status")
     sub.add_parser("tools")
+    show = sub.add_parser("live-show", help="Validate and plan an episode manifest offline (no rendering, posting or network)")
+    show.add_argument("manifest")
+    show.add_argument("--reviews", help="JSON list of review records for the readiness check")
+    show.add_argument("--questions", help="JSON list of moderated audience questions")
+    show.add_argument("--post-episode", action="store_true")
     sub.add_parser("studios")
     know = sub.add_parser("knowledge-add", help="Store a candidate project note for later review")
     know.add_argument("--project", required=True)

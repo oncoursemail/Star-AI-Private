@@ -71,6 +71,8 @@ class Settings:
     studio_tool_examples: bool = False    # opt-in: one example call appended to each error-prone Studio tool
     workspace_edit: bool = False
     debug_evidence_enabled: bool = False  # opt-in report analysis; never grants process execution or attachment
+    live_show_enabled: bool = False       # opt-in offline episode-manifest planner (star/live_show.py); no posting or rendering
+    minecraft_tools_enabled: bool = False  # opt-in offline pack/server-folder tools (star/minecraft_tools.py)
     max_calls: int = 12
     context_chars: int = 26000
     llama_server: str = ''
@@ -120,6 +122,7 @@ class Settings:
     blender_edit: bool = False             # explicit owner permission for new isolated scene jobs
     blender_executable: str = ''           # installed local executable; '' = discover without downloading
     blender_brain2: bool = False           # use the Blender on brain 2 (the second STAR server) instead of a local one
+    blender_motion_qa: bool = False        # offer the read-only animation motion check tool (star/animation_regression.py)
     # STAR Server (provider 'star_server'): an owner-entered private LAN address.
     # The server key is never stored here; it lives in the OS keyring.
     server_endpoint: str = ''
@@ -150,6 +153,7 @@ class Settings:
     learning_auto_live: bool = True
     research_auto_check: bool = False      # opt-in daily public-doc checks while desktop is open
     deep_research_enabled: bool = False    # candidate: bounded page reading for Team + Research
+    scholarly_research_enabled: bool = False  # deep research also asks Crossref/OpenAlex metadata (star/public_research.py)
     # Generate several, test, keep what works (star/best_of_n.py): 'off' or 'auto' (2 to best_of_n_max candidates
     # for code requests on STAR Server, as many as the free model slots allow). Off until the owner opts in.
     best_of_n: str = 'off'
@@ -158,6 +162,9 @@ class Settings:
     roblox_docs_live_enabled: bool = False  # opt-in live retrieval from create.roblox.com/docs; STAR_ROBLOX_DOCS_LIVE=1 also enables
     project_rules_enabled: bool = False    # opt-in: add the workspace's AGENTS.md (star/project_rules.py) to each turn
     luau_retry_ladder: bool = False        # opt-in: a second, thinking repair after a failed Luau repair
+    # Opt-in (star/incremental_repair.py): a failed tool call or a failed syntax check of a saved workspace file
+    # pauses other writes and gets at most two focused retries; what stays unresolved is noted in the answer.
+    incremental_repair: bool = False
     # Anti-slop post-check of the answer (star/slop.py): 'off', 'flag' (a note on invented APIs, unverifiable claims
     # and stubs) or 'trim' (the note, and filler lines outside code are removed). Off until the owner opts in.
     slop_check: str = 'off'
@@ -177,6 +184,10 @@ class Settings:
     # Settings > "Start thinking while I type" (star/prefill_warm.py): while the owner types, the server reads the
     # conversation and the draft into its prompt cache, so the answer starts sooner. Off by default.
     prefill_while_typing: bool = False
+    # Settings > Song recognition (star/music_recognition.py): off until the owner turns it on. The AudD and AcoustID
+    # keys live in the OS keyring. fpcalc_path = Chromaprint's fpcalc for AcoustID ('' = look on PATH; never downloaded).
+    music_recognition_enabled: bool = False
+    fpcalc_path: str = ''
 
     @classmethod
     def load(cls, file: Path):
@@ -207,12 +218,12 @@ class Settings:
         if not self.project.strip() or len(self.project) > 100:
             raise ValueError('Project name is invalid')
         if any(type(getattr(self, key)) is not bool
-               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled',
+               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled', 'live_show_enabled', 'minecraft_tools_enabled',
                             'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
-                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled', 'edit_diff')):
+                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled', 'edit_diff', 'music_recognition_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -248,6 +259,9 @@ class Settings:
                 or self.blender_executable.startswith(('\\\\', '//'))
                 or '://' in self.blender_executable):
             raise ValueError('Choose a trusted local Blender executable, not a URL or network share')
+        if (not isinstance(self.fpcalc_path, str) or len(self.fpcalc_path) > 2048 or '\x00' in self.fpcalc_path
+                or self.fpcalc_path.startswith(('\\\\', '//')) or '://' in self.fpcalc_path):
+            raise ValueError('Choose the local Chromaprint fpcalc program, not a URL or network share')
         if self.studio_edit and not self.studio_id.strip():
             raise ValueError('Choose a disposable Studio instance before editing')
         if not 1 <= self.comfy_port <= 65535 or not re.fullmatch(r'[A-Za-z0-9_-]{1,40}', self.comfy_prompt_node):
@@ -1052,12 +1066,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
              stream_tokens: bool = False, mode: str = 'auto', research: bool = False,
              cancel_event=None, github_enabled: bool = False, chat_id: str | None = None,
              owner_text: str | None = None, documents: list[Path] | None = None,
-             studio_configuration_home: Path | None = None, attachment_count: int = 0) -> str:
+             studio_configuration_home: Path | None = None, attachment_count: int = 0,
+             song_lookup: tuple[Path, str] | None = None) -> str:
     """User-controlled fast/automatic/agent routing; all hosted calls are opt-in.
 
     `owner_text` is what the owner typed, when `prompt` also carries text STAR added (an
     audio transcript, a note about video frames). Only the owner's own words can become an
-    automatically accepted lesson.
+    automatically accepted lesson. `song_lookup` = (attached WAV, catalog) the owner approved
+    in the composer for this message: it attaches the star_identify_song tool for one lookup.
     """
     from .knowledge import KnowledgeStore
     from . import lessons as learning
@@ -1191,6 +1207,11 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             # workspace, Studio, or network capability.
             route = replace(route, quick=False, max_calls=max(3, route.max_calls),
                             response_tokens=max(1600, route.response_tokens))
+        song_tool = None
+        if song_lookup is not None and settings.music_recognition_enabled is True:
+            from .music_recognition import ChatSongLookup
+            song_tool = ChatSongLookup(song_lookup[0], song_lookup[1], settings)
+            route = replace(route, quick=False, max_calls=max(3, route.max_calls))
         audited_event({'event':'route_selected','profile':route.profile,
                        'description':route.description,'model':route.model})
         quick = route.quick
@@ -1223,11 +1244,20 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         auto_web = bool(not research and settings.web_auto_search is not False and wants_fresh_web(prompt))
         allowed_context_chars = model_context_char_budget(settings, route.model)
         intelligence = for_settings(settings, home) if use_tools else None
-        workspace = Workspace(Path(settings.workspace)) if use_tools and settings.workspace else None
+        workspace = (Workspace(Path(settings.workspace), validate=settings.incremental_repair is True)
+                     if use_tools and settings.workspace else None)
         debug_evidence = None
         if workspace is not None and settings.debug_evidence_enabled is True:
             from .debug_evidence import DebugEvidenceTools
             debug_evidence = DebugEvidenceTools(workspace, enabled=True)
+        live_show = None
+        if workspace is not None and settings.live_show_enabled is True:
+            from .live_show import LiveShowTools
+            live_show = LiveShowTools(workspace, enabled=True)
+        minecraft_tools = None
+        if workspace is not None and settings.minecraft_tools_enabled is True:
+            from .minecraft_tools import MinecraftTools
+            minecraft_tools = MinecraftTools(workspace, enabled=True, allow_write=settings.workspace_edit is True)
         if use_tools and settings.tool_workshop_enabled:
             workshop = ToolWorkshop(home=home,project=settings.project,knowledge=knowledge,
                                     workspace=workspace,intelligence=intelligence)
@@ -1484,13 +1514,20 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                               github_enabled=bool(mode == 'agent' and github_enabled),
                               intelligence=intelligence, mcp_gateway=mcp_gateway,
                               mcp_registry=mcp_registry,
-                              tool_workshop=workshop, specialists=specialists)
+                              tool_workshop=workshop, specialists=specialists,
+                              incremental_repair=settings.incremental_repair is True)
                 if document_tools is not None:
                     kwargs['document_tools'] = document_tools
                 if reverse_engineering is not None:
                     kwargs['reverse_engineering'] = reverse_engineering
                 if debug_evidence is not None:
                     kwargs['debug_evidence'] = debug_evidence
+                if live_show is not None:
+                    kwargs['live_show'] = live_show
+                if minecraft_tools is not None:
+                    kwargs['minecraft_tools'] = minecraft_tools
+                if song_tool is not None:
+                    kwargs['song_lookup'] = song_tool  # type: ignore[assignment]  # kwargs' value type is inferred from the dict above
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.
