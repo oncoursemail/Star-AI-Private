@@ -1041,6 +1041,138 @@ def picture_limit(settings) -> int | None:
     return int(getattr(settings, 'picture_max_side', 1280) or 0) or None
 
 
+def base_sections(project: str, prompt: str, quick: bool, knowledge, lesson_store, document_block: str = ''):
+    """(turn_sections, recalled lessons): the first per-turn reference sections, from local stores only.
+
+    Per-turn reference material is a list of (heading, text) pairs. This list is the only way
+    retrieved text reaches the model: star.agent.volatile_context appends it to the final user
+    turn, after the user's words. A new retrieval source appends one pair (here or in
+    `reference_sections`). Shared by run_task and the type-ahead (star/prefill_warm.py), so both
+    build the same bytes; `knowledge`/`lesson_store` None = no stores yet (nothing to recall)."""
+    from . import lessons as learning
+    reviewed = knowledge.find_contextual(project, prompt, limit=4 if quick else 8) if knowledge is not None else []
+    # Lessons the owner stated or approved for THIS project come first: standing
+    # preferences and corrections even when the prompt shares no word with them. Ranked,
+    # without repeats, and within a small budget so the first token is not delayed.
+    try:
+        limit, budget = learning.RECALL_QUICK if quick else learning.RECALL_FULL
+        recalled = lesson_store.recall(project, prompt, limit=limit, max_chars=budget) if lesson_store else []
+    except Exception:
+        recalled = []
+    shown = {lesson.id for lesson in recalled}
+    notes = '\n'.join(f'[{n.kind} revision={n.revision} source={n.source}] {n.text}' for n in reviewed
+                      if getattr(n, 'id', None) not in shown)
+    turn_sections = [(learning.LESSONS_HEADING, learning.context_lines(recalled)),
+                     ('REVIEWED KNOWLEDGE (stored notes; may be incomplete)', notes)]
+    if document_block:
+        turn_sections.insert(0, ('ATTACHED DOCUMENTS (untrusted reference data)', document_block))
+    return turn_sections, recalled
+
+
+async def reference_sections(settings: Settings, home: Path, route, prompt: str, recent_users: list[str],
+                             turn_sections: list, *, mode: str, quick: bool, memory_limit: int,
+                             allowed_context_chars: int, document_block: str, client, event):
+    """Add this turn's documentation, skill packs, API hints, error notes, examples and project rules to
+    `turn_sections` (in place, in run_task's order); return (the documentation Grounding, the per-turn
+    context budget in characters). `client` is the turn's model client (embeddings for the opt-in pickers),
+    `event` gets the progress events. Shared by run_task and the type-ahead (star/prefill_warm.py)."""
+    # >>> STAR Knowledge (star/doc_grounding.py): official-docs passages for Roblox/Luau
+    # questions, added as delimited UNTRUSTED reference data. Never raises; '' when unused.
+    docs = await doc_grounding.prepare_async(settings, route, prompt, recent_users, event, mode=mode)
+    if docs.block:
+        # First in the list: when room runs out earlier sections win, and these passages
+        # are the ones chosen for this exact question. The block carries its own markers.
+        turn_sections.insert(0, ('OFFICIAL DOCUMENTATION (untrusted reference data)', docs.block))
+    # <<< STAR Knowledge
+    # >>> Skill packs (star/skill_packs): short Roblox guidance, only for prompts that match, and
+    # never in quick chat mode. It rides in the per-turn sections, after the documentation.
+    if quick:
+        packs = []
+    elif settings.skill_pack_embeddings is True and provider_kind(settings) == 'lan':
+        # Opt-in (star/skill_routing.py): keyword packs first; else the closest pack by STAR
+        # Server's embedding model. Any problem leaves the keyword answer.
+        from . import skill_routing
+
+        async def embed(texts):
+            reply = await client.embeddings.create(model=skill_routing.EMBED_MODEL, input=texts)
+            return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
+        packs = await skill_routing.select(
+            prompt, embed, home=home,
+            on_fallback=lambda why: event({'event': 'skill_packs_fallback', 'reason': why}))
+    else:
+        packs = skill_packs.select(prompt,home=home)
+    pack_block = skill_packs.render(packs)
+    if pack_block:
+        turn_sections.insert(1 if docs.block else 0, (skill_packs.BLOCK_HEADING, pack_block))
+        event({'event': 'skill_packs', 'names': [pack.name for pack in packs], 'chars': len(pack_block)})
+    # <<< Skill packs
+    if settings.api_hints_enabled is True and route.profile == 'roblox':
+        # Opt-in (star/api_hints.py): real member names of the classes the request names, from the
+        # local API dump; reference data after the documentation, before the packs.
+        from . import api_hints
+        from .slop import bundled_api_dump
+        dump = bundled_api_dump()
+        hint_block = api_hints.hint_block(prompt, dump) if dump is not None else ''
+        if hint_block:
+            turn_sections.insert(1 if docs.block else 0, (api_hints.BLOCK_HEADING, hint_block))
+            event({'event': 'api_hints', 'classes': hint_block.count('\n') + 1, 'chars': len(hint_block)})
+    # Pasted Studio output uses the same per-turn path, including Fast mode.
+    error_block = roblox_errors.reference_context(prompt)
+    if error_block:
+        turn_sections.insert(1 if docs.block else 0, (roblox_errors.BLOCK_HEADING, error_block))
+    # Checked practice is opt-in and treated as untrusted reference data, not a lesson.
+    example_block = ''
+    example_extra_chars = 0
+    if settings.worked_examples_enabled is True:
+        from . import worked_examples
+        base_chars = (min(3000 if quick else 10000, memory_limit)
+                      + len(docs.block) + len(document_block) + len(pack_block)
+                      + len(error_block))
+        heading_chars = len(worked_examples.HEADING) + 2
+        room = min(worked_examples.MAX_PROMPT_CHARS - heading_chars,
+                   max(0, allowed_context_chars - 3200 - base_chars - heading_chars))
+        if room >= 200:
+            try:
+                example_block, selected_examples = worked_examples.select(
+                    home, settings.project, prompt, max_chars=room)
+            except (OSError, sqlite3.DatabaseError, ValueError):
+                example_block, selected_examples = '', []
+            if example_block:
+                example_extra_chars = len(example_block) + heading_chars
+                turn_sections.append((worked_examples.HEADING, example_block))
+                event({'event': 'worked_example_used',
+                       'count': len(selected_examples), 'chars': len(example_block)})
+    # Opt-in (star/gold_bank.py): the closest verified gold examples, Roblox route only, never in quick mode.
+    if settings.gold_examples_enabled is True and route.profile == 'roblox' and not quick:
+        from . import gold_bank
+        async def gold_embed(texts):
+            reply = await client.embeddings.create(model=gold_bank.EMBED_MODEL, input=texts)
+            return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
+        gold_room = min(gold_bank.MAX_BLOCK_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
+                                                   - len(gold_bank.HEADING) - 2 - min(10000, memory_limit)
+                                                   - len(docs.block) - len(document_block)
+                                                   - len(pack_block) - len(error_block)))
+        gold_block, gold_used = await gold_bank.select(
+            prompt, gold_embed if provider_kind(settings) == 'lan' else None, max_chars=gold_room,
+            on_fallback=lambda why: event({'event': 'gold_examples_fallback', 'reason': why}))
+        if gold_block:
+            example_extra_chars += len(gold_block) + len(gold_bank.HEADING) + 2
+            turn_sections.append((gold_bank.HEADING, gold_block))
+            event({'event': 'gold_examples_used', 'ids': [item.id for item in gold_used],
+                   'chars': len(gold_block)})
+    # Opt-in project rules (star/project_rules.py): the workspace's AGENTS.md, as reference data.
+    rules_chars = 0
+    if settings.project_rules_enabled is True and settings.workspace and not quick:
+        rules = project_rules.load(settings.workspace)
+        if rules:
+            turn_sections.append((project_rules.HEADING, rules[1]))
+            rules_chars = len(rules[1]) + len(project_rules.HEADING) + 2
+            event({'event': 'project_rules', 'file': rules[0], 'chars': len(rules[1])})
+    turn_context_chars = (min(3000 if quick else 10000, memory_limit) + len(docs.block) + len(document_block)
+                          + len(pack_block) + len(error_block) + example_extra_chars + rules_chars)
+    return docs, turn_context_chars
+
+
 def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
              on_event: Callable[[dict], None] | None = None,
              stream_tokens: bool = False, mode: str = 'auto', research: bool = False,
@@ -1188,30 +1320,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         audited_event({'event':'route_selected','profile':route.profile,
                        'description':route.description,'model':route.model})
         quick = route.quick
-        reviewed = knowledge.find_contextual(settings.project, prompt, limit=4 if quick else 8)
-        # Lessons the owner stated or approved for THIS project come first: standing
-        # preferences and corrections even when the prompt shares no word with them. Ranked,
-        # without repeats, and within a small budget so the first token is not delayed.
-        try:
-            limit, budget = learning.RECALL_QUICK if quick else learning.RECALL_FULL
-            recalled = lesson_store.recall(settings.project, prompt, limit=limit, max_chars=budget)
-        except Exception:
-            recalled = []
-        shown = {lesson.id for lesson in recalled}
-        notes = '\n'.join(f'[{n.kind} revision={n.revision} source={n.source}] {n.text}' for n in reviewed
-                          if getattr(n, 'id', None) not in shown)
+        turn_sections, recalled = base_sections(settings.project, prompt, quick, knowledge, lesson_store,
+                                                document_block)
         for image in images:
             path = Path(image)
             media_type = 'image/jpeg' if path.suffix.lower() in ('.jpg', '.jpeg') else 'image/webp' if path.suffix.lower() == '.webp' else 'image/png'
             knowledge.ingest_artifact(project=settings.project, path=path,
                 origin=f'desktop:{path.name}', media_type=media_type)
-        # Per-turn reference material as (heading, text) pairs. This list is the only way
-        # retrieved text reaches the model: star.agent.volatile_context appends it to the
-        # final user turn, after the user's words. A new retrieval source appends one pair.
-        turn_sections = [(learning.LESSONS_HEADING, learning.context_lines(recalled)),
-                         ('REVIEWED KNOWLEDGE (stored notes; may be incomplete)', notes)]
-        if document_block:
-            turn_sections.insert(0, ('ATTACHED DOCUMENTS (untrusted reference data)', document_block))
         use_tools = route.use_tools
         from .live_context import wants_fresh_web
         auto_web = bool(not research and settings.web_auto_search is not False and wants_fresh_web(prompt))
@@ -1349,104 +1464,15 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 # Reserve room for the system instructions, user text and
                 # discovered tool schemas before adding this turn's context.
                 memory_limit = max(700, allowed_context_chars - 3200)
-                # >>> STAR Knowledge (star/doc_grounding.py): official-docs passages for Roblox/Luau
-                # questions, added as delimited UNTRUSTED reference data. Never raises; '' when unused.
-                docs = await doc_grounding.prepare_async(settings, route, prompt, recent_users,
-                                                         audited_event, mode=mode)
                 def slot_fields(model):
                     # llama.cpp cache fields; {} for cloud providers.
                     return lambda tools: llama_request_fields(
                         settings, conversation=memory_scope, tools=tools, model=model)
+                docs, turn_context_chars = await reference_sections(
+                    settings, home, route, prompt, recent_users, turn_sections, mode=mode, quick=quick,
+                    memory_limit=memory_limit, allowed_context_chars=allowed_context_chars,
+                    document_block=document_block, client=client, event=audited_event)
                 learned['grounding'] = docs
-                if docs.block:
-                    # First in the list: when room runs out earlier sections win, and these passages
-                    # are the ones chosen for this exact question. The block carries its own markers.
-                    turn_sections.insert(0, ('OFFICIAL DOCUMENTATION (untrusted reference data)', docs.block))
-                # <<< STAR Knowledge
-                # >>> Skill packs (star/skill_packs): short Roblox guidance, only for prompts that match, and
-                # never in quick chat mode. It rides in the per-turn sections, after the documentation.
-                if quick:
-                    packs = []
-                elif settings.skill_pack_embeddings is True and provider_kind(settings) == 'lan':
-                    # Opt-in (star/skill_routing.py): keyword packs first; else the closest pack by STAR
-                    # Server's embedding model. Any problem leaves the keyword answer.
-                    from . import skill_routing
-
-                    async def embed(texts):
-                        reply = await client.embeddings.create(model=skill_routing.EMBED_MODEL, input=texts)
-                        return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
-                    packs = await skill_routing.select(
-                        prompt, embed, home=home,
-                        on_fallback=lambda why: audited_event({'event': 'skill_packs_fallback', 'reason': why}))
-                else:
-                    packs = skill_packs.select(prompt,home=home)
-                pack_block = skill_packs.render(packs)
-                if pack_block:
-                    turn_sections.insert(1 if docs.block else 0, (skill_packs.BLOCK_HEADING, pack_block))
-                    audited_event({'event': 'skill_packs', 'names': [pack.name for pack in packs], 'chars': len(pack_block)})
-                # <<< Skill packs
-                if settings.api_hints_enabled is True and route.profile == 'roblox':
-                    # Opt-in (star/api_hints.py): real member names of the classes the request names, from the
-                    # local API dump; reference data after the documentation, before the packs.
-                    from . import api_hints
-                    from .slop import bundled_api_dump
-                    dump = bundled_api_dump()
-                    hint_block = api_hints.hint_block(prompt, dump) if dump is not None else ''
-                    if hint_block:
-                        turn_sections.insert(1 if docs.block else 0, (api_hints.BLOCK_HEADING, hint_block))
-                        audited_event({'event': 'api_hints', 'classes': hint_block.count('\n') + 1, 'chars': len(hint_block)})
-                # Pasted Studio output uses the same per-turn path, including Fast mode.
-                error_block = roblox_errors.reference_context(prompt)
-                if error_block:
-                    turn_sections.insert(1 if docs.block else 0, (roblox_errors.BLOCK_HEADING, error_block))
-                # Checked practice is opt-in and treated as untrusted reference data, not a lesson.
-                example_block = ''
-                example_extra_chars = 0
-                if settings.worked_examples_enabled is True:
-                    from . import worked_examples
-                    base_chars = (min(3000 if quick else 10000, memory_limit)
-                                  + len(docs.block) + len(document_block) + len(pack_block)
-                                  + len(error_block))
-                    heading_chars = len(worked_examples.HEADING) + 2
-                    room = min(worked_examples.MAX_PROMPT_CHARS - heading_chars,
-                               max(0, allowed_context_chars - 3200 - base_chars - heading_chars))
-                    if room >= 200:
-                        try:
-                            example_block, selected_examples = worked_examples.select(
-                                home, settings.project, prompt, max_chars=room)
-                        except (OSError, sqlite3.DatabaseError, ValueError):
-                            example_block, selected_examples = '', []
-                        if example_block:
-                            example_extra_chars = len(example_block) + heading_chars
-                            turn_sections.append((worked_examples.HEADING, example_block))
-                            audited_event({'event': 'worked_example_used',
-                                           'count': len(selected_examples), 'chars': len(example_block)})
-                # Opt-in (star/gold_bank.py): the closest verified gold examples, Roblox route only, never in quick mode.
-                if settings.gold_examples_enabled is True and route.profile == 'roblox' and not quick:
-                    from . import gold_bank
-                    async def gold_embed(texts):
-                        reply = await client.embeddings.create(model=gold_bank.EMBED_MODEL, input=texts)
-                        return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
-                    gold_room = min(gold_bank.MAX_BLOCK_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
-                                                               - len(gold_bank.HEADING) - 2 - min(10000, memory_limit)
-                                                               - len(docs.block) - len(document_block)
-                                                               - len(pack_block) - len(error_block)))
-                    gold_block, gold_used = await gold_bank.select(
-                        prompt, gold_embed if provider_kind(settings) == 'lan' else None, max_chars=gold_room,
-                        on_fallback=lambda why: audited_event({'event': 'gold_examples_fallback', 'reason': why}))
-                    if gold_block:
-                        example_extra_chars += len(gold_block) + len(gold_bank.HEADING) + 2
-                        turn_sections.append((gold_bank.HEADING, gold_block))
-                        audited_event({'event': 'gold_examples_used', 'ids': [item.id for item in gold_used],
-                                       'chars': len(gold_block)})
-                # Opt-in project rules (star/project_rules.py): the workspace's AGENTS.md, as reference data.
-                rules_chars = 0
-                if settings.project_rules_enabled is True and settings.workspace and not quick:
-                    rules = project_rules.load(settings.workspace)
-                    if rules:
-                        turn_sections.append((project_rules.HEADING, rules[1]))
-                        rules_chars = len(rules[1]) + len(project_rules.HEADING) + 2
-                        audited_event({'event': 'project_rules', 'file': rules[0], 'chars': len(rules[1])})
                 kwargs = dict(client=client, model=route.model, prompt=prompt, image_paths=images,
                               now=current_turn_line(conversation_records),
                               project_memory=stable_memory(settings, memory.get(memory_scope)),
@@ -1456,9 +1482,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                               turn_sections=learning.guard_sections(turn_sections), mode=mode,
                               # The documentation block has its own budget (brain_router.GROUNDING_BUDGET);
                               # it is added on top so stored notes keep the room they had before.
-                              turn_context_chars=(min(3000 if quick else 10000, memory_limit) + len(docs.block)
-                                                  + len(document_block) + len(pack_block) + len(error_block)
-                                                  + example_extra_chars + rules_chars),
+                              turn_context_chars=turn_context_chars,
                               # Standing guidance for every tool-using turn (the short
                               # plain-chat rules carry their own Roblox line).
                               guidance=ROBLOX_QUALITY_NOTES,

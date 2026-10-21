@@ -61,6 +61,15 @@ class FakeServer:
 def server(monkeypatch):
     fake = FakeServer()
     monkeypatch.setattr(prefill, "_TRANSPORT", httpx.MockTransport(fake.handle))
+    # The draft's own requests only; the reference block after it has its own tests (tail_server).
+    monkeypatch.setattr(prefill, "turn_tail", lambda *_, **__: ("", 0, "not in this test"))
+    return fake
+
+
+@pytest.fixture
+def tail_server(monkeypatch):
+    fake = FakeServer()
+    monkeypatch.setattr(prefill, "_TRANSPORT", httpx.MockTransport(fake.handle))
     return fake
 
 
@@ -280,7 +289,7 @@ def test_the_turn_stays_on_its_slot_while_its_own_warm_up_is_still_reading(monke
 def test_draft_warmer_keeps_only_the_newest_draft_and_stops_on_a_real_request():
     started, release, seen = threading.Event(), threading.Event(), []
 
-    def slow(settings, home, chat_id, text, *, mode, research, cancel_event):
+    def slow(settings, home, chat_id, text, *, mode, research, cancel_event, superseded):
         seen.append((text, mode, cancel_event))
         started.set()
         release.wait(5)
@@ -386,3 +395,59 @@ def test_chunks_stop_when_another_client_starts_generating(desk, server, monkeyp
     report = warm_draft(settings, desk.home, desk.chat, draft, probe=probe)
     assert report["primed"] is True and report["yielded"] is True
     assert len(server.sent()) == 1 and len(asked) == 2
+
+
+# --- the turn's reference block after the draft (turn_tail) ------------------------------------------------
+
+def _rendered(messages):
+    return FakeServer().handle(httpx.Request("POST", "http://x/apply-template", json={"messages": messages})).json()["prompt"]
+
+
+@pytest.mark.parametrize("mode", ["fast", "auto"])
+def test_the_reference_block_is_primed_up_to_the_time_line(desk, tail_server, monkeypatch, mode):
+    from star import doc_grounding
+    from test_doc_grounding import FakeKnowledge, passage
+    knowledge = FakeKnowledge([passage(n, "Tween a part with TweenService:Create. " * 20) for n in range(1, 5)])
+    monkeypatch.setattr(doc_grounding, "client_for", lambda settings: knowledge)
+    settings = on(desk.settings)
+    if mode == "auto":
+        # A tool turn is warmed with the tool list this chat last sent: one earlier Roblox turn.
+        desk.chats.add("STAR", "user", "Write a Luau script for my Roblox game that spins a part", chat_id=desk.chat)
+        run_task(settings, "Write a Luau script for my Roblox game that spins a part", mode=mode, chat_id=desk.chat)
+        desk.chats.add("STAR", "assistant", "real answer", chat_id=desk.chat)
+        desk.models.requests.clear()
+    draft = "How do I tween a part in my Roblox game so it moves up 5 studs over 2 seconds?"
+    report = warm_draft(settings, desk.home, desk.chat, draft, mode=mode)
+    assert report["primed"] is True and report["tail"]["primed"] is True, report
+    assert report["with_tools"] is (mode == "auto")
+    primed = tail_server.sent()[-1]["body"]["prompt"]
+    assert "OFFICIAL DOCUMENTATION" in primed and "Now: " not in primed.rsplit("<|im_start|>user", 1)[1]
+    # Enter with the same text: the real request starts with every byte that was primed, and only the time
+    # line and the closing tokens come after it.
+    desk.chats.add("STAR", "user", draft, chat_id=desk.chat)
+    run_task(settings, draft, mode=mode, chat_id=desk.chat)
+    real = _rendered(desk.models.requests[0]["messages"])
+    assert real.startswith(primed), (real[:len(primed)][-300:], primed[-300:])
+    rest = real[len(primed):]
+    assert rest.startswith("Now: ") and "OFFICIAL DOCUMENTATION" not in rest and len(rest) < 200
+
+
+def test_no_reference_block_when_the_turn_adds_what_the_draft_cannot_know(desk, tail_server, monkeypatch):
+    settings = on(desk.settings)
+    settings.edit_diff = True
+    pasted = "Make the part red:\n```lua\n" + "local part = workspace.Part\n" * 12 + "```"
+    report = warm_draft(settings, desk.home, desk.chat, pasted, mode="fast")
+    assert report["primed"] is True and report["tail"] == {"skipped": "edit_diff"}
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "What is the latest Roblox news today?",
+                        mode="fast", research=True)
+    assert report["tail"] == {"skipped": "research"}
+    # A newer draft is waiting: it will be primed instead.
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?",
+                        mode="fast", superseded=lambda: True)
+    assert report["primed"] is True and "tail" not in report
+
+
+def test_the_reference_block_leaves_no_trace(desk, tail_server):
+    before = footprint(desk.home)
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?", mode="fast")
+    assert report["tail"]["primed"] is True and footprint(desk.home) == before
