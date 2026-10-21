@@ -112,6 +112,19 @@ CLIP_INTEROP_ACTIONS = frozenset({
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_INTEROP_ACTIONS
 # A static read-only source index; no arbitrary fetch/install/execute capability.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | {'gameLabCatalog'}
+# Business uses only local draft and review actions; it cannot publish, spend or contact buyers.
+# Do not import the commerce package at desktop startup: its art scanner uses Pillow.
+COMMERCE_ACTIONS = frozenset({
+    'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview',
+    'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
+    'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
+    'commerceLearning', 'commerceImportDailyMetrics',
+    'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
+    'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
+    'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
+    'commerceApprovals', 'commerceApprovalDecide', 'commerceApprovalExecute',
+})
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
 
 # A background warm-up (server check + prompt-cache priming) gives way at once to
 # anything that talks to the model server or changes what it would talk to.
@@ -125,7 +138,7 @@ WARM_UP_STOPPERS = frozenset({
 # server keys go straight to the OS keyring through saveProviderKey.
 PERMITTED_SETTINGS = frozenset({
     'endpoint','model','fast_model','reasoning_model','roblox_model','vision_model',
-    'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled',
+    'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled','commerce_enabled',
     'tool_workshop_enabled','specialists_enabled','specialist_parallelism','provider',
     'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','debug_evidence_enabled','max_calls',
     'context_chars','reduced_motion','comfy_workflow','comfy_prompt_node','comfy_port',
@@ -728,6 +741,14 @@ def launch():
             self.research_timer.timeout.connect(self._research_tick)
             self.research_timer.start()
             QTimer.singleShot(10_000, self._research_tick)
+            # Commerce Pilot scans private, owner-imported supplier rows while STAR
+            # Desktop is open. Opt-in only, rate-capped, no external writes/network.
+            self.commerce_pilot_running = threading.Event()
+            self.commerce_pilot_timer = QTimer(self)
+            self.commerce_pilot_timer.setInterval(15 * 60 * 1000)
+            self.commerce_pilot_timer.timeout.connect(self._commerce_pilot_tick)
+            self.commerce_pilot_timer.start()
+            QTimer.singleShot(30_000, self._commerce_pilot_tick)
             self.shutdownRequested.connect(QApplication.instance().quit)
             self.allowed_files: set[Path] = set()
             self.active_task = False
@@ -791,6 +812,30 @@ def launch():
                 self.pool.submit(worker)
             except RuntimeError:
                 self.research_running.clear()
+
+        def _commerce_pilot_tick(self):
+            """Opt-in local seller-catalog safety check; never an external worker.
+
+            Runs at most one scan job per desktop scheduler tick. A paused shop,
+            an opt-out, or a not-yet-due configured business results in no work.
+            """
+            if self._closing or self.commerce_pilot_running.is_set():
+                return
+            self.commerce_pilot_running.set()
+
+            def worker():
+                try:
+                    from .commerce.autopilot import run_due_pilot_checks
+                    current = Settings.load(self.settings_file)
+                    if current.commerce_enabled is True:
+                        run_due_pilot_checks(app_data(), current.project)
+                finally:
+                    self.commerce_pilot_running.clear()
+
+            try:
+                self.pool.submit(worker)
+            except RuntimeError:
+                self.commerce_pilot_running.clear()
 
         def _warm_target(self):
             """What a message sent now would talk to. Runs on the warm-up thread."""
@@ -1191,6 +1236,24 @@ def launch():
                         self._run(rid, action, research_task)
                         return json.dumps({'ok':True,'pending':True,'requestId':rid})
                     return json.dumps({'ok':True,'data':research_task()},default=str)
+                # String literals preserve the standalone Qt bridge test harness that
+                # extracts invoke() without its module globals. Keep in sync with the allowlist.
+                if action in (
+                    'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview',
+                    'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
+                    'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
+    'commerceLearning', 'commerceImportDailyMetrics',
+    'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
+    'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
+    'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
+    'commerceApprovals', 'commerceApprovalDecide', 'commerceApprovalExecute',
+                ):
+                    from .commerce.workspace import handle_commerce
+                    current = Settings.load(self.settings_file)
+                    if current.commerce_enabled is not True:
+                        raise PermissionError('Business tools are off. Turn them on in Settings > Tools.')
+                    result = handle_commerce(action, body, project=current.project, home=app_data())
+                    return json.dumps({'ok':True,'data':result})
                 if action=='bootstrap':return json.dumps({'ok':True,'data':_get_state(self.settings_file,self.runtime,busy=self.active_task,studio_status=self.studio_status)})
                 if action=='brainSnapshot':return json.dumps({'ok':True,'data':brain_snapshot(self.settings_file,app_data())})
                 if action=='plannerStatus':return json.dumps({'ok':True,'data':planner_snapshot(self.settings_file)})

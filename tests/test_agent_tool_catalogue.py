@@ -56,6 +56,8 @@ HUB = ["star_roblox_marketplace_search", "star_roblox_creator_store_search", "st
 CRAFT = ["star_roblox_craft_audit", "star_roblox_craft_recipe"]
 # Experimental Asset Forge (star/intelligence.py ASSET_TOOLS); owner opt-in required.
 ASSET = ["star_asset_search", "star_building_plan", "star_terrain_preview"]
+# Business tools (star/commerce_tools.py); owner opt-in (commerce_enabled), prompt-scoped, propose-only.
+COMMERCE = ["star_commerce_overview", "star_commerce_draft_candidate", "star_commerce_propose_action"]
 # Optional architectural planning tools; STAR_ARCHITECTURE_TOOLS=1 only.
 ARCHITECTURE = ["star_architecture_preview", "star_architecture_compare_styles"]
 # Prepared shared stores only: not in ordered general-prompt tool expectations.
@@ -263,10 +265,11 @@ def test_the_written_lists_are_the_whole_built_in_catalogue():
     from star import intelligence, mcp_connections, mcp_registry, specialist_agents, tool_workshop, workspace
     assert set(intelligence.ALL_TOOLS) == set(SKILLS + OBSIDIAN + GRAPHIFY + ROBLOX_GAMES + ROBLOX_LINKS
                                              + ROBLOX_FORUM + ROBLOX_VIDEO + STAR_KNOWLEDGE + ROBLOX_CLOUD
-                                             + HUB + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE)
+                                             + HUB + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE + COMMERCE)
     assert [tool["name"] for tool in intelligence.ROBLOX_HUB_TOOLS] == HUB
     assert [tool["name"] for tool in intelligence.ARCHITECTURE_TOOLS] == ARCHITECTURE
     assert [tool["name"] for tool in intelligence.ASSET_TOOLS] == ASSET
+    assert [tool["name"] for tool in intelligence.COMMERCE_TOOLS] == COMMERCE
     assert [tool["name"] for tool in intelligence.SKILL_TOOLS] == SKILLS
     assert [tool["name"] for tool in intelligence.OBSIDIAN_TOOLS] == OBSIDIAN
     assert {tool["name"] for tool in workspace.TOOLS} == set(WORKSPACE_READ + WORKSPACE_WRITE + WORKSPACE_CREATOR + WORKSPACE_GAME)

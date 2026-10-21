@@ -33,6 +33,7 @@ from .shared_brain_runtime import (RUNTIME_TOOLS, SharedBrainUnavailable,
                                    shared_store_present)
 from . import design_db, design_md, map_plan
 from .roblox_docs_live import RobloxDocsLive, live_enabled
+from .commerce_tools import COMMERCE_TOOLS, COMMERCE_TOOL_NAMES, COMMERCE_TRIGGER, call_commerce_tool
 
 
 def _tool(name: str, description: str, properties: dict, required: tuple[str, ...] = ()) -> dict:
@@ -316,7 +317,7 @@ _CLOUD_TRIGGER = re.compile(r"\b(open.?cloud|owned.universe|owner.analytics|auth
 ALL_TOOLS = {tool["name"]: tool for tool in (*SKILL_TOOLS, *OBSIDIAN_TOOLS, *GRAPHIFY_TOOLS,
              *ROBLOX_GAME_TOOLS, *ROBLOX_KNOWLEDGE_TOOLS, *DOC_KNOWLEDGE_TOOLS, *ROBLOX_VIDEO_TOOLS,
              *ROBLOX_CLOUD_TOOLS, *ROBLOX_HUB_TOOLS, *CRAFT_TOOLS, *ASSET_TOOLS, *DESIGN_TOOLS, *MAP_PLAN_TOOLS, *STUDIO_LAB_TOOLS, *ROBLOX_DOCS_LIVE_TOOLS, *RUNTIME_TOOLS, *ARCHITECTURE_TOOLS,
-             *VFX_TOOLS)}
+             *VFX_TOOLS, *COMMERCE_TOOLS)}
 _DOC_TOOL_NAMES = frozenset(tool["name"] for tool in DOC_KNOWLEDGE_TOOLS)
 _SHARED_TOOL_NAMES = frozenset(tool["name"] for tool in RUNTIME_TOOLS)
 _LEGACY_GRAPH_READ_NAMES = frozenset({"star_graphify_query", "star_graphify_stats"})
@@ -358,7 +359,7 @@ class LocalIntelligence:
     def __init__(self, *, home: Path, workspace: Path | None = None,
                  obsidian_vault: Path | None = None, skills_enabled: bool = True,
                  graphify_enabled: bool = True, roblox_research_enabled: bool = True,
-                 asset_forge_enabled: bool = False, docs=None, cloud=None, design_enabled: bool = True,
+                 asset_forge_enabled: bool = False, commerce_enabled: bool = False, project: str = "STAR", docs=None, cloud=None, design_enabled: bool = True,
                  map_plans_enabled: bool = True, studio_lab_enabled: bool = False,
                  vfx_studio_enabled: bool = False,
                  docs_live: RobloxDocsLive | None = None,
@@ -392,6 +393,8 @@ class LocalIntelligence:
             self.roblox_hub = RobloxIntelligenceHub(analytics_universes="") if roblox_research_enabled else None
             self.roblox_hub_config_error = True
         self.asset_forge_enabled = asset_forge_enabled
+        self.commerce_enabled = commerce_enabled is True
+        self.project = project
         if skills_enabled:
             install_starters(home / "skills")
             self.skills = SkillLibrary(workspace=workspace, home=home, bundled=PACKS_DIR)
@@ -453,6 +456,8 @@ class LocalIntelligence:
             "obsidian": {"enabled": self.vault is not None,
                          "read_only": True,
                          "note": "Select an Obsidian vault folder and explicitly enable access."},
+            "commerce": {"enabled": self.commerce_enabled, "needs_owner_approval": True,
+                         "tools": [tool["name"] for tool in COMMERCE_TOOLS] if self.commerce_enabled else []},
             "asset_forge": {"enabled": self.asset_forge_enabled,
                             "online_search": self.asset_forge_enabled and self.roblox is not None},
             "craft": {"enabled": self.roblox is not None, "read_only": True,
@@ -482,6 +487,8 @@ class LocalIntelligence:
                 is_roblox_dev_prompt(prompt) or re.search(r"\b(blender|3d|procedural|poly.?haven|game\s?dev)\b", prompt, re.I)):
             # Only the first asset tool uses a third-party HTTP endpoint.
             result.extend(ASSET_TOOLS if self.roblox is not None else ASSET_TOOLS[1:])
+        if self.commerce_enabled and COMMERCE_TRIGGER.search(prompt):
+            result.extend(COMMERCE_TOOLS)
         if self.skills and _SKILL_TRIGGER.search(prompt):
             result.extend(SKILL_TOOLS)
         if self.vault and (_VAULT_TRIGGER.search(prompt) or (self.vault_is_brain and _BRAIN_TRIGGER.search(prompt))):
@@ -581,6 +588,10 @@ class LocalIntelligence:
                 "rendered": False, "studio_imported": False,
                 "note": "These are deterministic design prototypes, not ranked visual-quality results.",
             }
+        if name in COMMERCE_TOOL_NAMES:
+            if not self.commerce_enabled:
+                raise PermissionError("Turn on Business tools in Settings before using commerce tools")
+            return call_commerce_tool(name, args, project=self.project, home=self.home)
         if name in _ASSET_TOOL_NAMES:
             if not self.asset_forge_enabled:
                 raise PermissionError("Enable Asset Forge in Tools before using its tools")
@@ -899,6 +910,8 @@ def for_settings(settings, home: Path) -> LocalIntelligence:
         graph_boundary_check=graph_boundary_check,
         roblox_research_enabled=getattr(settings, "roblox_research_enabled", True),
         asset_forge_enabled=getattr(settings, "asset_forge_enabled", False),
+        commerce_enabled=getattr(settings, "commerce_enabled", False) is True,
+        project=getattr(settings, "project", "STAR"),
         docs=client_for(settings),
         cloud=RobloxCloud(home=home),
         design_enabled=getattr(settings, "design_tools_enabled", True) is not False and _env_on("STAR_DESIGN_TOOLS"),
