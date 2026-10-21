@@ -2,6 +2,7 @@ import {useCallback,useEffect,useRef,useState} from 'react'
 import {ArrowUpRight,Check,Clipboard,FileInput,LockKeyhole,PackageSearch,RefreshCw,ShieldAlert,Sparkles,TrendingUp} from 'lucide-react'
 import {request} from './bridge'
 import './commerce-dropshipping.css'
+import {CommercePilot} from './CommercePilot'
 
 type Offer = {
   sku:string;supplier:string;title:string;category:string;url:string
@@ -35,7 +36,7 @@ export function CommerceDropshipping({businessId,project,preview}:{
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
-  const [tab,setTab]=useState<'products'|'research'|'support'>('products')
+  const [tab,setTab]=useState<'products'|'research'|'support'|'autopilot'>('products')
   const [csv,setCsv]=useState('')
   const [source,setSource]=useState('Owner-authorized supplier catalog')
   const [ownerConfirmed,setConfirmed]=useState(false)
@@ -119,6 +120,7 @@ export function CommerceDropshipping({businessId,project,preview}:{
         <button type="button" aria-current={tab==='products'?'page':undefined} onClick={()=>setTab('products')}>Product sourcing</button>
         <button type="button" aria-current={tab==='research'?'page':undefined} onClick={()=>setTab('research')}>Demand & distribution</button>
         <button type="button" aria-current={tab==='support'?'page':undefined} onClick={()=>setTab('support')}>Support desk</button>
+        <button type="button" aria-current={tab==='autopilot'?'page':undefined} onClick={()=>setTab('autopilot')}>Autopilot</button>
       </nav>
       {tab==='products'&&<>
         <div className="commerce-ds-section-head"><div><h3>Supplier catalog</h3>
@@ -225,6 +227,7 @@ export function CommerceDropshipping({businessId,project,preview}:{
             <span>Owner review required. Order identity not verified. Gmail not connected. No email sent.</span></div>}
         </div>
       </>}
+      {tab==='autopilot'&&<CommercePilot businessId={businessId} project={project} preview={preview}/>}
     </>}
   </section>
 }

@@ -121,6 +121,7 @@ COMMERCE_ACTIONS = frozenset({
     'commerceLearning', 'commerceImportDailyMetrics',
     'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
     'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
+    'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
 })
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
 
@@ -739,6 +740,14 @@ def launch():
             self.research_timer.timeout.connect(self._research_tick)
             self.research_timer.start()
             QTimer.singleShot(10_000, self._research_tick)
+            # Commerce Pilot scans private, owner-imported supplier rows while STAR
+            # Desktop is open. Opt-in only, rate-capped, no external writes/network.
+            self.commerce_pilot_running = threading.Event()
+            self.commerce_pilot_timer = QTimer(self)
+            self.commerce_pilot_timer.setInterval(15 * 60 * 1000)
+            self.commerce_pilot_timer.timeout.connect(self._commerce_pilot_tick)
+            self.commerce_pilot_timer.start()
+            QTimer.singleShot(30_000, self._commerce_pilot_tick)
             self.shutdownRequested.connect(QApplication.instance().quit)
             self.allowed_files: set[Path] = set()
             self.active_task = False
@@ -802,6 +811,29 @@ def launch():
                 self.pool.submit(worker)
             except RuntimeError:
                 self.research_running.clear()
+
+        def _commerce_pilot_tick(self):
+            """Opt-in local seller-catalog safety check; never an external worker.
+
+            Runs at most one scan job per desktop scheduler tick. A paused shop,
+            an opt-out, or a not-yet-due configured business results in no work.
+            """
+            if self._closing or self.commerce_pilot_running.is_set():
+                return
+            self.commerce_pilot_running.set()
+
+            def worker():
+                try:
+                    from .commerce.autopilot import run_due_pilot_checks
+                    project = Settings.load(self.settings_file).project
+                    run_due_pilot_checks(app_data(), project)
+                finally:
+                    self.commerce_pilot_running.clear()
+
+            try:
+                self.pool.submit(worker)
+            except RuntimeError:
+                self.commerce_pilot_running.clear()
 
         def _warm_target(self):
             """What a message sent now would talk to. Runs on the warm-up thread."""
@@ -1211,6 +1243,7 @@ def launch():
     'commerceLearning', 'commerceImportDailyMetrics',
     'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
     'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
+    'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
                 ):
                     from .commerce.workspace import handle_commerce
                     current = Settings.load(self.settings_file)
