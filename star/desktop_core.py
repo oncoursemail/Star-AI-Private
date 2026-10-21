@@ -140,6 +140,7 @@ class Settings:
     learning_digest_cloud: bool = False   # ...also when the selected provider is a hosted one
     practice_lessons_enabled: bool = False  # off until the owner opts in
     worked_examples_enabled: bool = False   # read-only retrieval, off until owner opts in
+    gold_examples_enabled: bool = False     # verified licence-recorded examples (star/gold_bank.py), opt-in
     presolve_enabled: bool = False          # overnight pre-solved answers (star/presolve.py), off until owner opts in
     # Owner default (O1): night school's text lessons that won the paired gate go live for 14 days, visibly, with undo
     # (star/learned_week.py). False = bundles only add candidates that wait for review.
@@ -205,7 +206,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled')):
+                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -1415,6 +1416,24 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                             turn_sections.append((worked_examples.HEADING, example_block))
                             audited_event({'event': 'worked_example_used',
                                            'count': len(selected_examples), 'chars': len(example_block)})
+                # Opt-in (star/gold_bank.py): the closest verified gold examples, Roblox route only, never in quick mode.
+                if settings.gold_examples_enabled is True and route.profile == 'roblox' and not quick:
+                    from . import gold_bank
+                    async def gold_embed(texts):
+                        reply = await client.embeddings.create(model=gold_bank.EMBED_MODEL, input=texts)
+                        return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
+                    gold_room = min(gold_bank.MAX_BLOCK_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
+                                                               - len(gold_bank.HEADING) - 2 - min(10000, memory_limit)
+                                                               - len(docs.block) - len(document_block)
+                                                               - len(pack_block) - len(error_block)))
+                    gold_block, gold_used = await gold_bank.select(
+                        prompt, gold_embed if provider_kind(settings) == 'lan' else None, max_chars=gold_room,
+                        on_fallback=lambda why: audited_event({'event': 'gold_examples_fallback', 'reason': why}))
+                    if gold_block:
+                        example_extra_chars += len(gold_block) + len(gold_bank.HEADING) + 2
+                        turn_sections.append((gold_bank.HEADING, gold_block))
+                        audited_event({'event': 'gold_examples_used', 'ids': [item.id for item in gold_used],
+                                       'chars': len(gold_block)})
                 # Opt-in project rules (star/project_rules.py): the workspace's AGENTS.md, as reference data.
                 rules_chars = 0
                 if settings.project_rules_enabled is True and settings.workspace and not quick:
