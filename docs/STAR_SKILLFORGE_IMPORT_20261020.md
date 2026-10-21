@@ -1,8 +1,8 @@
 # STAR SkillForge: Safe Agent Skills Import and Priority Roadmap
 
-**Date:** 2026-10-20  
-**Scope:** private `star/next` development feature; not in the public installer.  
-**Implementation:** `star/skill_import.py`, `scripts/skill_review.py`, and `tests/test_skill_import.py`.
+- **Date:** 2026-10-20
+- **Scope:** private `star/next` development feature; not in the public installer.
+- **Implementation:** `star/skill_import.py`, `scripts/skill_review.py`, and `tests/test_skill_import.py`.
 
 ## Decision
 
