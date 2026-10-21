@@ -24,6 +24,7 @@ import type {ModelTeamReport} from './ModelFleetPanel'
 import {ReviewToolsPanel} from './ReviewToolsPanel'
 import {SettingsPage,type UpdateInfo} from './SettingsPage'
 import {Composer,type Availability,type ChatMode} from './Composer'
+import type {SongLookup} from './MusicRecognition'
 import {imageReadiness,webSearchAvailability} from './availability'
 import {overLimitMessage,promptKind} from './promptLimits'
 import {StarPet,type PetState} from './StarPet'
@@ -113,6 +114,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  const [clipsOn,setClipsOn]=useState(()=>readPreference('star.clips.panels')==='on')
  const [petTerminal,setPetTerminal]=useState<{kind:PetState;at:number}|null>(null)
  const [files,setFiles]=useState<string[]>([])
+ const [songLookup,setSongLookup]=useState<SongLookup|null>(null)   // one approved song lookup for this message
  const [busy,setBusy]=useState(false)
  const [stopping,setStopping]=useState(false)
  const [chatMode,setChatMode]=useState<ChatMode>('auto')
@@ -443,9 +445,10 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
    const intent=!teamMode&&!imageMode&&chatMode!=='agent'&&data.settings.media_chat_auto!==false?chatImageRequest(value,selected,messages,retryMessageId!==undefined):null
    const makeImage=imageMode||!!intent
    const mine=beginRun(value,selected,makeImage?'image':teamMode?'team':'chat')
-   if(retryMessageId===undefined)setMessages(m=>[...m,mine]);setFiles([]);setPrompt('')
+   const song=data.settings.music_recognition_enabled===true&&songLookup&&selected.includes(songLookup.file)?{songLookup:{...songLookup,consent:true}}:{}
+   if(retryMessageId===undefined)setMessages(m=>[...m,mine]);setFiles([]);setPrompt('');setSongLookup(null)
    const action=intent?'generateImage':imageMode?'generateImage':teamMode?'runTeam':'sendMessage'
-   const res=await act(action,intent?{prompt:intent.prompt,display_prompt:value,files:selected,size:imageSize,followup:intent.followup,...(retryMessageId===undefined?{}:{retryMessageId})}:imageMode?{prompt:value,files:selected,size:imageSize}:teamMode?{prompt:value,research}:{prompt:value,files:selected,mode:chatMode,research,github:chatMode==='agent'&&githubSource,...(retryMessageId===undefined?{}:{retryMessageId})})
+   const res=await act(action,intent?{prompt:intent.prompt,display_prompt:value,files:selected,size:imageSize,followup:intent.followup,...(retryMessageId===undefined?{}:{retryMessageId})}:imageMode?{prompt:value,files:selected,size:imageSize}:teamMode?{prompt:value,research}:{prompt:value,files:selected,mode:chatMode,research,github:chatMode==='agent'&&githubSource,...song,...(retryMessageId===undefined?{}:{retryMessageId})})
    if(!res){
      // The host refused before a turn started. Nothing was lost: the question stays with Retry and Edit.
      sending.current=false
@@ -455,7 +458,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
      fresh.current.add(row.id)
      setMessages(m=>[...m,row])
    }
- },[prompt,busy,files,inactive,act,beginRun,updateRun,imageMode,imageSize,data.settings,chatMode,teamMode,research,githubSource,messages])
+ },[prompt,busy,files,inactive,act,beginRun,updateRun,imageMode,imageSize,data.settings,chatMode,teamMode,research,githubSource,messages,songLookup])
 
  const stop=useCallback(()=>{
    if(!busy||stopping)return
@@ -853,7 +856,8 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
                teamMode={teamMode} onTeamMode={on=>{setTeamMode(on);composerRef.current?.focus()}} team={team}
                research={research} onResearch={setResearch} web={web} githubSource={githubSource} onGithubSource={setGithubSource}
                connection={connection} onOpenConnection={()=>nav('brain')}
-               onLookAtScreen={()=>{consentConfirmed.current=false;setScreenAsk(true)}} previews={previews}/>
+               onLookAtScreen={()=>{consentConfirmed.current=false;setScreenAsk(true)}} previews={previews}
+               song={data.settings.music_recognition_enabled===true?{lookup:songLookup&&files.includes(songLookup.file)?songLookup:null,onLookup:setSongLookup}:undefined}/>
              {empty?(classicHome?<div className="starters" role="group" aria-label="Starting points">{starters.map(item=><button key={item.label} type="button" className="starter" onClick={()=>fillComposer(item.prompt)}><item.icon size={15} aria-hidden="true"/><span>{item.label}</span></button>)}</div>:null)
                :<p className="dock-hint">{teamMode?`Team: four read-only stages on ${serverMode?'your STAR Server':'this PC'}, ${teamSlots===1?'one':'at most two'} at a time.${research?' Web search sends your objective and queries to your configured search provider.':''}`:'Review generated changes and tests before using them in your project.'}</p>}
              {studioLayout&&empty&&classicHome&&<StudioInputHint/>}

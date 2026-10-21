@@ -193,3 +193,28 @@ def test_fetch_is_refused_without_the_web_switch():
                       prompt="Calculate 2 + 2", image_paths=[], now="", on_event=events.append)
         assert {"event": "tool_rejected", "tool": "star_web_fetch"} in events
     asyncio.run(run())
+
+
+# -- post_form: the JSON form POST song recognition uses (same address checks, no redirects) ----------------------
+
+def test_post_form_goes_to_the_checked_address_and_returns_json():
+    seen = []
+    transport = serve({"/v2/lookup": (200, {"content-type": "application/json"}, b'{"status": "ok"}')}, seen)
+    body = asyncio.run(web_fetch.post_form("https://api.example.org/v2/lookup", {"a": "1"},
+                                           transport=transport, resolver=public_resolver))
+    assert body == {"status": "ok"}
+    assert seen == [(f"https://{PUBLIC}/v2/lookup", "api.example.org", "api.example.org")]
+
+
+@pytest.mark.parametrize("status, headers, body, resolver, message", [
+    (200, {}, b"{}", lambda host, port: ["10.0.0.5"], "private"),  # test address (star:allow)
+    (302, {"location": "http://10.0.0.5/"}, b"", public_resolver, "HTTP 302"),  # test address (star:allow)
+    (200, {}, b"<html>not json</html>", public_resolver, "not JSON"),
+    (200, {}, b"[" + b"1," * 60000 + b"1]", public_resolver, "larger"),
+], ids=["private", "redirect", "not-json", "too-large"])
+def test_post_form_refuses_private_hosts_redirects_and_bad_replies(status, headers, body, resolver, message):
+    seen = []
+    transport = serve({"/x": (status, headers, body)}, seen)
+    with pytest.raises(FetchRefused, match=message):
+        asyncio.run(web_fetch.post_form("https://api.example.org/x", {}, transport=transport, resolver=resolver))
+    assert len(seen) <= 1 and all(PUBLIC in url for url, _, _ in seen)

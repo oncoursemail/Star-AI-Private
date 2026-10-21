@@ -170,3 +170,22 @@ describe('helpers', () => {
     expect(settingsDirty({...base, instant_route_enabled: null}, {...base, instant_route_enabled: undefined})).toBe(false)
   })
 })
+
+describe('Song recognition', () => {
+  it('is off by default: no composer button and no key fields until the switch is on, then it saves the flag', async () => {
+    expect((backendSettings as AppSettings).music_recognition_enabled).toBeUndefined()
+    const user = userEvent.setup()
+    render(<App/>)
+    await screen.findByRole('textbox', {name: /message star/i})
+    expect(screen.queryByRole('button', {name: 'Identify a song'})).toBeNull()
+    await user.click(screen.getByRole('button', {name: /^settings/i}))
+    await user.click(await screen.findByRole('tab', {name: 'Images, voice & 3D'}))
+    expect(screen.queryByLabelText('AudD key')).toBeNull()
+    await user.click(screen.getByRole('checkbox', {name: 'Song recognition'}))
+    expect((screen.getByLabelText('AudD key') as HTMLInputElement).type).toBe('password')
+    expect(screen.getByLabelText('AcoustID key')).toBeTruthy()
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBe(1))
+    expect((desktop.sent('saveSettings')[0].payload.settings as AppSettings).music_recognition_enabled).toBe(true)
+  })
+})

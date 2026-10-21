@@ -184,6 +184,10 @@ class Settings:
     # Settings > "Start thinking while I type" (star/prefill_warm.py): while the owner types, the server reads the
     # conversation and the draft into its prompt cache, so the answer starts sooner. Off by default.
     prefill_while_typing: bool = False
+    # Settings > Song recognition (star/music_recognition.py): off until the owner turns it on. The AudD and AcoustID
+    # keys live in the OS keyring. fpcalc_path = Chromaprint's fpcalc for AcoustID ('' = look on PATH; never downloaded).
+    music_recognition_enabled: bool = False
+    fpcalc_path: str = ''
 
     @classmethod
     def load(cls, file: Path):
@@ -219,7 +223,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled', 'edit_diff')):
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled', 'edit_diff', 'music_recognition_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -255,6 +259,9 @@ class Settings:
                 or self.blender_executable.startswith(('\\\\', '//'))
                 or '://' in self.blender_executable):
             raise ValueError('Choose a trusted local Blender executable, not a URL or network share')
+        if (not isinstance(self.fpcalc_path, str) or len(self.fpcalc_path) > 2048 or '\x00' in self.fpcalc_path
+                or self.fpcalc_path.startswith(('\\\\', '//')) or '://' in self.fpcalc_path):
+            raise ValueError('Choose the local Chromaprint fpcalc program, not a URL or network share')
         if self.studio_edit and not self.studio_id.strip():
             raise ValueError('Choose a disposable Studio instance before editing')
         if not 1 <= self.comfy_port <= 65535 or not re.fullmatch(r'[A-Za-z0-9_-]{1,40}', self.comfy_prompt_node):
@@ -1059,12 +1066,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
              stream_tokens: bool = False, mode: str = 'auto', research: bool = False,
              cancel_event=None, github_enabled: bool = False, chat_id: str | None = None,
              owner_text: str | None = None, documents: list[Path] | None = None,
-             studio_configuration_home: Path | None = None, attachment_count: int = 0) -> str:
+             studio_configuration_home: Path | None = None, attachment_count: int = 0,
+             song_lookup: tuple[Path, str] | None = None) -> str:
     """User-controlled fast/automatic/agent routing; all hosted calls are opt-in.
 
     `owner_text` is what the owner typed, when `prompt` also carries text STAR added (an
     audio transcript, a note about video frames). Only the owner's own words can become an
-    automatically accepted lesson.
+    automatically accepted lesson. `song_lookup` = (attached WAV, catalog) the owner approved
+    in the composer for this message: it attaches the star_identify_song tool for one lookup.
     """
     from .knowledge import KnowledgeStore
     from . import lessons as learning
@@ -1198,6 +1207,11 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             # workspace, Studio, or network capability.
             route = replace(route, quick=False, max_calls=max(3, route.max_calls),
                             response_tokens=max(1600, route.response_tokens))
+        song_tool = None
+        if song_lookup is not None and settings.music_recognition_enabled is True:
+            from .music_recognition import ChatSongLookup
+            song_tool = ChatSongLookup(song_lookup[0], song_lookup[1], settings)
+            route = replace(route, quick=False, max_calls=max(3, route.max_calls))
         audited_event({'event':'route_selected','profile':route.profile,
                        'description':route.description,'model':route.model})
         quick = route.quick
@@ -1512,6 +1526,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     kwargs['live_show'] = live_show
                 if minecraft_tools is not None:
                     kwargs['minecraft_tools'] = minecraft_tools
+                if song_tool is not None:
+                    kwargs['song_lookup'] = song_tool  # type: ignore[assignment]  # kwargs' value type is inferred from the dict above
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.
