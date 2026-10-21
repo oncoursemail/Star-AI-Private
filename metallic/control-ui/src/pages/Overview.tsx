@@ -33,7 +33,8 @@ export function Overview({ state, go }: { state: State; go: (page: string, machi
                 <Dot h={a.level === "crit" ? "crit" : "warn"} word={a.level === "crit" ? "Problem" : "Check"} />
                 <span>{a.text}</span>
                 {state.machines.some((m) => m.id === a.where) &&
-                  <button className="link" onClick={() => go("servers", a.where)}>Open {a.where}</button>}
+                  <button className="link" onClick={() => go("servers", a.where)}>
+                    Open {state.machines.find((m) => m.id === a.where)?.name}</button>}
                 {a.where === "backups" && <button className="link" onClick={() => go("backups")}>Open backups</button>}
               </li>
             ))}

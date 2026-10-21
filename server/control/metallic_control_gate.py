@@ -9,8 +9,8 @@ nothing but name one of the verbs below (`server/control/deploy.sh gate` install
     stream          one JSON line every 5 s until the connection closes (host CPU/RAM/disk/network/temperatures,
                     per-container CPU and memory from the cgroup files); every 60 s also the top processes, STAR's
                     own facts (the Discord gate's `facts` verb inside the brain container), backup and runner state;
-                    every 5 min the container inventory with limits. Request timings of the brain's models arrive as
-                    they are logged (journal lines `print_timing`).
+                    every 5 min the container inventory with limits. From the brain's journal (`print_timing` lines):
+                    each finished request's timings, and the live tokens/s of every slot that is generating.
     act NAME        one allow-listed action that this host's gate.json enables (see ACTIONS); prints one JSON object.
     ping            {"ok": true}
 
@@ -40,6 +40,8 @@ NIC = re.compile(r"^(en|eth|wl|eno|enp)[A-Za-z0-9]*$")
 DISK = re.compile(r"^(sd[a-z]+|nvme\d+n\d+|vd[a-z]+|xvd[a-z]+)$")
 TIMING = re.compile(r"^(?:\[(?P<port>\d+)\] )?.*?slot print_timing: id +(?P<slot>\d+) \| task (?P<task>\d+) \| +"
                     r"(?P<what>prompt eval time|eval time|total time) = +(?P<ms>[0-9.]+) ms / +(?P<tokens>\d+) tokens")
+PROGRESS = re.compile(r"^(?:\[(?P<port>\d+)\] )?.*?slot print_timing: id +(?P<slot>\d+) \| task (?P<task>\d+) \| +"
+                      r"n_gen = +(?P<n>\d+), tg = +(?P<tg>[0-9.]+) t/s, tg_3s = +(?P<tg3>[0-9.]+) t/s")
 
 # Actions: name -> (what it runs, given the host config). Each host enables a subset in gate.json "actions".
 STAR_RESTART = ("star-brain", "star-knowledge", "star-search-gateway", "star-night-school", "star-ns-brain",
@@ -330,9 +332,19 @@ class Timings:
     def __init__(self):
         self.pending: dict = {}
         self.done: list[dict] = []
+        self.live: dict = {}            # (port, slot) -> latest progress line of a request still generating
         self.lock = threading.Lock()
 
     def feed(self, line: str, now: float | None = None) -> dict | None:
+        now = now if now is not None else _now()
+        prog = PROGRESS.match(line.strip())
+        if prog:                        # llama.cpp prints n_gen / tg / tg_3s every 3 s while a slot generates
+            with self.lock:
+                self.live[(prog.group("port") or "", int(prog.group("slot")))] = {
+                    "port": prog.group("port") or "", "slot": int(prog.group("slot")), "task": int(prog.group("task")),
+                    "n_gen": int(prog.group("n")), "tg": float(prog.group("tg")), "tg3": float(prog.group("tg3")),
+                    "t": round(now, 3)}
+            return None
         match = TIMING.match(line.strip())
         if not match:
             return None
@@ -346,11 +358,12 @@ class Timings:
             row["eval_ms"], row["eval_tokens"] = ms, tokens
         else:
             row["total_ms"] = ms
-            row["t"] = round(now if now is not None else _now(), 3)
+            row["t"] = round(now, 3)
             del self.pending[key]
             with self.lock:
                 self.done.append(row)
                 del self.done[:-200]
+                self.live.pop((row["port"], row["slot"]), None)
             return row
         return None
 
@@ -358,6 +371,14 @@ class Timings:
         with self.lock:
             rows, self.done = self.done, []
         return rows
+
+    def generating(self, now: float | None = None) -> list[dict]:
+        """Slots that logged progress in the last 10 s (a request that ends without timing lines ages out)."""
+        now = now if now is not None else _now()
+        with self.lock:
+            for key in [k for k, v in self.live.items() if now - v["t"] > 10]:
+                del self.live[key]
+            return list(self.live.values())
 
 
 def follow_journal(cfg: dict, timings: Timings) -> subprocess.Popen | None:
@@ -393,6 +414,8 @@ def stream(cfg: dict, out=sys.stdout, clock=time.monotonic, sleep=time.sleep, li
             reqs = timings.take()
             if reqs:
                 row["reqs"] = reqs
+            if child is not None:
+                row["gen"] = timings.generating()
             if tick - last_slow >= SLOW_EVERY:
                 last_slow = tick
                 row["slow"] = {"procs": tops(), "facts": star_facts(cfg), "backups": backups(cfg),
@@ -452,6 +475,8 @@ def act(name: str, cfg: dict, run=_run) -> tuple[int, dict]:
             text = str(inner["text"])[:400]
     except ValueError:
         pass
+    if not text:                              # systemctl --no-block and friends print nothing on success
+        text = "started" if result.returncode == 0 else f"exit {result.returncode}"
     return (0 if result.returncode == 0 else 1), {"ok": result.returncode == 0, "action": name,
                                                   "exit": result.returncode, "text": text}
 

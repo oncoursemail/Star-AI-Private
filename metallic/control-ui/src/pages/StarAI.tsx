@@ -14,7 +14,11 @@ export function StarAI({ state, range, setRange }: { state: State; range: Range;
   const loaded = chat.filter((m) => m.status === "loaded");
   const brainMachine = Object.keys(star.brains)[0] ?? "brain1";
   const keys = loaded.flatMap((m) => [`llm.brain1.${m.id}.tps`, `llm.brain1.${m.id}.prompt_ms`, `llm.brain1.${m.id}.busy`,
-    `llm.brain1.${m.id}.deferred`]).concat(["llm.brain2.star-ns-brain.tps"]);
+    `llm.brain1.${m.id}.deferred`, `llm.brain1.${m.id}.gen_tps`])
+    .concat(["llm.brain2.star-ns-brain.tps", "llm.brain2.star-ns-brain.gen_tps", "llm.brain2.star-ns-brain.prompt_ms"]);
+  const gen = (star.generating ?? []).filter((g) => state.generated - g.t < 15);
+  const genOf = (model: string) => gen.filter((g) => g.machine === "brain1" && g.model === model);
+  const lastOf = (model: string) => star.requests.find((r) => r.machine === "brain1" && r.model === model);
   const { data: s, error } = useSeries(keys, range);
   const speed = usePoll(api.speed, 300_000);
   const base = { from: s?.from ?? 0, to: s?.to ?? 0, step: s?.step ?? 5 };
@@ -36,8 +40,8 @@ export function StarAI({ state, range, setRange }: { state: State; range: Range;
         {!star.models.length ? <Empty>No answer from the brain router yet (it is polled every 10 s; models that are not loaded are never asked anything, so they stay unloaded).</Empty> : (
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Model</th><th>State</th><th>Slots busy</th><th>Waiting</th><th>Decode now</th>
-                <th>Output now</th><th>Prompt speed</th><th>Draft accepted</th><th>Prompt cache share</th><th>Context</th></tr></thead>
+              <thead><tr><th>Model</th><th>State</th><th>Slots busy</th><th>Waiting</th><th>Generating now</th>
+                <th>Last finished request</th><th>Draft accepted</th><th>Prompt cache share</th><th>Context</th></tr></thead>
               <tbody>
                 {star.models.map((m) => (
                   <tr key={m.id} className={m.status === "loaded" ? "" : "dim"}>
@@ -45,10 +49,14 @@ export function StarAI({ state, range, setRange }: { state: State; range: Range;
                     <td><Dot h={m.status === "loaded" ? "ok" : "none"} word={m.status} /></td>
                     <td className="num">{m.slots ? `${m.slots.busy} of ${m.slots.total}` : m.parallel ? `${m.parallel} slots` : " "}</td>
                     <td className="num">{m.live?.deferred ?? (m.status === "loaded" && !m.helper ? "n/a" : " ")}</td>
-                    <td className="num">{m.live?.decode_tps != null ? num(m.live.decode_tps, 1, "tok/s") : m.status === "loaded" && !m.helper ? "idle" : " "}</td>
-                    <td className="num">{m.live?.output_tps != null ? num(m.live.output_tps, 1, "tok/s") : " "}</td>
-                    <td className="num">{m.live?.prompt_tps != null ? num(m.live.prompt_tps, 0, "tok/s") : " "}</td>
-                    <td className="num">{m.live?.draft_accept != null ? pct(m.live.draft_accept * 100) : m.spec ? <span className="muted">{m.spec}</span> : " "}</td>
+                    <td className="num">{genOf(m.id).length ? genOf(m.id).map((g) => `${num(g.tps, 1)} tok/s`).join(" + ")
+                      : m.status === "loaded" && !m.helper ? <span className="muted">idle</span> : " "}</td>
+                    <td className="num">{(() => {
+                      const r = lastOf(m.id);
+                      return r && r.eval_ms && r.eval_tokens ? <>{num((r.eval_tokens * 1000) / r.eval_ms, 1, "tok/s")}
+                        <span className="muted"> · first token {ms(r.prompt_ms)} · {ago(r.t, state.generated)}</span></> : " ";
+                    })()}</td>
+                    <td className="num">{m.live?.draft_accept_total != null ? pct(m.live.draft_accept_total * 100) : m.spec ? <span className="muted">{m.spec}</span> : " "}</td>
                     <td className="num">{m.live?.cache_share_total != null ? pct(m.live.cache_share_total * 100) : " "}
                       {m.cache_ram_mib ? <span className="muted"> ({(m.cache_ram_mib / 1024).toFixed(0)} GB cache)</span> : null}</td>
                     <td className="num">{m.ctx ? `${Math.round(m.ctx / 1024)}k` : " "}</td>
@@ -58,8 +66,12 @@ export function StarAI({ state, range, setRange }: { state: State; range: Range;
             </table>
           </div>
         )}
-        <p className="muted small">Decode now = tokens per second while a slot generates, between the last two polls. Output now = tokens
-          produced per wall-clock second. Prompt cache share = cached prompt tokens over all prompt tokens since the model loaded.</p>
+        {gen.length > 0 && (
+          <p className="small">Generating now: {gen.map((g) => `${g.machine} ${g.model} slot ${g.slot}: ${num(g.tps, 1)} tok/s, ${g.n_gen ?? "?"} tokens so far`).join(" · ")}</p>
+        )}
+        <p className="muted small">Generating now = tokens per second over the last 3 s of each busy slot, from the brain's own log.
+          First token = prompt processing time of that request (queue wait not included). Draft accepted and prompt cache share
+          count everything since the model loaded.</p>
       </section>
 
       <div className="toolbar"><h2 className="inline">Request speed</h2><RangePicker value={range} onChange={setRange} /></div>
@@ -72,7 +84,13 @@ export function StarAI({ state, range, setRange }: { state: State; range: Range;
                      .filter((l) => l.points.length).slice(0, 3)} />
         <LineChart title="Prompt time per request (time to first token, without queueing)" {...base} fmt={(v) => ms(v)}
                    empty="No request finished in this range."
-                   lines={loaded.map((m, i) => ({ key: m.id, label: m.id, color: SERIES[i % 3], points: pts(s, `llm.brain1.${m.id}.prompt_ms`) }))
+                   lines={[...loaded.map((m, i) => ({ key: m.id, label: m.id, color: SERIES[i % 3], points: pts(s, `llm.brain1.${m.id}.prompt_ms`) })),
+                     { key: "b2", label: "brain 2 model", color: SERIES[2], points: pts(s, "llm.brain2.star-ns-brain.prompt_ms") }]
+                     .filter((l) => l.points.length).slice(0, 3)} />
+        <LineChart title="Live generation speed (all busy slots together), tokens per second" {...base} fmt={(v) => v.toFixed(0)}
+                   empty="No slot generated in this range."
+                   lines={[...loaded.map((m, i) => ({ key: m.id, label: m.id, color: SERIES[i % 3], points: pts(s, `llm.brain1.${m.id}.gen_tps`) })),
+                     { key: "b2", label: "brain 2 model", color: SERIES[2], points: pts(s, "llm.brain2.star-ns-brain.gen_tps") }]
                      .filter((l) => l.points.length).slice(0, 3)} />
         <LineChart title="Slots busy and requests waiting (star-fast)" {...base} fmt={(v) => v.toFixed(0)}
                    lines={[{ key: "busy", label: "Busy slots", color: SERIES[0], points: pts(s, "llm.brain1.star-fast.busy") },

@@ -53,13 +53,9 @@ def test_router_models_and_metrics():
     assert models[1]["status"] == "unloaded" and models[2]["helper"] is True
     m = col.parse_prometheus(METRICS)
     assert m["tokens_predicted_total"] == 220496 and "spec_decode_num_accepted_tokens_per_pos_total" not in m
-    after = dict(m, tokens_predicted_total=m["tokens_predicted_total"] + 100,
-                 tokens_predicted_seconds_total=m["tokens_predicted_seconds_total"] + 10,
-                 spec_decode_num_draft_tokens_total=m["spec_decode_num_draft_tokens_total"] + 50,
-                 spec_decode_num_accepted_tokens_total=m["spec_decode_num_accepted_tokens_total"] + 30)
-    live = col.model_rates(m, after, 20.0)
-    assert live["decode_tps"] == 10.0 and live["output_tps"] == 5.0 and live["draft_accept"] == 0.6
-    assert live["cache_share_total"] == round(432758 / (432758 + 243015), 3)
+    live = col.model_rates(m)
+    assert live == {"processing": 1, "deferred": 0, "cache_share_total": round(432758 / (432758 + 243015), 3),
+                    "draft_accept_total": round(142495 / 243320, 3)}
     assert col.slot_summary([{"id": 0, "is_processing": False, "n_ctx": 32768},
                              {"id": 1, "is_processing": True, "n_ctx": 32768}]) == {"total": 2, "busy": 1, "ctx": 32768}
 
@@ -119,6 +115,13 @@ def test_request_timings_get_the_model_name_from_the_router_port():
                     "eval_ms": 10000.0, "eval_tokens": 90, "total_ms": 11500.0, "t": 999.0}]
     c.on_host_line("brain1", json.dumps(row))
     assert store.requests(0)[0]["model"] == "star-fast"
+    row = json.loads(_sample(1005.0, [0] * 8, [0, 0], 0))
+    row["gen"] = [{"port": "46613", "slot": 1, "task": 10, "n_gen": 300, "tg": 9.0, "tg3": 8.5, "t": 1004.0},
+                  {"port": "49509", "slot": 0, "task": 11, "n_gen": 40, "tg": 20.0, "tg3": 19.0, "t": 1004.0}]
+    c.on_host_line("brain1", json.dumps(row))
+    gen = c.state()["star"]["generating"]
+    assert [(g["model"], g["tps"]) for g in gen] == [("star-fast", 8.5), ("port 49509", 19.0)]
+    assert store.series(["llm.brain1.star-fast.gen_tps"], "hour")["series"]["llm.brain1.star-fast.gen_tps"][0][1] == 8.5
     assert store.series(["llm.brain1.star-fast.tps"], "hour")["series"]["llm.brain1.star-fast.tps"][0][1] == 9.0
 
 

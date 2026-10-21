@@ -82,32 +82,17 @@ def slot_summary(slots) -> dict:
             "ctx": max((s.get("n_ctx") or 0 for s in rows), default=0)}
 
 
-def model_rates(before: dict | None, after: dict, seconds: float) -> dict:
-    """Live numbers between two /metrics looks: decode tok/s while generating, output tok/s over the wall clock,
-    prompt tok/s, prompt-cache share of prompt tokens."""
-    out = {"processing": after.get("requests_processing"), "deferred": after.get("requests_deferred"),
-           "decode_tps_avg": after.get("predicted_tokens_seconds"), "prompt_tps_avg": after.get("prompt_tokens_seconds")}
-    cached_total = after.get("prompt_tokens_cached_total")
-    prompt_total = after.get("prompt_tokens_total")
-    if cached_total is not None and prompt_total:
-        out["cache_share_total"] = round(cached_total / (cached_total + prompt_total), 3)
-    if before:
-        dtok = rate(before.get("tokens_predicted_total"), after.get("tokens_predicted_total"), 1.0)
-        dsec = rate(before.get("tokens_predicted_seconds_total"), after.get("tokens_predicted_seconds_total"), 1.0)
-        if dtok and dsec:
-            out["decode_tps"] = round(dtok / dsec, 2)
-        if dtok is not None and seconds > 0:
-            out["output_tps"] = round(dtok / seconds, 2)
-        dp = rate(before.get("prompt_tokens_total"), after.get("prompt_tokens_total"), 1.0)
-        dps = rate(before.get("prompt_seconds_total"), after.get("prompt_seconds_total"), 1.0)
-        if dp and dps:
-            out["prompt_tps"] = round(dp / dps, 1)
-        dacc = rate(before.get("spec_decode_num_accepted_tokens_total"),
-                    after.get("spec_decode_num_accepted_tokens_total"), 1.0)
-        ddraft = rate(before.get("spec_decode_num_draft_tokens_total"), after.get("spec_decode_num_draft_tokens_total"),
-                      1.0)
-        if dacc is not None and ddraft:
-            out["draft_accept"] = round(dacc / ddraft, 3)
+def model_rates(after: dict) -> dict:
+    """What /metrics can honestly say: requests running and waiting now, and since the model loaded the share of
+    drafted tokens accepted and of prompt tokens served from the prompt cache. (Token counters only move when a
+    request finishes, so live speed comes from the journal's progress lines instead.)"""
+    out = {"processing": after.get("requests_processing"), "deferred": after.get("requests_deferred")}
+    cached, prompt = after.get("prompt_tokens_cached_total"), after.get("prompt_tokens_total")
+    if cached is not None and prompt:
+        out["cache_share_total"] = round(cached / (cached + prompt), 3)
+    acc, draft = after.get("spec_decode_num_accepted_tokens_total"), after.get("spec_decode_num_draft_tokens_total")
+    if acc is not None and draft:
+        out["draft_accept_total"] = round(acc / draft, 3)
     return out
 
 
@@ -267,7 +252,6 @@ class Collector:
         self.machines = {m["id"]: Machine(m) for m in conf.get("machine", [])}
         self.sources: dict[str, dict] = {}
         self.star: dict = {"brains": {}, "models": [], "requests": []}
-        self.metrics_prev: dict = {}
         self.dev: dict = {}
         self.pc_extra: dict = {}
         self.forge_backups: dict | None = None
@@ -312,9 +296,21 @@ class Collector:
                 self.store.put("forge_backups", row["forge_backups"])
             reqs = row.get("reqs") or []
             ports = {mod.get("port"): mod["id"] for mod in self.star.get("models", []) if mod.get("port")}
-            for r in reqs:
-                r["model"] = ports.get(r.get("port")) or self.conf.get("brain_models", {}).get(machine_id) or (
+
+            def model_of(r):
+                return ports.get(r.get("port")) or self.conf.get("brain_models", {}).get(machine_id) or (
                     f"port {r.get('port')}" if r.get("port") else "model")
+            if "gen" in row:                    # slots generating right now, with their live tokens/s
+                gen = [{"machine": machine_id, "model": model_of(g), "slot": g.get("slot"), "tps": g.get("tg3"),
+                        "n_gen": g.get("n_gen"), "t": g.get("t")} for g in row["gen"] if isinstance(g, dict)]
+                self.star.setdefault("gen", {})[machine_id] = gen
+                totals: dict = {}
+                for g in gen:
+                    totals[g["model"]] = totals.get(g["model"], 0.0) + (g["tps"] or 0.0)
+                for model, tps in totals.items():
+                    values[f"llm.{machine_id}.{model}.gen_tps"] = tps
+            for r in reqs:
+                r["model"] = model_of(r)
                 if r.get("eval_ms") and r.get("eval_tokens"):
                     values[f"llm.{machine_id}.{r['model']}.tps"] = r["eval_tokens"] * 1000.0 / r["eval_ms"]
                 if r.get("prompt_ms") is not None:
@@ -361,14 +357,10 @@ class Collector:
                 q = urllib.parse.quote(mod["id"])
                 try:
                     row["slots"] = slot_summary(json.loads(fetch("/slots?model=" + q)))
-                    metrics = parse_prometheus(fetch("/metrics?model=" + q).decode("utf-8", "replace"))
-                    prev = self.metrics_prev.get(mod["id"])
-                    row["live"] = model_rates(prev[1] if prev else None, metrics, now - prev[0] if prev else 0)
-                    self.metrics_prev[mod["id"]] = (now, metrics)
+                    row["live"] = model_rates(parse_prometheus(fetch("/metrics?model=" + q).decode("utf-8", "replace")))
                     m = brain.get("machine", "brain1")
                     values[f"llm.{m}.{mod['id']}.busy"] = row["slots"]["busy"]
                     values[f"llm.{m}.{mod['id']}.deferred"] = row["live"].get("deferred")
-                    values[f"llm.{m}.{mod['id']}.output_tps"] = row["live"].get("output_tps")
                 except (OSError, ValueError) as exc:
                     row["error"] = type(exc).__name__
             rows.append(row)
@@ -568,6 +560,7 @@ class Collector:
                    "star": {"brains": {k: {"at": v["at"], **(v.get("facts") or {})}
                                        for k, v in self.star["brains"].items()},
                             "models": self.star.get("models", []), "models_at": self.star.get("models_at"),
+                            "generating": [g for rows in self.star.get("gen", {}).values() for g in rows],
                             "requests": self.store.requests(now - 3600, 40)},
                    "dev": self.dev, "dev_pc": self.pc_extra.get("dev_pc"), "runners": runners,
                    "backups": backups, "backup_pc": self.pc_extra.get("backup_pc"),

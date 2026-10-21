@@ -79,10 +79,12 @@ export interface ModelRow {
   spec: string | null;
   helper: boolean;
   slots?: { total: number; busy: number; ctx: number };
-  live?: { processing?: number; deferred?: number; decode_tps?: number; output_tps?: number; prompt_tps?: number;
-    draft_accept?: number; cache_share_total?: number; decode_tps_avg?: number };
+  live?: { processing?: number; deferred?: number; draft_accept_total?: number; cache_share_total?: number };
   error?: string;
 }
+
+export interface Gen { machine: string; model: string; slot: number; tps: number | null; n_gen: number | null;
+  t: number }
 
 export interface Req { t: number; machine: string; model: string; slot: number; prompt_ms: number | null;
   prompt_tokens: number | null; eval_ms: number | null; eval_tokens: number | null }
@@ -138,7 +140,8 @@ export interface DevPc {
 export interface State {
   generated: number;
   machines: MachineState[];
-  star: { brains: Record<string, BrainFacts>; models: ModelRow[]; models_at: number | null; requests: Req[] };
+  star: { brains: Record<string, BrainFacts>; models: ModelRow[]; models_at: number | null; requests: Req[];
+    generating?: Gen[] };
   dev: DevState;
   dev_pc: DevPc | null;
   runners: { runner: string; kind: string; state: string; machine: string }[];

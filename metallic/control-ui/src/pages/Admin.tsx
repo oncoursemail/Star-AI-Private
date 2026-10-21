@@ -31,6 +31,29 @@ export function warnings(a: Action, state: State): string[] {
   return out;
 }
 
+/** The thing an action changes, as it is right now (so "Pause" next to "already paused" is obvious). */
+export function currentState(a: Action, state: State): string {
+  const facts = state.star.brains[a.machine];
+  if (a.verb === "ns-pause" || a.verb === "ns-resume")
+    return facts?.night_school ? (facts.night_school.paused ? "now paused" : "now running") : "";
+  if (a.verb.startsWith("restart:")) {
+    const unit = facts?.services?.find((s) => s.unit === a.verb.slice(8) + ".service");
+    return unit ? `now ${unit.active}${unit.since ? `, up since ${unit.since.slice(11, 16)} UTC` : ""}` : "";
+  }
+  if (a.verb.startsWith("runner-") && a.machine !== "pc") {
+    const r = state.runners.find((x) => x.machine === a.machine && x.runner === a.verb.split(":")[1]);
+    return r ? `service now ${r.state}` : "";
+  }
+  const pc = state.machines.find((m) => m.id === "pc");
+  if (a.verb.startsWith("sunshine-")) return pc?.services?.sunshine ? `now ${pc.services.sunshine}` : "";
+  if (a.verb.endsWith(":pc-win")) return pc?.services?.pc_win_runner ? `now ${pc.services.pc_win_runner}` : "";
+  if (a.verb.startsWith("backup-now:")) {
+    const b = state.backups.find((x) => x.set === a.verb.slice(11));
+    return b?.in_progress ? "running now" : b?.last_success_utc ? `last success ${ago(b.last_success_utc, state.generated)}` : "";
+  }
+  return "";
+}
+
 export function Admin({ state }: { state: State }) {
   const acts = usePoll(api.actions, 600_000);
   const audit = usePoll(api.audit, 4_000);
@@ -55,6 +78,7 @@ export function Admin({ state }: { state: State }) {
                   <li key={a.id}>
                     <div>
                       <strong>{a.label}</strong> <span className="muted">on {a.machine_name}</span>
+                      {currentState(a, state) && <span className="now small">{currentState(a, state)}</span>}
                       <p className="muted small">{a.detail}</p>
                     </div>
                     <button className={a.danger === "high" ? "btn btn-danger" : "btn"} onClick={() => setPick(a)}>

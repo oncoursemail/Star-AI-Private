@@ -6,3 +6,4 @@ control-ui/node_modules/
 control-ui/dist/
 control-ui/src/sample/
 control-ui/*.tsbuildinfo
+control-ui/dist-preview/

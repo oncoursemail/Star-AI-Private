@@ -11,13 +11,14 @@ type Sample = { state: State; series: Record<Range, SeriesResponse>; speed: Spee
   audit: AuditRow[]; recorded: number };
 let sample: Sample | null = null;
 
-// The recorded snapshot exists only for the preview build (src/sample/ is not in git: it holds live data).
-const sampleFiles = import.meta.glob("./sample/sample.json");
+// The recorded snapshot exists only for the preview build (src/sample/ is not in git: it holds live data). Eager, so the
+// preview is one file; in the normal build the folder is absent and this is an empty object.
+const sampleFiles = import.meta.glob("./sample/sample.json", { eager: true, import: "default" });
 
 async function loadSample(): Promise<Sample> {
-  const load = sampleFiles["./sample/sample.json"];
-  if (!load) throw new Error("no recorded sample in src/sample/ (preview build only)");
-  if (!sample) sample = ((await load()) as { default: Sample }).default;
+  const data = SAMPLE ? sampleFiles["./sample/sample.json"] : undefined;
+  if (!data) throw new Error("no recorded sample in src/sample/ (preview build only)");
+  sample ??= data as Sample;
   return sample;
 }
 

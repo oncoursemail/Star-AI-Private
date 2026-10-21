@@ -42,7 +42,7 @@ export function Backups({ state }: { state: State }) {
                       {b.last_error && toUnix(b.last_error.at)! > (toUnix(b.last_success_utc) ?? 0) &&
                         <div className="small bad-text">{b.last_error.action} failed {ago(b.last_error.at, now)}: {b.last_error.message}</div>}
                       {b.error && <div className="small bad-text">{b.error}</div>}</td>
-                    <td>{ago(b.last_success_utc, now)}<div className="muted small mono">{b.last_snapshot_id || " "} · {stamp(b.last_success_utc)}</div></td>
+                    <td>{ago(b.last_success_utc, now)}<div className="muted small"><span className="mono">{b.last_snapshot_id || " "}</span> · {stamp(b.last_success_utc)}</div></td>
                     <td className="num">{bytes(b.data_added_packed)}<div className="muted small">{bytes(b.data_added)} before packing</div></td>
                     <td><Meter value={used} max={max} /><div className="small">{bytes(used)} of {max ? bytes(max, 0) : "no budget"}
                       {used && max ? ` (${Math.round((100 * used) / max)} %)` : ""}</div></td>

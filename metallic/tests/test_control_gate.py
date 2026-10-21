@@ -94,6 +94,12 @@ def test_timings_join_the_three_print_timing_lines_into_one_request():
     assert done == {"port": "46613", "slot": 1, "task": 212818, "prompt_ms": 11804.1, "prompt_tokens": 516,
                     "eval_ms": 166604.38, "eval_tokens": 1452, "total_ms": 178408.47, "t": 1000.0}
     assert t.take() == [done] and t.take() == []
+    progress = ("[46613] 615.44.009.387 I slot print_timing: id  1 | task 226817 | n_gen =   2895, tg =   9.06 t/s, "
+                "tg_3s =   7.48 t/s")
+    assert t.feed(progress, now=2000.0) is None
+    assert t.generating(now=2005.0) == [{"port": "46613", "slot": 1, "task": 226817, "n_gen": 2895, "tg": 9.06,
+                                         "tg3": 7.48, "t": 2000.0}]
+    assert t.generating(now=2011.0) == []                 # no progress line for 10 s: not generating any more
     # a plain llama-server (brain 2's model) logs without the [port] prefix
     for what in ("prompt eval time =   10.00 ms /   5 tokens", "eval time =   100.00 ms /  10 tokens",
                  "total time =   110.00 ms /  15 tokens"):

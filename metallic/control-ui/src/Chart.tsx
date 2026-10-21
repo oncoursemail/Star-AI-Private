@@ -46,12 +46,15 @@ export function nearest(points: Point[], t: number): number {
   return lo;
 }
 
-function useWidth(ref: React.RefObject<HTMLDivElement | null>): number {
-  const [w, setW] = useState(600);
+/** Width of the figure (always rendered, unlike the plot), so the SVG never draws wider than its card. */
+function useWidth(ref: React.RefObject<HTMLElement | null>): number {
+  const [w, setW] = useState(0);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver((entries) => setW(Math.max(240, Math.round(entries[0].contentRect.width))));
+    const measure = () => setW(Math.max(200, Math.floor(el.clientWidth - 28)));     // minus the card's padding
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [ref]);
@@ -60,7 +63,8 @@ function useWidth(ref: React.RefObject<HTMLDivElement | null>): number {
 
 export function LineChart({ title, lines, from, to, step, fmt, yMax, base2, height = 180, empty }: ChartProps) {
   const box = useRef<HTMLDivElement>(null);
-  const width = useWidth(box);
+  const fig = useRef<HTMLElement>(null);
+  const width = useWidth(fig) || 560;
   const [hover, setHover] = useState<number | null>(null);      // a time on the x axis
   const [table, setTable] = useState(false);
   const id = useId();
@@ -70,7 +74,7 @@ export function LineChart({ title, lines, from, to, step, fmt, yMax, base2, heig
     for (const l of lines) for (const p of l.points) if (p[1] != null && p[1] > hi) hi = p[1];
     const span = yMax ?? (hi > 0 ? hi * 1.1 : 1);
     const unit = base2 && span >= 1024 ? 1024 ** Math.floor(Math.log(span) / Math.log(1024)) : 1;
-    const t = ticks(0, span / unit).map((v) => v * unit);
+    const t = ticks(0, span / unit).map((v) => v * unit).filter((v) => yMax == null || v <= yMax * 1.0001);
     return { yTicks: t, top: yMax ?? t[t.length - 1] };
   }, [lines, yMax, base2]);
   const iw = width - PAD.l - PAD.r;
@@ -98,7 +102,7 @@ export function LineChart({ title, lines, from, to, step, fmt, yMax, base2, heig
   };
 
   return (
-    <figure className="chart">
+    <figure className="chart" ref={fig}>
       <figcaption>
         <span className="chart-title" id={id}>{title}</span>
         {lines.length > 1 && (
