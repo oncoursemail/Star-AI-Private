@@ -56,8 +56,10 @@ PRIVATE_PROVIDERS: dict[str, Provider] = {
 }
 ALL_PROVIDERS: dict[str, Provider] = {**PRIVATE_PROVIDERS, **PROVIDERS}
 SEARCH_KEYS = {"brave": "BRAVE_SEARCH_API_KEY", "tavily": "TAVILY_API_KEY"}
+# Song recognition catalogs (star/music_recognition.py): the owner's AudD token / AcoustID client key.
+MUSIC_KEYS = {"audd": "STAR_AUDD_API_TOKEN", "acoustid": "STAR_ACOUSTID_CLIENT_KEY"}
 KEY_ENV = {**{name: provider.env_var for name, provider in ALL_PROVIDERS.items()
-              if provider.requires_key}, **SEARCH_KEYS}
+              if provider.requires_key}, **SEARCH_KEYS, **MUSIC_KEYS}
 
 # Use explicit ranges: ipaddress.is_private also includes non-LAN addresses.
 # Left out on purpose: link-local (169.254.0.0/16, fe80::/10), where cloud metadata services

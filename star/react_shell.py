@@ -82,6 +82,9 @@ ALLOWED_ACTIONS = frozenset({
 })
 # Voice calls keep their own action list (star/voice/bridge.py, docs/STAR_VOICE_CALLS.md).
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | VOICE_ACTIONS
+# The Identify-a-song dialog (star/music_recognition.py); refused while Settings > Song recognition is off.
+MUSIC_ACTIONS = frozenset({'musicStatus', 'musicChooseWav', 'musicClear', 'musicIdentify'})
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | MUSIC_ACTIONS
 # Voice actions that make sound must run where Settings → Where STAR generates says (star/media_places.py).
 VOICE_PLACE_ACTIONS = frozenset({'voiceStartCall', 'voicePreviewVoice', 'voiceSpeak'})
 # Learning: review of lessons and thumbs on answers (star/lessons.py), plus the optional
@@ -157,11 +160,30 @@ PERMITTED_SETTINGS = frozenset({
     'gpu_helper_server','gpu_helper_model','gpu_idle_minutes',
     'prefill_while_typing',   # star/prefill_warm.py: warm the prompt cache with the draft, off by default
     'edit_diff',              # star/edit_format.py: changed lines only for pasted-code edits, off by default
+    'music_recognition_enabled','fpcalc_path',   # star/music_recognition.py, off by default
 })
 
 # Settings > Media "session capabilities" line: put before the owner's words of every turn (and of a draft warm-up).
 SESSION_CAPABILITIES = ('Session capabilities: Image creation is available through STAR chat when the local engine is configured. '
                         'Other features depend on the current setup.\n\n')
+
+
+def song_lookup_request(raw, files: list, selected: list[Path], settings) -> tuple[Path, str] | None:
+    """The composer's per-message song lookup approval: {provider, file (one of `files`, a .wav), consent: true}.
+
+    Only this owner-side flag attaches star_identify_song to a turn; the model cannot set it.
+    """
+    if raw is None:
+        return None
+    if settings.music_recognition_enabled is not True:
+        raise PermissionError('Song recognition is off. Turn it on in Settings > Song recognition.')
+    if (not isinstance(raw, dict) or set(raw) != {'provider', 'file', 'consent'} or raw['consent'] is not True
+            or raw['provider'] not in ('audd', 'acoustid') or raw['file'] not in files):
+        raise ValueError('Invalid song lookup approval')
+    path = selected[files.index(raw['file'])]
+    if path.suffix.lower() != '.wav':
+        raise ValueError('Song lookup needs an attached WAV file')
+    return path, raw['provider']
 
 
 def prepare_desktop_update(bridge, request_id: str, home: Path) -> dict:
@@ -774,6 +796,7 @@ def launch():
                 pass
             from . import presolve   # opt-in overnight pre-solving: until it is switched on it only reads the setting
             presolve.start_nightly(self.settings_file, app_data())
+            self.music = None   # star.music_recognition.DesktopSession, made on first use
             self.voice = VoiceBridge(lambda call_id, data: self._emit(call_id, 'voice', data),
                                      settings_path=app_data() / 'voice.json', save_turn=self._save_voice_turn)
 
@@ -973,7 +996,8 @@ def launch():
             source = info.executable if info is not None else Settings.load(self.settings_file).llama_server
             return self.runtime, self.settings_file, app_data(), source
 
-        def _run_chat(self, request_id, prompt, selected, mode='auto', research=False, github=False, retry_id=None):
+        def _run_chat(self, request_id, prompt, selected, mode='auto', research=False, github=False, retry_id=None,
+                      song=None):
             home=app_data()
             settings=Settings.load(self.settings_file)
             if not settings.model.strip():
@@ -994,8 +1018,9 @@ def launch():
                 # about looks; the "not watched" rule for a bare video link (star/chat_media.py).
                 if any(path.suffix.lower() in {'.mp4','.mov','.mkv','.webm','.avi'} for path in selected):
                     self._emit(request_id,'progress',{'phase':'Sampling frames and transcribing the sound…'})
-                media=prepare_turn(settings,home,prompt,selected,Path(directory)/('m_'+uuid.uuid4().hex),
-                                   cancelled=self.cancel_chat.is_set)
+                # A WAV approved for song lookup goes to star_identify_song, not to speech-to-text.
+                media=prepare_turn(settings,home,prompt,[path for path in selected if song is None or path!=song[0]],
+                                   Path(directory)/('m_'+uuid.uuid4().hex),cancelled=self.cancel_chat.is_set)
                 pics=media.pictures
                 full_prompt=media.prompt(prompt)
                 documents=media.documents
@@ -1019,7 +1044,7 @@ def launch():
                 answer=run_task(settings,full_prompt,pics,on_event=relay,
                     stream_tokens=True, mode=mode, research=research, cancel_event=self.cancel_chat, github_enabled=github, chat_id=active_chat,
                     owner_text=prompt, studio_configuration_home=self.settings_file.parent, attachment_count=len(selected),
-                    **({'documents': documents} if documents else {}))
+                    **({'documents': documents} if documents else {}), **({'song_lookup': song} if song else {}))
                 # STAR states what a video answer was based on, whatever the model wrote.
                 answer+=media.footer
             if self.cancel_chat.is_set():
@@ -1124,6 +1149,28 @@ def launch():
                 "elapsed_ms": team.elapsed_ms,
             }
 
+        def _music_action(self, action: str, body: dict, rid: str) -> str:
+            """Identify-a-song dialog. Replies carry booleans and a file name only, never a key."""
+            from .music_recognition import DesktopSession
+            settings = Settings.load(self.settings_file)
+            if self.music is None:
+                self.music = DesktopSession()
+            if action == 'musicStatus':
+                return json.dumps({'ok': True, 'data': self.music.status(settings)})
+            if settings.music_recognition_enabled is not True:
+                raise PermissionError('Song recognition is off. Turn it on in Settings > Song recognition.')
+            if action == 'musicChooseWav':
+                chosen, _ = QFileDialog.getOpenFileName(self.host, 'Choose a WAV recording', '', 'PCM16 WAV (*.wav)')
+                return json.dumps({'ok': True, 'data': self.music.choose(Path(chosen)) if chosen else {'cancelled': True}})
+            if action == 'musicClear':
+                return json.dumps({'ok': True, 'data': self.music.clear()})
+            if self.active_task or self._in_voice_call():
+                raise RuntimeError('Finish the current chat or voice call before identifying a song')
+            music = self.music
+            self._run(rid, action, lambda: music.identify(
+                body, settings, progress=lambda phase: self._emit(rid, 'progress', {'phase': phase})))
+            return json.dumps({'ok': True, 'pending': True, 'requestId': rid})
+
         def _clip_action(self, action: str, body: dict, rid: str) -> str:
             """STAR Clips, clip folder, SteelSeries Moments and Game Lab (kept out of invoke for pyright)."""
             if action == 'gameLabCatalog':
@@ -1206,6 +1253,8 @@ def launch():
                     return json.dumps({'ok':True,'data':handle_discord_action(action,self.discord,autostart=saved.discord_autostart)})
                 if action == 'gameLabCatalog' or action in CLIP_INTEROP_ACTIONS or action in CLIP_ACTIONS:
                     return self._clip_action(action, body, rid)
+                if action in MUSIC_ACTIONS:
+                    return self._music_action(action, body, rid)
                 if action in MEDIA_ACTIONS:
                     def media_worker():
                         return handle_media_action(
@@ -1492,6 +1541,7 @@ def launch():
                     github=body.get('github',False)
                     if not isinstance(github,bool) or (github and mode != 'agent'):
                         raise ValueError('GitHub inspection requires Agent mode')
+                    song=song_lookup_request(body.get('songLookup'),files,selected,Settings.load(self.settings_file))
                     self.cancel_chat = threading.Event()
                     self.active_task=True
                     try:
@@ -1505,7 +1555,7 @@ def launch():
                                 chats.recover_turn(current,chats.active_chat(current),retry_id,prompt)
                             finally:
                                 chats.close()
-                        self._run(rid,action,lambda:self._run_chat(rid,prompt,selected,mode=mode,research=research,github=github,retry_id=retry_id))
+                        self._run(rid,action,lambda:self._run_chat(rid,prompt,selected,mode=mode,research=research,github=github,retry_id=retry_id,song=song))
                     except Exception:
                         self.active_task=False
                         raise

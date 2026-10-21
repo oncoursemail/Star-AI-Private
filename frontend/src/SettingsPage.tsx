@@ -107,9 +107,9 @@ function Switch({label,hint,checked,onChange,disabled,experimental}:{label:strin
  return <label className="setting-switch"><span><strong>{label}{experimental&&<span className="settings-badge">Experimental</span>}</strong><small id={hintId}>{hint}</small></span><input type="checkbox" aria-label={label} aria-describedby={hintId} checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)}/></label>
 }
 
-/** Brave or Tavily key for web search. The key goes to the OS credential vault through saveProviderKey and is never
- * shown again; the page only learns whether one is stored. */
-function SearchKey({provider,label,stored,invoke,disabled,onSaved}:{provider:'brave'|'tavily';label:string;stored:boolean;invoke:Invoke;disabled:boolean;onSaved:()=>void}) {
+/** A service key (Brave or Tavily for web search, AudD or AcoustID for song recognition). The key goes to the OS
+ * credential vault through saveProviderKey and is never shown again; the page only learns whether one is stored. */
+function SearchKey({provider,label,stored,invoke,disabled,onSaved}:{provider:'brave'|'tavily'|'audd'|'acoustid';label:string;stored:boolean;invoke:Invoke;disabled:boolean;onSaved:()=>void}) {
  const field=useRef<HTMLInputElement>(null)
  const [typed,setTyped]=useState(false)
  const [busy,setBusy]=useState(false)
@@ -286,6 +286,16 @@ export function SettingsPage(props:SettingsPageProps) {
    </Block>
    <Block id="blender" keywords="blender 3d model mesh">
      <BlenderPanel draft={draft} onChange={setDraft} status={data.blender} invoke={act} disabled={inactive||busy}/>
+   </Block>
+   <Block id="song-recognition" keywords="song music recognition identify shazam audd acoustid chromaprint fpcalc">
+     <Panel className="settings-section"><div className="section-heading"><div><h3 className="settings-group-title">Song recognition</h3><p>Identify a song from a WAV file or a short recording. Each lookup asks first. AudD receives the audio clip; AcoustID receives only a fingerprint made on this PC by Chromaprint fpcalc.</p></div><KeyRound size={20} aria-hidden="true"/></div>
+       <Switch label="Song recognition" hint="Off by default. Adds Identify a song to the composer and a song lookup line for an attached WAV." checked={draft.music_recognition_enabled===true} onChange={on=>set({music_recognition_enabled:on})}/>
+       {draft.music_recognition_enabled===true&&<>
+         <SearchKey provider="audd" label="AudD" stored={!!data.credentials?.audd} invoke={act} disabled={inactive} onSaved={sync}/>
+         <SearchKey provider="acoustid" label="AcoustID" stored={!!data.credentials?.acoustid} invoke={act} disabled={inactive} onSaved={sync}/>
+         <div className="intelligence-folder-row"><label>Chromaprint fpcalc program<input aria-label="Chromaprint fpcalc program" value={draft.fpcalc_path??''} onChange={e=>set({fpcalc_path:e.target.value})} placeholder="Not set: fpcalc is looked up on PATH"/></label></div>
+       </>}
+     </Panel>
    </Block>
   </>,
   knowledge:<>
