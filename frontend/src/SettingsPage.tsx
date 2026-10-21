@@ -21,6 +21,7 @@ export type SettingsSectionId='general'|'model'|'roblox'|'creative'|'knowledge'|
 
 /** Everything the page needs from the desktop shell. The shell keeps the state; this page only lays it out. */
 export type SettingsPageProps={
+ appearance?:ReactNode
  data:BootData
  draft:AppSettings
  setDraft:(update:AppSettings|((d:AppSettings)=>AppSettings))=>void
@@ -46,6 +47,8 @@ export type SettingsPageProps={
  showStar:boolean
  setShowStar:(on:boolean)=>void
  newHome?:boolean
+ studioLayout?:boolean
+ setStudioLayout?:(on:boolean)=>void
  setNewHome?:(on:boolean)=>void
  clipsOn?:boolean
  setClipsOn?:(on:boolean)=>void
@@ -199,8 +202,10 @@ export function SettingsPage(props:SettingsPageProps) {
 
  const panels:Record<SettingsSectionId,ReactNode>={
   general:<>
-   <Block id="interface" keywords="theme animation motion mascot pet appearance accessibility home start workbench clips obs replay recording game lab">
+   <Block id="interface" keywords="theme animation motion mascot pet appearance accessibility home start workbench clips obs replay recording game lab studio layout companions">
+     {props.appearance}
      <Panel className="settings-section"><h3 className="settings-group-title">Interface</h3>
+       {props.setStudioLayout&&<Switch label="Studio layout" hint="Off by default. Adds a workspace switch, an Appearance menu with themes and a companion shelf beside the chat. Saved on this device." checked={!!props.studioLayout} onChange={props.setStudioLayout}/>}
        <Switch label="Show Star" hint="Off by default. Display the mascot over the chat. Saved on this device." checked={props.showStar} onChange={props.setShowStar}/>
        {props.setNewHome&&<Switch label="Workbench home screen" hint="Off by default. Shows the new start canvas with starter tasks when a chat is empty. Saved on this device." checked={!!props.newHome} onChange={props.setNewHome}/>}
        {props.setClipsOn&&<Switch label="STAR Clips and Game Lab" hint="Off by default. Shows the OBS replay, clip folder, SteelSeries Moments and Game Lab panels on the Tools page. Needs your own OBS Studio. Saved on this device." checked={!!props.clipsOn} onChange={props.setClipsOn}/>}

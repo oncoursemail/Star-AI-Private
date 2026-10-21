@@ -317,7 +317,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   reverse_engineering=None, debug_evidence=None,
                   preserve_history=False, complete_code_answers=None,
                   tool_discovery_enabled=False, candidate_code_team_enabled=False, now=None,
-                  web_settings=None, on_first_request=None, incremental_repair=False):
+                  web_settings=None, on_first_request=None, incremental_repair=None):
     """Run one user turn.
 
     Request layout (see star/context_layout.py): one system message holding the
