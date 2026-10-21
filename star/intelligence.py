@@ -297,6 +297,13 @@ _ASSET_TRIGGER = re.compile(r"\b(assets?|meshes?|textures?|pbr|blender|terrain|b
 _CRAFT_TRIGGER = re.compile(r"\b(ui|gui|hud|vfx|particles?|animations?|tweens?|rigs?|audit)\b", re.I)
 _SKILL_TRIGGER = re.compile(r"\b(skill|expert|workflow|tool|roblox|luau|ui|design|debug|build|fix|test|code|studio|script)\b", re.I)
 _VAULT_TRIGGER = re.compile(r"\b(obsidian|obsidion|vault|notes?|journal|remember|knowledge|documents?|docs|meeting|decision|research|plan|backlinks?|wiki-?links?)\b", re.I)
+# Only for the STAR brain vault (star.brain_vault, marked by .brain-vault.json): the team's own vocabulary, so a
+# question like "how does night school work" reaches the notes without the word "notes" in it. Deliberately narrow:
+# a general Roblox question must not pay for four extra tool schemas (about 430 tokens) or an extra search.
+_BRAIN_TRIGGER = re.compile(
+    r"\b(night.?school|conductor|forge|metallic|priority.?proxy|brain.?[123]|star-(?:fast|deep|voice)|"
+    r"knowledge.?service|ledger|owner.?todo|what\s+(?:did|have)\s+we\s+(?:change|do|ship|merge|decide)|"
+    r"what\s+(?:changed|happened)|yesterday|last\s+night|this\s+week|our\s+(?:notes|docs|code)|team\s+notes|brain\s+vault)\b", re.I)
 _GRAPH_TRIGGER = re.compile(r"\b(graphify|graph|architecture|codebase|dependenc\w*|relationships?|connections?|module|function|imports?|calls?|trace|impact|bug|scripts?)\b", re.I)
 _ROBLOX_TRIGGER = re.compile(r"\b(roblox|luau|devforum|studio|universe|obby|tycoon|gamepass|game.pass|battlegrounds|fps|roproxy)\b", re.I)
 _GAME_TRIGGER = re.compile(r"\b(games?|experiences?|types?|genres?|playing|players?|statistics|stats|visits|favorites|popular|compare|research|search|find|discover|trends?|universe|places?)\b", re.I)
@@ -343,8 +350,10 @@ class LocalIntelligence:
             self.skills = SkillLibrary(workspace=workspace, home=home, bundled=PACKS_DIR)
         if graphify_enabled is True and workspace is not None:
             self.graph = GraphifyGraph(workspace)
+        self.vault_is_brain = False
         if obsidian_vault is not None:
             self.vault = ObsidianVault(obsidian_vault)
+            self.vault_is_brain = (self.vault.root / ".brain-vault.json").is_file()
 
     def _graph_allowed(self) -> bool:
         if self._closed or self.graph is None:
@@ -423,7 +432,7 @@ class LocalIntelligence:
             result.extend(ASSET_TOOLS if self.roblox is not None else ASSET_TOOLS[1:])
         if self.skills and _SKILL_TRIGGER.search(prompt):
             result.extend(SKILL_TOOLS)
-        if self.vault and _VAULT_TRIGGER.search(prompt):
+        if self.vault and (_VAULT_TRIGGER.search(prompt) or (self.vault_is_brain and _BRAIN_TRIGGER.search(prompt))):
             result.extend(OBSIDIAN_TOOLS)
         if self._graph_allowed() and _GRAPH_TRIGGER.search(prompt):
             if self.graph.path.is_file():

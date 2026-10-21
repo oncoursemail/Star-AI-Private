@@ -1,0 +1,91 @@
+{
+  "sources": [
+    {
+      "name": "learning-app",
+      "path": "/opt/star/learning/app"
+    },
+    {
+      "name": "learning-data",
+      "path": "/opt/star/learning/data"
+    },
+    {
+      "name": "learning-outbox",
+      "path": "/opt/star/learning/outbox"
+    },
+    {
+      "name": "learning-conductor",
+      "path": "/opt/star/learning/conductor"
+    },
+    {
+      "name": "learning-env",
+      "path": "/opt/star/learning/env"
+    },
+    {
+      "name": "learning-docs",
+      "path": "/opt/star/learning/docs-recent"
+    },
+    {
+      "name": "learning-pool",
+      "path": "/opt/star/learning/pool"
+    },
+    {
+      "name": "knowledge-app",
+      "path": "/opt/star/knowledge/app"
+    },
+    {
+      "name": "knowledge-data",
+      "path": "/opt/star/knowledge/data"
+    },
+    {
+      "name": "knowledge-sources",
+      "path": "/opt/star/knowledge/sources"
+    },
+    {
+      "name": "training",
+      "path": "/opt/star/training"
+    },
+    {
+      "name": "model-config",
+      "path": "/opt/star/config"
+    },
+    {
+      "name": "search-gateway",
+      "path": "/opt/star/search-gateway"
+    },
+    {
+      "name": "runtime-secrets",
+      "path": "/opt/star/secrets"
+    },
+    {
+      "name": "recovery-source",
+      "path": "/home/star/.local/share/star-recovery"
+    },
+    {
+      "name": "recovery-config",
+      "path": "/home/star/.config/star-recovery"
+    }
+  ],
+  "staging_dir": "/data/star-re/knowledge/.star-recovery-staging",
+  "max_total_bytes": 3221225472,
+  "min_free_bytes": 8589934592,
+  "sqlite_timeout_seconds": 300,
+  "exclude_patterns": [
+    "*/__pycache__",
+    "*/__pycache__/*",
+    "*.pyc",
+    "*.log",
+    "*.bak-*",
+    "knowledge-sources/osbooks-prealgebra-bundle",
+    "knowledge-sources/osbooks-calculus-bundle",
+    "knowledge-sources/blender-manual",
+    "knowledge-sources/ebook",
+    "knowledge-sources/osbooks-introduction-python-programming",
+    "knowledge-sources/osbooks-introduction-business",
+    "knowledge-sources/simplewiki",
+    "knowledge-sources/osbooks-statistics",
+    "knowledge-sources/wikipedia-topics",
+    "knowledge-sources/osbooks-university-physics-bundle",
+    "knowledge-sources/godot-docs",
+    "knowledge-data/kb.sqlite3*"
+  ]
+}

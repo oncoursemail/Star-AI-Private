@@ -1,0 +1,198 @@
+{
+ "run": {
+  "date": "2026-10-20",
+  "prompts": "10 golden-v2 Luau code prompts (LUA-01, LUA-03, NET-03, NET-05, SYS-01, SYS-03, UI-09, UI-10, NET-12, PERF-03), 300 tokens each, greedy, no prompt cache, single stream",
+  "server": "fresh temp llama-server per config on brain 1, live binary and star-fast preset (-np 3, ctx 98304, threads 24/24), inside the quiet lock",
+  "A": "--spec-type draft-dspark,ngram-mod --spec-draft-n-max 2 (live)",
+  "B": "A + ngram-cache --lookup-cache-static luau-static.lcs (440,006 corpus tokens: 505 worked-example code blocks, 86 eval reference answers without the 10 measured tasks, 1,064 creator-docs Luau samples, the API dump; 88,267 2-grams, 3.1 MB)",
+  "static_cache_proxy_on_held_out_answers": {
+   "draft_share": 0.373,
+   "right_of_drafted": 0.69
+  }
+ },
+ "specA": {
+  "summary": {
+   "tag": "specA",
+   "tokens": 2952,
+   "gen_tps": 8.78,
+   "draft_n": 2707,
+   "accepted": 1612,
+   "accept_rate": 0.595
+  },
+  "rows": [
+   {
+    "id": "LUA-01",
+    "gen_n": 252,
+    "gen_tps": 6.414091334462946,
+    "draft_n": 252,
+    "draft_accepted": 155,
+    "sha": "8aebd9e74c75"
+   },
+   {
+    "id": "LUA-03",
+    "gen_n": 300,
+    "gen_tps": 7.937058015036292,
+    "draft_n": 227,
+    "draft_accepted": 185,
+    "sha": "cef6506a1d89"
+   },
+   {
+    "id": "NET-03",
+    "gen_n": 300,
+    "gen_tps": 8.749256349787427,
+    "draft_n": 294,
+    "draft_accepted": 152,
+    "sha": "3ff9dda85283"
+   },
+   {
+    "id": "NET-05",
+    "gen_n": 300,
+    "gen_tps": 9.679109361375602,
+    "draft_n": 266,
+    "draft_accepted": 166,
+    "sha": "29a474fccb99"
+   },
+   {
+    "id": "SYS-01",
+    "gen_n": 300,
+    "gen_tps": 9.683371875744267,
+    "draft_n": 266,
+    "draft_accepted": 165,
+    "sha": "41bad4725ee3"
+   },
+   {
+    "id": "SYS-03",
+    "gen_n": 300,
+    "gen_tps": 9.21911818178763,
+    "draft_n": 275,
+    "draft_accepted": 160,
+    "sha": "b2f6c1d771e6"
+   },
+   {
+    "id": "UI-09",
+    "gen_n": 300,
+    "gen_tps": 8.991156731258053,
+    "draft_n": 289,
+    "draft_accepted": 154,
+    "sha": "a73723ca2637"
+   },
+   {
+    "id": "UI-10",
+    "gen_n": 300,
+    "gen_tps": 8.964474029274134,
+    "draft_n": 289,
+    "draft_accepted": 153,
+    "sha": "1382a73f0cd5"
+   },
+   {
+    "id": "NET-12",
+    "gen_n": 300,
+    "gen_tps": 9.322612142293867,
+    "draft_n": 276,
+    "draft_accepted": 161,
+    "sha": "b294b88acef5"
+   },
+   {
+    "id": "PERF-03",
+    "gen_n": 300,
+    "gen_tps": 9.187577547072276,
+    "draft_n": 273,
+    "draft_accepted": 161,
+    "sha": "30973290be1a"
+   }
+  ]
+ },
+ "specB": {
+  "summary": {
+   "tag": "specB",
+   "tokens": 2952,
+   "gen_tps": 7.82,
+   "draft_n": 3184,
+   "accepted": 1464,
+   "accept_rate": 0.46
+  },
+  "rows": [
+   {
+    "id": "LUA-01",
+    "gen_n": 252,
+    "gen_tps": 8.99900419385863,
+    "draft_n": 307,
+    "draft_accepted": 147,
+    "sha": "8aebd9e74c75"
+   },
+   {
+    "id": "LUA-03",
+    "gen_n": 300,
+    "gen_tps": 9.887382383964953,
+    "draft_n": 263,
+    "draft_accepted": 163,
+    "sha": "cef6506a1d89"
+   },
+   {
+    "id": "NET-03",
+    "gen_n": 300,
+    "gen_tps": 8.43430784191196,
+    "draft_n": 312,
+    "draft_accepted": 141,
+    "sha": "3ff9dda85283"
+   },
+   {
+    "id": "NET-05",
+    "gen_n": 300,
+    "gen_tps": 8.597325374951211,
+    "draft_n": 313,
+    "draft_accepted": 151,
+    "sha": "29a474fccb99"
+   },
+   {
+    "id": "SYS-01",
+    "gen_n": 300,
+    "gen_tps": 8.923800947068967,
+    "draft_n": 303,
+    "draft_accepted": 159,
+    "sha": "41bad4725ee3"
+   },
+   {
+    "id": "SYS-03",
+    "gen_n": 300,
+    "gen_tps": 7.933062148192572,
+    "draft_n": 342,
+    "draft_accepted": 138,
+    "sha": "b2f6c1d771e6"
+   },
+   {
+    "id": "UI-09",
+    "gen_n": 300,
+    "gen_tps": 8.85121344067714,
+    "draft_n": 322,
+    "draft_accepted": 153,
+    "sha": "a73723ca2637"
+   },
+   {
+    "id": "UI-10",
+    "gen_n": 300,
+    "gen_tps": 5.849761037261628,
+    "draft_n": 380,
+    "draft_accepted": 124,
+    "sha": "1382a73f0cd5"
+   },
+   {
+    "id": "NET-12",
+    "gen_n": 300,
+    "gen_tps": 5.23718308911829,
+    "draft_n": 318,
+    "draft_accepted": 146,
+    "sha": "b294b88acef5"
+   },
+   {
+    "id": "PERF-03",
+    "gen_n": 300,
+    "gen_tps": 8.343020817539028,
+    "draft_n": 324,
+    "draft_accepted": 142,
+    "sha": "30973290be1a"
+   }
+  ]
+ },
+ "identical_text": 10
+}

@@ -27,6 +27,7 @@ PACKAGE_DATA_SITES = {
     "star/business/opportunities.py": "star/data/business/candidate_catalog.json",  # PR #404 research catalogue
     "star/character_lifecycle_lessons.py": "docs/lessons/roblox-character-lifecycle.md",
     "star/design_db.py": "star/data/design/ui-ux-pro-max",
+    "star/gold_bank.py": "data/gold_bank/bank.jsonl",  # opt-in gold examples (gold-bank-20261020)
     "star/learned_week.py": "star/skill_packs",
     "star/luau_record_type_lessons.py": "docs/lessons/luau-record-types.md",
     "star/lesson_import.py": "star/skill_packs",
@@ -50,6 +51,7 @@ OTHER_FILE_ANCHORS = {
     "star/eval_runner.py": "developer-only evaluation fixtures",
     "star/failure_ledger.py": "developer-only evaluation prelude",
     "star/general_knowledge_benchmark.py": "source-only benchmark",
+    "star/gold_bank_verify.py": "developer-only gold bank build tool (needs STAR Server)",
     "star/github_app.py": "source-root check blocks credential files",
     "star/media_actions.py": "owner-installed external ComfyUI",
     "star/playtest_learning.py": "server-only playtest learning: robot + specs in server/studio_lab/playtest (brain 2)",
@@ -63,6 +65,7 @@ PENDING_OWNER_REVIEW = frozenset({
     "examples/roblox-templates",
     "data/roblox_api_confusions.json",
     "data/roblox_api/roblox_api.json",  # bundled API dump (#331): not packaged yet
+    "data/gold_bank/bank.jsonl",  # gold bank: not packaged yet (missing file = no examples)
     "evals/studio",  # do not bundle protected evaluation manifests blindly
 })
 
@@ -70,7 +73,7 @@ PENDING_OWNER_REVIEW = frozenset({
 def _commands(local_text: str, workflow_text: str) -> tuple[list[str], list[str]]:
     local = re.search(r"Invoke-CheckedNative \$python @\(('-m',\s*'PyInstaller'.*?)\) 'PyInstaller'",
                       local_text, flags=re.DOTALL)
-    workflow = re.search(r"(?ms)^\s*python -m PyInstaller\s+(.*?)^\s*if \(\$LASTEXITCODE",
+    workflow = re.search(r"(?ms)^\s*python @pyinstaller\s+(.*?)^\s*if \(\$LASTEXITCODE",
                          workflow_text)
     assert local is not None and workflow is not None, "PyInstaller command changed"
     local_argv = re.findall(r"'([^']*)'", local.group(1))
