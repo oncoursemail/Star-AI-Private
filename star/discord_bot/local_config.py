@@ -47,6 +47,8 @@ ALLOWED = frozenset({
     "STAR_DISCORD_PRESENCE", "STAR_DISCORD_PRESENCE_MINUTES",
     "STAR_DISCORD_DRAW", "STAR_DISCORD_DRAW_ANYONE", "STAR_DISCORD_DRAW_TIMEOUT", "STAR_DISCORD_MENTIONS",
     "STAR_DISCORD_HOST",
+    "STAR_DISCORD_GATE_1", "STAR_DISCORD_GATE_2", "STAR_DISCORD_PROACTIVE", "STAR_DISCORD_DIGEST_TIMES",
+    "STAR_DISCORD_EVENT_DMS_PER_HOUR", "STAR_DISCORD_OWNER_TZ",
 })
 # The token may only come from the secret file or the process environment.
 _SECRET_KEYS = frozenset({"STAR_DISCORD_BOT_TOKEN"})
@@ -174,6 +176,17 @@ STAR_DISCORD_LEARNING_DM_OPT_IN=0
 # Where the report comes from: an ssh login that can run 'lxc exec starai' (key login), or a local file path.
 STAR_DISCORD_LEARNING_REPORT_SSH=
 STAR_DISCORD_LEARNING_REPORT=
+# Star's live status and allow-listed actions: one gate per brain (server/discord/deploy.sh gate sets them up).
+# ssh:user@host (the bot's own key, forced to the gate command) or unix:/run/star-discord-gate.sock (same container).
+STAR_DISCORD_GATE_1=
+STAR_DISCORD_GATE_2=
+# With LEARNING_DM_OPT_IN=1 and a gate: a morning and an evening note (owner-local times) and DMs for important
+# events (at most this many an hour). /quiet holds them. PROACTIVE=0 switches only this part off.
+STAR_DISCORD_PROACTIVE=1
+STAR_DISCORD_DIGEST_TIMES=08:30,20:30
+STAR_DISCORD_EVENT_DMS_PER_HOUR=3
+# The owner's time zone (IANA, e.g. America/Chicago). Empty = the PC's offset, sent by the STAR GPU worker.
+STAR_DISCORD_OWNER_TZ=
 """
 
 

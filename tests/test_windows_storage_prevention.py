@@ -256,16 +256,16 @@ class WorkflowTests(unittest.TestCase):
     def test_windows_validation_has_no_artifact_handoff_or_upload_before_package_checks(self):
         self.assertNotIn("star-frontend-dist", WORKFLOW)
         self.assertNotIn("actions/upload-artifact@", job("frontend"))
+        for command in ("npm run typecheck", "npm run test", "npm run build"):
+            self.assertIn(command, job("frontend"))  # React is fully validated once, on Linux
         for name in ("windows-tests", "windows-build"):
             text = job(name)
-            self.assertIn("needs: frontend", text)
+            self.assertNotIn("needs:", text)  # Windows starts at once; the release still needs frontend
             self.assertNotIn("actions/download-artifact@", text)
-            for command in ("npm run typecheck", "npm run test", "npm run build"):
-                self.assertIn(command, text)
+        self.assertIn("npm run build", job("windows-build"))  # the packaged bundle comes from this checkout
         build = job("windows-build")
-        self.assertLess(build.index("./scripts/smoke_windows_installer.ps1"), build.index("actions/upload-artifact@"))
+        self.assertLess(build.index("./scripts/ci/run_in_sandbox.ps1"), build.index("actions/upload-artifact@"))
         self.assertIn("python -m pytest", job("windows-tests"))
-        self.assertIn("shard: [1, 2]", job("windows-tests"))
         self.assertNotIn("continue-on-error", WORKFLOW)
 
     def test_retention_and_trusted_release_dependencies_are_preserved(self):
@@ -273,7 +273,7 @@ class WorkflowTests(unittest.TestCase):
             if "actions/upload-artifact@" in step:
                 days = 1 if "name: STAR-Windows-vNext" in step else 3
                 self.assertIn(f"retention-days: {days}", step)
-        self.assertIn("needs: [windows-build, windows-tests]", job("attest-release"))
+        self.assertIn("needs: [windows-build, windows-tests, frontend]", job("attest-release"))
         self.assertIn("if: github.ref == 'refs/heads/main'", job("attest-release"))
         publish_needs = re.search(r"needs: \[([^\]]+)\]", job("publish-release"))[1]
         self.assertTrue({"windows-build", "attest-release"} <= {name.strip() for name in publish_needs.split(",")})
@@ -282,10 +282,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("attestations: write", job("windows-build"))
 
     def test_native_smoke_is_unconditional_and_limited_to_disposable_runner(self):
-        smoke = next(step for step in steps("windows-build") if "./scripts/smoke_windows_installer.ps1" in step)
+        smoke = next(step for step in steps("windows-build") if "./scripts/ci/run_in_sandbox.ps1" in step)
         self.assertIsNone(re.search(r"(?m)^        if:", smoke))
+        wrapper = (ROOT / "scripts/ci/run_in_sandbox.ps1").read_text(encoding="utf-8")
+        self.assertIn("smoke_windows_installer.ps1", wrapper)
+        self.assertIn("<ReadOnly>true</ReadOnly>", wrapper)
         source = (ROOT / "scripts/smoke_windows_installer.ps1").read_text(encoding="utf-8")
-        self.assertIn("$env:RUNNER_ENVIRONMENT -ne 'github-hosted'", source)
+        self.assertIn("$env:RUNNER_ENVIRONMENT -eq 'github-hosted'", source)
+        self.assertIn(r"[Security.Principal.WindowsIdentity]::GetCurrent().Name -match '\\WDAGUtilityAccount$'", source)
         self.assertIn("$process.Path -eq $installedExe", source)
         self.assertIn("WaitForExit($Seconds * 1000)", source)
         self.assertIn("foreach ($attempt in 1, 2)", source)
@@ -293,7 +297,6 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--ui-doctor", source)
         self.assertIn("--build-doctor", source)
         self.assertNotIn("Remove-Item", source)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,12 +45,11 @@ concurrency:
   group: ${{ (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.preview_format != 'none')) && 'star-windows-artifact-writer' || format('star-windows-{0}', github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.ref != 'refs/heads/main' && inputs.preview_format == 'none') }}
 
-# Layout: Linux React validation is still required. Each Windows job builds and tests
-# its own React bundle from the checked-out commit, so PR validation needs no artifact
-# storage. The offline suite still runs as two shards while windows-build packages,
-# exercises, installs, and checks the exact binaries later offered for release.
-# A release still needs every shard green: attest-release needs windows-tests, and
-# publish-release needs attest-release. Check names: "Windows offline tests (1/2)" and "(2/2)".
+# Layout: the Linux frontend job typechecks, tests and builds React; the Windows jobs start at once
+# (no wait for it) and do only what needs Windows: the offline suite with the desktop requirements,
+# and windows-build, which packages, exercises, installs and checks the exact binaries later offered
+# for release. No artifact storage for PR validation. A release needs all three green: attest-release
+# needs frontend, windows-build and windows-tests; publish-release needs attest-release.
 jobs:
   frontend:
     name: React desktop assets
@@ -75,18 +74,15 @@ jobs:
           sh ../scripts/ci_heavy.sh sh -c 'npm run typecheck && npm run test && npm run build'
           test -s dist/index.html
 
+  # The whole offline suite runs on Linux too (tests.yml); this job is the same suite on Windows with the
+  # desktop requirements, as one xdist run instead of two shards (one PC runner would run shards one after another).
   windows-tests:
-    name: Windows offline tests (${{ matrix.shard }}/2)
-    needs: frontend
+    name: Windows offline tests
     if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'windows-ci') && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: [self-hosted, windows, star-win]
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
     steps:
       # Self-hosted Windows runner = the owner's PC: never let a job see the real user profile
       # (%APPDATA%\STAR holds the owner's chats and settings).
@@ -100,78 +96,76 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # No `cache: pip`: restoring it downloaded a 526 MB archive (~30 s) that the base venv makes useless.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-desktop.txt
-            requirements-dev.txt
-      # Self-hosted runners keep the tool-cache Python between jobs: give this job its own venv.
-      - name: Fresh Python environment for this job
-        run: python -c "import os,venv; d=os.path.join(os.environ['RUNNER_TEMP'],'job-venv'); venv.create(d, with_pip=True); open(os.environ['GITHUB_PATH'],'a').write(os.path.join(d,'Scripts' if os.name=='nt' else 'bin')+chr(10))"
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22'
-      - name: Build and verify React assets on this Windows runner
+      # main (release) and requested previews: clean install, clean build, maximum compression.
+      # Every other run validates the same source with the runner's host caches and fast packaging.
+      - name: Choose a clean release build or a cached validation build
         shell: pwsh
-        working-directory: frontend
+        env:
+          STAR_PREVIEW_FORMAT: ${{ inputs.preview_format }}
         run: |
-          npm install --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw 'React dependencies could not be installed' }
-          npm run typecheck
-          if ($LASTEXITCODE -ne 0) { throw 'React type checks failed' }
-          npm run test
-          if ($LASTEXITCODE -ne 0) { throw 'React tests failed' }
-          npm run build
-          if ($LASTEXITCODE -ne 0) { throw 'React build failed' }
-          if (-not (Test-Path 'dist/index.html') -or (Get-Item 'dist/index.html').Length -eq 0) {
-            throw 'React index missing or empty'
+          if ($env:GITHUB_REF -ne 'refs/heads/main' -and $env:STAR_PREVIEW_FORMAT -notin 'setup', 'portable') {
+            'STAR_FAST_PACKAGE=1' >> $env:GITHUB_ENV
+            if ($env:STAR_CI_CACHE) { "STAR_CACHE_DIR=$env:STAR_CI_CACHE" >> $env:GITHUB_ENV }
+            "Validation build; host caches: $([bool]$env:STAR_CI_CACHE)" >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            'Clean release build: no caches, maximum compression.' >> $env:GITHUB_STEP_SUMMARY
           }
-      - name: Install STAR test requirements
+      # Self-hosted runners keep the tool-cache Python between jobs: every job gets its own fresh venv.
+      # Cached runs layer it over a base venv built once per requirements hash (scripts/ci_windows_cache.py).
+      - name: Python environment for this job
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-desktop.txt -r requirements-dev.txt
-          if ($LASTEXITCODE -ne 0) { throw 'Python dependencies could not be installed' }
-          python -m pip check
+          $venv = Join-Path $env:RUNNER_TEMP 'job-venv'
+          $requirements = 'requirements.txt', 'requirements-desktop.txt', 'requirements-dev.txt'
+          $extra = 'pyinstaller>=6.10,<7', 'pytest-xdist==3.8.0'
+          if ($env:STAR_CACHE_DIR) {
+            python scripts/ci_windows_cache.py python-base --cache $env:STAR_CACHE_DIR --venv $venv --requirements @requirements --extra @extra
+            if ($LASTEXITCODE -ne 0) { throw 'Cached Python base could not be prepared' }
+          } else {
+            python -m venv $venv
+            if ($LASTEXITCODE -ne 0) { throw 'Python environment could not be created' }
+            & "$venv\Scripts\python.exe" -m pip install --disable-pip-version-check @($requirements | ForEach-Object { '-r', $_ }) @extra
+            if ($LASTEXITCODE -ne 0) { throw 'Python dependencies could not be installed' }
+          }
+          "$venv\Scripts" >> $env:GITHUB_PATH
+          & "$venv\Scripts\python.exe" -m pip check
           if ($LASTEXITCODE -ne 0) { throw 'Python dependency check failed' }
       - name: Run offline tests
         shell: pwsh
-        env:
-          STAR_TEST_SHARD: ${{ matrix.shard }}/2
         run: |
-          python -m pytest -q --durations=15 --junitxml=test-results/windows-shard.xml
+          python -m pytest -q -n 4 --durations=15 --junitxml=test-results/windows-tests.xml
           if ($LASTEXITCODE -ne 0) { throw 'Offline tests failed' }
           python -m compileall -q star star_desktop.py
-      - name: Record this shard's real test result counts without artifact storage
+      - name: Record the real test result counts without artifact storage
         if: ${{ always() }}
         shell: pwsh
         run: |
-          if (Test-Path 'test-results/windows-shard.xml') {
-            [xml]$report = Get-Content 'test-results/windows-shard.xml' -Raw
+          if (Test-Path 'test-results/windows-tests.xml') {
+            [xml]$report = Get-Content 'test-results/windows-tests.xml' -Raw
             $total = $report.SelectNodes('//testcase').Count
             $failed = $report.SelectNodes('//testcase[failure or error]').Count
             $skipped = $report.SelectNodes('//testcase[skipped]').Count
-            "Windows shard: $total reported cases; $failed failures/errors; $skipped skipped." >> $env:GITHUB_STEP_SUMMARY
+            "Windows tests: $total reported cases; $failed failures/errors; $skipped skipped." >> $env:GITHUB_STEP_SUMMARY
           } else {
-            'Windows shard did not produce a test report; do not infer a passing suite.' >> $env:GITHUB_STEP_SUMMARY
+            'Windows tests did not produce a report; do not infer a passing suite.' >> $env:GITHUB_STEP_SUMMARY
           }
-      - name: Keep this shard's per-test results and timings
+      - name: Keep the per-test results and timings
         if: ${{ always() && github.ref == 'refs/heads/main' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-tests-shard-${{ matrix.shard }}
-          path: test-results/windows-shard.xml
+          name: windows-tests
+          path: test-results/windows-tests.xml
           if-no-files-found: ignore
           retention-days: 3
 
   windows-build:
-    needs: frontend
     if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'windows-ci') && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: [self-hosted, windows, star-win]
-    timeout-minutes: 65
+    timeout-minutes: 40
     permissions:
       contents: read
       actions: read
@@ -202,49 +196,82 @@ jobs:
             run_id = [string]$env:GITHUB_RUN_ID
           } | ConvertTo-Json -Compress
           [System.IO.File]::WriteAllText('star/build-info.json', $payload, (New-Object System.Text.UTF8Encoding $false))
+      # No `cache: pip`: restoring it downloaded a 526 MB archive (~30 s) that the base venv makes useless.
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-desktop.txt
-            requirements-dev.txt
-      # Self-hosted runners keep the tool-cache Python between jobs: give this job its own venv.
-      - name: Fresh Python environment for this job
-        run: python -c "import os,venv; d=os.path.join(os.environ['RUNNER_TEMP'],'job-venv'); venv.create(d, with_pip=True); open(os.environ['GITHUB_PATH'],'a').write(os.path.join(d,'Scripts' if os.name=='nt' else 'bin')+chr(10))"
+      # main (release) and requested previews: clean install, clean build, maximum compression.
+      # Every other run validates the same source with the runner's host caches and fast packaging.
+      - name: Choose a clean release build or a cached validation build
+        shell: pwsh
+        env:
+          STAR_PREVIEW_FORMAT: ${{ inputs.preview_format }}
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main' -and $env:STAR_PREVIEW_FORMAT -notin 'setup', 'portable') {
+            'STAR_FAST_PACKAGE=1' >> $env:GITHUB_ENV
+            if ($env:STAR_CI_CACHE) { "STAR_CACHE_DIR=$env:STAR_CI_CACHE" >> $env:GITHUB_ENV }
+            "Validation build; host caches: $([bool]$env:STAR_CI_CACHE)" >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            'Clean release build: no caches, maximum compression.' >> $env:GITHUB_STEP_SUMMARY
+          }
+      # Self-hosted runners keep the tool-cache Python between jobs: every job gets its own fresh venv.
+      # Cached runs layer it over a base venv built once per requirements hash (scripts/ci_windows_cache.py).
+      - name: Python environment for this job
+        shell: pwsh
+        run: |
+          $venv = Join-Path $env:RUNNER_TEMP 'job-venv'
+          $requirements = 'requirements.txt', 'requirements-desktop.txt', 'requirements-dev.txt'
+          $extra = 'pyinstaller>=6.10,<7', 'pytest-xdist==3.8.0'
+          if ($env:STAR_CACHE_DIR) {
+            python scripts/ci_windows_cache.py python-base --cache $env:STAR_CACHE_DIR --venv $venv --requirements @requirements --extra @extra
+            if ($LASTEXITCODE -ne 0) { throw 'Cached Python base could not be prepared' }
+          } else {
+            python -m venv $venv
+            if ($LASTEXITCODE -ne 0) { throw 'Python environment could not be created' }
+            & "$venv\Scripts\python.exe" -m pip install --disable-pip-version-check @($requirements | ForEach-Object { '-r', $_ }) @extra
+            if ($LASTEXITCODE -ne 0) { throw 'Python dependencies could not be installed' }
+          }
+          "$venv\Scripts" >> $env:GITHUB_PATH
+          & "$venv\Scripts\python.exe" -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'Python dependency check failed' }
+      # The React bundle is platform independent and the Linux frontend job typechecks, tests and builds it.
+      # Validation runs reuse the bundle built here for the same frontend/ tree (git tree hash); main builds it fresh.
+      - name: Reuse the React bundle built for this exact frontend tree
+        id: frontend-cache
+        shell: pwsh
+        run: |
+          $key = (git rev-parse HEAD:frontend).Trim()
+          "key=$key" >> $env:GITHUB_OUTPUT
+          if ($env:STAR_CACHE_DIR) {
+            python scripts/ci_windows_cache.py restore --cache $env:STAR_CACHE_DIR --kind frontend --key $key --dest frontend/dist
+            if ($LASTEXITCODE -eq 0) { 'hit=true' >> $env:GITHUB_OUTPUT } elseif ($LASTEXITCODE -ne 3) { throw 'React bundle cache failed' }
+          }
+          exit 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.frontend-cache.outputs.hit != 'true'
         with:
           node-version: '22'
-      - name: Build and verify React assets on this Windows runner
+      - name: Build React assets on this Windows runner
+        if: steps.frontend-cache.outputs.hit != 'true'
         shell: pwsh
         working-directory: frontend
+        env:
+          STAR_FRONTEND_KEY: ${{ steps.frontend-cache.outputs.key }}
         run: |
           npm install --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw 'React dependencies could not be installed' }
-          npm run typecheck
-          if ($LASTEXITCODE -ne 0) { throw 'React type checks failed' }
-          npm run test
-          if ($LASTEXITCODE -ne 0) { throw 'React tests failed' }
           npm run build
           if ($LASTEXITCODE -ne 0) { throw 'React build failed' }
-          if (-not (Test-Path 'dist/index.html') -or (Get-Item 'dist/index.html').Length -eq 0) {
+          if ($env:STAR_CACHE_DIR) {
+            python ../scripts/ci_windows_cache.py save --cache $env:STAR_CACHE_DIR --kind frontend --key $env:STAR_FRONTEND_KEY --src dist
+            if ($LASTEXITCODE -ne 0) { throw 'React bundle could not be cached' }
+          }
+      - name: Check the React bundle used for packaging
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'frontend/dist/index.html') -or (Get-Item 'frontend/dist/index.html').Length -eq 0) {
             throw 'React index missing or empty'
           }
-      - name: Check the React bundle produced on this runner
-        shell: pwsh
-        run: |
-          if (-not (Test-Path 'frontend/dist/index.html')) { throw 'React index missing' }
-      - name: Install STAR build requirements
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-desktop.txt -r requirements-dev.txt
-          if ($LASTEXITCODE -ne 0) { throw 'Python dependencies could not be installed' }
-          python -m pip install 'pyinstaller>=6.10,<7'
-          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller could not be installed' }
-          python -m pip check
-          if ($LASTEXITCODE -ne 0) { throw 'Python dependency check failed' }
       - name: Capture real STAR OLED GUI screens for review
         shell: pwsh
         run: |
@@ -256,7 +283,12 @@ jobs:
       - name: Package STAR.exe with vector assets
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name STAR `
+          # Validation runs: third-party packages are analysed once per requirements hash and reused, only STAR's
+          # own code is analysed again (scripts/ci/pyinstaller_layered.py). main/previews: plain full analysis.
+          $pyinstaller = if ($env:STAR_CACHE_DIR) {
+            'scripts/ci/pyinstaller_layered.py', '--cache', (Join-Path $env:STAR_CACHE_DIR 'pyinstaller-base'), '--'
+          } else { '-m', 'PyInstaller' }
+          python @pyinstaller --noconfirm --clean --onedir --windowed --name STAR `
             --icon assets/star.ico `
             --add-data 'frontend/dist;frontend/dist' --add-data 'star/build-info.json;star' --add-data 'star/skill_packs;star/skill_packs' --add-data 'star/data;star/data' --add-data 'star/studio_lab_specs;star/studio_lab_specs' --add-data 'star/voice/voices.json;star/voice' --add-data 'star/blender_worker.py;star' --add-data 'star/blender_animation_worker.py;star' `
             --hidden-import PySide6.QtWebEngineWidgets --hidden-import PySide6.QtWebChannel `
@@ -289,27 +321,39 @@ jobs:
           if ($null -eq $build.ExitCode -or $build.ExitCode -ne 0) {
             throw "STAR packaged build SHA mismatch or missing metadata: $($build.ExitCode)"
           }
+      # The portable ZIP and the checksum file exist only for uploads (main and requested previews, which are
+      # never fast validation builds), so validation runs skip both.
       - name: Zip portable build
+        if: env.STAR_FAST_PACKAGE != '1'
         shell: pwsh
         run: |
-          Compress-Archive -Path 'dist/STAR/*' -DestinationPath 'STAR-Genesis-Windows-x64.zip' -Force
+          # .NET zip writer: Compress-Archive took 25-60 s on the same folder.
+          $zip = Join-Path $PWD 'STAR-Genesis-Windows-x64.zip'
+          if (Test-Path $zip) { throw 'Stale portable ZIP in the workspace' }
+          [IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path 'dist/STAR').Path, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
       - name: Build upgradeable Windows setup EXE
         shell: pwsh
         run: |
-          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          # STAR_ISCC: the runner's own Inno Setup 6 (star-ci-win.cmd sets it on the PC); hosted runners use choco.
+          $iscc = if ($env:STAR_ISCC) { $env:STAR_ISCC } else { 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' }
           if (-not (Test-Path $iscc)) { choco install innosetup --yes --no-progress }
           if (-not (Test-Path $iscc)) { throw 'Inno Setup was not installed' }
           $version = (python -c "from star.version import __version__;print(__version__)").Trim()
-          & $iscc "/DStarVersion=$version" 'installer/STAR.iss'
+          $defines = @("/DStarVersion=$version")
+          if ($env:STAR_FAST_PACKAGE) { $defines += '/DStarFastCompression' }
+          & $iscc @defines 'installer/STAR.iss'
           if ($LASTEXITCODE -ne 0) { throw 'STAR installer build failed' }
           $setup = "dist/STAR-Setup-v$version.exe"
           if (-not (Test-Path $setup)) { throw "Missing $setup" }
-      - name: Install and smoke test the exact Setup output on the disposable Windows runner
+      # The installer test writes into the real per-user locations, so it runs only on a disposable Windows:
+      # directly on a GitHub-hosted runner, otherwise inside a fresh Windows Sandbox (scripts/ci/run_in_sandbox.ps1).
+      - name: Install and smoke test the exact Setup output on a disposable Windows
         shell: pwsh
         env:
           STAR_EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: ./scripts/smoke_windows_installer.ps1
+        run: ./scripts/ci/run_in_sandbox.ps1
       - name: Create standalone SHA-256 file for manual preview downloads
+        if: env.STAR_FAST_PACKAGE != '1'
         shell: pwsh
         run: |
           $version = (python -c "from star.version import __version__;print(__version__)").Trim()
@@ -382,7 +426,7 @@ jobs:
   # The PR build receives NO attestation or publishing permissions. Only
   # verified main-branch artifacts enter this trusted provenance job.
   attest-release:
-    needs: [windows-build, windows-tests]
+    needs: [windows-build, windows-tests, frontend]
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux, star-ci]
     timeout-minutes: 15

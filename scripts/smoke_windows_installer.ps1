@@ -2,9 +2,24 @@
 # This supplements native human acceptance; it does not claim a real-user upgrade.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows' -or
-    $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or -not $env:RUNNER_TEMP) {
-  throw 'Installer smoke checks require a disposable GitHub-hosted Windows runner'
+$githubHosted = $env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_OS -eq 'Windows' -and
+  $env:RUNNER_ENVIRONMENT -eq 'github-hosted'
+# Windows Sandbox (scripts/ci/run_in_sandbox.ps1): a fresh Windows that is thrown away afterwards. Its only
+# user is WDAGUtilityAccount. Checked from the process token and the real AppData folder Inno writes to,
+# never from environment variables, so the owner's PC (whose runner runs as the owner) can never match.
+$sandboxProfile = Join-Path $env:SystemDrive 'Users\WDAGUtilityAccount\'
+$disposableSandbox = $env:STAR_DISPOSABLE_WINDOWS -eq '1' -and
+  [Security.Principal.WindowsIdentity]::GetCurrent().Name -match '\\WDAGUtilityAccount$' -and
+  ([Environment]::GetFolderPath('ApplicationData') + '\').StartsWith($sandboxProfile, [StringComparison]::OrdinalIgnoreCase)
+# Throwaway CI VM restored from a snapshot after every run (docs/agents/winvm-20261020.md): local user `ci`
+# plus a marker file baked into the image. The owner's PC has neither.
+$vmProfile = Join-Path $env:SystemDrive 'Users\ci\'
+$disposableVm = $env:STAR_DISPOSABLE_WINDOWS -eq '1' -and
+  [Security.Principal.WindowsIdentity]::GetCurrent().Name -match '\\ci$' -and
+  ([Environment]::GetFolderPath('ApplicationData') + '\').StartsWith($vmProfile, [StringComparison]::OrdinalIgnoreCase) -and
+  (Test-Path -LiteralPath 'C:\ProgramData\STAR-CI\disposable-vm.txt' -PathType Leaf)
+if (-not ($githubHosted -or $disposableSandbox -or $disposableVm) -or -not $env:RUNNER_TEMP) {
+  throw 'Installer smoke checks require a disposable Windows: a GitHub-hosted runner, Windows Sandbox or the CI VM'
 }
 if ($env:STAR_EXPECTED_HEAD_SHA -notmatch '^[0-9a-f]{40}$') {
   throw 'An exact expected source SHA is required'
