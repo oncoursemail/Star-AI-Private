@@ -1,4 +1,4 @@
-"""CLI: python -m starkb {build|stats|subset|embed|search|ask|api-lookup|luau-check|serve|eval|
+"""CLI: python -m starkb {build|build-private|stats|subset|embed|search|ask|api-lookup|luau-check|serve|eval|
                          study-plan|study|study-status|refresh|api-coverage|
                          offload-export|offload-import|offload-sample|watchdog}
 
@@ -27,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("build", help="chunk the checked-out sources and rebuild the FTS5 index (one transaction)")
     p.add_argument("--force", action="store_true", help="accept a result with far fewer chunks than before")
     sub.add_parser("stats", help="print index statistics")
+
+    p = sub.add_parser("build-private", help="index a brain vault (Markdown notes) into the PRIVATE database (--db)")
+    p.add_argument("--vault", type=Path, required=True)
+    p.add_argument("--force", action="store_true", help="accept a result with far fewer chunks than before")
 
     p = sub.add_parser("subset", help="write the text hashes of a focus-area subset to a file")
     p.add_argument("--out", type=Path, required=True)
@@ -158,6 +162,12 @@ def main(argv: list[str] | None = None) -> int:
             count = offload.import_vectors(args.db, sys.stdin.buffer, EMBED_MODEL, batch=args.batch,
                                            log=lambda m: print(m, file=sys.stderr, flush=True))
         print(json.dumps({"model": EMBED_MODEL, "result": count}), file=sys.stderr)
+        return 0
+
+    if args.cmd == "build-private":
+        from .private_corpus import build_private
+        stats = build_private(args.vault, args.db, force=args.force)
+        print(json.dumps(stats["_all"] | {"db": str(args.db)}, indent=2))
         return 0
 
     if args.cmd == "search":

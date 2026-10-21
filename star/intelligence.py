@@ -27,11 +27,13 @@ from .obsidian_bridge import ObsidianVault
 from .roblox_craft import audit as craft_audit, recipe as craft_recipe
 from .roblox_cloud import RobloxCloud
 from .roblox_research import RobloxResearch
+from .roblox_intelligence_hub import RobloxIntelligenceHub
 from .shared_brain_runtime import (RUNTIME_TOOLS, SharedBrainUnavailable,
                                    make_shared_brain_runtime, registered_workspace,
                                    shared_store_present)
 from . import design_db, design_md, map_plan
 from .roblox_docs_live import RobloxDocsLive, live_enabled
+from .commerce_tools import COMMERCE_TOOLS, COMMERCE_TOOL_NAMES, COMMERCE_TRIGGER, call_commerce_tool
 
 
 def _tool(name: str, description: str, properties: dict, required: tuple[str, ...] = ()) -> dict:
@@ -101,6 +103,38 @@ ROBLOX_GAME_TOOLS = (
     _tool("star_roblox_compare_games", "Compare two to four public Roblox experiences by Universe ID using comparable snapshot metrics. Never infer revenue or retention.", {"universe_ids": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 2, "maxItems": 4, "uniqueItems": True}}, ("universe_ids",)),
     _tool("star_roblox_game_image", "Visually inspect pixels of one official Roblox game icon or thumbnail in the existing STAR vision-capable chat. Image may be marketing art, not gameplay.", {"universe_id": {"type": "integer", "minimum": 1}, "kind": {"type": "string", "enum": ["icon", "thumbnail"], "default": "thumbnail"}, "index": {"type": "integer", "minimum": 0, "maximum": 3, "default": 0}}, ("universe_id",)),
 )
+
+# Fixed-host public catalog and owner-consented private analytics: no player profiles.
+ROBLOX_HUB_TOOLS = (
+    _tool("star_roblox_marketplace_search",
+          "Search public Roblox avatar Marketplace item metadata and prices; no purchase, import or ownership claims.",
+          {"query": _s(100), "category": {"type": "integer", "enum": [1, 3, 11, 12], "default": 1}}, ("query",)),
+    _tool("star_roblox_creator_store_search",
+          "Search beta Roblox Creator Store by type. Public metadata only; never install or run untrusted assets.",
+          {"query": _s(100), "category": {"type": "string", "enum": ["Audio", "Model", "Decal", "Plugin", "MeshPart", "Video", "FontFamily"], "default": "Model"}}, ("query",)),
+    _tool("star_roblox_creator_asset",
+          "Read bounded public Roblox Creator Store asset metadata. No downloads or script execution.",
+          {"asset_id": {"type": "integer", "minimum": 1}}, ("asset_id",)),
+    _tool("star_roblox_analytics_metrics",
+          "Query aggregated Roblox creator metrics only for owner-approved universes with a key scoped universe.analytics:read. Not individual player data. 1-90 days, async queries may need polling.",
+          {"universe_id": {"type": "integer", "minimum": 1},
+           "metric": {"type": "string", "enum": ["DailyActiveUsers", "MonthlyActiveUsers", "Visits", "AveragePlayTimeMinutesPerDAU", "AverageSessionLengthMinutes", "ForwardD1Retention", "ForwardD7Retention", "ForwardD30Retention", "DailyRevenue", "PayingUsersCVR"]},
+           "start_day": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+           "end_day": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+           "granularity": {"type": "string", "enum": ["OneDay", "OneWeek", "OneMonth", "None"], "default": "OneDay"},
+           "breakdown": {"type": "string", "enum": ["Country", "Platform", "OperatingSystem", ""], "default": ""}},
+          ("universe_id", "metric", "start_day", "end_day")),
+    _tool("star_roblox_analytics_poll",
+          "Poll one owner-authorized Roblox analytics query operation using only a fixed endpoint, no arbitrary URL.",
+          {"universe_id": {"type": "integer", "minimum": 1},
+           "operation_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
+           "metric": {"type": "string", "enum": ["DailyActiveUsers", "MonthlyActiveUsers", "Visits", "AveragePlayTimeMinutesPerDAU", "AverageSessionLengthMinutes", "ForwardD1Retention", "ForwardD7Retention", "ForwardD30Retention", "DailyRevenue", "PayingUsersCVR"]}},
+          ("universe_id", "operation_id", "metric")),
+    _tool("star_roblox_gameplay_telemetry_plan",
+          "Preview privacy-safe native Roblox AnalyticsService events and Studio playtest evidence. Does not play any game or record player data.", {}),
+)
+_HUB_TOOL_NAMES = frozenset(tool["name"] for tool in ROBLOX_HUB_TOOLS)
+
 ROBLOX_KNOWLEDGE_TOOLS = (
     _tool("star_roblox_docs", "Find relevant official Roblox Creator Hub and Luau documentation links from the curated index; not full-text page retrieval.", {"query": _s(140), "limit": _limit(12, 7)}, ("query",)),
     _tool("star_roblox_docs_read", "Fetch an actual Markdown or YAML reference from Roblox's official creator-docs GitHub source. Specify a relative path like scripting/events/remote.md or reference/engine/classes/RemoteEvent.yaml. Fixed repo only.", {"path": _s(210), "max_chars": {"type": "integer", "minimum": 1000, "maximum": 20000, "default": 14000}}, ("path",)),
@@ -270,13 +304,20 @@ _OFF_VALUES = {"0", "off", "false", "no"}
 _DESIGN_NAMES = frozenset(tool["name"] for tool in DESIGN_TOOLS)
 _DOCS_LIVE_NAMES = frozenset(tool["name"] for tool in ROBLOX_DOCS_LIVE_TOOLS)
 MAX_TOOL_TEXT = 20000
+_HUB_CATALOG_TRIGGER = re.compile(r"\b(creator.store|toolbox|marketplace|avatar.(?:catalog|items?|accessor\w*)|"
+                                  r"roblox.catalog|catalog.(?:items?|search)|asset.store|"
+                                  r"(?:find|search|browse)\w*\W+(?:\w+\W+){0,3}plugins?)\b", re.I)
+_HUB_ANALYTICS_TRIGGER = re.compile(r"\b(analytics|dau|mau|retention|revenue|monetiz\w*|engagement|play.?time|"
+                                    r"session.length|creator.metrics?)\b", re.I)
+_HUB_GAMEPLAY_TRIGGER = re.compile(r"\b(telemetry|instrumentation|funnel|analytics.?service|player.behavio\w*|"
+                                   r"gameplay.(?:events?|analytics))\b", re.I)
 _CLOUD_TRIGGER = re.compile(r"\b(open.?cloud|owned.universe|owner.analytics|authorized.universe|api.key|publish\w*|headless|"
                             r"test.(?:place|experience|run)|run.(?:the.)?tests?|luau.execution|data.?stores?|"
                             r"(?:place|experience|universe).(?:info\w*|id))\b", re.I)
 ALL_TOOLS = {tool["name"]: tool for tool in (*SKILL_TOOLS, *OBSIDIAN_TOOLS, *GRAPHIFY_TOOLS,
              *ROBLOX_GAME_TOOLS, *ROBLOX_KNOWLEDGE_TOOLS, *DOC_KNOWLEDGE_TOOLS, *ROBLOX_VIDEO_TOOLS,
-             *ROBLOX_CLOUD_TOOLS, *CRAFT_TOOLS, *ASSET_TOOLS, *DESIGN_TOOLS, *MAP_PLAN_TOOLS, *STUDIO_LAB_TOOLS, *ROBLOX_DOCS_LIVE_TOOLS, *RUNTIME_TOOLS, *ARCHITECTURE_TOOLS,
-             *VFX_TOOLS)}
+             *ROBLOX_CLOUD_TOOLS, *ROBLOX_HUB_TOOLS, *CRAFT_TOOLS, *ASSET_TOOLS, *DESIGN_TOOLS, *MAP_PLAN_TOOLS, *STUDIO_LAB_TOOLS, *ROBLOX_DOCS_LIVE_TOOLS, *RUNTIME_TOOLS, *ARCHITECTURE_TOOLS,
+             *VFX_TOOLS, *COMMERCE_TOOLS)}
 _DOC_TOOL_NAMES = frozenset(tool["name"] for tool in DOC_KNOWLEDGE_TOOLS)
 _SHARED_TOOL_NAMES = frozenset(tool["name"] for tool in RUNTIME_TOOLS)
 _LEGACY_GRAPH_READ_NAMES = frozenset({"star_graphify_query", "star_graphify_stats"})
@@ -297,6 +338,13 @@ _ASSET_TRIGGER = re.compile(r"\b(assets?|meshes?|textures?|pbr|blender|terrain|b
 _CRAFT_TRIGGER = re.compile(r"\b(ui|gui|hud|vfx|particles?|animations?|tweens?|rigs?|audit)\b", re.I)
 _SKILL_TRIGGER = re.compile(r"\b(skill|expert|workflow|tool|roblox|luau|ui|design|debug|build|fix|test|code|studio|script)\b", re.I)
 _VAULT_TRIGGER = re.compile(r"\b(obsidian|obsidion|vault|notes?|journal|remember|knowledge|documents?|docs|meeting|decision|research|plan|backlinks?|wiki-?links?)\b", re.I)
+# Only for the STAR brain vault (star.brain_vault, marked by .brain-vault.json): the team's own vocabulary, so a
+# question like "how does night school work" reaches the notes without the word "notes" in it. Deliberately narrow:
+# a general Roblox question must not pay for four extra tool schemas (about 430 tokens) or an extra search.
+_BRAIN_TRIGGER = re.compile(
+    r"\b(night.?school|conductor|forge|metallic|priority.?proxy|brain.?[123]|star-(?:fast|deep|voice)|"
+    r"knowledge.?service|ledger|owner.?todo|what\s+(?:did|have)\s+we\s+(?:change|do|ship|merge|decide)|"
+    r"what\s+(?:changed|happened)|yesterday|last\s+night|this\s+week|our\s+(?:notes|docs|code)|team\s+notes|brain\s+vault)\b", re.I)
 _GRAPH_TRIGGER = re.compile(r"\b(graphify|graph|architecture|codebase|dependenc\w*|relationships?|connections?|module|function|imports?|calls?|trace|impact|bug|scripts?)\b", re.I)
 _ROBLOX_TRIGGER = re.compile(r"\b(roblox|luau|devforum|studio|universe|obby|tycoon|gamepass|game.pass|battlegrounds|fps|roproxy)\b", re.I)
 _GAME_TRIGGER = re.compile(r"\b(games?|experiences?|types?|genres?|playing|players?|statistics|stats|visits|favorites|popular|compare|research|search|find|discover|trends?|universe|places?)\b", re.I)
@@ -311,7 +359,7 @@ class LocalIntelligence:
     def __init__(self, *, home: Path, workspace: Path | None = None,
                  obsidian_vault: Path | None = None, skills_enabled: bool = True,
                  graphify_enabled: bool = True, roblox_research_enabled: bool = True,
-                 asset_forge_enabled: bool = False, docs=None, cloud=None, design_enabled: bool = True,
+                 asset_forge_enabled: bool = False, commerce_enabled: bool = False, project: str = "STAR", docs=None, cloud=None, design_enabled: bool = True,
                  map_plans_enabled: bool = True, studio_lab_enabled: bool = False,
                  vfx_studio_enabled: bool = False,
                  docs_live: RobloxDocsLive | None = None,
@@ -337,14 +385,25 @@ class LocalIntelligence:
         self._shared_root = (registered_workspace(workspace, registered_workspaces)
                              if graphify_enabled is True else None)
         self.roblox = RobloxResearch(home=home) if roblox_research_enabled else None
+        # An invalid owner-provided analytics allowlist must not crash normal STAR chat.
+        self.roblox_hub_config_error = False
+        try:
+            self.roblox_hub = RobloxIntelligenceHub() if roblox_research_enabled else None
+        except ValueError:
+            self.roblox_hub = RobloxIntelligenceHub(analytics_universes="") if roblox_research_enabled else None
+            self.roblox_hub_config_error = True
         self.asset_forge_enabled = asset_forge_enabled
+        self.commerce_enabled = commerce_enabled is True
+        self.project = project
         if skills_enabled:
             install_starters(home / "skills")
             self.skills = SkillLibrary(workspace=workspace, home=home, bundled=PACKS_DIR)
         if graphify_enabled is True and workspace is not None:
             self.graph = GraphifyGraph(workspace)
+        self.vault_is_brain = False
         if obsidian_vault is not None:
             self.vault = ObsidianVault(obsidian_vault)
+            self.vault_is_brain = (self.vault.root / ".brain-vault.json").is_file()
 
     def _graph_allowed(self) -> bool:
         if self._closed or self.graph is None:
@@ -377,6 +436,8 @@ class LocalIntelligence:
     def close(self) -> None:
         """Revoke this hub. Dispatch holds no SQLite handle between calls."""
         self._closed = True
+        if self.roblox_hub is not None:
+            self.roblox_hub.close()
         if self.shared_brain is not None:
             self.shared_brain.close()
 
@@ -395,11 +456,16 @@ class LocalIntelligence:
             "obsidian": {"enabled": self.vault is not None,
                          "read_only": True,
                          "note": "Select an Obsidian vault folder and explicitly enable access."},
+            "commerce": {"enabled": self.commerce_enabled, "needs_owner_approval": True,
+                         "tools": [tool["name"] for tool in COMMERCE_TOOLS] if self.commerce_enabled else []},
             "asset_forge": {"enabled": self.asset_forge_enabled,
                             "online_search": self.asset_forge_enabled and self.roblox is not None},
             "craft": {"enabled": self.roblox is not None, "read_only": True,
                       "tools": [tool["name"] for tool in CRAFT_TOOLS] if self.roblox else []},
             "roblox_research": self.roblox.status() if self.roblox else {"enabled": False},
+            "roblox_intelligence_hub": ({**self.roblox_hub.status(),
+                                        "analytics_configuration_error": self.roblox_hub_config_error}
+                                       if self.roblox_hub else {"enabled": False}),
             "doc_knowledge": {"enabled": self.docs is not None, "read_only": True},
             "design": {"enabled": self.design_enabled, "read_only": True, "offline": True,
                        "tools": [tool["name"] for tool in DESIGN_TOOLS] if self.design_enabled else []},
@@ -421,9 +487,11 @@ class LocalIntelligence:
                 is_roblox_dev_prompt(prompt) or re.search(r"\b(blender|3d|procedural|poly.?haven|game\s?dev)\b", prompt, re.I)):
             # Only the first asset tool uses a third-party HTTP endpoint.
             result.extend(ASSET_TOOLS if self.roblox is not None else ASSET_TOOLS[1:])
+        if self.commerce_enabled and COMMERCE_TRIGGER.search(prompt):
+            result.extend(COMMERCE_TOOLS)
         if self.skills and _SKILL_TRIGGER.search(prompt):
             result.extend(SKILL_TOOLS)
-        if self.vault and _VAULT_TRIGGER.search(prompt):
+        if self.vault and (_VAULT_TRIGGER.search(prompt) or (self.vault_is_brain and _BRAIN_TRIGGER.search(prompt))):
             result.extend(OBSIDIAN_TOOLS)
         if self._graph_allowed() and _GRAPH_TRIGGER.search(prompt):
             if self.graph.path.is_file():
@@ -446,6 +514,13 @@ class LocalIntelligence:
             result.extend(VFX_TOOLS)
         if self.docs_live is not None and roblox_prompt and _DOCS_TRIGGER.search(prompt):
             result.extend(ROBLOX_DOCS_LIVE_TOOLS)
+        if self.roblox_hub and roblox_prompt:
+            if _HUB_CATALOG_TRIGGER.search(prompt):
+                result.extend(ROBLOX_HUB_TOOLS[:3])
+            if _HUB_GAMEPLAY_TRIGGER.search(prompt):
+                result.append(ROBLOX_HUB_TOOLS[5])
+            if _HUB_ANALYTICS_TRIGGER.search(prompt) and self.roblox_hub.allowed_universes:
+                result.extend(ROBLOX_HUB_TOOLS[3:5])
         if self.roblox and (_ROBLOX_TRIGGER.search(prompt) or re.search(r"https://(?:www\.)?roblox\.com/games/", prompt, re.I)):
             if _GAME_TRIGGER.search(prompt) or re.search(r"https://(?:www\.)?roblox\.com/games/", prompt, re.I):
                 result.extend(ROBLOX_GAME_TOOLS)
@@ -474,6 +549,24 @@ class LocalIntelligence:
         if self._closed or name not in enabled or name not in ALL_TOOLS or not isinstance(args, dict):
             raise PermissionError("Intelligence tool is not enabled for this task")
         Draft202012Validator(ALL_TOOLS[name]["inputSchema"]).validate(args)
+        if name in _HUB_TOOL_NAMES:
+            hub = self.roblox_hub
+            if hub is None:
+                raise PermissionError("Roblox intelligence hub is not enabled")
+            handlers = {
+                "star_roblox_marketplace_search": lambda: hub.marketplace_search(
+                    args["query"], category=args.get("category", 1)),
+                "star_roblox_creator_store_search": lambda: hub.creator_store_search(
+                    args["query"], category=args.get("category", "Model")),
+                "star_roblox_creator_asset": lambda: hub.creator_asset(args["asset_id"]),
+                "star_roblox_analytics_metrics": lambda: hub.analytics_metrics(
+                    args["universe_id"], args["metric"], args["start_day"], args["end_day"],
+                    granularity=args.get("granularity", "OneDay"), breakdown=args.get("breakdown", "")),
+                "star_roblox_analytics_poll": lambda: hub.analytics_poll(
+                    args["universe_id"], args["operation_id"], metric=args["metric"]),
+                "star_roblox_gameplay_telemetry_plan": hub.gameplay_plan,
+            }
+            return handlers[name]()
         if name == "star_architecture_preview":
             return design_summary(make_plan(validate_brief(args)))
         if name == "star_architecture_compare_styles":
@@ -495,6 +588,10 @@ class LocalIntelligence:
                 "rendered": False, "studio_imported": False,
                 "note": "These are deterministic design prototypes, not ranked visual-quality results.",
             }
+        if name in COMMERCE_TOOL_NAMES:
+            if not self.commerce_enabled:
+                raise PermissionError("Turn on Business tools in Settings before using commerce tools")
+            return call_commerce_tool(name, args, project=self.project, home=self.home)
         if name in _ASSET_TOOL_NAMES:
             if not self.asset_forge_enabled:
                 raise PermissionError("Enable Asset Forge in Tools before using its tools")
@@ -813,6 +910,8 @@ def for_settings(settings, home: Path) -> LocalIntelligence:
         graph_boundary_check=graph_boundary_check,
         roblox_research_enabled=getattr(settings, "roblox_research_enabled", True),
         asset_forge_enabled=getattr(settings, "asset_forge_enabled", False),
+        commerce_enabled=getattr(settings, "commerce_enabled", False) is True,
+        project=getattr(settings, "project", "STAR"),
         docs=client_for(settings),
         cloud=RobloxCloud(home=home),
         design_enabled=getattr(settings, "design_tools_enabled", True) is not False and _env_on("STAR_DESIGN_TOOLS"),

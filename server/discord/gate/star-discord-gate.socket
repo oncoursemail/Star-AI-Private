@@ -1,0 +1,13 @@
+[Unit]
+Description=STAR Discord bot gate (a Unix socket only star-discord can open; server/discord/gate/star_gate.py)
+
+[Socket]
+ListenStream=/run/star-discord-gate.sock
+SocketUser=star-discord
+SocketGroup=star-discord
+SocketMode=0600
+Accept=yes
+MaxConnections=4
+
+[Install]
+WantedBy=sockets.target

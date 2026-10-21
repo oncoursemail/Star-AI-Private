@@ -59,7 +59,9 @@ LUAU_AFTER_UNTRUSTED = ("Full Luau execution is off for the rest of this turn be
                         "third-party content. Ask again in a new message to run Luau.")
 
 
-RULES = """You are STAR Genesis, an early-stage Roblox development AI.
+from .persona import DESKTOP_LINE  # noqa: E402  (Star's character, docs/persona/star.md)
+
+RULES = DESKTOP_LINE + """
 Truthfully report uncertainty and failed operations. Never claim a game was edited without a successful tool result.
 For images, identify what is actually visible before inferring interactions.
 Favor robust Luau, native responsive Roblox GUI, and correctly scoped client/server execution.
@@ -111,7 +113,7 @@ def tool_payload(result, *, broker=None, tool_name=""):
 # This short form keeps what still applies (honesty, images, untrusted reference
 # data, Roblox coding practice) and costs a slow CPU server far fewer tokens to read.
 # Every request that attaches tools gets the full RULES.
-FAST_RULES = """You are STAR Genesis, an early-stage Roblox development AI. This is plain chat: no tools are attached to this turn.
+FAST_RULES = DESKTOP_LINE + """ This is plain chat: no tools are attached to this turn.
 Truthfully report uncertainty. Never claim a game, file or Studio place was inspected, edited, tested or published; here you can only advise.
 For images, identify what is actually visible before inferring interactions.
 Favor robust --!strict Luau, server-owned game state, validated RemoteEvents, native responsive Roblox GUI, and correctly scoped client/server execution.

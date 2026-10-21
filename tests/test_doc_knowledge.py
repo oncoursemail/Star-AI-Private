@@ -123,6 +123,25 @@ def test_search_sends_a_scope_only_when_given_and_refuses_a_malformed_one():
     assert len(bodies) == 1                                                # nothing malformed reached the service
 
 
+def test_search_asks_for_the_private_corpus_only_when_told_to():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"passages": [dict(PASSAGE, url="vault://notes/agents/x.md", path="notes/agents/x.md")]})
+
+    client = client_with(handler)
+    passages = client.search("how does night school work", corpus="private")
+    assert bodies == [{"query": "how does night school work", "mode": "vector", "top": 4, "corpus": "private"}]
+    assert passages[0]["path"] == "notes/agents/x.md" and passages[0]["url"] == ""    # a vault note has no web page
+    client.search("tween a part")
+    assert "corpus" not in bodies[1]
+    for bad in ("public", "Private", "", 5):
+        with pytest.raises(ValueError):
+            client.search("tween a part", corpus=bad)
+    assert len(bodies) == 2
+
+
 def test_only_documentation_hosts_are_linkable():
     assert safe_source_url("https://create.roblox.com/docs/x#y") and safe_source_url("https://luau.org/typecheck")
     for bad in ("http://create.roblox.com/docs", "https://create.roblox.com.evil.io/x", "https://u:p@luau.org/",

@@ -1,0 +1,10 @@
+local ret, env = load_answer()
+local V = ret
+check("sensitivity defaults to 1", V.clean({}).sensitivity == 1 and V.defaults().sensitivity == 1)
+check("sensitivity in range is kept", V.clean({ sensitivity = 2.5 }).sensitivity == 2.5)
+check("sensitivity is clamped", V.clean({ sensitivity = 50 }).sensitivity == 5 and V.clean({ sensitivity = 0 }).sensitivity == 0.1)
+check("a non-number sensitivity becomes the default", V.clean({ sensitivity = "fast" }).sensitivity == 1)
+check("fov is clamped, not reset", V.clean({ fov = 200 }).fov == 110 and V.clean({ fov = 10 }).fov == 60)
+check("fov in range is kept", V.clean({ fov = 90 }).fov == 90)
+check("unknown keys are still dropped", V.clean({ admin = true }).admin == nil)
+check("other fields still validated", V.clean({ crosshair = "skull", volume = 3 }).crosshair == "dot" and V.clean({ volume = 3 }).volume == 1)

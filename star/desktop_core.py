@@ -36,6 +36,7 @@ from . import server_roles, turn_memory
 from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
+from . import edit_format
 from . import studio_loop, studio_tool_examples
 from . import project_rules
 from . import gpu_helper
@@ -99,6 +100,7 @@ class Settings:
     graphify_enabled: bool = True
     roblox_research_enabled: bool = True
     asset_forge_enabled: bool = False     # owner opt-in; external asset search also needs Roblox research
+    commerce_enabled: bool = False        # owner opt-in: Business tab, commerce tools; real-world actions still need approval
     tool_workshop_enabled: bool = True
     specialists_enabled: bool = True
     # Local reverse-engineering tools (star/reverse_engineering.py). Off by default; opt-in.
@@ -140,6 +142,7 @@ class Settings:
     learning_digest_cloud: bool = False   # ...also when the selected provider is a hosted one
     practice_lessons_enabled: bool = False  # off until the owner opts in
     worked_examples_enabled: bool = False   # read-only retrieval, off until owner opts in
+    gold_examples_enabled: bool = False     # verified licence-recorded examples (star/gold_bank.py), opt-in
     presolve_enabled: bool = False          # overnight pre-solved answers (star/presolve.py), off until owner opts in
     # Owner default (O1): night school's text lessons that won the paired gate go live for 14 days, visibly, with undo
     # (star/learned_week.py). False = bundles only add candidates that wait for review.
@@ -161,6 +164,9 @@ class Settings:
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
     # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
     api_hints_enabled: bool = False
+    # Opt-in (star/edit_format.py): pasted code + "fix/change this" is answered with SEARCH/REPLACE blocks that STAR
+    # applies and checks, instead of the whole file written again; a block that does not apply falls back to that.
+    edit_diff: bool = False
     skill_pack_embeddings: bool = False    # opt-in: STAR Server embeddings pick a skill pack the keywords missed
     # Settings > "Use my GPU" (star/gpu_helper.py): STAR's code model on this PC's NVIDIA card, per request, the
     # server as fallback. Off by default. Paths '' = <app data>/gpu-helper/llama-server.exe and star-fast.gguf.
@@ -203,10 +209,10 @@ class Settings:
         if any(type(getattr(self, key)) is not bool
                for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled',
                             'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
-                            'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
+                            'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled')):
+                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled', 'edit_diff')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -1416,6 +1422,24 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                             turn_sections.append((worked_examples.HEADING, example_block))
                             audited_event({'event': 'worked_example_used',
                                            'count': len(selected_examples), 'chars': len(example_block)})
+                # Opt-in (star/gold_bank.py): the closest verified gold examples, Roblox route only, never in quick mode.
+                if settings.gold_examples_enabled is True and route.profile == 'roblox' and not quick:
+                    from . import gold_bank
+                    async def gold_embed(texts):
+                        reply = await client.embeddings.create(model=gold_bank.EMBED_MODEL, input=texts)
+                        return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
+                    gold_room = min(gold_bank.MAX_BLOCK_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
+                                                               - len(gold_bank.HEADING) - 2 - min(10000, memory_limit)
+                                                               - len(docs.block) - len(document_block)
+                                                               - len(pack_block) - len(error_block)))
+                    gold_block, gold_used = await gold_bank.select(
+                        prompt, gold_embed if provider_kind(settings) == 'lan' else None, max_chars=gold_room,
+                        on_fallback=lambda why: audited_event({'event': 'gold_examples_fallback', 'reason': why}))
+                    if gold_block:
+                        example_extra_chars += len(gold_block) + len(gold_bank.HEADING) + 2
+                        turn_sections.append((gold_bank.HEADING, gold_block))
+                        audited_event({'event': 'gold_examples_used', 'ids': [item.id for item in gold_used],
+                                       'chars': len(gold_block)})
                 # Opt-in project rules (star/project_rules.py): the workspace's AGENTS.md, as reference data.
                 rules_chars = 0
                 if settings.project_rules_enabled is True and settings.workspace and not quick:
@@ -1474,6 +1498,15 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     on_event=audited_event)
                 if several is not None:
                     kwargs['on_first_request'] = several.on_first_request
+                # Opt-in diff-only edits (star/edit_format.py): pasted code plus a change request is answered with
+                # SEARCH/REPLACE blocks that STAR applies and checks here. Plain chat turns only, not with best-of-N.
+                edit = (edit_format.find_edit(prompt)
+                        if settings.edit_diff is True and several is None and mode != 'agent' and not images
+                        and document_tools is None and not document_block and not allow_studio
+                        and not allow_blender else None)
+                if edit is not None:
+                    kwargs['prompt'] = edit.prompt
+                    audited_event({'event': 'edit_diff_started', 'lines': edit.source.count('\n')})
                 audited_event({'event': 'model_started'})
                 async def answer_with(model):
                     nonlocal prepared_conversation
@@ -1575,6 +1608,20 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     if several is not None:
                         await several.run.cancel()
                     raise
+                if edit is not None and not tools_ran and result is not None:
+                    done = await asyncio.to_thread(edit_format.finish, edit, result[0],
+                                                   check=docs.client.luau_check if docs.client is not None else None)
+                    audited_event({'event': 'edit_diff_finished', 'ok': done.ok, 'reason': done.reason[:160],
+                                   'edits': done.edits})
+                    if done.ok:
+                        result = (done.answer, *result[1:])
+                    else:
+                        # The edit did not apply or checked worse: the normal full answer, asked once.
+                        kwargs['prompt'] = prompt
+                        if stream_tokens:
+                            audited_event({'event': 'assistant_delta', 'text':
+                                           '\n\n*(The edit did not apply cleanly; STAR is writing the full code.)*\n\n'})
+                        result = await answer_with(used.model)
                 if several is not None:
                     # The best of the candidates (the main answer above is candidate 1) replaces the answer.
                     result = await several.apply(result, used.model, started=started, budget=route.task_timeout,
