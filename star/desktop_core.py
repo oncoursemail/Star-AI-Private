@@ -106,6 +106,7 @@ class Settings:
     # Local reverse-engineering tools (star/reverse_engineering.py). Off by default; opt-in.
     # Defensive, workspace-confined analysis of your own/permitted binaries only.
     reverse_engineering_enabled: bool = False
+    re_game_path: str = ''          # your own PS3 ISO or extracted game folder, read in place by the PS3 RE tools
     specialist_parallelism: int = 1
     team_timeout_min: int = 30      # bounded specialist request deadline, seconds
     team_timeout_max: int = 900     # allows slow on-device and STAR Server inference
@@ -222,6 +223,11 @@ class Settings:
             raise ValueError('Select an Obsidian vault before enabling read access')
         if self.workspace and (not Path(self.workspace).expanduser().is_dir()):
             raise ValueError('Choose an existing workspace directory')
+        if not isinstance(self.re_game_path, str) or (self.re_game_path and not (
+                Path(self.re_game_path).expanduser().is_dir()
+                or (Path(self.re_game_path).expanduser().is_file()
+                    and self.re_game_path.lower().endswith('.iso')))):
+            raise ValueError('Game path must be an existing game folder or .iso file')
         if self.best_of_n not in ('off', 'auto') or type(self.best_of_n_max) is not int                 or not 2 <= self.best_of_n_max <= 8:
             raise ValueError('Best-of-N must be off or auto, with 2 to 8 candidates')
         if self.slop_check not in ('off', 'flag', 'trim'):
