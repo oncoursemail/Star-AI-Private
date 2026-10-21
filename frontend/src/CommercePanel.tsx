@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useState} from 'react'
 import {ArrowRight, Check, CircleAlert, ClipboardCheck, FilePenLine, FolderOpen, LockKeyhole, Plus, RefreshCw, ShieldCheck, Store, X} from 'lucide-react'
 import {request} from './bridge'
 import {CommerceMissionControl, type MissionSnapshot} from './CommerceMissionControl'
+import {CommerceSeasonality} from './CommerceSeasonality'
 import './commerce.css'
 
 type Channel = 'etsy' | 'shopify' | 'fiverr' | 'payhip' | 'gumroad' | 'printify'
@@ -175,6 +176,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
         if (found) setChannel(found.channel as Channel)
       }}
       onAction={(action, payload, message) => mutate(action, payload, message)}/>
+    <CommerceSeasonality businessId={selectedBusinessId} project={project} preview={preview}/>
     <div className="commerce-workspace">
       <section className="commerce-main" aria-label="Product pipeline">
         {showCreate && !preview && <form className="commerce-create" onSubmit={event => {

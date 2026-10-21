@@ -16,11 +16,12 @@ import uuid
 from typing import Any, Mapping
 
 from .planning import assess_etsy, assess_fiverr
+from .sales_learning import LEARNING_ACTIONS, ensure_learning_schema, handle_learning
 from .mission import ACTIONS as MISSION_ACTIONS, ensure_schema, invalidate_preflights, mission_action, mission_snapshot, validate_assignment
 
 COMMERCE_ACTIONS = frozenset({
     "commerceBoard", "commerceCreate", "commerceEvidence", "commerceReview",
-}) | MISSION_ACTIONS
+}) | MISSION_ACTIONS | LEARNING_ACTIONS
 CHANNELS = {
     "etsy": ("Etsy", "Seller OAuth and approved API app required"),
     "shopify": ("Shopify", "Merchant connection and digital delivery app required"),
@@ -95,6 +96,7 @@ def _connect(home: Path) -> sqlite3.Connection:
         )
     """)
     ensure_schema(connection)
+    ensure_learning_schema(connection)
     connection.commit()
     return connection
 
@@ -295,4 +297,6 @@ def handle_commerce(action: str, body: Mapping[str, Any], *, project: str, home:
                 _review(conn, project, body)
             elif action in MISSION_ACTIONS:
                 mission_action(conn, project, action, body, _assessment)
+            elif action in LEARNING_ACTIONS:
+                return handle_learning(conn, project, action, body)
         return _overview(conn, project)
