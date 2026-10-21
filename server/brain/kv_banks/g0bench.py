@@ -17,7 +17,8 @@ Arms (each repeated --reps times, slot 0 unless noted, greedy, 48 new tokens):
   background  slot 1 generates 256 tokens alone, then again while slot 0 (holding the chat's start) primes a paste
               in chunks: tok/s ratio
   contention  another client's short request on slot 1, 1 s into the owner's draft prefill of a long paste on slot 0:
-              its first token with no draft, with the draft as one request, and with the draft in chunks
+              its first token with no draft, with the draft as one request, in chunks, and in chunks that stop
+              while another slot generates (the app's behaviour)
 """
 from __future__ import annotations
 
@@ -118,10 +119,23 @@ def draft_cut(base: str, messages: list, draft: str) -> str:
     return prompt[:prompt.rfind(draft) + len(draft)]
 
 
-def chunked(base: str, text: str, start: int, n: int, stop=None) -> list:
-    """Prime `text` from character `start` on in CHUNK_CHARS steps, as the app's chunk_ends does."""
+def busy(base: str, n: int) -> bool:
+    conn = _conn(base, 10)
+    try:
+        conn.request("GET", "/slots")
+        rows = json.loads(conn.getresponse().read())
+    finally:
+        conn.close()
+    return any(row.get("id") == n and row.get("is_processing") for row in rows)
+
+
+def chunked(base: str, text: str, start: int, n: int, stop=None, yield_to=None) -> list:
+    """Prime `text` from character `start` on in CHUNK_CHARS steps, as the app's chunk_ends does; with `yield_to`,
+    stop before the next chunk while that slot is generating (the app's others_busy check)."""
     out, at = [], start
     while at < len(text):
+        if out and yield_to is not None and busy(base, yield_to):
+            break
         end = min(len(text), at + CHUNK_CHARS)
         if end < len(text):
             space = max(text.rfind(" ", at + CHUNK_CHARS // 2, end), text.rfind("\n", at + CHUNK_CHARS // 2, end))
@@ -180,23 +194,23 @@ def run(base: str, ctx: dict, arms: list, reps: int) -> dict:
         bg = [{"role": "user", "content": "Write a Luau ModuleScript for a round-based minigame lobby with a "
                                           "countdown, player teleport and a winner board. Code only."}]
         alone = chat(base, bg, 1, 256)
-        stop = threading.Event()
-        typed: list = []
-        restore()                   # the owner's chat: its start is in slot 0, the paste is new
+        out["background"] = {"alone_tps": alone.get("predicted_per_second")}
+        for label, yield_to in (("chunks", None), ("chunks_yield", 1)):
+            stop = threading.Event()
+            typed: list = []
+            restore()               # the owner's chat: its start is in slot 0, the paste is new
 
-        def typist():
-            paste_turn = messages[:-1] + [{"role": "user", "content": ctx["paste"]}]
-            text = draft_cut(base, paste_turn, ctx["paste"])
-            typed.extend(chunked(base, text, len(text) - len(ctx["paste"]), 0, stop))
-        worker = threading.Thread(target=typist)
-        time.sleep(0.2)
-        worker.start()
-        shared = chat(base, bg, 1, 256)
-        stop.set()
-        worker.join()
-        out["background"] = {"alone_tps": alone.get("predicted_per_second"),
-                             "with_prefill_tps": shared.get("predicted_per_second"),
-                             "prefill_requests": len(typed), "same_text": alone["text"] == shared["text"]}
+            def typist():
+                paste_turn = messages[:-1] + [{"role": "user", "content": ctx["paste"]}]
+                text = draft_cut(base, paste_turn, ctx["paste"])
+                typed.extend(chunked(base, text, len(text) - len(ctx["paste"]), 0, stop, yield_to))
+            worker = threading.Thread(target=typist)
+            worker.start()
+            shared = chat(base, bg, 1, 256)
+            stop.set()
+            worker.join()
+            out["background"][label] = {"tps": shared.get("predicted_per_second"), "prefill_requests": len(typed),
+                                        "same_text": alone["text"] == shared["text"]}
         print("background", json.dumps(out["background"]), flush=True)
 
     if "contention" in arms:
@@ -204,7 +218,7 @@ def run(base: str, ctx: dict, arms: list, reps: int) -> dict:
         # llama.cpp fills each batch (2048 tokens) from slot 0 first, so one long request can hold slot 1 back.
         other = [{"role": "user", "content": "In one sentence: what does RunService.Heartbeat fire on?"}]
         rows = []
-        for mode in ("no_draft", "one_request", "chunks"):
+        for mode in ("no_draft", "one_request", "chunks", "chunks_yield"):
             restore()
             paste_turn = messages[:-1] + [{"role": "user", "content": ctx["long_paste"]}]
             text = draft_cut(base, paste_turn, ctx["long_paste"])
@@ -215,6 +229,8 @@ def run(base: str, ctx: dict, arms: list, reps: int) -> dict:
                 worker = threading.Thread(target=lambda: prime(base, text, 0))
             elif mode == "chunks":
                 worker = threading.Thread(target=lambda: chunked(base, text, start, 0, stop))
+            elif mode == "chunks_yield":
+                worker = threading.Thread(target=lambda: chunked(base, text, start, 0, stop, yield_to=1))
             if worker is not None:
                 worker.start()
                 time.sleep(1.0)

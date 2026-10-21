@@ -133,11 +133,14 @@ def _on_pc(settings: Settings, request: dict):
 
 
 async def _send_prefix(settings: Settings, request: dict, cancel_event, pc_base: str | None,
-                       chat_key: str = '') -> dict:
+                       chat_key: str = '', others_busy=None) -> dict:
     """Render `request` with the server's chat template, cut it after the draft, send that text for one token:
     in chunks (`chunk_ends`) from what the previous draft of this chat primed on this model and slot.
 
-    Stops the moment `cancel_event` is set (the connection is closed; the server keeps what it read)."""
+    Stops the moment `cancel_event` is set (the connection is closed; the server keeps what it read), and before
+    the next chunk when `await others_busy()` says another client's request is running: a chunk read beside a
+    generating slot slows every one of its tokens (brain 1: 1.3 tok/s instead of 8.6), and the turn on Enter
+    reads the rest anyway."""
     import httpx
     endpoint, key = (pc_base, '') if pc_base else connection_for(settings)
     endpoint = endpoint.rstrip('/')
@@ -164,6 +167,9 @@ async def _send_prefix(settings: Settings, request: dict, cancel_event, pc_base:
         found: dict = {'primed': True}
         ends = chunk_ends(draft, _common_length(before, draft))
         for number, end in enumerate(ends):
+            if number and others_busy is not None and await others_busy():
+                found['yielded'] = True
+                break
             reply = await http.post(endpoint + '/completions', headers=headers, json={
                 'model': request['model'], 'prompt': prompt[:cut + end], 'max_tokens': 1, 'temperature': 0,
                 **extras})
@@ -263,7 +269,18 @@ def warm_draft(settings: Settings, home: Path, chat_id: str | None, text: str, *
                 finally:
                     own_warm_ended(mark, cancelled=cancel_event is not None and cancel_event.is_set())
         try:
-            result = asyncio.run(_send_prefix(settings, request, cancel_event, pc_base, str(chat_id or '')))
+            others_busy = None
+            if pc_base is None and kind == 'lan':
+                scope = memory_scope_for(settings, chat_id)
+
+                async def others_busy() -> bool:
+                    # This app's own draft is marked (own_warm_started), so a busy slot here is another client's.
+                    try:
+                        return bool(await probe(settings, request['model'], conversation=scope))
+                    except Exception:
+                        return False
+            result = asyncio.run(_send_prefix(settings, request, cancel_event, pc_base, str(chat_id or ''),
+                                              others_busy))
         except Exception as exc:
             return done(error=type(exc).__name__)
         return done(**result, model=str(request['model'])[:180], on_pc=pc_base is not None,

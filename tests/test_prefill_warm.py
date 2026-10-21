@@ -371,3 +371,18 @@ def test_a_cancel_between_chunks_sends_no_more(desk, monkeypatch):
     report = warm_draft(settings, desk.home, desk.chat, "Explain this:\n" + "x = x + 1\n" * 200, mode="fast",
                         cancel_event=cancel)
     assert report.get("cancelled") is True and len(sent) == 1
+
+
+def test_chunks_stop_when_another_client_starts_generating(desk, server, monkeypatch):
+    monkeypatch.setenv("STAR_SERVER_API_KEY", KEY)
+    settings = on(lan_settings())
+    remember_server_limits(settings.server_endpoint, "star-fast", 32768, 2)
+    asked = []
+
+    async def probe(settings, model, *, conversation=""):
+        asked.append(model)
+        return frozenset() if len(asked) == 1 else frozenset({1})   # idle at the start, then a client arrives
+    draft = "Fix this:\n" + "part.Anchored = true -- keep it still\n" * 40
+    report = warm_draft(settings, desk.home, desk.chat, draft, probe=probe)
+    assert report["primed"] is True and report["yielded"] is True
+    assert len(server.sent()) == 1 and len(asked) == 2
