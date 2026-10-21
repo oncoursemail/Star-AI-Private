@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "kind": "anime_benchmark_template",
+  "status": "not_run",
+  "protocol_version": "2026-10-19",
+  "initial_take_limit_per_route": 3,
+  "maximum_routes_per_test": 3,
+  "baseline_required": true,
+  "fixed_approved_audio_required": true,
+  "human_review_required": true,
+  "screen_tests": [
+    {
+      "test_id": "dialogue_handoff",
+      "target_seconds": 12
+    },
+    {
+      "test_id": "quiet_reaction",
+      "target_seconds": 8
+    },
+    {
+      "test_id": "action_contact_recovery",
+      "target_seconds": 8
+    }
+  ],
+  "measurement_fields": {
+    "configuration": [
+      "provider",
+      "model_id",
+      "model_snapshot",
+      "adapter_hashes",
+      "software_commit",
+      "gpu_model",
+      "gpu_count",
+      "peak_vram_bytes",
+      "resolution",
+      "fps_fraction",
+      "precision",
+      "sampling_steps",
+      "cache_state"
+    ],
+    "evidence": [
+      "source_asset_hashes",
+      "source_audio_hash",
+      "output_sha256",
+      "job_log_id",
+      "selected_take_ids",
+      "review_record_id"
+    ],
+    "time": [
+      "setup_seconds",
+      "queue_seconds",
+      "generation_seconds",
+      "transfer_seconds",
+      "review_ready_seconds",
+      "scene_elapsed_seconds",
+      "artist_minutes",
+      "director_minutes",
+      "reviewer_minutes"
+    ],
+    "billing": [
+      "billable_unit",
+      "billable_quantity",
+      "currency",
+      "total_cost",
+      "generated_or_processed_seconds",
+      "selected_unique_timeline_seconds"
+    ],
+    "quality": [
+      "status",
+      "faults",
+      "cleanup_minutes",
+      "acting_score",
+      "visual_score",
+      "sync_score",
+      "reviewer_count",
+      "audience_count"
+    ]
+  },
+  "runs": [],
+  "summary": null,
+  "notes": [
+    "Fill only from actual run logs and reviewed outputs.",
+    "Record all attempts, including failures and rejected media.",
+    "Alternative takes and overlapping timeline intervals must not double count accepted duration.",
+    "A new-dialogue generator is a separate test unless audio replacement and synchronization repair are included.",
+    "No runtime reader or provider adapter is implemented by this template."
+  ]
+}
