@@ -37,6 +37,7 @@ PACKAGE_DATA_SITES = {
     "star/roblox_api_dataset.py": "data/roblox_api/roblox_api.json",
     "star/roblox_cutscene_studio.py": "star/skill_packs",  # roblox-cutscenes pack luau/ (PR #351)
     "star/roblox_vfx_studio.py": "star/skill_packs",  # roblox-vfx-composer pack luau/ (PR #327)
+    "star/skill_import.py": "star/skill_packs",  # SkillForge: refuses to shadow a bundled pack name
     "star/skill_packs/__init__.py": "star/skill_packs",
     "star/studio_milestones.py": "evals/studio",
     "star/voice/catalog.py": "star/voice/voices.json",
