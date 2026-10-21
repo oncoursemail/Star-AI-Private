@@ -115,7 +115,7 @@ def _inspect(source: Path, *, source_url: str, commit: str,
         raise ValueError("Invalid Agent Skills name, description, compatibility or body")
     # The common minimal frontmatter parser reads name/description/compatibility.
     # Check the optional license field separately; never override a conflicting declaration.
-    header = body.split("\n---\n", 1)[0]
+    header = body.replace("\r\n", "\n").split("\n---\n", 1)[0]
     match = re.search(r"(?m)^license:\s*([^\r\n#]+)", header)
     declared_license = match.group(1).strip().strip('"').strip("'") if match else None
     if declared_license and declared_license != license_id:

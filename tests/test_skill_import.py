@@ -96,7 +96,10 @@ def test_reject_unreviewed_content(tmp_path, relative):
 
 def test_reject_symlink_escape(tmp_path):
     folder = source(tmp_path)
-    (folder / "references" / "leak.txt").symlink_to(tmp_path / "outside.txt")
+    try:
+        (folder / "references" / "leak.txt").symlink_to(tmp_path / "outside.txt")
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks unavailable")
     with pytest.raises(ValueError, match="Symlinks"):
         preview_skill(folder, **kwargs())
 
@@ -125,6 +128,13 @@ def test_reject_hidden_file_in_source(tmp_path):
     (folder / ".private").write_text("never import")
     with pytest.raises(ValueError, match="Hidden"):
         preview_skill(folder, **kwargs())
+
+
+def test_crlf_skill_reads_license_from_header_only(tmp_path):
+    folder = source(tmp_path)
+    text = SKILL.replace("license: MIT\n", "") + "license: GPL-3.0\n"
+    (folder / "SKILL.md").write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+    assert preview_skill(folder, **kwargs())["license"] == "MIT"
 
 
 def test_reject_unknown_license(tmp_path):
