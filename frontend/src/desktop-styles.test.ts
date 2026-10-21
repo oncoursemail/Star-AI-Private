@@ -65,7 +65,7 @@ describe('every class the desktop pages use has a style', () => {
 
   it('leaves no page element unstyled (the Tools cards lost their layout this way)', () => {
     const missing: string[] = []
-    for (const file of ['./Desktop.tsx', './CommercePanel.tsx', './CommerceMissionControl.tsx', './CommerceSeasonality.tsx', './components.tsx', './Composer.tsx', './ActivityTimeline.tsx', './IntegrationPanels.tsx', './ModelFleetPanel.tsx', './ReviewToolsPanel.tsx', './Charts.tsx', './LearningPanel.tsx', './MediaPanel.tsx', './VoiceSettings.tsx', './StudioTargetSettings.tsx', './ChatRow.tsx', './StarFace.tsx', './ScreenConsent.tsx', './VoiceCall.tsx', './ReadAloud.tsx']) {
+    for (const file of ['./Desktop.tsx', './CommercePanel.tsx', './CommerceApprovals.tsx', './CommerceMissionControl.tsx', './CommerceSeasonality.tsx', './components.tsx', './Composer.tsx', './ActivityTimeline.tsx', './IntegrationPanels.tsx', './ModelFleetPanel.tsx', './ReviewToolsPanel.tsx', './Charts.tsx', './LearningPanel.tsx', './MediaPanel.tsx', './VoiceSettings.tsx', './StudioTargetSettings.tsx', './ChatRow.tsx', './StarFace.tsx', './ScreenConsent.tsx', './VoiceCall.tsx', './ReadAloud.tsx']) {
       for (const name of used(file)) if (!styled.has(name) && !hooks.has(name)) missing.push(`${file}: .${name}`)
     }
     expect(missing).toEqual([])

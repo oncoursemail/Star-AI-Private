@@ -19,6 +19,15 @@ UI = Path(__file__).resolve().parent.parent / "data" / "business" / "console_ui.
 MAX_BODY = 24_000
 
 
+def business_enabled(settings_path: str = "") -> bool:
+    """The draft console is part of the opt-in Business feature set (setting `commerce_enabled`)."""
+    from ..desktop_core import Settings, app_data
+    try:
+        return Settings.load(Path(settings_path) if settings_path else app_data() / "settings.json").commerce_enabled is True
+    except (OSError, ValueError):
+        return False
+
+
 def create_handler(db, lock: threading.RLock):
     class Handler(BaseHTTPRequestHandler):
         server_version = "STAR-Commerce/0.1"
@@ -107,7 +116,9 @@ def main(argv=None):
     parser.add_argument("--worker",action="store_true",help="Run queued jobs repeatedly, no web dashboard")
     parser.add_argument("--once",action="store_true",help="Process queued jobs once and exit")
     parser.add_argument("--interval",type=int,default=60)
+    parser.add_argument("--settings",default="",help="STAR settings.json (default: the installed app's)")
     args=parser.parse_args(argv)
+    if not business_enabled(args.settings): parser.error("Business tools are off: turn them on in STAR Settings > Tools")
     if not 1024 <= args.port <= 65535: parser.error("port must be 1024-65535")
     if not 5 <= args.interval <= 3600: parser.error("interval must be 5-3600 seconds")
     db=init_db(args.db)

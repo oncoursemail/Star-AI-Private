@@ -122,6 +122,7 @@ COMMERCE_ACTIONS = frozenset({
     'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
     'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
     'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
+    'commerceApprovals', 'commerceApprovalDecide', 'commerceApprovalExecute',
 })
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
 
@@ -137,7 +138,7 @@ WARM_UP_STOPPERS = frozenset({
 # server keys go straight to the OS keyring through saveProviderKey.
 PERMITTED_SETTINGS = frozenset({
     'endpoint','model','fast_model','reasoning_model','roblox_model','vision_model',
-    'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled',
+    'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled','commerce_enabled',
     'tool_workshop_enabled','specialists_enabled','specialist_parallelism','provider',
     'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','debug_evidence_enabled','max_calls',
     'context_chars','reduced_motion','comfy_workflow','comfy_prompt_node','comfy_port',
@@ -825,8 +826,9 @@ def launch():
             def worker():
                 try:
                     from .commerce.autopilot import run_due_pilot_checks
-                    project = Settings.load(self.settings_file).project
-                    run_due_pilot_checks(app_data(), project)
+                    current = Settings.load(self.settings_file)
+                    if current.commerce_enabled is True:
+                        run_due_pilot_checks(app_data(), current.project)
                 finally:
                     self.commerce_pilot_running.clear()
 
@@ -1244,9 +1246,12 @@ def launch():
     'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
     'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
     'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
+    'commerceApprovals', 'commerceApprovalDecide', 'commerceApprovalExecute',
                 ):
                     from .commerce.workspace import handle_commerce
                     current = Settings.load(self.settings_file)
+                    if current.commerce_enabled is not True:
+                        raise PermissionError('Business tools are off. Turn them on in Settings > Tools.')
                     result = handle_commerce(action, body, project=current.project, home=app_data())
                     return json.dumps({'ok':True,'data':result})
                 if action=='bootstrap':return json.dumps({'ok':True,'data':_get_state(self.settings_file,self.runtime,busy=self.active_task,studio_status=self.studio_status)})

@@ -124,3 +124,19 @@ Report visual findings rather than treating any one automated score as proof of 
 - [Superpowers](https://github.com/obra/superpowers)
 - [Anti-Slop](https://github.com/zansxart/anti-slop)
 - [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
+
+## Opt-in, tools and owner approvals (integration, 2026-10-21)
+
+- Setting `commerce_enabled` (Settings > Tools, off by default) switches on the Business tab, the Qt actions, the Commerce Pilot
+  scheduler tick, the model tools below and the draft console (`python -m star.business.console`).
+- Model tools (only when the prompt is about shops, listings, suppliers and so on): `star_commerce_overview` (read),
+  `star_commerce_draft_candidate` (local draft), `star_commerce_propose_action` (a draft of a real-world action).
+- Real-world actions (list or price a product, place or change an order, spend money, post publicly, message a customer, change
+  a third-party account) exist only as proposals in `star/commerce/approvals.py`. The owner approves with the Approve button in
+  the Business tab or `python -m star.commerce approvals approve ID --yes`, and an approved action runs once through a connector.
+  Models cannot approve or run. No connector ships in STAR: the owner adds one with their own credentials, so until then an
+  approved action stays approved and nothing leaves the PC.
+- Approval is a confirmation, not a filter: no topic, wording or content checks. Evidence "blockers" are advice only.
+- `star/business` (draft asset workforce, PRs #485/#505) and `star/commerce` (workspace, PRs #477-#486) are two halves of one
+  feature: the workforce makes draft asset packs on a loopback page; the workspace holds candidates, monitoring and approvals.
+  The console page ships in `star/data/business/` (already bundled by both Windows builds; replaces PR #508's build-file edit).

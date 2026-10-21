@@ -92,3 +92,10 @@
  .commerce-main,.commerce-review {padding:21px 16px}
  .commerce-count,.commerce-done {display:none}
 }
+
+.commerce-approvals{display:grid;gap:12px;margin:16px 0}
+.commerce-approval-card{border:1px solid var(--line,rgba(255,255,255,.14));border-radius:12px;padding:14px;display:grid;gap:10px}
+.commerce-approval-card header{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.commerce-approval-details{margin:0;max-height:160px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;opacity:.85}
+.commerce-approval-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.commerce-approval-history{margin:0;padding-left:18px;font-size:12px;opacity:.7}

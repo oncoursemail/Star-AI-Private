@@ -68,7 +68,7 @@ The new Pilot provides:
 1. Default-OFF per-Shopify-business settings with explicit owner consent: low-stock buffer, minimum modeled pre-ad contribution %, max reported delivery days, evidence TTL and interval minutes.
 2. Manual bounded check of up to 1,000 owner-imported supplier offers.
 3. A Qt timer that wakes every 15 minutes *while STAR Desktop runs*, reviews only due, enabled, unpaused businesses, and records only private findings. Up to 12 businesses are checked per wake. It has no network, email, publishing, ads, order or supplier-purchase capability.
-4. Stable findings for zero/low supplier stock, insufficient hypothetical contribution, long lead times, missing sample, unavailable returns, regulated/sensitive categories and stale source snapshots.
+4. Stable findings for zero/low supplier stock, insufficient hypothetical contribution, long lead times, missing sample, unavailable returns and stale source snapshots (product topics are never screened).
 5. Evidence fingerprint deduplication; unchanged scans do not reopen reviewed alerts. Updated evidence can reopen risks. Cleared risks resolve. Max 10,000 rows and bounded audit retention per business.
 6. Private source timestamps, review state and operational status in the same STAR Business dashboard. No fictitious revenue or verified supplier badges.
 

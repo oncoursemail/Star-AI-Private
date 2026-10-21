@@ -97,4 +97,33 @@ describe('STAR Business integration', () => {
     await user.click(approval)
     expect(bridge.sent('commerceReview')[0].payload).toMatchObject({decision: 'approve', owner_confirmed: true})
   })
+
+  it('explains that Business is off and never talks to the desktop while disabled', () => {
+    render(<CommercePanel project="STAR" enabled={false}/>)
+    expect(screen.getByText(/Business tools are off/)).toBeTruthy()
+    expect(bridge.sent('commerceBoard')).toHaveLength(0)
+  })
+
+  it('only the owner click approves or runs a proposed action', async () => {
+    const pending = {
+      id: 'c'.repeat(32), kind: 'spend_money', kind_label: 'Spend money (ads, tools, stock)',
+      title: 'Boost the hoodie listing', payload: {budget_usd: 50}, amount_cents: 5000, status: 'pending',
+      proposed_by: 'star', result: {}, created_at: '2026-10-21T10:00:00Z',
+    }
+    bridge.onAction('commerceBoard', () => ({ok: true, data: {...board, approvals: [pending]}}))
+    bridge.onAction('commerceApprovalDecide', () => ({ok: true, data: {...board, approvals: [{...pending, status: 'approved'}]}}))
+    bridge.onAction('commerceApprovalExecute', () => ({ok: true, data: {...board, approvals: [{...pending, status: 'executed'}]}}))
+    const user = userEvent.setup()
+    render(<CommercePanel project="STAR"/>)
+    const card = within(await screen.findByRole('region', {name: 'Actions waiting for your approval'}))
+    expect(card.getByText('Boost the hoodie listing')).toBeTruthy()
+    expect(card.queryByRole('button', {name: /Run approved action/})).toBeNull()
+    expect(bridge.sent('commerceApprovalDecide')).toHaveLength(0)
+    expect(bridge.sent('commerceApprovalExecute')).toHaveLength(0)
+    await user.click(card.getByRole('button', {name: /Approve \$50\.00/}))
+    expect(bridge.sent('commerceApprovalDecide')[0].payload).toMatchObject({id: pending.id, decision: 'approve', owner_confirmed: true})
+    expect(bridge.sent('commerceApprovalExecute')).toHaveLength(0)
+    await user.click(await card.findByRole('button', {name: /Run approved action/}))
+    expect(bridge.sent('commerceApprovalExecute')[0].payload).toMatchObject({id: pending.id})
+  })
 })

@@ -4,6 +4,7 @@ import {request} from './bridge'
 import {CommerceMissionControl, type MissionSnapshot} from './CommerceMissionControl'
 import {CommerceSeasonality} from './CommerceSeasonality'
 import {CommerceDropshipping} from './CommerceDropshipping'
+import {CommerceApprovals, type Approval} from './CommerceApprovals'
 import './commerce.css'
 
 type Channel = 'etsy' | 'shopify' | 'fiverr' | 'payhip' | 'gumroad' | 'printify'
@@ -37,6 +38,7 @@ type Board = MissionSnapshot & {
   counts: {candidates: number; review_ready: number; approved_for_export: number; live_listings: 0; verified_sales: null}
   platforms: {id: Channel; label: string; connection: string; note: string}[]
   ideas: Candidate[]
+  approvals?: Approval[]
 }
 
 const platforms: {id: Channel; label: string}[] = [
@@ -80,7 +82,7 @@ function CheckField({title, checked, onChange}: {
 /** Real STAR desktop reads/writes only its private app-data DB, via the narrow Qt bridge.
  * Browser preview deliberately shows zero private data and cannot save or publish.
  */
-export function CommercePanel({project, preview = false}: {project: string; preview?: boolean}) {
+export function CommercePanel({project, preview = false, enabled = true}: {project: string; preview?: boolean; enabled?: boolean}) {
   const [board, setBoard] = useState<Board | null>(null)
   const [loading, setLoading] = useState(!preview)
   const [busy, setBusy] = useState(false)
@@ -96,7 +98,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
   const [selectedBusinessId, setSelectedBusinessId] = useState('')
 
   const refresh = useCallback(async () => {
-    if (preview) return
+    if (preview || !enabled) return
     setLoading(true)
     const answer = await request<Board>('commerceBoard')
     if (answer.ok && answer.data) {
@@ -106,7 +108,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
       setError(answer.error || 'Could not load the local Business workspace.')
     }
     setLoading(false)
-  }, [preview])
+  }, [preview, enabled])
 
   useEffect(() => {void refresh()}, [refresh, project])
   useEffect(() => {
@@ -128,7 +130,7 @@ export function CommercePanel({project, preview = false}: {project: string; prev
   }
 
   async function mutate(action: string, payload: Record<string, unknown>, success: string) {
-    if (preview || busy) return false
+    if (preview || !enabled || busy) return false
     setBusy(true)
     setError('')
     const answer = await request<Board>(action, payload)
@@ -144,6 +146,8 @@ export function CommercePanel({project, preview = false}: {project: string; prev
     setBusy(false)
     return !!(answer.ok && answer.data)
   }
+
+  if (!enabled && !preview) return <div className="commerce-layout"><p className="commerce-connection" role="status"><LockKeyhole size={16}/> Business tools are off. Turn them on in Settings, under Tools, to research products and draft listings. Nothing is ever listed, bought or sent without your approval.</p></div>
 
   return <div className="commerce-layout">
     <header className="commerce-header">
@@ -169,6 +173,8 @@ export function CommercePanel({project, preview = false}: {project: string; prev
       <div><span>VERIFIED SALES</span><strong>—</strong><small>No sales feed connected</small></div>
     </section>
 
+    {!preview && <CommerceApprovals approvals={board?.approvals ?? []} busy={busy}
+      onAct={(action, payload, message) => void mutate(action, payload, message)}/>}
     <CommerceMissionControl board={board} preview={preview} busy={busy}
       selectedBusinessId={selectedBusinessId}
       onSelectBusiness={id => {

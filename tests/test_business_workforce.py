@@ -137,3 +137,20 @@ def test_invalid_local_model_endpoint_fails_safe(db, monkeypatch):
     assert steps[0]["state"]=="completed"
     assert steps[1]["state"]=="failed"
     assert db.execute("SELECT state FROM offer WHERE id='hud-kit'").fetchone()[0]=="blocked"
+
+
+def test_console_is_part_of_the_opt_in_business_setting(tmp_path, capsys):
+    from star.business import console
+    from star.desktop_core import Settings
+    settings = tmp_path / "settings.json"
+    Settings().save(settings)
+    args = ["--once", "--db", str(tmp_path / "state.db"), "--settings", str(settings)]
+    with pytest.raises(SystemExit):
+        console.main(args)
+    assert "Business tools are off" in capsys.readouterr().err
+    assert not (tmp_path / "state.db").exists()
+    saved = Settings.load(settings)
+    saved.commerce_enabled = True
+    saved.save(settings)
+    assert console.main(args) == 0
+    assert (tmp_path / "state.db").exists()
