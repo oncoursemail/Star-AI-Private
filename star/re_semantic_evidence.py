@@ -67,7 +67,7 @@ def _observable(value: object, *, specification: bool) -> dict:
     else:
         raise ValueError("Observable kind must be bits, memory_sha256, or events")
     _keys(value, keys, "Observable")
-    result = {"name": _identifier(value["name"], "Observable name"), "kind": kind}
+    result: dict = {"name": _identifier(value["name"], "Observable name"), "kind": kind}
     if kind == "bits":
         width = _integer(value["width_bits"], 1, 128, "width_bits")
         result["width_bits"] = width
@@ -97,7 +97,7 @@ def _observable(value: object, *, specification: bool) -> dict:
 
 
 def _contract(value: object) -> dict:
-    _keys(value, {"schema_version", "suite_id", "suite_sha256", "reference_artifact_sha256",
+    value = _keys(value, {"schema_version", "suite_id", "suite_sha256", "reference_artifact_sha256",
                   "candidate_artifact_sha256", "cases"}, "Contract")
     if value["schema_version"] != CONTRACT_VERSION:
         raise ValueError("Unsupported semantic contract schema_version")
@@ -123,7 +123,7 @@ def _contract(value: object) -> dict:
 
 
 def _evidence(value: object) -> dict:
-    _keys(value, {"schema_version", "suite_id", "suite_sha256", "artifact_sha256", "producer_id",
+    value = _keys(value, {"schema_version", "suite_id", "suite_sha256", "artifact_sha256", "producer_id",
                   "run_id", "complete", "exit_code", "unsupported_operations", "unverified_stubs",
                   "cases"}, "Evidence")
     if value["schema_version"] != EVIDENCE_VERSION:

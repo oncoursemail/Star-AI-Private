@@ -44,7 +44,7 @@ class _Report:
         }
 
     def issue(self, code: str, severity: str, message: str, index: int | None = None):
-        item = {"code": code, "severity": severity, "message": message}
+        item: dict = {"code": code, "severity": severity, "message": message}
         if index is not None:
             item["index"] = index
         self.issues.append(item)

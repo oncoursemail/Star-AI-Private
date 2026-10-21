@@ -66,7 +66,7 @@ class _Reader:
 
 
 def _memory_row(limits: dict, imported: bool) -> dict:
-    row = dict(limits, imported=imported)
+    row: dict = {**limits, "imported": imported}
     row["min_mib"] = round(limits["min_pages"] * WASM_PAGE_BYTES / 2**20, 2)
     row["max_mib"] = (None if limits["max_pages"] is None
                       else round(limits["max_pages"] * WASM_PAGE_BYTES / 2**20, 2))

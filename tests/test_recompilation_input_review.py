@@ -188,6 +188,13 @@ def test_wrong_content_pin_fails_even_when_size_matches(tmp_path):
         _read(tmp_path, [inputs.InputSpec("sample.json", 7, other)])
 
 
+def _bump_mtime(path):
+    # Detection relies on file metadata; a same-size rewrite within one clock tick (common on
+    # Windows) keeps the same mtime, so move it forward as any later real edit would.
+    info = path.stat()
+    os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 10**9))
+
+
 def test_same_size_mutation_during_its_own_read_is_rejected(tmp_path, monkeypatch):
     target = tmp_path / "sample.json"
     target.write_bytes(b"AAAA")
@@ -198,6 +205,7 @@ def test_same_size_mutation_during_its_own_read_is_rejected(tmp_path, monkeypatc
         if block and not changed:
             changed = True
             target.write_bytes(b"BBBB")
+            _bump_mtime(target)
 
     _observe_reads(monkeypatch, mutate)
     with pytest.raises(ValueError, match="changed"):
@@ -218,6 +226,7 @@ def test_earlier_input_mutated_during_later_read_cannot_return_complete_receipts
         if block and os.fstat(handle.fileno()).st_ino == later_inode and not changed:
             changed = True
             earlier.write_bytes(b"CCCC")
+            _bump_mtime(earlier)
 
     _observe_reads(monkeypatch, mutate)
     with pytest.raises(ValueError, match="changed"):
