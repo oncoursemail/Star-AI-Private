@@ -1,6 +1,7 @@
 # STAR Commerce OS — evidence-led implementation and launch research
 
-**As of:** October 18, 2026  
+**As of:** October 18, 2026
+
 **Status:** working local draft automation with tests; no published products, merchant OAuth, verified orders, or genuine revenue created by the kit.
 
 ## 1) Reading the source video critically

@@ -1,7 +1,9 @@
 # STAR Business workspace — initial integration
 
-**Code stage:** reviewable development branch; NOT a production marketplace connector.  
-**Data residency:** private per-user STAR app-data SQLite database.  
+**Code stage:** reviewable development branch; NOT a production marketplace connector.
+
+**Data residency:** private per-user STAR app-data SQLite database.
+
 **Revenue:** not connected or verified. Never infer sales from draft counts.
 
 This work builds on the existing `star/commerce/planning.py`, `star/commerce/art_quality.py`,
