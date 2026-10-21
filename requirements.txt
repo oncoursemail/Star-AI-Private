@@ -1,6 +1,6 @@
 openai>=2.54.0,<3
 mcp>=1.30.0,<2
-Pillow>=12.3.0,<13
+Pillow>=13.0.0,<14
 python-dotenv>=1.2.4,<2
 jsonschema>=4.26.0,<5
 PyJWT[crypto]>=2.15.1,<3
