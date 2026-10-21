@@ -294,6 +294,7 @@ export function SettingsPage(props:SettingsPageProps) {
        <SearchKey provider="brave" label="Brave Search" stored={!!data.credentials?.brave} invoke={act} disabled={inactive} onSaved={sync}/>
        <SearchKey provider="tavily" label="Tavily" stored={!!data.credentials?.tavily} invoke={act} disabled={inactive} onSaved={sync}/>
        <Switch label="Read source pages in deep research" hint="With both Team and Research selected, search several evidence angles, read up to 12 public pages, and follow up on missing evidence. Shows source activity and citation references. Uses your selected search service; pages can see the reader's network address." checked={draft.deep_research_enabled===true} onChange={on=>set({deep_research_enabled:on})}/>
+       <Switch label="Add scholarly papers to deep research" hint="Deep research also looks up matching papers on Crossref and OpenAlex (titles and links only) and reads them like other sources. Your research question is sent to both services." checked={draft.scholarly_research_enabled===true} onChange={on=>set({scholarly_research_enabled:on})}/>
      </Panel>
    </Block>
    <Block id="knowledge-tools" keywords="skills graphify obsidian notes vault practice examples knowledge agents.md project rules">

@@ -143,6 +143,19 @@ describe('Web search keys', () => {
   })
 })
 
+describe('Scholarly research switch', () => {
+  it('is off by default and saves scholarly_research_enabled when turned on', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Knowledge & search'}))
+    const box = screen.getByRole('checkbox', {name: 'Add scholarly papers to deep research'}) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    await user.click(box)
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    expect((desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>).scholarly_research_enabled).toBe(true)
+  })
+})
+
 describe('helpers', () => {
   it('matches every word, ignoring case, accents and hyphens', () => {
     expect(normalizeSearch('Résumé  Wi-Fi')).toBe('resume wi fi')
