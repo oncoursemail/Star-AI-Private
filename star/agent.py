@@ -10,10 +10,11 @@ from pathlib import Path
 from .context_layout import assemble, clean_history, context_block, drop_oldest_turns, final_user_text
 from .media import image_part, mcp_images
 from .redact import redact_text
-from .policy import allowed_registry, enforce
+from .policy import allowed_registry, enforce, READ_TOOLS as STUDIO_READ_TOOLS
 from .memory import compact
 from .workspace import TOOLS, TOOL_NAMES, WRITE_TOOLS as WORKSPACE_WRITE_TOOLS
 from . import code_answer_completion
+from .incremental_repair import RepairController, RepairDeferred, RepairsOff
 
 
 # A server's "the prompt does not fit" refusal (llama.cpp exceed_context_size_error, OpenAI-compatible
@@ -316,7 +317,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   reverse_engineering=None, debug_evidence=None,
                   preserve_history=False, complete_code_answers=None,
                   tool_discovery_enabled=False, candidate_code_team_enabled=False, now=None,
-                  web_settings=None, on_first_request=None):
+                  web_settings=None, on_first_request=None, incremental_repair=False):
     """Run one user turn.
 
     Request layout (see star/context_layout.py): one system message holding the
@@ -329,6 +330,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
     `on_first_request({"messages", "tools", "max_tokens"})` is called once, just before the
     first model request, with that request's messages and tool list (star/best_of_n.py samples
     extra candidates of the same request while this one is written). It cannot fail the turn.
+    `incremental_repair` (Settings > incremental_repair, off by default) turns on star/incremental_repair.py:
+    tool failures and workspace syntax checks steer at most two focused retries, and an unresolved one
+    adds a verification note to the answer. Off, tool handling and streaming are as before.
     `request_extras` are provider-specific body fields from
     `providers.llama_request_fields`; they are empty for cloud providers.
     `tool_memory` (star/turn_memory.py) keeps the prompt-selected tools of a
@@ -524,6 +528,38 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 clean_history(history), {"role": "user", "content": content})
     archive = []
     event = on_event or (lambda _: None)
+    repairs = RepairController(event) if incremental_repair else RepairsOff()
+
+    def tool_effects(name: str, args: dict) -> tuple[bool, str, str]:
+        # This classifies effects only to PAUSE actions. Existing authorization
+        # above dispatch remains authoritative; this never grants a capability.
+        read_only = ((TOOL_NAMES - WORKSPACE_WRITE_TOOLS) | STUDIO_READ_TOOLS | {
+            'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
+            'star_web_search', 'star_github_tree', 'star_github_read', 'star_delegate',
+            'star_mcp_registry_search', 'star_candidate_code_team',
+        })
+        group = 'workspace' if name in TOOL_NAMES else 'studio' if name in registry else name
+        mutation = name not in read_only
+        for label, source in (('intelligence', intelligence), ('documents', document_tools),
+                              ('blender', blender), ('workshop', tool_workshop),
+                              ('specialists', specialists), ('mcp', mcp_gateway),
+                              ('registry', mcp_registry), ('reverse_engineering', reverse_engineering),
+                              ('debug_evidence', debug_evidence)):
+            if source is not None and source.owns(name):
+                group = label
+                if label in {'documents', 'specialists', 'mcp', 'registry', 'workshop',
+                             'reverse_engineering', 'debug_evidence'}:
+                    mutation = False  # these adapters expose read-only work only
+                break
+        if name == 'screen_capture' and set(args) - {'studio_id', 'datamodel_type', 'capture_id'}:
+            mutation = True  # moving the capture camera is a Studio edit
+        resource = str(args.get('path', '')) if group == 'workspace' else ''
+        if resource and workspace is not None and hasattr(workspace, 'resolve'):
+            try:
+                resource = workspace.resolve(resource, allow_missing=True).relative_to(workspace.root).as_posix()
+            except (ValueError, PermissionError, OSError):
+                pass  # the actual dispatcher reports invalid paths through its existing checks
+        return mutation, group, resource
     # Compute a full, inert evidence block only when references exist. Plain chat
     # retains the old single-request path, with no retrieval or summary calls.
     full_context = context
@@ -681,9 +717,10 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         answered.pop('finish_reason', None)
         shown_before = shown_text
         buffered_deltas = []
+        repair_buffering = repairs.unresolved
 
         def stream_event(item):
-            if not complete_code_answers:
+            if not complete_code_answers and not repair_buffering:
                 event(item)
             elif item.get('event') == 'assistant_delta':
                 buffered_deltas.append(item)
@@ -730,11 +767,14 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                 event(buffered)
             messages.append({"role": "assistant", "content": answer_text or "", "tool_calls": [
                 {"id": t.id, "type": "function", "function": {"name": t.function.name, "arguments": t.function.arguments}} for t in tool_calls]})
+            batch_paused = False
             for tool_call in tool_calls:
                 calls_count += 1
                 if calls_count > 20:
                     raise RuntimeError("Tool-call budget exhausted")
                 name = tool_call.function.name
+                workspace_result = None
+                outcome_uncertain = False
                 try:
                     args = json.loads(tool_call.function.arguments)
                     if name == 'star_evidence_read':
@@ -810,9 +850,20 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                             raise PermissionError(LUAU_AFTER_UNTRUSTED)
                     elif workspace is None or (name in WORKSPACE_WRITE_TOOLS and not workspace_edit):
                         raise PermissionError("Workspace tool not authorized")
-                except Exception as exc:
-                    result = json.dumps({"isError": True, "output": f"Tool request rejected: {type(exc).__name__}"})
+                    mutation, effect_group, resource = tool_effects(name, args)
+                    repairs.before_call(name, args, mutation=mutation, group=effect_group,
+                                        resource=resource, batch_paused=batch_paused)
+                except RepairDeferred as exc:
+                    result = json.dumps({"isError": True, "not_executed": True,
+                                         "output": exc.feedback['instruction'], "repair": exc.feedback})
                     images = []
+                    event({"event": "tool_rejected", "tool": name})
+                except Exception as exc:
+                    result = json.dumps({"isError": True, **({"not_executed": True} if incremental_repair else {}),
+                                         "output": f"Tool request rejected: {type(exc).__name__}"})
+                    images = []
+                    batch_paused = True
+                    repairs.rejected()
                     event({"event": "tool_rejected", "tool": name})
                 else:
                     # Authorized: announce before running so progress is not retroactive.
@@ -837,11 +888,23 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         except (ValueError, ArithmeticError, OverflowError, TypeError) as exc:
                             data = {"isError": True, "content": [{"type": "text", "text": f"Calculator rejected: {type(exc).__name__}"}]}
                     elif name == 'star_clock':
-                        from .clock import tool_result as clock_result
-                        data = clock_result(args)
+                        try:
+                            from .clock import tool_result as clock_result
+                            data = clock_result(args)
+                        except Exception as exc:
+                            if not incremental_repair:
+                                raise
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Clock tool failed: {type(exc).__name__}"}]}
                     elif name == 'star_web_fetch':
-                        from .web_fetch import tool_result as fetch_result
-                        data = await fetch_result(args, settings=web_settings)
+                        try:
+                            from .web_fetch import tool_result as fetch_result
+                            data = await fetch_result(args, settings=web_settings)
+                        except Exception as exc:
+                            if not incremental_repair:
+                                raise
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Web fetch failed: {type(exc).__name__}"}]}
                     elif name == 'star_github_tree' or name == 'star_github_read':
                         try:
                             from .repo_intelligence import repo_tree, repo_read
@@ -930,7 +993,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif document_tools is not None and document_tools.owns(name):
                         # Keep SQLite-backed document access on the caller's thread.
                         # Only the prompt-selected/attached capability set is allowed.
-                        data = document_tools.call(name, args, enabled=enabled_documents)
+                        try:
+                            data = document_tools.call(name, args, enabled=enabled_documents)
+                        except Exception as exc:
+                            if not incremental_repair:
+                                raise
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Document tool failed: {type(exc).__name__}"}]}
                     elif reverse_engineering is not None and reverse_engineering.owns(name):
                         # Local, workspace-confined binary analysis. Output is untrusted data.
                         try:
@@ -952,6 +1021,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         try:
                             data = await blender.call(name, args)
                         except Exception as exc:
+                            outcome_uncertain = mutation  # an edit may have started before the error
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Blender MCP tool unavailable: {type(exc).__name__}"}]}
                     elif mcp_gateway is not None and mcp_gateway.owns(name):
@@ -975,22 +1045,60 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif name in TOOL_NAMES:
                         try:
                             local_output = workspace.call(name, args, allow_write=workspace_edit)
+                            if not isinstance(local_output, dict):
+                                raise TypeError('Workspace dispatcher returned an invalid result')
+                            if name in WORKSPACE_WRITE_TOOLS:
+                                workspace_result = local_output
                             data = {"isError": False, "content": [{"type": "text", "text": json.dumps(local_output, ensure_ascii=False)}]}
-                        except (ValueError, PermissionError, OSError) as exc:
+                        except Exception as exc:
+                            if not incremental_repair and not isinstance(exc, (ValueError, PermissionError, OSError)):
+                                raise
+                            outcome_uncertain = mutation and not isinstance(exc, (ValueError, PermissionError))
                             data = {"isError": True, "content": [{"type": "text", "text": f"Workspace tool failed: {type(exc).__name__}: {exc}"}]}
                     else:
-                        if studio is None:
-                            raise RuntimeError("Studio tool request with no Studio connection")
-                        # No automatic retry: the mutation may have succeeded before a timeout.
-                        raw = await asyncio.wait_for(studio.call_tool(name, arguments=args), timeout=65)
-                        data = raw.model_dump(by_alias=True, exclude_none=True)
-                    result = tool_payload(data, broker=evidence_broker, tool_name=name)
-                    images = mcp_images(data)
+                        try:
+                            if studio is None:
+                                raise RuntimeError("Studio tool request with no Studio connection")
+                            # No automatic replay: the mutation may have succeeded before a timeout.
+                            raw = await asyncio.wait_for(studio.call_tool(name, arguments=args), timeout=65)
+                            data = raw.model_dump(by_alias=True, exclude_none=True)
+                        except Exception as exc:
+                            if not incremental_repair:
+                                raise
+                            # Only a raised or timed-out call has an unknown outcome; a clean refusal
+                            # returned by Studio (isError) is an ordinary tool error.
+                            outcome_uncertain = mutation
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Studio tool did not return a confirmed result: {type(exc).__name__}. "
+                                            "Inspect current state before planning any further action."}]}
+                    try:
+                        result = tool_payload(data, broker=evidence_broker, tool_name=name)
+                        images = mcp_images(data)
+                    except Exception as exc:
+                        if not incremental_repair:
+                            raise
+                        # A malformed adapter response must still receive a tool
+                        # receipt. Do not lose the remainder of the model batch.
+                        outcome_uncertain = mutation
+                        workspace_result = None
+                        data = {"isError": True, "content": [{"type": "text",
+                                "text": f"Tool response could not be read: {type(exc).__name__}. "
+                                        "Its result was not confirmed."}]}
+                        result, images = tool_payload(data), []
                     if (name in UNTRUSTED_SOURCE_TOOLS
                             or (mcp_gateway is not None and mcp_gateway.owns(name))
                             or (mcp_registry is not None and mcp_registry.owns(name))):
                         untrusted_read = True
                     event({"event": "tool_finished", "tool": name, "is_error": bool(data.get("isError"))})
+                    feedback, needs_attention = repairs.observe(
+                        name, args, is_error=bool(data.get('isError')), mutation=mutation,
+                        group=effect_group, resource=resource, workspace_result=workspace_result,
+                        uncertain=outcome_uncertain)
+                    batch_paused = batch_paused or needs_attention
+                    if feedback is not None:
+                        envelope = json.loads(result)
+                        envelope['repair'] = feedback
+                        result = json.dumps(envelope, ensure_ascii=False)
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
                 if images:
                     caption = ("Public Roblox CDN artwork fetched for visual inspection. "
@@ -1005,13 +1113,24 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
             if not answer.strip():
                 raise RuntimeError('Local model streamed no visible answer' if streamed
                                    else "Local model gave no text or tool calls")
+            followup = repairs.completion_prompt() if step + 1 < max_calls and calls_count < 20 else ''
+            if followup:
+                # The original task stays in context. This consumes an existing
+                # model turn, not a separate unbounded critic or repair loop.
+                messages.extend([{'role': 'assistant', 'content': answer},
+                                 {'role': 'user', 'content': followup}])
+                continue
             if complete_code_answers:
                 answer = await code_answer_completion.complete(
                     answer, answered.get('finish_reason'), history=messages,
                     send=continue_request, event=event)
+            verification_note = repairs.final_note()
+            answer += verification_note
             if streamed:
-                if complete_code_answers:
+                if complete_code_answers or repair_buffering:
                     event({'event': 'assistant_delta', 'text': ('\n\n' if shown_before else '') + answer})
+                elif verification_note:
+                    event({'event': 'assistant_delta', 'text': verification_note})
                 messages.append({'role': 'assistant', 'content': answer})
             # The name the server reported, else the one that was asked for.
             finished = {"event": "model_answered", "model": str(answered.get('model') or model)[:180],

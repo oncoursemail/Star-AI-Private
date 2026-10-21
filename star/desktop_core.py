@@ -156,6 +156,9 @@ class Settings:
     roblox_docs_live_enabled: bool = False  # opt-in live retrieval from create.roblox.com/docs; STAR_ROBLOX_DOCS_LIVE=1 also enables
     project_rules_enabled: bool = False    # opt-in: add the workspace's AGENTS.md (star/project_rules.py) to each turn
     luau_retry_ladder: bool = False        # opt-in: a second, thinking repair after a failed Luau repair
+    # Opt-in (star/incremental_repair.py): a failed tool call or a failed syntax check of a saved workspace file
+    # pauses other writes and gets at most two focused retries; what stays unresolved is noted in the answer.
+    incremental_repair: bool = False
     # Anti-slop post-check of the answer (star/slop.py): 'off', 'flag' (a note on invented APIs, unverifiable claims
     # and stubs) or 'trim' (the note, and filler lines outside code are removed). Off until the owner opts in.
     slop_check: str = 'off'
@@ -210,7 +213,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled', 'edit_diff')):
+                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'gold_examples_enabled', 'edit_diff')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -1216,7 +1219,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         auto_web = bool(not research and settings.web_auto_search is not False and wants_fresh_web(prompt))
         allowed_context_chars = model_context_char_budget(settings, route.model)
         intelligence = for_settings(settings, home) if use_tools else None
-        workspace = Workspace(Path(settings.workspace)) if use_tools and settings.workspace else None
+        workspace = (Workspace(Path(settings.workspace), validate=settings.incremental_repair is True)
+                     if use_tools and settings.workspace else None)
         debug_evidence = None
         if workspace is not None and settings.debug_evidence_enabled is True:
             from .debug_evidence import DebugEvidenceTools
@@ -1477,7 +1481,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                               github_enabled=bool(mode == 'agent' and github_enabled),
                               intelligence=intelligence, mcp_gateway=mcp_gateway,
                               mcp_registry=mcp_registry,
-                              tool_workshop=workshop, specialists=specialists)
+                              tool_workshop=workshop, specialists=specialists,
+                              incremental_repair=settings.incremental_repair is True)
                 if document_tools is not None:
                     kwargs['document_tools'] = document_tools
                 if reverse_engineering is not None:
