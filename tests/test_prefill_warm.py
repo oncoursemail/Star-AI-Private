@@ -423,7 +423,7 @@ def test_the_reference_block_is_primed_up_to_the_time_line(desk, tail_server, mo
     *_, primed, whole = [call["body"]["prompt"] for call in tail_server.sent()]
     assert "OFFICIAL DOCUMENTATION" in primed and "Now: " not in primed.rsplit("<|im_start|>user", 1)[1]
     # Then the whole request once, this minute's time line and the closing tokens included.
-    assert whole.startswith(primed) and whole.endswith("<|im_start|>assistant\n")
+    assert whole.startswith(primed) and whole.endswith("<|im_start|>assistant\n") and report["tail"]["whole"]
     # Enter with the same text: the real request starts with every byte that was primed, and only the time
     # line and the closing tokens come after it.
     desk.chats.add("STAR", "user", draft, chat_id=desk.chat)

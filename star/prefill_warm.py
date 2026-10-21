@@ -180,9 +180,10 @@ async def _send_prefix(settings: Settings, request: dict, cancel_event, pc_base:
         where = (chat_key, request['model'], extras.get('id_slot'), pc_base)
         before = _PRIMED.get(where, '')
         found: dict = {'primed': True}
-        ends: list = chunk_ends(draft, _common_length(before, draft))
+        start = _common_length(before, draft)
+        ends: list = chunk_ends(draft, start)
         if whole:
-            ends.append(None)
+            ends = [None] if start == len(draft) else ends + [None]
         for number, end in enumerate(ends):
             if number and others_busy is not None and await others_busy():
                 found['yielded'] = True
@@ -394,17 +395,28 @@ def warm_draft(settings: Settings, home: Path, chat_id: str | None, text: str, *
                 message, length, why = turn_tail(settings, home, chat_id, text, request, mode=mode,
                                                  research=research)
                 if message and not (cancel_event is not None and cancel_event.is_set()):
-                    full = {**request, 'messages': [*request['messages'][:-1], {
-                        **request['messages'][-1], 'content': [{'type': 'text', 'text': message}]}]}
+                    def with_message(body: str) -> dict:
+                        return {**request, 'messages': [*request['messages'][:-1], {
+                            **request['messages'][-1], 'content': [{'type': 'text', 'text': body}]}]}
 
                     async def stop_between_chunks() -> bool:
                         # The owner typed on (a newer draft waits) or another client is generating.
                         return bool((superseded is not None and superseded())
                                     or (others_busy is not None and await others_busy()))
-                    more = asyncio.run(_send_prefix(settings, full, cancel_event, pc_base, str(chat_id or ''),
-                                                    stop_between_chunks, primed=message[:length], whole=True))
+                    more = asyncio.run(_send_prefix(settings, with_message(message), cancel_event, pc_base,
+                                                    str(chat_id or ''), stop_between_chunks, primed=message[:length]))
+                    if more.get('primed') and not more.get('yielded') and not more.get('cancelled'):
+                        # Then the whole request with the time line of NOW (reading the block took a while).
+                        from .clock import now_line
+                        old = message[length:].split('\n', 1)[0]
+                        message = message[:length] + now_line() + message[length + len(old):]
+                        last = asyncio.run(_send_prefix(settings, with_message(message), cancel_event, pc_base,
+                                                        str(chat_id or ''), stop_between_chunks,
+                                                        primed=message[:length], whole=True))
+                        more['whole'] = bool(last.get('primed') and not last.get('cancelled'))
                     result['tail'] = {key: more[key] for key in ('primed', 'yielded', 'cancelled', 'skipped',
-                                                                 'prompt_tokens_read', 'chunks') if key in more}
+                                                                 'prompt_tokens_read', 'chunks', 'whole')
+                                      if key in more}
                 else:
                     result['tail'] = {'skipped': why or 'cancelled'}
             except Exception as exc:
