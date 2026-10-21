@@ -36,7 +36,7 @@ FAIL_MAX = 5
 MAX_BODY = 512_000
 HEADERS = {"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY",
            "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-                                      "font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
+                                      "font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
                                       "form-action 'self'"}
 
 

@@ -83,6 +83,7 @@ export function LineChart({ title, lines, from, to, step, fmt, yMax, base2, heig
   const y = (v: number) => PAD.t + ih - (v / (top || 1)) * ih;
   const xt = timeTicks(from, to);
   const withDay = to - from > 86400 * 1.5;
+  const dayTicks = xt.length > 1 && xt[1] - xt[0] >= 86400;      // whole-day ticks: the weekday alone is enough
   const ref = lines.find((l) => l.points.length)?.points ?? [];
   const hi = hover != null ? nearest(ref, hover) : -1;
   const ht = hi >= 0 ? ref[hi][0] : null;
@@ -125,9 +126,12 @@ export function LineChart({ title, lines, from, to, step, fmt, yMax, base2, heig
               </g>
             ))}
             {xt.map((t) => (
-              <text key={t} x={x(t)} y={height - 6} textAnchor="middle" className="tick">{clock(t, withDay)}</text>
+              <text key={t} x={x(t)} y={height - 6} textAnchor="middle" className="tick">
+                {dayTicks ? new Date(t * 1000).toLocaleDateString(undefined, { weekday: "short" }) : clock(t, withDay)}</text>
             ))}
-            {lines.map((l) => segments(l.points, step).map((seg, i) => (
+            {lines.map((l) => segments(l.points, step).map((seg, i) => seg.length === 1 ? (
+              <circle key={l.key + i} cx={x(seg[0][0])} cy={y(seg[0][1] as number)} r={3} fill={l.color} />
+            ) : (
               <polyline key={l.key + i} fill="none" stroke={l.color} strokeWidth={2} strokeLinejoin="round"
                         strokeLinecap="round"
                         points={seg.map((p) => `${x(p[0]).toFixed(1)},${y(p[1] as number).toFixed(1)}`).join(" ")} />

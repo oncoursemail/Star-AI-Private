@@ -100,7 +100,7 @@ main:focus-visible { outline: none; }      /* focus moves here on page change fo
 .all-clear { margin: 0; color: var(--muted); }
 
 /* machine plates */
-.plates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 18px; }
+.plates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 18px; align-items: start; }
 .plate { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .plate::before { content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 1px; background: var(--ti);
@@ -173,7 +173,7 @@ tr.dim td { color: var(--muted); }
 .values { margin-top: 8px; }
 
 /* Star AI */
-.brains { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 18px; }
+.brains { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 18px; align-items: start; }
 .brain { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px;
   display: flex; flex-direction: column; gap: 14px; }
 .brain > header { display: flex; justify-content: space-between; align-items: baseline; }
@@ -195,7 +195,7 @@ tr.dim td { color: var(--muted); }
 .files li { display: flex; justify-content: space-between; gap: 12px; }
 
 /* dev projects */
-.projects { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 14px; }
+.projects { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; }
 .project { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
   display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .project header { display: flex; gap: 10px; align-items: center; }

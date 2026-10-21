@@ -140,6 +140,7 @@ function Confirm({ action, state, onClose }: { action: Action; state: State; onC
       setBusy(false);
     }
   };
+  // showModal focuses the first button, Cancel: confirming always takes a deliberate second step
   return (
     <dialog ref={dlg} className="dialog" onClose={onClose} aria-labelledby="confirm-h">
       <h2 id="confirm-h">{action.label} on {action.machine_name}?</h2>
@@ -148,10 +149,9 @@ function Confirm({ action, state, onClose }: { action: Action; state: State; onC
       <p className="muted small mono">{action.id}</p>
       {result && <p className={result.ok ? "ok-text" : "bad-text"} role="status">{result.text}</p>}
       <div className="dialog-actions">
-        <button className="btn" onClick={onClose} autoFocus={action.danger === "high"}>{result ? "Close" : "Cancel"}</button>
+        <button className="btn" onClick={onClose}>{result ? "Close" : "Cancel"}</button>
         {!result && (
-          <button className={action.danger === "high" ? "btn btn-danger" : "btn btn-primary"} onClick={run} disabled={busy}
-                  autoFocus={action.danger !== "high"}>
+          <button className={action.danger === "high" ? "btn btn-danger" : "btn btn-primary"} onClick={run} disabled={busy}>
             {busy ? "Starting…" : `Yes, ${action.label.toLowerCase()}`}
           </button>
         )}

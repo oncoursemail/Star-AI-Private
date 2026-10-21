@@ -12,7 +12,6 @@ export function StarAI({ state, range, setRange }: { state: State; range: Range;
   const star = state.star;
   const chat = star.models.filter((m) => !m.helper);
   const loaded = chat.filter((m) => m.status === "loaded");
-  const brainMachine = Object.keys(star.brains)[0] ?? "brain1";
   const keys = loaded.flatMap((m) => [`llm.brain1.${m.id}.tps`, `llm.brain1.${m.id}.prompt_ms`, `llm.brain1.${m.id}.busy`,
     `llm.brain1.${m.id}.deferred`, `llm.brain1.${m.id}.gen_tps`])
     .concat(["llm.brain2.star-ns-brain.tps", "llm.brain2.star-ns-brain.gen_tps", "llm.brain2.star-ns-brain.prompt_ms"]);
@@ -124,9 +123,10 @@ export function StarAI({ state, range, setRange }: { state: State; range: Range;
 
       <div className="brains">
         {Object.entries(star.brains).length === 0 && <Empty>No STAR facts yet (they arrive once a minute from each brain's gate).</Empty>}
-        {Object.entries(star.brains).map(([id, f]) => <BrainCard key={id} id={id} f={f} state={state} />)}
+        {Object.entries(star.brains).sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, f]) => <BrainCard key={id} id={id} f={f} state={state} />)}
       </div>
-      <p className="muted small">Facts come from STAR's own allow-listed gate (the Discord bot's `facts` verb) once a minute. Main brain: {brainMachine}.</p>
+      <p className="muted small">Facts come from STAR's own allow-listed gate (the Discord bot's facts verb) once a minute.</p>
     </div>
   );
 }
