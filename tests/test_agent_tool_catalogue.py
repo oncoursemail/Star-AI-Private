@@ -49,6 +49,9 @@ STAR_KNOWLEDGE = ["star_docs_search", "star_api_lookup", "star_luau_check"]
 ROBLOX_CLOUD = ["star_roblox_cloud_universe", "star_roblox_cloud_status", "star_roblox_cloud_place",
                 "star_roblox_cloud_data_stores", "star_roblox_cloud_action", "star_roblox_cloud_request_publish",
                 "star_roblox_cloud_request_test"]
+# Prompt-scoped Roblox Intelligence Hub tools (ROBLOX_HUB_TOOLS); catalog words, and analytics only with an owner allowlist.
+HUB = ["star_roblox_marketplace_search", "star_roblox_creator_store_search", "star_roblox_creator_asset",
+       "star_roblox_analytics_metrics", "star_roblox_analytics_poll", "star_roblox_gameplay_telemetry_plan"]
 # Prompt-scoped craft tools; not part of the ordered general-prompt lists below.
 CRAFT = ["star_roblox_craft_audit", "star_roblox_craft_recipe"]
 # Experimental Asset Forge (star/intelligence.py ASSET_TOOLS); owner opt-in required.
@@ -262,7 +265,8 @@ def test_the_written_lists_are_the_whole_built_in_catalogue():
     from star import intelligence, mcp_connections, mcp_registry, specialist_agents, tool_workshop, workspace
     assert set(intelligence.ALL_TOOLS) == set(SKILLS + OBSIDIAN + GRAPHIFY + ROBLOX_GAMES + ROBLOX_LINKS
                                              + ROBLOX_FORUM + ROBLOX_VIDEO + STAR_KNOWLEDGE + ROBLOX_CLOUD
-                                             + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE + COMMERCE)
+                                             + HUB + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE + COMMERCE)
+    assert [tool["name"] for tool in intelligence.ROBLOX_HUB_TOOLS] == HUB
     assert [tool["name"] for tool in intelligence.ARCHITECTURE_TOOLS] == ARCHITECTURE
     assert [tool["name"] for tool in intelligence.ASSET_TOOLS] == ASSET
     assert [tool["name"] for tool in intelligence.COMMERCE_TOOLS] == COMMERCE
