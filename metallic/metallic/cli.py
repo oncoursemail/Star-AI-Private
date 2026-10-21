@@ -5,6 +5,9 @@
     metallic queue run [--target BRANCH] [--apply] [--no-batch] [BRANCH...]
     metallic status [--out FILE]                 dashboard data (JSON)
     metallic serve [--port 8765] [--dist DIR]    dashboard + live /data.json on 127.0.0.1
+    metallic control serve --config FILE         Metallic Control collector + API + UI (metallic/control)
+    metallic control agent [--config FILE]       the Windows PC's reporter for Metallic Control
+    metallic control token FILE                  write a new random token to an owner-only file
 
 Exit status: 0 green, 1 red (a blocking check failed), 2 usage or setup error, 3 queue busy.
 """
@@ -150,6 +153,26 @@ def cmd_serve(a) -> int:
     return 0
 
 
+def cmd_control(a) -> int:
+    if a.action == "serve":
+        from .control import service
+        return service.run(a.config)
+    if a.action == "agent":
+        from .control import pc_agent
+        return pc_agent.main(["--config", a.config] if a.config else [])
+    from .control import service
+    if not a.config:
+        print("metallic control token FILE", file=sys.stderr)
+        return 2
+    try:
+        service.write_token(a.config)
+    except FileExistsError as e:
+        print(f"metallic: {e}", file=sys.stderr)
+        return 2
+    print(f"new token written to {a.config} (owner-only)", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="metallic", description="Metallic layer: checks, merge queue, dashboard data")
     p.add_argument("--repo", default=".", help="repository (default: current folder)")
@@ -176,13 +199,20 @@ def build_parser() -> argparse.ArgumentParser:
     v = sub.add_parser("serve", help="serve the dashboard with live data on 127.0.0.1")
     v.add_argument("--port", type=int, default=8765)
     v.add_argument("--dist")
+    k = sub.add_parser("control", help="Metallic Control: collector + admin dashboard, PC agent, tokens")
+    k.add_argument("action", choices=["serve", "agent", "token"])
+    k.add_argument("config", nargs="?", help="config file (serve/agent) or token file (token)")
+    k.add_argument("--config", dest="config_opt", help=argparse.SUPPRESS)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
+    if a.cmd == "control" and getattr(a, "config_opt", None):
+        a.config = a.config_opt
     try:
-        return {"check": cmd_check, "queue": cmd_queue, "status": cmd_status, "serve": cmd_serve}[a.cmd](a)
+        return {"check": cmd_check, "queue": cmd_queue, "status": cmd_status, "serve": cmd_serve,
+                "control": cmd_control}[a.cmd](a)
     except gitutil.GitError as e:
         print(f"metallic: {e}", file=sys.stderr)
         return 2
