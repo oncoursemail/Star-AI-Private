@@ -12,9 +12,9 @@ import json
 from pathlib import Path
 import re
 
-MAX_GRAPH_BYTES = 20_000_000
-MAX_NODES = 60_000
-MAX_EDGES = 160_000
+MAX_GRAPH_BYTES = 64_000_000   # STAR's own code graph is 29 MB (21,503 nodes, 54,336 edges)
+MAX_NODES = 100_000
+MAX_EDGES = 300_000
 
 
 def _endpoint(value) -> str:
@@ -76,6 +76,9 @@ def _load(path: str, modified: int, size: int):
     }
 
 
+_SEPARATORS = re.compile(r"[_\-./\\]+")
+
+
 def _symbol_name(label: str) -> str:
     """'connection_for()' and '.connection_for()' -> 'connection_for' (lower-case input)."""
     return re.sub(r"\(\)$", "", label.strip()).lstrip(".")
@@ -112,20 +115,22 @@ class GraphifyGraph:
 
     @staticmethod
     def _rank(nodes, query: str):
-        words = re.findall(r"[a-z0-9_]{2,}", query.lower())[:10]
+        words = re.findall(r"[a-z0-9]{2,}", query.lower())[:10]
         if not words:
             words = [query.strip().lower()]
         query_low = query.strip().lower()
         # Graphify labels a function "name()" and a method ".name()". A symbol whose own name is
         # exactly the query must outrank a docstring sentence that merely mentions it.
         query_name = _symbol_name(query_low)
+        query_spaced = _SEPARATORS.sub(" ", query_low).strip()
         ranked = []
         for ident, node in nodes.items():
             label = node["label"].lower()
-            source = node["source_file"].lower()
+            spaced = _SEPARATORS.sub(" ", label)   # "priority_proxy.py" must answer "priority proxy"
+            source = _SEPARATORS.sub(" ", node["source_file"].lower())
             score = (20 if _symbol_name(label) == query_name else 12 if label == query_low
-                     else 6 if query_low in label else 0)
-            score += sum((4 if word in label else 0) + (1 if word in source else 0) for word in words)
+                     else 6 if query_low in label or (query_spaced and query_spaced in spaced) else 0)
+            score += sum((4 if word in spaced else 0) + (1 if word in source else 0) for word in words)
             if score:
                 ranked.append((score, ident))
         # Ties: the shorter label first (a symbol name before a sentence), then alphabetical.
