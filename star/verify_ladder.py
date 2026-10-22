@@ -37,7 +37,8 @@ MAX_BLOCKS = 2
 MAX_DETAIL = 600
 FIX_RESERVE_SECONDS = 45.0        # a fix call is stopped this long before the turn's deadline
 MIN_FIX_SECONDS = 40.0            # no fix call when less than this is left
-WRITE_TESTS_SECONDS = 60.0        # the test-writing call is dropped (no tests) after this long
+WRITE_TESTS_SECONDS = 120.0       # the test-writing call is dropped (no tests) after this long (a cold prompt on
+                                  # a busy star-fast slot reads ~45 tokens/s, so ~60 s is common)
 RUNGS = ("compile", "api", "run", "tests")
 ENGINE = Path(__file__).with_name("player_twins") / "luau" / "engine.luau"
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
