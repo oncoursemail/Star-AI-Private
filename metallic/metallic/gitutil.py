@@ -7,6 +7,9 @@ import shutil
 import subprocess
 import tempfile
 
+# Background callers (the Metallic Control PC agent runs under pythonw) must not flash a console per git call.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 class GitError(RuntimeError):
     pass
@@ -19,7 +22,7 @@ def git(args: list[str], cwd: str | os.PathLike, *, env: dict | None = None, che
         cmd += ["-c", "user.name=" + identity[0], "-c", "user.email=" + identity[1]]
     full_env = dict(os.environ, **(env or {}))
     full_env.setdefault("GIT_TERMINAL_PROMPT", "0")
-    proc = subprocess.run(cmd + args, cwd=str(cwd), env=full_env, capture_output=True)
+    proc = subprocess.run(cmd + args, cwd=str(cwd), env=full_env, capture_output=True, creationflags=NO_WINDOW)
     out = proc.stdout.decode("utf-8", "replace")
     if check and proc.returncode != 0:
         raise GitError(f"git {' '.join(args[:3])} failed ({proc.returncode}): "
@@ -28,7 +31,7 @@ def git(args: list[str], cwd: str | os.PathLike, *, env: dict | None = None, che
 
 
 def ok(args: list[str], cwd) -> bool:
-    return subprocess.run(["git"] + args, cwd=str(cwd), capture_output=True).returncode == 0
+    return subprocess.run(["git"] + args, cwd=str(cwd), capture_output=True, creationflags=NO_WINDOW).returncode == 0
 
 
 def repo_root(path: str | os.PathLike = ".") -> Path:
@@ -105,4 +108,5 @@ def diff_text(base_tree: str, tree: str, cwd, paths: list[str] | None = None) ->
 
 
 def read_blob(blob: str, cwd) -> bytes:
-    return subprocess.run(["git", "cat-file", "blob", blob], cwd=str(cwd), capture_output=True, check=True).stdout
+    return subprocess.run(["git", "cat-file", "blob", blob], cwd=str(cwd), capture_output=True, check=True,
+                          creationflags=NO_WINDOW).stdout
