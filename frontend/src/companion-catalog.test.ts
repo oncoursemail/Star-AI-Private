@@ -1,20 +1,35 @@
 import {describe, expect, it} from 'vitest'
-import {COMPANIONS, companionCharacter, companionImage, companionWorkLabel, normalizeCompanionPreferences} from './companion-catalog'
+import {COMPANIONS, DEFAULT_COMPANION_PREFERENCES, companionCharacter, companionImage, companionWorkLabel, normalizeCompanionPreferences} from './companion-catalog'
 
 describe('companion appearance contract', () => {
-  it.each([null, undefined, [], 'star', {version: 2, character: 'astra', visible: false}])('uses safe, visible defaults for an unsupported preference record', value => {
-    expect(normalizeCompanionPreferences(value)).toEqual({version: 1, character: 'star', motion: 'subtle', visible: true})
+  it.each([null, undefined, [], 'star', {version: 3, character: 'astra', visible: false}])('uses safe, visible defaults for an unsupported preference record', value => {
+    expect(normalizeCompanionPreferences(value)).toEqual(DEFAULT_COMPANION_PREFERENCES)
   })
-  it('retains an explicit hidden/still choice and drops unrelated or executable fields', () => {
+  it('defaults: walking companions on, all four out, normal forms, affection on, study looks automatic', () => {
+    expect(DEFAULT_COMPANION_PREFERENCES).toEqual({
+      version: 2, character: 'star', motion: 'subtle', visible: true, stage: true, cast: ['star', 'ember', 'astra', 'gemini'],
+      forms: {star: 'normal', ember: 'normal', astra: 'normal', gemini: 'normal'}, affection: true, study: 'auto',
+    })
+  })
+  it('keeps a version 1 choice and fills in the new settings', () => {
     expect(normalizeCompanionPreferences({version: 1, character: 'ember', motion: 'still', visible: false, provider: 'other', script: 'alert(1)'}))
-      .toEqual({version: 1, character: 'ember', motion: 'still', visible: false})
+      .toEqual({...DEFAULT_COMPANION_PREFERENCES, character: 'ember', motion: 'still', visible: false})
+  })
+  it('keeps valid version 2 choices and drops unknown cast members, forms and fields', () => {
+    expect(normalizeCompanionPreferences({
+      version: 2, character: 'gemini', motion: 'subtle', visible: true, stage: false, cast: ['astra', 'gemini', 'mallory'],
+      forms: {astra: 'dog', gemini: 'cat', star: 'dragon'}, affection: false, study: 'on', script: 'x',
+    })).toEqual({
+      ...DEFAULT_COMPANION_PREFERENCES, character: 'gemini', stage: false, cast: ['astra', 'gemini'],
+      forms: {star: 'normal', ember: 'normal', astra: 'dog', gemini: 'cat'}, affection: false, study: 'on',
+    })
   })
   it('never treats a stored URL as an image or character ID', () => {
     expect(normalizeCompanionPreferences({version: 1, character: 'https://example.com/avatar.png', visible: 'yes', motion: 'unlimited'}))
-      .toEqual({version: 1, character: 'star', motion: 'subtle', visible: true})
+      .toEqual(DEFAULT_COMPANION_PREFERENCES)
   })
   it('limits character choices to the original project pack and packaged relative paths', () => {
-    expect(COMPANIONS.map(character => character.id)).toEqual(['star', 'ember', 'astra'])
+    expect(COMPANIONS.map(character => character.id)).toEqual(['star', 'ember', 'astra', 'gemini'])
     for (const character of COMPANIONS) {
       expect(character.image).toMatch(/^\.\/assets\/(mascot\/poses|companions)\/[a-z-]+\.png$/)
       expect(new URL(character.image, 'file:///app/frontend/dist/index.html').protocol).toBe('file:')

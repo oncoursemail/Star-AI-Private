@@ -1,0 +1,92 @@
+/* Living companions along the bottom of the chat (CompanionStage.tsx).
+ * Above the transcript fade (z 2), below the "Latest" jump (5) and composer menus (30). */
+.companion-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+.companion-stage__canvas {
+  position: absolute;
+  left: 0;
+  display: block;
+  pointer-events: none;
+}
+.companion-stage__hit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 40% 40% 24% 24%;
+  cursor: grab;
+  touch-action: none;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.companion-stage[data-dragging] .companion-stage__hit {
+  cursor: grabbing;
+}
+.companion-stage[data-still] .companion-stage__hit {
+  cursor: pointer;
+}
+.companion-stage__bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 172px;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--star-stroke-strong);
+  border-radius: 13px;
+  background: var(--star-surface-3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  color: var(--star-text);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.32;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 140ms ease-out, visibility 0s linear 140ms;
+}
+.companion-stage__bubble.is-on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 120ms ease-out;
+}
+.companion-stage__bubble::after {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: inherit;
+  background: inherit;
+  content: '';
+}
+.companion-stage__bubble[data-side='above']::after {
+  bottom: -5px;
+  left: calc(50% - 5px);
+  border-width: 0 1px 1px 0;
+  transform: rotate(45deg);
+}
+.companion-stage__bubble[data-side='left']::after {
+  top: 12px;
+  right: -5px;
+  border-width: 1px 1px 0 0;
+  transform: rotate(45deg);
+}
+.companion-stage__bubble[data-side='right']::after {
+  top: 12px;
+  left: -5px;
+  border-width: 0 0 1px 1px;
+  transform: rotate(45deg);
+}
+/* The newest message never sits under companions standing on the composer. */
+.thread.has-companion-lane .thread-column {
+  padding-bottom: calc(var(--star-10) + 64px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .companion-stage__bubble,
+  .companion-stage__bubble.is-on {
+    transition: none;
+  }
+}

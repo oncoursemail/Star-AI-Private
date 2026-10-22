@@ -79,6 +79,8 @@ ALLOWED_ACTIONS = frozenset({
     'renameChat','deleteChat','captureScreen',
     # Settings > Use my GPU (star/gpu_helper.py): its status line and the on/off switch.
     'gpuHelperStatus','gpuHelperSet',
+    # Desktop companions: whether STAR is learning on this PC (read-only, star/learning_activity.py).
+    'learningActivity',
 })
 # Voice calls keep their own action list (star/voice/bridge.py, docs/STAR_VOICE_CALLS.md).
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | VOICE_ACTIONS
@@ -1491,6 +1493,9 @@ def launch():
                     token=body.get('key','')
                     save_api_key(name,token)
                     return json.dumps({'ok':True,'data':{'connected':True}})
+                if action=='learningActivity':
+                    from .learning_activity import pc_learning_status
+                    return json.dumps({'ok':True,'data':pc_learning_status()})
                 if action=='serverKeyFileStatus':
                     from .server_key_file import key_file_status
                     return json.dumps({'ok':True,'data':key_file_status()})

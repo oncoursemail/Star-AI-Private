@@ -2,13 +2,22 @@ import {useCallback, useEffect, useState} from 'react'
 import type {Dispatch, SetStateAction} from 'react'
 import type {PetState} from './StarPet'
 
-export type CompanionId = 'star' | 'ember' | 'astra'
+export type CompanionId = 'star' | 'ember' | 'astra' | 'gemini'
 export type CompanionMotion = 'subtle' | 'still'
+export type CompanionForm = 'normal' | 'cat' | 'dog'
+/** Study looks: automatic while STAR learns on this PC, always, or never. */
+export type CompanionStudy = 'auto' | 'on' | 'off'
 export type CompanionPreferences = {
-  version: 1
+  version: 2
   character: CompanionId
   motion: CompanionMotion
   visible: boolean
+  /** The living companions that walk along the bottom of the chat. */
+  stage: boolean
+  cast: CompanionId[]
+  forms: Record<CompanionId, CompanionForm>
+  affection: boolean
+  study: CompanionStudy
 }
 export type CompanionCharacter = {
   id: CompanionId
@@ -22,24 +31,45 @@ export const COMPANIONS: readonly CompanionCharacter[] = [
   {id: 'star', name: 'Star', image: './assets/mascot/poses/stand.png', description: 'Gold bows, a little star, and a familiar face.'},
   {id: 'ember', name: 'Ember', image: './assets/companions/ember.png', description: 'Copper hair, round glasses, and a curious streak.'},
   {id: 'astra', name: 'Astra', image: './assets/companions/astra.png', description: 'Violet hair, little cat ears, and a playful spark.'},
+  {id: 'gemini', name: 'Gemini', image: './assets/companions/gemini.png', description: 'Sky-to-pink hair, a star clip, and a sparkly streak.'},
 ]
+const IDS: readonly CompanionId[] = ['star', 'ember', 'astra', 'gemini']
+const isId = (value: unknown): value is CompanionId => IDS.includes(value as CompanionId)
+const FORMS: readonly CompanionForm[] = ['normal', 'cat', 'dog']
 
 export const COMPANION_PREFERENCE_KEY = 'star.companions.v1'
 export const DEFAULT_COMPANION_PREFERENCES: Readonly<CompanionPreferences> = {
-  version: 1, character: 'star', motion: 'subtle', visible: true,
+  version: 2, character: 'star', motion: 'subtle', visible: true,
+  stage: true, cast: [...IDS], forms: {star: 'normal', ember: 'normal', astra: 'normal', gemini: 'normal'},
+  affection: true, study: 'auto',
 }
 
+const defaults = (): CompanionPreferences => ({
+  ...DEFAULT_COMPANION_PREFERENCES, cast: [...DEFAULT_COMPANION_PREFERENCES.cast], forms: {...DEFAULT_COMPANION_PREFERENCES.forms},
+})
+
+/** Version 1 records (character, motion, visible) keep their choices; everything else is filled in. */
 export function normalizeCompanionPreferences(value: unknown): CompanionPreferences {
-  const fallback = {...DEFAULT_COMPANION_PREFERENCES}
+  const fallback = defaults()
   if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback
   const stored = value as Record<string, unknown>
-  if (stored.version !== 1) return fallback
-  return {
-    version: 1,
-    character: stored.character === 'ember' || stored.character === 'astra' ? stored.character : 'star',
+  if (stored.version !== 1 && stored.version !== 2) return fallback
+  const result: CompanionPreferences = {
+    ...fallback,
+    character: isId(stored.character) ? stored.character : 'star',
     motion: stored.motion === 'still' ? 'still' : 'subtle',
     visible: typeof stored.visible === 'boolean' ? stored.visible : true,
   }
+  if (stored.version === 1) return result
+  if (typeof stored.stage === 'boolean') result.stage = stored.stage
+  if (typeof stored.affection === 'boolean') result.affection = stored.affection
+  if (stored.study === 'on' || stored.study === 'off' || stored.study === 'auto') result.study = stored.study
+  if (Array.isArray(stored.cast)) result.cast = IDS.filter(id => (stored.cast as unknown[]).includes(id))
+  if (stored.forms && typeof stored.forms === 'object' && !Array.isArray(stored.forms)) {
+    const forms = stored.forms as Record<string, unknown>
+    for (const id of IDS) if (FORMS.includes(forms[id] as CompanionForm)) result.forms[id] = forms[id] as CompanionForm
+  }
+  return result
 }
 
 function decodePreferences(raw: string | null): CompanionPreferences {

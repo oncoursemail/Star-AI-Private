@@ -121,10 +121,10 @@ describe('companion local preferences', () => {
   it('persists an explicit choice across mounts without touching the old floating-pet preference', () => {
     localStorage.setItem('star.pet.visible', 'off')
     const first = renderHook(() => useCompanionPreferences())
-    act(() => first.result.current[1]({version: 1, character: 'astra', motion: 'still', visible: false}))
+    act(() => first.result.current[1]({...DEFAULT_COMPANION_PREFERENCES, character: 'astra', motion: 'still', visible: false}))
     first.unmount()
     const second = renderHook(() => useCompanionPreferences())
-    expect(second.result.current[0]).toEqual({version: 1, character: 'astra', motion: 'still', visible: false})
+    expect(second.result.current[0]).toEqual({...DEFAULT_COMPANION_PREFERENCES, character: 'astra', motion: 'still', visible: false})
     expect(localStorage.getItem('star.pet.visible')).toBe('off')
   })
   it('recovers from malformed storage and remains usable when persistence is unavailable', () => {

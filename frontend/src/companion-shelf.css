@@ -209,6 +209,12 @@
 .companion-controls__label { margin-bottom: 10px; color: var(--star-muted); font-size: 12px; }
 .companion-controls__motion { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr); align-items: center; gap: 12px; color: var(--star-body); font-size: 12px; }
 .companion-controls__motion select { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--star-stroke-control); border-radius: 7px; color: var(--star-body); background: var(--star-surface-1); font: inherit; }
+.companion-cast { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.companion-cast__row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 120px); align-items: center; gap: 12px; }
+.companion-cast__who { display: flex; align-items: center; gap: 10px; color: var(--star-body); font-size: 13px; }
+.companion-cast__who input { width: 18px; height: 18px; margin: 0; accent-color: var(--star-gold); }
+.companion-cast select { width: 100%; min-height: 34px; padding: 6px 9px; border: 1px solid var(--star-stroke-control); border-radius: 7px; color: var(--star-body); background: var(--star-surface-1); font: inherit; font-size: 12px; }
+.companion-cast select:disabled { opacity: 0.5; }
 .companion-controls__note { margin: -9px 0 0; color: var(--star-muted); font-size: 11px; line-height: 1.6; }
 .companion-shelf__character[data-reaction='greet'] { animation: companion-greet 540ms ease-out both; }
 .companion-shelf__character[data-reaction='focus'] { animation: companion-focus 540ms ease-out both; }
