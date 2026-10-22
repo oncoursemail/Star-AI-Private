@@ -137,5 +137,5 @@ Scored by the suite's unit tests in the Luau VM + Luau check. The tool-choice si
 ### Decision / how to turn it on
 Off by default (nothing changes unless `prefill_while_typing` is on). Owner: Settings > Answers > "Start thinking while
 I type". The fixed tool list comes with it (same switch). If the owner wants the speed without the list change, the
-pin is the three lines in `desktop_core.run_task` (`tools_kept.pin(...)`); remove them and the minute-change misses of the
-tool list return (4 of 20 edits: ~90-106 s).
+pin is the three lines in `desktop_core.run_task` (`tools_kept.pin(...)`); remove them and the tool-list misses return (4 of 20
+edits: ~90-106 s).
