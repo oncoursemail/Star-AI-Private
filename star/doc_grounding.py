@@ -476,12 +476,14 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
         verify = (getattr(settings, "verify_ladder", "off") == "on" and model_client is not None
                   and not getattr(route, "quick", True) and bool(luau_blocks(answer)))
         if verify and (not timed or left() > REVIEW_RESERVE_SECONDS):
-            from . import slop, verify_ladder
+            from . import mistake_memory, slop, verify_ladder
             write_tests, fix = verify_ladder.model_tools(model_client, route.model, prompt,
                                                          max_tokens=getattr(route, "response_tokens", 1600))
             tools = verify_ladder.Tools(checker=knowledge.luau_check if knowledge is not None else None,
                                         dump=slop.bundled_api_dump(), runner=verify_ladder.default_runner(),
-                                        write_tests=write_tests, fix=fix, prompt=prompt)
+                                        write_tests=write_tests, fix=fix, prompt=prompt,
+                                        fixers=(mistake_memory.active_fixers()
+                                                if getattr(settings, "mistake_memory", "retrieve") == "fix" else []))
             answer, ladder_record = await verify_ladder.review(
                 answer, tools, rounds=getattr(settings, "verify_rounds", 2),
                 budget=float(getattr(settings, "verify_budget_s", 240)),

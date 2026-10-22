@@ -96,6 +96,7 @@ class Tools:
     prompt: str = ""
     first_block: bool = True    # later blocks are usually usage examples: unknown globals there are placeholders
     extra_rungs: list = field(default_factory=list)   # callables (code) -> Rung | None, after `tests`
+    fixers: list = field(default_factory=list)        # active self-written fixers (star/mistake_memory.py): no model call
 
 
 def _bounded(text: str, limit: int = MAX_DETAIL) -> str:
@@ -485,6 +486,20 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
     first_fail = first_failure(rungs)
     record = {"rungs": [r.record() for r in rungs], "rounds": 0, "fixed": False, "code": current,
               "first_failure": first_fail.record() if first_fail else None, "mistakes": []}
+    if tools.fixers:      # deterministic rewrites first (star/mistake_memory.py); kept only if the block climbs no worse
+        from . import mistake_memory
+        rewritten, used = mistake_memory.apply(current, tools.fixers)
+        if used:
+            new_rungs = await run_rungs(rewritten, tools, state)
+            if ladder_rank(new_rungs) >= ladder_rank(rungs):
+                by_id = {f["id"]: f for f in tools.fixers}
+                for fixer_id in used:
+                    record["mistakes"].append({
+                        "rung": by_id[fixer_id].get("rung", "lint"), "signature": by_id[fixer_id]["signature"],
+                        "message": by_id[fixer_id].get("message", ""), "verified": True, "by": "fixer:" + fixer_id,
+                        "diff": _changed_lines(current, rewritten)})
+                record.update(fixers=used, fixed=True)
+                current, rungs = rewritten, new_rungs
     for _ in range(max(0, rounds)):
         failure = first_failure(rungs)
         if failure is None or tools.fix is None:
@@ -539,10 +554,12 @@ def block_note(name: str, record: dict) -> str:
     skipped = [f"{r.rung} not checked ({r.detail})" for r in rungs if r.status == "skip"]
     failure = first_failure(rungs)
     fixed = ""
-    if record["fixed"]:
+    if record.get("fixers"):
+        fixed = f" STAR applied {len(record['fixers'])} self-written rewrite rule(s) (no model call): " +             "; ".join(_bounded(m.get("message", ""), 80) for m in record["mistakes"] if m.get("by")) + "."
+    if record["rounds"] and record["fixed"]:
         first = record["first_failure"] or {}
-        fixed = (f" STAR fixed it in {record['rounds']} round(s); the first version failed {first.get('rung')}: "
-                 f"{_bounded(first.get('detail', ''), 160)}.")
+        fixed += (f" STAR fixed it in {record['rounds']} round(s); the first version failed {first.get('rung')}: "
+                  f"{_bounded(first.get('detail', ''), 160)}.")
     if failure is None:
         text = f"{name}: verified: " + "; ".join(passed) + "." + fixed
     else:
@@ -568,14 +585,15 @@ def scrub(text: str) -> str:
     return _SECRET.sub("<redacted>", str(text))
 
 
-def remember(records: list[dict], *, path: Path | None = None) -> int:
+def remember(records: list[dict], *, path: Path | None = None, task: str = "") -> int:
     """Append one JSON line per failure seen (verified = a fix that passed that rung). Never raises."""
     rows = []
     for record in records:
         for m in record.get("mistakes", []):
             rows.append({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "rung": m["rung"],
                          "signature": scrub(m["signature"]), "message": scrub(m["message"]),
-                         "diff": scrub(m.get("diff", "")), "verified": bool(m.get("verified"))})
+                         "diff": scrub(m.get("diff", "")), "verified": bool(m.get("verified")),
+                         **({"by": m["by"]} if m.get("by") else {}), **({"task": scrub(task)[:300]} if task else {})})
         if not record.get("mistakes") and record.get("first_failure"):
             f = record["first_failure"]
             rows.append({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "rung": f["rung"],
@@ -660,7 +678,7 @@ async def review(answer: str, tools: Tools, *, rounds: int = 2, budget: float = 
     notes = [block_note(name, r) for name, r in zip(names, records)]
     if len(blocks) > MAX_BLOCKS:
         notes.append(f"{len(blocks) - MAX_BLOCKS} other code block(s) were not checked.")
-    remember(records)
+    remember(records, task=tools.prompt)
     summary = {"blocks": [{k: v for k, v in r.items() if k not in ("_rungs", "code")} for r in records],
                "seconds": round(monotonic() - started, 1),
                "verified": all(r["ok"] for r in records), "fixed": any(r["fixed"] for r in records)}

@@ -174,6 +174,10 @@ class Settings:
     verify_ladder: str = 'on'
     verify_rounds: int = 2
     verify_budget_s: int = 240
+    # Mistake memory (star/mistake_memory.py): 'retrieve' (default) adds a short note of verified fixes for failures like
+    # the request's to the turn; 'fix' also lets the check-fix loop apply its validated self-written rewrite rules
+    # (no model call) before any model fix; 'off' does neither. Rules stay off until the owner sets 'fix'.
+    mistake_memory: str = 'retrieve'
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
     # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
     api_hints_enabled: bool = False
@@ -250,6 +254,8 @@ class Settings:
             raise ValueError('Game path must be an existing game folder or .iso file')
         if self.best_of_n not in ('off', 'auto') or type(self.best_of_n_max) is not int                 or not 2 <= self.best_of_n_max <= 8:
             raise ValueError('Best-of-N must be off or auto, with 2 to 8 candidates')
+        if self.mistake_memory not in ('off', 'retrieve', 'fix'):
+            raise ValueError('Mistake memory must be off, retrieve or fix')
         if self.slop_check not in ('off', 'flag', 'trim', 'repair'):
             raise ValueError('Slop check must be off, flag, trim or repair')
         if (self.verify_ladder not in ('off', 'on') or type(self.verify_rounds) is not int
@@ -1193,6 +1199,18 @@ async def reference_sections(settings: Settings, home: Path, route, prompt: str,
             turn_sections.append((gold_bank.HEADING, gold_block))
             event({'event': 'gold_examples_used', 'ids': [item.id for item in gold_used],
                    'chars': len(gold_block)})
+    # Mistake memory (star/mistake_memory.py, default on): verified fixes of earlier failures like this request.
+    if settings.mistake_memory in ('retrieve', 'fix') and route.profile == 'roblox' and not quick:
+        from . import mistake_memory
+        pit_room = min(mistake_memory.MAX_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
+                                                      - len(mistake_memory.HEADING) - 2 - min(10000, memory_limit)
+                                                      - len(docs.block) - len(document_block)
+                                                      - len(pack_block) - len(error_block)))
+        pit_block, pit_used = mistake_memory.pitfalls(prompt, max_chars=pit_room)
+        if pit_block:
+            example_extra_chars += len(pit_block) + len(mistake_memory.HEADING) + 2
+            turn_sections.append((mistake_memory.HEADING, pit_block))
+            event({'event': 'mistake_memory_used', 'signatures': pit_used, 'chars': len(pit_block)})
     # Opt-in project rules (star/project_rules.py): the workspace's AGENTS.md, as reference data.
     rules_chars = 0
     if settings.project_rules_enabled is True and settings.workspace and not quick:
