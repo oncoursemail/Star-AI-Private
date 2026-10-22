@@ -31,7 +31,7 @@ export const COMPANIONS: readonly CompanionCharacter[] = [
   {id: 'star', name: 'Star', image: './assets/mascot/poses/stand.png', description: 'Gold bows, a little star, and a familiar face.'},
   {id: 'ember', name: 'Ember', image: './assets/companions/ember.png', description: 'Copper hair, round glasses, and a curious streak.'},
   {id: 'astra', name: 'Astra', image: './assets/companions/astra.png', description: 'Violet hair, little cat ears, and a playful spark.'},
-  {id: 'gemini', name: 'Gemini', image: './assets/companions/gemini.png', description: 'Sky-to-pink hair, a star clip, and a sparkly streak.'},
+  {id: 'gemini', name: 'Gemini', image: './assets/companions/gemini.png', description: 'Sky-to-pink hair, a teal capelet, and a sparkly streak.'},
 ]
 const IDS: readonly CompanionId[] = ['star', 'ember', 'astra', 'gemini']
 const isId = (value: unknown): value is CompanionId => IDS.includes(value as CompanionId)

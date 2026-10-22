@@ -1,455 +1,234 @@
 /**
- * WebGL2 renderer for the puppets: one skinned mesh per character (12-bone linear blend skinning in the
- * vertex shader), eye/mouth ellipses blended from the inpainted closed-face sprite, and one batched
- * quad pass per layer for accessories, props and particles from the hand-drawn atlas.
+ * WebGL2 renderer for the skeletal companions: CPU-skinned weighted meshes (a few hundred vertices per
+ * character) streamed into one buffer and drawn in slot order, one draw per atlas page change, then the
+ * particles. Premultiplied alpha throughout so soft edges and mipmaps stay clean.
  */
-import {BONE, BONE_COUNT, figureHeight} from './rig'
-import type {CastId, Ellipse, Rig} from './rig'
-import {buildPuppetMesh} from './mesh'
-import type {PuppetMesh} from './mesh'
-import {apply, computeBones, rootMatrix} from './pose'
-import type {Frame} from './animator'
-import {buildAtlas, slotKey} from './props'
-import type {Atlas, Slot} from './props'
+import type {Skeleton} from './skeleton'
+import type {Character} from './armature'
+import {fxSheet, paintSheet} from './armature'
+import type {FxName} from './art'
+import type {Rect} from './armature'
 
-const PUPPET_VS = `#version 300 es
-in vec2 aPos; in vec2 aUv; in vec4 aW0; in vec4 aW1; in vec4 aW2;
-uniform vec3 uA[${BONE_COUNT}]; uniform vec3 uB[${BONE_COUNT}];
-uniform vec4 uView;
-out vec2 vUv;
+export type Particle = {
+  item: FxName; x: number; y: number; vx: number; vy: number; age: number; life: number; size: number; spin: number
+  kind: 'float' | 'pop' | 'fall' | 'burst' | 'drift' | 'puff'
+  rot?: number
+}
+export type DrawItem = { sk: Skeleton; alpha: number; z: number }
+
+const VS = `#version 300 es
+layout(location=0) in vec2 a_pos;
+layout(location=1) in vec2 a_uv;
+layout(location=2) in vec4 a_color;
+uniform vec2 u_view;
+uniform vec2 u_offset;
+out vec2 v_uv;
+out vec4 v_color;
 void main() {
-  vec3 h = vec3(aPos, 1.0);
-  float w[${BONE_COUNT}] = float[${BONE_COUNT}](aW0.x, aW0.y, aW0.z, aW0.w, aW1.x, aW1.y, aW1.z, aW1.w, aW2.x, aW2.y, aW2.z, aW2.w);
-  vec2 p = vec2(0.0);
-  for (int i = 0; i < ${BONE_COUNT}; i++) { if (w[i] > 0.0) p += w[i] * vec2(dot(uA[i], h), dot(uB[i], h)); }
-  vUv = aUv;
-  gl_Position = vec4((p.x - uView.z) * uView.x - 1.0, 1.0 - (p.y - uView.w) * uView.y, 0.0, 1.0);
+  vec2 p = (a_pos - u_offset) / u_view * 2.0 - 1.0;
+  gl_Position = vec4(p.x, -p.y, 0.0, 1.0);
+  v_uv = a_uv;
+  v_color = a_color;
 }`
-const PUPPET_FS = `#version 300 es
+const FS = `#version 300 es
 precision mediump float;
-in vec2 vUv; out vec4 color;
-uniform sampler2D uTex; uniform sampler2D uAlt;
-uniform vec4 uEyeL; uniform vec4 uEyeR; uniform vec4 uMouth;
-uniform float uEyes; uniform float uMouthClosed; uniform float uAlpha;
-float inside(vec4 e) { vec2 d = (vUv - e.xy) * e.zw; return 1.0 - smoothstep(0.78, 0.96, length(d)); }
-void main() {
-  vec4 c = texture(uTex, vUv);
-  float k = max(max(inside(uEyeL), inside(uEyeR)) * uEyes, inside(uMouth) * uMouthClosed);
-  if (k > 0.001) c = mix(c, texture(uAlt, vUv), k);
-  color = c * uAlpha;
-}`
-const SPRITE_VS = `#version 300 es
-in vec2 aPos; in vec2 aUv; in float aAlpha;
-uniform vec4 uView;
-out vec2 vUv; out float vAlpha;
-void main() { vUv = aUv; vAlpha = aAlpha; gl_Position = vec4((aPos.x - uView.z) * uView.x - 1.0, 1.0 - (aPos.y - uView.w) * uView.y, 0.0, 1.0); }`
-const SPRITE_FS = `#version 300 es
-precision mediump float;
-in vec2 vUv; in float vAlpha; out vec4 color;
-uniform sampler2D uTex;
-void main() { color = texture(uTex, vUv) * vAlpha; }`
+in vec2 v_uv;
+in vec4 v_color;
+uniform sampler2D u_tex;
+out vec4 outColor;
+void main() { outColor = texture(u_tex, v_uv) * v_color; }`
 
-type Puppet = {
-  rig: Rig
-  mesh: PuppetMesh
-  vao: WebGLVertexArrayObject
-  count: number
-  base: WebGLTexture
-  closed: WebGLTexture
-  plain: WebGLTexture | null
-}
-
-export type Particle = { item: string; x: number; y: number; vx: number; vy: number; age: number; life: number; size: number; spin: number; kind: 'float' | 'pop' | 'fall' | 'burst' | 'drift' }
-
-export type DrawCharacter = { id: CastId; frame: Frame; z: number }
-
-function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
-  const program = gl.createProgram() as WebGLProgram
-  for (const [type, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
-    const shader = gl.createShader(type) as WebGLShader
-    gl.shaderSource(shader, source)
-    gl.compileShader(shader)
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error('Companion shader: ' + gl.getShaderInfoLog(shader))
-    gl.attachShader(program, shader)
-  }
-  gl.linkProgram(program)
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error('Companion program: ' + gl.getProgramInfoLog(program))
-  return program
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.decoding = 'async'
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Companion art missing: ' + src))
-    image.src = src
-  })
-}
-
-/** Summed-area table of alpha so the mesh builder can drop fully transparent cells cheaply. */
-function opacityTest(image: HTMLImageElement): (x0: number, y0: number, x1: number, y1: number) => boolean {
-  const w = image.naturalWidth, h = image.naturalHeight
-  const canvas = document.createElement('canvas')
-  canvas.width = w; canvas.height = h
-  const ctx = canvas.getContext('2d', {willReadFrequently: true})
-  if (!ctx) return () => true
-  ctx.drawImage(image, 0, 0)
-  const data = ctx.getImageData(0, 0, w, h).data
-  const sat = new Uint32Array((w + 1) * (h + 1))
-  for (let y = 0; y < h; y++) {
-    let row = 0
-    for (let x = 0; x < w; x++) {
-      row += data[(y * w + x) * 4 + 3] > 6 ? 1 : 0
-      sat[(y + 1) * (w + 1) + x + 1] = sat[y * (w + 1) + x + 1] + row
-    }
-  }
-  return (x0, y0, x1, y1) => {
-    const a = Math.max(0, Math.floor(x0)), b = Math.max(0, Math.floor(y0)), c = Math.min(w, Math.ceil(x1)), d = Math.min(h, Math.ceil(y1))
-    if (c <= a || d <= b) return false
-    return sat[d * (w + 1) + c] - sat[b * (w + 1) + c] - sat[d * (w + 1) + a] + sat[b * (w + 1) + a] > 0
-  }
-}
-
-const FLOATS = 5   // x, y, u, v, alpha per sprite vertex
+const FLOATS = 8
+const MAX_VERTS = 24000
 
 export class CompanionRenderer {
-  readonly gl: WebGL2RenderingContext
-  private puppetProgram: WebGLProgram
-  private spriteProgram: WebGLProgram
-  private puppets = new Map<CastId, Puppet>()
-  private atlas: Atlas | null = null
-  private atlasTexture: WebGLTexture | null = null
-  private spriteVao: WebGLVertexArrayObject
-  private spriteBuffer: WebGLBuffer
-  private spriteData = new Float32Array(6 * FLOATS * 1200)
-  private spriteCount = 0
+  particles: Particle[] = []
+  private textures: WebGLTexture[] = []
+  private fxCells: Record<FxName, Rect> | null = null
+  private fxSize = {w: 1, h: 1}
+  private data = new Float32Array(MAX_VERTS * FLOATS)
+  private index = new Uint16Array(MAX_VERTS * 3)
+  private skinned = new Float32Array(4096)
   private width = 1
   private height = 1
-  private originX = 0
-  private originY = 0
-  private loc: Record<string, WebGLUniformLocation | null> = {}
-  private bones = new Float32Array(BONE_COUNT * 6)
-  private boneA = new Float32Array(BONE_COUNT * 3)
-  private boneB = new Float32Array(BONE_COUNT * 3)
-  particles: Particle[] = []
-  private buffers: WebGLBuffer[] = []
+  private ox = 0
+  private oy = 0
+  private program: WebGLProgram
+  private vao: WebGLVertexArrayObject
+  private vbo: WebGLBuffer
+  private ibo: WebGLBuffer
+  private uView: WebGLUniformLocation | null
+  private uOffset: WebGLUniformLocation | null
 
   static create(canvas: HTMLCanvasElement): CompanionRenderer | null {
-    const gl = canvas.getContext('webgl2', {alpha: true, premultipliedAlpha: true, antialias: true, powerPreference: 'low-power', preserveDrawingBuffer: false})
+    const gl = canvas.getContext('webgl2', {alpha: true, premultipliedAlpha: true, antialias: true})
     if (!gl) return null
     try { return new CompanionRenderer(gl) } catch { return null }
   }
 
-  private constructor(gl: WebGL2RenderingContext) {
-    this.gl = gl
-    this.puppetProgram = compile(gl, PUPPET_VS, PUPPET_FS)
-    this.spriteProgram = compile(gl, SPRITE_VS, SPRITE_FS)
-    for (const name of ['uA', 'uB', 'uView', 'uTex', 'uAlt', 'uEyeL', 'uEyeR', 'uMouth', 'uEyes', 'uMouthClosed', 'uAlpha'])
-      this.loc[name] = gl.getUniformLocation(this.puppetProgram, name)
-    this.loc.sView = gl.getUniformLocation(this.spriteProgram, 'uView')
-    this.loc.sTex = gl.getUniformLocation(this.spriteProgram, 'uTex')
-    this.spriteVao = gl.createVertexArray() as WebGLVertexArrayObject
-    this.spriteBuffer = gl.createBuffer() as WebGLBuffer
-    gl.bindVertexArray(this.spriteVao)
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.spriteBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, this.spriteData.byteLength, gl.DYNAMIC_DRAW)
-    const stride = FLOATS * 4
-    const attrib = (name: string, size: number, offset: number) => {
-      const at = gl.getAttribLocation(this.spriteProgram, name)
-      gl.enableVertexAttribArray(at)
-      gl.vertexAttribPointer(at, size, gl.FLOAT, false, stride, offset)
+  private constructor(private gl: WebGL2RenderingContext) {
+    const compile = (type: number, src: string) => {
+      const s = gl.createShader(type) as WebGLShader
+      gl.shaderSource(s, src); gl.compileShader(s)
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'shader')
+      return s
     }
-    attrib('aPos', 2, 0); attrib('aUv', 2, 8); attrib('aAlpha', 1, 16)
+    const p = gl.createProgram() as WebGLProgram
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, VS)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, FS))
+    gl.linkProgram(p)
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link')
+    this.program = p
+    this.uView = gl.getUniformLocation(p, 'u_view')
+    this.uOffset = gl.getUniformLocation(p, 'u_offset')
+    this.vao = gl.createVertexArray() as WebGLVertexArrayObject
+    gl.bindVertexArray(this.vao)
+    this.vbo = gl.createBuffer() as WebGLBuffer
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo)
+    gl.bufferData(gl.ARRAY_BUFFER, this.data.byteLength, gl.DYNAMIC_DRAW)
+    const stride = FLOATS * 4
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, stride, 0)
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 8)
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 16)
+    this.ibo = gl.createBuffer() as WebGLBuffer
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo)
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, this.index.byteLength, gl.DYNAMIC_DRAW)
     gl.bindVertexArray(null)
-    gl.enable(gl.BLEND)
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
-    gl.disable(gl.DEPTH_TEST)
   }
 
-  private texture(source: TexImageSource): WebGLTexture {
+  /** Paints and uploads one atlas page per character (page = position in the list) plus the particles. */
+  async load(characters: readonly Character[]) {
     const gl = this.gl
-    const texture = gl.createTexture() as WebGLTexture
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source)
-    gl.generateMipmap(gl.TEXTURE_2D)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    return texture
+    const upload = (canvas: HTMLCanvasElement) => {
+      const tex = gl.createTexture() as WebGLTexture
+      gl.bindTexture(gl.TEXTURE_2D, tex)
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas)
+      gl.generateMipmap(gl.TEXTURE_2D)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      return tex
+    }
+    for (const c of characters) {
+      this.textures.push(upload(paintSheet(c.sheet)))
+      // Let the page breathe between the big uploads.
+      await new Promise(r => setTimeout(r, 0))
+    }
+    const fx = fxSheet()
+    this.fxCells = fx.cells
+    this.fxSize = {w: fx.canvas.width, h: fx.canvas.height}
+    this.textures.push(upload(fx.canvas))
   }
 
-  async load(rigs: readonly Rig[]): Promise<void> {
-    const gl = this.gl
-    this.atlas = buildAtlas(rigs)
-    this.atlasTexture = this.texture(this.atlas.canvas)
-    await Promise.all(rigs.map(async rig => {
-      const [base, closed, plain] = await Promise.all([loadImage(rig.image), loadImage(rig.closed), rig.plain ? loadImage(rig.plain) : Promise.resolve(null)])
-      const mesh = buildPuppetMesh(rig, 9, opacityTest(base))
-      const vao = gl.createVertexArray() as WebGLVertexArrayObject
-      gl.bindVertexArray(vao)
-      const buffer = (data: Float32Array, name: string, size: number) => {
-        const b = gl.createBuffer() as WebGLBuffer; this.buffers.push(b)
-        gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
-        const at = gl.getAttribLocation(this.puppetProgram, name)
-        gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, size, gl.FLOAT, false, 0, 0)
-      }
-      buffer(mesh.positions, 'aPos', 2)
-      buffer(mesh.uvs, 'aUv', 2)
-      const wb = gl.createBuffer() as WebGLBuffer; this.buffers.push(wb); gl.bindBuffer(gl.ARRAY_BUFFER, wb); gl.bufferData(gl.ARRAY_BUFFER, mesh.weights, gl.STATIC_DRAW)
-      for (let i = 0; i < 3; i++) {
-        const at = gl.getAttribLocation(this.puppetProgram, 'aW' + i)
-        gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 4, gl.FLOAT, false, BONE_COUNT * 4, i * 16)
-      }
-      const ib = gl.createBuffer() as WebGLBuffer; this.buffers.push(ib); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW)
-      gl.bindVertexArray(null)
-      this.puppets.set(rig.id, {
-        rig, mesh, vao, count: mesh.indices.length,
-        base: this.texture(base), closed: this.texture(closed), plain: plain ? this.texture(plain) : null,
-      })
-    }))
-  }
-
-  get ready() { return this.puppets.size > 0 && !!this.atlas }
-
-  /** The canvas shows the stage rectangle (originX, originY, cssWidth, cssHeight). */
-  resize(cssWidth: number, cssHeight: number, dpr: number, originX = 0, originY = 0) {
+  resize(width: number, height: number, dpr: number, ox: number, oy: number) {
     const canvas = this.gl.canvas as HTMLCanvasElement
-    const w = Math.max(1, Math.round(cssWidth * dpr)), h = Math.max(1, Math.round(cssHeight * dpr))
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
-    this.width = cssWidth; this.height = cssHeight; this.originX = originX; this.originY = originY
+    const w = Math.max(1, Math.round(width * dpr)), h = Math.max(1, Math.round(height * dpr))
+    if (canvas.width !== w) canvas.width = w
+    if (canvas.height !== h) canvas.height = h
+    this.width = width; this.height = height; this.ox = ox; this.oy = oy
   }
 
-  /** Stage point of a sprite point on a bone (for bubbles, particles and hit boxes). */
-  point(id: CastId, frame: Frame, bone: number, x: number, y: number): [number, number] {
-    const puppet = this.puppets.get(id)
-    if (!puppet) return [frame.pose.x, frame.pose.y]
-    computeBones(puppet.rig, frame.pose, this.bones)
-    return apply(this.bones.subarray(bone * 6, bone * 6 + 6), x, y)
-  }
+  emit(p: Omit<Particle, 'age'>) { if (this.particles.length < 120) this.particles.push({...p, age: 0, rot: p.spin * 0.2}) }
 
-  render(characters: readonly DrawCharacter[], dt: number) {
+  render(items: readonly DrawItem[], dt: number) {
     const gl = this.gl
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT)
-    if (!this.ready) return
-    const order = [...characters].sort((a, b) => a.z - b.z)
-    for (const c of order) {
-      const puppet = this.puppets.get(c.id)
-      if (!puppet || c.frame.alpha <= 0.01) continue
-      computeBones(puppet.rig, c.frame.pose, this.bones)
-      this.beginSprites(); this.backLayer(puppet, c.frame); this.flushSprites()
-      this.drawPuppet(puppet, c.frame)
-      this.beginSprites(); this.frontLayer(puppet, c.frame); this.flushSprites()
+    if (!this.textures.length) return
+    gl.useProgram(this.program)
+    gl.uniform2f(this.uView, this.width, this.height)
+    gl.uniform2f(this.uOffset, this.ox, this.oy)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+    gl.bindVertexArray(this.vao)
+    let verts = 0, tris = 0, page = -1
+    const flush = () => {
+      if (!tris) return
+      gl.bindTexture(gl.TEXTURE_2D, this.textures[page])
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo)
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data, 0, verts * FLOATS)
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo)
+      gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, this.index, 0, tris)
+      gl.drawElements(gl.TRIANGLES, tris, gl.UNSIGNED_SHORT, 0)
+      verts = 0; tris = 0
     }
-    this.beginSprites(); this.stepParticles(dt); this.flushSprites()
-  }
-
-  // ------------------------------------------------------------ puppet
-
-  private drawPuppet(puppet: Puppet, frame: Frame) {
-    const gl = this.gl
-    const loc = this.loc
-    gl.useProgram(this.puppetProgram)
-    for (let i = 0; i < BONE_COUNT; i++) {
-      const m = this.bones.subarray(i * 6, i * 6 + 6)
-      this.boneA[i * 3] = m[0]; this.boneA[i * 3 + 1] = m[2]; this.boneA[i * 3 + 2] = m[4]
-      this.boneB[i * 3] = m[1]; this.boneB[i * 3 + 1] = m[3]; this.boneB[i * 3 + 2] = m[5]
-    }
-    gl.uniform3fv(loc.uA, this.boneA)
-    gl.uniform3fv(loc.uB, this.boneB)
-    gl.uniform4f(loc.uView, 2 / this.width, 2 / this.height, this.originX, this.originY)
-    const [w, h] = puppet.rig.size
-    const ellipse = (name: string, e: Ellipse) => gl.uniform4f(loc[name], e[0] / w, e[1] / h, w / e[2], h / e[3])
-    ellipse('uEyeL', puppet.rig.eyes[0]); ellipse('uEyeR', puppet.rig.eyes[1]); ellipse('uMouth', puppet.rig.mouth)
-    gl.uniform1f(loc.uEyes, frame.eyes)
-    gl.uniform1f(loc.uMouthClosed, frame.mouth)
-    gl.uniform1f(loc.uAlpha, frame.alpha)
-    const base = frame.form === 'dog' && puppet.plain ? puppet.plain : puppet.base
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, base); gl.uniform1i(loc.uTex, 0)
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, puppet.closed); gl.uniform1i(loc.uAlt, 1)
-    gl.bindVertexArray(puppet.vao)
-    gl.drawElements(gl.TRIANGLES, puppet.count, gl.UNSIGNED_SHORT, 0)
-    gl.bindVertexArray(null)
-  }
-
-  // ------------------------------------------------------------ sprites
-
-  private beginSprites() { this.spriteCount = 0 }
-
-  private flushSprites() {
-    if (!this.spriteCount || !this.atlasTexture) return
-    const gl = this.gl
-    gl.useProgram(this.spriteProgram)
-    gl.uniform4f(this.loc.sView, 2 / this.width, 2 / this.height, this.originX, this.originY)
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.atlasTexture); gl.uniform1i(this.loc.sTex, 0)
-    gl.bindVertexArray(this.spriteVao)
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.spriteBuffer)
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.spriteData, 0, this.spriteCount * FLOATS)
-    gl.drawArrays(gl.TRIANGLES, 0, this.spriteCount)
-    gl.bindVertexArray(null)
-  }
-
-  private vertex(x: number, y: number, u: number, v: number, alpha: number) {
-    if (this.spriteCount * FLOATS + FLOATS > this.spriteData.length) return
-    const o = this.spriteCount * FLOATS
-    const d = this.spriteData
-    d[o] = x; d[o + 1] = y; d[o + 2] = u; d[o + 3] = v; d[o + 4] = alpha
-    this.spriteCount++
-  }
-
-  /** A textured quad from four stage corners (top-left, top-right, bottom-right, bottom-left). */
-  private quad(corners: [number, number][], slot: Slot, alpha: number, mirror = false) {
-    const s = this.atlas?.size ?? 1024
-    let u0 = slot.x / s, u1 = (slot.x + slot.w) / s
-    if (mirror) [u0, u1] = [u1, u0]
-    const v0 = slot.y / s, v1 = (slot.y + slot.h) / s
-    const [a, b, c, d] = corners
-    this.vertex(a[0], a[1], u0, v0, alpha); this.vertex(b[0], b[1], u1, v0, alpha); this.vertex(c[0], c[1], u1, v1, alpha)
-    this.vertex(a[0], a[1], u0, v0, alpha); this.vertex(c[0], c[1], u1, v1, alpha); this.vertex(d[0], d[1], u0, v1, alpha)
-  }
-
-  /** Place an atlas item on a bone: sprite-space anchor, rotation, height; anchor fraction inside the item. */
-  private attach(matrix: ArrayLike<number>, key: string, at: readonly [number, number], angle: number, height: number, ax: number, ay: number, alpha: number, mirror = false) {
-    const slot = this.atlas?.slots[key]
-    if (!slot) return
-    const width = height * slot.w / slot.h
-    const cos = Math.cos(angle), sin = Math.sin(angle)
-    const corner = (fx: number, fy: number): [number, number] => {
-      const lx = (fx - ax) * width, ly = (fy - ay) * height
-      return apply(matrix, at[0] + lx * cos - ly * sin, at[1] + lx * sin + ly * cos)
-    }
-    this.quad([corner(0, 0), corner(1, 0), corner(1, 1), corner(0, 1)], slot, alpha, mirror)
-  }
-
-  private boneOf(bone: number): Float32Array { return this.bones.subarray(bone * 6, bone * 6 + 6) }
-
-  private backLayer(puppet: Puppet, frame: Frame) {
-    const rig = puppet.rig
-    const k = figureHeight(rig) / 470
-    const root = rootMatrix(frame.pose)
-    if (frame.cushion) this.attach(root, slotKey('cushion', rig.id), [rig.centerX, rig.footY + 10 * k], 0, 104 * k, 0.5, 0.78, frame.alpha)
-    if (frame.tail) this.tailStrip(rig, frame)
-    const head = this.boneOf(BONE.head)
-    if (frame.form === 'cat' && !rig.ownEars) {
-      const [l, r] = rig.ears
-      this.attach(head, slotKey('catEar', rig.id), l.at, l.angle + frame.earAngles[0], l.size * 0.92, 0.5, 0.9, frame.alpha)
-      this.attach(head, slotKey('catEar', rig.id), r.at, r.angle + frame.earAngles[1], r.size * 0.92, 0.5, 0.9, frame.alpha, true)
-    }
-  }
-
-  private frontLayer(puppet: Puppet, frame: Frame) {
-    const rig = puppet.rig
-    const k = figureHeight(rig) / 470
-    const head = this.boneOf(BONE.head)
-    const root = rootMatrix(frame.pose)
-    if (frame.form === 'dog') {
-      const [l, r] = rig.ears
-      // Floppy ears hang from the upper sides of the head and bounce with the body.
-      const bounce = 0.1 * Math.sin(frame.pose.bodyY * 0.5)
-      this.attach(head, slotKey('dogEar', rig.id), [l.at[0] + 16 * k, l.at[1] + 66 * k], 0.14 - frame.earAngles[0] * 0.6 + bounce, l.size * 1.55, 0.5, 0.06, frame.alpha)
-      this.attach(head, slotKey('dogEar', rig.id), [r.at[0] - 16 * k, r.at[1] + 66 * k], -0.14 - frame.earAngles[1] * 0.6 - bounce, r.size * 1.55, 0.5, 0.06, frame.alpha, true)
-    }
-    if (frame.blush > 0.01) for (const cheek of rig.cheeks) this.attach(head, 'blush', cheek, 0, 26 * k, 0.5, 0.5, frame.blush * frame.alpha)
-    if (frame.glasses && rig.glasses) {
-      const g = rig.glasses
-      this.attach(head, 'glasses', g.at, g.angle, g.width * 92 / 260, 0.5, 0.5, frame.alpha)
-    }
-    if (frame.desk) {
-      const deskTop = rig.footY - 92 * k
-      this.attach(root, 'desk', [rig.centerX, rig.footY + 8 * k], 0, 112 * k, 0.5, 1, frame.alpha)
-      if (frame.prop === 'laptop') {
-        const tap = Math.sin(frame.propPhase * 21) * 0.6
-        this.attach(root, 'laptop', [rig.centerX + tap * 0.2, deskTop + 8 * k], 0, 112 * k, 0.5, 1, frame.alpha)
-      } else if (frame.prop === 'notebook') {
-        this.attach(root, 'notebook', [rig.centerX - 6 * k, deskTop + 10 * k], 0, 62 * k, 0.5, 1, frame.alpha)
-        const hand = rig.hands[1]
-        this.attach(this.boneOf(BONE.armR), 'pencil', [hand[0], hand[1] - 4 * k], -1.05 + 0.18 * Math.sin(frame.propPhase * 9), 13 * k, 0.88, 0.5, frame.alpha)
+    for (const item of [...items].sort((a, b) => a.z - b.z)) {
+      if (item.alpha <= 0.01) continue
+      const sk = item.sk, slots = sk.data.slots
+      for (let s = 0; s < slots.length; s++) {
+        const slot = slots[s]
+        const name = sk.attachment[s]
+        if (!name) continue
+        const mesh = sk.data.attachments[slot.name]?.[name]
+        if (!mesh) continue
+        const a = sk.alpha[s] * item.alpha
+        if (a <= 0.01) continue
+        const n = mesh.influences.length
+        if (verts + n > MAX_VERTS || tris + mesh.triangles.length > this.index.length) flush()
+        if (mesh.page !== page) { flush(); page = mesh.page }
+        if (this.skinned.length < n * 2) this.skinned = new Float32Array(n * 2)
+        sk.skin(mesh, this.skinned)
+        const c = slot.shade * a
+        for (let v = 0; v < n; v++) {
+          const o = (verts + v) * FLOATS
+          this.data[o] = this.skinned[v * 2]; this.data[o + 1] = this.skinned[v * 2 + 1]
+          this.data[o + 2] = mesh.uvs[v * 2]; this.data[o + 3] = mesh.uvs[v * 2 + 1]
+          this.data[o + 4] = c; this.data[o + 5] = c; this.data[o + 6] = c; this.data[o + 7] = a
+        }
+        for (let i = 0; i < mesh.triangles.length; i++) this.index[tris + i] = mesh.triangles[i] + verts
+        verts += n; tris += mesh.triangles.length
       }
     }
-    if (frame.prop === 'book') {
-      const [hl, hr] = rig.hands
-      const flip = Math.max(0, Math.sin(frame.propPhase * 0.6) - 0.96) * 18
-      this.attach(this.boneOf(BONE.torso), 'book', [(hl[0] + hr[0]) / 2, Math.min(hl[1], hr[1]) - 6 * k], 0.04 * Math.sin(flip), 92 * k, 0.5, 0.62, frame.alpha)
-    }
+    flush()
+    this.drawParticles(dt, flush, (p: number) => { if (p !== page) { flush(); page = p } }, () => ({verts, tris}), (v, t) => { verts = v; tris = t })
+    flush()
+    gl.bindVertexArray(null)
   }
 
-  private tailStrip(rig: Rig, frame: Frame) {
-    const points = frame.tail
-    const slot = this.atlas?.slots[slotKey(frame.form === 'dog' ? 'dogTail' : 'catTail', rig.id)]
-    if (!points || points.length < 2 || !slot) return
-    const hips = this.boneOf(BONE.hips)
-    const k = figureHeight(rig) / 470
-    const s = this.atlas?.size ?? 1024
-    const lengths = [0]
-    for (let i = 1; i < points.length; i++) lengths.push(lengths[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]))
-    const total = lengths[lengths.length - 1] || 1
-    const half = (frame.form === 'dog' ? 22 : 15) * k
-    const edge = (i: number): [[number, number], [number, number], number] => {
-      const a = points[Math.max(0, i - 1)], b = points[Math.min(points.length - 1, i + 1)]
-      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1
-      const nx = -dy / len * half, ny = dx / len * half
-      const p = points[i]
-      return [apply(hips, p[0] + nx, p[1] + ny), apply(hips, p[0] - nx, p[1] - ny), slot.x / s + lengths[i] / total * slot.w / s]
-    }
-    const v0 = slot.y / s, v1 = (slot.y + slot.h) / s
-    let prev = edge(0)
-    for (let i = 1; i < points.length; i++) {
-      const next = edge(i)
-      const [a, b, ua] = prev, [c, d, uc] = next
-      this.vertex(a[0], a[1], ua, v0, frame.alpha); this.vertex(c[0], c[1], uc, v0, frame.alpha); this.vertex(d[0], d[1], uc, v1, frame.alpha)
-      this.vertex(a[0], a[1], ua, v0, frame.alpha); this.vertex(d[0], d[1], uc, v1, frame.alpha); this.vertex(b[0], b[1], ua, v1, frame.alpha)
-      prev = next
-    }
-  }
-
-  // ------------------------------------------------------------ particles
-
-  emit(particle: Omit<Particle, 'age'>) {
-    if (this.particles.length < 80) this.particles.push({...particle, age: 0})
-  }
-
-  private stepParticles(dt: number) {
+  private drawParticles(dt: number, flush: () => void, use: (page: number) => void, counts: () => {verts: number; tris: number}, set: (v: number, t: number) => void) {
+    if (!this.fxCells || !this.particles.length) return
+    use(this.textures.length - 1)
     const keep: Particle[] = []
     for (const p of this.particles) {
       p.age += dt
       if (p.age >= p.life) continue
       keep.push(p)
-      const t = p.age / p.life
-      let scale = 1, alpha = 1, angle = 0
-      if (p.kind === 'float') { p.x += p.vx * dt + Math.sin(p.age * 5 + p.spin) * 8 * dt; p.y += p.vy * dt; scale = Math.min(1, t * 6) * (1 - t * 0.2); alpha = 1 - Math.max(0, t - 0.6) / 0.4 }
-      else if (p.kind === 'drift') { p.x += p.vx * dt; p.y += p.vy * dt; scale = 0.6 + t * 0.7; alpha = Math.min(1, t * 5) * (1 - Math.max(0, t - 0.6) / 0.4); angle = -0.2 }
-      else if (p.kind === 'pop') { scale = t < 0.18 ? t / 0.18 * 1.25 : t < 0.3 ? 1.25 - (t - 0.18) / 0.12 * 0.25 : 1; alpha = 1 - Math.max(0, t - 0.75) / 0.25; p.y += p.vy * dt }
-      else if (p.kind === 'fall') { p.vy += 260 * dt; p.x += p.vx * dt; p.y += p.vy * dt; alpha = 1 - Math.max(0, t - 0.5) / 0.5; scale = Math.min(1, t * 8) }
-      else { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= Math.pow(0.05, dt); p.vy *= Math.pow(0.05, dt); scale = (t < 0.2 ? t / 0.2 : 1) * (1 - t * 0.5); alpha = 1 - t; angle = p.spin * p.age }
-      const slot = this.atlas?.slots[p.item]
-      if (!slot) continue
-      const h = p.size * scale, w = h * slot.w / slot.h
-      const cos = Math.cos(angle), sin = Math.sin(angle)
-      const corner = (fx: number, fy: number): [number, number] => {
-        const lx = (fx - 0.5) * w, ly = (fy - 0.5) * h
-        return [p.x + lx * cos - ly * sin, p.y + lx * sin + ly * cos]
+      const u = p.age / p.life
+      let scale = 1, alpha = 1
+      switch (p.kind) {
+        case 'float': p.x += (p.vx + Math.sin(p.age * 5 + p.spin) * 8) * dt; p.y += p.vy * dt; alpha = u > 0.65 ? (1 - u) / 0.35 : 1; scale = Math.min(1, p.age * 8); break
+        case 'pop': scale = u < 0.15 ? 1.35 * u / 0.15 : u < 0.3 ? 1.35 - (u - 0.15) / 0.15 * 0.35 : 1; alpha = u > 0.75 ? (1 - u) / 0.25 : 1; p.y += p.vy * dt; break
+        case 'fall': p.vy += 220 * dt; p.x += p.vx * dt; p.y += p.vy * dt; alpha = 1 - u * u; break
+        case 'burst': p.vx *= Math.pow(0.05, dt); p.vy *= Math.pow(0.05, dt); p.x += p.vx * dt; p.y += p.vy * dt; scale = 1 - u * 0.5; alpha = 1 - u; break
+        case 'drift': p.x += (p.vx + Math.sin(p.age * 2.4) * 6) * dt; p.y += p.vy * dt; scale = 0.6 + u * 0.7; alpha = u > 0.6 ? (1 - u) / 0.4 : Math.min(1, u * 6); break
+        case 'puff': p.vx *= Math.pow(0.02, dt); p.vy *= Math.pow(0.02, dt); p.x += p.vx * dt; p.y += p.vy * dt; scale = 0.45 + 0.9 * Math.sqrt(u); alpha = u > 0.45 ? (1 - u) / 0.55 : 1; break
       }
-      this.quad([corner(0, 0), corner(1, 0), corner(1, 1), corner(0, 1)], slot, Math.max(0, alpha))
+      p.rot = (p.rot ?? 0) + p.spin * dt
+      const cell = this.fxCells[p.item]
+      if (!cell) continue
+      let {verts, tris} = counts()
+      if (verts + 4 > MAX_VERTS) { flush(); ({verts, tris} = counts()) }
+      const half = p.size * scale / 2, cos = Math.cos(p.rot) * half, sin = Math.sin(p.rot) * half
+      const u0 = cell.x / this.fxSize.w, v0 = cell.y / this.fxSize.h, u1 = (cell.x + cell.w) / this.fxSize.w, v1 = (cell.y + cell.h) / this.fxSize.h
+      const corners = [[-1, -1, u0, v0], [1, -1, u1, v0], [1, 1, u1, v1], [-1, 1, u0, v1]]
+      corners.forEach(([cx, cy, uu, vv], k) => {
+        const o = (verts + k) * FLOATS
+        this.data[o] = p.x + cx * cos - cy * sin; this.data[o + 1] = p.y + cx * sin + cy * cos
+        this.data[o + 2] = uu; this.data[o + 3] = vv
+        this.data[o + 4] = alpha; this.data[o + 5] = alpha; this.data[o + 6] = alpha; this.data[o + 7] = alpha
+      })
+      this.index.set([verts, verts + 1, verts + 2, verts, verts + 2, verts + 3], tris)
+      set(verts + 4, tris + 6)
     }
     this.particles = keep
   }
 
   dispose() {
     const gl = this.gl
-    for (const p of this.puppets.values()) {
-      gl.deleteVertexArray(p.vao)
-      for (const t of [p.base, p.closed, p.plain]) if (t) gl.deleteTexture(t)
-    }
-    if (this.atlasTexture) gl.deleteTexture(this.atlasTexture)
-    gl.deleteBuffer(this.spriteBuffer)
-    for (const b of this.buffers) gl.deleteBuffer(b)
-    gl.deleteVertexArray(this.spriteVao)
-    gl.deleteProgram(this.puppetProgram)
-    gl.deleteProgram(this.spriteProgram)
-    this.puppets.clear()
+    for (const t of this.textures) gl.deleteTexture(t)
+    gl.deleteBuffer(this.vbo); gl.deleteBuffer(this.ibo); gl.deleteVertexArray(this.vao); gl.deleteProgram(this.program)
+    this.textures = []
   }
 }

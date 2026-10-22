@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest'
 import {actorWidth, createWorld, dragTo, grab, planPath, poke, release, stepWorld} from './director'
 import type {AppActivity, Platform, StageEnv, World} from './director'
-import type {CastId} from './rig'
+import type {CastId} from './cast'
 
 const CAST: CastId[] = ['star', 'ember', 'astra', 'gemini']
 const floor: Platform = {id: 'floor', x0: 0, x1: 1200, y: 600}
@@ -90,8 +90,8 @@ describe('companion director', () => {
     world.next.affection = 0
     const kinds = new Set<string>()
     run(world, e, 20, w => w.actors.forEach(a => kinds.add(a.act.kind)))
-    expect(kinds.has('kiss') || kinds.has('hug')).toBe(true)
-    expect(kinds.has('blush')).toBe(true)
+    expect(kinds.has('kiss') || kinds.has('hug') || kinds.has('highfive')).toBe(true)
+    expect(kinds.has('blush') || kinds.has('celebrate')).toBe(true)
 
     const off = env({affection: false})
     const quiet = createWorld(['ember', 'astra'], off, 4)
@@ -99,6 +99,24 @@ describe('companion director', () => {
     const seen = new Set<string>()
     run(quiet, off, 60, w => w.actors.forEach(a => seen.add(a.act.kind)))
     expect(seen.has('kiss') || seen.has('hug')).toBe(false)
+  })
+
+  it('still high-fives with hugs and kisses off, and the tagger reaches out on a tag', () => {
+    const off = env({affection: false})
+    const world = createWorld(['ember', 'astra'], off, 4)
+    world.next.tag = world.next.banter = Infinity
+    world.next.affection = 0
+    const seen = new Set<string>()
+    run(world, off, 30, w => w.actors.forEach(a => seen.add(a.act.kind)))
+    expect(seen.has('highfive')).toBe(true)
+
+    const e = env()
+    const tag = createWorld(['ember', 'astra', 'gemini'], e, 5)
+    tag.next.tag = 0; tag.next.banter = tag.next.affection = Infinity
+    const kinds = new Set<string>()
+    run(tag, e, 25, w => w.actors.forEach(a => kinds.add(a.act.kind)))
+    expect(kinds.has('tagged')).toBe(true)
+    expect(kinds.has('reach')).toBe(true)
   })
 
   it('keeps play calm while you type or STAR works, and Star works at her laptop', () => {

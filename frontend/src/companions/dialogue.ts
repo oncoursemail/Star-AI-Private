@@ -1,4 +1,4 @@
-import type {CastId} from './rig'
+import type {CastId} from './cast'
 
 /**
  * Scripted lines. Ember: bookish, warm, a little smug. Astra: cool, teasing, secretly soft.

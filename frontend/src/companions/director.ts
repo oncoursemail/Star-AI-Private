@@ -5,7 +5,7 @@
  */
 import {pickBanter, pickLine} from './dialogue'
 import type {Line, Situation} from './dialogue'
-import type {CastId} from './rig'
+import type {CastId} from './cast'
 
 export type Form = 'normal' | 'cat' | 'dog'
 export type AppActivity = 'idle' | 'typing' | 'thinking' | 'streaming' | 'finished' | 'error' | 'cancelled' | 'update'
@@ -36,7 +36,9 @@ export type Activity =
   | { kind: 'sleep'; until: number }
   | { kind: 'talk'; until: number; to: CastId | null }
   | { kind: 'listen'; until: number; to: CastId }
-  | { kind: 'kiss' | 'hug'; until: number; to: CastId; giver: boolean }
+  | { kind: 'kiss' | 'hug' | 'highfive'; until: number; to: CastId; giver: boolean }
+  /** The tagger's hand-off reach. */
+  | { kind: 'reach'; until: number }
   | { kind: 'blush'; until: number; to: CastId }
   | { kind: 'celebrate'; until: number }
   | { kind: 'worried'; until: number }
@@ -70,7 +72,7 @@ export type Actor = {
 export type Scene =
   | { kind: 'banter'; a: CastId; b: CastId; lines: readonly Line[]; index: number; next: number; meeting: boolean }
   | { kind: 'tag'; it: CastId; until: number; immune: CastId | null; immuneUntil: number; replan: number }
-  | { kind: 'affection'; a: CastId; b: CastId; type: 'kiss' | 'hug'; phase: 'approach' | 'act' | 'after'; until: number }
+  | { kind: 'affection'; a: CastId; b: CastId; type: 'kiss' | 'hug' | 'highfive'; phase: 'approach' | 'act' | 'after'; until: number }
   | { kind: 'react'; type: 'done' | 'error' | 'stopped'; until: number }
 
 export type StageEvent = { kind: 'dust' | 'heart' | 'sparkle' | 'sweat' | 'zzz' | 'bang' | 'question' | 'note'; id: CastId }
@@ -413,11 +415,14 @@ function scheduleScene(world: World, env: StageEnv) {
     for (const a of ready) { a.energy = 1; a.path = []; setIdle(world, a, 0.3) }
     return
   }
-  if (env.affection && now >= world.next.affection) {
+  if (now >= world.next.affection) {
     world.next.affection = now + range(world, 80, 170)
     const [a, b] = pickPair(world, ready)
+    // Hugs and cheek kisses follow the setting; a high five is always fine.
+    const roll = nextRandom(world)
+    const type = !env.affection || roll > 0.72 ? 'highfive' : roll < 0.38 ? 'kiss' : 'hug'
     if (a.platform === b.platform) {
-      world.scene = { kind: 'affection', a: a.id, b: b.id, type: nextRandom(world) < 0.55 ? 'kiss' : 'hug', phase: 'approach', until: now + 9 }
+      world.scene = { kind: 'affection', a: a.id, b: b.id, type, phase: 'approach', until: now + 9 }
       return
     }
   }
@@ -484,11 +489,11 @@ function face(actor: Actor, x: number) {
 function runAffection(world: World, env: StageEnv, scene: Extract<Scene, { kind: 'affection' }>) {
   const now = world.now
   const a = world.actors.find(x => x.id === scene.a), b = world.actors.find(x => x.id === scene.b)
-  if (!a || !b || !free(a) || !free(b) || !env.affection || calm(world, env) || now > scene.until + 6) {
+  if (!a || !b || !free(a) || !free(b) || (!env.affection && scene.type !== 'highfive') || calm(world, env) || now > scene.until + 6) {
     world.scene = null
     return
   }
-  const close = actorWidth(env) * (scene.type === 'hug' ? 0.62 : 0.78)
+  const close = actorWidth(env) * (scene.type === 'hug' ? 0.62 : scene.type === 'kiss' ? 0.78 : 1.05)
   if (scene.phase === 'approach') {
     if (a.platform !== b.platform) { world.scene = null; return }
     const gap = Math.abs(a.x - b.x)
@@ -502,18 +507,27 @@ function runAffection(world: World, env: StageEnv, scene: Extract<Scene, { kind:
     }
     face(a, b.x); face(b, a.x)
     a.path = []; b.path = []
-    const length = scene.type === 'hug' ? 1.7 : 1.25
+    const length = scene.type === 'hug' ? 2.2 : scene.type === 'kiss' ? 1.6 : 1.1
     a.act = { kind: scene.type, until: now + length, to: b.id, giver: true }
     b.act = { kind: scene.type, until: now + length, to: a.id, giver: false }
-    a.blushUntil = b.blushUntil = now + length + 1.8
-    world.events.push({ kind: 'heart', id: a.id }, { kind: 'heart', id: b.id })
+    if (scene.type !== 'highfive') {
+      a.blushUntil = b.blushUntil = now + length + 1.8
+      world.events.push({ kind: 'heart', id: a.id }, { kind: 'heart', id: b.id })
+    }
     scene.phase = 'act'
     scene.until = now + length
     return
   }
   if (scene.phase === 'act') {
-    if (nextRandom(world) < 0.06) world.events.push({ kind: 'heart', id: nextRandom(world) < 0.5 ? a.id : b.id })
+    if (scene.type !== 'highfive' && nextRandom(world) < 0.06) world.events.push({ kind: 'heart', id: nextRandom(world) < 0.5 ? a.id : b.id })
     if (now < scene.until) return
+    if (scene.type === 'highfive') {
+      a.act = { kind: 'celebrate', until: now + 0.9 }
+      b.act = { kind: 'celebrate', until: now + 0.9 }
+      scene.phase = 'after'
+      scene.until = now + 0.9
+      return
+    }
     a.act = { kind: 'blush', until: now + 1.6, to: b.id }
     b.act = { kind: 'blush', until: now + 1.6, to: a.id }
     sayLine(world, nextRandom(world) < 0.5 ? b : a, scene.type === 'kiss' ? 'kissAfter' : 'hugAfter')
@@ -544,7 +558,9 @@ function runTag(world: World, env: StageEnv, scene: Extract<Scene, { kind: 'tag'
     scene.immune = it.id
     scene.immuneUntil = now + 1.6
     scene.it = prey.id
-    setIdle(world, it, 0.05)
+    face(it, prey.x)
+    it.path = []
+    it.act = { kind: 'reach', until: now + 0.45 }
     return
   }
   if (now >= scene.replan) {
@@ -712,7 +728,7 @@ function updateActor(world: World, env: StageEnv, actor: Actor, dt: number) {
       if (now >= act.until) setIdle(world, actor)
       return
     }
-    case 'talk': case 'kiss': case 'hug':
+    case 'talk': case 'kiss': case 'hug': case 'highfive':
       if (now >= act.until) setIdle(world, actor, range(world, 0.6, 1.4))
       return
     default:

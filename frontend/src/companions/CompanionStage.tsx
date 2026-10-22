@@ -8,14 +8,15 @@ import type {PetState} from '../StarPet'
 import type {CompanionPreferences} from '../companion-catalog'
 import {useStarReducedMotion} from '../MotionPolicy'
 import {usePageVisible} from '../usePageVisible'
-import {BONE, CAST, RIGS, figureHeight} from './rig'
-import type {CastId} from './rig'
+import {CAST} from './cast'
+import type {CastId} from './cast'
+import {compileCharacter} from './armature'
 import {Animator} from './animator'
-import type {Frame} from './animator'
+import type {AnimEvent, Frame} from './animator'
 import {createWorld, dragTo, grab, poke, release, stepWorld} from './director'
-import type {AppActivity, Platform, StageEnv, StageEvent, World} from './director'
+import type {Actor, AppActivity, Form, Platform, StageEnv, StageEvent, World} from './director'
 import {CompanionRenderer} from './renderer'
-import {rootMatrix, apply} from './pose'
+import type {DrawItem} from './renderer'
 import './companion-stage.css'
 
 export type CompanionStageProps = {
@@ -94,28 +95,26 @@ export function CompanionStage({app, preferences, reducedMotion, learning, empty
     let size = 92
     let readingHistory = false
     let band = {top: 0, height: 0, width: 0}
-    const rigs = cast.map(id => RIGS[id])
-    const animators = new Map(rigs.map((rig, index) => [rig.id, new Animator(rig, 97 + index * 31)]))
+    const characters = cast.map((id, page) => compileCharacter(id, page))
+    const animators = new Map(characters.map((c, index) => [c.id, new Animator(c, 97 + index * 31)]))
     const said = new Map<CastId, Bubble>()
     const frames = new Map<CastId, Frame>()
     const scroll = thread.querySelector<HTMLElement>('.thread-scroll')
 
+    // Preview-only overrides for design review captures (forms and study switched live, to see the poof).
+    const review: {forms: Partial<Record<CastId, Form>>; study: boolean | null; frozen: boolean} = {forms: {}, study: null, frozen: false}
     const env = (): StageEnv => {
       const {preferences: prefs, app: work, learning: learn, still: quiet} = live.current
       const f = flags.current
       const hour = new Date().getHours()
+      const form = (id: CastId): Form => review.forms[id] ?? (f.has('cat') ? 'cat' : f.has('dog') ? 'dog' : prefs.forms[id])
       return {
         platforms, size,
         app: APP[work] ?? 'idle',
-        study: f.has('study') || prefs.study === 'on' || (prefs.study === 'auto' && learn),
+        study: review.study ?? (f.has('study') || prefs.study === 'on' || (prefs.study === 'auto' && learn)),
         night: f.has('night') || hour >= 23 || hour < 5,
         affection: prefs.affection,
-        forms: {
-          star: f.has('cat') ? 'cat' : f.has('dog') ? 'dog' : prefs.forms.star,
-          ember: f.has('cat') ? 'cat' : f.has('dog') ? 'dog' : prefs.forms.ember,
-          astra: f.has('cat') ? 'cat' : f.has('dog') ? 'dog' : prefs.forms.astra,
-          gemini: f.has('cat') ? 'cat' : f.has('dog') ? 'dog' : prefs.forms.gemini,
-        },
+        forms: {star: form('star'), ember: form('ember'), astra: form('astra'), gemini: form('gemini')},
         still: quiet,
       }
     }
@@ -136,13 +135,15 @@ export function CompanionStage({app, preferences, reducedMotion, learning, empty
 
     const emit = (event: StageEvent) => {
       const frame = frames.get(event.id)
-      const rig = RIGS[event.id]
-      if (!frame) return
-      const head = (dx: number, dy: number) => renderer.point(event.id, frame, BONE.head, rig.head[0] + dx, rig.topY + dy)
+      const animator = animators.get(event.id)
+      const actor = world?.actors.find(a => a.id === event.id)
+      if (!frame || !animator || !actor) return
+      // Offsets are in the old sprite px (about 4.7 per model unit) from the top of the head.
+      const head = (dx: number, dy: number) => animator.point('head', dx / 4.7, -100 + dy / 4.7)
       const s = size / 92
       const r = () => Math.random() - 0.5
       if (event.kind === 'dust') {
-        const [x, y] = [frame.pose.x, frame.pose.y]
+        const [x, y] = [actor.x, actor.y]
         for (const side of [-1, 1]) renderer.emit({item: 'dust', x: x + side * size * 0.14, y: y - 3, vx: side * 28 * s, vy: -8, life: 0.42, size: 10 * s, spin: 0, kind: 'burst'})
       } else if (event.kind === 'heart') {
         const [x, y] = head(r() * 60, 0)
@@ -167,29 +168,53 @@ export function CompanionStage({app, preferences, reducedMotion, learning, empty
       }
     }
 
+    const effect = (event: AnimEvent) => {
+      const s = size / 92
+      const burst = (count: number, speed: number) => {
+        for (let i = 0; i < count; i++) {
+          const a = (i / count) * Math.PI * 2 + Math.random() * 0.5
+          renderer.emit({item: 'smoke', x: event.x, y: event.y, vx: Math.cos(a) * speed * s, vy: Math.sin(a) * speed * s * 0.7, life: 0.55 + Math.random() * 0.15, size: 15 * s, spin: (Math.random() - 0.5) * 3, kind: 'puff'})
+        }
+        for (let i = 0; i < 4; i++) {
+          const a = Math.random() * Math.PI * 2
+          renderer.emit({item: i % 2 ? 'sparkle' : 'twinkle', x: event.x, y: event.y, vx: Math.cos(a) * speed * 1.3 * s, vy: Math.sin(a) * speed * s - 20 * s, life: 0.7, size: 11 * s, spin: (Math.random() - 0.5) * 6, kind: 'burst'})
+        }
+      }
+      if (event.kind === 'poof') burst(7, 70)
+      else if (event.kind === 'propPoof') burst(9, 110)
+      else for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2
+        renderer.emit({item: i % 2 ? 'twinkle' : 'sparkle', x: event.x, y: event.y, vx: Math.cos(a) * 80 * s, vy: Math.sin(a) * 80 * s, life: 0.5, size: 12 * s, spin: 3, kind: 'burst'})
+      }
+    }
+
     const place = (dt: number) => {
       if (!world) return
       const e = env()
-      const draws = []
+      const draws: DrawItem[] = []
+      const partnerOf = (actor: Actor) => 'to' in actor.act ? world?.actors.find(a => a.id === (actor.act as {to: CastId | null}).to) ?? null : null
+      const zOf = (actor: Actor) => actor.y + (actor.act.kind === 'dragged' ? 10000 : 0)
       for (const actor of world.actors) {
         const animator = animators.get(actor.id)
         if (!animator) continue
-        const frame = animator.frame(actor, e, world.now, dt, e.still)
+        const partner = partnerOf(actor)
+        const frame = animator.frame(actor, e, world.now, dt, e.still, partner)
         frames.set(actor.id, frame)
+        for (const ev of frame.events) effect(ev)
         const act = actor.act
-        const giver = (act.kind === 'hug' || act.kind === 'kiss') && act.giver
-        draws.push({id: actor.id, frame, z: actor.y + (giver ? 1 : 0) + (act.kind === 'dragged' ? 10000 : 0)})
+        const giver = (act.kind === 'hug' || act.kind === 'kiss' || act.kind === 'highfive') && act.giver
+        // The giver is drawn in front: the hugging arm lies over the partner's shoulders.
+        draws.push({sk: frame.sk, alpha: frame.alpha, z: zOf(actor) + (giver ? 1 : 0)})
       }
       for (const event of world.events) emit(event)
       renderer.render(draws, dt)
       for (const actor of world.actors) {
         const frame = frames.get(actor.id)
-        const rig = RIGS[actor.id]
+        const animator = animators.get(actor.id)
         const hit = hits.current.get(actor.id), bubble = bubbles.current.get(actor.id)
-        if (!frame) continue
-        const root = rootMatrix(frame.pose)
-        const [x0, y0] = apply(root, rig.centerX - figureHeight(rig) * 0.3, rig.topY)
-        const [x1, y1] = apply(root, rig.centerX + figureHeight(rig) * 0.3, rig.footY)
+        if (!frame || !animator) continue
+        const box = animator.bounds()
+        const [x0, y0, x1, y1] = [box.x0, box.y0, box.x1, box.y1]
         if (hit) {
           const shown = !actor.away && frame.alpha > 0.5
           setStyle(hit, 'display', shown ? '' : 'none')
@@ -211,7 +236,7 @@ export function CompanionStage({app, preferences, reducedMotion, learning, empty
         }
         const count = e.still ? text.length : Math.min(text.length, Math.ceil((world.now - state.started) * 42))
         if (count !== state.shown) { state.shown = count; bubble.textContent = text.slice(0, count) }
-        const [hx, hy] = renderer.point(actor.id, frame, BONE.head, rig.head[0], rig.topY + 6)
+        const [hx, hy] = [box.headX, box.headY + size * 0.02]
         const onLedge = actor.platform === 'ledge'
         const side = onLedge ? (hx > band.width / 2 ? 'left' : 'right') : 'above'
         bubble.dataset.side = side
@@ -233,7 +258,7 @@ export function CompanionStage({app, preferences, reducedMotion, learning, empty
       world.actors.every(a => CALM.has(a.act.kind) && !a.bubble)
     const tick = (time: number) => {
       raf = 0
-      if (disposed || !world) return
+      if (disposed || !world || review.frozen) return
       if (last && calm() && time - last < 30) { raf = requestAnimationFrame(tick); return }
       // Still mode ticks on demand: its clock follows the wall so bubbles expire on time.
       const dt = last ? Math.min(live.current.still ? 1 : 0.05, (time - last) / 1000) : 1 / 60
@@ -318,19 +343,27 @@ export function CompanionStage({app, preferences, reducedMotion, learning, empty
       })
     }
 
-    renderer.load(rigs).then(() => {
+    renderer.load(characters).then(() => {
       if (disposed) return
       measure()
       world = createWorld(cast, env(), 7 + cast.length)
       stepWorld(world, env(), 0)
       if (preview) {
         (window as unknown as {__starCompanions?: unknown}).__starCompanions = {
-          world, env, renderer,
+          world, env, renderer, animators,
+          /** Stop the clock; `advance` then steps it in fixed frames (frame-exact captures). */
+          freeze: () => { review.frozen = true; if (raf) cancelAnimationFrame(raf); raf = 0 },
+          advance: (seconds: number, fps = 30) => {
+            if (!world) return
+            for (let i = 0, n = Math.max(1, Math.round(seconds * fps)); i < n; i++) { stepWorld(world, env(), 1 / fps); place(1 / fps) }
+          },
+          setForm: (id: CastId | 'all', form: Form) => { for (const c of id === 'all' ? cast : [id]) review.forms[c] = form; kick.current() },
+          setStudy: (on: boolean | null) => { review.study = on; kick.current() },
           scene: (kind: string) => {
             if (!world) return
             world.next.banter = world.next.tag = world.next.affection = Infinity
             if (kind === 'tag') world.next.tag = world.now
-            if (kind === 'kiss' || kind === 'hug') {
+            if (kind === 'kiss' || kind === 'hug' || kind === 'highfive') {
               const a = world.actors.find(x => world?.actors.some(y => y !== x && y.platform === x.platform && !!x.platform))
               const b = a && world.actors.find(y => y !== a && y.platform === a.platform)
               if (a && b) { const p = platforms.find(x => x.id === a.platform); if (p) b.x = Math.min(p.x1 - size * 0.4, Math.max(p.x0 + size * 0.4, a.x + size * 1.6)) }

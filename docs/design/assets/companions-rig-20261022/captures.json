@@ -1,0 +1,299 @@
+{
+  "base": "local vite dev server (preview=1)",
+  "report": [
+    {
+      "theme": "obsidian",
+      "name": "idle",
+      "frames": 16,
+      "step": 0.12,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "walk",
+      "frames": 16,
+      "step": 0.041666666666666664,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "run",
+      "frames": 14,
+      "step": 0.03333333333333333,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "turn",
+      "frames": 12,
+      "step": 0.03333333333333333,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "hop",
+      "frames": 16,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "sit",
+      "frames": 14,
+      "step": 0.1,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "talk",
+      "frames": 16,
+      "step": 0.06666666666666667,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "tag",
+      "frames": 16,
+      "step": 0.08333333333333333,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "kiss",
+      "frames": 16,
+      "step": 0.12,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "hug",
+      "frames": 18,
+      "step": 0.13,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "highfive",
+      "frames": 14,
+      "step": 0.09,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "pickup",
+      "frames": 18,
+      "step": 0.06666666666666667,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "poke",
+      "frames": 12,
+      "step": 0.06666666666666667,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "cat",
+      "frames": 16,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "dog",
+      "frames": 18,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "dogwalk",
+      "frames": 16,
+      "step": 0.041666666666666664,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "catback",
+      "frames": 14,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "study",
+      "frames": 18,
+      "step": 0.1,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "studyoff",
+      "frames": 12,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "nap",
+      "frames": 10,
+      "step": 0.25,
+      "errors": []
+    },
+    {
+      "theme": "obsidian",
+      "name": "cheer",
+      "frames": 12,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "idle",
+      "frames": 16,
+      "step": 0.12,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "walk",
+      "frames": 16,
+      "step": 0.041666666666666664,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "run",
+      "frames": 14,
+      "step": 0.03333333333333333,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "turn",
+      "frames": 12,
+      "step": 0.03333333333333333,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "hop",
+      "frames": 16,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "sit",
+      "frames": 14,
+      "step": 0.1,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "talk",
+      "frames": 16,
+      "step": 0.06666666666666667,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "tag",
+      "frames": 16,
+      "step": 0.08333333333333333,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "kiss",
+      "frames": 16,
+      "step": 0.12,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "hug",
+      "frames": 18,
+      "step": 0.13,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "highfive",
+      "frames": 14,
+      "step": 0.09,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "pickup",
+      "frames": 18,
+      "step": 0.06666666666666667,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "poke",
+      "frames": 12,
+      "step": 0.06666666666666667,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "cat",
+      "frames": 16,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "dog",
+      "frames": 18,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "dogwalk",
+      "frames": 16,
+      "step": 0.041666666666666664,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "catback",
+      "frames": 14,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "study",
+      "frames": 18,
+      "step": 0.1,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "studyoff",
+      "frames": 12,
+      "step": 0.05,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "nap",
+      "frames": 10,
+      "step": 0.25,
+      "errors": []
+    },
+    {
+      "theme": "pearl",
+      "name": "cheer",
+      "frames": 12,
+      "step": 0.05,
+      "errors": []
+    }
+  ]
+}
