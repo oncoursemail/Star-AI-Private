@@ -472,7 +472,23 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
 
         slop_mode = getattr(settings, "slop_check", "off")
         slop_record: dict = {}
-        if (slop_mode == "repair" and model_client is not None and not getattr(route, "quick", True)
+        # Opt-in check-fix loop (star/verify_ladder.py): replaces the slop repair and the static check + repair below.
+        verify = (getattr(settings, "verify_ladder", "off") == "on" and model_client is not None
+                  and not getattr(route, "quick", True) and bool(luau_blocks(answer)))
+        if verify and (not timed or left() > REVIEW_RESERVE_SECONDS):
+            from . import slop, verify_ladder
+            write_tests, fix = verify_ladder.model_tools(model_client, route.model, prompt,
+                                                         max_tokens=getattr(route, "response_tokens", 1600))
+            tools = verify_ladder.Tools(checker=knowledge.luau_check if knowledge is not None else None,
+                                        dump=slop.bundled_api_dump(), runner=verify_ladder.default_runner(),
+                                        write_tests=write_tests, fix=fix, prompt=prompt)
+            answer, ladder_record = await verify_ladder.review(
+                answer, tools, rounds=getattr(settings, "verify_rounds", 2),
+                budget=float(getattr(settings, "verify_budget_s", 240)),
+                deadline=started + budget if timed and started is not None else None, on_event=on_event)
+            if ladder_record:
+                archive = [*archive, {"star_verify": ladder_record}]
+        if (not verify and slop_mode == "repair" and model_client is not None and not getattr(route, "quick", True)
                 and (not timed or left() >= max(90, 0.35 * budget))):
             from . import slop
             dump = slop.bundled_api_dump()
@@ -484,7 +500,7 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
                     timeout=max(0.05, left() - REPAIR_RESERVE_SECONDS) if timed else None)
                 _emit(on_event, {"event": "slop_repair", "accepted": slop_record["accepted"]})
 
-        if (grounding.plan.check_luau and knowledge is not None and luau_blocks(answer)
+        if (not verify and grounding.plan.check_luau and knowledge is not None and luau_blocks(answer)
                 and (not timed or left() > REVIEW_RESERVE_SECONDS)):
             repair = None
             # A repair is another model call; only when the turn has clearly enough time left.
