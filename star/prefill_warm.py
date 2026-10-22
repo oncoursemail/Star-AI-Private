@@ -34,7 +34,8 @@ question) also comes after the owner's words. Once the draft is primed and no ne
 that block for the draft with the functions the turn uses (desktop_core.base_sections / reference_sections) and
 primes it too, up to the time line (the only part that changes every minute), then the whole request once with
 this minute's time line. On Enter with the same text in the same minute the server reads ~4 tokens; in a later
-minute, the time line and the template's closing tokens. Skipped when the turn would add something
+minute, the time line and the template's closing tokens; so while the owner has not pressed Enter, the whole request
+is sent again a moment after each minute change (DraftWarmer keep_fresh). Skipped when the turn would add something
 the draft cannot know (web search, attached documents, a Studio connection, a diff-only edit); a mismatch costs a
 cache miss, never a different answer.
 """
@@ -43,6 +44,7 @@ from __future__ import annotations
 import asyncio
 import re
 import threading
+import time
 from pathlib import Path
 from time import perf_counter
 
@@ -67,6 +69,11 @@ BUSY_MAX_CHARS = 1600
 # star-fast's batch is 2048 tokens: an unchunked long paste could hold the server ~55 s before the turn on Enter
 # or any other client's request could start. Chunks bound that wait to one chunk.
 CHUNK_CHARS = 400
+# The time line has minute resolution: once the minute changes, the primed whole request is stale (Enter would read
+# ~50 tokens, ~3 s on brain 1). The app sends the whole request again a moment after each minute change while the
+# owner has not pressed Enter (at most MAX_REFRESHES of them; each reads ~50 tokens).
+MAX_REFRESHES = 10
+REFRESH_AFTER_S = 1.0
 
 # The draft text the last request primed, and where: (chat, model, slot) -> text. Only the newest is kept.
 _PRIMED: dict = {}
@@ -310,9 +317,23 @@ def turn_tail(settings: Settings, home: Path, chat_id: str | None, text: str, re
     return final_user_text(text, block), len(text) + 2 + at, ''
 
 
+def _next_minute(cancel_event, superseded) -> bool:
+    """Wait until the minute changes (plus REFRESH_AFTER_S). False when the draft was cancelled or replaced meanwhile."""
+    until = (time.time() // 60 + 1) * 60 + REFRESH_AFTER_S
+    while time.time() < until:
+        if (cancel_event is not None and cancel_event.is_set()) or (superseded is not None and superseded()):
+            return False
+        time.sleep(0.2)
+    return True
+
+
 def warm_draft(settings: Settings, home: Path, chat_id: str | None, text: str, *, mode: str = 'auto',
-               research: bool = False, cancel_event=None, probe=look_for_busy_slots, superseded=None) -> dict:
-    """Send the draft's start to the model server. Never raises; returns a small nonsecret report."""
+               research: bool = False, cancel_event=None, probe=look_for_busy_slots, superseded=None,
+               keep_fresh: bool = False) -> dict:
+    """Send the draft's start to the model server. Never raises; returns a small nonsecret report.
+
+    `keep_fresh`: after the whole request is primed, stay (until cancelled, replaced or MAX_REFRESHES minutes) and
+    send it again with the new time line whenever the minute changes. The call then returns only at that point."""
     began = perf_counter()
 
     def done(**fields) -> dict:
@@ -414,8 +435,23 @@ def warm_draft(settings: Settings, home: Path, chat_id: str | None, text: str, *
                                                         str(chat_id or ''), stop_between_chunks,
                                                         primed=message[:length], whole=True))
                         more['whole'] = bool(last.get('primed') and not last.get('cancelled'))
+                        refreshed = 0
+                        while keep_fresh and more['whole'] and refreshed < MAX_REFRESHES and _next_minute(
+                                cancel_event, superseded):
+                            if others_busy is not None and asyncio.run(others_busy()):
+                                break
+                            old = message[length:].split('\n', 1)[0]
+                            message = message[:length] + now_line() + message[length + len(old):]
+                            last = asyncio.run(_send_prefix(settings, with_message(message), cancel_event, pc_base,
+                                                            str(chat_id or ''), stop_between_chunks,
+                                                            primed=message[:length], whole=True))
+                            if not last.get('primed') or last.get('cancelled'):
+                                break
+                            refreshed += 1
+                        if refreshed:
+                            more['refreshed'] = refreshed
                     result['tail'] = {key: more[key] for key in ('primed', 'yielded', 'cancelled', 'skipped',
-                                                                 'prompt_tokens_read', 'chunks', 'whole')
+                                                                 'prompt_tokens_read', 'chunks', 'whole', 'refreshed')
                                       if key in more}
                 else:
                     result['tail'] = {'skipped': why or 'cancelled'}
@@ -436,8 +472,9 @@ class DraftWarmer:
     request within a tenth of a second (the server keeps what it already read).
     """
 
-    def __init__(self, run=warm_draft):
+    def __init__(self, run=warm_draft, keep_fresh: bool = False):
         self._run = run
+        self._keep_fresh = keep_fresh
         self._lock = threading.Lock()
         self._pending = None
         self._cancel = threading.Event()
@@ -472,6 +509,7 @@ class DraftWarmer:
             try:
                 settings, home, chat_id = load()
                 self.last = self._run(settings, home, chat_id, text, mode=mode, research=research,
-                                      cancel_event=cancel, superseded=lambda: self._pending is not None)
+                                      cancel_event=cancel, superseded=lambda: self._pending is not None,
+                                      **({'keep_fresh': True} if self._keep_fresh else {}))
             except Exception as exc:
                 self.last = {'primed': False, 'error': type(exc).__name__}

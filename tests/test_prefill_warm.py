@@ -471,3 +471,39 @@ def test_the_reference_block_stops_between_chunks_when_the_owner_types_on(desk, 
     report = warm_draft(on(desk.settings), desk.home, desk.chat, draft, mode="fast", superseded=superseded)
     assert report["tail"]["primed"] is True and report["tail"]["yielded"] is True
     assert len(tail_server.sent()) == 2          # the draft, then one chunk of the block
+
+
+def test_keep_fresh_sends_the_whole_request_again_after_each_minute_change(desk, tail_server, monkeypatch):
+    # now_line has minute resolution: Enter in a later minute would read the new time line (~50 tokens) unless
+    # the whole request was sent again with it.
+    from star import clock
+    minute = iter(range(10, 1000))
+    monkeypatch.setattr(clock, "now_line", lambda *a, **k: f"Now: Monday 2026-10-19 10:{next(minute)} CDT.")
+    waits = []
+
+    def next_minute(cancel_event, superseded):
+        waits.append(1)
+        return len(waits) <= 2                      # two minute changes, then the owner presses Enter
+    monkeypatch.setattr(prefill, "_next_minute", next_minute)
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?", mode="fast",
+                        keep_fresh=True)
+    assert report.get("tail", {}).get("refreshed") == 2, report
+    wholes = [call["body"]["prompt"] for call in tail_server.sent()][-3:]
+    assert len(set(wholes)) == 3 and all(w.endswith("<|im_start|>assistant" + chr(10)) for w in wholes)
+    stamps = [int(w.rsplit("Now: Monday 2026-10-19 10:", 1)[1][:2]) for w in wholes]
+    assert stamps == sorted(stamps) and stamps[0] < stamps[1] < stamps[2]      # each send carries a newer time line
+
+
+def test_without_keep_fresh_nothing_is_sent_after_the_whole_request(desk, tail_server, monkeypatch):
+    monkeypatch.setattr(prefill, "_next_minute", lambda *a: pytest.fail("must not wait for the next minute"))
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?", mode="fast")
+    assert report["tail"]["whole"] is True and "refreshed" not in report["tail"]
+
+
+def test_a_newer_draft_or_enter_ends_the_refresh_loop_at_once(monkeypatch):
+    import time as clock_time
+    stopped = threading.Event()
+    stopped.set()
+    began = clock_time.monotonic()
+    assert prefill._next_minute(stopped, None) is False and prefill._next_minute(None, lambda: True) is False
+    assert clock_time.monotonic() - began < 1

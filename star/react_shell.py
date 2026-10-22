@@ -824,7 +824,7 @@ def launch():
             self.pending_update = None
             self._closing = False
             self.warmer = Warmer()
-            self.draft_warmer = DraftWarmer()
+            self.draft_warmer = DraftWarmer(keep_fresh=True)
             self.digester = Digester()
             self.comfy_launcher = ComfyLauncher()
             self.clips = ClipService()  # No capture until explicit owner-controlled OBS actions.

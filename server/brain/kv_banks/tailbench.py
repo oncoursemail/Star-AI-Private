@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -51,6 +52,9 @@ def main() -> int:
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--count", type=int, default=20)
     parser.add_argument("--arms", default="cold,enabled")
+    parser.add_argument("--dwell", action="store_true",
+                        help="enabled arm: like an owner who pauses before Enter. The draft warm-up keeps the time line fresh "
+                             "(keep_fresh) and Enter comes ~7 s after the next minute change, so the primed time line is stale")
     parser.add_argument("--deadline", type=float, default=0, help="stop starting new tasks after this many seconds")
     args = parser.parse_args()
     real = Path(os.path.expandvars(r"%USERPROFILE%\AppData\Roaming")).resolve()
@@ -131,6 +135,32 @@ def main() -> int:
                 return
             time.sleep(0.5)
 
+    whole_done = threading.Event()
+    real_send = prefill._send_prefix
+
+    async def spy_send(*a, **kw):
+        found = await real_send(*a, **kw)
+        if kw.get("whole") and found.get("primed"):
+            whole_done.set()
+        return found
+    prefill._send_prefix = spy_send
+
+    def dwell_warm(settings, chat: str, text: str) -> dict:
+        """The owner has finished typing and reads it over: the whole request was primed, then the minute changes."""
+        whole_done.clear()
+        stop = threading.Event()
+        out: dict = {}
+        worker = threading.Thread(target=lambda: out.update(prefill.warm_draft(
+            settings, home, chat, text, mode="auto", cancel_event=stop, keep_fresh=True)))
+        worker.start()
+        while worker.is_alive() and not whole_done.is_set():
+            time.sleep(0.2)
+        now = time.time()
+        time.sleep((now // 60 + 1) * 60 + 7 - now)          # next minute change + 7 s: the refresh is sent and read
+        stop.set()
+        worker.join(30)
+        return out
+
     def seeded_chat(settings) -> str:
         chat = chats.new_chat("STAR")
         chats.add("STAR", "user", SEED_PROMPT, chat_id=chat)
@@ -189,7 +219,10 @@ def main() -> int:
             if arm == "enabled":
                 primed.clear()
                 started = time.perf_counter()
-                report = prefill.warm_draft(settings, home, chat, text, mode="auto")
+                if args.dwell:
+                    report = dwell_warm(settings, chat, text)
+                else:
+                    report = prefill.warm_draft(settings, home, chat, text, mode="auto")
                 row["prefill"] = {**report, "wall_s": round(time.perf_counter() - started, 2)}
                 idle()
             result = turn(settings, chat, text)
