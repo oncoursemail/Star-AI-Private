@@ -37,6 +37,7 @@ MAX_BLOCKS = 2
 MAX_DETAIL = 600
 FIX_RESERVE_SECONDS = 45.0        # a fix call is stopped this long before the turn's deadline
 MIN_FIX_SECONDS = 40.0            # no fix call when less than this is left
+WRITE_TESTS_SECONDS = 60.0        # the test-writing call is dropped (no tests) after this long
 RUNGS = ("compile", "api", "run", "tests")
 ENGINE = Path(__file__).with_name("player_twins") / "luau" / "engine.luau"
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
@@ -353,21 +354,35 @@ def check_tests(code: str, tools: Tools, state: dict) -> Rung:
 
 # --- the ladder -----------------------------------------------------------------------------------------------
 
+def _took(state: dict, name: str, since: float) -> None:
+    seconds = state.setdefault("seconds", {})
+    seconds[name] = round(seconds.get(name, 0.0) + monotonic() - since, 1)
+
+
 async def run_rungs(code: str, tools: Tools, state: dict) -> list[Rung]:
-    """All rungs in order, stopping at the first failure. `state` carries the generated tests across rounds."""
+    """All rungs in order, stopping at the first failure. `state` carries the generated tests across rounds
+    and the seconds spent per rung."""
     out: list[Rung] = []
     for rung in (check_compile, check_api):
+        since = monotonic()
         result = await asyncio.to_thread(rung, code, tools)
+        _took(state, result.rung, since)
         out.append(result)
         if result.status == "fail":
             return out
+    since = monotonic()
     result = await asyncio.to_thread(check_run, code, tools, out[0].context)
+    _took(state, "run", since)
     out.append(result)
     if result.status == "fail":
         return out
     if not tools.tests and "generated" not in state and "why" not in state:
+        since = monotonic()
         await _generate_tests(code, tools, state)
+        _took(state, "write_tests", since)
+    since = monotonic()
     result = await asyncio.to_thread(check_tests, code, tools, state)
+    _took(state, "tests", since)
     out.append(result)
     if result.status == "fail":
         return out
@@ -380,8 +395,22 @@ async def run_rungs(code: str, tools: Tools, state: dict) -> list[Rung]:
     return out
 
 
+_ASSERT_LINE = re.compile(r"^assert\(.{4,300}\)$")
+
+
+def parse_tests(reply: str) -> str:
+    """Two to six one-line `assert(...)` statements from one fenced block (they run only in the server sandbox)."""
+    found = _FENCE.search(_THINK.sub("", reply or ""))
+    lines = [line.strip() for line in (found.group(1) if found else "").splitlines() if line.strip()]
+    lines = [line.rstrip(";") for line in lines if not line.startswith("--")]
+    if not 2 <= len(lines) <= 6 or not all(_ASSERT_LINE.match(line) and "--" not in line and
+                                          line.count("(") == line.count(")") for line in lines):
+        raise ValueError("expected two to six one-line assert(...) statements")
+    return "\n".join(lines) + "\n"
+
+
 async def _generate_tests(code: str, tools: Tools, state: dict) -> None:
-    from .luau_run_repair import parse_assertions, pure_source
+    from .luau_run_repair import pure_source
     if not pure_source(code):
         state["why"] = "not a pure module, so no tests were generated"
         return
@@ -389,7 +418,7 @@ async def _generate_tests(code: str, tools: Tools, state: dict) -> None:
         state["why"] = "no model was available to write tests"
         return
     try:
-        state["generated"] = parse_assertions(await tools.write_tests(code))
+        state["generated"] = parse_tests(await asyncio.wait_for(tools.write_tests(code), WRITE_TESTS_SECONDS))
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -462,9 +491,11 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
         mistake = {"rung": failure.rung, "signature": failure.signature, "message": failure.detail[:300],
                    "verified": False}
         record["mistakes"].append(mistake)
+        since = monotonic()
         try:
             reply = await asyncio.wait_for(tools.fix(current, failure, _members(failure.classes, tools.dump)),
                                            timeout=max(1.0, left() - 5))
+            _took(state, "fix", since)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -484,7 +515,8 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
         mistake["verified"] = still is None or still.rung != failure.rung
         current, rungs = candidate, new_rungs
         record["fixed"] = True
-    record.update(code=current, rungs=[r.record() for r in rungs], ok=first_failure(rungs) is None)
+    record.update(code=current, rungs=[r.record() for r in rungs], ok=first_failure(rungs) is None,
+                  seconds=state.get("seconds", {}))
     record["_rungs"] = rungs
     return record
 
@@ -628,7 +660,8 @@ async def review(answer: str, tools: Tools, *, rounds: int = 2, budget: float = 
                "verified": all(r["ok"] for r in records), "fixed": any(r["fixed"] for r in records)}
     _emit(on_event, {"event": "verify_finished", "verified": summary["verified"], "fixed": summary["fixed"],
                      "rounds": sum(r["rounds"] for r in records), "seconds": summary["seconds"],
-                     "rungs": [[x["rung"] + ":" + x["status"] for x in r["rungs"]] for r in records]})
+                     "rungs": [[x["rung"] + ":" + x["status"] for x in r["rungs"]] for r in records],
+                     "timing": [r["seconds"] for r in records]})
     return answer.rstrip() + "\n\n" + CHECK_MARKER + " " + " ".join(notes) + "\n", summary
 
 

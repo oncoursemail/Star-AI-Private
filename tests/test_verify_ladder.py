@@ -165,6 +165,10 @@ def test_generated_tests_are_written_once_run_and_reported_as_generated():
     assert "local result = (function()" in runner.sources[-1] and "@@T" in runner.sources[-1]
     asyncio.run(vl.run_rungs(module, vl.Tools(checker=checker, write_tests=write_tests, runner=runner), state))
     assert len(written) == 1
+    assert vl.parse_tests("```luau\nassert(#result.list({1, 2}) == 2)\nassert(result.add(1, 1) == 2)\n```")
+    for bad in ("```luau\nassert(true)\n```", "```luau\nprint(1)\nassert(result.x == 1)\n```", "no fence"):
+        with pytest.raises(ValueError):
+            vl.parse_tests(bad)
     request = vl.fix_request("add", module, rungs[-1])
     assert "can be wrong" in request
     engine = asyncio.run(vl.run_rungs(GOOD, vl.Tools(checker=checker, write_tests=write_tests,

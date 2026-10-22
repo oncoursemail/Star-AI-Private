@@ -33,6 +33,7 @@ PACKAGE_DATA_SITES = {
     "star/luau_record_type_lessons.py": "docs/lessons/luau-record-types.md",
     "star/lesson_import.py": "star/skill_packs",
     "star/player_twins/bundle.py": "star/player_twins/luau",  # Player Twins engine doubles + driver
+    "star/verify_ladder.py": "star/player_twins/luau",  # check-fix loop runs blocks in the same engine doubles
     "star/react_shell.py": "frontend/dist",
     "star/reverse_engineering.py": "star/re_scripts",  # Ghidra scripts (PR #344), not in the PyInstaller lists
     "star/roblox_api_confusions.py": "data/roblox_api_confusions.json",
