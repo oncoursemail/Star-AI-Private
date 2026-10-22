@@ -72,7 +72,8 @@ def runner(entry: dict) -> dict:
     if not probe:
         return r
     try:
-        proc = subprocess.run(probe, capture_output=True, text=True, timeout=int(entry.get("timeout", 8)))
+        proc = subprocess.run(probe, capture_output=True, text=True, timeout=int(entry.get("timeout", 8)),
+                              creationflags=gitutil.NO_WINDOW)
     except (OSError, subprocess.TimeoutExpired) as e:
         r["status"] = f"offline ({type(e).__name__})"
         return r
