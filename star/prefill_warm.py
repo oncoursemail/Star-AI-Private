@@ -138,7 +138,7 @@ def _on_pc(settings: Settings, request: dict):
     """(request, the PC server's address) when the turn would go to the PC now, else (request, None).
 
     With an address the caller must end with `gpu_helper.HELPER.warm_end()`."""
-    if provider_kind(settings) != 'lan' or settings.use_my_gpu is not True:
+    if provider_kind(settings) != 'lan' or not gpu_helper.pc_allowed(settings):
         return request, None
     if not gpu_helper.wanted(settings, {'model': request['model'], 'messages': request['messages']}):
         return request, None
@@ -300,7 +300,7 @@ def turn_tail(settings: Settings, home: Path, chat_id: str | None, text: str, re
 
     async def references():
         async with desktop_core.open_client(settings) as client:   # the turn's client (run_task)
-            if provider_kind(settings) == 'lan' and settings.use_my_gpu is True:
+            if provider_kind(settings) == 'lan' and gpu_helper.pc_allowed(settings):
                 client = gpu_helper.GpuRoutingClient(client, settings)
             return await reference_sections(
                 settings, home, route, text, recent_users, sections, mode=mode, quick=route.quick,

@@ -155,6 +155,31 @@ def test_the_apps_use_my_pc_switch_gates_every_session(rig):
     assert settings.read_text(encoding="utf-8") == '{"use_my_gpu": true}'      # read only
 
 
+def test_automatic_night_use_runs_in_the_night_window_with_the_switch_off(rig):
+    settings = rig.home.parent / "settings.json"
+    rig.hour["now"] = 3
+    rig.probe.idle = 6 * MIN
+    settings.write_text('{"use_my_gpu": false}', encoding="utf-8")            # auto night is on by default
+    assert rig.start_blocker() == ""
+    settings.write_text('{"use_my_gpu": false, "use_my_pc_auto_night": false}', encoding="utf-8")
+    assert "Use my PC switch is off" in rig.start_blocker()                   # auto off: does not run
+    settings.write_text("not json", encoding="utf-8")
+    assert "could not be read" in rig.start_blocker()                         # unreadable: fails closed at night too
+    settings.write_text('{"use_my_gpu": false}', encoding="utf-8")
+    rig.hour["now"] = 14                                                      # day: follows the switch
+    rig.probe.idle = 30 * MIN
+    assert "Use my PC switch is off" in rig.start_blocker()
+    rig.hour["now"] = 3
+    rig.tick()
+    assert rig.state == "loading"
+    rig.helper.state = "ready"
+    rig.tick()
+    assert rig.state == "running"
+    rig.hour["now"] = 8                                                       # night_end: back to the switch (off)
+    rig.tick()
+    assert rig.state == "waiting" and "Use my PC switch was turned off" in rig.reason
+
+
 def test_a_session_runs_night_school_on_the_switch_launcher_and_stops_when_the_owner_returns(rig):
     rig.tick()
     assert rig.state == "loading" and rig.synced == [1]

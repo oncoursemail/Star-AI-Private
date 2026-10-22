@@ -15,8 +15,9 @@ the PC, a game starts, the switch starts, or the OFF file appears.
 
 One switch for all PC use: the STAR app's "Use my PC" switch (the setting `use_my_gpu` in the app's settings.json,
 read here and never written) must be on. Off, or a settings file that is missing or unreadable, means no session
-starts, and a running one stops the way it does when the owner returns. `config.json` "app_settings" overrides
-the file's location.
+starts, and a running one stops the way it does when the owner returns. Exception: the app's "Automatically turn
+on at night" (`use_my_pc_auto_night`, on by default) lets sessions run in the night window with the switch off;
+at `night_end` it follows the switch again. `config.json` "app_settings" overrides the file's location.
 
 A session = the GPU switch's own launcher (star/gpu_helper.GpuHelper: the same llama-server command line and
 checks) + night school (`python -m nightschool run`) pointed at it, with its own share of the practice tasks
@@ -86,13 +87,16 @@ def app_settings_path(config: dict) -> Path:
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "star-ai" / "settings.json"
 
 
-def app_switch_blocker(config: dict) -> str:
-    """"" when the app's "Use my PC" switch is on; else why not. Read only; unreadable counts as off."""
+def app_switch_blocker(config: dict, hour: int) -> str:
+    """"" when the app's "Use my PC" switch is on (or it is night and auto-night is on); else why not.
+    Read only; unreadable counts as off."""
     try:
         data = json.loads(app_settings_path(config).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "the STAR app's Use my PC switch is off (its settings could not be read)"
     if isinstance(data, dict) and data.get("use_my_gpu") is True:
+        return ""
+    if isinstance(data, dict) and data.get("use_my_pc_auto_night", True) is True and night_now(config, hour):
         return ""
     return "the STAR app's Use my PC switch is off"
 
@@ -243,7 +247,7 @@ class Turbo:
     def start_blocker(self) -> str:
         if (self.home / "OFF").exists():
             return "off (the OFF file exists)"
-        switch = app_switch_blocker(self.config)
+        switch = app_switch_blocker(self.config, self._hour())
         if switch:
             return switch
         if self._clock() < self.cool_until:
@@ -263,7 +267,7 @@ class Turbo:
     def stop_reason(self) -> str:
         if (self.home / "OFF").exists():
             return "off switch"
-        if app_switch_blocker(self.config):
+        if app_switch_blocker(self.config, self._hour()):
             return "the Use my PC switch was turned off"
         if self.probe.idle_seconds() < float(self.config["back_seconds"]):
             return "the owner is back"

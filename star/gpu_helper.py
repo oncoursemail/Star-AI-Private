@@ -24,6 +24,9 @@ Rules:
     the answer (and any draft warm-up) is done, then stops. Requests made after the switch went off go to the
     server at once, and turning it on again before the answer ends simply keeps the loaded model. Turning it on
     mid-answer affects only the next request.
+  * "Automatically turn on at night" (`use_my_pc_auto_night`, on by default): between NIGHT_START and NIGHT_END
+    o'clock local time the PC may be used even when the switch is off; at NIGHT_END it follows the switch again
+    (a running answer finishes first, like a switch-off). Every rule above still applies.
   * One request at a time (`-np 1`): a second request made meanwhile (a sub-agent, a candidate) goes to the server.
 """
 from __future__ import annotations
@@ -56,8 +59,26 @@ RETRY_SECONDS = 60.0
 CONNECT_SECONDS = 2.0
 SILENCE_SECONDS = 90.0                    # a 32K prompt is read in ~40 s; then tokens arrive every ~30 ms
 
+NIGHT_START, NIGHT_END = 1, 8             # local hours; the same window as the night turbo (server/night_school/pc/turbo.py)
+
 LABELS = {"off": "Off", "starting": "Starting", "ready": "Ready", "busy": "Paused", "idle": "Sleeping",
           "failed": "Failed"}
+
+
+def local_hour() -> int:
+    return time.localtime().tm_hour
+
+
+def night_now(hour: int | None = None) -> bool:
+    hour = local_hour() if hour is None else hour
+    return NIGHT_START <= hour < NIGHT_END
+
+
+def pc_allowed(settings, hour: int | None = None) -> bool:
+    """May STAR use this PC now: the switch is on, or it is night and "Automatically turn on at night" is on."""
+    if getattr(settings, "use_my_gpu", False) is True:
+        return True
+    return getattr(settings, "use_my_pc_auto_night", False) is True and night_now(hour)
 
 
 def threads() -> int:
@@ -187,9 +208,10 @@ class GpuHelper:
     """The PC model server's life: start, health, yield, idle stop, and which state the status line shows."""
 
     def __init__(self, *, popen=subprocess.Popen, gpu=read_gpu, ram=free_ram_mib, image_engine=port_open,
-                 health=healthy, clock=time.monotonic, pick_port=free_port, watchdog: bool = True, warm=warm_up):
+                 health=healthy, clock=time.monotonic, pick_port=free_port, watchdog: bool = True, warm=warm_up, hour=None):
         self._popen, self._gpu, self._ram, self._image_engine = popen, gpu, ram, image_engine
         self._health, self._clock, self._pick_port, self._watchdog = health, clock, pick_port, watchdog
+        self._hour = hour or (lambda: local_hour())
         self._warm = warm             # None: ready as soon as /health answers
         self._lock = threading.RLock()
         self._wake = threading.Event()
@@ -206,6 +228,8 @@ class GpuHelper:
         self.warms = 0                # draft warm-ups on the PC right now (star/prefill_warm.py), not leases
         self.started_at = self.last_used = self.since = 0.0
         self.want_start = False
+        self.switch_on = False        # the owner's switch itself (the helper may also be on for the night)
+        self.night_only = False       # on only because of "Automatically turn on at night"
         self.draining = False         # switched off while a request ran: stop the model when the last one ends
         self.hot_ticks = 0
         self.warming = False
@@ -216,7 +240,8 @@ class GpuHelper:
     def configure(self, settings, home: Path, *, start: bool = False) -> None:
         """Apply the saved settings. Off stops the model. `start`: load it now (the owner just turned the switch
         on); otherwise it loads with the next request that needs it."""
-        on = getattr(settings, "use_my_gpu", False) is True
+        switch = getattr(settings, "use_my_gpu", False) is True
+        on = pc_allowed(settings, self._hour())
         files = files_for(settings, home)
         with self._lock:
             self.idle_seconds = 60.0 * int(getattr(settings, "gpu_idle_minutes", 10) or 10)
@@ -224,6 +249,7 @@ class GpuHelper:
             self.log_path = Path(home) / "logs" / "gpu-helper.log"
             changed = files != self.files
             self.files = files
+            self.switch_on, self.night_only = switch, on and not switch
             if not on:
                 self.enabled = False
                 if self.in_flight or self.warms:      # an answer is running here: let it finish, then stop
@@ -251,9 +277,14 @@ class GpuHelper:
     def status(self) -> dict:
         with self._lock:
             return {"state": self.state, "label": LABELS[self.state], "text": self._text(),
-                    "tokens_per_second": self.tokens_per_second, "enabled": self.enabled}
+                    "tokens_per_second": self.tokens_per_second, "enabled": self.enabled,
+                    "switch": self.switch_on, "night": self.night_only}
 
     def _text(self) -> str:
+        text = self._state_text()
+        return text + (f" On automatically at night until {NIGHT_END:02d}:00." if self.night_only and self.enabled else "")
+
+    def _state_text(self) -> str:
         speed = f" Last answer: {self.tokens_per_second:.1f} tokens per second." if self.tokens_per_second else ""
         fallback = f" The last request went to the server ({self.last_fallback})." if self.last_fallback else ""
         if self.state == "off":
@@ -281,7 +312,7 @@ class GpuHelper:
         Never blocks: a model that is not loaded yet is asked to start, and this request uses the server.
         """
         with self._lock:
-            if not self.enabled:
+            if not self.enabled or (self.night_only and not night_now(self._hour())):
                 return None
             if self.state == "ready" and self.in_flight == 0 and self._alive():
                 self.in_flight = 1
@@ -368,6 +399,14 @@ class GpuHelper:
             if not self.enabled:
                 return
             now = self._clock()
+            if self.night_only and not night_now(self._hour()):     # the night is over: back to the switch (off)
+                self.enabled = self.night_only = False
+                if self.in_flight or self.warms:
+                    self.draining = True
+                else:
+                    self._stop_locked()
+                self._set("off", "")
+                return
             if self.process is not None:
                 code = self.process.poll()
                 if code is not None:

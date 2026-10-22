@@ -33,7 +33,7 @@ export function UsePcSwitch({saved,disabled=false,onChanged}:{saved:boolean;disa
     return ()=>{mounted.current=false;if(timer)clearInterval(timer)}
   },[refresh,disabled])
 
-  const on=status?status.enabled:saved
+  const on=status?(status.switch??status.enabled):saved
   const toggle=async()=>{
     if(disabled||busy)return
     setBusy(true);setProblem('')

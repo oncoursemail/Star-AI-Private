@@ -501,6 +501,39 @@ def test_switching_on_again_mid_answer_keeps_the_loaded_model_for_the_next_reque
     assert len(rig.started) == 1
 
 
+def test_automatic_night_use_runs_with_the_switch_off_and_follows_the_switch_by_day(tmp_path):
+    hour = {"now": 3}
+    for auto, now, runs in ((True, 3, True), (False, 3, False), (True, 14, False), (True, 8, False), (True, 1, True)):
+        rig = Rig(tmp_path)
+        rig.helper._hour = lambda: hour["now"]
+        hour["now"] = now
+        settings = replace(rig.settings, use_my_gpu=False, use_my_pc_auto_night=auto)
+        rig.helper.configure(settings, rig.home, start=True)
+        assert rig.helper.enabled is runs, (auto, now)
+        assert rig.helper.status()["switch"] is False and rig.helper.status()["night"] is runs
+    day = Rig(tmp_path)
+    day.helper._hour = lambda: 14
+    day.helper.configure(replace(day.settings, use_my_gpu=True, use_my_pc_auto_night=False), day.home, start=True)
+    assert day.helper.enabled and day.helper.status()["switch"] is True and day.helper.status()["night"] is False
+    assert gpu_helper.pc_allowed(SimpleNamespace(use_my_gpu=False)) is False      # no setting at all: fails closed
+
+
+def test_the_night_ending_returns_to_the_switch_after_the_running_answer(tmp_path):
+    hour = {"now": 3}
+    rig = Rig(tmp_path)
+    rig.helper._hour = lambda: hour["now"]
+    rig.settings = replace(rig.settings, use_my_gpu=False, use_my_pc_auto_night=True)
+    helper = rig.ready()
+    assert helper.status()["night"] is True and "at night" in helper.status()["text"]
+    assert helper.lease() == helper.base
+    hour["now"] = 8                                   # 08:00: the night is over while an answer runs
+    assert helper.lease() is None                     # a new request already goes to the server
+    helper.tick()
+    assert helper.status()["state"] == "off" and not rig.processes[0].terminated
+    helper.finish(ok=True)
+    assert rig.processes[0].terminated and helper.status()["enabled"] is False
+
+
 def test_a_reader_that_stops_early_frees_the_pc(tmp_path):
     server, local = Fake(), Fake(Stream([chunk("a"), chunk("b"), chunk("c")]))
     rig, client = routed(tmp_path, server, local)
