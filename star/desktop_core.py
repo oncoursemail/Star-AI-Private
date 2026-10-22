@@ -169,9 +169,9 @@ class Settings:
     # and stubs), 'trim' (the note, and filler lines outside code are removed) or 'repair' (the note, after one model
     # call that fixes the exact findings; star/doc_grounding.repair_slop). Off until the owner opts in.
     slop_check: str = 'off'
-    # Opt-in check-fix loop (star/verify_ladder.py): compile -> real API -> run with Roblox mocks on the server ->
-    # tests, with up to verify_rounds targeted fix calls inside verify_budget_s seconds per turn. Off by default.
-    verify_ladder: str = 'off'
+    # Check-fix loop (star/verify_ladder.py): compile -> real API -> run with Roblox mocks on the server ->
+    # tests, with up to verify_rounds targeted fix calls inside verify_budget_s seconds per turn. On by default (owner, 2026-10-22).
+    verify_ladder: str = 'on'
     verify_rounds: int = 2
     verify_budget_s: int = 240
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API

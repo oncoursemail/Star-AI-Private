@@ -221,7 +221,7 @@ def test_finalize_runs_the_ladder_instead_of_the_static_check_only_when_on():
 
 def test_settings_and_eval_switches():
     Settings(verify_ladder="on", verify_rounds=3, verify_budget_s=300).validate()
-    assert Settings().verify_ladder == "off"
+    assert Settings().verify_ladder == "on"
     for bad in ({"verify_ladder": "yes"}, {"verify_rounds": 9}, {"verify_budget_s": 5}):
         with pytest.raises(ValueError):
             Settings(**bad).validate()
