@@ -109,3 +109,33 @@ EDIT-02 stays the exception: the prompt triggers the automatic web search ("late
 per-turn block after the owner's words, so the draft is primed but the block (web text, ~800+ tokens) cannot be known
 before Enter and is read after it (the web search itself runs on the PC before the model request). 94 s -> 25 s: the old tool-list
 re-read is gone, the rest is the web block.
+
+### Quality check: the 20 edit tasks, tools as before vs fixed list (live brain 1, no quiet lock, k=1, greedy)
+Same code, same server, `python -m star.evals`-style runs through `eval_runner.build_real` (driver: arms interleaved per
+task, tool memory forgotten before each ask), arm `off` = `prefill_while_typing=false` (today's tools, 0-3 per task),
+arm `on` = `prefill_while_typing=true` (the fixed 19 tools from the first message; new `--set prefill_while_typing=...`).
+Scored by the suite's unit tests in the Luau VM + Luau check. The tool-choice side first:
+
+| | tasks passed | tool calls made (20 tasks) | median seconds (cold, one-shot) |
+|---|---|---|---|
+| off (tools as before) | 17/20 | 2 (EDIT-10: `star_luau_check` twice, then no code block: fail) | 228 |
+| on (19 fixed tools) | 14/20 | 0 | 250 |
+
+- Tool selection did not drop: with 7 more tool schemas on offer the model made no extra or wrong tool call on any task
+  (off made 2 calls, both the Luau checker, on one task that then failed for having no code block).
+- Pass rate: off-pass/on-fail EDIT-04, 09, 15, 16; off-fail/on-pass EDIT-10; both fail EDIT-05, 20. 4 vs 1 discordant
+  pairs: McNemar exact p = 0.375, so INCONCLUSIVE at k=1 (as every earlier k=1 A/B here), direction negative. Failure
+  kinds differ (a missed edge case twice, a Luau test aborted on `nil` twice, none a tool call), consistent with a
+  different prompt giving a different greedy trajectory rather than a tool effect, but this was not tested beyond k=1.
+  Greedy reruns of the same prompt are not independent samples, so a bigger check needs a larger task set (k>=3 A/Bs, see
+  the oracle notes), not a repeat.
+- Median time of the one-shot task is +22 s with the fixed list: the first request reads ~1.4k more tokens cold. In a
+  chat with type-ahead that read happens once per chat (and the start is identical for every Roblox chat, so a saved
+  prompt start (G0b bank) now serves all of them).
+- Rows: scratchpad tf/evalout/*.json (not in git; evals/results is parsed by the failure ledger).
+
+### Decision / how to turn it on
+Off by default (nothing changes unless `prefill_while_typing` is on). Owner: Settings > Answers > "Start thinking while
+I type". The fixed tool list comes with it (same switch). If the owner wants the speed without the list change, the
+pin is the three lines in `desktop_core.run_task` (`tools_kept.pin(...)`); remove them and the minute-change misses of the
+tool list return (4 of 20 edits: ~90-106 s).
