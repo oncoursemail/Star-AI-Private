@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 import os
 from pathlib import Path
@@ -94,6 +94,7 @@ class Tools:
     fix: Any = None             # async (code, rung, excerpt, members) -> reply text
     tests: str = ""             # tests the caller attached (assert lines against `result`)
     prompt: str = ""
+    first_block: bool = True    # later blocks are usually usage examples: unknown globals there are placeholders
     extra_rungs: list = field(default_factory=list)   # callables (code) -> Rung | None, after `tests`
 
 
@@ -134,6 +135,8 @@ def check_compile(code: str, tools: Tools) -> Rung:
     if not isinstance(report, dict) or report.get("ran") is not True:
         return Rung("compile", "skip", "the Luau check did not run")
     errors = effective_errors(report, tools.prompt)
+    if not tools.first_block:       # as the grader: `require(path.to.Module)` in an example is a placeholder
+        errors = [e for e in errors if not _UNKNOWN_GLOBAL.search(str(e.get("message")))]
 
     def unknown_globals(items) -> set[str]:
         return {m.group(1) for e in items if (m := _UNKNOWN_GLOBAL.search(str(e.get("message"))))}
@@ -401,9 +404,10 @@ _ASSERT_LINE = re.compile(r"^assert\(.{4,300}\)$")
 
 def parse_tests(reply: str) -> str:
     """Two to six one-line `assert(...)` statements from one fenced block (they run only in the server sandbox)."""
+    from .eval_checks import strip_luau
     found = _FENCE.search(_THINK.sub("", reply or ""))
-    lines = [line.strip() for line in (found.group(1) if found else "").splitlines() if line.strip()]
-    lines = [line.rstrip(";") for line in lines if not line.startswith("--")]
+    body = strip_luau(found.group(1)) if found else ""          # trailing `-- notes` the model adds
+    lines = [line.strip().rstrip(";").strip() for line in body.splitlines() if line.strip()][:6]
     if not 2 <= len(lines) <= 6 or not all(_ASSERT_LINE.match(line) and "--" not in line and
                                           line.count("(") == line.count(")") for line in lines):
         raise ValueError("expected two to six one-line assert(...) statements")
@@ -496,12 +500,13 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
         try:
             reply = await asyncio.wait_for(tools.fix(current, failure, _members(failure.classes, tools.dump)),
                                            timeout=max(1.0, left() - 5))
-            _took(state, "fix", since)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             record["stopped"] = "fix call failed (" + type(exc).__name__ + ")"
             break
+        finally:
+            _took(state, "fix", since)
         candidate = parse_fix(reply)
         if (not candidate or candidate.strip() == current.strip()
                 or len(candidate.strip()) < 0.5 * len(current.strip())):
@@ -641,7 +646,7 @@ async def review(answer: str, tools: Tools, *, rounds: int = 2, budget: float = 
     _emit(on_event, {"event": "verify_started", "blocks": min(len(blocks), MAX_BLOCKS)})
     records, replacements = [], []
     for number, (start, end, code) in enumerate(blocks[:MAX_BLOCKS], 1):
-        record = await verify_block(code, tools, rounds=rounds, left=left)
+        record = await verify_block(code, replace(tools, first_block=number == 1), rounds=rounds, left=left)
         record["block"] = number
         failure = first_failure(record["_rungs"])
         record["signature"] = failure.signature if failure else ""

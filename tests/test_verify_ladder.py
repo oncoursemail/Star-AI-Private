@@ -101,6 +101,16 @@ def test_invented_members_fail_the_api_rung_with_the_real_member_list():
     assert vl.check_api(INVENTED.replace("Colour", "Color"), tools).status == "pass"
 
 
+def test_unknown_globals_in_a_usage_example_block_are_placeholders_as_in_the_grader():
+    def check(code, strict=False):
+        return {"ran": True, "ok": False, "errors": [{"line": 1, "column": 1, "kind": "TypeError",
+                                                    "message": "Unknown global 'path'; consider assigning to it first"}]}
+    example = "local M = require(path.to.Module)\n"
+    assert vl.check_compile(example, vl.Tools(checker=check)).status == "fail"
+    second = vl.check_compile(example, vl.Tools(checker=check, first_block=False))
+    assert second.status == "pass" and second.context == ("path",)
+
+
 def test_ranking_prefers_getting_further_then_fewer_errors():
     fail = lambda rung, n=1: vl.Rung(rung, "fail", errors=n)  # noqa: E731
     ok = lambda rung: vl.Rung(rung, "pass")                    # noqa: E731
@@ -166,6 +176,8 @@ def test_generated_tests_are_written_once_run_and_reported_as_generated():
     asyncio.run(vl.run_rungs(module, vl.Tools(checker=checker, write_tests=write_tests, runner=runner), state))
     assert len(written) == 1
     assert vl.parse_tests("```luau\nassert(#result.list({1, 2}) == 2)\nassert(result.add(1, 1) == 2)\n```")
+    assert vl.parse_tests("```luau\nassert(result.a() == 1) -- a note\n-- Let's check more.\nassert(result.b() == 2)\n```"
+                          ) == "assert(result.a() == 1)\nassert(result.b() == 2)\n"
     for bad in ("```luau\nassert(true)\n```", "```luau\nprint(1)\nassert(result.x == 1)\n```", "no fence"):
         with pytest.raises(ValueError):
             vl.parse_tests(bad)
