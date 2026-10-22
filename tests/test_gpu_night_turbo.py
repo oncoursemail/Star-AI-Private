@@ -75,7 +75,8 @@ def rig(tmp_path, monkeypatch):
     killed = []
     monkeypatch.setattr(turbo, "kill_tree", lambda proc: (killed.append(proc.pid), setattr(proc, "returncode", 1)))
     monkeypatch.setattr(turbo.time, "sleep", lambda _s: None)
-    config = dict(turbo.DEFAULTS, app=str(tmp_path / "app"), python="py.exe", llama_server="ls.exe", model="m.gguf",
+    (tmp_path / "settings.json").write_text('{"use_my_gpu": true}', encoding="utf-8")   # the app's switch, on
+    config = dict(turbo.DEFAULTS, app=str(tmp_path / "app"), app_settings=str(tmp_path / "settings.json"), python="py.exe", llama_server="ls.exe", model="m.gguf",
                   knowledge_url="http://knowledge.invalid:8091", server_ssh="star@host.invalid")
     spawned, synced, merged = [], [], []
 
@@ -137,6 +138,23 @@ def test_off_file_games_the_gpu_switch_and_other_gpu_users_block_a_start(rig):
     assert rig.start_blocker() == ""
 
 
+def test_the_apps_use_my_pc_switch_gates_every_session(rig):
+    settings = rig.home.parent / "settings.json"
+    for text in ('{"use_my_gpu": false}', "{}", '{"use_my_gpu": "yes"}', "not json", None):
+        if text is None:
+            settings.unlink()                                      # no settings file: off, never "on by default"
+        else:
+            settings.write_text(text, encoding="utf-8")
+        assert "Use my PC switch is off" in rig.start_blocker()
+        rig.tick()
+        assert rig.state == "waiting" and rig.helper.configured is None and not rig.spawned
+    settings.write_text('{"use_my_gpu": true}', encoding="utf-8")
+    assert rig.start_blocker() == ""
+    rig.tick()
+    assert rig.state == "loading"
+    assert settings.read_text(encoding="utf-8") == '{"use_my_gpu": true}'      # read only
+
+
 def test_a_session_runs_night_school_on_the_switch_launcher_and_stops_when_the_owner_returns(rig):
     rig.tick()
     assert rig.state == "loading" and rig.synced == [1]
@@ -179,6 +197,7 @@ def test_a_session_runs_night_school_on_the_switch_launcher_and_stops_when_the_o
 
 @pytest.mark.parametrize("change, words", [
     (lambda r: (r.home / "OFF").write_text("off"), "off switch"),
+    (lambda r: (r.home.parent / "settings.json").write_text('{"use_my_gpu": false}'), "Use my PC switch was turned off"),
     (lambda r: setattr(r.probe, "full", True), "full-screen"),
     (lambda r: r.probe.procs.update({301: "llama-server.exe"}), "another llama-server"),
     (lambda r: setattr(r.worker, "returncode", 3), "night school exited (code 3)"),

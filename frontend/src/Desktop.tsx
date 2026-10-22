@@ -42,6 +42,7 @@ import './polish.css'
 import './start-canvas.css'
 import {ActivityTimeline,RunStatus} from './ActivityTimeline'
 import {applyProgress,isRich,settleRun,startRun,type ActivityRun,type ProgressPayload} from './activity'
+import {UsePcSwitch} from './UsePcSwitch'
 import {classifyFailure,connectionTarget,describeConnection,type LastOutcome} from './connection'
 import {instant,pageFade} from './motion'
 import {useDraftWarm} from './draftWarm'
@@ -856,6 +857,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
                teamMode={teamMode} onTeamMode={on=>{setTeamMode(on);composerRef.current?.focus()}} team={team}
                research={research} onResearch={setResearch} web={web} githubSource={githubSource} onGithubSource={setGithubSource}
                connection={connection} onOpenConnection={()=>nav('brain')}
+               usePc={data.settings.provider==='star_server'?<UsePcSwitch saved={draft.use_my_gpu===true} disabled={inactive} onChanged={on=>{setDraft(d=>({...d,use_my_gpu:on}));setData(d=>({...d,settings:{...d.settings,use_my_gpu:on}}))}}/>:undefined}
                onLookAtScreen={()=>{consentConfirmed.current=false;setScreenAsk(true)}} previews={previews}
                song={data.settings.music_recognition_enabled===true?{lookup:songLookup&&files.includes(songLookup.file)?songLookup:null,onLookup:setSongLookup}:undefined}/>
              {empty?(classicHome?<div className="starters" role="group" aria-label="Starting points">{starters.map(item=><button key={item.label} type="button" className="starter" onClick={()=>fillComposer(item.prompt)}><item.icon size={15} aria-hidden="true"/><span>{item.label}</span></button>)}</div>:null)

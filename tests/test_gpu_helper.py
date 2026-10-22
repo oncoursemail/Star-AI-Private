@@ -3,6 +3,7 @@
 Everything here runs with fakes: no process, no nvidia-smi, no network.
 """
 import asyncio
+from dataclasses import replace
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -445,6 +446,59 @@ def test_tool_calls_are_held_until_the_pc_finished_and_dropped_if_it_breaks(tmp_
     got = asyncio.run(collect(asyncio.run(client.chat.completions.create(**REQUEST, stream=True))))
     assert [bool(i.choices[0].delta.tool_calls) for i in got] == [False, True, False]   # the server's call only
     assert server.requests[0]["messages"][-1] == {"role": "assistant", "content": "Let me look. "}
+
+
+def test_switching_off_mid_answer_lets_the_answer_finish_on_the_pc_then_stops_it(tmp_path):
+    tool = SimpleNamespace(index=0, id="call_1", function=SimpleNamespace(name="read_file", arguments='{"path": "a"}'))
+    server = Fake(Stream([chunk("server for the next request")]))
+    local = Fake(Stream([chunk("Let me look. "), chunk("Reading. "), chunk(tool=tool), chunk(finish="tool_calls")]))
+    rig, client = routed(tmp_path, server, local)
+    process = rig.processes[0]
+    off = replace(rig.settings, use_my_gpu=False)
+    seen = []
+
+    async def answer():
+        stream = await client.chat.completions.create(**REQUEST, stream=True)
+        async for item in stream:
+            seen.append("tool" if item.choices[0].delta.tool_calls else "text" if item.choices[0].delta.content else "end")
+            if len(seen) == 1:                       # the owner flips the switch while the PC is answering
+                rig.helper.configure(off, rig.home)
+                assert rig.helper.status()["state"] == "off" and rig.helper.status()["enabled"] is False
+                assert process.terminated is False   # the running answer is not cut
+    asyncio.run(answer())
+    assert seen == ["text", "text", "tool", "end"]   # complete: text, then the whole tool call, no error
+    assert not server.requests and process.terminated and rig.helper.in_flight == 0
+    assert rig.helper.status()["state"] == "off" and rig.helper.last_fallback == ""
+    assert rig.helper.lease() is None                # the next request goes to the server
+    got = asyncio.run(collect(asyncio.run(client.chat.completions.create(**REQUEST, stream=True))))
+    assert text_of(got) == "server for the next request" and len(rig.started) == 1
+
+
+def test_switching_off_when_nothing_runs_stops_at_once_and_a_late_failure_does_not_show_failed(tmp_path):
+    rig = Rig(tmp_path)
+    helper = rig.ready()
+    off = replace(rig.settings, use_my_gpu=False)
+    helper.configure(off, rig.home)
+    assert rig.processes[0].terminated and helper.state == "off"
+    rig = Rig(tmp_path)
+    helper = rig.ready()
+    assert helper.lease()
+    helper.configure(off, rig.home)
+    helper.finish(ok=False, reason="the graphics card server stopped answering", hard=True)
+    assert rig.processes[0].terminated and helper.state == "off" and helper.status()["label"] == "Off"
+
+
+def test_switching_on_again_mid_answer_keeps_the_loaded_model_for_the_next_request(tmp_path):
+    rig = Rig(tmp_path)
+    helper = rig.ready()
+    assert helper.lease()
+    off = replace(rig.settings, use_my_gpu=False)
+    helper.configure(off, rig.home)
+    helper.configure(rig.settings, rig.home)         # back on before the answer ended
+    assert helper.state == "ready" and not rig.processes[0].terminated
+    helper.finish(ok=True)
+    assert not rig.processes[0].terminated and helper.lease() == helper.base
+    assert len(rig.started) == 1
 
 
 def test_a_reader_that_stops_early_frees_the_pc(tmp_path):

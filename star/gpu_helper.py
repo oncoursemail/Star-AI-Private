@@ -20,6 +20,10 @@ Rules:
     shown continues on the server from that text (the server continues a final assistant message; measured on
     llama.cpp b11541). Tool calls from the PC are held back until its answer is complete, so a break never leaves
     half a tool call behind. The only visible trace is the status line in Settings.
+  * Turning the switch off while an answer runs on the PC does not cut that answer: the model keeps running until
+    the answer (and any draft warm-up) is done, then stops. Requests made after the switch went off go to the
+    server at once, and turning it on again before the answer ends simply keeps the loaded model. Turning it on
+    mid-answer affects only the next request.
   * One request at a time (`-np 1`): a second request made meanwhile (a sub-agent, a candidate) goes to the server.
 """
 from __future__ import annotations
@@ -202,6 +206,7 @@ class GpuHelper:
         self.warms = 0                # draft warm-ups on the PC right now (star/prefill_warm.py), not leases
         self.started_at = self.last_used = self.since = 0.0
         self.want_start = False
+        self.draining = False         # switched off while a request ran: stop the model when the last one ends
         self.hot_ticks = 0
         self.warming = False
         self.tokens_per_second: float | None = None
@@ -221,13 +226,20 @@ class GpuHelper:
             self.files = files
             if not on:
                 self.enabled = False
-                self._stop_locked()
+                if self.in_flight or self.warms:      # an answer is running here: let it finish, then stop
+                    self.draining = True
+                else:
+                    self._stop_locked()
                 self._set("off", "")
                 return
             if changed and self.process is not None:
                 self._stop_locked()
                 self._set("idle", "")
-            if not self.enabled or self.state in ("off", "failed", "idle"):
+            resumed = self.draining and self.process is not None
+            self.draining = False
+            if resumed:                              # switched back on before the answer ended: still loaded
+                self._set("ready", "")
+            elif not self.enabled or self.state in ("off", "failed", "idle"):
                 if self.state != "idle":
                     self._set("idle", "")
                 self.want_start = self.want_start or start
@@ -297,6 +309,8 @@ class GpuHelper:
         with self._lock:
             self.warms = max(0, self.warms - 1)
             self.last_used = self._clock()
+            if self.draining and not self.warms and not self.in_flight:
+                self._stop_locked()
 
     def finish(self, *, ok: bool, reason: str = "", hard: bool = False, tokens_per_second: float | None = None):
         """End of a leased request. `hard`: the PC server itself failed (connection, timeout); it is stopped."""
@@ -308,7 +322,10 @@ class GpuHelper:
             self.last_fallback = "" if ok else reason[:120]
             if not ok and hard:
                 self._stop_locked()
-                self._set("failed", reason[:160] or "the graphics card server stopped answering")
+                if self.enabled:
+                    self._set("failed", reason[:160] or "the graphics card server stopped answering")
+            elif self.draining and not self.warms:
+                self._stop_locked()
 
     def yield_to(self, reason: str) -> None:
         """Stop now (for the image engine): the card is never shared by two big models."""
@@ -461,6 +478,7 @@ class GpuHelper:
 
     def _stop_locked(self) -> None:
         process, self.process, self.base, self.in_flight, self.warming = self.process, None, "", 0, False
+        self.draining = False
         if process is None:
             return
         try:

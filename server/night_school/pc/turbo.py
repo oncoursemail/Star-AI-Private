@@ -13,6 +13,11 @@ llama-server (the STAR app's "Use my GPU" switch), no program from `block_proces
 rules (free video memory, free RAM, ComfyUI). It stops within seconds when any of that changes: the owner touches
 the PC, a game starts, the switch starts, or the OFF file appears.
 
+One switch for all PC use: the STAR app's "Use my PC" switch (the setting `use_my_gpu` in the app's settings.json,
+read here and never written) must be on. Off, or a settings file that is missing or unreadable, means no session
+starts, and a running one stops the way it does when the owner returns. `config.json` "app_settings" overrides
+the file's location.
+
 A session = the GPU switch's own launcher (star/gpu_helper.GpuHelper: the same llama-server command line and
 checks) + night school (`python -m nightschool run`) pointed at it, with its own share of the practice tasks
 (`share`, default 2/4: server 1 has 0,1/4, server 2 3/4), the tasks server 1 already answered left out, server 1's
@@ -55,6 +60,7 @@ DEFAULTS = {
     "other_gpu_percent": 15,              # another process this busy on the card (two looks in a row) blocks
     "block_processes": [],                # program names (e.g. "RobloxPlayerBeta.exe") that always block
     "back_seconds": 10,                   # input this recent while running = the owner is back
+    "app_settings": "",                   # the STAR app's settings.json; "" = <app data>/STAR/settings.json
 }
 POLL_S = 2.0
 GPU_LOOK_S = 15.0
@@ -70,6 +76,25 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 def default_home() -> Path:
     return Path(os.environ.get("STAR_TURBO_HOME") or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "STAR-night-turbo")
+
+
+def app_settings_path(config: dict) -> Path:
+    if config.get("app_settings"):
+        return Path(config["app_settings"]).expanduser()
+    if os.name == "nt":
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "STAR" / "settings.json"
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "star-ai" / "settings.json"
+
+
+def app_switch_blocker(config: dict) -> str:
+    """"" when the app's "Use my PC" switch is on; else why not. Read only; unreadable counts as off."""
+    try:
+        data = json.loads(app_settings_path(config).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "the STAR app's Use my PC switch is off (its settings could not be read)"
+    if isinstance(data, dict) and data.get("use_my_gpu") is True:
+        return ""
+    return "the STAR app's Use my PC switch is off"
 
 
 def load_config(home: Path) -> dict:
@@ -218,6 +243,9 @@ class Turbo:
     def start_blocker(self) -> str:
         if (self.home / "OFF").exists():
             return "off (the OFF file exists)"
+        switch = app_switch_blocker(self.config)
+        if switch:
+            return switch
         if self._clock() < self.cool_until:
             return "cooling down after a failure"
         night = night_now(self.config, self._hour())
@@ -235,6 +263,8 @@ class Turbo:
     def stop_reason(self) -> str:
         if (self.home / "OFF").exists():
             return "off switch"
+        if app_switch_blocker(self.config):
+            return "the Use my PC switch was turned off"
         if self.probe.idle_seconds() < float(self.config["back_seconds"]):
             return "the owner is back"
         if self.worker is not None and self.worker.poll() is not None:
