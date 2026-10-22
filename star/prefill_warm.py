@@ -398,12 +398,13 @@ def warm_draft(settings: Settings, home: Path, chat_id: str | None, text: str, *
             if pc_base is None and kind == 'lan':
                 scope = memory_scope_for(settings, chat_id)
 
-                async def others_busy() -> bool:
+                async def probe_others() -> bool:
                     # This app's own draft is marked (own_warm_started), so a busy slot here is another client's.
                     try:
                         return bool(await probe(settings, request['model'], conversation=scope))
                     except Exception:
                         return False
+                others_busy = probe_others
             result = asyncio.run(_send_prefix(settings, request, cancel_event, pc_base, str(chat_id or ''),
                                               others_busy))
         except Exception as exc:
