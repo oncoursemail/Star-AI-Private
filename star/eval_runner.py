@@ -501,7 +501,7 @@ class PlannedSandbox:
         return self.default.lock_present(*args, **kwargs)
 
 
-_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check"})
+_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check", "prefill_while_typing"})
 
 
 def parse_sets(pairs: list[str]) -> dict:

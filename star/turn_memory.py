@@ -20,12 +20,22 @@ a secret, and a restart simply starts again):
    under the settings of that moment. A source the owner switched off, a
    revoked recipe or a removed vault therefore drops out at once.
 
+   With "Start thinking while I type" on, a Roblox conversation also starts with one fixed set (`pin`): the
+   tools that ordinary code and bug-fix messages pick up by accident from a single word ("audit", "update",
+   "bug", "time in UTC", a calculation). Without it each of those messages added one to three tools in the
+   middle of a chat, the start of the prompt changed, and the server read the whole prompt again (~90 s on
+   star-fast) although the owner's draft had been read while typing.
+
 2. The shape of the last request (model, tool list, guidance), overall and per
    model. The post-answer warm-up uses it to prime the request the next message
    will most likely send, instead of always priming plain chat (which, on one
    slot, would replace a cached tool prompt).
 """
 from __future__ import annotations
+
+# Fed to every tool source like an earlier prompt (so each source applies its own settings and permissions): it
+# selects the Roblox game tools, the craft audit/recipe pair, the DevForum tools, the calculator and the clock.
+ROBLOX_FIXED_TOOLS = "Roblox game: audit the UI, search the devforum, calculate 2 + 2 and show the time in UTC"
 
 _CONVERSATIONS: dict[str, "TurnMemory"] = {}
 _MAX_CONVERSATIONS = 32
@@ -39,6 +49,7 @@ class TurnMemory:
     def __init__(self, *, sticky: bool = False):
         self.sticky = sticky
         self.prompts: list[str] = []     # earlier prompts that brought a tool in
+        self.pinned: list[str] = []      # texts every turn selects tools for as well (ROBLOX_FIXED_TOOLS)
         self.order: list[str] = []       # tool names, in the order they were first attached
         self.shape: dict | None = None   # the last request: {'model', 'tools', 'guidance'}
         self.shapes: dict[str, dict] = {}  # the last request sent to each model
@@ -52,12 +63,17 @@ class TurnMemory:
             return list(select(prompt))
         chosen: list[dict] = []
         seen: set[str] = set()
-        for text in (prompt, *self.prompts):
+        for text in (prompt, *self.pinned, *self.prompts):
             for tool in select(text):
                 if tool["name"] not in seen:
                     seen.add(tool["name"])
                     chosen.append(tool)
         return chosen
+
+    def pin(self, text: str) -> None:
+        """From now on every turn also selects the tools `text` would select (same settings, same permissions)."""
+        if text not in self.pinned:
+            self.pinned.append(text)
 
     def arrange(self, definitions: list[dict], prompt: str) -> list[dict]:
         """Put the whole tool list in first-attachment order and remember what is new."""
