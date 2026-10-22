@@ -57,7 +57,7 @@ PRODUCT_FAILURES = ("Model-call limit exceeded", "streamed no visible answer", "
 LOCK_LIMIT_SECONDS = 3 * 3600
 _PRIVATE_IP = re.compile(r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b")
 _KEEP_EVENTS = {"route_selected", "knowledge_finished", "luau_check_finished", "skill_packs", "api_hints",
-                "slop_repair"}
+                "slop_repair", "verify_finished"}
 
 
 def _lf(data):
@@ -501,7 +501,8 @@ class PlannedSandbox:
         return self.default.lock_present(*args, **kwargs)
 
 
-_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check"})
+_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check", "verify_ladder", "verify_rounds",
+                       "verify_budget_s"})
 
 
 def parse_sets(pairs: list[str]) -> dict:
@@ -513,7 +514,7 @@ def parse_sets(pairs: list[str]) -> dict:
         name, value = name.strip(), value.strip()
         if not sep or name not in _SETTABLE:
             raise SystemExit(f"--set {pair!r}: expected NAME=VALUE with NAME one of {', '.join(sorted(_SETTABLE))}")
-        out[name] = {"true": True, "false": False}.get(value.lower(), value)
+        out[name] = int(value) if value.isdigit() else {"true": True, "false": False}.get(value.lower(), value)
     return out
 
 

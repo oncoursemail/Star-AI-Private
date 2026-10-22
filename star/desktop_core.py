@@ -169,6 +169,11 @@ class Settings:
     # and stubs), 'trim' (the note, and filler lines outside code are removed) or 'repair' (the note, after one model
     # call that fixes the exact findings; star/doc_grounding.repair_slop). Off until the owner opts in.
     slop_check: str = 'off'
+    # Opt-in check-fix loop (star/verify_ladder.py): compile -> real API -> run with Roblox mocks on the server ->
+    # tests, with up to verify_rounds targeted fix calls inside verify_budget_s seconds per turn. Off by default.
+    verify_ladder: str = 'off'
+    verify_rounds: int = 2
+    verify_budget_s: int = 240
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
     # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
     api_hints_enabled: bool = False
@@ -244,6 +249,10 @@ class Settings:
             raise ValueError('Best-of-N must be off or auto, with 2 to 8 candidates')
         if self.slop_check not in ('off', 'flag', 'trim', 'repair'):
             raise ValueError('Slop check must be off, flag, trim or repair')
+        if (self.verify_ladder not in ('off', 'on') or type(self.verify_rounds) is not int
+                or not 0 <= self.verify_rounds <= 4 or type(self.verify_budget_s) is not int
+                or not 30 <= self.verify_budget_s <= 900):
+            raise ValueError('Check-fix loop must be off or on, with 0 to 4 rounds and a 30 to 900 second budget')
         if type(self.specialist_parallelism) is not int or self.specialist_parallelism not in (1,2):
             raise ValueError('Limit specialists to 1 or 2 concurrent model calls')
         if (type(self.team_timeout_min) is not int or type(self.team_timeout_max) is not int
