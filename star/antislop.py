@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from functools import lru_cache
 import os
-from pathlib import Path
 import re
 
 from .agent_skills import _frontmatter
