@@ -147,6 +147,7 @@ class Settings:
     practice_lessons_enabled: bool = False  # off until the owner opts in
     worked_examples_enabled: bool = False   # read-only retrieval, off until owner opts in
     gold_examples_enabled: bool = False     # verified licence-recorded examples (star/gold_bank.py), opt-in
+    studio_atlas: bool = True               # tested reference systems by capability (star/studio_atlas.py); retrieval only
     presolve_enabled: bool = False          # overnight pre-solved answers (star/presolve.py), off until owner opts in
     # Owner default (O1): night school's text lessons that won the paired gate go live for 14 days, visibly, with undo
     # (star/learned_week.py). False = bundles only add candidates that wait for review.
@@ -237,7 +238,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'edit_diff', 'music_recognition_enabled')):
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -1214,6 +1215,18 @@ async def reference_sections(settings: Settings, home: Path, route, prompt: str,
             example_extra_chars += len(pit_block) + len(mistake_memory.HEADING) + 2
             turn_sections.append((mistake_memory.HEADING, pit_block))
             event({'event': 'mistake_memory_used', 'signatures': pit_used, 'chars': len(pit_block)})
+    # Studio Atlas (star/studio_atlas.py): the closest tested reference system(s) when the request matches, Roblox route only.
+    if settings.studio_atlas is True and route.profile == 'roblox' and not quick:
+        from . import studio_atlas
+        atlas_room = min(studio_atlas.MAX_BLOCK_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
+                                                           - len(studio_atlas.HEADING) - 2 - min(10000, memory_limit)
+                                                           - len(docs.block) - len(document_block)
+                                                           - len(pack_block) - len(error_block)))
+        atlas_block, atlas_used = studio_atlas.select(prompt, max_chars=atlas_room)
+        if atlas_block:
+            example_extra_chars += len(atlas_block) + len(studio_atlas.HEADING) + 2
+            turn_sections.append((studio_atlas.HEADING, atlas_block))
+            event({'event': 'studio_atlas_used', 'ids': [item.id for item in atlas_used], 'chars': len(atlas_block)})
     # Opt-in project rules (star/project_rules.py): the workspace's AGENTS.md, as reference data.
     rules_chars = 0
     if settings.project_rules_enabled is True and settings.workspace and not quick:
