@@ -107,7 +107,11 @@ model-card sampling defaults and automatic room for answers. These are
 mitigations, not evidence that no model/quantization can ever loop.
 
 On the machine **running Strata**, open its `strata-<model>.json` config and
-add this top-level setting (not inside `args` or `sampling`):
+add this top-level setting (not inside `args` or `sampling`).
+In STAR Settings → Model, **Apply engine loop recovery…** can do this edit
+from a native file picker, saving an exact local backup first. The button
+works only when the Strata config already exists and never downloads the
+engine/model:
 
 ```json
 "reasoning_loop_recovery": "recover"
