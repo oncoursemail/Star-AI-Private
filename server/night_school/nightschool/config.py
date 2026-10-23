@@ -30,6 +30,10 @@ class Settings:
     # STAR's resource planner (star/resource_planner_service.py) on this machine; "off" = only the idle gate above.
     # Planner down or without fresh data: the idle gate decides, exactly as before.
     planner_url: str = field(default_factory=lambda: _env("STAR_NS_PLANNER_URL", "http://127.0.0.1:8098"))
+    # "priority": brain_url goes through STAR's priority proxy (star/priority_proxy.py, e.g. http://127.0.0.1:8097/p3),
+    # which pauses night school's generation for the owner's chat and resumes it; so night school works beside other
+    # clients (no idle wait, no cancel). HOLD and the quiet lock still stop it. Proxy not answering: the idle gate.
+    gate: str = field(default_factory=lambda: _env("STAR_NS_GATE", "idle"))
     # Parallel practice lanes (each its own planner lease and its own slot: slot, slot + 1, ...). Lanes 2..N run only
     # while the planner admits them; with the planner off or down night school is single-lane, as before.
     # The model that drafts lessons (the "diagnose" step, 260 tokens). "" = the answer model. star-quick (its own

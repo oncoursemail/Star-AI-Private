@@ -544,9 +544,22 @@ def run_cycle(settings, ask, validators: Validators, *, now: dt.datetime | None 
     jobs.append(("ideas", ideas_prompt(docs, seen_categories, 4), {"docs": [d[0] for d in docs]}))
     jobs.append(("ideas", ideas_prompt(docs, list(reversed(seen_categories)), 4), {"docs": [d[0] for d in docs]}))
     used_model = ""
+    # Steps finished by a cycle that yielded (owner chat, restart) are not asked again: their tasks are already in the
+    # pool file, only their counts come back. The checkpoint is dropped when a cycle finishes (_finish).
+    from star.task_checkpoint import StepCheckpoint, step_key
+    checkpoint = StepCheckpoint(settings.conductor_dir / "checkpoint.json", scope=night)
     for kind, user, info in jobs[:MAX_CALLS_PER_CYCLE]:
         if not models or tally.accepted >= min(budget, MAX_ACCEPT_PER_CYCLE):
             break
+        key = step_key(kind, user)
+        done = checkpoint.get(key)
+        if isinstance(done, dict):
+            tally.created += int(done.get("created", 0))
+            tally.accepted += int(done.get("accepted", 0))
+            tally.by_kind[kind] = tally.by_kind.get(kind, 0) + int(done.get("accepted", 0))
+            used_model = str(done.get("model") or used_model)
+            continue
+        created_before, accepted_before = tally.created, tally.accepted
         reply, error = "", ""
         for name in list(models):
             try:
@@ -605,6 +618,8 @@ def run_cycle(settings, ask, validators: Validators, *, now: dt.datetime | None 
             tally.by_kind[kind] = tally.by_kind.get(kind, 0) + 1
             _write_night_tasks(path, night_tasks)
             _keep_reference(settings, night, task, raw["reference"])
+        checkpoint.put(key, {"created": tally.created - created_before, "accepted": tally.accepted - accepted_before,
+                             "model": used_model})
     return _finish(settings, state, tally, failures, night, used_model, log)
 
 
@@ -642,6 +657,10 @@ def _finish(settings, state: dict, tally: Tally, failures: list[dict], night: st
     state["finished_at"] = time.time()
     state["finished"] = utc()
     save_state(settings, state)
+    try:                                       # the counts are in the state now: a checkpoint would count them twice
+        (settings.conductor_dir / "checkpoint.json").unlink()
+    except OSError:
+        pass
     text = build_report(settings, state)
     write_report(settings, night, text, state)
     log(f"night conductor: created {tally.created}, accepted {tally.accepted}, rejected {sum(tally.rejected.values())}"

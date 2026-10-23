@@ -51,6 +51,7 @@ def bootstrap(settings) -> str:
     key = read_key(settings.key_file)
     if key:
         os.environ["STAR_SERVER_API_KEY"] = key
+    os.environ.setdefault("STAR_PRIORITY", "P3")     # background class for the brain's priority proxy
     if settings.packs:
         os.environ["STAR_SKILL_PACKS"] = settings.packs
     return key
@@ -86,7 +87,8 @@ def pin_slots(slot_of):
         limits = providers.call_limits(settings)
         timeout = httpx.Timeout(request_timeout or limits.request_timeout, connect=limits.connect_timeout)
         client = httpx.AsyncClient(trust_env=False, timeout=timeout, transport=PinTransport())
-        return AsyncOpenAI(base_url=endpoint, api_key=key, timeout=timeout, max_retries=0, http_client=client)
+        return AsyncOpenAI(base_url=endpoint, api_key=key, timeout=timeout, max_retries=0, http_client=client,
+                           default_headers={"X-Star-Priority": os.environ.get("STAR_PRIORITY", "P3")})
 
     replaced = []
     for module in list(sys.modules.values()):

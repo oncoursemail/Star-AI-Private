@@ -224,7 +224,11 @@ def open_client(settings, *, request_timeout: float | None = None):
     timeout = httpx.Timeout(request_timeout or limits.request_timeout, connect=limits.connect_timeout)
     extra = {} if limits.trust_env else {
         "http_client": httpx.AsyncClient(trust_env=False, timeout=timeout)}
-    return AsyncOpenAI(base_url=endpoint, api_key=key, timeout=timeout, max_retries=0, **extra)
+    # The owner's own STAR server schedules by class (star/priority_proxy.py): STAR_PRIORITY=P0..P3 says how urgent
+    # this process is (night school and evals P3). Sent only to the owner's server, never to a cloud provider.
+    priority = os.environ.get("STAR_PRIORITY", "").strip().upper()
+    headers = {"X-Star-Priority": priority} if priority in ("P0", "P1", "P2", "P3") and provider_kind(settings) == "lan"         else None
+    return AsyncOpenAI(base_url=endpoint, api_key=key, timeout=timeout, max_retries=0, default_headers=headers, **extra)
 
 # Context size and slot count last reported by a server's own /props endpoint.
 # Process memory only: nothing here is a secret and nothing is written to disk.
