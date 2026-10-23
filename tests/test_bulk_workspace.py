@@ -152,7 +152,8 @@ def test_aliases_are_refused_even_inside_workspace(tmp_path, kind):
     assert (folder / "a.txt").read_bytes() == b"old"
 
 
-@pytest.mark.parametrize("data", [b"old\x00binary", b"old\xff", b"x" * (bulk.MAX_FILE_BYTES + 1)])
+@pytest.mark.parametrize("data", [b"old\x00binary", b"old\xff", b"x" * (bulk.MAX_FILE_BYTES + 1)],
+                         ids=["nul", "bad-utf8", "oversize"])
 def test_nontext_and_large_files_are_refused(tmp_path, data):
     (tmp_path / "a.txt").write_bytes(data)
     with pytest.raises(ValueError):
@@ -180,7 +181,7 @@ def test_combined_before_after_budget_is_enforced(tmp_path):
 
 def test_diff_is_bounded_and_truncation_explicit(tmp_path):
     before = "".join(f"old line {i}\n" for i in range(300))
-    (tmp_path / "a.txt").write_text(before, encoding="utf-8")
+    (tmp_path / "a.txt").write_text(before, encoding="utf-8", newline="")
     plan = bulk.preview_edits(tmp_path, [edit("a.txt", before, before.replace("old", "new"))])
     item = plan["files"][0]
     assert len(item["diff"]) <= bulk.MAX_DIFF_CHARS
