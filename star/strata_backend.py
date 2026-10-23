@@ -127,6 +127,41 @@ def request_extras(plan: StrataPlan) -> dict:
     return {"reasoning_effort": plan.reasoning_effort, "top_k": plan.top_k}
 
 
+async def probe(settings: Any, *, endpoint: str | None = None, model: str | None = None) -> dict:
+    """Make one tiny real completion against Strata without changing saved settings."""
+    from time import monotonic
+    from .brain_router import validate_alias
+    from .providers import open_client
+
+    target = validate_endpoint(endpoint or getattr(settings, "strata_endpoint", ""))
+    name = str(model or getattr(settings, "strata_model", "") or "").strip()
+    validate_alias(name, field="strata_model")
+    if not name:
+        raise ValueError("Choose a Strata model before testing it")
+    timeout = int(getattr(settings, "strata_timeout", 900) or 900)
+    candidate = replace(settings, provider="local", endpoint=target, model=name)
+    started = monotonic()
+    async with open_client(candidate, request_timeout=timeout) as client:
+        completion = await client.chat.completions.create(
+            model=name,
+            messages=[
+                {"role": "system", "content": "You are STAR. Reply briefly and plainly."},
+                {"role": "user", "content": "Reply with the exact words: Strata is ready."},
+            ],
+            max_tokens=96, temperature=0.7, top_p=0.8,
+            extra_body={"reasoning_effort": "none", "top_k": 20},
+        )
+    if not getattr(completion, "choices", None):
+        raise RuntimeError("Strata returned no completion choices")
+    response = str(completion.choices[0].message.content or "").strip()
+    if not response:
+        raise RuntimeError("Strata returned no visible text")
+    return {
+        "ok": True, "model": name, "sample": response[:180],
+        "elapsed_ms": max(0, round((monotonic() - started) * 1000)),
+    }
+
+
 def _fallback_worthy(exc: BaseException) -> bool:
     status = getattr(exc, "status_code", None)
     if status in (404, 500, 502, 503, 504):
