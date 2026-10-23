@@ -1,0 +1,14 @@
+{
+ "cow": {
+  "before_s": 19.5,
+  "after_s": 179.6,
+  "answer": "Image generated on this PC in 179.4 s \u00b7 Z-Image Turbo (bf16), 1280 x 720, seed 4242 \u00b7 prompt expanded by STAR \u00b7 3 drafts judged blind, #1 picked (anatomy ok, prompt match 3/3) \u00b7 original saved in STAR/generated-images",
+  "rewritten": "A realistic Holstein cow standing calmly on a lush green pasture. The cow is shown in a full-body side view, displaying four natural, anatomically correct legs and a normal tail. The background features a clear blue sky with soft white clouds. The lighting is bright and natural, highlighting the cow's black and white spots. The composition is centered, capturing the animal in its natural environment with high detail and realism."
+ },
+ "retro": {
+  "before_s": 22.0,
+  "after_s": 363.6,
+  "answer": "Image generated on this PC in 363.4 s \u00b7 Z-Image Turbo (bf16), 1280 x 720, seed 4242 \u00b7 prompt expanded by STAR \u00b7 6 drafts judged blind, #1 picked (anatomy ok, prompt match 1/3, all drafts failed the judge, best one kept) \u00b7 one repair round \u00b7 text drawn by STAR: \"SCORE 0420\", \"LIVES 3\" (exact letters) \u00b7 original saved in STAR/generated-images",
+  "rewritten": "A retro 8-bit video game screenshot featuring a pixelated hero character standing on a grassy platform. The character faces right, holding a sword. A pixelated dragon enemy appears on the left side of the screen. The background shows a dark blue sky with scattered pixel stars. The bottom area is reserved for the user interface. The visual style is classic NES-era graphics with limited color palettes and blocky textures."
+ }
+}
