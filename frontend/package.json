@@ -14,8 +14,8 @@
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "lucide-react": "^0.468.0",
-    "motion": "^12.23.12",
+    "lucide-react": "^1.56.0",
+    "motion": "^14.2.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
@@ -32,8 +32,8 @@
     "@vitejs/plugin-react": "^5.0.3",
     "axe-core": "^4.10.3",
     "jsdom": "^27.4.0",
-    "typescript": "~5.9.2",
-    "vite": "^7.1.7",
-    "vitest": "^3.2.4"
+    "typescript": "~7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
   }
 }

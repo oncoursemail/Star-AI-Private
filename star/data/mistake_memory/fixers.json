@@ -1,0 +1,99 @@
+{
+ "version": 1,
+ "fixers": [
+  {
+   "pattern": "(?<![\\w.:])(?P<v0>spawn|wait)\\s*\\(",
+   "replacement": "task.\\g<v0>(",
+   "signature": "lint:deprecated-task-global",
+   "id": "fx-1c24b89d",
+   "validation": {
+    "cases": 15,
+    "fixed": 15,
+    "guard_blocks": 618,
+    "false_changes": 0,
+    "changed": [],
+    "at": "2026-10-22T21:41:17Z",
+    "passing_eval_answers": 369,
+    "passing_eval_answers_changed": 0
+   },
+   "message": "Deprecated global wait().",
+   "support": 3,
+   "cases": [
+    [
+     "\t\t\t\t\twait(baseDelay * 2 ^ (k - 1))",
+     "\t\t\t\t\ttask.wait(baseDelay * 2 ^ (k - 1))"
+    ],
+    [
+     "\t\twait(delay)",
+     "\t\ttask.wait(delay)"
+    ],
+    [
+     "\t\t\twait(baseDelay * 2 ^ (k - 1))",
+     "\t\t\ttask.wait(baseDelay * 2 ^ (k - 1))"
+    ],
+    [
+     "\t\twait(delay)",
+     "\t\ttask.wait(delay)"
+    ],
+    [
+     "\t\twait(delay)",
+     "\t\ttask.wait(delay)"
+    ],
+    [
+     "\t\t\t\twait(baseDelay * 2 ^ (k - 1))",
+     "\t\t\t\ttask.wait(baseDelay * 2 ^ (k - 1))"
+    ]
+   ],
+   "created": "2026-10-22T21:41:17Z",
+   "origin": "seed",
+   "active": true
+  },
+  {
+   "pattern": "(?<![\\w.:])game\\s*\\.\\s*(?P<v0>Players|ReplicatedStorage|ServerScriptService|ServerStorage|Workspace)(?!\\w)",
+   "replacement": "game:GetService(\"\\g<v0>\")",
+   "signature": "lint:service-property",
+   "id": "fx-8f4d7540",
+   "validation": {
+    "cases": 45,
+    "fixed": 45,
+    "guard_blocks": 618,
+    "false_changes": 0,
+    "changed": [],
+    "at": "2026-10-22T21:41:17Z",
+    "passing_eval_answers": 369,
+    "passing_eval_answers_changed": 15
+   },
+   "message": "Service game.Players accessed as a property.",
+   "support": 14,
+   "cases": [
+    [
+     "game.Players.PlayerRemoving:Connect(function(player)",
+     "game:GetService(\"Players\").PlayerRemoving:Connect(function(player)"
+    ],
+    [
+     "local Validate = require(game.ServerScriptService.Validate)",
+     "local Validate = require(game:GetService(\"ServerScriptService\").Validate)"
+    ],
+    [
+     "game.ReplicatedStorage.SomeRemote.OnServerEvent:Connect(function(player, arg1, arg2, arg3, arg4)",
+     "game:GetService(\"ReplicatedStorage\").SomeRemote.OnServerEvent:Connect(function(player, arg1, arg2, arg3, arg4)"
+    ],
+    [
+     "local ATTACK_REMOTE = game.ReplicatedStorage:WaitForChild(\"AttackHit\") -- adjust path as needed",
+     "local ATTACK_REMOTE = game:GetService(\"ReplicatedStorage\"):WaitForChild(\"AttackHit\") -- adjust path as needed"
+    ],
+    [
+     "local WallLayout = require(game.ReplicatedStorage.WallLayout)",
+     "local WallLayout = require(game:GetService(\"ReplicatedStorage\").WallLayout)"
+    ],
+    [
+     "local SpeedMode = game.ReplicatedStorage:WaitForChild(\"SpeedMode\") -- Adjust path as needed",
+     "local SpeedMode = game:GetService(\"ReplicatedStorage\"):WaitForChild(\"SpeedMode\") -- Adjust path as needed"
+    ]
+   ],
+   "created": "2026-10-22T21:41:17Z",
+   "origin": "seed",
+   "active": true
+  }
+ ]
+}

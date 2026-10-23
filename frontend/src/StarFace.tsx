@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react'
 import {motion,useSpring} from 'motion/react'
 import {useStarReducedMotion} from './MotionPolicy'
+import {usePageVisible} from './usePageVisible'
 
 /** The owner-approved Star art (frontend/public/assets/mascot), relative so the packaged app can load it from a file. */
 const faces='./assets/mascot/faces/'
@@ -25,8 +26,10 @@ const BLINKS:ReadonlySet<StarMood>=new Set(['idle','listening','looking'])
  */
 export function StarFace({mood='idle',size=64,follow=false,className='',label}:{mood?:StarMood;size?:number;follow?:boolean;className?:string;label?:string}){
  const reduced=useStarReducedMotion()
- const [shown,setShown]=useState(mood)
- const [leaving,setLeaving]=useState<StarMood|null>(null)
+ const visible=usePageVisible()
+ const still=reduced||!visible
+ const [{shown,leaving},setFrame]=useState<{shown:StarMood;leaving:StarMood|null}>({shown:mood,leaving:null})
+ const previousMood=useRef(mood)
  const [failed,setFailed]=useState(false)
  const root=useRef<HTMLSpanElement>(null)
  const tiltX=useSpring(0,{stiffness:120,damping:16,mass:0.6})
@@ -34,18 +37,22 @@ export function StarFace({mood='idle',size=64,follow=false,className='',label}:{
  const turn=useSpring(0,{stiffness:120,damping:16,mass:0.6})
  // Cross-fade between expressions; the old face leaves while the new one settles in.
  useEffect(()=>{
-  if(mood===shown)return
-  if(reduced){setShown(mood);setLeaving(null);return}
-  setLeaving(shown);setShown(mood)
-  const timer=window.setTimeout(()=>setLeaving(null),240)
+  const previous=previousMood.current
+  previousMood.current=mood
+  if(still){setFrame({shown:mood,leaving:null});return}
+  if(mood===previous)return
+  setFrame({shown:mood,leaving:previous})
+  // The displayed frame is deliberately not an effect dependency: updating it must
+  // not clean up the timeout that removes the outgoing expression.
+  const timer=window.setTimeout(()=>setFrame(frame=>({...frame,leaving:null})),240)
   return ()=>window.clearTimeout(timer)
- },[mood,shown,reduced])
+ },[mood,still])
  // Warm the cache for the faces a conversation moves through, so a change never flashes empty.
  useEffect(()=>{
   for(const next of ['thinking','focused','happy','normal'] as const){const image=new Image();image.src=faces+next+'.png'}
  },[])
  useEffect(()=>{
-  if(!follow||reduced){tiltX.set(0);tiltY.set(0);turn.set(0);return}
+  if(!follow||still){tiltX.set(0);tiltY.set(0);turn.set(0);return}
   let frame=0
   const onMove=(event:PointerEvent)=>{
    cancelAnimationFrame(frame)
@@ -62,15 +69,15 @@ export function StarFace({mood='idle',size=64,follow=false,className='',label}:{
   window.addEventListener('pointermove',onMove,{passive:true})
   document.addEventListener('pointerleave',settle)
   return ()=>{cancelAnimationFrame(frame);window.removeEventListener('pointermove',onMove);document.removeEventListener('pointerleave',settle)}
- },[follow,reduced,tiltX,tiltY,turn])
+ },[follow,still,tiltX,tiltY,turn])
  if(failed)return null
- return <span ref={root} className={'star-face '+className} data-mood={shown} data-still={reduced||undefined}
+ return <span ref={root} className={'star-face '+className} data-mood={shown} data-still={still||undefined}
   style={{width:size,height:size}} role={label?'img':undefined} aria-label={label} aria-hidden={label?undefined:true}>
   <motion.span className="star-face-lean" style={{x:tiltX,y:tiltY,rotate:turn}}>
-   <span className="star-face-body" key={reduced?'still':shown==='happy'?'pop':'calm'}>
+   <span className="star-face-body" key={still?'still':shown==='happy'?'pop':'calm'}>
     {leaving&&<img className="star-face-img is-leaving" src={starFaceSource(leaving)} alt="" draggable={false}/>}
     <img className={'star-face-img'+(leaving?' is-entering':'')} src={starFaceSource(shown)} alt="" draggable={false} onError={()=>setFailed(true)}/>
-    {!reduced&&BLINKS.has(shown)&&!leaving&&<img className="star-face-img star-face-blink" src={faces+'content.png'} alt="" draggable={false}/>}
+    {!still&&BLINKS.has(shown)&&!leaving&&<img className="star-face-img star-face-blink" src={faces+'content.png'} alt="" draggable={false}/>}
    </span>
   </motion.span>
  </span>

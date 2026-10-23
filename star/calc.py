@@ -211,6 +211,8 @@ _TRIGGERS = (
     # "what is 4 + 8" / "what's 3*7"; a bare date such as 2026-10-12 has no spaces around the minus and never matches.
     re.compile(r"\bwhat(?:'s|\s+is)\s+\(*-?\d[\d.]*\s*" + _OP + r"\s*\(*-?\d", re.I),
     re.compile(r"\bhow\s+many\s+(?:metres|meters|feet|studs|seconds|bytes)\b[^.?!\n]{0,60}\d", re.I),
+    # A bare sum such as "9 + 10 / 23123 x 100": a number, an operator, a number. No dates (2026-10-12), no "2-3".
+    re.compile(r"\d\s*(?:\*\*|[+*^×])\s*\(*-?\d|\d\s+[/x×-]\s+\(*-?\d"),
 )
 
 
@@ -225,7 +227,7 @@ def numerical_request(text: str) -> bool:
 
 
 TOOL = {"name": "star_calculate",
-        "description": "Calculate bounded arithmetic, convert compatible units, or compute statistics exactly where rational.",
+        "description": "Calculate bounded arithmetic, convert compatible units, or compute statistics exactly where rational. For any sum or conversion, call this instead of working it out in text. If the expression is ambiguous or malformed, ask the owner one short clarifying question instead of guessing.",
         "inputSchema": {"type": "object", "properties": {
             "expression": {"type": "string", "description": "Arithmetic expression"},
             "operation": {"type": "string", "enum": ["evaluate", "convert", "mean", "median", "mode", "stdev", "variance"]},

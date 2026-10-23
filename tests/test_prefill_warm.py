@@ -61,6 +61,15 @@ class FakeServer:
 def server(monkeypatch):
     fake = FakeServer()
     monkeypatch.setattr(prefill, "_TRANSPORT", httpx.MockTransport(fake.handle))
+    # The draft's own requests only; the reference block after it has its own tests (tail_server).
+    monkeypatch.setattr(prefill, "turn_tail", lambda *_, **__: ("", 0, "not in this test"))
+    return fake
+
+
+@pytest.fixture
+def tail_server(monkeypatch):
+    fake = FakeServer()
+    monkeypatch.setattr(prefill, "_TRANSPORT", httpx.MockTransport(fake.handle))
     return fake
 
 
@@ -280,7 +289,7 @@ def test_the_turn_stays_on_its_slot_while_its_own_warm_up_is_still_reading(monke
 def test_draft_warmer_keeps_only_the_newest_draft_and_stops_on_a_real_request():
     started, release, seen = threading.Event(), threading.Event(), []
 
-    def slow(settings, home, chat_id, text, *, mode, research, cancel_event):
+    def slow(settings, home, chat_id, text, *, mode, research, cancel_event, superseded):
         seen.append((text, mode, cancel_event))
         started.set()
         release.wait(5)
@@ -325,3 +334,176 @@ def test_host_allows_the_action_and_the_setting():
     assert "warmDraft" in shell.ALLOWED_ACTIONS and "warmDraft" not in shell.WARM_UP_STOPPERS
     assert "prefill_while_typing" in shell.PERMITTED_SETTINGS
     assert "sendMessage" in shell.WARM_UP_STOPPERS
+
+
+def test_chunk_ends_bound_each_step_and_prefer_a_space():
+    text = ("word " * 300).strip()                       # 1,499 characters
+    ends = prefill.chunk_ends(text, 0, 400)
+    assert ends[-1] == len(text) and ends == sorted(ends)
+    steps = [b - a for a, b in zip([0] + ends, ends)]
+    assert max(steps) <= 400 and all(text[end - 1] == " " for end in ends[:-1])
+    assert prefill.chunk_ends(text, len(text) - 10, 400) == [len(text)]
+    assert prefill.chunk_ends("x" * 900, 0, 400) == [400, 800, 900]   # no space: a hard cut
+    assert prefill.chunk_ends("short", 0, 400) == [5]
+
+
+def test_a_long_paste_goes_in_chunks_and_the_next_draft_sends_only_the_rest(desk, server):
+    settings = on(desk.settings)
+    script = "local part = workspace.Part\n" + "part.Size = Vector3.new(4, 1, 2) -- size\n" * 30
+    draft = "Fix this script so the part spins:\n" + script      # ~1,300 characters
+    report = warm_draft(settings, desk.home, desk.chat, draft, mode="fast")
+    sent = [call["body"]["prompt"] for call in server.sent()]
+    assert report["primed"] is True and report["chunks"] == len(sent) >= 4
+    assert sent[-1].endswith("<|im_start|>user\n" + draft)
+    # Each request extends the one before by at most CHUNK_CHARS: the server is never far from a real request.
+    assert all(b.startswith(a) and 0 < len(b) - len(a) <= prefill.CHUNK_CHARS for a, b in zip(sent, sent[1:]))
+    assert report["prompt_tokens_read"] == 12 * len(sent)
+    # The owner adds a few words: one request, from where the paste ended.
+    server.calls.clear()
+    report = warm_draft(settings, desk.home, desk.chat, draft + "Also make it red.", mode="fast")
+    assert len(server.sent()) == 1 and "chunks" not in report
+
+
+def test_a_cancel_between_chunks_sends_no_more(desk, monkeypatch):
+    settings = on(desk.settings)
+    cancel, sent = threading.Event(), []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if request.url.path == "/apply-template":
+            return httpx.Response(200, json={"prompt": "<|im_start|>user\n" + _text(body["messages"][-1])})
+        sent.append(body["prompt"])
+        cancel.set()                                      # Enter arrives while the first chunk is read
+        await asyncio.sleep(0.3)
+        return httpx.Response(200, json={"timings": {"prompt_n": 100}})
+    monkeypatch.setattr(prefill, "_TRANSPORT", httpx.MockTransport(handler))
+    report = warm_draft(settings, desk.home, desk.chat, "Explain this:\n" + "x = x + 1\n" * 200, mode="fast",
+                        cancel_event=cancel)
+    assert report.get("cancelled") is True and len(sent) == 1
+
+
+def test_chunks_stop_when_another_client_starts_generating(desk, server, monkeypatch):
+    monkeypatch.setenv("STAR_SERVER_API_KEY", KEY)
+    settings = on(lan_settings())
+    remember_server_limits(settings.server_endpoint, "star-fast", 32768, 2)
+    asked = []
+
+    async def probe(settings, model, *, conversation=""):
+        asked.append(model)
+        return frozenset() if len(asked) == 1 else frozenset({1})   # idle at the start, then a client arrives
+    draft = "Fix this:\n" + "part.Anchored = true -- keep it still\n" * 40
+    report = warm_draft(settings, desk.home, desk.chat, draft, probe=probe)
+    assert report["primed"] is True and report["yielded"] is True
+    assert len(server.sent()) == 1 and len(asked) == 2
+
+
+# --- the turn's reference block after the draft (turn_tail) ------------------------------------------------
+
+def _rendered(messages):
+    return FakeServer().handle(httpx.Request("POST", "http://x/apply-template", json={"messages": messages})).json()["prompt"]
+
+
+@pytest.mark.parametrize("mode", ["fast", "auto"])
+def test_the_reference_block_is_primed_up_to_the_time_line(desk, tail_server, monkeypatch, mode):
+    from star import doc_grounding
+    from test_doc_grounding import FakeKnowledge, passage
+    knowledge = FakeKnowledge([passage(n, "Tween a part with TweenService:Create. " * 20) for n in range(1, 5)])
+    monkeypatch.setattr(doc_grounding, "client_for", lambda settings: knowledge)
+    settings = on(desk.settings)
+    if mode == "auto":
+        # A tool turn is warmed with the tool list this chat last sent: one earlier Roblox turn.
+        desk.chats.add("STAR", "user", "Write a Luau script for my Roblox game that spins a part", chat_id=desk.chat)
+        run_task(settings, "Write a Luau script for my Roblox game that spins a part", mode=mode, chat_id=desk.chat)
+        desk.chats.add("STAR", "assistant", "real answer", chat_id=desk.chat)
+        desk.models.requests.clear()
+    draft = "How do I tween a part in my Roblox game so it moves up 5 studs over 2 seconds?"
+    report = warm_draft(settings, desk.home, desk.chat, draft, mode=mode)
+    assert report["primed"] is True and report["tail"]["primed"] is True, report
+    assert report["with_tools"] is (mode == "auto")
+    *_, primed, whole = [call["body"]["prompt"] for call in tail_server.sent()]
+    assert "OFFICIAL DOCUMENTATION" in primed and "Now: " not in primed.rsplit("<|im_start|>user", 1)[1]
+    # Then the whole request once, this minute's time line and the closing tokens included.
+    assert whole.startswith(primed) and whole.endswith("<|im_start|>assistant\n") and report["tail"]["whole"]
+    # Enter with the same text: the real request starts with every byte that was primed, and only the time
+    # line and the closing tokens come after it.
+    desk.chats.add("STAR", "user", draft, chat_id=desk.chat)
+    run_task(settings, draft, mode=mode, chat_id=desk.chat)
+    real = _rendered(desk.models.requests[0]["messages"])
+    assert real.startswith(primed), (real[:len(primed)][-300:], primed[-300:])
+    rest = real[len(primed):]
+    assert rest.startswith("Now: ") and "OFFICIAL DOCUMENTATION" not in rest and len(rest) < 200
+    # Within the same minute it is exactly the whole request that was primed (only a minute change differs).
+    assert real == whole or whole[len(primed):].split(",")[0] != rest.split(",")[0]
+
+
+def test_no_reference_block_when_the_turn_adds_what_the_draft_cannot_know(desk, tail_server, monkeypatch):
+    settings = on(desk.settings)
+    settings.edit_diff = True
+    pasted = "Make the part red:\n```lua\n" + "local part = workspace.Part\n" * 12 + "```"
+    report = warm_draft(settings, desk.home, desk.chat, pasted, mode="fast")
+    assert report["primed"] is True and report["tail"] == {"skipped": "edit_diff"}
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "What is the latest Roblox news today?",
+                        mode="fast", research=True)
+    assert report["tail"] == {"skipped": "research"}
+    # A newer draft is waiting: it will be primed instead.
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?",
+                        mode="fast", superseded=lambda: True)
+    assert report["primed"] is True and "tail" not in report
+
+
+def test_the_reference_block_leaves_no_trace(desk, tail_server):
+    before = footprint(desk.home)
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?", mode="fast")
+    assert report["tail"]["primed"] is True and footprint(desk.home) == before
+
+
+def test_the_reference_block_stops_between_chunks_when_the_owner_types_on(desk, tail_server, monkeypatch):
+    from star import doc_grounding
+    from test_doc_grounding import FakeKnowledge, passage
+    monkeypatch.setattr(doc_grounding, "client_for", lambda settings: FakeKnowledge(
+        [passage(n, "Tween a part with TweenService:Create. " * 20) for n in range(1, 5)]))
+    draft = "How do I tween a part in my Roblox game so it moves up 5 studs over 2 seconds?"
+    calls = []
+
+    def superseded():
+        calls.append(len(tail_server.sent()))
+        return len(calls) > 1          # free when the tail starts, then a newer draft arrives
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, draft, mode="fast", superseded=superseded)
+    assert report["tail"]["primed"] is True and report["tail"]["yielded"] is True
+    assert len(tail_server.sent()) == 2          # the draft, then one chunk of the block
+
+
+def test_keep_fresh_sends_the_whole_request_again_after_each_minute_change(desk, tail_server, monkeypatch):
+    # now_line has minute resolution: Enter in a later minute would read the new time line (~50 tokens) unless
+    # the whole request was sent again with it.
+    from star import clock
+    minute = iter(range(10, 1000))
+    monkeypatch.setattr(clock, "now_line", lambda *a, **k: f"Now: Monday 2026-10-19 10:{next(minute)} CDT.")
+    waits = []
+
+    def next_minute(cancel_event, superseded):
+        waits.append(1)
+        return len(waits) <= 2                      # two minute changes, then the owner presses Enter
+    monkeypatch.setattr(prefill, "_next_minute", next_minute)
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?", mode="fast",
+                        keep_fresh=True)
+    assert report.get("tail", {}).get("refreshed") == 2, report
+    wholes = [call["body"]["prompt"] for call in tail_server.sent()][-3:]
+    assert len(set(wholes)) == 3 and all(w.endswith("<|im_start|>assistant" + chr(10)) for w in wholes)
+    stamps = [int(w.rsplit("Now: Monday 2026-10-19 10:", 1)[1][:2]) for w in wholes]
+    assert stamps == sorted(stamps) and stamps[0] < stamps[1] < stamps[2]      # each send carries a newer time line
+
+
+def test_without_keep_fresh_nothing_is_sent_after_the_whole_request(desk, tail_server, monkeypatch):
+    monkeypatch.setattr(prefill, "_next_minute", lambda *a: pytest.fail("must not wait for the next minute"))
+    report = warm_draft(on(desk.settings), desk.home, desk.chat, "How do I anchor every part at once?", mode="fast")
+    assert report["tail"]["whole"] is True and "refreshed" not in report["tail"]
+
+
+def test_a_newer_draft_or_enter_ends_the_refresh_loop_at_once(monkeypatch):
+    import time as clock_time
+    stopped = threading.Event()
+    stopped.set()
+    began = clock_time.monotonic()
+    assert prefill._next_minute(stopped, None) is False and prefill._next_minute(None, lambda: True) is False
+    assert clock_time.monotonic() - began < 1

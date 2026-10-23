@@ -33,6 +33,25 @@ or **explicitly record** the competing load. A benchmark is a real inference
 workload: it competes with interactive chat, and therefore should not be launched
 during a live latency incident.
 
+## Comparing two runs (before/after a change)
+
+Save each run's output to a file, change one thing, run again with the same model,
+scenario, target and `--parallel`, then compare. No request is sent by `--compare`:
+
+```powershell
+python -m star.brain_benchmark --model star-fast --scenario chat --runs 8 > before.json
+python -m star.brain_benchmark --model star-fast --scenario chat --runs 8 > after.json
+python -m star.brain_benchmark --compare before.json after.json
+```
+
+Sample i of each file is paired and scored with the exact sign test and bootstrap
+interval from `star/eval_stats.py` (the eval gate's statistics). `decision` is
+`PROMOTE` (faster, exit 0), `REJECT` (slower, exit 1) or `INCONCLUSIVE` (exit 4);
+unusable or unlike files exit 2. Fewer than 5 runs per arm can never be
+significant at alpha 0.05. The arms run one after the other, so check that the
+machine was otherwise idle both times. This is speed evidence only; answer quality
+still needs the eval gate.
+
 ## Reading the output
 
 - `median_ttft_ms` and `p95_ttft_ms`: elapsed before the first visible text.

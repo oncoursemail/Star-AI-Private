@@ -1,7 +1,9 @@
 name: STAR offline checks
 on:
+  # Work branches get their run from pull_request; a push run on them too would run the suite twice
+  # on the shared self-hosted runner.
   push:
-    branches: [main, 'star/**']
+    branches: [main, star/next]
   pull_request:
 permissions:
   contents: read
@@ -16,8 +18,10 @@ jobs:
   # release checklists, agent notes...) still runs the tests.
   checks:
     name: Offline Python checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
+    # Covers setup, the suite (~6.5 min alone on the 4-CPU runner) and waiting for the shared heavy-job lock.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,9 +39,13 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
           cache-dependency-path: requirements.txt
+      # Self-hosted runners keep the tool-cache Python between jobs: give this job its own venv.
+      - name: Fresh Python environment for this job
+        if: ${{ steps.scope.outputs.docs_only != 'true' }}
+        run: python -c "import os,venv; d=os.path.join(os.environ['RUNNER_TEMP'],'job-venv'); venv.create(d, with_pip=True); open(os.environ['GITHUB_PATH'],'a').write(os.path.join(d,'Scripts' if os.name=='nt' else 'bin')+chr(10))"
       - name: Install reviewed dependencies and pytest
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
-        run: python -m pip install -r requirements.txt pytest
+        run: python -m pip install -r requirements.txt pytest pytest-xdist==3.8.0
       - name: Compile Python sources
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python -m compileall -q star main.py
@@ -50,12 +58,15 @@ jobs:
         run: python -m pytest -q tests/test_star_research.py
       - name: Run all offline regression tests
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
-        run: python -m pytest -q
+        # One heavy step at a time on the shared runner machine (scripts/ci_heavy.sh). Four workers: the
+        # suite mostly waits, so on the 4-CPU runner it takes ~6.5 min instead of ~11 (measured alone).
+        run: sh scripts/ci_heavy.sh python -m pytest -q -n 4
 
   react:
     name: React UI compile and tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -81,9 +92,7 @@ jobs:
       - name: Typecheck React and validate components
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: |
-          npm run typecheck --prefix frontend
-          npm run test --prefix frontend
-          npm run build --prefix frontend
+          sh scripts/ci_heavy.sh sh -c 'npm run typecheck --prefix frontend && npm run test --prefix frontend && npm run build --prefix frontend'
       - name: Confirm built offline application entry point
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: test -s frontend/dist/index.html
@@ -120,12 +129,13 @@ jobs:
           name: STAR-v08-React-Visual-QA
           path: react-qa/*.png
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3
 
   pyright:
     name: Python types (pyright basic, baseline gate)
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -135,12 +145,15 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      # Self-hosted runners keep the tool-cache Python between jobs: give this job its own venv.
+      - name: Fresh Python environment for this job
+        run: python -c "import os,venv; d=os.path.join(os.environ['RUNNER_TEMP'],'job-venv'); venv.create(d, with_pip=True); open(os.environ['GITHUB_PATH'],'a').write(os.path.join(d,'Scripts' if os.name=='nt' else 'bin')+chr(10))"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       # No third-party packages on purpose: their stubs change between releases, so the
       # baseline stays stable and only STAR's own code is judged.
       - name: Run pyright on star/ (settings in pyrightconfig.json)
-        run: npx --yes pyright@1.1.414 --pythonpath "$(command -v python)" --outputjson > pyright.json || test -s pyright.json
+        run: sh scripts/ci_heavy.sh npx --yes pyright@1.1.414 --pythonpath "$(command -v python)" --outputjson > pyright.json || test -s pyright.json
       - name: Fail on errors beyond scripts/pyright_baseline.json
         run: python scripts/pyright_baseline.py check pyright.json

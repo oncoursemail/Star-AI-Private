@@ -75,7 +75,8 @@ def rig(tmp_path, monkeypatch):
     killed = []
     monkeypatch.setattr(turbo, "kill_tree", lambda proc: (killed.append(proc.pid), setattr(proc, "returncode", 1)))
     monkeypatch.setattr(turbo.time, "sleep", lambda _s: None)
-    config = dict(turbo.DEFAULTS, app=str(tmp_path / "app"), python="py.exe", llama_server="ls.exe", model="m.gguf",
+    (tmp_path / "settings.json").write_text('{"use_my_gpu": true}', encoding="utf-8")   # the app's switch, on
+    config = dict(turbo.DEFAULTS, app=str(tmp_path / "app"), app_settings=str(tmp_path / "settings.json"), python="py.exe", llama_server="ls.exe", model="m.gguf",
                   knowledge_url="http://knowledge.invalid:8091", server_ssh="star@host.invalid")
     spawned, synced, merged = [], [], []
 
@@ -137,6 +138,48 @@ def test_off_file_games_the_gpu_switch_and_other_gpu_users_block_a_start(rig):
     assert rig.start_blocker() == ""
 
 
+def test_the_apps_use_my_pc_switch_gates_every_session(rig):
+    settings = rig.home.parent / "settings.json"
+    for text in ('{"use_my_gpu": false}', "{}", '{"use_my_gpu": "yes"}', "not json", None):
+        if text is None:
+            settings.unlink()                                      # no settings file: off, never "on by default"
+        else:
+            settings.write_text(text, encoding="utf-8")
+        assert "Use my PC switch is off" in rig.start_blocker()
+        rig.tick()
+        assert rig.state == "waiting" and rig.helper.configured is None and not rig.spawned
+    settings.write_text('{"use_my_gpu": true}', encoding="utf-8")
+    assert rig.start_blocker() == ""
+    rig.tick()
+    assert rig.state == "loading"
+    assert settings.read_text(encoding="utf-8") == '{"use_my_gpu": true}'      # read only
+
+
+def test_automatic_night_use_runs_in_the_night_window_with_the_switch_off(rig):
+    settings = rig.home.parent / "settings.json"
+    rig.hour["now"] = 3
+    rig.probe.idle = 6 * MIN
+    settings.write_text('{"use_my_gpu": false}', encoding="utf-8")            # auto night is on by default
+    assert rig.start_blocker() == ""
+    settings.write_text('{"use_my_gpu": false, "use_my_pc_auto_night": false}', encoding="utf-8")
+    assert "Use my PC switch is off" in rig.start_blocker()                   # auto off: does not run
+    settings.write_text("not json", encoding="utf-8")
+    assert "could not be read" in rig.start_blocker()                         # unreadable: fails closed at night too
+    settings.write_text('{"use_my_gpu": false}', encoding="utf-8")
+    rig.hour["now"] = 14                                                      # day: follows the switch
+    rig.probe.idle = 30 * MIN
+    assert "Use my PC switch is off" in rig.start_blocker()
+    rig.hour["now"] = 3
+    rig.tick()
+    assert rig.state == "loading"
+    rig.helper.state = "ready"
+    rig.tick()
+    assert rig.state == "running"
+    rig.hour["now"] = 8                                                       # night_end: back to the switch (off)
+    rig.tick()
+    assert rig.state == "waiting" and "Use my PC switch was turned off" in rig.reason
+
+
 def test_a_session_runs_night_school_on_the_switch_launcher_and_stops_when_the_owner_returns(rig):
     rig.tick()
     assert rig.state == "loading" and rig.synced == [1]
@@ -179,6 +222,7 @@ def test_a_session_runs_night_school_on_the_switch_launcher_and_stops_when_the_o
 
 @pytest.mark.parametrize("change, words", [
     (lambda r: (r.home / "OFF").write_text("off"), "off switch"),
+    (lambda r: (r.home.parent / "settings.json").write_text('{"use_my_gpu": false}'), "Use my PC switch was turned off"),
     (lambda r: setattr(r.probe, "full", True), "full-screen"),
     (lambda r: r.probe.procs.update({301: "llama-server.exe"}), "another llama-server"),
     (lambda r: setattr(r.worker, "returncode", 3), "night school exited (code 3)"),
@@ -286,3 +330,17 @@ def test_server_1s_quiet_lock_blocks_a_start(rig):
     assert rig.start_blocker() == "server 1's quiet lock is held"
     rig.lock["held"], rig.next_look = False, -1e18
     assert rig.start_blocker() == ""
+
+
+def test_pc_conductor_tasks_are_pushed_to_server_1s_pool(tmp_path, monkeypatch):
+    pool = tmp_path / "ns" / "pool"
+    pool.mkdir(parents=True)
+    (pool / "conductor-pc-20261017.json").write_text("[]", encoding="utf-8")
+    (pool / "conductor-20261017.json").write_text("[]", encoding="utf-8")      # server 1's own file: never sent back
+    (pool / "conductor-pc-x.json").write_text("[]", encoding="utf-8")          # odd name: refused
+    calls = []
+    monkeypatch.setattr(turbo.subprocess, "run", lambda argv, **kw: calls.append((argv, kw)) or turbo.SimpleNamespace(returncode=0))
+    config = dict(turbo.DEFAULTS, server_ssh="star@host.invalid")
+    assert turbo.push_conductor_tasks(config, tmp_path / "ns") == 1
+    assert "pool/conductor-pc-20261017.json" in calls[0][0][-1] and calls[0][1]["input"] == b"[]"
+    assert turbo.push_conductor_tasks(dict(config, server_ssh=""), tmp_path / "ns") == 0

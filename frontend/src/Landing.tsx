@@ -3,7 +3,7 @@
  * everything on the page is editorial content, captures of the interface, or public GitHub release data.
  */
 import {Suspense,useEffect,useMemo,useRef,useState} from 'react'
-import {ArrowDown,Github,Menu,X} from 'lucide-react'
+import {ArrowDown,ArrowUpRight,Menu,X} from 'lucide-react'
 import {StarLockup,StarMark} from './SiteBrand'
 import {SiteMascotHero,SiteMascotFooter} from './SiteMascot'
 import {SiteFeatures} from './SiteFeatures'
@@ -69,7 +69,7 @@ export function Landing(){
        <a href={'#'+section.id} aria-current={active===section.id?'true':undefined} onClick={closeMenu}>{section.label}</a>
       </li>)}
       <li className="sw-nav-out"><a href={LINKS.repo} target="_blank" rel="noopener noreferrer" onClick={closeMenu}>
-       <Github size={16} aria-hidden="true"/> GitHub<span className="sw-sr"> (opens in a new tab)</span>
+       <ArrowUpRight size={16} aria-hidden="true"/> GitHub<span className="sw-sr"> (opens in a new tab)</span>
       </a></li>
      </ul>
     </nav>

@@ -1,0 +1,94 @@
+/* STAR Business Mission Control — neutral OLED, calm editorial hierarchy.
+ * Uses existing STAR tokens rather than shipping a competing design system.
+ */
+.commerce-mission {margin:10px 0 32px;padding:0 0 29px;border-bottom:1px solid var(--star-stroke)}
+.commerce-mission-head,.commerce-queue-head {display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:20px}
+.commerce-mission-head h2 {font-size:clamp(21px,2.2vw,27px);letter-spacing:-.045em;font-weight:650;line-height:1.2;margin:0 0 8px;color:var(--star-text)}
+.commerce-queue-head h2 {font-size:20px;letter-spacing:-.035em;line-height:1.2;margin:0 0 8px}
+.commerce-mission-head p:not(.commerce-kicker),.commerce-queue-head p:not(.commerce-kicker) {color:var(--star-muted);font-size:13px;line-height:1.65;margin:0;max-width:600px}
+.commerce-mission-actions {display:flex;align-items:center;gap:15px;flex-wrap:wrap;justify-content:flex-end}
+.commerce-mission-capacity {font-family:var(--star-mono);font-size:12px;color:var(--star-muted);white-space:nowrap}
+.commerce-mission-capacity span {color:var(--star-faint)}
+.commerce-mission-create {background:var(--star-surface-1);padding:22px;border:1px solid var(--star-stroke-strong);border-radius:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px 22px;margin-bottom:25px}
+.commerce-mission-create>div {grid-column:1/-1}
+.commerce-mission-create h3 {margin:0 0 5px;font-size:16px;letter-spacing:-.025em}
+.commerce-mission-create p {font-size:12px;line-height:1.5;color:var(--star-muted);margin:0}
+.commerce-mission-create .commerce-action-primary {align-self:end;justify-self:start}
+.commerce-portfolio-layout {display:grid;grid-template-columns:minmax(0,1.7fr) minmax(250px,.75fr);border:1px solid var(--star-stroke);border-radius:var(--star-r-lg);overflow:hidden;min-width:0;background:var(--star-surface-1)}
+.commerce-portfolio-main {min-width:0;padding:17px 20px}
+.commerce-portfolio-tools {display:flex;gap:12px;justify-content:space-between;align-items:center;margin:0 0 13px}
+.commerce-portfolio-search {display:flex;align-items:center;gap:9px;border:1px solid var(--star-stroke-strong);border-radius:9px;background:var(--star-sidebar);color:var(--star-faint);height:36px;padding:0 11px;max-width:370px;flex:1;min-width:0}
+.commerce-portfolio-search input {border:0;outline:0;background:transparent;color:var(--star-text);font:13px var(--star-font);width:100%;min-width:0}
+.commerce-portfolio-search input::placeholder {color:var(--star-faint)}
+.commerce-portfolio-search:focus-within {outline:2px solid var(--star-stroke-focus);outline-offset:2px}
+.commerce-portfolio-count {font-family:var(--star-mono);color:var(--star-faint);font-size:11px;white-space:nowrap}
+.commerce-portfolio-list {max-height:354px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--star-stroke-strong) transparent}
+.commerce-portfolio-entry {display:flex;align-items:center;gap:10px;min-width:0;border-top:1px solid var(--star-stroke-soft);padding:3px 0}
+.commerce-portfolio-entry.is-selected {background:var(--star-gold-wash)}
+.commerce-portfolio-select {display:flex;gap:12px;min-width:0;flex:1;align-items:center;padding:10px 4px;border:0;background:transparent;cursor:pointer;text-align:left;color:var(--star-text);font:inherit}
+.commerce-portfolio-select:hover {background:var(--star-veil)}
+.commerce-portfolio-monogram {display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border-radius:9px;background:var(--star-surface-3);color:var(--star-body);font:600 12px var(--star-mono);border:1px solid var(--star-stroke)}
+.commerce-portfolio-description {display:flex;flex-direction:column;min-width:0;gap:5px}
+.commerce-portfolio-description strong {font-size:13px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.commerce-portfolio-description small {font-size:12px;color:var(--star-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.commerce-portfolio-meta {font:11px var(--star-mono);color:var(--star-muted);white-space:nowrap;margin-left:auto}
+.commerce-portfolio-state {font-size:11px;white-space:nowrap;font-weight:600;color:var(--star-success)}
+.commerce-portfolio-state.is-paused {color:var(--star-faint)}
+.commerce-portfolio-toggle {display:grid;place-items:center;width:32px;height:32px;flex:0 0 32px;background:transparent;border:1px solid var(--star-stroke-strong);color:var(--star-muted);border-radius:8px;cursor:pointer;margin-right:2px}
+.commerce-portfolio-toggle:hover:not(:disabled) {background:var(--star-surface-3);color:var(--star-text)}
+.commerce-portfolio-toggle:disabled {opacity:.45;cursor:not-allowed}
+.commerce-portfolio-empty {padding:30px 12px;min-height:144px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;color:var(--star-muted);font-size:13px}
+.commerce-portfolio-empty svg {color:var(--star-gold);margin-bottom:11px}
+.commerce-portfolio-empty h3 {color:var(--star-text);font-size:15px;margin:0 0 7px}
+.commerce-portfolio-empty p {margin:0;line-height:1.65;max-width:400px}
+.commerce-portfolio-health {padding:24px 22px;min-width:0;border-left:1px solid var(--star-stroke);background:var(--star-sidebar)}
+.commerce-health-head {display:flex;align-items:center;gap:10px;color:var(--star-text);font-size:14px}
+.commerce-health-head svg {color:var(--star-gold)}
+.commerce-portfolio-health>p {font-size:12px;line-height:1.5;color:var(--star-muted);margin:7px 0 22px}
+.commerce-health-metric {display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-top:1px solid var(--star-stroke-soft);padding:11px 0}
+.commerce-health-metric span {font-size:12px;color:var(--star-body)}
+.commerce-health-metric strong {font:600 18px var(--star-mono);font-variant-numeric:tabular-nums;color:var(--star-text)}
+.commerce-health-line {display:flex;align-items:center;gap:8px;margin:14px 0 0;padding:10px 0;color:var(--star-gold);font-size:12px;line-height:1.5}
+.commerce-portfolio-health .commerce-health-note {color:var(--star-faint);font-size:11px;line-height:1.65;margin:9px 0 0}
+.commerce-queue-head {margin:30px 0 18px}
+.commerce-queue-list {border:1px solid var(--star-stroke);border-radius:var(--star-r-md);background:var(--star-surface-1);overflow:hidden}
+.commerce-queue-empty {display:flex;align-items:center;gap:14px;padding:20px;color:var(--star-muted);font-size:13px}
+.commerce-queue-empty svg {color:var(--star-gold);flex:0 0 20px}
+.commerce-queue-empty p {margin:0;line-height:1.6}
+.commerce-queue-job {display:flex;align-items:center;gap:12px;padding:13px 17px;border-bottom:1px solid var(--star-stroke-soft)}
+.commerce-queue-job:last-child {border-bottom:0}
+.commerce-queue-status-icon {display:grid;place-items:center;color:var(--star-gold);width:30px;height:30px;flex:0 0 30px;background:var(--star-surface-3);border-radius:8px}
+.commerce-queue-copy {min-width:0;display:flex;flex-direction:column;gap:4px;flex:1}
+.commerce-queue-copy strong {font-size:13px;color:var(--star-text);overflow-wrap:anywhere}
+.commerce-queue-copy small {color:var(--star-muted);font-size:11px}
+.commerce-queue-copy>span {font-size:11px;color:var(--star-gold)}
+.commerce-queue-cancel {background:transparent;border:1px solid var(--star-stroke-strong);border-radius:7px;padding:7px 10px;color:var(--star-muted);display:flex;gap:5px;align-items:center;font-size:12px;cursor:pointer}
+.commerce-queue-cancel:hover:not(:disabled) {background:var(--star-surface-3)}
+.commerce-queue-cancel:disabled {opacity:.45;cursor:not-allowed}
+.commerce-activity-footer {margin-top:16px}
+.commerce-activity-toggle {display:inline-flex;align-items:center;gap:9px;border:0;color:var(--star-muted);font:12px var(--star-font);background:transparent;padding:9px 0;cursor:pointer}
+.commerce-activity-toggle:hover {color:var(--star-text)}
+.commerce-activity-list {display:flex;flex-direction:column;gap:0;padding:5px 13px;border:1px solid var(--star-stroke);border-radius:8px;margin:7px 0 0}
+.commerce-activity-list>div {display:flex;justify-content:space-between;gap:12px;align-items:baseline;border-top:1px solid var(--star-stroke-soft);padding:9px 0;color:var(--star-body);font-size:12px}
+.commerce-activity-list>div:first-child {border-top:0}
+.commerce-activity-list time {font:11px var(--star-mono);color:var(--star-faint);white-space:nowrap}
+.commerce-activity-list p {font-size:12px;color:var(--star-muted)}
+.commerce-mission :is(button,input,textarea,select):focus-visible {outline:2px solid var(--star-stroke-focus);outline-offset:2px}
+@media (max-width:1100px) {
+  .commerce-portfolio-layout {grid-template-columns:1fr}
+  .commerce-portfolio-health {border-left:0;border-top:1px solid var(--star-stroke)}
+}
+@media (max-width:650px) {
+  .commerce-mission-head,.commerce-queue-head {flex-direction:column;align-items:stretch;gap:16px}
+  .commerce-mission-actions {justify-content:space-between}
+  .commerce-mission-create {grid-template-columns:1fr}
+  .commerce-mission-create>div {grid-column:1}
+  .commerce-portfolio-main,.commerce-portfolio-health {padding:18px 13px}
+  .commerce-portfolio-meta {display:none}
+  .commerce-portfolio-state {font-size:10px}
+  .commerce-portfolio-description small {max-width:150px}
+  .commerce-queue-cancel {font-size:0;padding:8px}
+  .commerce-queue-cancel svg {width:15px}
+  .commerce-queue-head .commerce-action-secondary {width:100%}
+  .commerce-activity-list>div {flex-direction:column;gap:4px}
+}

@@ -1,0 +1,26 @@
+{
+  "note": "Fixed benchmark subset (docs/research/image-gen-upgrade-20261023.md section 5). 'request' goes through the rewriter; 'inline' prompts carry the exact words in the picture so the text rate measures the model itself, not STAR's overlay (which is exact by construction).",
+  "prompts": [
+    {"id": "cow", "category": "anatomy", "request": "a real cow with no weird legs"},
+    {"id": "horse", "category": "anatomy", "request": "a horse galloping across a field"},
+    {"id": "dogcat", "category": "anatomy", "request": "a dog and a cat sitting together on a sofa"},
+    {"id": "mug", "category": "anatomy", "request": "a person holding a coffee mug in both hands"},
+    {"id": "hands", "category": "anatomy", "request": "close-up of two hands holding a small plant"},
+    {"id": "spider", "category": "anatomy", "request": "a spider on its web in the morning dew"},
+    {"id": "retro", "category": "text", "request": "a retro 8-bit game screenshot with SCORE 0420 and LIVES 3",
+     "inline": "A retro 8-bit arcade game screenshot: a small spaceship at the bottom shooting at rows of pixel aliens on a black starry background. The top-left of the screen reads \"SCORE 0420\" and the top-right reads \"LIVES 3\" in chunky white pixel letters.",
+     "text": ["SCORE 0420", "LIVES 3"]},
+    {"id": "open", "category": "text", "request": "a shop window with a sign that says OPEN 24 HOURS",
+     "inline": "Photo of a small corner shop at night, a bright rectangular sign in the window with the words \"OPEN 24 HOURS\" in clear red capital letters.",
+     "text": ["OPEN 24 HOURS"]},
+    {"id": "book", "category": "text", "request": "a book cover titled THE LAST LIGHTHOUSE",
+     "inline": "A hardcover book cover illustration of a lonely lighthouse on a cliff at dusk, with the title \"THE LAST LIGHTHOUSE\" in large cream capital letters across the top.",
+     "text": ["THE LAST LIGHTHOUSE"]},
+    {"id": "neon", "category": "text", "request": "a neon sign that says PIZZA on a brick wall",
+     "inline": "A glowing pink neon sign that spells \"PIZZA\" in clear capital letters on a dark brick wall at night.",
+     "text": ["PIZZA"]},
+    {"id": "interior", "category": "scene", "request": "a cozy modern living room with a green armchair and a big window"},
+    {"id": "food", "category": "scene", "request": "a bowl of ramen with an egg and green onions, studio food photo"}
+  ],
+  "seeds": [1111, 2222]
+}

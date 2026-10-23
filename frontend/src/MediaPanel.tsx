@@ -144,6 +144,14 @@ export function MediaPlaces({settings,invoke,disabled=false,refresh}:{settings:A
          <small>Longer side of an attached picture as the STAR Server or the on-device brain reads it. Your file is never changed.</small></label>
        <label className="learn-switch"><span><strong>Use this project's visual references</strong><small>Pinned reference images are given to image generation, and to chat turns about how something looks.</small></span>
          <input type="checkbox" checked={settings.media_use_references!==false} disabled={disabled} onChange={event=>void save({media_use_references:event.target.checked})}/></label>
+       <label className="learn-switch"><span><strong>Careful pictures</strong><small>STAR expands your request into a full prompt, draws several drafts, lets the vision model check them blind (legs, hands, text), and draws any words itself so the letters are exact. Slower; off draws one picture straight from your words.</small></span>
+         <input type="checkbox" checked={settings.image_quality!==false} disabled={disabled} onChange={event=>void save({image_quality:event.target.checked})}/></label>
+       <label className="media-field">Drafts per picture
+         <select value={String(settings.image_drafts??3)} disabled={disabled||settings.image_quality===false} onChange={event=>void save({image_drafts:Number(event.target.value)})}>
+           <option value="1">1 (fastest)</option><option value="2">2</option><option value="3">3 (default)</option><option value="4">4</option><option value="5">5 (slowest)</option></select></label>
+       <label className="media-field">Picture model
+         <select value={settings.image_engine??'auto'} disabled={disabled} onChange={event=>void save({image_engine:event.target.value as 'auto'|'klein'|'zimage'})}>
+           <option value="auto">Automatic (Z-Image Turbo when installed, else klein)</option><option value="klein">FLUX.2 klein 4B (about 6x faster)</option><option value="zimage">Z-Image Turbo</option></select></label>
      </div>
    </div>}
    {notice&&<p className="learn-notice" role="status">{notice}</p>}

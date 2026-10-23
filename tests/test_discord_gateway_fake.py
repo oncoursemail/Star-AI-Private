@@ -384,6 +384,8 @@ def test_digest_is_opt_in_and_dms_once_per_real_change(tmp_path):
 
     def runner(argv, **kwargs):
         calls.append(argv)
+        if argv[-1] == digest_task.REMOTE_WATCHDOG_COMMAND:   # no knowledge watchdog on this fake server
+            return SimpleNamespace(returncode=1, stdout=b"")
         assert argv[-1] == digest_task.REMOTE_REPORT_COMMAND and "BatchMode=yes" in argv
         return SimpleNamespace(returncode=0, stdout=current["text"].encode("utf-8"))
 

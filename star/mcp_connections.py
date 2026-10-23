@@ -1,8 +1,9 @@
 """Curated MCP connections for STAR: read-only, task-local, no arbitrary endpoints.
 
 Supports stateless MCP 2026-07-28 and explicit sessionful 2025-11-25
-Streamable HTTP. OAuth, tools that write, child processes, images, subscriptions,
-MRTR, and arbitrary user-chosen URLs are NOT enabled.
+Streamable HTTP. OAuth, tools that write, arbitrary MCP server processes, images, subscriptions,
+MRTR, and arbitrary user-chosen URLs are NOT enabled. The optional GitHub preset
+uses a fixed in-process reader and an explicitly selected existing credential.
 """
 from __future__ import annotations
 
@@ -30,6 +31,7 @@ MAX_REPLY = 320_000
 MAX_RESULT = 12_000
 CALL_SECONDS = 30
 TRIGGER = re.compile(r"\b(mcp|connector|connections?|graphify (?:docs|mcp)|obsidian (?:mcp|live|plugin)|live vault|remote tools?|tool catalog)\b", re.I)
+GITHUB_TRIGGER = re.compile(r"\b(githubs?|metallic)\b", re.I)   # only while the GitHub connector is enabled
 NAME = re.compile(r"^[a-zA-Z][\w.-]{0,90}$")
 HEADER = re.compile(r"^[a-zA-Z0-9!#$%&'*+.^_|~-]+$")
 
@@ -58,9 +60,18 @@ class Server:
     allowed: frozenset[str]
     token_env: str = ""
     ca_env: str = ""
+    credential_source: str = ""
 
 def presets(settings: Any) -> list[Server]:
     results = []
+    if getattr(settings, "mcp_github_repositories", False) is True:
+        from .github_repository_tools import REPOSITORY_TOOL_NAMES
+        source = getattr(settings, "github_repository_access_source", "gh")
+        if not isinstance(source, str) or source not in {"gh", "env"}:
+            raise ValueError("GitHub repository credential source must be gh or env")
+        results.append(Server("github_repositories", "GitHub repository discovery",
+                              "internal:github-repositories", "internal-v1", REPOSITORY_TOOL_NAMES,
+                              "STAR_GITHUB_READ_TOKEN" if source == "env" else "", credential_source=source))
     if getattr(settings, "mcp_graphify_docs", False):
         results.append(Server("graphify_docs", "Graphify Documentation",
                               "https://graphify.com/api/mcp", MODERN,
@@ -315,12 +326,41 @@ class StreamableHTTP:
             return text_result(answer)
         return await self._connected(op)
 
+class GitHubRepositoryConnector:
+    """Curated local adapter; never starts a server or sends a model-selected request."""
+
+    def __init__(self, server: Server):
+        from .github_repository_tools import REPOSITORY_TOOL_NAMES, RepositoryTools
+        if (server.name != "github_repositories" or server.url != "internal:github-repositories"
+                or server.protocol != "internal-v1" or server.allowed != REPOSITORY_TOOL_NAMES
+                or not isinstance(server.credential_source, str) or server.credential_source not in {"gh", "env"}):
+            raise PermissionError("GitHub repository connector configuration is not approved")
+        self.tools = RepositoryTools(credential_source=server.credential_source)
+
+    async def list_tools(self):
+        return await self.tools.list_tools()
+
+    async def call_tool(self, name: str, args: dict, schema: dict):
+        async with asyncio.timeout(CALL_SECONDS):
+            result = await self.tools.call(name, args)
+        return {"isError": False, "output": json.dumps(result, ensure_ascii=False),
+                "truncated": False, "untrusted": True}
+
+    async def probe(self):
+        async with asyncio.timeout(CALL_SECONDS):
+            return await self.tools.call("github_repository_inventory", {"limit": 1})
+
+
+def _connector(server: Server):
+    return GitHubRepositoryConnector(server) if server.name == "github_repositories" else StreamableHTTP(server)
+
+
 class MCPGateway:
     """A task-scoped MCP tool search and call service with user-controlled opt-in."""
 
     def __init__(self, settings: Any, *, factory=None):
         self.servers = {s.name: s for s in presets(settings)}
-        self.factory = factory or StreamableHTTP
+        self.factory = factory or _connector
         self.catalog: dict[tuple[str, str], dict] = {}
         self.disclosed: set[tuple[str, str]] = set()
         self.calls = 0
@@ -330,17 +370,20 @@ class MCPGateway:
         return name in OWN_NAMES
 
     def definitions(self, prompt: str) -> list[dict]:
-        return TOOLS if self.servers and TRIGGER.search(prompt) else []
+        if not self.servers:
+            return []
+        github = "github_repositories" in self.servers and GITHUB_TRIGGER.search(prompt)
+        return TOOLS if TRIGGER.search(prompt) or github else []
 
     def status(self) -> dict:
         return {"servers": [{
             "name": name, "enabled": name in self.servers,
             "protocol": self.servers[name].protocol if name in self.servers else "",
-            "credential_ready": bool(name in self.servers and (
+            "credential_ready": bool(name in self.servers and name != "github_repositories" and (
                 not self.servers[name].token_env or os.environ.get(self.servers[name].token_env))),
             "state": "configured_not_tested" if name in self.servers else "disabled",
             "read_only": True,
-        } for name in ("graphify_docs", "graphify_local", "obsidian_live")]}
+        } for name in ("graphify_docs", "graphify_local", "obsidian_live", "github_repositories")]}
 
     async def _discover(self, name: str) -> list[dict]:
         server = self.servers[name]
@@ -375,6 +418,16 @@ class MCPGateway:
         if name not in self.servers:
             raise PermissionError("Enable this MCP connection in Star settings first")
         tools = await self._discover(name)
+        if name == "github_repositories":
+            connector_probe = getattr(self.factory(self.servers[name]), "probe")   # only the GitHub connector has one
+            result = await connector_probe()
+            if not result.get("complete"):
+                raise RuntimeError("GitHub inventory was incomplete; additional repositories may be visible")
+            return {"name": name, "connected": True, "protocol": "internal-v1",
+                    "read_tool_count": len(tools), "read_tools": [tool["tool"] for tool in tools],
+                    "repository_count": result["repository_count"], "complete": True,
+                    "scope": result["scope"], "credential_kind": result["credential_kind"],
+                    "note": "Credential-visible repository inventory checked. Individual source reads and writes are not verified."}
         return {"name": name, "connected": True, "protocol": self.servers[name].protocol,
                 "read_tool_count": len(tools),
                 "read_tools": [t["tool"] for t in tools[:25]],

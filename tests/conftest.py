@@ -66,3 +66,10 @@ def _offline_slot_probe(monkeypatch):
     monkeypatch.setattr(providers, "_SLOT_PROBE_TRANSPORT", httpx.MockTransport(lambda request: httpx.Response(404)))
     yield
     clear()
+
+
+@pytest.fixture(autouse=True)
+def pc_clock_is_daytime(monkeypatch):
+    """"Automatically turn on at night" (star/gpu_helper.py) must not make a test depend on the hour it runs at."""
+    from star import gpu_helper
+    monkeypatch.setattr(gpu_helper, "local_hour", lambda: 14)

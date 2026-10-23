@@ -7,6 +7,7 @@ import {collapse, rowIn} from './motion'
 import {useMotionVariants,useStarReducedMotion} from './MotionPolicy'
 import {MotionSurface} from './MotionSurface'
 import {StarFace} from './StarFace'
+import {ResearchActivity, ResearchMark} from './ResearchActivity'
 
 /** Re-render once a second while something is running, so elapsed times are live. */
 export function useNow(active: boolean): number {
@@ -90,23 +91,27 @@ export function ActivityTimeline({run, onStop, stopping = false}: {run: Activity
   const listId = useId()
   const done = countDone(run)
   const total = run.steps.length
+  const hasDetails = total > 0 || !!run.research
   const brainLabel = run.brain === 'pc' ? 'answered on this PC'
     : run.brain === 'server' ? (run.model || 'STAR Server') : run.model ? (running ? run.model : `answered by ${run.model}`) : ''
-  const meta = [run.label, total ? (running ? `${done} of ${total} steps done` : `${total} ${total === 1 ? 'step' : 'steps'}`) : '',
+  const researchMeta = run.research ? `${run.research.counts.found} found · ${run.research.counts.read} read` : ''
+  const meta = [researchMeta || run.label, total ? (running ? `${done} of ${total} steps done` : `${total} ${total === 1 ? 'step' : 'steps'}`) : '',
     brainLabel, run.firstTokenMs != null ? `${run.firstTokenMs} ms first token` : '',
     run.tokensPerSecond != null ? `${run.estimatedTokens ? '≈' : ''}${run.tokensPerSecond.toFixed(1)} tok/s` : ''].filter(Boolean).join(' · ')
   return (
-    <section className={'act act-' + run.outcome + (open ? ' is-open' : '')} aria-label="What STAR did">
+    <section className={'act act-' + run.outcome + (open ? ' is-open' : '') + (run.research ? ' has-research' : '')} aria-label="What STAR did">
+      {/* A collapsed research run still announces phases. Counters, pages and clocks are never live. */}
+      {run.research && <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{stopping ? 'Stopping research' : running ? run.phase : run.outcome === 'cancelled' ? 'Research run stopped' : run.outcome === 'failed' ? 'Research run ended with an error' : 'Research answer finished'}</span>}
       <div className="act-head">
-        <button type="button" className="act-toggle" aria-expanded={open} aria-controls={listId} disabled={!total} onClick={() => setToggled(!open)}>
+        <button type="button" className="act-toggle" aria-expanded={open} aria-controls={listId} disabled={!hasDetails} onClick={() => setToggled(!open)}>
           <span className={'act-glyph act-run-glyph is-' + run.outcome}>
-            <Glyph state={running ? 'running' : run.outcome === 'done' ? 'run-done' : run.outcome === 'cancelled' ? 'run-cancelled' : 'run-failed'} />
+            {run.research && running ? <ResearchMark /> : <Glyph state={running ? 'running' : run.outcome === 'done' ? 'run-done' : run.outcome === 'cancelled' ? 'run-cancelled' : 'run-failed'} />}
           </span>
-          <span className="act-title">{headline(run, now)}</span>
+          <span className="act-title">{run.research && running ? 'Deep research' : headline(run, now)}</span>
           {meta && <span className="act-meta">{meta}</span>}
-          {total > 0 && <ChevronDown size={14} className="act-chevron" aria-hidden="true" />}
+          {hasDetails && <ChevronDown size={14} className="act-chevron" aria-hidden="true" />}
         </button>
-        {running && <span className="act-clock" aria-label="Elapsed time">{formatElapsed(runElapsed(run, now), true)}</span>}
+        {running && <span className="act-clock" role="timer" aria-live="off" aria-label="Elapsed time">{formatElapsed(runElapsed(run, now), true)}</span>}
         {running && onStop && (
           <button type="button" className="act-stop" onClick={event => event.detail <= 1 && onStop()} disabled={stopping}>
             <Square size={11} fill="currentColor" aria-hidden="true" />
@@ -115,13 +120,14 @@ export function ActivityTimeline({run, onStop, stopping = false}: {run: Activity
         )}
       </div>
       <AnimatePresence initial={false}>
-        {open && total > 0 && (
-          <MotionSurface className="act-body" variants={collapse}>
-            <ol className="act-steps" id={listId}>
+        {open && hasDetails && (
+          <MotionSurface className="act-body" variants={collapse} id={listId}>
+            {run.research && <ResearchActivity research={run.research} />}
+            {total > 0 && <ol className="act-steps">
               {run.steps.map(step => (
                 <Step key={step.id} step={step} now={now} />
               ))}
-            </ol>
+            </ol>}
           </MotionSurface>
         )}
       </AnimatePresence>

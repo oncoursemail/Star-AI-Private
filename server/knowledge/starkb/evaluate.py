@@ -69,6 +69,10 @@ def run_eval(db_path: Path, questions_path: Path, modes: list[str], *, scope_emb
         for path in q["expected"]:
             if path not in known:
                 raise ValueError(f"{q['id']}: expected path not in index: {path}")
+        if q.get("answer") and not any(q["answer"] in r[0] for r in searcher.db.execute(
+                f"SELECT c.text FROM chunks c JOIN docs d ON d.id=c.doc_id WHERE d.path IN ({','.join('?' * len(q['expected']))})",
+                q["expected"])):    # a question with a verbatim answer must be answerable from its expected pages
+            raise ValueError(f"{q['id']}: answer not found in its expected pages")
     asked = len(questions)
     if scope_shas is not None:
         in_scope = {r[0] for r in searcher.db.execute("SELECT d.path, c.text_sha FROM chunks c JOIN docs d ON d.id=c.doc_id")

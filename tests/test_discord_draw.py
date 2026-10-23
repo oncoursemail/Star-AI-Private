@@ -426,7 +426,9 @@ def test_slash_draw_posts_the_png_with_its_prompt(tmp_path):
             edits = [kw for kind, kw in owner.log if kind == "edit"]
             assert edits[0]["content"] == "🎨 Drawing…"
             final = edits[-1]
-            assert final["content"].startswith("**a dragon over a castle**")
+            # The picture arrives inside Star's drawing card (embeds.drawing_card), prompt as the description.
+            assert final["content"] is None and final["embed"].description == "a dragon over a castle"
+            assert final["embed"].image.url == "attachment://star-drawing.png"
             assert final["attachments"][0].filename == "star-drawing.png"
             stranger = interaction(user=MEMBER)
             await draw.callback(stranger, prompt="a cat", private=False)
@@ -463,7 +465,7 @@ def test_owner_dm_draw_request_shows_drawing_then_the_picture(tmp_path):
             await bot.on_message(message(dm, "draw a dragon"))
             assert dm.sent[0].content == "🎨 Drawing…" and dm.sent[0].deleted
             picture = dm.sent[1]
-            assert picture.content.startswith("**a dragon**") and picture.kwargs["file"].filename == "star-drawing.png"
+            assert picture.kwargs["embed"].description == "a dragon" and picture.kwargs["file"].filename == "star-drawing.png"
             assert brain.prompts == []                        # not sent to the chat model
             dm.sent.clear()
             await bot.on_message(message(dm, "Generate me a image"))

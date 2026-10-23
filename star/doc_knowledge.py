@@ -179,14 +179,28 @@ class KnowledgeClient:
                 "embedded": data.get("embedded") if type(data.get("embedded")) is int else 0,
                 "luau_check": data.get("luau_check") is True}
 
-    def search(self, query: str, *, top: int = 4, mode: str = "vector") -> list[dict]:
-        """Passages most relevant to `query`, best first. Each is plain, bounded data."""
+    def search(self, query: str, *, top: int = 4, mode: str = "vector", scope: str | None = None,
+               corpus: str | None = None) -> list[dict]:
+        """Passages most relevant to `query`, best first. Each is plain, bounded data.
+
+        `scope`: "roblox" searches only the Roblox and Luau documentation, "all" or a group name other indexed
+        sources; None leaves the field out (an older service ignores it; a newer one decides from the query).
+        `corpus`: "private" asks for the team's own notes (the brain vault); only a service that was given a private
+        index answers it, everything else refuses. None (the default) is the public documentation."""
         if not isinstance(query, str) or not query.strip():
             raise ValueError("Search query is empty")
         if type(top) is not int or not 1 <= top <= 10 or mode not in ("vector", "bm25", "hybrid"):
             raise ValueError("Invalid documentation search options")
-        data = self._request("POST", "/search", {"query": clean_text(query, MAX_QUERY_CHARS).strip(),
-                                                 "mode": mode, "top": top}, SEARCH_TIMEOUT)
+        if scope is not None and (not isinstance(scope, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", scope)):
+            raise ValueError("Invalid documentation search scope")
+        if corpus not in (None, "private"):
+            raise ValueError("Invalid documentation search corpus")
+        body = {"query": clean_text(query, MAX_QUERY_CHARS).strip(), "mode": mode, "top": top}
+        if scope is not None:
+            body["scope"] = scope
+        if corpus is not None:
+            body["corpus"] = corpus
+        data = self._request("POST", "/search", body, SEARCH_TIMEOUT)
         passages = []
         for raw in (data.get("passages") if isinstance(data.get("passages"), list) else [])[:top]:
             item = _passage(raw, len(passages) + 1)

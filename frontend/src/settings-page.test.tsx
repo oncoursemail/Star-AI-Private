@@ -125,6 +125,65 @@ describe('Unsaved changes', () => {
   })
 })
 
+describe('Strata specialist settings', () => {
+  it('applies the Strata engine recovery through a native owner-picked config', async () => {
+    desktop.onAction('repairStrataConfig', () => ({
+      ok:true,data:{configured:true,changed:true,restart_required:true,backup_name:'strata-qwen.json.star-before-recovery.bak'}
+    }))
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Model'}))
+    await user.click(screen.getByRole('button', {name: 'Apply engine loop recovery…'}))
+    await waitFor(() => expect(desktop.sent('repairStrataConfig').length).toBe(1))
+    expect(desktop.sent('repairStrataConfig')[0].payload).toEqual({})
+    expect(await screen.findByText(/Recovery enabled in Strata config/)).toBeTruthy()
+  })
+
+  it('can disable the issue #728 watchdog for intentional repetition', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Model'}))
+    await user.click(screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}))
+    const control = screen.getByRole('checkbox', {name: 'Stop runaway Strata repetition'}) as HTMLInputElement
+    expect(control.checked).toBe(true)
+    await user.click(control)
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    const saved = desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>
+    expect(saved.strata_loop_guard_enabled).toBe(false)
+  })
+
+  it('tests the Strata endpoint and model currently on screen', async () => {
+    desktop.onAction('testStrata', () => ({ok:true,data:{ok:true,model:'strata',sample:'Strata is ready.',elapsed_ms:12}}))
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Model'}))
+    await user.click(screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}))
+    await user.click(screen.getByRole('button', {name: 'Test Strata'}))
+    await waitFor(() => expect(desktop.sent('testStrata').length).toBe(1))
+    const call = desktop.sent('testStrata')[0]
+    expect(call.payload).toEqual({endpoint:'http://127.0.0.1:8082/v1',model:'strata'})
+    expect(await screen.findByText(/Strata is ready/)).toBeTruthy()
+  })
+
+  it('keeps the second engine opt-in and saves its bounded local configuration', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Model'}))
+    const enabled = screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}) as HTMLInputElement
+    expect(enabled.checked).toBe(false)
+    await user.click(enabled)
+    const model = screen.getByLabelText('Strata model ID') as HTMLInputElement
+    await user.clear(model); await user.type(model, 'strata')
+    const effort = screen.getByLabelText('Reasoning') as HTMLSelectElement
+    await user.selectOptions(effort, 'high')
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    const saved = desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>
+    expect(saved.strata_enabled).toBe(true)
+    expect(saved.strata_endpoint).toBe('http://127.0.0.1:8082/v1')
+    expect(saved.strata_reasoning).toBe('high')
+    expect(saved.strata_context_tokens).toBe(32768)
+    expect(saved.strata_loop_guard_enabled).toBe(true)
+  })
+})
+
 describe('Web search keys', () => {
   it('stores a Brave key through the OS vault action and never keeps it in the page', async () => {
     desktop.onAction('saveProviderKey', () => ({ok: true, data: {connected: true}}))
@@ -143,6 +202,19 @@ describe('Web search keys', () => {
   })
 })
 
+describe('Scholarly research switch', () => {
+  it('is off by default and saves scholarly_research_enabled when turned on', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Knowledge & search'}))
+    const box = screen.getByRole('checkbox', {name: 'Add scholarly papers to deep research'}) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    await user.click(box)
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    expect((desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>).scholarly_research_enabled).toBe(true)
+  })
+})
+
 describe('helpers', () => {
   it('matches every word, ignoring case, accents and hyphens', () => {
     expect(normalizeSearch('Résumé  Wi-Fi')).toBe('resume wi fi')
@@ -155,5 +227,24 @@ describe('helpers', () => {
     expect(settingsDirty({...base, reduced_motion: !base.reduced_motion}, base)).toBe(false)
     expect(settingsDirty({...base, max_calls: 3}, base)).toBe(true)
     expect(settingsDirty({...base, instant_route_enabled: null}, {...base, instant_route_enabled: undefined})).toBe(false)
+  })
+})
+
+describe('Song recognition', () => {
+  it('is off by default: no composer button and no key fields until the switch is on, then it saves the flag', async () => {
+    expect((backendSettings as AppSettings).music_recognition_enabled).toBeUndefined()
+    const user = userEvent.setup()
+    render(<App/>)
+    await screen.findByRole('textbox', {name: /message star/i})
+    expect(screen.queryByRole('button', {name: 'Identify a song'})).toBeNull()
+    await user.click(screen.getByRole('button', {name: /^settings/i}))
+    await user.click(await screen.findByRole('tab', {name: 'Images, voice & 3D'}))
+    expect(screen.queryByLabelText('AudD key')).toBeNull()
+    await user.click(screen.getByRole('checkbox', {name: 'Song recognition'}))
+    expect((screen.getByLabelText('AudD key') as HTMLInputElement).type).toBe('password')
+    expect(screen.getByLabelText('AcoustID key')).toBeTruthy()
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBe(1))
+    expect((desktop.sent('saveSettings')[0].payload.settings as AppSettings).music_recognition_enabled).toBe(true)
   })
 })

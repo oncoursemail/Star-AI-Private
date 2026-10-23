@@ -84,11 +84,13 @@ WRITE_TOOLS = frozenset({'workspace_write', 'workspace_edit'})
 
 
 class Workspace:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, validate: bool = False):
         root = root.expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError('Workspace must be an existing directory')
         self.root = root
+        # Settings > incremental_repair: writes also report a syntax check (star/workspace_validation.py).
+        self.validate = validate
 
     def resolve(self, relative: str, *, allow_missing: bool = False) -> Path:
         if not relative or len(relative) > 500:
@@ -171,14 +173,20 @@ class Workspace:
             if not path.is_file() or path.stat().st_size > MAX_READ_BYTES:
                 raise ValueError('Not a small text file')
             with path.open(encoding='utf-8', newline='') as handle:
-                edited = apply_edit(handle.read(), args['old_string'], args['new_string'],
+                previous_text = handle.read()
+                edited = apply_edit(previous_text, args['old_string'], args['new_string'],
                                     replace_all=args.get('replace_all', False))
             result = self._replace(path, edited.text.encode('utf-8'))
             result.update({'replacements': edited.count, 'match': edited.strategy})
-            return _with_lint(result, path, edited.text)
+            if not self.validate:
+                return _with_lint(result, path, edited.text)
+            return _with_validation(result, path, edited.text, previous_text=previous_text)
         path = self.resolve(args['path'], allow_missing=True)
+        previous_text = _validation_baseline(path) if self.validate else None
         result = self._replace(path, args['content'].encode('utf-8'))
-        return _with_lint(result, path, args['content'])
+        if not self.validate:
+            return _with_lint(result, path, args['content'])
+        return _with_validation(result, path, args['content'], previous_text=previous_text)
 
     def _replace(self, path: Path, data: bytes) -> dict[str, Any]:
         if len(data) > MAX_WRITE_BYTES:
@@ -199,6 +207,39 @@ class Workspace:
             if tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
         return {'path': path.relative_to(self.root).as_posix(), 'bytes_written': len(data)}
+
+
+def _validation_baseline(path: Path) -> str | None:
+    """Best-effort prior text for comparison, never a condition of an authorized write."""
+    try:
+        if not path.is_file() or path.stat().st_size > MAX_READ_BYTES:
+            return None
+        with path.open(encoding='utf-8', newline='') as handle:
+            text = handle.read(MAX_READ_BYTES + 1)
+        return text if len(text.encode('utf-8')) <= MAX_READ_BYTES else None
+    except (OSError, UnicodeError):
+        return None
+
+
+def _with_validation(result: dict[str, Any], path: Path, text: str,
+                     *, previous_text: str | None = None) -> dict[str, Any]:
+    """A parser failure is feedback after the atomic write, not a failed write."""
+    try:
+        from .workspace_validation import validate_text
+        result['validation'] = validate_text(path, text, previous_text=previous_text)
+    except Exception:
+        # Even a dispatcher/import defect must not report an already-saved write
+        # as failed. Do not expose a checker traceback or claim syntax passed.
+        import hashlib
+        result['validation'] = {
+            'checker': 'workspace_validation', 'scope': 'file_syntax', 'status': 'unavailable',
+            'content_sha256': hashlib.sha256(text.encode('utf-8')).hexdigest(),
+            'diagnostics': [{'code': 'checker_unavailable', 'severity': 'info',
+                             'message': 'Syntax checker could not complete.'}],
+            'runtime_verified': False, 'comparison': 'unknown',
+            'summary': 'Syntax was not checked; runtime behavior is unverified.',
+        }
+    return _with_lint(result, path, text)
 
 
 LINTED_SUFFIXES = frozenset({'.lua', '.luau'})

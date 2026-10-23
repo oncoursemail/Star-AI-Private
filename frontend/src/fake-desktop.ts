@@ -19,13 +19,16 @@ type Row = {id: string; role: 'user' | 'assistant' | 'event'; text: string; crea
 /** Mirrors `asdict(Settings())` in star/desktop_core.py; loosely typed on purpose. */
 export const backendSettings = {
   endpoint: 'http://127.0.0.1:8080/v1', provider: 'local', model: 'qwen-test', fast_model: '',
-  reasoning_model: '', roblox_model: '', vision_model: '', router_models_dir: '', router_context: 4096,
+  reasoning_model: '', roblox_model: '', vision_model: '', strata_enabled: false,
+  strata_endpoint: 'http://127.0.0.1:8082/v1', strata_model: 'strata', strata_reasoning: 'auto',
+  strata_context_tokens: 32768, strata_timeout: 900, strata_vision_enabled: true, strata_loop_guard_enabled: true,
+  router_models_dir: '', router_context: 4096,
   gpu_layers: 25, instant_route_enabled: false, project: 'STAR', workspace: '', studio_id: '', studio_target: 'local_pc', studio_edit: false, workspace_edit: false,
   max_calls: 12, context_chars: 26000, reduced_motion: true, obsidian_vault: '', obsidian_enabled: false,
   skills_enabled: true, graphify_enabled: true, comfy_workflow: '', comfy_prompt_node: '6', comfy_port: 8188,
   mcp_graphify_docs: false, mcp_graphify_local: false, mcp_graphify_port: 8931, mcp_obsidian_live: false,
   blender_enabled: false, blender_edit: false, blender_executable: '',
-  roblox_research_enabled: true, asset_forge_enabled: false, tool_workshop_enabled: true, specialists_enabled: true, specialist_parallelism: 1,
+  roblox_research_enabled: true, asset_forge_enabled: false, commerce_enabled: true, tool_workshop_enabled: true, specialists_enabled: true, specialist_parallelism: 1,
   practice_lessons_enabled: false, worked_examples_enabled: false, presolve_enabled: false,
 }
 

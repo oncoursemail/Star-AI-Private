@@ -295,6 +295,44 @@ class PlannedGate(IdleGate):
         self._drop()
 
 
+class PriorityGate(IdleGate):
+    """For a brain URL behind STAR's priority proxy: the proxy pauses night school's generation when the owner needs
+    the slot and resumes it afterwards, so other clients are no reason to wait or to cancel. HOLD and the quiet lock
+    still are. When the proxy does not answer /priority/v1/status (looked at once a minute), this is the idle gate."""
+
+    def __init__(self, settings, watch: BrainWatch, *, recheck_s: float = 60.0, **kwargs):
+        super().__init__(settings, watch, **kwargs)
+        self._recheck_s, self._proxy_at, self._proxy = recheck_s, -1e18, False
+
+    def proxied(self) -> bool:
+        now = self._clock()
+        if now - self._proxy_at >= self._recheck_s:
+            self._proxy_at = now
+            try:
+                status = self.watch._fetch("/priority/v1/status")
+                self._proxy = isinstance(status, dict) and "classes" in status
+            except OSError:
+                self._proxy = False
+        return self._proxy
+
+    def look(self) -> str:
+        if Path(self.settings.hold_file).exists():
+            return "HOLD file present, paused"
+        if self.lock_held():
+            return "quiet lock held, waiting"
+        return "" if self.proxied() else super().look()
+
+    def intruder(self, own_slot: int) -> str:
+        if Path(self.settings.hold_file).exists():
+            return "HOLD file"
+        if self.lock_held():
+            return "quiet lock"
+        return "" if self.proxied() else super().intruder(own_slot)
+
+    def close(self) -> None:
+        return
+
+
 def make_planner(settings, key: str):
     """The planner client for night school, or None when switched off (STAR_NS_PLANNER_URL=off) or not importable."""
     url = getattr(settings, "planner_url", "")

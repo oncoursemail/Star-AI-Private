@@ -231,6 +231,10 @@ TRIGGERS: dict[str, re.Pattern] = {
         r"CameraType\.Scriptable|Scriptable camera|letterbox\w*|skip button|FaceControls|facial (?:expressions?|animation)|"
         r"dynamic heads?|FACS|expressions? (?:change|player)|lip-?sync|talking animation|"
         r"Catmull-?Rom|camera splines?|depth of field|DepthOfFieldEffect|boss intro)\b", re.IGNORECASE),
+    # EXPERIMENTAL XPBD secondary-motion kernel and rig preflight (SmartBone 2 comparison). OFF until evaluated.
+    "roblox-secondary-motion-lab": re.compile(
+        r"\b(?:SmartBone(?: ?2)?|XPBD|secondary motion|jiggle bones?|spring bones?|bone chains?|hair physics|cloth physics|"
+        r"cosmetic physics|AnimationConstraint|ponytail|capes?|dangling)\b", re.IGNORECASE),
 }
 
 

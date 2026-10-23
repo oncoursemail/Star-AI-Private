@@ -121,7 +121,8 @@ def find_comfy_home(*, env: dict | None = None, data_dir: Path | None = None, se
 
     A fixed, short list and nothing else (no disk search): the folder named by STAR_COMFY_HOME; a `media/ComfyUI`
     folder inside STAR's own data folder; and `media/ComfyUI` next to STAR's own folder or up to four levels above
-    it, which is where `scripts/media/setup_comfyui.sh` puts it when MEDIA_HOME is the project's `media` folder.
+    it, which is where `scripts/media/setup_comfyui.sh` puts it when MEDIA_HOME is the project's `media` folder; and
+    `Documents/starai/media/ComfyUI` in the user's profile (the installed app does not run from the project).
     The folders above STAR count only when they are inside the user's own profile, so a folder that another user of
     this PC could create (for example one at the root of a drive) is never run. A folder counts only when it
     has `main.py` and ComfyUI's own Python, exactly what the launcher needs.
@@ -154,6 +155,10 @@ def find_comfy_home(*, env: dict | None = None, data_dir: Path | None = None, se
                 found = level / 'media' / 'ComfyUI'
                 if usable(found):
                     return str(found)
+        # The project's own media folder in the user's profile, for an installed app that runs from elsewhere.
+        project_media = profile / 'Documents' / 'starai' / 'media' / 'ComfyUI'
+        if usable(project_media):
+            return str(project_media)
     except (OSError, RuntimeError):
         return ''
     return ''

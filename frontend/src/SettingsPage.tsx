@@ -5,6 +5,7 @@ import {Panel,Tag} from './components'
 import {WEBSITE_RELEASES} from './constants'
 import type {AppSettings,BootData} from './types'
 import {ProviderPanel} from './IntegrationPanels'
+import {onBackendEvent} from './bridge'
 import {RobloxPanel} from './RobloxPanel'
 import {BlenderPanel} from './BlenderPanel'
 import {MediaPlaces} from './MediaPanel'
@@ -21,6 +22,7 @@ export type SettingsSectionId='general'|'model'|'roblox'|'creative'|'knowledge'|
 
 /** Everything the page needs from the desktop shell. The shell keeps the state; this page only lays it out. */
 export type SettingsPageProps={
+ appearance?:ReactNode
  data:BootData
  draft:AppSettings
  setDraft:(update:AppSettings|((d:AppSettings)=>AppSettings))=>void
@@ -46,6 +48,8 @@ export type SettingsPageProps={
  showStar:boolean
  setShowStar:(on:boolean)=>void
  newHome?:boolean
+ studioLayout?:boolean
+ setStudioLayout?:(on:boolean)=>void
  setNewHome?:(on:boolean)=>void
  clipsOn?:boolean
  setClipsOn?:(on:boolean)=>void
@@ -107,9 +111,64 @@ function Switch({label,hint,checked,onChange,disabled,experimental}:{label:strin
  return <label className="setting-switch"><span><strong>{label}{experimental&&<span className="settings-badge">Experimental</span>}</strong><small id={hintId}>{hint}</small></span><input type="checkbox" aria-label={label} aria-describedby={hintId} checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)}/></label>
 }
 
-/** Brave or Tavily key for web search. The key goes to the OS credential vault through saveProviderKey and is never
- * shown again; the page only learns whether one is stored. */
-function SearchKey({provider,label,stored,invoke,disabled,onSaved}:{provider:'brave'|'tavily';label:string;stored:boolean;invoke:Invoke;disabled:boolean;onSaved:()=>void}) {
+type StrataProbeResult={ok:boolean;model:string;sample:string;elapsed_ms:number}
+
+function StrataProbe({draft,invoke,disabled}:{draft:AppSettings;invoke:Invoke;disabled:boolean}) {
+ const [busy,setBusy]=useState(false)
+ const [result,setResult]=useState<StrataProbeResult|null>(null)
+ const [error,setError]=useState('')
+ const pending=useRef('')
+ useEffect(()=>onBackendEvent(event=>{
+   if(!pending.current||event.requestId!==pending.current||event.kind==='progress')return
+   pending.current='';setBusy(false)
+   if(event.kind==='error'){setResult(null);setError(String(event.data||'Strata test failed').slice(0,260));return}
+   const value=event.data as StrataProbeResult|null
+   if(value?.ok){setResult(value);setError('')}else{setResult(null);setError('Strata returned no usable test result.')}
+ }),[])
+ const run=async()=>{
+   if(disabled||busy)return
+   setBusy(true);setResult(null);setError('')
+   const reply=await invoke('testStrata',{endpoint:draft.strata_endpoint||'',model:draft.strata_model||''}) as
+     ({pending?:boolean;requestId?:string}&Partial<StrataProbeResult>)|null
+   if(reply?.pending&&reply.requestId){pending.current=reply.requestId;return}
+   setBusy(false)
+   if(reply?.ok){setResult(reply as StrataProbeResult);return}
+   if(reply!==null)setError('Strata returned no usable test result.')
+ }
+ return <div className="settings-actions">
+   <button type="button" className="secondary-button" disabled={disabled||busy||!draft.strata_model}
+     onClick={()=>void run()}>{busy?<LoaderCircle className="spin" size={14} aria-hidden="true"/>:<Zap size={14} aria-hidden="true"/>} Test Strata</button>
+   {result&&<span className="health-result" role="status"><Check size={14} aria-hidden="true"/> {result.sample} · {result.elapsed_ms} ms</span>}
+   {error&&<span className="integrated-error" role="alert">{error}</span>}
+ </div>
+}
+
+function StrataEngineRepair({invoke,disabled}:{invoke:Invoke;disabled:boolean}) {
+ const [busy,setBusy]=useState(false)
+ const [result,setResult]=useState('')
+ const apply=async()=>{
+   if(disabled||busy)return
+   setBusy(true);setResult('')
+   try {
+     // Native Qt file picker decides the path; no file path is accepted from React.
+     const reply=await invoke('repairStrataConfig') as
+       {configured?:boolean;changed?:boolean;restart_required?:boolean;cancelled?:boolean}|null
+     if(reply?.cancelled||!reply)return
+     if(reply.configured)setResult(reply.changed
+       ?'Recovery enabled in Strata config. Restart the Strata server to activate it; a local backup was kept.'
+       :'Recovery was already enabled in this Strata config.')
+   } finally {setBusy(false)}
+ }
+ return <div className="settings-actions">
+   <button type="button" className="secondary-button" onClick={()=>void apply()}
+     disabled={disabled||busy}>{busy?<LoaderCircle className="spin" size={14} aria-hidden="true"/>:<ShieldCheck size={14} aria-hidden="true"/>} Apply engine loop recovery…</button>
+   {result&&<small role="status">{result}</small>}
+ </div>
+}
+
+/** A service key (Brave or Tavily for web search, AudD or AcoustID for song recognition). The key goes to the OS
+ * credential vault through saveProviderKey and is never shown again; the page only learns whether one is stored. */
+function SearchKey({provider,label,stored,invoke,disabled,onSaved}:{provider:'brave'|'tavily'|'audd'|'acoustid';label:string;stored:boolean;invoke:Invoke;disabled:boolean;onSaved:()=>void}) {
  const field=useRef<HTMLInputElement>(null)
  const [typed,setTyped]=useState(false)
  const [busy,setBusy]=useState(false)
@@ -199,8 +258,10 @@ export function SettingsPage(props:SettingsPageProps) {
 
  const panels:Record<SettingsSectionId,ReactNode>={
   general:<>
-   <Block id="interface" keywords="theme animation motion mascot pet appearance accessibility home start workbench clips obs replay recording game lab">
+   <Block id="interface" keywords="theme animation motion mascot pet appearance accessibility home start workbench clips obs replay recording game lab studio layout companions">
+     {props.appearance}
      <Panel className="settings-section"><h3 className="settings-group-title">Interface</h3>
+       {props.setStudioLayout&&<Switch label="Studio layout" hint="Off by default. Adds a workspace switch, an Appearance menu with themes and a companion shelf beside the chat. Saved on this device." checked={!!props.studioLayout} onChange={props.setStudioLayout}/>}
        <Switch label="Show Star" hint="Off by default. Display the mascot over the chat. Saved on this device." checked={props.showStar} onChange={props.setShowStar}/>
        {props.setNewHome&&<Switch label="Workbench home screen" hint="Off by default. Shows the new start canvas with starter tasks when a chat is empty. Saved on this device." checked={!!props.newHome} onChange={props.setNewHome}/>}
        {props.setClipsOn&&<Switch label="STAR Clips and Game Lab" hint="Off by default. Shows the OBS replay, clip folder, SteelSeries Moments and Game Lab panels on the Tools page. Needs your own OBS Studio. Saved on this device." checked={!!props.clipsOn} onChange={props.setClipsOn}/>}
@@ -222,6 +283,28 @@ export function SettingsPage(props:SettingsPageProps) {
        <div className="field-grid"><label>{serverDraft?'Server model ID':'Model ID'}<input list="star-model-ids" value={draft.model} onChange={e=>set({model:e.target.value})} placeholder={serverDraft?'Model on your STAR Server':'Installed model'}/></label>{!serverDraft&&<label>Local endpoint<input value={draft.endpoint} onChange={e=>set({endpoint:e.target.value})}/></label>}</div>
        <div className="settings-actions"><button className="secondary-button" type="button" onClick={()=>void act('listModels')}>List available models <RefreshCcw size={14} aria-hidden="true"/></button><button className="secondary-button" type="button" disabled={modelChecking||!draft.model} onClick={props.testActualModel}>{modelChecking?<LoaderCircle className="spin" size={14} aria-hidden="true"/>:<Zap size={14} aria-hidden="true"/>} Test actual response</button></div>
        {modelCheck&&<div className="health-result" role="status"><Check size={16} aria-hidden="true"/> <span>Live response: {modelCheck.sample}</span></div>}{modelList.length>0&&<small>Available: {modelList.join(', ')}</small>}
+     </Panel>
+   </Block>
+   <Block id="strata" keywords="strata qwen qwen3.8 flash next large model reasoning coding roblox local second engine">
+     <Panel className="settings-section"><div className="section-heading"><div><h3 className="settings-group-title">Strata + Qwen3.8 specialist</h3><p>Optional second local engine for harder code, Roblox, research and Agent tasks. Simple chat stays on your normal resident model.</p></div><Sparkles size={20} aria-hidden="true"/></div>
+       <Switch label="Use Strata for hard local work" hint="Off by default. When enabled with the Local provider, STAR routes complex tasks to the separate Strata endpoint and falls back to the resident model if Strata is unavailable before output starts." checked={draft.strata_enabled===true} disabled={inactive||draft.provider!=='local'} onChange={on=>set({strata_enabled:on})}/>
+       <div className="field-grid">
+         <label>Strata endpoint<input value={draft.strata_endpoint??'http://127.0.0.1:8082/v1'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_endpoint:e.target.value})} placeholder="http://127.0.0.1:8082/v1"/></label>
+         <label>Strata model ID<input value={draft.strata_model??'strata'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_model:e.target.value})} placeholder="strata"/></label>
+         <label>Reasoning
+           <select value={draft.strata_reasoning??'auto'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_reasoning:e.target.value as AppSettings['strata_reasoning']})}>
+             <option value="auto">Automatic by task</option><option value="none">None</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+           </select>
+         </label>
+         <label>Context tokens<input type="number" min="4096" max="262144" step="1024" value={draft.strata_context_tokens??32768} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_context_tokens:Number(e.target.value)})}/></label>
+         <label>Request timeout (seconds)<input type="number" min="60" max="1800" step="30" value={draft.strata_timeout??900} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_timeout:Number(e.target.value)})}/></label>
+       </div>
+       <Switch label="Let Strata inspect images" hint="Use Qwen3.8's image input for complex visual/Roblox debugging when the Strata model supports it." checked={draft.strata_vision_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_vision_enabled:on})}/>
+       <Switch label="Stop runaway Strata repetition" hint="On by default when Strata is enabled. Detects repeated reasoning or answer passages (issue #728) and stops the request without replaying project tools." checked={draft.strata_loop_guard_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_loop_guard_enabled:on})}/>
+       <StrataProbe draft={draft} invoke={act} disabled={inactive||draft.strata_enabled!==true}/>
+       <StrataEngineRepair invoke={act} disabled={inactive||draft.provider!=='local'}/>
+       <small>Engine recovery requires Strata 0.1.40 or newer. Choose its installed strata-*.json file to enable recovery with an exact local backup; restart Strata afterwards.</small>
+       <small>STAR never downloads or starts Strata automatically. Run Strata separately on this loopback endpoint; keeping it separate lets the small model stay fast for everyday chat.</small>
      </Panel>
    </Block>
    <Block id="provider" keywords="api key cloud groq openrouter gemini cerebras star server provider lan">
@@ -250,10 +333,12 @@ export function SettingsPage(props:SettingsPageProps) {
        <Switch label="Find guidance packs by meaning" hint="Off by default. With STAR Server, when no guidance pack matches your words, its embedding model picks the closest one. Falls back to word matching if the server does not answer." checked={draft.skill_pack_embeddings===true} onChange={on=>set({skill_pack_embeddings:on})}/>
      </Panel>
    </Block>
-   <Block id="roblox-code" keywords="luau code studio tools examples retry fix thinking">
+   <Block id="roblox-code" keywords="luau code studio tools examples retry fix thinking edit diff changed lines repair syntax">
      <Panel className="settings-section"><h3 className="settings-group-title">Roblox code help</h3>
        <Switch label="Show example Studio tool calls" hint="Off by default. Adds one fixed example call to each Studio tool so the model makes fewer refused calls. Permissions do not change." checked={draft.studio_tool_examples===true} onChange={on=>set({studio_tool_examples:on})}/>
        <Switch label="Retry a failed Luau fix with more thinking" hint="Off by default. When STAR's fix still fails the Luau check, it tries once more with the new errors (thinking on with your own brain). Answers can take longer." checked={draft.luau_retry_ladder===true} onChange={on=>set({luau_retry_ladder:on})}/>
+       <Switch label="Repair a failed tool step before going on" hint="Off by default. When a tool call fails or a file STAR saved fails its syntax check, STAR holds its other changes and makes at most two focused fixes, then says in the answer what is still unresolved. While a check is unresolved the answer appears at the end instead of word by word." checked={draft.incremental_repair===true} onChange={on=>set({incremental_repair:on})}/>
+       <Switch label="Write only the changed lines when I paste code" hint="Off by default. When you paste code and ask for a fix or change, STAR asks the model for the changed lines only, applies them to your code, checks the result and shows the full code. Faster on long scripts. If the change does not apply cleanly, STAR writes the full code as usual." checked={draft.edit_diff===true} onChange={on=>set({edit_diff:on})}/>
      </Panel>
    </Block>
    <Block id="studio-target" keywords="studio place practice host this pc mcp">
@@ -286,12 +371,24 @@ export function SettingsPage(props:SettingsPageProps) {
    <Block id="blender" keywords="blender 3d model mesh">
      <BlenderPanel draft={draft} onChange={setDraft} status={data.blender} invoke={act} disabled={inactive||busy}/>
    </Block>
+   <Block id="song-recognition" keywords="song music recognition identify shazam audd acoustid chromaprint fpcalc">
+     <Panel className="settings-section"><div className="section-heading"><div><h3 className="settings-group-title">Song recognition</h3><p>Identify a song from a WAV file or a short recording. Each lookup asks first. AudD receives the audio clip; AcoustID receives only a fingerprint made on this PC by Chromaprint fpcalc.</p></div><KeyRound size={20} aria-hidden="true"/></div>
+       <Switch label="Song recognition" hint="Off by default. Adds Identify a song to the composer and a song lookup line for an attached WAV." checked={draft.music_recognition_enabled===true} onChange={on=>set({music_recognition_enabled:on})}/>
+       {draft.music_recognition_enabled===true&&<>
+         <SearchKey provider="audd" label="AudD" stored={!!data.credentials?.audd} invoke={act} disabled={inactive} onSaved={sync}/>
+         <SearchKey provider="acoustid" label="AcoustID" stored={!!data.credentials?.acoustid} invoke={act} disabled={inactive} onSaved={sync}/>
+         <div className="intelligence-folder-row"><label>Chromaprint fpcalc program<input aria-label="Chromaprint fpcalc program" value={draft.fpcalc_path??''} onChange={e=>set({fpcalc_path:e.target.value})} placeholder="Not set: fpcalc is looked up on PATH"/></label></div>
+       </>}
+     </Panel>
+   </Block>
   </>,
   knowledge:<>
-   <Block id="web-search" keywords="internet brave tavily api key web search">
+   <Block id="web-search" keywords="internet brave tavily api key web search deep research sources">
      <Panel className="settings-section"><div className="section-heading"><div><h3 className="settings-group-title">Web search</h3><p>{serverDraft?'With STAR Server selected, STAR uses the server’s search. A Brave or Tavily key is used instead when you add one here.':'Add a Brave or Tavily key so STAR can search the web. Your search words go to that provider; nothing else does.'}</p></div><KeyRound size={20} aria-hidden="true"/></div>
        <SearchKey provider="brave" label="Brave Search" stored={!!data.credentials?.brave} invoke={act} disabled={inactive} onSaved={sync}/>
        <SearchKey provider="tavily" label="Tavily" stored={!!data.credentials?.tavily} invoke={act} disabled={inactive} onSaved={sync}/>
+       <Switch label="Read source pages in deep research" hint="With both Team and Research selected, search several evidence angles, read up to 12 public pages, and follow up on missing evidence. Shows source activity and citation references. Uses your selected search service; pages can see the reader's network address." checked={draft.deep_research_enabled===true} onChange={on=>set({deep_research_enabled:on})}/>
+       <Switch label="Add scholarly papers to deep research" hint="Deep research also looks up matching papers on Crossref and OpenAlex (titles and links only) and reads them like other sources. Your research question is sent to both services." checked={draft.scholarly_research_enabled===true} onChange={on=>set({scholarly_research_enabled:on})}/>
      </Panel>
    </Block>
    <Block id="knowledge-tools" keywords="skills graphify obsidian notes vault practice examples knowledge agents.md project rules">
@@ -312,6 +409,9 @@ export function SettingsPage(props:SettingsPageProps) {
    <Block id="permissions" keywords="permissions write edit folder workspace studio access security">
      <Panel className="settings-section"><h3 className="settings-group-title">Workspace & Studio</h3>
        <div className="field-grid"><label>Workspace folder<input value={draft.workspace} onChange={e=>set({workspace:e.target.value})} placeholder="Choose a project folder"/></label><div className="settings-field-static"><span>Selected Roblox Studio</span><small>{data.settings.studio_id||'Connect an open place in Tools first'}</small><button className="secondary-button" type="button" onClick={()=>nav('tools')}>Open Studio connections</button></div></div>
+       <Switch label="Analyze debugger reports" hint="Read local test failures, debugger captures and source locations in your selected workspace. Compare repair evidence and suggest focused checks." experimental checked={draft.debug_evidence_enabled===true} onChange={on=>set({debug_evidence_enabled:on})}/>
+       <Switch label="Plan live-show episodes" hint="Validate an episode manifest JSON in your selected workspace and report timing and readiness. Offline planning only: nothing is rendered, posted or streamed." experimental checked={draft.live_show_enabled===true} onChange={on=>set({live_show_enabled:on})}/>
+      <Switch label="Minecraft pack and server-folder tools" hint="Check your own resource packs and Blockbench models, and read plugin and mod details from a server folder you name, inside your selected workspace. Building a pack or item also needs workspace editing. Nothing is downloaded, run or connected." experimental checked={draft.minecraft_tools_enabled===true} onChange={on=>set({minecraft_tools_enabled:on})}/>
        <Switch label="Allow workspace writes" hint="Only inside your selected workspace." checked={draft.workspace_edit} onChange={on=>set({workspace_edit:on})}/>
        <Switch label="Allow Studio edits" hint="Use an unpublished disposable test place first." checked={draft.studio_edit} onChange={on=>set({studio_edit:on})}/>
      </Panel>

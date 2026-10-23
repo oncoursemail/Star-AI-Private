@@ -41,6 +41,7 @@ import time
 from typing import Any
 
 from . import eval_checks as checks
+from .knowledge_checks import validate_key
 
 SCHEMA = 1
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,7 +56,8 @@ PRODUCT_FAILURES = ("Model-call limit exceeded", "streamed no visible answer", "
                     "Failed to parse tool call arguments")   # the server rejects the model's own malformed tool call: the user sees this error
 LOCK_LIMIT_SECONDS = 3 * 3600
 _PRIVATE_IP = re.compile(r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b")
-_KEEP_EVENTS = {"route_selected", "knowledge_finished", "luau_check_finished", "skill_packs"}
+_KEEP_EVENTS = {"route_selected", "knowledge_finished", "luau_check_finished", "skill_packs", "api_hints",
+                "slop_repair", "verify_finished"}
 
 
 def _lf(data):
@@ -130,6 +132,8 @@ def validate_tasks(tasks: list[dict], directory: Path) -> list[str]:
                         re.compile(pattern)
                 except (re.error, KeyError):
                     problems.append(f"{tid}: bad {key} pattern {item.get('id')}")
+        if "answer" in auto:
+            problems.extend(f"{tid}: bad answer key: {p}" for p in validate_key(auto["answer"]))
     return problems
 
 
@@ -165,9 +169,13 @@ def summarize(tasks: dict) -> dict:
             counts[record["status"]] += 1
             seconds.append(record.get("seconds", 0.0))
     scored = counts["pass"] + counts["fail"]
+    slops = [r["slop"]["score"] for r in tasks.values() if isinstance(r.get("slop"), dict)]
     return {**counts, "scored": scored,
             "pass_rate": round(counts["pass"] / scored, 4) if scored else None,
-            "median_seconds": round(statistics.median(seconds), 1) if seconds else None}
+            "median_seconds": round(statistics.median(seconds), 1) if seconds else None,
+            **({"slop_mean": round(sum(slops) / len(slops), 1),
+                "slop_hard": sum(1 for r in tasks.values() if isinstance(r.get("slop"), dict) and r["slop"]["hard"])}
+               if slops else {})}
 
 
 def grader_sha256(root: Path = ROOT) -> str:
@@ -283,7 +291,10 @@ def record_for(task: dict, asked: Asked | None, score: checks.TaskScore | None, 
                 "seconds": round(asked.seconds, 1) if asked else 0.0, "error": error}
     events = compact_events(asked.events)
     packs = next((e.get("names") for e in events if e.get("event") == "skill_packs"), [])
+    from . import slop                     # measurement only: the score never changes pass/fail
+    report = slop.score_answer(asked.answer, prompt=task.get("prompt", ""))
     return {
+        "slop": {"score": report.score, "hard": report.hard, "rules": report.rules},
         "status": "pass" if score.passed else "fail", "passed": score.passed,
         "prompt_sha256": hashlib.sha256(task["prompt"].encode("utf-8")).hexdigest()[:16],
         "reasons": score.reasons, "checks": [c.record() for c in score.checks],
@@ -490,6 +501,23 @@ class PlannedSandbox:
         return self.default.lock_present(*args, **kwargs)
 
 
+_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check", "prefill_while_typing", "verify_ladder",
+                       "verify_rounds", "verify_budget_s", "mistake_memory", "thinking_budget"})
+
+
+def parse_sets(pairs: list[str]) -> dict:
+    """NAME=VALUE pairs -> Settings overrides. Only answer-path switches (no endpoint, key or model: those have
+    their own options); true/false become booleans."""
+    out: dict = {}
+    for pair in pairs:
+        name, sep, value = str(pair).partition("=")
+        name, value = name.strip(), value.strip()
+        if not sep or name not in _SETTABLE:
+            raise SystemExit(f"--set {pair!r}: expected NAME=VALUE with NAME one of {', '.join(sorted(_SETTABLE))}")
+        out[name] = int(value) if value.isdigit() else {"true": True, "false": False}.get(value.lower(), value)
+    return out
+
+
 def build_real(args, log=print):
     """(run_info, ask, scorer, lock_probe, secrets) wired to the real server."""
     from .desktop_core import Settings, run_task
@@ -499,6 +527,7 @@ def build_real(args, log=print):
     key = read_key(Path(args.key_file))
     os.environ["STAR_SERVER_API_KEY"] = key
     os.environ["STAR_SKILL_PACKS"] = args.packs
+    os.environ["STAR_BACKGROUND_WORK"] = "1"     # star-fast requests name a background slot (star/background_cap.py)
     server = (args.server or os.environ.get("STAR_EVAL_SERVER", "")).rstrip("/")
     if not server:
         raise SystemExit("Give the STAR Server URL with --server or STAR_EVAL_SERVER")
@@ -508,8 +537,10 @@ def build_real(args, log=print):
     # star-fast fills the blank code role, so a "star-quick" run still answers Roblox tasks with star-fast.
     pinned = getattr(args, "pin_model", False)
     roles = {f: args.model for f in ("fast_model", "reasoning_model", "roblox_model", "vision_model")} if pinned else {}
+    # --set NAME=VALUE: the arm of an A/B (e.g. api_hints_enabled=true); the same names and checks as the app's Settings.
+    overrides = parse_sets(getattr(args, "set", None) or [])
     settings = Settings(provider="star_server", server_endpoint=server, model=args.model, project="STAR-eval",
-                        server_timeout=SERVER_TIMEOUT_SECONDS, **roles)
+                        server_timeout=SERVER_TIMEOUT_SECONDS, **roles, **overrides)
     settings.validate()
     knowledge = client_for(settings)
     if knowledge is None:
@@ -552,7 +583,7 @@ def build_real(args, log=print):
 
     served = served_models(server, key)
     fingerprint_source = {"mode": args.mode, "model": args.model, "packs": args.packs, "provider": "star_server",
-                          **({"pinned_roles": True} if roles else {})}
+                          **({"pinned_roles": True} if roles else {}), **({"settings": overrides} if overrides else {})}
     run_info = {
         **git_state(),
         "runner": "star.eval_runner/" + str(SCHEMA),
@@ -560,6 +591,7 @@ def build_real(args, log=print):
         "skill_packs": args.packs, "knowledge": "on", "temperature": 0, "server_timeout_s": SERVER_TIMEOUT_SECONDS,
         "server": "<private-address>", "sandbox": "lxc container as user star (prlimit + timeout)" if sandbox else "none",
         "platform": sys.platform, **({"pinned_roles": True} if roles else {}),
+        **({"settings": overrides} if overrides else {}),
         "fingerprint": hashlib.sha256(json.dumps(fingerprint_source, sort_keys=True).encode()).hexdigest()[:12],
     }
     probe = lock_box.lock_present if lock_box else None
@@ -671,6 +703,9 @@ def add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--packs", default="off", help="skill packs: off, all, or a comma list of pack names")
     parser.add_argument("--pin-model", action="store_true",
                         help="every role answers with --model (a quick-model arm for python -m star.cascade_router)")
+    parser.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
+                        help="answer-path setting for this run (repeatable), e.g. --set api_hints_enabled=true; "
+                        "recorded in the result file and its fingerprint")
 
 
 def main(argv: list[str] | None = None) -> int:

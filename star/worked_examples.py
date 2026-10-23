@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import closing
 from dataclasses import dataclass
 import json
 import math
@@ -124,7 +125,7 @@ def import_file(path: Path, *, home: Path, project: str) -> dict:
         rows = parse_export(handle.read(MAX_FILE_BYTES + 1))
     home = Path(home)
     home.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(home / "worked_examples.sqlite3") as db:
+    with closing(sqlite3.connect(home / "worked_examples.sqlite3")) as db, db:
         db.execute("""CREATE TABLE IF NOT EXISTS worked_examples (
             project TEXT NOT NULL, id TEXT NOT NULL, group_id TEXT NOT NULL,
             category TEXT NOT NULL, instruction TEXT NOT NULL, response TEXT NOT NULL,
@@ -221,7 +222,7 @@ def select(home: Path, project: str, prompt: str, *, max_chars: int = MAX_PROMPT
     path = Path(home) / "worked_examples.sqlite3"
     if max_chars < 200 or not path.is_file():
         return "", []
-    with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)) as db, db:
         # Examples from a learning bundle (star/learned_week.py) stop being used when their 14 days are over.
         timed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='example_expiry'").fetchone()
         expiry = ("AND id NOT IN (SELECT id FROM example_expiry WHERE project=? AND expires_at<=?) " if timed else "")
