@@ -207,7 +207,7 @@ def test_quick_chat_mode_never_gets_a_pack(monkeypatch, tmp_path):
 def test_engineering_packs_keep_the_attribution_and_licence_of_the_two_mit_collections():
     notices = (skill_packs.PACKS_DIR / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
     assert "Copyright (c) 2025 Addy Osmani" in notices and "Copyright (c) 2025 Jesse Vincent" in notices
-    assert notices.count("Permission is hereby granted, free of charge") == 2
+    assert notices.count("Permission is hereby granted, free of charge") == 3   # the two collections + miqdadbadjuber/anti-slop
     for name in ENGINEERING:
         text = (skill_packs.PACKS_DIR / name / "references" / "ATTRIBUTION.md").read_text(encoding="utf-8")
         assert "MIT" in text and "github.com/addyosmani/agent-skills" in text and "github.com/obra/superpowers" in text, name
