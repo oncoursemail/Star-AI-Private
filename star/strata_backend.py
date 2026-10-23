@@ -168,6 +168,31 @@ class _FallbackStream:
                 self._stream = await self._start_fallback()
 
 
+class BackgroundClient:
+    """Inject a small Qwen thinking budget for summaries/subagents.
+
+    These callers often request only hundreds of tokens.  Leaving Strata at its
+    default high/xhigh thinking can consume the cap before visible output.
+    Explicit caller values still win.
+    """
+
+    def __init__(self, client):
+        self._client = client
+        self.chat = self
+        self.completions = self
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    async def create(self, **kwargs):
+        options = dict(kwargs)
+        options.setdefault("temperature", 1.0)
+        options.setdefault("top_p", 0.95)
+        if "extra_body" not in options:
+            options["extra_body"] = {"reasoning_effort": "low", "top_k": 20}
+        return await self._client.chat.completions.create(**options)
+
+
 class RoutingClient:
     """Minimal AsyncOpenAI-compatible chat wrapper with a safe resident fallback.
 
