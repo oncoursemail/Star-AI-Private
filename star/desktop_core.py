@@ -1354,7 +1354,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     client = gpu_helper.GpuRoutingClient(client, settings)
                 # Summaries, sub-agents, specialists and code repair are not the conversation:
                 # on STAR Server they carry no id_slot, the server places them (providers.llama_request_fields).
-                helper = background_client(client, model_settings, conversation=memory_scope)
+                helper = (strata_backend.BackgroundClient(client) if strata_plan.active
+                          else background_client(client, model_settings, conversation=memory_scope))
                 specialists = (ResearchTeam(
                     client=helper,model=route.subagent_model,project=settings.project,
                     knowledge=knowledge,workspace=workspace,intelligence=intelligence,
