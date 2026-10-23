@@ -60,6 +60,7 @@ OTHER_FILE_ANCHORS = {
     "star/gold_bank_verify.py": "developer-only gold bank build tool (needs STAR Server)",
     "star/github_app.py": "source-root check blocks credential files",
     "star/media_actions.py": "owner-installed external ComfyUI",
+    "star/oracle/__main__.py": "developer-only Star Oracle CLI defaults (gold bank, eval suites, calibration)",
     "star/playtest_learning.py": "server-only playtest learning: robot + specs in server/studio_lab/playtest (brain 2)",
     "star/roblox_benchmark.py": "server-only Roblox benchmark: tasks + harness in benchmarks/roblox (repo checkout, brain 2)",
     "star/xray.py": "X-ray Eyes CLI (needs Lune or Studio MCP); its Luau is star/data/xray, bundled with star/data",
