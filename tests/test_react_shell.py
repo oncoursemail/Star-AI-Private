@@ -15,6 +15,7 @@ def test_strata_settings_are_permitted_but_no_secret_or_remote_host_is_added():
     expected = {
         'strata_enabled','strata_endpoint','strata_model','strata_reasoning',
         'strata_context_tokens','strata_timeout','strata_vision_enabled',
+        'strata_loop_guard_enabled',
     }
     assert expected <= PERMITTED_SETTINGS
     assert 'strata_api_key' not in PERMITTED_SETTINGS
