@@ -157,6 +157,8 @@ def _repair_strata_config(host, active_task) -> dict:
     """
     if active_task:
         raise RuntimeError('Finish the current chat before editing Strata settings')
+    # Qt is an optional desktop-only dependency: never import it at module load.
+    from PySide6.QtWidgets import QFileDialog
     selected, _ = QFileDialog.getOpenFileName(
         host, 'Choose an installed Strata model config',
         str(Path.home()), 'Strata model settings (strata-*.json)')
