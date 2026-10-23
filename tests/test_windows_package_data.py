@@ -24,18 +24,25 @@ PACKAGE_DATA_SITES = {
     "star/blender_bridge.py": "star/blender_worker.py",
     "star/build_info.py": "star/build-info.json",
     "star/build_planner.py": "examples/roblox-templates",
+    "star/business/console.py": "star/data/business/console_ui.html",  # commerce draft console page
     "star/business/opportunities.py": "star/data/business/candidate_catalog.json",  # PR #404 research catalogue
     "star/character_lifecycle_lessons.py": "docs/lessons/roblox-character-lifecycle.md",
     "star/design_db.py": "star/data/design/ui-ux-pro-max",
+    "star/gold_bank.py": "data/gold_bank/bank.jsonl",  # opt-in gold examples (gold-bank-20261020)
     "star/learned_week.py": "star/skill_packs",
+    "star/studio_atlas.py": "data/studio_atlas",  # tested reference systems (studio-atlas-20261022)
     "star/luau_record_type_lessons.py": "docs/lessons/luau-record-types.md",
     "star/lesson_import.py": "star/skill_packs",
+    "star/player_twins/bundle.py": "star/player_twins/luau",  # Player Twins engine doubles + driver
+    "star/verify_ladder.py": "star/player_twins/luau",  # check-fix loop runs blocks in the same engine doubles
+    "star/mistake_memory.py": "star/data/mistake_memory",  # seed rows + validated fixers (star/data is bundled)
     "star/react_shell.py": "frontend/dist",
     "star/reverse_engineering.py": "star/re_scripts",  # Ghidra scripts (PR #344), not in the PyInstaller lists
     "star/roblox_api_confusions.py": "data/roblox_api_confusions.json",
     "star/roblox_api_dataset.py": "data/roblox_api/roblox_api.json",
     "star/roblox_cutscene_studio.py": "star/skill_packs",  # roblox-cutscenes pack luau/ (PR #351)
     "star/roblox_vfx_studio.py": "star/skill_packs",  # roblox-vfx-composer pack luau/ (PR #327)
+    "star/skill_import.py": "star/skill_packs",  # SkillForge: refuses to shadow a bundled pack name
     "star/skill_packs/__init__.py": "star/skill_packs",
     "star/studio_milestones.py": "evals/studio",
     "star/voice/catalog.py": "star/voice/voices.json",
@@ -50,10 +57,13 @@ OTHER_FILE_ANCHORS = {
     "star/eval_runner.py": "developer-only evaluation fixtures",
     "star/failure_ledger.py": "developer-only evaluation prelude",
     "star/general_knowledge_benchmark.py": "source-only benchmark",
+    "star/gold_bank_verify.py": "developer-only gold bank build tool (needs STAR Server)",
     "star/github_app.py": "source-root check blocks credential files",
     "star/media_actions.py": "owner-installed external ComfyUI",
+    "star/oracle/__main__.py": "developer-only Star Oracle CLI defaults (gold bank, eval suites, calibration)",
     "star/playtest_learning.py": "server-only playtest learning: robot + specs in server/studio_lab/playtest (brain 2)",
     "star/roblox_benchmark.py": "server-only Roblox benchmark: tasks + harness in benchmarks/roblox (repo checkout, brain 2)",
+    "star/xray.py": "X-ray Eyes CLI (needs Lune or Studio MCP); its Luau is star/data/xray, bundled with star/data",
     "star/shared_brain/improve.py": "development verifier source hash",
 }
 PENDING_OWNER_REVIEW = frozenset({
@@ -63,6 +73,8 @@ PENDING_OWNER_REVIEW = frozenset({
     "examples/roblox-templates",
     "data/roblox_api_confusions.json",
     "data/roblox_api/roblox_api.json",  # bundled API dump (#331): not packaged yet
+    "data/gold_bank/bank.jsonl",  # gold bank: not packaged yet (missing file = no examples)
+    "data/studio_atlas",  # studio atlas: not packaged yet (missing folder = no reference systems)
     "evals/studio",  # do not bundle protected evaluation manifests blindly
 })
 
@@ -70,7 +82,7 @@ PENDING_OWNER_REVIEW = frozenset({
 def _commands(local_text: str, workflow_text: str) -> tuple[list[str], list[str]]:
     local = re.search(r"Invoke-CheckedNative \$python @\(('-m',\s*'PyInstaller'.*?)\) 'PyInstaller'",
                       local_text, flags=re.DOTALL)
-    workflow = re.search(r"(?ms)^\s*python -m PyInstaller\s+(.*?)^\s*if \(\$LASTEXITCODE",
+    workflow = re.search(r"(?ms)^\s*python @pyinstaller\s+(.*?)^\s*if \(\$LASTEXITCODE",
                          workflow_text)
     assert local is not None and workflow is not None, "PyInstaller command changed"
     local_argv = re.findall(r"'([^']*)'", local.group(1))
@@ -160,7 +172,7 @@ def test_runtime_missing_resources_are_recorded_and_not_claimed_bundled():
     assert missing == PENDING_OWNER_REVIEW
     bundled = set(PACKAGE_DATA_SITES.values()) - missing
     assert all(_bundle_has(resource, local_data) for resource in bundled)
-    assert len(bundled) == 7  # five readers share the skill-pack directory
+    assert len(bundled) == 10  # five readers share the skill-pack directory; star/data/mistake_memory (S2) rides star/data
 
 
 def test_actual_packaged_root_readers_resolve_resources(tmp_path):

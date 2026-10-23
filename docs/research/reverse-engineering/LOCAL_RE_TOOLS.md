@@ -30,6 +30,9 @@ STAR's `re_*` tools degrade gracefully:
 
 `re_tool_status` reports exactly which of these are present on the machine.
 
+Game engineering tools (asset manifests, WebAssembly portability, PS3 ISO/game-folder scan, PS3 ELF
+preflight, recompilation evidence) are in [GAME_TOOLS.md](GAME_TOOLS.md).
+
 ## Comparison table
 
 | Tool | Latest (date) | Licence | Win download | Windows | Automation API | Best for |

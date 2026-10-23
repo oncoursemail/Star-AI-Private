@@ -423,6 +423,9 @@ def score_answer(task: dict, answer: str, *, luau_check, sandbox=None, prelude: 
         score.checks.append(Check("unit_tests", False, "no code to test"))
 
     score.checks.extend(pattern_checks(auto, blocks, body))
+    if auto.get("answer"):            # knowledge school: exact / numeric / choice / order / match / short / rubric keys
+        from .knowledge_checks import answer_checks
+        score.checks.extend(answer_checks(auto["answer"], answer))
     if auto.get("citation", {}).get("required"):
         score.checks.append(citation_check(auto, footer))
     return score

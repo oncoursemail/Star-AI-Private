@@ -10,10 +10,11 @@ from pathlib import Path
 from .context_layout import assemble, clean_history, context_block, drop_oldest_turns, final_user_text
 from .media import image_part, mcp_images
 from .redact import redact_text
-from .policy import allowed_registry, enforce
+from .policy import allowed_registry, enforce, READ_TOOLS as STUDIO_READ_TOOLS
 from .memory import compact
 from .workspace import TOOLS, TOOL_NAMES, WRITE_TOOLS as WORKSPACE_WRITE_TOOLS
 from . import code_answer_completion
+from .incremental_repair import RepairController, RepairDeferred, RepairsOff
 
 
 # A server's "the prompt does not fit" refusal (llama.cpp exceed_context_size_error, OpenAI-compatible
@@ -53,12 +54,16 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_roblox_search_games", "star_roblox_game_report", "star_roblox_compare_games",
     "star_roblox_game_image", "search_asset",
     "star_github_tree", "star_github_read", "star_mcp_search", "star_mcp_call", "star_delegate_research",
+    "star_debug_report", "star_debug_compare", "star_debug_source",
+    "workspace_minecraft_audit", "workspace_minecraft_inspect", "star_identify_song",
 })
 LUAU_AFTER_UNTRUSTED = ("Full Luau execution is off for the rest of this turn because it read web or "
                         "third-party content. Ask again in a new message to run Luau.")
 
 
-RULES = """You are STAR Genesis, an early-stage Roblox development AI.
+from .persona import DESKTOP_LINE  # noqa: E402  (Star's character, docs/persona/star.md)
+
+RULES = DESKTOP_LINE + """
 Truthfully report uncertainty and failed operations. Never claim a game was edited without a successful tool result.
 For images, identify what is actually visible before inferring interactions.
 Favor robust Luau, native responsive Roblox GUI, and correctly scoped client/server execution.
@@ -110,7 +115,7 @@ def tool_payload(result, *, broker=None, tool_name=""):
 # This short form keeps what still applies (honesty, images, untrusted reference
 # data, Roblox coding practice) and costs a slow CPU server far fewer tokens to read.
 # Every request that attaches tools gets the full RULES.
-FAST_RULES = """You are STAR Genesis, an early-stage Roblox development AI. This is plain chat: no tools are attached to this turn.
+FAST_RULES = DESKTOP_LINE + """ This is plain chat: no tools are attached to this turn.
 Truthfully report uncertainty. Never claim a game, file or Studio place was inspected, edited, tested or published; here you can only advise.
 For images, identify what is actually visible before inferring interactions.
 Favor robust --!strict Luau, server-owned game state, validated RemoteEvents, native responsive Roblox GUI, and correctly scoped client/server execution.
@@ -310,10 +315,10 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   history=None, turn_sections=None, mode="", guidance="",
                   turn_context_chars=10000, request_extras=None, sampling=None, today=None,
                   tool_memory=None, helper_client=None, document_tools=None, image_max_side=None,
-                  reverse_engineering=None,
+                  reverse_engineering=None, debug_evidence=None, song_lookup=None, minecraft_tools=None, live_show=None,
                   preserve_history=False, complete_code_answers=None,
                   tool_discovery_enabled=False, candidate_code_team_enabled=False, now=None,
-                  web_settings=None, on_first_request=None):
+                  web_settings=None, on_first_request=None, incremental_repair=None):
     """Run one user turn.
 
     Request layout (see star/context_layout.py): one system message holding the
@@ -326,6 +331,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
     `on_first_request({"messages", "tools", "max_tokens"})` is called once, just before the
     first model request, with that request's messages and tool list (star/best_of_n.py samples
     extra candidates of the same request while this one is written). It cannot fail the turn.
+    `incremental_repair` (Settings > incremental_repair, off by default) turns on star/incremental_repair.py:
+    tool failures and workspace syntax checks steer at most two focused retries, and an unresolved one
+    adds a verification note to the answer. Off, tool handling and streaming are as before.
     `request_extras` are provider/engine-specific body fields. `sampling` may override only
     temperature/top_p for a known local engine; callers cannot inject arbitrary request keys.
     `tool_memory` (star/turn_memory.py) keeps the prompt-selected tools of a
@@ -341,14 +349,15 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
     registry = allowed_registry(discovered or [], may_edit, allow_luau=allow_luau)
     definitions = [{"type": "function", "function": {"name": name, "description": t.get("description", ""), "parameters": t["inputSchema"]}} for name, t in registry.items()]
     from .calc import TOOL as CALCULATOR_TOOL, numerical_request
-    calculator_enabled = numerical_request(prompt)
+    pinned = tool_memory.pinned if tool_memory is not None and tool_memory.sticky else ()
+    calculator_enabled = any(numerical_request(text) for text in (prompt, *pinned))
     if calculator_enabled:
         definitions.append({"type": "function", "function": {"name": CALCULATOR_TOOL["name"],
                             "description": CALCULATOR_TOOL["description"],
                             "parameters": CALCULATOR_TOOL["inputSchema"]}})
     # Like the calculator: offered only to a prompt about times, zones or dates (star/clock.py).
     from .clock import TOOL as CLOCK_TOOL, wants_clock
-    clock_enabled = wants_clock(prompt)
+    clock_enabled = any(wants_clock(text) for text in (prompt, *pinned))
     if clock_enabled:
         definitions.append({"type": "function", "function": {"name": CLOCK_TOOL["name"],
                             "description": CLOCK_TOOL["description"],
@@ -482,6 +491,26 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
                        for tool in re_definitions)
     enabled_re = {tool["name"] for tool in re_definitions}
+    debug_definitions = selected(debug_evidence)
+    definitions.extend({"type": "function", "function": {"name": tool["name"],
+                       "description": tool["description"], "parameters": tool["inputSchema"]}}
+                       for tool in debug_definitions)
+    enabled_debug = {tool["name"] for tool in debug_definitions}
+    live_show_definitions = selected(live_show)
+    definitions.extend({"type": "function", "function": {"name": tool["name"],
+                       "description": tool["description"], "parameters": tool["inputSchema"]}}
+                       for tool in live_show_definitions)
+    enabled_live_show = {tool["name"] for tool in live_show_definitions}
+    minecraft_definitions = selected(minecraft_tools)
+    definitions.extend({"type": "function", "function": {"name": tool["name"],
+                       "description": tool["description"], "parameters": tool["inputSchema"]}}
+                       for tool in minecraft_definitions)
+    enabled_minecraft = {tool["name"] for tool in minecraft_definitions}
+    song_definitions = selected(song_lookup)
+    definitions.extend({"type": "function", "function": {"name": tool["name"],
+                       "description": tool["description"], "parameters": tool["inputSchema"]}}
+                       for tool in song_definitions)
+    enabled_song = {tool["name"] for tool in song_definitions}
     # Qwen templates render the tool list before the system text. Tools that are attached on
     # every turn stay first and the Studio tools (present only for a Studio request) go last,
     # so a change at the end of the list leaves the start of the request cached.
@@ -516,6 +545,38 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 clean_history(history), {"role": "user", "content": content})
     archive = []
     event = on_event or (lambda _: None)
+    repairs = RepairController(event) if incremental_repair else RepairsOff()
+
+    def tool_effects(name: str, args: dict) -> tuple[bool, str, str]:
+        # This classifies effects only to PAUSE actions. Existing authorization
+        # above dispatch remains authoritative; this never grants a capability.
+        read_only = ((TOOL_NAMES - WORKSPACE_WRITE_TOOLS) | STUDIO_READ_TOOLS | {
+            'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
+            'star_web_search', 'star_github_tree', 'star_github_read', 'star_delegate',
+            'star_mcp_registry_search', 'star_candidate_code_team',
+        })
+        group = 'workspace' if name in TOOL_NAMES else 'studio' if name in registry else name
+        mutation = name not in read_only
+        for label, source in (('intelligence', intelligence), ('documents', document_tools),
+                              ('blender', blender), ('workshop', tool_workshop),
+                              ('specialists', specialists), ('mcp', mcp_gateway),
+                              ('registry', mcp_registry), ('reverse_engineering', reverse_engineering),
+                              ('debug_evidence', debug_evidence)):
+            if source is not None and source.owns(name):
+                group = label
+                if label in {'documents', 'specialists', 'mcp', 'registry', 'workshop',
+                             'reverse_engineering', 'debug_evidence'}:
+                    mutation = False  # these adapters expose read-only work only
+                break
+        if name == 'screen_capture' and set(args) - {'studio_id', 'datamodel_type', 'capture_id'}:
+            mutation = True  # moving the capture camera is a Studio edit
+        resource = str(args.get('path', '')) if group == 'workspace' else ''
+        if resource and workspace is not None and hasattr(workspace, 'resolve'):
+            try:
+                resource = workspace.resolve(resource, allow_missing=True).relative_to(workspace.root).as_posix()
+            except (ValueError, PermissionError, OSError):
+                pass  # the actual dispatcher reports invalid paths through its existing checks
+        return mutation, group, resource
     # Compute a full, inert evidence block only when references exist. Plain chat
     # retains the old single-request path, with no retrieval or summary calls.
     full_context = context
@@ -688,9 +749,10 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         answered.pop('finish_reason', None)
         shown_before = shown_text
         buffered_deltas = []
+        repair_buffering = repairs.unresolved
 
         def stream_event(item):
-            if not complete_code_answers:
+            if not complete_code_answers and not repair_buffering:
                 event(item)
             elif item.get('event') == 'assistant_delta':
                 buffered_deltas.append(item)
@@ -737,11 +799,14 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                 event(buffered)
             messages.append({"role": "assistant", "content": answer_text or "", "tool_calls": [
                 {"id": t.id, "type": "function", "function": {"name": t.function.name, "arguments": t.function.arguments}} for t in tool_calls]})
+            batch_paused = False
             for tool_call in tool_calls:
                 calls_count += 1
                 if calls_count > 20:
                     raise RuntimeError("Tool-call budget exhausted")
                 name = tool_call.function.name
+                workspace_result = None
+                outcome_uncertain = False
                 try:
                     args = json.loads(tool_call.function.arguments)
                     if name == 'star_evidence_read':
@@ -808,15 +873,38 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif reverse_engineering is not None and reverse_engineering.owns(name):
                         if name not in enabled_re:
                             raise PermissionError("Reverse-engineering tool not authorized for this task")
+                    elif debug_evidence is not None and debug_evidence.owns(name):
+                        if name not in enabled_debug:
+                            raise PermissionError("Debug evidence tool not authorized for this task")
+                    elif live_show is not None and live_show.owns(name):
+                        if name not in enabled_live_show:
+                            raise PermissionError("Live show tool not authorized for this task")
+                    elif minecraft_tools is not None and minecraft_tools.owns(name):
+                        if name not in enabled_minecraft:
+                            raise PermissionError("Minecraft tool not authorized for this task")
+                    elif song_lookup is not None and song_lookup.owns(name):
+                        if name not in enabled_song:
+                            raise PermissionError("Song recognition not authorized for this message")
                     elif name not in TOOL_NAMES:
                         enforce(name, args, registry, studio_id, may_edit, allow_luau=allow_luau)
                         if name == "execute_luau" and untrusted_read:
                             raise PermissionError(LUAU_AFTER_UNTRUSTED)
                     elif workspace is None or (name in WORKSPACE_WRITE_TOOLS and not workspace_edit):
                         raise PermissionError("Workspace tool not authorized")
-                except Exception as exc:
-                    result = json.dumps({"isError": True, "output": f"Tool request rejected: {type(exc).__name__}"})
+                    mutation, effect_group, resource = tool_effects(name, args)
+                    repairs.before_call(name, args, mutation=mutation, group=effect_group,
+                                        resource=resource, batch_paused=batch_paused)
+                except RepairDeferred as exc:
+                    result = json.dumps({"isError": True, "not_executed": True,
+                                         "output": exc.feedback['instruction'], "repair": exc.feedback})
                     images = []
+                    event({"event": "tool_rejected", "tool": name})
+                except Exception as exc:
+                    result = json.dumps({"isError": True, **({"not_executed": True} if incremental_repair else {}),
+                                         "output": f"Tool request rejected: {type(exc).__name__}"})
+                    images = []
+                    batch_paused = True
+                    repairs.rejected()
                     event({"event": "tool_rejected", "tool": name})
                 else:
                     # Authorized: announce before running so progress is not retroactive.
@@ -841,11 +929,23 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         except (ValueError, ArithmeticError, OverflowError, TypeError) as exc:
                             data = {"isError": True, "content": [{"type": "text", "text": f"Calculator rejected: {type(exc).__name__}"}]}
                     elif name == 'star_clock':
-                        from .clock import tool_result as clock_result
-                        data = clock_result(args)
+                        try:
+                            from .clock import tool_result as clock_result
+                            data = clock_result(args)
+                        except Exception as exc:
+                            if not incremental_repair:
+                                raise
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Clock tool failed: {type(exc).__name__}"}]}
                     elif name == 'star_web_fetch':
-                        from .web_fetch import tool_result as fetch_result
-                        data = await fetch_result(args, settings=web_settings)
+                        try:
+                            from .web_fetch import tool_result as fetch_result
+                            data = await fetch_result(args, settings=web_settings)
+                        except Exception as exc:
+                            if not incremental_repair:
+                                raise
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Web fetch failed: {type(exc).__name__}"}]}
                     elif name == 'star_github_tree' or name == 'star_github_read':
                         try:
                             from .repo_intelligence import repo_tree, repo_read
@@ -934,7 +1034,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif document_tools is not None and document_tools.owns(name):
                         # Keep SQLite-backed document access on the caller's thread.
                         # Only the prompt-selected/attached capability set is allowed.
-                        data = document_tools.call(name, args, enabled=enabled_documents)
+                        try:
+                            data = document_tools.call(name, args, enabled=enabled_documents)
+                        except Exception as exc:
+                            if not incremental_repair:
+                                raise
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Document tool failed: {type(exc).__name__}"}]}
                     elif reverse_engineering is not None and reverse_engineering.owns(name):
                         # Local, workspace-confined binary analysis. Output is untrusted data.
                         try:
@@ -944,10 +1050,45 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         except (ValueError, PermissionError, OSError, UnicodeError) as exc:
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Reverse-engineering tool failed: {type(exc).__name__}: {exc}"}]}
+                    elif debug_evidence is not None and debug_evidence.owns(name):
+                        try:
+                            local_output = await asyncio.to_thread(debug_evidence.call, name, args, enabled=enabled_debug)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except (ValueError, PermissionError, OSError, UnicodeError) as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Debug evidence unavailable: {type(exc).__name__}"}]}
+                    elif live_show is not None and live_show.owns(name):
+                        try:
+                            local_output = await asyncio.to_thread(live_show.call, name, args, enabled=enabled_live_show)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except (ValueError, PermissionError, OSError, UnicodeError) as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Live show planner failed: {type(exc).__name__}: {exc}"}]}
+                    elif minecraft_tools is not None and minecraft_tools.owns(name):
+                        try:
+                            local_output = await asyncio.to_thread(minecraft_tools.call, name, args, enabled=enabled_minecraft)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except (ValueError, PermissionError, OSError, UnicodeError) as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Minecraft tool failed: {type(exc).__name__}: {exc}"}]}
+                    elif song_lookup is not None and song_lookup.owns(name):
+                        # One lookup the owner approved for an attached WAV (star/music_recognition.py).
+                        from .music_recognition import LookupFailed
+                        try:
+                            local_output = await song_lookup.call(name, args, enabled=enabled_song)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except (ValueError, PermissionError, OSError, LookupFailed) as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Song recognition failed: {exc}"}]}
                     elif blender is not None and blender.owns(name):
                         try:
                             data = await blender.call(name, args)
                         except Exception as exc:
+                            outcome_uncertain = mutation  # an edit may have started before the error
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Blender MCP tool unavailable: {type(exc).__name__}"}]}
                     elif mcp_gateway is not None and mcp_gateway.owns(name):
@@ -971,22 +1112,60 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif name in TOOL_NAMES:
                         try:
                             local_output = workspace.call(name, args, allow_write=workspace_edit)
+                            if not isinstance(local_output, dict):
+                                raise TypeError('Workspace dispatcher returned an invalid result')
+                            if name in WORKSPACE_WRITE_TOOLS:
+                                workspace_result = local_output
                             data = {"isError": False, "content": [{"type": "text", "text": json.dumps(local_output, ensure_ascii=False)}]}
-                        except (ValueError, PermissionError, OSError) as exc:
+                        except Exception as exc:
+                            if not incremental_repair and not isinstance(exc, (ValueError, PermissionError, OSError)):
+                                raise
+                            outcome_uncertain = mutation and not isinstance(exc, (ValueError, PermissionError))
                             data = {"isError": True, "content": [{"type": "text", "text": f"Workspace tool failed: {type(exc).__name__}: {exc}"}]}
                     else:
-                        if studio is None:
-                            raise RuntimeError("Studio tool request with no Studio connection")
-                        # No automatic retry: the mutation may have succeeded before a timeout.
-                        raw = await asyncio.wait_for(studio.call_tool(name, arguments=args), timeout=65)
-                        data = raw.model_dump(by_alias=True, exclude_none=True)
-                    result = tool_payload(data, broker=evidence_broker, tool_name=name)
-                    images = mcp_images(data)
+                        try:
+                            if studio is None:
+                                raise RuntimeError("Studio tool request with no Studio connection")
+                            # No automatic replay: the mutation may have succeeded before a timeout.
+                            raw = await asyncio.wait_for(studio.call_tool(name, arguments=args), timeout=65)
+                            data = raw.model_dump(by_alias=True, exclude_none=True)
+                        except Exception as exc:
+                            if not incremental_repair:
+                                raise
+                            # Only a raised or timed-out call has an unknown outcome; a clean refusal
+                            # returned by Studio (isError) is an ordinary tool error.
+                            outcome_uncertain = mutation
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"Studio tool did not return a confirmed result: {type(exc).__name__}. "
+                                            "Inspect current state before planning any further action."}]}
+                    try:
+                        result = tool_payload(data, broker=evidence_broker, tool_name=name)
+                        images = mcp_images(data)
+                    except Exception as exc:
+                        if not incremental_repair:
+                            raise
+                        # A malformed adapter response must still receive a tool
+                        # receipt. Do not lose the remainder of the model batch.
+                        outcome_uncertain = mutation
+                        workspace_result = None
+                        data = {"isError": True, "content": [{"type": "text",
+                                "text": f"Tool response could not be read: {type(exc).__name__}. "
+                                        "Its result was not confirmed."}]}
+                        result, images = tool_payload(data), []
                     if (name in UNTRUSTED_SOURCE_TOOLS
                             or (mcp_gateway is not None and mcp_gateway.owns(name))
                             or (mcp_registry is not None and mcp_registry.owns(name))):
                         untrusted_read = True
                     event({"event": "tool_finished", "tool": name, "is_error": bool(data.get("isError"))})
+                    feedback, needs_attention = repairs.observe(
+                        name, args, is_error=bool(data.get('isError')), mutation=mutation,
+                        group=effect_group, resource=resource, workspace_result=workspace_result,
+                        uncertain=outcome_uncertain)
+                    batch_paused = batch_paused or needs_attention
+                    if feedback is not None:
+                        envelope = json.loads(result)
+                        envelope['repair'] = feedback
+                        result = json.dumps(envelope, ensure_ascii=False)
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
                 if images:
                     caption = ("Public Roblox CDN artwork fetched for visual inspection. "
@@ -1001,13 +1180,24 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
             if not answer.strip():
                 raise RuntimeError('Local model streamed no visible answer' if streamed
                                    else "Local model gave no text or tool calls")
+            followup = repairs.completion_prompt() if step + 1 < max_calls and calls_count < 20 else ''
+            if followup:
+                # The original task stays in context. This consumes an existing
+                # model turn, not a separate unbounded critic or repair loop.
+                messages.extend([{'role': 'assistant', 'content': answer},
+                                 {'role': 'user', 'content': followup}])
+                continue
             if complete_code_answers:
                 answer = await code_answer_completion.complete(
                     answer, answered.get('finish_reason'), history=messages,
                     send=continue_request, event=event)
+            verification_note = repairs.final_note()
+            answer += verification_note
             if streamed:
-                if complete_code_answers:
+                if complete_code_answers or repair_buffering:
                     event({'event': 'assistant_delta', 'text': ('\n\n' if shown_before else '') + answer})
+                elif verification_note:
+                    event({'event': 'assistant_delta', 'text': verification_note})
                 messages.append({'role': 'assistant', 'content': answer})
             # The name the server reported, else the one that was asked for.
             finished = {"event": "model_answered", "model": str(answered.get('model') or model)[:180],

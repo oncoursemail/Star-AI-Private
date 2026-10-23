@@ -17,7 +17,8 @@ concurrency:
 jobs:
   guard:
     name: Generators do not edit evals, graders or the gate
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

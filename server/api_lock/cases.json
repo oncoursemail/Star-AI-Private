@@ -1,0 +1,893 @@
+{
+ "table": {
+  "version": 1,
+  "studio_version": "fixture",
+  "classes": {
+   "Instance": {
+    "super": "<<<ROOT>>>",
+    "members": [
+     "Changed",
+     "ClassName",
+     "Clone",
+     "Destroy",
+     "FindFirstChild",
+     "GetChildren",
+     "Name",
+     "Parent",
+     "WaitForChild"
+    ],
+    "methods": [
+     "Clone",
+     "Destroy",
+     "FindFirstChild",
+     "GetChildren",
+     "WaitForChild"
+    ]
+   },
+   "BasePart": {
+    "super": "Instance",
+    "members": [
+     "Anchored",
+     "CanCollide",
+     "GetMass",
+     "Position",
+     "Size",
+     "Touched"
+    ],
+    "methods": [
+     "GetMass"
+    ]
+   },
+   "Part": {
+    "super": "BasePart",
+    "members": [
+     "Shape"
+    ],
+    "methods": []
+   },
+   "Model": {
+    "super": "Instance",
+    "members": [
+     "GetPivot",
+     "PivotTo",
+     "PrimaryPart"
+    ],
+    "methods": [
+     "GetPivot",
+     "PivotTo"
+    ]
+   },
+   "DataModel": {
+    "super": "Instance",
+    "members": [
+     "GetService",
+     "IsLoaded",
+     "Workspace"
+    ],
+    "methods": [
+     "GetService",
+     "IsLoaded"
+    ]
+   },
+   "Workspace": {
+    "super": "Model",
+    "members": [
+     "Gravity",
+     "Raycast"
+    ],
+    "methods": [
+     "Raycast"
+    ]
+   },
+   "Players": {
+    "super": "Instance",
+    "members": [
+     "GetPlayerFromCharacter",
+     "GetPlayers",
+     "LocalPlayer",
+     "PlayerAdded"
+    ],
+    "methods": [
+     "GetPlayerFromCharacter",
+     "GetPlayers"
+    ]
+   },
+   "RunService": {
+    "super": "Instance",
+    "members": [
+     "Heartbeat",
+     "IsClient",
+     "IsServer"
+    ],
+    "methods": [
+     "IsClient",
+     "IsServer"
+    ]
+   },
+   "ReplicatedStorage": {
+    "super": "Instance",
+    "members": [],
+    "methods": []
+   },
+   "Script": {
+    "super": "Instance",
+    "members": [
+     "Disabled",
+     "GetHash"
+    ],
+    "methods": [
+     "GetHash"
+    ]
+   },
+   "UIGridLayout": {
+    "super": "Instance",
+    "members": [
+     "CellPadding",
+     "CellSize",
+     "FillDirectionMaxCells"
+    ],
+    "methods": []
+   }
+  },
+  "services": [
+   "Players",
+   "ReplicatedStorage",
+   "RunService",
+   "Workspace"
+  ],
+  "dot_closed": [
+   "Players",
+   "RunService"
+  ],
+  "enums": {
+   "Material": [
+    "Neon",
+    "Plastic",
+    "Wood",
+    "WoodPlanks"
+   ],
+   "KeyCode": [
+    "E",
+    "Q"
+   ]
+  }
+ },
+ "cases": [
+  {
+   "name": "getservice colon method",
+   "text": "game:GetService(\"RunService\"):",
+   "mode": 2,
+   "allow": [
+    "IsServer",
+    "Is",
+    "IsC",
+    "Destroy"
+   ],
+   "deny": [
+    "Create",
+    "Heartbeat",
+    "isServer"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "getservice dot closed service",
+   "text": "game:GetService(\"Players\").",
+   "mode": 2,
+   "allow": [
+    "LocalPlayer",
+    "Local",
+    "PlayerAdded"
+   ],
+   "deny": [
+    "LocalPlayers2",
+    "Foo"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "getservice dot container open",
+   "text": "game:GetService(\"ReplicatedStorage\").",
+   "mode": 2,
+   "allow": [
+    "Remotes",
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "single quotes",
+   "text": "game:GetService('RunService'):",
+   "mode": 2,
+   "allow": [
+    "IsClient"
+   ],
+   "deny": [
+    "Wait("
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "unknown service no mask",
+   "text": "game:GetService(\"NopeService\"):",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "bound service local",
+   "text": "local RS = game:GetService(\"RunService\")\nRS:",
+   "mode": 2,
+   "allow": [
+    "IsServer"
+   ],
+   "deny": [
+    "Create"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "bound service dot event",
+   "text": "local RS = game:GetService(\"RunService\")\nRS.",
+   "mode": 2,
+   "allow": [
+    "Heartbeat"
+   ],
+   "deny": [
+    "Stepped2"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "partial then forced",
+   "text": "local RS = game:GetService(\"RunService\")\nRS.Heart",
+   "mode": 2,
+   "allow": [
+    "beat"
+   ],
+   "deny": [
+    "throb"
+   ],
+   "forced": "beat",
+   "extra": []
+  },
+  {
+   "name": "no force on empty partial",
+   "text": "local RS = game:GetService(\"RunService\")\nRS.",
+   "mode": 2,
+   "allow": [],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "no force when two candidates",
+   "text": "local RS = game:GetService(\"RunService\")\nRS:Is",
+   "mode": 2,
+   "allow": [
+    "Server",
+    "Client"
+   ],
+   "deny": [
+    "Running"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "complete name then call allowed",
+   "text": "local RS = game:GetService(\"RunService\")\nRS:IsServer",
+   "mode": 2,
+   "allow": [
+    "(",
+    "()"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "invented prefix then call blocked",
+   "text": "local RS = game:GetService(\"RunService\")\nRS:Is",
+   "mode": 2,
+   "allow": [],
+   "deny": [
+    "(",
+    " "
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "instance new inline dot",
+   "text": "Instance.new(\"Part\").",
+   "mode": 2,
+   "allow": [
+    "Anchored",
+    "Name",
+    "Shape"
+   ],
+   "deny": [
+    "Color2"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "instance new bound dot",
+   "text": "local p = Instance.new(\"Part\")\np.",
+   "mode": 2,
+   "allow": [
+    "Anchored",
+    "Size",
+    "Touched"
+   ],
+   "deny": [
+    "Transparencyy",
+    "Child"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "instance new bound colon",
+   "text": "local p = Instance.new(\"Part\")\np:",
+   "mode": 2,
+   "allow": [
+    "GetMass",
+    "Destroy",
+    "Clone"
+   ],
+   "deny": [
+    "GetMas(",
+    "Explode"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "parented to opens dot",
+   "text": "local p = Instance.new(\"Part\")\nlocal a = Instance.new(\"Part\")\na.Parent = p\np.",
+   "mode": 2,
+   "allow": [
+    "Child"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "new with parent arg opens dot",
+   "text": "local p = Instance.new(\"Part\")\nlocal a = Instance.new(\"Part\", p)\np.",
+   "mode": 2,
+   "allow": [
+    "Child"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "typed local binds nothing",
+   "text": "local m: Model = workspace.Thing\nm:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "typed local dot open",
+   "text": "local m: Model = workspace.Thing\nm.",
+   "mode": 2,
+   "allow": [
+    "Child"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "typed param binds nothing",
+   "text": "local p = Instance.new(\"Part\")\nlocal function f(p: BasePart, n)\np:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "untyped param killed",
+   "text": "local p = Instance.new(\"Part\")\nlocal function f(p)\np.",
+   "mode": 2,
+   "allow": [
+    "Child"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "reassignment kills",
+   "text": "local p = Instance.new(\"Part\")\np = something()\np.",
+   "mode": 2,
+   "allow": [
+    "Child"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "redeclare kills",
+   "text": "local p = Instance.new(\"Part\")\nlocal p = other\np:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "for variable kills",
+   "text": "local p = Instance.new(\"Part\")\nfor _, p in items do\np:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "game shadowed",
+   "text": "local game = fake()\ngame:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "workspace colon",
+   "text": "workspace:",
+   "mode": 2,
+   "allow": [
+    "Raycast",
+    "FindFirstChild",
+    "PivotTo"
+   ],
+   "deny": [
+    "Explode"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "workspace dot open",
+   "text": "workspace.",
+   "mode": 2,
+   "allow": [
+    "Baseplate"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "game dot services and members",
+   "text": "game.",
+   "mode": 2,
+   "allow": [
+    "Players",
+    "Workspace",
+    "IsLoaded"
+   ],
+   "deny": [
+    "Lobby"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "game dot service chain",
+   "text": "game.Players.",
+   "mode": 2,
+   "allow": [
+    "LocalPlayer"
+   ],
+   "deny": [
+    "Lobby"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "script colon",
+   "text": "script:",
+   "mode": 2,
+   "allow": [
+    "GetHash",
+    "WaitForChild"
+   ],
+   "deny": [
+    "Explode"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "script dot open",
+   "text": "script.",
+   "mode": 2,
+   "allow": [
+    "Config"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "enum namespace",
+   "text": "x = Enum.",
+   "mode": 2,
+   "allow": [
+    "Material",
+    "KeyCode"
+   ],
+   "deny": [
+    "Materials"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "enum items",
+   "text": "x = Enum.Material.",
+   "mode": 2,
+   "allow": [
+    "Plastic",
+    "Wood",
+    "WoodPlanks"
+   ],
+   "deny": [
+    "Plasticc",
+    "Glass"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "enum forced",
+   "text": "x = Enum.Material.Ne",
+   "mode": 2,
+   "allow": [
+    "on"
+   ],
+   "deny": [],
+   "forced": "on",
+   "extra": []
+  },
+  {
+   "name": "enum complete prefix of longer",
+   "text": "x = Enum.Material.Wood",
+   "mode": 2,
+   "allow": [
+    ")",
+    "Planks",
+    ","
+   ],
+   "deny": [
+    "s"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "enum colon no mask",
+   "text": "Enum.Material:",
+   "mode": 2,
+   "allow": [
+    "GetEnumItems"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "concat after receiver",
+   "text": "local p = Instance.new(\"Part\")\nx = p..",
+   "mode": 2,
+   "allow": [
+    ".",
+    " "
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "dot then space releases",
+   "text": "local RS = game:GetService(\"RunService\")\nRS.",
+   "mode": 2,
+   "allow": [
+    " ",
+    "\n"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "token spanning separator",
+   "text": "local p = Instance.new(\"Part\")\np",
+   "mode": 2,
+   "allow": [
+    ".Anch",
+    ":Get",
+    " ",
+    "=",
+    ".."
+   ],
+   "deny": [
+    ".Foo",
+    ":Explode"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "field of unknown not a receiver",
+   "text": "foo.RS:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "chained member not a receiver",
+   "text": "local p = Instance.new(\"Part\")\np.Parent:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "in string no mask",
+   "text": "print(\"game:GetService('RunService'):",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "in comment no mask",
+   "text": "-- workspace:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "long string spans lines",
+   "text": "local s = [[\nworkspace:",
+   "mode": 2,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "long string closed again",
+   "text": "local s = [[\nx\n]]\nworkspace:",
+   "mode": 2,
+   "allow": [
+    "Raycast"
+   ],
+   "deny": [
+    "Explode"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "fence luau masks",
+   "text": "Here:\n```lua\nworkspace:",
+   "mode": 1,
+   "allow": [
+    "Raycast"
+   ],
+   "deny": [
+    "Explode"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "fence python no mask",
+   "text": "```python\nworkspace:",
+   "mode": 1,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "prose no mask in fence mode",
+   "text": "Call workspace:",
+   "mode": 1,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "after fence closes no mask",
+   "text": "```lua\nx = 1\n```\nworkspace:",
+   "mode": 1,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "bindings reset at new fence",
+   "text": "```lua\nlocal p = Instance.new(\"Part\")\n```\n```lua\np:",
+   "mode": 1,
+   "allow": [
+    "Anything"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "extra names on closed dot",
+   "text": "local p = Instance.new(\"Part\")\np.",
+   "mode": 2,
+   "allow": [
+    "Hitbox"
+   ],
+   "deny": [
+    "Hitbax"
+   ],
+   "forced": "",
+   "extra": [
+    "Hitbox"
+   ]
+  },
+  {
+   "name": "invalid partial releases",
+   "text": "local RS = game:GetService(\"RunService\")\nRS.Fo",
+   "mode": 2,
+   "allow": [
+    "Anything",
+    "("
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "number after dot",
+   "text": "x = 3.",
+   "mode": 2,
+   "allow": [
+    "5"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "ui grid invented",
+   "text": "local g = Instance.new(\"UIGridLayout\")\ng.",
+   "mode": 2,
+   "allow": [
+    "CellSize",
+    "FillDirectionMaxCells"
+   ],
+   "deny": [
+    "ColumnCount"
+   ],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "typed base class narrowed by IsA",
+   "text": "local function apply(model: Instance)\nif model:IsA(\"Model\") then\nmodel:",
+   "mode": 2,
+   "allow": [
+    "PivotTo",
+    "AddPersistentPlayer"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "type annotation after bound name",
+   "text": "local Players = game:GetService(\"Players\")\nlocal function save(player: Players.",
+   "mode": 2,
+   "allow": [
+    "Player"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "type line",
+   "text": "local Players = game:GetService(\"Players\")\ntype P = Players.",
+   "mode": 2,
+   "allow": [
+    "Player"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "return type arrow",
+   "text": "local Players = game:GetService(\"Players\")\nlocal function f(): Players.",
+   "mode": 2,
+   "allow": [
+    "Player"
+   ],
+   "deny": [],
+   "forced": "",
+   "extra": []
+  },
+  {
+   "name": "crlf line ends",
+   "text": "local p = Instance.new(\"Part\")\r\np.",
+   "mode": 2,
+   "allow": [
+    "Anchored"
+   ],
+   "deny": [
+    "Foo"
+   ],
+   "forced": "",
+   "extra": []
+  }
+ ]
+}

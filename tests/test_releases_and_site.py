@@ -49,7 +49,7 @@ def test_update_extract_rejects_zip_slip_and_accepts_exe(tmp_path):
 
 def test_windows_release_workflow_has_real_windows_installer_and_guarded_release():
     s=(ROOT/'.github/workflows/windows-desktop.yml').read_text()
-    assert 'runs-on: windows-latest' in s
+    assert 'runs-on: [self-hosted, windows, star-win]' in s
     assert 'installer/STAR.iss' in s
     assert 'smoke' in s.lower()
     assert 'contents: write' in s and 'needs: [windows-build, attest-release]' in s

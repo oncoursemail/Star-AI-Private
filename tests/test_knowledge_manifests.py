@@ -65,8 +65,10 @@ def test_catalogue_is_metadata_only_and_contains_every_corpus():
 
 
 def test_the_existing_roblox_index_has_not_been_extended():
+    # The knowledge school added other corpora to the index (2026-10-18); the Roblox group, which Roblox questions
+    # are answered from (search.auto_scope), is still exactly the two official sources.
     sources = json.loads((KNOWLEDGE / "corpora.json").read_text(encoding="utf-8"))["sources"]
-    assert {item["name"] for item in sources} == {"creator-docs", "luau-site"}
+    assert {item["name"] for item in sources if item.get("group", "roblox") == "roblox"} == {"creator-docs", "luau-site"}
 
 
 @pytest.mark.parametrize("change", [

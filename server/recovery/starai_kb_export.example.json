@@ -1,0 +1,12 @@
+{
+  "sources": [
+    {
+      "name": "knowledge-kb",
+      "path": "/opt/star/knowledge/data/kb.sqlite3"
+    }
+  ],
+  "staging_dir": "/data/star-re/knowledge/.star-recovery-staging",
+  "max_total_bytes": 4294967296,
+  "min_free_bytes": 8589934592,
+  "sqlite_timeout_seconds": 600
+}

@@ -202,6 +202,19 @@ describe('Web search keys', () => {
   })
 })
 
+describe('Scholarly research switch', () => {
+  it('is off by default and saves scholarly_research_enabled when turned on', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Knowledge & search'}))
+    const box = screen.getByRole('checkbox', {name: 'Add scholarly papers to deep research'}) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    await user.click(box)
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    expect((desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>).scholarly_research_enabled).toBe(true)
+  })
+})
+
 describe('helpers', () => {
   it('matches every word, ignoring case, accents and hyphens', () => {
     expect(normalizeSearch('Résumé  Wi-Fi')).toBe('resume wi fi')
@@ -214,5 +227,24 @@ describe('helpers', () => {
     expect(settingsDirty({...base, reduced_motion: !base.reduced_motion}, base)).toBe(false)
     expect(settingsDirty({...base, max_calls: 3}, base)).toBe(true)
     expect(settingsDirty({...base, instant_route_enabled: null}, {...base, instant_route_enabled: undefined})).toBe(false)
+  })
+})
+
+describe('Song recognition', () => {
+  it('is off by default: no composer button and no key fields until the switch is on, then it saves the flag', async () => {
+    expect((backendSettings as AppSettings).music_recognition_enabled).toBeUndefined()
+    const user = userEvent.setup()
+    render(<App/>)
+    await screen.findByRole('textbox', {name: /message star/i})
+    expect(screen.queryByRole('button', {name: 'Identify a song'})).toBeNull()
+    await user.click(screen.getByRole('button', {name: /^settings/i}))
+    await user.click(await screen.findByRole('tab', {name: 'Images, voice & 3D'}))
+    expect(screen.queryByLabelText('AudD key')).toBeNull()
+    await user.click(screen.getByRole('checkbox', {name: 'Song recognition'}))
+    expect((screen.getByLabelText('AudD key') as HTMLInputElement).type).toBe('password')
+    expect(screen.getByLabelText('AcoustID key')).toBeTruthy()
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBe(1))
+    expect((desktop.sent('saveSettings')[0].payload.settings as AppSettings).music_recognition_enabled).toBe(true)
   })
 })

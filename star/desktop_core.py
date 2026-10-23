@@ -30,12 +30,13 @@ from .providers import (ALL_PROVIDERS, background_client, call_limits, connectio
                         model_unavailable, open_client,
                         provider_kind, server_context_tokens, validate_lan_endpoint)
 from .brain_router import (select_route, validate_alias, is_roblox_task, deep_request, ROBLOX_QUALITY_NOTES,
-                           busy_downgrade_allowed)
+                           busy_downgrade_allowed, is_roblox_dev_prompt)
 from .instant_route import decide_instant_route, loaded_local_model, answer_on_pc
 from . import server_roles, turn_memory
 from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
+from . import edit_format
 from . import studio_loop, studio_tool_examples
 from . import project_rules
 from . import gpu_helper
@@ -79,6 +80,9 @@ class Settings:
     studio_luau: bool = False             # let STAR run Luau in that sandbox (needed to create instances)
     studio_tool_examples: bool = False    # opt-in: one example call appended to each error-prone Studio tool
     workspace_edit: bool = False
+    debug_evidence_enabled: bool = False  # opt-in report analysis; never grants process execution or attachment
+    live_show_enabled: bool = False       # opt-in offline episode-manifest planner (star/live_show.py); no posting or rendering
+    minecraft_tools_enabled: bool = False  # opt-in offline pack/server-folder tools (star/minecraft_tools.py)
     max_calls: int = 12
     context_chars: int = 26000
     llama_server: str = ''
@@ -108,11 +112,13 @@ class Settings:
     graphify_enabled: bool = True
     roblox_research_enabled: bool = True
     asset_forge_enabled: bool = False     # owner opt-in; external asset search also needs Roblox research
+    commerce_enabled: bool = False        # owner opt-in: Business tab, commerce tools; real-world actions still need approval
     tool_workshop_enabled: bool = True
     specialists_enabled: bool = True
     # Local reverse-engineering tools (star/reverse_engineering.py). Off by default; opt-in.
     # Defensive, workspace-confined analysis of your own/permitted binaries only.
     reverse_engineering_enabled: bool = False
+    re_game_path: str = ''          # your own PS3 ISO or extracted game folder, read in place by the PS3 RE tools
     specialist_parallelism: int = 1
     team_timeout_min: int = 30      # bounded specialist request deadline, seconds
     team_timeout_max: int = 900     # allows slow on-device and STAR Server inference
@@ -120,10 +126,13 @@ class Settings:
     mcp_graphify_local: bool = False
     mcp_graphify_port: int = 8931
     mcp_obsidian_live: bool = False
+    mcp_github_repositories: bool = False  # explicit opt-in; fixed read-only repository discovery
+    github_repository_access_source: str = 'gh'  # existing GitHub CLI account, or explicit env token
     blender_enabled: bool = False          # only attach STAR's local Blender MCP when requested
     blender_edit: bool = False             # explicit owner permission for new isolated scene jobs
     blender_executable: str = ''           # installed local executable; '' = discover without downloading
     blender_brain2: bool = False           # use the Blender on brain 2 (the second STAR server) instead of a local one
+    blender_motion_qa: bool = False        # offer the read-only animation motion check tool (star/animation_regression.py)
     # STAR Server (provider 'star_server'): an owner-entered private LAN address.
     # The server key is never stored here; it lives in the OS keyring.
     server_endpoint: str = ''
@@ -147,11 +156,15 @@ class Settings:
     learning_digest_cloud: bool = False   # ...also when the selected provider is a hosted one
     practice_lessons_enabled: bool = False  # off until the owner opts in
     worked_examples_enabled: bool = False   # read-only retrieval, off until owner opts in
+    gold_examples_enabled: bool = False     # verified licence-recorded examples (star/gold_bank.py), opt-in
+    studio_atlas: bool = True               # tested reference systems by capability (star/studio_atlas.py); retrieval only
     presolve_enabled: bool = False          # overnight pre-solved answers (star/presolve.py), off until owner opts in
     # Owner default (O1): night school's text lessons that won the paired gate go live for 14 days, visibly, with undo
     # (star/learned_week.py). False = bundles only add candidates that wait for review.
     learning_auto_live: bool = True
     research_auto_check: bool = False      # opt-in daily public-doc checks while desktop is open
+    deep_research_enabled: bool = False    # candidate: bounded page reading for Team + Research
+    scholarly_research_enabled: bool = False  # deep research also asks Crossref/OpenAlex metadata (star/public_research.py)
     # Generate several, test, keep what works (star/best_of_n.py): 'off' or 'auto' (2 to best_of_n_max candidates
     # for code requests on STAR Server, as many as the free model slots allow). Off until the owner opts in.
     best_of_n: str = 'off'
@@ -160,16 +173,46 @@ class Settings:
     roblox_docs_live_enabled: bool = False  # opt-in live retrieval from create.roblox.com/docs; STAR_ROBLOX_DOCS_LIVE=1 also enables
     project_rules_enabled: bool = False    # opt-in: add the workspace's AGENTS.md (star/project_rules.py) to each turn
     luau_retry_ladder: bool = False        # opt-in: a second, thinking repair after a failed Luau repair
+    # Opt-in (star/incremental_repair.py): a failed tool call or a failed syntax check of a saved workspace file
+    # pauses other writes and gets at most two focused retries; what stays unresolved is noted in the answer.
+    incremental_repair: bool = False
+    # Anti-slop post-check of the answer (star/slop.py): 'off', 'flag' (a note on invented APIs, unverifiable claims
+    # and stubs), 'trim' (the note, and filler lines outside code are removed) or 'repair' (the note, after one model
+    # call that fixes the exact findings; star/doc_grounding.repair_slop). Off until the owner opts in.
+    slop_check: str = 'off'
+    # Check-fix loop (star/verify_ladder.py): compile -> real API -> run with Roblox mocks on the server ->
+    # tests, with up to verify_rounds targeted fix calls inside verify_budget_s seconds per turn. On by default (owner, 2026-10-22).
+    verify_ladder: str = 'on'
+    verify_rounds: int = 2
+    verify_budget_s: int = 240
+    # Mistake memory (star/mistake_memory.py): 'retrieve' (default) adds a short note of verified fixes for failures like
+    # the request's to the turn; 'fix' also lets the check-fix loop apply its validated self-written rewrite rules
+    # (no model call) before any model fix; 'off' does neither. Rules stay off until the owner sets 'fix'.
+    mistake_memory: str = 'retrieve'
+    # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
+    # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
+    api_hints_enabled: bool = False
+    # Opt-in (star/api_lock.py): ask a STAR Server with llama.cpp patch 0004 to allow only real Roblox API members
+    # after a known receiver (`game:GetService("X"):`, `Instance.new("Part").`). A server without the patch ignores it.
+    api_lock_enabled: bool = False
+    # Opt-in (star/edit_format.py): pasted code + "fix/change this" is answered with SEARCH/REPLACE blocks that STAR
+    # applies and checks, instead of the whole file written again; a block that does not apply falls back to that.
+    edit_diff: bool = False
     skill_pack_embeddings: bool = False    # opt-in: STAR Server embeddings pick a skill pack the keywords missed
     # Settings > "Use my GPU" (star/gpu_helper.py): STAR's code model on this PC's NVIDIA card, per request, the
     # server as fallback. Off by default. Paths '' = <app data>/gpu-helper/llama-server.exe and star-fast.gguf.
     use_my_gpu: bool = False
+    use_my_pc_auto_night: bool = True      # at night (gpu_helper.NIGHT_START-NIGHT_END) STAR may use the PC even when off
     gpu_helper_server: str = ''
     gpu_helper_model: str = ''
     gpu_idle_minutes: int = 10
     # Settings > "Start thinking while I type" (star/prefill_warm.py): while the owner types, the server reads the
     # conversation and the draft into its prompt cache, so the answer starts sooner. Off by default.
     prefill_while_typing: bool = False
+    # Settings > Song recognition (star/music_recognition.py): off until the owner turns it on. The AudD and AcoustID
+    # keys live in the OS keyring. fpcalc_path = Chromaprint's fpcalc for AcoustID ('' = look on PATH; never downloaded).
+    music_recognition_enabled: bool = False
+    fpcalc_path: str = ''
 
     @classmethod
     def load(cls, file: Path):
@@ -208,23 +251,38 @@ class Settings:
         if not self.project.strip() or len(self.project) > 100:
             raise ValueError('Project name is invalid')
         if any(type(getattr(self, key)) is not bool
-               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled',
-                            'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live',
-                            'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
+               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled', 'live_show_enabled', 'minecraft_tools_enabled',
+                            'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
+                            'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
-                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled',
-                            'strata_enabled', 'strata_vision_enabled',
-                            'strata_loop_guard_enabled')):
+                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
+                            'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
             raise ValueError('Tool access settings must be true or false')
+        if (not isinstance(self.github_repository_access_source, str)
+                or self.github_repository_access_source not in {'gh', 'env'}):
+            raise ValueError('GitHub repository credential source must be gh or env')
         if self.obsidian_vault and not Path(self.obsidian_vault).expanduser().is_dir():
             raise ValueError('Obsidian vault must be an existing folder')
         if self.obsidian_enabled and not self.obsidian_vault:
             raise ValueError('Select an Obsidian vault before enabling read access')
         if self.workspace and (not Path(self.workspace).expanduser().is_dir()):
             raise ValueError('Choose an existing workspace directory')
+        if not isinstance(self.re_game_path, str) or (self.re_game_path and not (
+                Path(self.re_game_path).expanduser().is_dir()
+                or (Path(self.re_game_path).expanduser().is_file()
+                    and self.re_game_path.lower().endswith('.iso')))):
+            raise ValueError('Game path must be an existing game folder or .iso file')
         if self.best_of_n not in ('off', 'auto') or type(self.best_of_n_max) is not int                 or not 2 <= self.best_of_n_max <= 8:
             raise ValueError('Best-of-N must be off or auto, with 2 to 8 candidates')
+        if self.mistake_memory not in ('off', 'retrieve', 'fix'):
+            raise ValueError('Mistake memory must be off, retrieve or fix')
+        if self.slop_check not in ('off', 'flag', 'trim', 'repair'):
+            raise ValueError('Slop check must be off, flag, trim or repair')
+        if (self.verify_ladder not in ('off', 'on') or type(self.verify_rounds) is not int
+                or not 0 <= self.verify_rounds <= 4 or type(self.verify_budget_s) is not int
+                or not 30 <= self.verify_budget_s <= 900):
+            raise ValueError('Check-fix loop must be off or on, with 0 to 4 rounds and a 30 to 900 second budget')
         if type(self.specialist_parallelism) is not int or self.specialist_parallelism not in (1,2):
             raise ValueError('Limit specialists to 1 or 2 concurrent model calls')
         if (type(self.team_timeout_min) is not int or type(self.team_timeout_max) is not int
@@ -241,6 +299,9 @@ class Settings:
                 or self.blender_executable.startswith(('\\\\', '//'))
                 or '://' in self.blender_executable):
             raise ValueError('Choose a trusted local Blender executable, not a URL or network share')
+        if (not isinstance(self.fpcalc_path, str) or len(self.fpcalc_path) > 2048 or '\x00' in self.fpcalc_path
+                or self.fpcalc_path.startswith(('\\\\', '//')) or '://' in self.fpcalc_path):
+            raise ValueError('Choose the local Chromaprint fpcalc program, not a URL or network share')
         if self.studio_edit and not self.studio_id.strip():
             raise ValueError('Choose a disposable Studio instance before editing')
         if not 1 <= self.comfy_port <= 65535 or not re.fullmatch(r'[A-Za-z0-9_-]{1,40}', self.comfy_prompt_node):
@@ -267,6 +328,8 @@ class Settings:
             raise ValueError('Choose a local folder for the GGUF model router')
         if type(self.use_my_gpu) is not bool:
             raise ValueError('Use my GPU must be on or off')
+        if type(self.use_my_pc_auto_night) is not bool:
+            raise ValueError('Automatically turn on at night must be on or off')
         if type(self.prefill_while_typing) is not bool:
             raise ValueError('Start thinking while I type must be on or off')
         for key in ('gpu_helper_server', 'gpu_helper_model'):
@@ -817,12 +880,14 @@ def redact_for_logs(value):
 
 
 def needs_project_tools(prompt: str, prior_user_turns: list[str] | None = None, *,
-                        blender: bool = False) -> bool:
+                        blender: bool = False, github_repositories: bool = False) -> bool:
     """Load task tools on explicit request or scoped short edit follow-up.
 
     User context hints are not permissions; executable scopes remain enforced.
     """
     text = prompt.lower()
+    if github_repositories and re.search(r'\b(?:githubs?|metallic(?:-[a-z]{2})?)\b', text):
+        return True
     scopes = ('studio', 'roblox', 'workspace', 'my project', 'my game', 'my files',
               'project folder', 'current place')
     if blender:   # only with the Blender switch on (Settings.blender_enabled); off, these stay plain chat
@@ -1038,17 +1103,184 @@ def picture_limit(settings) -> int | None:
     return int(getattr(settings, 'picture_max_side', 1280) or 0) or None
 
 
+def base_sections(project: str, prompt: str, quick: bool, knowledge, lesson_store, document_block: str = ''):
+    """(turn_sections, recalled lessons): the first per-turn reference sections, from local stores only.
+
+    Per-turn reference material is a list of (heading, text) pairs. This list is the only way
+    retrieved text reaches the model: star.agent.volatile_context appends it to the final user
+    turn, after the user's words. A new retrieval source appends one pair (here or in
+    `reference_sections`). Shared by run_task and the type-ahead (star/prefill_warm.py), so both
+    build the same bytes; `knowledge`/`lesson_store` None = no stores yet (nothing to recall)."""
+    from . import lessons as learning
+    reviewed = knowledge.find_contextual(project, prompt, limit=4 if quick else 8) if knowledge is not None else []
+    # Lessons the owner stated or approved for THIS project come first: standing
+    # preferences and corrections even when the prompt shares no word with them. Ranked,
+    # without repeats, and within a small budget so the first token is not delayed.
+    try:
+        limit, budget = learning.RECALL_QUICK if quick else learning.RECALL_FULL
+        recalled = lesson_store.recall(project, prompt, limit=limit, max_chars=budget) if lesson_store else []
+    except Exception:
+        recalled = []
+    shown = {lesson.id for lesson in recalled}
+    notes = '\n'.join(f'[{n.kind} revision={n.revision} source={n.source}] {n.text}' for n in reviewed
+                      if getattr(n, 'id', None) not in shown)
+    turn_sections = [(learning.LESSONS_HEADING, learning.context_lines(recalled)),
+                     ('REVIEWED KNOWLEDGE (stored notes; may be incomplete)', notes)]
+    if document_block:
+        turn_sections.insert(0, ('ATTACHED DOCUMENTS (untrusted reference data)', document_block))
+    return turn_sections, recalled
+
+
+async def reference_sections(settings: Settings, home: Path, route, prompt: str, recent_users: list[str],
+                             turn_sections: list, *, mode: str, quick: bool, memory_limit: int,
+                             allowed_context_chars: int, document_block: str, client, event):
+    """Add this turn's documentation, skill packs, API hints, error notes, examples and project rules to
+    `turn_sections` (in place, in run_task's order); return (the documentation Grounding, the per-turn
+    context budget in characters). `client` is the turn's model client (embeddings for the opt-in pickers),
+    `event` gets the progress events. Shared by run_task and the type-ahead (star/prefill_warm.py)."""
+    # >>> STAR Knowledge (star/doc_grounding.py): official-docs passages for Roblox/Luau
+    # questions, added as delimited UNTRUSTED reference data. Never raises; '' when unused.
+    docs = await doc_grounding.prepare_async(settings, route, prompt, recent_users, event, mode=mode)
+    if docs.block:
+        # First in the list: when room runs out earlier sections win, and these passages
+        # are the ones chosen for this exact question. The block carries its own markers.
+        turn_sections.insert(0, ('OFFICIAL DOCUMENTATION (untrusted reference data)', docs.block))
+    # <<< STAR Knowledge
+    # >>> Skill packs (star/skill_packs): short Roblox guidance, only for prompts that match, and
+    # never in quick chat mode. It rides in the per-turn sections, after the documentation.
+    if quick:
+        packs = []
+    elif settings.skill_pack_embeddings is True and provider_kind(settings) == 'lan':
+        # Opt-in (star/skill_routing.py): keyword packs first; else the closest pack by STAR
+        # Server's embedding model. Any problem leaves the keyword answer.
+        from . import skill_routing
+
+        async def embed(texts):
+            reply = await client.embeddings.create(model=skill_routing.EMBED_MODEL, input=texts)
+            return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
+        packs = await skill_routing.select(
+            prompt, embed, home=home,
+            on_fallback=lambda why: event({'event': 'skill_packs_fallback', 'reason': why}))
+    else:
+        packs = skill_packs.select(prompt,home=home)
+    pack_block = skill_packs.render(packs)
+    if pack_block:
+        turn_sections.insert(1 if docs.block else 0, (skill_packs.BLOCK_HEADING, pack_block))
+        event({'event': 'skill_packs', 'names': [pack.name for pack in packs], 'chars': len(pack_block)})
+    # <<< Skill packs
+    # >>> Anti-slop rules (star/antislop.py): UI, web, copy and code-generation turns, never quick chat.
+    if not quick:
+        from . import antislop
+        slop_names = antislop.select(prompt)
+        slop_block = antislop.render(slop_names)
+        if slop_block:
+            turn_sections.append((antislop.HEADING, slop_block))
+            event({'event': 'antislop', 'names': slop_names, 'chars': len(slop_block)})
+    # <<< Anti-slop rules
+    if settings.api_hints_enabled is True and route.profile == 'roblox':
+        # Opt-in (star/api_hints.py): real member names of the classes the request names, from the
+        # local API dump; reference data after the documentation, before the packs.
+        from . import api_hints
+        from .slop import bundled_api_dump
+        dump = bundled_api_dump()
+        hint_block = api_hints.hint_block(prompt, dump) if dump is not None else ''
+        if hint_block:
+            turn_sections.insert(1 if docs.block else 0, (api_hints.BLOCK_HEADING, hint_block))
+            event({'event': 'api_hints', 'classes': hint_block.count('\n') + 1, 'chars': len(hint_block)})
+    # Pasted Studio output uses the same per-turn path, including Fast mode.
+    error_block = roblox_errors.reference_context(prompt)
+    if error_block:
+        turn_sections.insert(1 if docs.block else 0, (roblox_errors.BLOCK_HEADING, error_block))
+    # Checked practice is opt-in and treated as untrusted reference data, not a lesson.
+    example_block = ''
+    example_extra_chars = 0
+    if settings.worked_examples_enabled is True:
+        from . import worked_examples
+        base_chars = (min(3000 if quick else 10000, memory_limit)
+                      + len(docs.block) + len(document_block) + len(pack_block)
+                      + len(error_block))
+        heading_chars = len(worked_examples.HEADING) + 2
+        room = min(worked_examples.MAX_PROMPT_CHARS - heading_chars,
+                   max(0, allowed_context_chars - 3200 - base_chars - heading_chars))
+        if room >= 200:
+            try:
+                example_block, selected_examples = worked_examples.select(
+                    home, settings.project, prompt, max_chars=room)
+            except (OSError, sqlite3.DatabaseError, ValueError):
+                example_block, selected_examples = '', []
+            if example_block:
+                example_extra_chars = len(example_block) + heading_chars
+                turn_sections.append((worked_examples.HEADING, example_block))
+                event({'event': 'worked_example_used',
+                       'count': len(selected_examples), 'chars': len(example_block)})
+    # Opt-in (star/gold_bank.py): the closest verified gold examples, Roblox route only, never in quick mode.
+    if settings.gold_examples_enabled is True and route.profile == 'roblox' and not quick:
+        from . import gold_bank
+        async def gold_embed(texts):
+            reply = await client.embeddings.create(model=gold_bank.EMBED_MODEL, input=texts)
+            return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
+        gold_room = min(gold_bank.MAX_BLOCK_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
+                                                   - len(gold_bank.HEADING) - 2 - min(10000, memory_limit)
+                                                   - len(docs.block) - len(document_block)
+                                                   - len(pack_block) - len(error_block)))
+        gold_block, gold_used = await gold_bank.select(
+            prompt, gold_embed if provider_kind(settings) == 'lan' else None, max_chars=gold_room,
+            on_fallback=lambda why: event({'event': 'gold_examples_fallback', 'reason': why}))
+        if gold_block:
+            example_extra_chars += len(gold_block) + len(gold_bank.HEADING) + 2
+            turn_sections.append((gold_bank.HEADING, gold_block))
+            event({'event': 'gold_examples_used', 'ids': [item.id for item in gold_used],
+                   'chars': len(gold_block)})
+    # Mistake memory (star/mistake_memory.py, default on): verified fixes of earlier failures like this request.
+    if settings.mistake_memory in ('retrieve', 'fix') and route.profile == 'roblox' and not quick:
+        from . import mistake_memory
+        pit_room = min(mistake_memory.MAX_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
+                                                      - len(mistake_memory.HEADING) - 2 - min(10000, memory_limit)
+                                                      - len(docs.block) - len(document_block)
+                                                      - len(pack_block) - len(error_block)))
+        pit_block, pit_used = mistake_memory.pitfalls(prompt, max_chars=pit_room)
+        if pit_block:
+            example_extra_chars += len(pit_block) + len(mistake_memory.HEADING) + 2
+            turn_sections.append((mistake_memory.HEADING, pit_block))
+            event({'event': 'mistake_memory_used', 'signatures': pit_used, 'chars': len(pit_block)})
+    # Studio Atlas (star/studio_atlas.py): the closest tested reference system(s) when the request matches, Roblox route only.
+    if settings.studio_atlas is True and route.profile == 'roblox' and not quick:
+        from . import studio_atlas
+        atlas_room = min(studio_atlas.MAX_BLOCK_CHARS, max(0, allowed_context_chars - 3200 - example_extra_chars
+                                                           - len(studio_atlas.HEADING) - 2 - min(10000, memory_limit)
+                                                           - len(docs.block) - len(document_block)
+                                                           - len(pack_block) - len(error_block)))
+        atlas_block, atlas_used = studio_atlas.select(prompt, max_chars=atlas_room)
+        if atlas_block:
+            example_extra_chars += len(atlas_block) + len(studio_atlas.HEADING) + 2
+            turn_sections.append((studio_atlas.HEADING, atlas_block))
+            event({'event': 'studio_atlas_used', 'ids': [item.id for item in atlas_used], 'chars': len(atlas_block)})
+    # Opt-in project rules (star/project_rules.py): the workspace's AGENTS.md, as reference data.
+    rules_chars = 0
+    if settings.project_rules_enabled is True and settings.workspace and not quick:
+        rules = project_rules.load(settings.workspace)
+        if rules:
+            turn_sections.append((project_rules.HEADING, rules[1]))
+            rules_chars = len(rules[1]) + len(project_rules.HEADING) + 2
+            event({'event': 'project_rules', 'file': rules[0], 'chars': len(rules[1])})
+    turn_context_chars = (min(3000 if quick else 10000, memory_limit) + len(docs.block) + len(document_block)
+                          + len(pack_block) + len(error_block) + example_extra_chars + rules_chars)
+    return docs, turn_context_chars
+
+
 def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
              on_event: Callable[[dict], None] | None = None,
              stream_tokens: bool = False, mode: str = 'auto', research: bool = False,
              cancel_event=None, github_enabled: bool = False, chat_id: str | None = None,
              owner_text: str | None = None, documents: list[Path] | None = None,
-             studio_configuration_home: Path | None = None, attachment_count: int = 0) -> str:
+             studio_configuration_home: Path | None = None, attachment_count: int = 0,
+             song_lookup: tuple[Path, str] | None = None) -> str:
     """User-controlled fast/automatic/agent routing; all hosted calls are opt-in.
 
     `owner_text` is what the owner typed, when `prompt` also carries text STAR added (an
     audio transcript, a note about video frames). Only the owner's own words can become an
-    automatically accepted lesson.
+    automatically accepted lesson. `song_lookup` = (attached WAV, catalog) the owner approved
+    in the composer for this message: it attaches the star_identify_song tool for one lookup.
     """
     from .knowledge import KnowledgeStore
     from . import lessons as learning
@@ -1173,7 +1405,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             and recent_all[-1][1] and prompt.startswith(recent_all[-1][1]) else recent_all
         )
         recent_users = [body for role,body in route_history if role=='user']
-        project_tools = needs_project_tools(prompt, recent_users, blender=settings.blender_enabled is True)
+        project_tools = needs_project_tools(prompt, recent_users, blender=settings.blender_enabled is True,
+                                            github_repositories=settings.mcp_github_repositories is True)
         referential = len(prompt) <= 160 and bool(re.search(
             r'\b(?:it|this|that|same|continue|again|those|these)\b', prompt, re.I))
         roblox_context = bool(project_tools and referential
@@ -1204,41 +1437,42 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                             task_timeout=max(route.task_timeout, strata_plan.task_timeout))
             audited_event({'event':'strata_selected','profile':route.profile,
                            'model':route.model,'reasoning_effort':strata_plan.reasoning_effort})
+        song_tool = None
+        if song_lookup is not None and settings.music_recognition_enabled is True:
+            from .music_recognition import ChatSongLookup
+            song_tool = ChatSongLookup(song_lookup[0], song_lookup[1], settings)
+            route = replace(route, quick=False, max_calls=max(3, route.max_calls))
         audited_event({'event':'route_selected','profile':route.profile,
                        'description':route.description,'model':route.model,
                        'engine':'strata' if strata_plan.active else 'default'})
         quick = route.quick
-        reviewed = knowledge.find_contextual(settings.project, prompt, limit=4 if quick else 8)
-        # Lessons the owner stated or approved for THIS project come first: standing
-        # preferences and corrections even when the prompt shares no word with them. Ranked,
-        # without repeats, and within a small budget so the first token is not delayed.
-        try:
-            limit, budget = learning.RECALL_QUICK if quick else learning.RECALL_FULL
-            recalled = lesson_store.recall(settings.project, prompt, limit=limit, max_chars=budget)
-        except Exception:
-            recalled = []
-        shown = {lesson.id for lesson in recalled}
-        notes = '\n'.join(f'[{n.kind} revision={n.revision} source={n.source}] {n.text}' for n in reviewed
-                          if getattr(n, 'id', None) not in shown)
+        turn_sections, recalled = base_sections(settings.project, prompt, quick, knowledge, lesson_store,
+                                                document_block)
         for image in images:
             path = Path(image)
             media_type = 'image/jpeg' if path.suffix.lower() in ('.jpg', '.jpeg') else 'image/webp' if path.suffix.lower() == '.webp' else 'image/png'
             knowledge.ingest_artifact(project=settings.project, path=path,
                 origin=f'desktop:{path.name}', media_type=media_type)
-        # Per-turn reference material as (heading, text) pairs. This list is the only way
-        # retrieved text reaches the model: star.agent.volatile_context appends it to the
-        # final user turn, after the user's words. A new retrieval source appends one pair.
-        turn_sections = [(learning.LESSONS_HEADING, learning.context_lines(recalled)),
-                         ('REVIEWED KNOWLEDGE (stored notes; may be incomplete)', notes)]
-        if document_block:
-            turn_sections.insert(0, ('ATTACHED DOCUMENTS (untrusted reference data)', document_block))
         use_tools = route.use_tools
         from .live_context import wants_fresh_web
         auto_web = bool(not research and settings.web_auto_search is not False and wants_fresh_web(prompt))
         allowed_context_chars = (strata_plan.context_chars if strata_plan.active
                                  else model_context_char_budget(settings, route.model))
         intelligence = for_settings(settings, home) if use_tools else None
-        workspace = Workspace(Path(settings.workspace)) if use_tools and settings.workspace else None
+        workspace = (Workspace(Path(settings.workspace), validate=settings.incremental_repair is True)
+                     if use_tools and settings.workspace else None)
+        debug_evidence = None
+        if workspace is not None and settings.debug_evidence_enabled is True:
+            from .debug_evidence import DebugEvidenceTools
+            debug_evidence = DebugEvidenceTools(workspace, enabled=True)
+        live_show = None
+        if workspace is not None and settings.live_show_enabled is True:
+            from .live_show import LiveShowTools
+            live_show = LiveShowTools(workspace, enabled=True)
+        minecraft_tools = None
+        if workspace is not None and settings.minecraft_tools_enabled is True:
+            from .minecraft_tools import MinecraftTools
+            minecraft_tools = MinecraftTools(workspace, enabled=True, allow_write=settings.workspace_edit is True)
         if use_tools and settings.tool_workshop_enabled:
             workshop = ToolWorkshop(home=home,project=settings.project,knowledge=knowledge,
                                     workspace=workspace,intelligence=intelligence)
@@ -1261,6 +1495,11 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         # Server), and the shape of this request is kept for the post-answer warm-up.
         tools_kept = (turn_memory.for_conversation(memory_scope, sticky=kind == 'lan')
                       if kind != 'cloud' else None)
+        if (tools_kept is not None and tools_kept.sticky and use_tools and settings.prefill_while_typing is True
+                and (is_roblox_task(prompt) or is_roblox_dev_prompt(prompt))):
+            # Type-ahead only pays when the start of the prompt does not change: a Roblox chat gets one fixed tool
+            # list from its first Roblox message on (star/turn_memory.py), not one to three more per message.
+            tools_kept.pin(turn_memory.ROBLOX_FIXED_TOOLS)
         answered_by = ''
         model_stats = {}
         instant_answer = None
@@ -1364,7 +1603,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                             'section':str(getattr(exc, 'section', 'unknown'))[:24]}))
                 else:
                     client = primary_client
-                if kind == 'lan' and settings.use_my_gpu is True:
+                if kind == 'lan' and gpu_helper.pc_allowed(settings):
                     # STAR's code model on this PC's graphics card when it is ready; the server otherwise and
                     # whenever the PC fails (star/gpu_helper.py). Everything else in this turn is unchanged.
                     if not gpu_helper.HELPER.enabled:
@@ -1388,10 +1627,6 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 # Reserve room for the system instructions, user text and
                 # discovered tool schemas before adding this turn's context.
                 memory_limit = max(700, allowed_context_chars - 3200)
-                # >>> STAR Knowledge (star/doc_grounding.py): official-docs passages for Roblox/Luau
-                # questions, added as delimited UNTRUSTED reference data. Never raises; '' when unused.
-                docs = await doc_grounding.prepare_async(settings, route, prompt, recent_users,
-                                                         audited_event, mode=mode)
                 def slot_fields(model):
                     # Engine-specific request body.  Strata gets Qwen reasoning/top-k;
                     # ordinary local/LAN llama.cpp keeps STAR's prompt-cache fields.
@@ -1399,68 +1634,11 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                         return lambda tools: strata_backend.request_extras(strata_plan)
                     return lambda tools: llama_request_fields(
                         model_settings, conversation=memory_scope, tools=tools, model=model)
+                docs, turn_context_chars = await reference_sections(
+                    settings, home, route, prompt, recent_users, turn_sections, mode=mode, quick=quick,
+                    memory_limit=memory_limit, allowed_context_chars=allowed_context_chars,
+                    document_block=document_block, client=client, event=audited_event)
                 learned['grounding'] = docs
-                if docs.block:
-                    # First in the list: when room runs out earlier sections win, and these passages
-                    # are the ones chosen for this exact question. The block carries its own markers.
-                    turn_sections.insert(0, ('OFFICIAL DOCUMENTATION (untrusted reference data)', docs.block))
-                # <<< STAR Knowledge
-                # >>> Skill packs (star/skill_packs): short Roblox guidance, only for prompts that match, and
-                # never in quick chat mode. It rides in the per-turn sections, after the documentation.
-                if quick:
-                    packs = []
-                elif settings.skill_pack_embeddings is True and provider_kind(settings) == 'lan':
-                    # Opt-in (star/skill_routing.py): keyword packs first; else the closest pack by STAR
-                    # Server's embedding model. Any problem leaves the keyword answer.
-                    from . import skill_routing
-
-                    async def embed(texts):
-                        reply = await client.embeddings.create(model=skill_routing.EMBED_MODEL, input=texts)
-                        return [row.embedding for row in sorted(reply.data, key=lambda row: row.index)]
-                    packs = await skill_routing.select(
-                        prompt, embed, home=home,
-                        on_fallback=lambda why: audited_event({'event': 'skill_packs_fallback', 'reason': why}))
-                else:
-                    packs = skill_packs.select(prompt,home=home)
-                pack_block = skill_packs.render(packs)
-                if pack_block:
-                    turn_sections.insert(1 if docs.block else 0, (skill_packs.BLOCK_HEADING, pack_block))
-                    audited_event({'event': 'skill_packs', 'names': [pack.name for pack in packs], 'chars': len(pack_block)})
-                # <<< Skill packs
-                # Pasted Studio output uses the same per-turn path, including Fast mode.
-                error_block = roblox_errors.reference_context(prompt)
-                if error_block:
-                    turn_sections.insert(1 if docs.block else 0, (roblox_errors.BLOCK_HEADING, error_block))
-                # Checked practice is opt-in and treated as untrusted reference data, not a lesson.
-                example_block = ''
-                example_extra_chars = 0
-                if settings.worked_examples_enabled is True:
-                    from . import worked_examples
-                    base_chars = (min(3000 if quick else 10000, memory_limit)
-                                  + len(docs.block) + len(document_block) + len(pack_block)
-                                  + len(error_block))
-                    heading_chars = len(worked_examples.HEADING) + 2
-                    room = min(worked_examples.MAX_PROMPT_CHARS - heading_chars,
-                               max(0, allowed_context_chars - 3200 - base_chars - heading_chars))
-                    if room >= 200:
-                        try:
-                            example_block, selected_examples = worked_examples.select(
-                                home, settings.project, prompt, max_chars=room)
-                        except (OSError, sqlite3.DatabaseError, ValueError):
-                            example_block, selected_examples = '', []
-                        if example_block:
-                            example_extra_chars = len(example_block) + heading_chars
-                            turn_sections.append((worked_examples.HEADING, example_block))
-                            audited_event({'event': 'worked_example_used',
-                                           'count': len(selected_examples), 'chars': len(example_block)})
-                # Opt-in project rules (star/project_rules.py): the workspace's AGENTS.md, as reference data.
-                rules_chars = 0
-                if settings.project_rules_enabled is True and settings.workspace and not quick:
-                    rules = project_rules.load(settings.workspace)
-                    if rules:
-                        turn_sections.append((project_rules.HEADING, rules[1]))
-                        rules_chars = len(rules[1]) + len(project_rules.HEADING) + 2
-                        audited_event({'event': 'project_rules', 'file': rules[0], 'chars': len(rules[1])})
                 kwargs = dict(client=client, model=route.model, prompt=prompt, image_paths=images,
                               now=current_turn_line(conversation_records),
                               project_memory=stable_memory(settings, memory.get(memory_scope)),
@@ -1470,9 +1648,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                               turn_sections=learning.guard_sections(turn_sections), mode=mode,
                               # The documentation block has its own budget (brain_router.GROUNDING_BUDGET);
                               # it is added on top so stored notes keep the room they had before.
-                              turn_context_chars=(min(3000 if quick else 10000, memory_limit) + len(docs.block)
-                                                  + len(document_block) + len(pack_block) + len(error_block)
-                                                  + example_extra_chars + rules_chars),
+                              turn_context_chars=turn_context_chars,
                               # Standing guidance for every tool-using turn (the short
                               # plain-chat rules carry their own Roblox line).
                               guidance=ROBLOX_QUALITY_NOTES,
@@ -1493,11 +1669,20 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                               github_enabled=bool(mode == 'agent' and github_enabled),
                               intelligence=intelligence, mcp_gateway=mcp_gateway,
                               mcp_registry=mcp_registry,
-                              tool_workshop=workshop, specialists=specialists)
+                              tool_workshop=workshop, specialists=specialists,
+                              incremental_repair=settings.incremental_repair is True)
                 if document_tools is not None:
                     kwargs['document_tools'] = document_tools
                 if reverse_engineering is not None:
                     kwargs['reverse_engineering'] = reverse_engineering
+                if debug_evidence is not None:
+                    kwargs['debug_evidence'] = debug_evidence
+                if live_show is not None:
+                    kwargs['live_show'] = live_show
+                if minecraft_tools is not None:
+                    kwargs['minecraft_tools'] = minecraft_tools
+                if song_tool is not None:
+                    kwargs['song_lookup'] = song_tool  # type: ignore[assignment]  # kwargs' value type is inferred from the dict above
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.
@@ -1510,6 +1695,15 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     on_event=audited_event)
                 if several is not None:
                     kwargs['on_first_request'] = several.on_first_request
+                # Opt-in diff-only edits (star/edit_format.py): pasted code plus a change request is answered with
+                # SEARCH/REPLACE blocks that STAR applies and checks here. Plain chat turns only, not with best-of-N.
+                edit = (edit_format.find_edit(prompt)
+                        if settings.edit_diff is True and several is None and mode != 'agent' and not images
+                        and document_tools is None and not document_block and not allow_studio
+                        and not allow_blender else None)
+                if edit is not None:
+                    kwargs['prompt'] = edit.prompt
+                    audited_event({'event': 'edit_diff_started', 'lines': edit.source.count('\n')})
                 audited_event({'event': 'model_started'})
                 async def answer_with(model):
                     nonlocal prepared_conversation
@@ -1611,6 +1805,20 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     if several is not None:
                         await several.run.cancel()
                     raise
+                if edit is not None and not tools_ran and result is not None:
+                    done = await asyncio.to_thread(edit_format.finish, edit, result[0],
+                                                   check=docs.client.luau_check if docs.client is not None else None)
+                    audited_event({'event': 'edit_diff_finished', 'ok': done.ok, 'reason': done.reason[:160],
+                                   'edits': done.edits})
+                    if done.ok:
+                        result = (done.answer, *result[1:])
+                    else:
+                        # The edit did not apply or checked worse: the normal full answer, asked once.
+                        kwargs['prompt'] = prompt
+                        if stream_tokens:
+                            audited_event({'event': 'assistant_delta', 'text':
+                                           '\n\n*(The edit did not apply cleanly; STAR is writing the full code.)*\n\n'})
+                        result = await answer_with(used.model)
                 if several is not None:
                     # The best of the candidates (the main answer above is candidate 1) replaces the answer.
                     result = await several.apply(result, used.model, started=started, budget=route.task_timeout,

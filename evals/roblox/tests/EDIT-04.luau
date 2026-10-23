@@ -1,0 +1,23 @@
+local ret, env = load_answer()
+local SplatPool = ret
+local n = 0
+local destroyed = {}
+local pool = SplatPool.new(function() n += 1; return { id = n } end, 2, function(s) table.insert(destroyed, s) end)
+local a = pool:acquire()
+pool:release(a)
+pool:release(a)
+check("a double release keeps one copy in the free list", pool:freeCount() == 1)
+local b = pool:acquire()
+local c = pool:acquire()
+check("two acquires after that give two different splats", b ~= c)
+pool:release({ id = 99 })
+check("an unknown splat is ignored", pool:freeCount() == 0 and #destroyed == 0)
+local d = pool:acquire()
+pool:release(b); pool:release(c); pool:release(d)
+check("the free list never holds more than maxSize", pool:freeCount() == 2)
+check("the extra splat went to destroy", #destroyed == 1 and destroyed[1] == d)
+check("active count is 0 after releasing everything", pool:activeCount() == 0)
+local plain = SplatPool.new(function() return {} end, 1)
+local x, y = plain:acquire(), plain:acquire()
+check("without destroy an extra release does not error", not throws(function() plain:release(x); plain:release(y) end))
+check("without destroy the cap still holds", plain:freeCount() == 1)

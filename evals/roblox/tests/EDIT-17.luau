@@ -1,0 +1,11 @@
+local ret, env = load_answer()
+local T = ret
+check("pads seconds", T.clock(65) == "1:05")
+check("under a minute", T.clock(9) == "0:09")
+check("an hour or more", T.clock(3725) == "1:02:05")
+check("exactly one hour", T.clock(3600) == "1:00:00")
+check("negative is 0:00", T.clock(-12) == "0:00")
+check("fractions are floored", T.clock(59.9) == "0:59")
+check("words with negative input", T.words(-5) == "0 s")
+check("words unchanged otherwise", T.words(125) == "2 min 5 s" and T.words(120) == "2 min")
+check("parse and countdown still work", T.parse("1:05") == 65 and T.countdown(9.44) == "9.4" and T.countdown(75) == "1:15")

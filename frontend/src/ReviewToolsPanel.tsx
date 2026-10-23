@@ -48,6 +48,11 @@ export function ReviewToolsPanel({settings,onChange,status,recipes,query,onQuery
         <span>Enable experimental Asset Forge planning (off by default; Poly Haven metadata needs public research enabled)</span>
       </label>
       <label className="integrated-switch"><input type="checkbox" disabled={disabled}
+        checked={settings.commerce_enabled===true}
+        onChange={e=>onChange({...settings,commerce_enabled:e.target.checked})}/>
+        <span>Enable Business tools: product research and drafts. Orders, listings, spending, public posts and customer messages always wait for your approval.</span>
+      </label>
+      <label className="integrated-switch"><input type="checkbox" disabled={disabled}
         checked={Boolean(settings.specialists_enabled)}
         onChange={e=>onChange({...settings,specialists_enabled:e.target.checked})}/>
         <span>Enable scoped research specialists</span>
