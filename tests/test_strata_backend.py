@@ -3,7 +3,7 @@ import asyncio
 from types import SimpleNamespace
 import pytest
 
-from star.strata_backend import RoutingClient, choose, request_extras, validate_endpoint
+from star.strata_backend import BackgroundClient, RoutingClient, choose, request_extras, validate_endpoint
 
 
 def settings(**changes):
@@ -96,6 +96,20 @@ class BrokenStream:
         return self
     async def __anext__(self):
         raise ConnectionError("server disconnected")
+
+
+def test_background_helpers_use_low_reasoning_without_overriding_callers():
+    raw = FakeClient([{"ok": 1}, {"ok": 2}])
+    client = BackgroundClient(raw)
+    asyncio.run(client.chat.completions.create(model="strata", messages=[]))
+    asyncio.run(client.chat.completions.create(
+        model="strata", messages=[], temperature=0.2,
+        extra_body={"reasoning_effort": "none"}))
+    first, second = raw.chat.completions.calls
+    assert first["extra_body"] == {"reasoning_effort": "low", "top_k": 20}
+    assert first["temperature"] == 1.0 and first["top_p"] == 0.95
+    assert second["temperature"] == 0.2
+    assert second["extra_body"] == {"reasoning_effort": "none"}
 
 
 def test_falls_back_before_output_and_stays_on_resident_model():
