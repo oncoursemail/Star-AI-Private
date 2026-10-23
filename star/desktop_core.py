@@ -194,6 +194,7 @@ class Settings:
     mistake_memory: str = 'retrieve'
     # Thinking budget (star/thinking_budget.py): 'auto' picks no thinking for easy turns and a small to large budget for hard
     # ones (and a growing one for check-fix rounds) on llama.cpp brains; 'off' never turns thinking on; 'always' = large.
+    # Default off: paired eval 2026-10-23 had no pass gain and +66% median time (docs/agents/thinking-budget-20261023.md).
     thinking_budget: str = 'off'
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
     # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
