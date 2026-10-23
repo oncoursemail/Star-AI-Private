@@ -29,6 +29,7 @@ PACKAGE_DATA_SITES = {
     "star/character_lifecycle_lessons.py": "docs/lessons/roblox-character-lifecycle.md",
     "star/design_db.py": "star/data/design/ui-ux-pro-max",
     "star/gold_bank.py": "data/gold_bank/bank.jsonl",  # opt-in gold examples (gold-bank-20261020)
+    "star/image_post.py": "star/data/fonts",  # bundled OFL fonts for exact text on generated pictures
     "star/learned_week.py": "star/skill_packs",
     "star/studio_atlas.py": "data/studio_atlas",  # tested reference systems (studio-atlas-20261022)
     "star/luau_record_type_lessons.py": "docs/lessons/luau-record-types.md",
@@ -172,7 +173,7 @@ def test_runtime_missing_resources_are_recorded_and_not_claimed_bundled():
     assert missing == PENDING_OWNER_REVIEW
     bundled = set(PACKAGE_DATA_SITES.values()) - missing
     assert all(_bundle_has(resource, local_data) for resource in bundled)
-    assert len(bundled) == 10  # five readers share the skill-pack directory; star/data/mistake_memory (S2) rides star/data
+    assert len(bundled) == 11  # five readers share the skill-pack directory; star/data/mistake_memory (S2) and star/data/fonts ride star/data
 
 
 def test_actual_packaged_root_readers_resolve_resources(tmp_path):

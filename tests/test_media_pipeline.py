@@ -306,7 +306,7 @@ def test_chat_entry_point_uses_the_built_in_model_without_a_workflow_file(tmp_pa
         (home / 'generated-images' / 'x.png').write_bytes(b'x')
         return {'answer': 'ok', 'image': 'data:image/webp;base64,AA', 'message': PREFIX + 'x.png', 'path': home, 'note': {}}
     monkeypatch.setattr(image_gen, 'generate', fake)
-    result = generate_chat_image(Settings(project='Test'), 'a cat', tmp_path, size='draft')
+    result = generate_chat_image(Settings(project='Test', image_quality=False), 'a cat', tmp_path, size='draft')
     assert result == {'answer': 'ok', 'image': 'data:image/webp;base64,AA', 'message': PREFIX + 'x.png'}
     assert seen['size'] == 'draft' and seen['source'] is None and seen['prompt'] == 'a cat'
 

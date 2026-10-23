@@ -107,6 +107,10 @@ class Settings:
     # Longest side, in pixels, of a picture as the STAR Server or the on-device brain reads it
     # (0 = full size). The attached file itself is never changed. See star/media.py.
     picture_max_side: int = 1280
+    # Careful image pipeline (star/image_quality.py): rewrite the request, draw N drafts, blind-judge, exact text.
+    image_quality: bool = True
+    image_drafts: int = 3                 # 1-5 drafts per picture
+    image_engine: str = 'auto'            # 'auto', 'klein' or 'zimage'
     obsidian_vault: str = ''
     obsidian_enabled: bool = False
     skills_enabled: bool = True
@@ -326,6 +330,12 @@ class Settings:
             if (not isinstance(value, str) or len(value) > 1024 or '\x00' in value
                     or value.lower().startswith(('http:', 'https:', 'file:', '\\\\'))):
                 raise ValueError(f'Choose a local folder for the {label}')
+        if type(self.image_quality) is not bool:
+            raise ValueError('Image quality must be true or false')
+        if type(self.image_drafts) is not int or not 1 <= self.image_drafts <= 5:
+            raise ValueError('Image drafts must be a whole number from 1 to 5')
+        if self.image_engine not in ('auto', 'klein', 'zimage'):
+            raise ValueError('Image engine must be auto, klein or zimage')
         if type(self.picture_max_side) is not int or not (self.picture_max_side == 0
                                                            or 512 <= self.picture_max_side <= 4096):
             raise ValueError('Picture size for the brain must be 0 (full size) or 512 to 4096 pixels')

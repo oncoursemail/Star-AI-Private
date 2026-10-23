@@ -69,6 +69,11 @@ def generate_chat_image(settings, prompt: str, home: Path, cancel_event=None, *,
     """
     if not 1 <= len(prompt.strip()) <= 1500:
         raise ValueError("Image prompt must be 1–1500 characters")
+    if source is None and not settings.comfy_workflow.strip():
+        from . import image_quality
+        if image_quality.enabled(settings):
+            made = image_quality.generate_best(settings, prompt, home, size=size, cancel_event=cancel_event)
+            return _on_disk(home, {"answer": made["answer"], "image": made["image"], "message": made["message"]})
     if source is not None or not settings.comfy_workflow.strip():
         from .image_gen import generate as generate_built_in
         made = generate_built_in(settings, prompt, home, size=size, source=source, mask=mask,

@@ -1,0 +1,682 @@
+{
+ "rows": [
+  {
+   "engine": "klein",
+   "id": "cow",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 8.0,
+   "file": "klein-cow-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "cow",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 6.2,
+   "file": "klein-cow-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "horse",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 7.5,
+   "file": "klein-horse-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "horse",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 6.0,
+   "file": "klein-horse-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "dogcat",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 7.5,
+   "file": "klein-dogcat-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "dogcat",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 6.2,
+   "file": "klein-dogcat-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "mug",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 7.6,
+   "file": "klein-mug-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "mug",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 6.0,
+   "file": "klein-mug-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "hands",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 7.6,
+   "file": "klein-hands-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": false,
+    "issues": [
+     "human: 1-1 heads, saw 0"
+    ],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.1,
+    "passed": false
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "hands",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 6.4,
+   "file": "klein-hands-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": false,
+    "issues": [
+     "human: 1-1 heads, saw 0"
+    ],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.1,
+    "passed": false
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "spider",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 8.1,
+   "file": "klein-spider-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "spider",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 6.5,
+   "file": "klein-spider-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "retro",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 8.0,
+   "file": "klein-retro-1111.png",
+   "expected_text": [
+    "SCORE 0420",
+    "LIVES 3"
+   ],
+   "judge": {
+    "anatomy_ok": false,
+    "issues": [
+     "each invader needs limbs that attach naturally to the body",
+     "each invader has one head",
+     "each spaceship needs limbs that attach naturally to the body"
+    ],
+    "soft": [],
+    "text_read": [
+     "SCORE",
+     "0420",
+     "LIV6 3"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.0,
+    "passed": false
+   },
+   "text_exact": 0.5
+  },
+  {
+   "engine": "klein",
+   "id": "retro",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 6.1,
+   "file": "klein-retro-2222.png",
+   "expected_text": [
+    "SCORE 0420",
+    "LIVES 3"
+   ],
+   "judge": {
+    "anatomy_ok": false,
+    "issues": [
+     "each green alien has one head",
+     "each orange alien has one head"
+    ],
+    "soft": [],
+    "text_read": [
+     "SCORE",
+     "0420",
+     "LIVES 3"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.05,
+    "passed": false
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "klein",
+   "id": "open",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 8.0,
+   "file": "klein-open-1111.png",
+   "expected_text": [
+    "OPEN 24 HOURS"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "OPEN",
+     "OPEN",
+     "24 HOURS",
+     "21"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "klein",
+   "id": "open",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 6.2,
+   "file": "klein-open-2222.png",
+   "expected_text": [
+    "OPEN 24 HOURS"
+   ],
+   "judge": {
+    "anatomy_ok": false,
+    "issues": [
+     "person: exactly 1 heads, not 2"
+    ],
+    "soft": [],
+    "text_read": [
+     "OPEN 24 HOURS"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.1,
+    "passed": false
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "klein",
+   "id": "book",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 7.5,
+   "file": "klein-book-1111.png",
+   "expected_text": [
+    "THE LAST LIGHTHOUSE"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "THE LAST LIGHTHOUSE"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "klein",
+   "id": "book",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 6.0,
+   "file": "klein-book-2222.png",
+   "expected_text": [
+    "THE LAST LIGHTHOUSE"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "THE LAST",
+     "LIGHTHOUSE",
+     "THE LAST",
+     "LIGHTHOUSE"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "klein",
+   "id": "neon",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 7.5,
+   "file": "klein-neon-1111.png",
+   "expected_text": [
+    "PIZZA"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "PIZZA"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "klein",
+   "id": "neon",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 6.1,
+   "file": "klein-neon-2222.png",
+   "expected_text": [
+    "PIZZA"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "PIZZA"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "klein",
+   "id": "interior",
+   "category": "scene",
+   "seed": 1111,
+   "seconds": 7.5,
+   "file": "klein-interior-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "interior",
+   "category": "scene",
+   "seed": 2222,
+   "seconds": 5.9,
+   "file": "klein-interior-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "food",
+   "category": "scene",
+   "seed": 1111,
+   "seconds": 8.0,
+   "file": "klein-food-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "klein",
+   "id": "food",
+   "category": "scene",
+   "seed": 2222,
+   "seconds": 6.1,
+   "file": "klein-food-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  }
+ ],
+ "warmup": {
+  "klein": 8.1
+ },
+ "prompts": {
+  "cow": {
+   "prompt": "A realistic Holstein cow standing calmly on a lush green pasture. The cow is captured in a full-body side view, showcasing four natural, anatomically correct legs and a standard tail. The setting is a bright, sunny day with soft natural lighting illuminating the animal's black and white coat. The composition is a wide shot that captures the entire animal and its serene environment, emphasizing the realistic texture of the fur and the peaceful rural atmosphere.",
+   "checks": [
+    "Is the subject a cow?",
+    "Are the legs anatomically correct and natural?",
+    "Is the setting a green pasture?"
+   ],
+   "rewritten": true
+  },
+  "horse": {
+   "prompt": "A majestic chestnut horse galloping dynamically across a lush green meadow. The horse is captured mid-stride with all four legs extended, showcasing powerful muscle definition and a flowing mane. The composition uses a low angle to emphasize speed and height. The setting is an open field with soft rolling hills in the background. Natural sunlight illuminates the scene, creating a warm and vibrant atmosphere. The style is realistic and high-definition photography.",
+   "checks": [
+    "Is there a horse in the image?",
+    "Is the horse galloping?",
+    "Is the setting a field?"
+   ],
+   "rewritten": true
+  },
+  "dogcat": {
+   "prompt": "A fluffy golden retriever dog and a sleek tabby cat sitting side by side on a plush beige sofa. The dog sits upright with front paws forward, while the cat sits with tail curled around its paws. They face forward in a medium shot composition. The setting is a cozy living room with soft natural daylight streaming through a nearby window, illuminating their fur textures. The background is slightly blurred to keep focus on the animals.",
+   "checks": [
+    "Is there a dog and a cat present?",
+    "Are they sitting on a sofa?",
+    "Is the lighting soft and natural?"
+   ],
+   "rewritten": true
+  },
+  "mug": {
+   "prompt": "Full-body front view of a person standing upright, holding a ceramic coffee mug with both hands wrapped around it. The subject is centered in the frame, facing forward with a relaxed posture. The setting is a cozy, sunlit kitchen with soft morning light streaming through a window, creating gentle shadows. The camera angle is eye-level, capturing the entire figure clearly. The background features blurred kitchen elements like cabinets and a counter, providing depth without distraction. The lighting is warm and natural, highlighting the texture of the mug and the person's clothing.",
+   "checks": [
+    "Is the person holding a coffee mug?",
+    "Are both hands visible holding the mug?",
+    "Is the setting a kitchen?"
+   ],
+   "rewritten": true
+  },
+  "hands": {
+   "prompt": "Close-up shot of two human hands gently cupping a small green potted plant. The fingers are curled around the rim of the pot, showcasing detailed skin texture and natural nail beds. The plant features vibrant green leaves and a slender stem. The background is a soft, out-of-focus neutral tone to emphasize the subject. Natural, diffused daylight illuminates the scene, highlighting the freshness of the foliage and the warmth of the skin. High-resolution photography style with shallow depth of field.",
+   "checks": [
+    "Are two hands visible holding the plant?",
+    "Is the plant small and green?",
+    "Is the background blurred and neutral?"
+   ],
+   "rewritten": true
+  },
+  "spider": {
+   "prompt": "A detailed close-up of a garden spider resting at the center of its intricate orb web. The spider is surrounded by glistening morning dew drops clinging to the silk threads. The composition is a tight macro shot, focusing on the texture of the spider and the wet strands. The background is a soft, out-of-focus green forest, illuminated by soft, diffused morning light. The style is high-resolution nature photography with sharp focus on the subject.",
+   "checks": [
+    "Is there a spider visible on a web?",
+    "Are there dew drops on the web strands?",
+    "Is the background blurred green foliage?"
+   ],
+   "rewritten": true
+  },
+  "retro": {
+   "prompt": "A retro 8-bit arcade game screenshot: a small spaceship at the bottom shooting at rows of pixel aliens on a black starry background. The top-left of the screen reads \"SCORE 0420\" and the top-right reads \"LIVES 3\" in chunky white pixel letters.",
+   "checks": []
+  },
+  "open": {
+   "prompt": "Photo of a small corner shop at night, a bright rectangular sign in the window with the words \"OPEN 24 HOURS\" in clear red capital letters.",
+   "checks": []
+  },
+  "book": {
+   "prompt": "A hardcover book cover illustration of a lonely lighthouse on a cliff at dusk, with the title \"THE LAST LIGHTHOUSE\" in large cream capital letters across the top.",
+   "checks": []
+  },
+  "neon": {
+   "prompt": "A glowing pink neon sign that spells \"PIZZA\" in clear capital letters on a dark brick wall at night.",
+   "checks": []
+  },
+  "interior": {
+   "prompt": "A cozy modern living room interior featuring a plush green armchair positioned near a large window. The room has clean lines, neutral walls, and soft textures. Natural daylight streams through the big window, illuminating the space. The composition is centered on the armchair, capturing the inviting atmosphere. The style is photorealistic with high detail, emphasizing comfort and contemporary design elements in a serene home setting.",
+   "checks": [
+    "Is there a green armchair in the image?",
+    "Is there a large window present?",
+    "Is the style modern and cozy?"
+   ],
+   "rewritten": true
+  },
+  "food": {
+   "prompt": "A steaming bowl of rich ramen broth topped with a soft-boiled egg and fresh green onions. The dish is centered in a close-up studio food photography shot. The lighting is bright and even, highlighting the glossy texture of the broth and the vibrant colors of the ingredients. The background is a clean, neutral studio backdrop to keep the focus entirely on the appetizing meal.",
+   "checks": [
+    "Is there a bowl of ramen in the image?",
+    "Are there green onions and an egg on top of the ramen?",
+    "Is the setting a studio environment with neutral background?"
+   ],
+   "rewritten": true
+  }
+ }
+}
