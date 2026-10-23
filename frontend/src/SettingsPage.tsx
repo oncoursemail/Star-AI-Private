@@ -5,6 +5,7 @@ import {Panel,Tag} from './components'
 import {WEBSITE_RELEASES} from './constants'
 import type {AppSettings,BootData} from './types'
 import {ProviderPanel} from './IntegrationPanels'
+import {onBackendEvent} from './bridge'
 import {RobloxPanel} from './RobloxPanel'
 import {BlenderPanel} from './BlenderPanel'
 import {MediaPlaces} from './MediaPanel'
@@ -105,6 +106,38 @@ function Block({id,keywords='',children}:{id:string;keywords?:string;children:Re
 function Switch({label,hint,checked,onChange,disabled,experimental}:{label:string;hint:string;checked:boolean;onChange:(on:boolean)=>void;disabled?:boolean;experimental?:boolean}) {
  const hintId=useId()
  return <label className="setting-switch"><span><strong>{label}{experimental&&<span className="settings-badge">Experimental</span>}</strong><small id={hintId}>{hint}</small></span><input type="checkbox" aria-label={label} aria-describedby={hintId} checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)}/></label>
+}
+
+type StrataProbeResult={ok:boolean;model:string;sample:string;elapsed_ms:number}
+
+function StrataProbe({draft,invoke,disabled}:{draft:AppSettings;invoke:Invoke;disabled:boolean}) {
+ const [busy,setBusy]=useState(false)
+ const [result,setResult]=useState<StrataProbeResult|null>(null)
+ const [error,setError]=useState('')
+ const pending=useRef('')
+ useEffect(()=>onBackendEvent(event=>{
+   if(!pending.current||event.requestId!==pending.current||event.kind==='progress')return
+   pending.current='';setBusy(false)
+   if(event.kind==='error'){setResult(null);setError(String(event.data||'Strata test failed').slice(0,260));return}
+   const value=event.data as StrataProbeResult|null
+   if(value?.ok){setResult(value);setError('')}else{setResult(null);setError('Strata returned no usable test result.')}
+ }),[])
+ const run=async()=>{
+   if(disabled||busy)return
+   setBusy(true);setResult(null);setError('')
+   const reply=await invoke('testStrata',{endpoint:draft.strata_endpoint||'',model:draft.strata_model||''}) as
+     ({pending?:boolean;requestId?:string}&Partial<StrataProbeResult>)|null
+   if(reply?.pending&&reply.requestId){pending.current=reply.requestId;return}
+   setBusy(false)
+   if(reply?.ok){setResult(reply as StrataProbeResult);return}
+   if(reply!==null)setError('Strata returned no usable test result.')
+ }
+ return <div className="settings-actions">
+   <button type="button" className="secondary-button" disabled={disabled||busy||!draft.strata_model}
+     onClick={()=>void run()}>{busy?<LoaderCircle className="spin" size={14} aria-hidden="true"/>:<Zap size={14} aria-hidden="true"/>} Test Strata</button>
+   {result&&<span className="health-result" role="status"><Check size={14} aria-hidden="true"/> {result.sample} · {result.elapsed_ms} ms</span>}
+   {error&&<span className="integrated-error" role="alert">{error}</span>}
+ </div>
 }
 
 /** Brave or Tavily key for web search. The key goes to the OS credential vault through saveProviderKey and is never
@@ -239,6 +272,7 @@ export function SettingsPage(props:SettingsPageProps) {
          <label>Request timeout (seconds)<input type="number" min="60" max="1800" step="30" value={draft.strata_timeout??900} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_timeout:Number(e.target.value)})}/></label>
        </div>
        <Switch label="Let Strata inspect images" hint="Use Qwen3.8's image input for complex visual/Roblox debugging when the Strata model supports it." checked={draft.strata_vision_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_vision_enabled:on})}/>
+       <StrataProbe draft={draft} invoke={act} disabled={inactive||draft.strata_enabled!==true}/>
        <small>STAR never downloads or starts Strata automatically. Run Strata separately on this loopback endpoint; keeping it separate lets the small model stay fast for everyday chat.</small>
      </Panel>
    </Block>
