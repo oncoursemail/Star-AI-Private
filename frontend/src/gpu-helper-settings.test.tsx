@@ -63,6 +63,17 @@ describe('Settings > Use my GPU', () => {
     expect(desktop.sent('gpuHelperSet').map(call => call.payload)).toEqual([{enabled: true}, {enabled: false}])
   })
 
+  it('"Automatically turn on at night" is on by default and saves with the page', async () => {
+    desktop.onAction('gpuHelperStatus', () => ({ok: true, data: off}))
+    const {user, box} = await openPanel()
+    const auto = within(box).getByRole('checkbox', {name: 'Automatically turn on at night'}) as HTMLInputElement
+    expect(auto.checked).toBe(true)
+    await user.click(auto)
+    expect(auto.checked).toBe(false)
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
+    expect(desktop.sent('gpuHelperSet')).toHaveLength(0)
+  })
+
   it('a refused switch stays off and says why', async () => {
     desktop.onAction('gpuHelperStatus', () => ({ok: true, data: off}))
     desktop.onAction('gpuHelperSet', () => ({ok: false, error: 'Settings could not be saved'}))

@@ -3,6 +3,7 @@
 Everything here runs with fakes: no process, no nvidia-smi, no network.
 """
 import asyncio
+from dataclasses import replace
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -445,6 +446,92 @@ def test_tool_calls_are_held_until_the_pc_finished_and_dropped_if_it_breaks(tmp_
     got = asyncio.run(collect(asyncio.run(client.chat.completions.create(**REQUEST, stream=True))))
     assert [bool(i.choices[0].delta.tool_calls) for i in got] == [False, True, False]   # the server's call only
     assert server.requests[0]["messages"][-1] == {"role": "assistant", "content": "Let me look. "}
+
+
+def test_switching_off_mid_answer_lets_the_answer_finish_on_the_pc_then_stops_it(tmp_path):
+    tool = SimpleNamespace(index=0, id="call_1", function=SimpleNamespace(name="read_file", arguments='{"path": "a"}'))
+    server = Fake(Stream([chunk("server for the next request")]))
+    local = Fake(Stream([chunk("Let me look. "), chunk("Reading. "), chunk(tool=tool), chunk(finish="tool_calls")]))
+    rig, client = routed(tmp_path, server, local)
+    process = rig.processes[0]
+    off = replace(rig.settings, use_my_gpu=False)
+    seen = []
+
+    async def answer():
+        stream = await client.chat.completions.create(**REQUEST, stream=True)
+        async for item in stream:
+            seen.append("tool" if item.choices[0].delta.tool_calls else "text" if item.choices[0].delta.content else "end")
+            if len(seen) == 1:                       # the owner flips the switch while the PC is answering
+                rig.helper.configure(off, rig.home)
+                assert rig.helper.status()["state"] == "off" and rig.helper.status()["enabled"] is False
+                assert process.terminated is False   # the running answer is not cut
+    asyncio.run(answer())
+    assert seen == ["text", "text", "tool", "end"]   # complete: text, then the whole tool call, no error
+    assert not server.requests and process.terminated and rig.helper.in_flight == 0
+    assert rig.helper.status()["state"] == "off" and rig.helper.last_fallback == ""
+    assert rig.helper.lease() is None                # the next request goes to the server
+    got = asyncio.run(collect(asyncio.run(client.chat.completions.create(**REQUEST, stream=True))))
+    assert text_of(got) == "server for the next request" and len(rig.started) == 1
+
+
+def test_switching_off_when_nothing_runs_stops_at_once_and_a_late_failure_does_not_show_failed(tmp_path):
+    rig = Rig(tmp_path)
+    helper = rig.ready()
+    off = replace(rig.settings, use_my_gpu=False)
+    helper.configure(off, rig.home)
+    assert rig.processes[0].terminated and helper.state == "off"
+    rig = Rig(tmp_path)
+    helper = rig.ready()
+    assert helper.lease()
+    helper.configure(off, rig.home)
+    helper.finish(ok=False, reason="the graphics card server stopped answering", hard=True)
+    assert rig.processes[0].terminated and helper.state == "off" and helper.status()["label"] == "Off"
+
+
+def test_switching_on_again_mid_answer_keeps_the_loaded_model_for_the_next_request(tmp_path):
+    rig = Rig(tmp_path)
+    helper = rig.ready()
+    assert helper.lease()
+    off = replace(rig.settings, use_my_gpu=False)
+    helper.configure(off, rig.home)
+    helper.configure(rig.settings, rig.home)         # back on before the answer ended
+    assert helper.state == "ready" and not rig.processes[0].terminated
+    helper.finish(ok=True)
+    assert not rig.processes[0].terminated and helper.lease() == helper.base
+    assert len(rig.started) == 1
+
+
+def test_automatic_night_use_runs_with_the_switch_off_and_follows_the_switch_by_day(tmp_path):
+    hour = {"now": 3}
+    for auto, now, runs in ((True, 3, True), (False, 3, False), (True, 14, False), (True, 8, False), (True, 1, True)):
+        rig = Rig(tmp_path)
+        rig.helper._hour = lambda: hour["now"]
+        hour["now"] = now
+        settings = replace(rig.settings, use_my_gpu=False, use_my_pc_auto_night=auto)
+        rig.helper.configure(settings, rig.home, start=True)
+        assert rig.helper.enabled is runs, (auto, now)
+        assert rig.helper.status()["switch"] is False and rig.helper.status()["night"] is runs
+    day = Rig(tmp_path)
+    day.helper._hour = lambda: 14
+    day.helper.configure(replace(day.settings, use_my_gpu=True, use_my_pc_auto_night=False), day.home, start=True)
+    assert day.helper.enabled and day.helper.status()["switch"] is True and day.helper.status()["night"] is False
+    assert gpu_helper.pc_allowed(SimpleNamespace(use_my_gpu=False)) is False      # no setting at all: fails closed
+
+
+def test_the_night_ending_returns_to_the_switch_after_the_running_answer(tmp_path):
+    hour = {"now": 3}
+    rig = Rig(tmp_path)
+    rig.helper._hour = lambda: hour["now"]
+    rig.settings = replace(rig.settings, use_my_gpu=False, use_my_pc_auto_night=True)
+    helper = rig.ready()
+    assert helper.status()["night"] is True and "at night" in helper.status()["text"]
+    assert helper.lease() == helper.base
+    hour["now"] = 8                                   # 08:00: the night is over while an answer runs
+    assert helper.lease() is None                     # a new request already goes to the server
+    helper.tick()
+    assert helper.status()["state"] == "off" and not rig.processes[0].terminated
+    helper.finish(ok=True)
+    assert rig.processes[0].terminated and helper.status()["enabled"] is False
 
 
 def test_a_reader_that_stops_early_frees_the_pc(tmp_path):

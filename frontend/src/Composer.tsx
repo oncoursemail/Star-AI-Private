@@ -142,6 +142,8 @@ export type ComposerProps = {
   onGithubSource: (on: boolean) => void
   connection: Connection
   onOpenConnection: () => void
+  /** The "Use my PC" switch (UsePcSwitch), shown beside the model chip when STAR Server is the provider. */
+  usePc?: ReactNode
   /** "Look at my screen": asks first (ScreenConsent), then attaches one screenshot. Absent where it cannot work. */
   onLookAtScreen?: () => void
   /** Small thumbnails for attachments that have one (a screenshot), keyed by path. */
@@ -366,6 +368,7 @@ export function Composer(props: ComposerProps) {
           )}
         </div>
         <div className="cmp-bar-right">
+          {props.usePc}
           <div className="cmp-pop-wrap" ref={statusWrap}>
             <button ref={statusTrigger} type="button" className={'cmp-status is-' + connection.tone} aria-haspopup="dialog" aria-expanded={statusOpen} title={`${connection.label} — ${connection.state}`} onClick={() => {
               setSide(statusTrigger.current?.closest('.thread.is-empty') ? 'aside' : sideFor(statusTrigger.current, 260))

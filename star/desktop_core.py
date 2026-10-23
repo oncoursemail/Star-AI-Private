@@ -187,6 +187,7 @@ class Settings:
     # Settings > "Use my GPU" (star/gpu_helper.py): STAR's code model on this PC's NVIDIA card, per request, the
     # server as fallback. Off by default. Paths '' = <app data>/gpu-helper/llama-server.exe and star-fast.gguf.
     use_my_gpu: bool = False
+    use_my_pc_auto_night: bool = True      # at night (gpu_helper.NIGHT_START-NIGHT_END) STAR may use the PC even when off
     gpu_helper_server: str = ''
     gpu_helper_model: str = ''
     gpu_idle_minutes: int = 10
@@ -301,6 +302,8 @@ class Settings:
             raise ValueError('Choose a local folder for the GGUF model router')
         if type(self.use_my_gpu) is not bool:
             raise ValueError('Use my GPU must be on or off')
+        if type(self.use_my_pc_auto_night) is not bool:
+            raise ValueError('Automatically turn on at night must be on or off')
         if type(self.prefill_while_typing) is not bool:
             raise ValueError('Start thinking while I type must be on or off')
         for key in ('gpu_helper_server', 'gpu_helper_model'):
@@ -1496,7 +1499,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 audited_event({'event': 'search_finished'})
             # One client per task, with the selected provider's own time limits.
             async with open_client(settings) as client:
-                if kind == 'lan' and settings.use_my_gpu is True:
+                if kind == 'lan' and gpu_helper.pc_allowed(settings):
                     # STAR's code model on this PC's graphics card when it is ready; the server otherwise and
                     # whenever the PC fails (star/gpu_helper.py). Everything else in this turn is unchanged.
                     if not gpu_helper.HELPER.enabled:
