@@ -59,6 +59,15 @@ class Settings:
     reasoning_model: str = ''
     roblox_model: str = ''
     vision_model: str = ''
+    # Optional second local engine: Strata + Qwen3.8-Flash-Next.  It is never
+    # installed or started implicitly; complex routes use it only when enabled.
+    strata_enabled: bool = False
+    strata_endpoint: str = 'http://127.0.0.1:8082/v1'
+    strata_model: str = 'strata'
+    strata_reasoning: str = 'auto'   # auto | none | low | medium | high
+    strata_context_tokens: int = 32768
+    strata_timeout: int = 900
+    strata_vision_enabled: bool = True
     project: str = 'STAR'
     workspace: str = ''
     studio_id: str = ''
@@ -175,8 +184,16 @@ class Settings:
 
     def validate(self):
         validate_target(self.studio_target)
-        for name in ('model', 'fast_model', 'reasoning_model', 'roblox_model', 'vision_model'):
+        for name in ('model', 'fast_model', 'reasoning_model', 'roblox_model', 'vision_model', 'strata_model'):
             validate_alias(getattr(self, name), field=name)
+        from .strata_backend import validate_endpoint as validate_strata_endpoint
+        validate_strata_endpoint(self.strata_endpoint)
+        if self.strata_reasoning not in ('auto', 'none', 'low', 'medium', 'high'):
+            raise ValueError('Strata reasoning must be automatic, none, low, medium or high')
+        if type(self.strata_context_tokens) is not int or not 4096 <= self.strata_context_tokens <= 262144:
+            raise ValueError('Strata context must be 4096 to 262144 tokens')
+        if type(self.strata_timeout) is not int or not 60 <= self.strata_timeout <= 1800:
+            raise ValueError('Strata timeout must be 60 to 1800 seconds')
         if not isinstance(self.provider, str) or self.provider not in ALL_PROVIDERS:
             raise ValueError('Unknown model provider')
         if not re.fullmatch(r'http://(?:127\.0\.0\.1|localhost):\d{2,5}/v1/?', self.endpoint):
@@ -195,7 +212,8 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled')):
+                            'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled',
+                            'strata_enabled', 'strata_vision_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if self.obsidian_vault and not Path(self.obsidian_vault).expanduser().is_dir():
             raise ValueError('Obsidian vault must be an existing folder')
