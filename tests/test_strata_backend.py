@@ -37,7 +37,7 @@ def test_saved_settings_are_backward_compatible_and_validate_strata():
     with pytest.raises(ValueError, match="Tool access settings"):
         cfg.validate()
     cfg.strata_loop_guard_enabled = True
-    cfg.strata_endpoint = "http://192.168.1.2:8080/v1"
+    cfg.strata_endpoint = "http://192.168.1.2:8080/v1"  # star:allow test address
     with pytest.raises(ValueError, match="loopback"):
         cfg.validate()
 
@@ -78,7 +78,7 @@ def test_owner_can_reduce_reasoning_and_disable_vision():
 
 
 @pytest.mark.parametrize("bad", [
-    "https://example.com/v1", "http://192.168.1.2:8080/v1",
+    "https://example.com/v1", "http://192.168.1.2:8080/v1",  # star:allow test address
     "http://127.0.0.1:80/v1", "http://localhost:8082/not-v1", "http://user@127.0.0.1:8082/v1",
 ])
 def test_endpoint_is_loopback_only(bad):
