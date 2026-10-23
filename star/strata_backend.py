@@ -253,8 +253,11 @@ class RoutingClient:
     def _fallback_kwargs(self, kwargs: dict) -> dict:
         cleaned = dict(kwargs)
         cleaned["model"] = self._fallback_model
-        # Strata's reasoning/top-k body fields are not sent to llama.cpp.
+        # Strata's reasoning/top-k body fields and sampling are not inherited by
+        # STAR's resident model; preserve its existing deterministic behavior.
         cleaned.pop("extra_body", None)
+        cleaned.pop("top_p", None)
+        cleaned["temperature"] = 0.0
         return cleaned
 
     def _mark_failed(self, exc: BaseException) -> None:
