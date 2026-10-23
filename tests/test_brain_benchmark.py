@@ -110,3 +110,55 @@ def test_cache_metrics_are_not_invented_without_server_timings():
     assert "median_prompt_tokens_cached" not in result
     assert "median_prompt_eval_ms" not in result
     assert "aggregate_output_tokens_per_second" not in result
+
+
+def _report(ttfts, *, scale=1.0, model="star-fast", parallel=1):
+    rows = [{"ttft_ms": t * scale, "total_ms": (t + 500) * scale, "output_chars_per_s": 40} for t in ttfts]
+    return {"model": model, "scenario": "chat", "target": "local", "endpoint": "http://127.0.0.1:8080/v1",
+            "measurements": rows, "summary": {"runs": len(rows), "parallel": parallel}}
+
+
+def test_compare_reports_reaches_a_verdict_with_any_sample_count():
+    from star.brain_benchmark import compare_reports
+    base = _report([400, 420, 380, 450, 410, 395])          # 6 runs, not the old fixed 10
+    faster = compare_reports(base, _report([400, 420, 380, 450, 410, 395], scale=0.7))
+    assert faster["decision"] == "PROMOTE" and faster["pairs"] == 6
+    assert faster["metrics"]["ttft_ms"]["wins"] == 6 and faster["metrics"]["ttft_ms"]["p_better"] < 0.05
+    assert faster["metrics"]["ttft_ms"]["mean_saved_ms_interval"][0] > 0
+    slower = compare_reports(base, _report([400, 420, 380, 450, 410, 395], scale=1.3))
+    assert slower["decision"] == "REJECT" and slower["metrics"]["total_ms"]["losses"] == 6
+    few = compare_reports(_report([400, 420, 380]), _report([300, 320, 280]))
+    assert few["decision"] == "INCONCLUSIVE"
+    assert any("cannot reach significance" in note for note in few["notes"])
+    mixed = compare_reports(base, _report([390, 430, 370, 460, 400, 405]))
+    assert mixed["decision"] == "INCONCLUSIVE"
+
+
+def test_compare_refuses_unlike_reports():
+    from star.brain_benchmark import compare_reports
+    with pytest.raises(ValueError, match="model"):
+        compare_reports(_report([1, 2, 3]), _report([1, 2, 3], model="star-deep"))
+    with pytest.raises(ValueError, match="parallel"):
+        compare_reports(_report([1, 2, 3]), _report([1, 2, 3], parallel=2))
+    broken = _report([1, 2, 3])
+    broken["measurements"][0]["ttft_ms"] = float("nan")
+    with pytest.raises(ValueError, match="ttft_ms"):
+        compare_reports(_report([1, 2, 3]), broken)
+
+
+def test_compare_cli_reads_saved_reports_without_any_request(tmp_path, monkeypatch, capsys):
+    import json
+    import star.brain_benchmark as bench
+    monkeypatch.setattr(bench, "benchmark_target", lambda *a, **k: pytest.fail("compare must not connect"))
+    before, after, other = tmp_path / "before.json", tmp_path / "after.json", tmp_path / "other.json"
+    before.write_text(json.dumps(_report([400, 420, 380, 450, 410, 395, 405])), encoding="utf-8")
+    after.write_text(json.dumps(_report([400, 420, 380, 450, 410, 395, 405], scale=0.8)), encoding="utf-8")
+    other.write_text(json.dumps(_report([1, 2, 3], model="star-deep")), encoding="utf-8")
+    assert bench.main(["--compare", str(before), str(after)]) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "PROMOTE"
+    assert bench.main(["--compare", str(after), str(before)]) == 1
+    capsys.readouterr()
+    assert bench.main(["--compare", str(before), str(other)]) == 2
+    assert json.loads(capsys.readouterr().out)["decision"] == "UNUSABLE"
+    with pytest.raises(SystemExit):
+        bench.main([])                                       # measuring still needs --model

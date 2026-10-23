@@ -7,7 +7,8 @@
 - The prompt is the model's own chat template with thinking off: the same text llama-server builds at inference.
 - Saves the adapter after every epoch (epoch-N/) and the one with the lowest validation loss as best/.
 - Owner first: refuses to start while the card is busy (GPU util >= 50 % or > 3 GB VRAM used by others), and stops
-  after the current step (saving the adapter) when a game starts, free RAM drops below --ram-floor (6 GB), or STOP-TRAIN exists
+  after the current step (saving the adapter) when a game starts, a --stop-procs process appears, free RAM drops below
+  --ram-floor (6 GB), or STOP-TRAIN exists
   next to --out. `--resume-epoch N` continues from epoch-N/ (optimizer state starts fresh).
 """
 from __future__ import annotations
@@ -38,10 +39,14 @@ def gpu_busy() -> str:
     return ""
 
 
-def owner_busy(ram_floor: float = RAM_FLOOR_GB) -> str:
+def owner_busy(ram_floor: float = RAM_FLOOR_GB, stop_procs: tuple[str, ...] = ()) -> str:
     import psutil
     if psutil.virtual_memory().available / 2**30 < ram_floor:
         return "free RAM below the floor"
+    for proc in psutil.process_iter(["name"]) if stop_procs else ():
+        name = (proc.info.get("name") or "").lower()
+        if any(mark in name for mark in stop_procs):
+            return "a stop process is running (" + name + ")"
     games = []
     for proc in psutil.process_iter(["name", "exe"]):
         text = f"{proc.info.get('name') or ''} {proc.info.get('exe') or ''}".lower()
@@ -76,10 +81,13 @@ def main() -> None:
     ap.add_argument("--resume-epoch", type=int, default=0)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--ram-floor", type=float, default=RAM_FLOOR_GB, help="stop below this much free RAM (GB)")
+    ap.add_argument("--stop-procs", default="", help="comma-separated process-name parts that block/stop training "
+                    "whenever they run, idle or not (e.g. robloxstudio)")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     stop_file = args.out / "STOP-TRAIN"
-    why = gpu_busy() or owner_busy(args.ram_floor)
+    stop_procs = tuple(p.strip().lower() for p in args.stop_procs.split(",") if p.strip())
+    why = gpu_busy() or owner_busy(args.ram_floor, stop_procs)
     if why:
         raise SystemExit("not starting: " + why)
 
@@ -167,7 +175,7 @@ def main() -> None:
                 if stop_file.exists():
                     stopped = "STOP-TRAIN file"
                 else:
-                    stopped = owner_busy(args.ram_floor)
+                    stopped = owner_busy(args.ram_floor, stop_procs)
                 if stopped:
                     break
                 print(f"epoch {epoch} {i}/{len(order)} loss {run_loss / seen:.4f} "

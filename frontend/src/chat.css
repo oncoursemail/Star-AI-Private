@@ -1452,3 +1452,82 @@
   color: var(--star-faint);
   font-size: var(--star-fs-meta);
 }
+
+/* "Use my PC" (UsePcSwitch): a pill switch beside the model chip. Tokens only, so every theme follows. */
+.cmp-pc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 var(--star-2);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--star-muted);
+  font-size: var(--star-fs-meta);
+  white-space: nowrap;
+  transition:
+    background-color var(--star-dur-hover) var(--star-ease),
+    color var(--star-dur-hover) var(--star-ease);
+}
+.cmp-pc:not(:disabled):hover {
+  background: var(--star-surface-3);
+  color: var(--star-text);
+}
+.cmp-pc:disabled {
+  opacity: 0.6;
+}
+.cmp-pc:focus-visible {
+  outline: 2px solid var(--star-gold);
+  outline-offset: 2px;
+}
+.cmp-pc-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 14px;
+  border: 1px solid var(--star-faint);
+  border-radius: 999px;
+  transition: background-color var(--star-dur-hover) var(--star-ease), border-color var(--star-dur-hover) var(--star-ease);
+}
+.cmp-pc-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--star-faint);
+  transition: transform var(--star-dur-hover) var(--star-ease), background-color var(--star-dur-hover) var(--star-ease);
+}
+.cmp-pc.is-on {
+  color: var(--star-text);
+}
+.cmp-pc.is-on .cmp-pc-track {
+  border-color: var(--star-gold);
+  background: var(--star-gold-wash);
+}
+.cmp-pc.is-on .cmp-pc-knob {
+  transform: translateX(10px);
+  background: var(--star-gold);
+}
+.cmp-pc-state {
+  min-width: 18px;
+  text-align: left;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cmp-pc,
+  .cmp-pc-track,
+  .cmp-pc-knob {
+    transition: none;
+  }
+}
+@media (max-width: 600px) {
+  .cmp-pc-label,
+  .cmp-pc-state {
+    display: none;
+  }
+  .cmp-pc {
+    padding: 0 6px;
+  }
+}

@@ -433,3 +433,27 @@ describe('Tools > Asset Forge opt-in', () => {
     expect(desktop.sent('saveSettings')[0].payload.settings).toMatchObject({asset_forge_enabled: true})
   })
 })
+
+
+describe('Tools > Business opt-in', () => {
+  it('hides the Business tab until the owner enables it and saves', async () => {
+    desktop.host({settings: {...backendSettings, commerce_enabled: false}})
+    desktop.onAction('saveSettings', call => {
+      const settings = {...backendSettings, ...(call.payload.settings as Record<string, unknown>)}
+      desktop.host({settings})
+      return {ok: true, data: settings}
+    })
+    const user = userEvent.setup()
+    render(<App/>)
+    await screen.findByRole('textbox', {name: /message star/i})
+    expect(screen.queryByRole('button', {name: /^business$/i})).toBeNull()
+    await user.click(screen.getByRole('button', {name: /^tools$/i}))
+    const toggle = await screen.findByRole('checkbox', {name: /Enable Business tools/})
+    expect(toggle).toHaveProperty('checked', false)
+    expect(toggle.closest('label')?.textContent).toContain('always wait for your approval')
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', {name: /save connector settings/i}))
+    await waitFor(() => expect(desktop.sent('saveSettings')[0].payload.settings).toMatchObject({commerce_enabled: true}))
+    expect(await screen.findByRole('button', {name: /^business$/i})).toBeTruthy()
+  })
+})

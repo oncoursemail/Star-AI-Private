@@ -9,20 +9,26 @@ Any public http(s) URL may be read (no allowlist), with these guards:
     DNS answer cannot point it somewhere else. The only private address allowed is the configured
     STAR search gateway (web_search.search_endpoint_for).
   * Redirects are followed by hand (at most 5), each hop checked the same way.
-  * Limits: ports 80/443/8080/8443, 15 s for the whole fetch, 2 MB downloaded, text-like content
-    types only, no cookies, no credentials, no system proxy.
+  * Limits: ports 80/443/8080/8443, one 15 s budget for DNS, redirects, download and text extraction,
+    2 MB downloaded, text-like content types only, no cookies, no credentials, no system proxy.
+    Blocking DNS and parsing use separate bounded worker pools, never the shared default executor.
   * The page is reduced to its readable text (title + main content; scripts, styles, navigation,
     headers, footers and forms dropped) and returned inside an UNTRUSTED DATA frame.
+
+`post_form` reuses the same address checks for a JSON form POST to a fixed public API (song recognition).
 """
 from __future__ import annotations
 
 import asyncio
 import codecs
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from html.parser import HTMLParser
 import ipaddress
+import json
 import re
 import socket
+import threading
 import time
 from urllib.parse import urljoin, urlsplit
 
@@ -51,6 +57,50 @@ TOOL = {
 
 class FetchRefused(ValueError):
     """The URL or an address it resolves to is not allowed, or the reply broke a limit."""
+
+
+def _remaining(deadline: float) -> float:
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise FetchRefused(f"The page took too long ({TOTAL_TIMEOUT:g} s limit)")
+    return left
+
+
+class _BlockingWorkers:
+    """No unbounded executor queue; a cancelled waiter does not free a running worker.
+
+    OS DNS calls and Python parsers cannot be forcibly stopped by cancelling their async waiter.
+    The concurrent future, not the asyncio wrapper, therefore owns its admission slot until it
+    really finishes (or is cancelled before starting). Pools are shared safely across event loops.
+    """
+
+    def __init__(self, limit: int, name: str):
+        self._slots = threading.BoundedSemaphore(limit)
+        self._executor = ThreadPoolExecutor(max_workers=limit, thread_name_prefix=name)
+
+    async def run(self, function, *args, deadline: float, **kwargs):
+        _remaining(deadline)
+        if not self._slots.acquire(blocking=False):
+            raise FetchRefused("The page reader is busy; try again when an active read finishes")
+        try:
+            future = self._executor.submit(function, *args, **kwargs)
+        except BaseException:
+            self._slots.release()
+            raise
+        future.add_done_callback(lambda _: self._slots.release())
+        try:
+            result = await asyncio.wait_for(asyncio.wrap_future(future),
+                                            timeout=max(0.0, deadline - time.monotonic()))
+        except asyncio.TimeoutError:
+            raise FetchRefused(f"The page took too long ({TOTAL_TIMEOUT:g} s limit)") from None
+        _remaining(deadline)
+        return result
+
+
+# A stuck resolver can occupy at most these dedicated workers. Parsing has its own capacity so
+# stuck DNS does not take the application's default executor or all text-extraction workers.
+_DNS_WORKERS = _BlockingWorkers(4, "star-page-dns")
+_PARSE_WORKERS = _BlockingWorkers(2, "star-page-text")
 
 
 @dataclass(frozen=True)
@@ -245,9 +295,73 @@ def _decode(body: bytes, content_type: str) -> str:
         return body.decode("utf-8", errors="replace")
 
 
+def _reduce_page(url: str, body: bytes, declared_type: str, max_chars: int) -> Page:
+    """Decode and extract on a bounded worker, preserving the existing Page representation."""
+    content_type = declared_type.split(";")[0].strip().lower()
+    raw = _decode(body, declared_type)
+    if content_type in ("text/html", "application/xhtml+xml") or (
+            not content_type and "<html" in raw[:2000].lower()):
+        title, text = readable_text(raw)
+    else:
+        title, text = "", raw.strip()
+    return Page(url=url, title=title[:300], text=text[:max_chars], content_type=content_type or "unknown",
+                truncated=len(text) > max_chars)
+
+
+def _pinned(url: str, host: str, port: int, address: str) -> tuple[str, str, dict]:
+    """(URL naming the checked address, Host header, request extensions). The request goes to the
+    address check_url approved; the name goes in Host and in TLS SNI (certificate check)."""
+    parts = urlsplit(url)
+    default_port = 443 if parts.scheme == "https" else 80
+    target_host = f"[{address}]" if ":" in address else address
+    netloc = target_host if port == default_port else f"{target_host}:{port}"
+    host_header = host if port == default_port else f"{host}:{port}"
+    extensions = {"sni_hostname": host} if parts.scheme == "https" and address != host else {}
+    return parts._replace(netloc=netloc).geturl(), host_header, extensions
+
+
+async def post_form(url: str, form: dict[str, str], *, files: dict | None = None, max_bytes: int = 96 * 1024,
+                    transport: httpx.AsyncBaseTransport | None = None, resolver=_resolve) -> object:
+    """POST a form (and optional file parts) to one fixed public API and return its JSON reply.
+
+    For services STAR calls with the owner's key (song recognition). Same address checks and
+    pinning as fetch_page, one 15 s budget, no redirects, no proxy, reply capped at `max_bytes`.
+    Raises FetchRefused (also for a non-200 status or a reply that is not JSON) or httpx.HTTPError.
+    """
+    deadline = time.monotonic() + TOTAL_TIMEOUT
+    host, port, address = await _DNS_WORKERS.run(check_url, url, resolver=resolver, deadline=deadline)
+    pinned, host_header, extensions = _pinned(url, host, port, address)
+    headers = {"Host": host_header, "User-Agent": _USER_AGENT, "Accept": "application/json"}
+    async with httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False,
+                                 timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+        request = client.build_request("POST", pinned, data=form, files=files, headers=headers,
+                                       extensions=extensions)
+        response = await asyncio.wait_for(client.send(request, stream=True), timeout=_remaining(deadline))
+        try:
+            if response.status_code != 200:
+                raise FetchRefused(f"The service answered HTTP {response.status_code}")
+            body = bytearray()
+            async def read_all():
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > max_bytes:
+                        raise FetchRefused("The reply was larger than allowed")
+            await asyncio.wait_for(read_all(), timeout=_remaining(deadline))
+        finally:
+            await response.aclose()
+    try:
+        return json.loads(bytes(body))
+    except ValueError:
+        raise FetchRefused("The reply was not JSON") from None
+
+
 async def fetch_page(url: str, *, transport: httpx.AsyncBaseTransport | None = None, resolver=_resolve,
                      exempt: frozenset[tuple[str, int]] = frozenset(), max_chars: int = MAX_TEXT_CHARS) -> Page:
-    """Fetch and reduce one page. Raises FetchRefused (bad URL / address / limit) or httpx.HTTPError."""
+    """Fetch and reduce within one budget. Raises FetchRefused or httpx.HTTPError.
+
+    Cancellation stops waiting and prevents later HTTP requests; it cannot kill an OS resolver
+    or parser already running. Their bounded worker slots stay held until those calls end.
+    """
     deadline = time.monotonic() + TOTAL_TIMEOUT
     current = url
     async with httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False,
@@ -255,23 +369,14 @@ async def fetch_page(url: str, *, transport: httpx.AsyncBaseTransport | None = N
         for hop in range(MAX_REDIRECTS + 1):
             # The search-gateway exception covers the address the request named, never a redirect
             # target: a public page must not be able to bounce the fetch onto the LAN.
-            host, port, address = await asyncio.to_thread(check_url, current, resolver=resolver,
-                                                          exempt=exempt if hop == 0 else frozenset())
-            parts = urlsplit(current)
-            # Connect to the checked address; the name goes in Host and in TLS SNI (certificate check).
-            target_host = f"[{address}]" if ":" in address else address
-            netloc = target_host if port in (80, 443) and port == (443 if parts.scheme == "https" else 80) \
-                else f"{target_host}:{port}"
-            pinned = parts._replace(netloc=netloc).geturl()
-            host_header = host if port == (443 if parts.scheme == "https" else 80) else f"{host}:{port}"
+            host, port, address = await _DNS_WORKERS.run(
+                check_url, current, resolver=resolver, exempt=exempt if hop == 0 else frozenset(), deadline=deadline)
+            pinned, host_header, extensions = _pinned(current, host, port, address)
             headers = {"Host": host_header, "User-Agent": _USER_AGENT,
                        "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
                        "Accept-Language": "en;q=0.9"}
-            extensions = {"sni_hostname": host} if parts.scheme == "https" and address != host else {}
-            left = deadline - time.monotonic()
-            if left <= 0:
-                raise FetchRefused("The page took too long (15 s limit)")
             request = client.build_request("GET", pinned, headers=headers, extensions=extensions)
+            left = _remaining(deadline)
             response = await asyncio.wait_for(client.send(request, stream=True), timeout=left)
             try:
                 if response.status_code in (301, 302, 303, 307, 308):
@@ -281,7 +386,8 @@ async def fetch_page(url: str, *, transport: httpx.AsyncBaseTransport | None = N
                     current = urljoin(current, location)
                     continue
                 response.raise_for_status()
-                content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+                declared_type = response.headers.get("content-type", "")
+                content_type = declared_type.split(";")[0].strip().lower()
                 if content_type and not content_type.startswith(_TEXT_TYPES):
                     raise FetchRefused(f"Not a text page ({content_type})")
                 declared = response.headers.get("content-length")
@@ -293,20 +399,12 @@ async def fetch_page(url: str, *, transport: httpx.AsyncBaseTransport | None = N
                         body.extend(chunk)
                         if len(body) > MAX_BYTES:
                             raise FetchRefused("The page is larger than 2 MB")
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    raise FetchRefused("The page took too long (15 s limit)")
+                left = _remaining(deadline)
                 await asyncio.wait_for(read_all(), timeout=left)
-                raw = _decode(bytes(body), response.headers.get("content-type", ""))
             finally:
                 await response.aclose()
-            if content_type in ("text/html", "application/xhtml+xml") or (not content_type and "<html" in raw[:2000].lower()):
-                title, text = readable_text(raw)
-            else:
-                title, text = "", raw.strip()
-            truncated = len(text) > max_chars
-            return Page(url=current, title=title[:300], text=text[:max_chars], content_type=content_type or "unknown",
-                        truncated=truncated)
+            return await _PARSE_WORKERS.run(_reduce_page, current, bytes(body), declared_type, max_chars,
+                                            deadline=deadline)
     raise FetchRefused(f"More than {MAX_REDIRECTS} redirects")
 
 

@@ -263,7 +263,8 @@ def test_worker_settings_ssh_command_and_hidden_logon_task(tmp_path):
         gpu_worker.load_settings(tmp_path)
     (tmp_path / "gpu-worker.env").write_text("STAR_GPU_WORKER_SSH=star@brain.example\n", encoding="utf-8")
     settings = gpu_worker.load_settings(tmp_path)
-    assert settings == {"target": "star@brain.example", "container": "starai", "socket": gpu_worker.DEFAULT_SOCKET}
+    assert settings == {"target": "star@brain.example", "container": "starai", "socket": gpu_worker.DEFAULT_SOCKET,
+                        "feed_root": ""}
     (tmp_path / "gpu-worker.env").write_text("STAR_GPU_WORKER_SSH=x@y\nSTAR_GPU_WORKER_CONTAINER=a;rm\n",
                                              encoding="utf-8")
     with pytest.raises(ValueError):

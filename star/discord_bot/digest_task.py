@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+import json
 import logging
 import os
 from pathlib import Path
@@ -26,6 +28,10 @@ from .learning_sender import DeliveryLedger, DeliverySettings, MAX_SNOWFLAKE, ru
 _LOG = logging.getLogger(__name__)
 # Fixed, read-only remote command; the target login comes from the owner's local settings.
 REMOTE_REPORT_COMMAND = "lxc exec starai -- cat /opt/star/learning/report/latest.md"
+# The knowledge service watchdog's state (server/knowledge/starkb/watchdog.py), same login, also read-only.
+REMOTE_WATCHDOG_COMMAND = "lxc exec starai -- cat /opt/star/knowledge/data/watchdog.json"
+MAX_WATCHDOG_BYTES = 16_000
+WATCHDOG_ALERT_HOURS = 24        # restarts older than this are history, not news
 _SSH_TARGET = re.compile(r"^[A-Za-z0-9._-]{1,64}@[A-Za-z0-9.:_-]{1,253}$")
 
 
@@ -121,6 +127,65 @@ def _ssh_fetch(target: str, runner=subprocess.run) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def watchdog_alerts(state: object, *, now: datetime) -> list[tuple[str, str]]:
+    """(alert id, DM text) for each knowledge-service restart in the last WATCHDOG_ALERT_HOURS."""
+    restarts = state.get("restarts") if isinstance(state, dict) else None
+    alerts = []
+    for row in restarts if isinstance(restarts, list) else []:
+        if not isinstance(row, dict) or not isinstance(row.get("at"), str):
+            continue
+        try:
+            at = datetime.strptime(row["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if not now - timedelta(hours=WATCHDOG_ALERT_HOURS) <= at <= now + timedelta(minutes=5):
+            continue
+        reason = re.sub(r"[^A-Za-z0-9 :._-]", "", str(row.get("reason", "")))[:80] or "unknown"
+        text = (f"**STAR Knowledge was restarted by its watchdog** at {row['at']} after {int(row.get('failures') or 0)} "
+                f"failed searches in a row ({reason}).")
+        if row.get("done") is not True:
+            text += " The restart command FAILED: the docs search may still be down."
+        alerts.append((sha256(("knowledge-watchdog:" + row["at"]).encode()).hexdigest(), text))
+    return alerts
+
+
+async def send_watchdog_alerts(config: DigestConfig, send, *, runner=subprocess.run, now=None) -> int:
+    """DM each new knowledge-service restart once (own ledger table, outside the digest cooldown)."""
+    state_path = config.state_path
+    if not config.ssh_target or state_path is None:
+        return 0
+    now = now or datetime.now(timezone.utc)
+    ssh = shutil.which("ssh")
+    if not ssh:
+        return 0
+    result = await asyncio.to_thread(
+        runner, [ssh, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", config.ssh_target, REMOTE_WATCHDOG_COMMAND],
+        capture_output=True, timeout=40, stdin=subprocess.DEVNULL, check=False)
+    if result.returncode != 0 or len(result.stdout) > MAX_WATCHDOG_BYTES:
+        return 0          # no watchdog installed yet, or the server is unreachable: the digest path reports that
+    try:
+        alerts = watchdog_alerts(json.loads(result.stdout.decode("utf-8", errors="replace")), now=now)
+    except ValueError:
+        return 0
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger = DeliveryLedger(state_path, config.owner_id)
+    sent = 0
+    try:
+        for alert_id, text in alerts:
+            if not ledger.reserve_alert(alert_id, now=now):
+                continue
+            try:
+                await send(text, None)
+            except BaseException:
+                ledger.mark_alert(alert_id, "unknown")
+                raise
+            ledger.mark_alert(alert_id, "sent")
+            sent += 1
+    finally:
+        ledger.close()
+    return sent
+
+
 async def load_snapshot(config: DigestConfig, *, runner=subprocess.run) -> LearningSnapshot:
     if config.report_path is not None:
         return await asyncio.to_thread(read_night_school_report, config.report_path)
@@ -140,6 +205,13 @@ async def check_and_send(config: DigestConfig, send, *, runner=subprocess.run, n
     """One timer tick: DM only on real, fresh, non-duplicate progress."""
     if not config.enabled:
         return {"state": "disabled", "sent": False}
+    try:
+        alerts = await send_watchdog_alerts(config, send, runner=runner, now=now)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        _LOG.warning("Knowledge watchdog check failed: %s", type(exc).__name__)
+        alerts = 0
+    if alerts:
+        _LOG.info("Knowledge watchdog: %d restart alert(s) sent", alerts)
     if config.evidence_directory is not None:
         from .task_events import check_task_events
         result = await check_task_events(config, send, now=now)

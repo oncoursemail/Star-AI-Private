@@ -13,6 +13,12 @@ llama-server (the STAR app's "Use my GPU" switch), no program from `block_proces
 rules (free video memory, free RAM, ComfyUI). It stops within seconds when any of that changes: the owner touches
 the PC, a game starts, the switch starts, or the OFF file appears.
 
+One switch for all PC use: the STAR app's "Use my PC" switch (the setting `use_my_gpu` in the app's settings.json,
+read here and never written) must be on. Off, or a settings file that is missing or unreadable, means no session
+starts, and a running one stops the way it does when the owner returns. Exception: the app's "Automatically turn
+on at night" (`use_my_pc_auto_night`, on by default) lets sessions run in the night window with the switch off;
+at `night_end` it follows the switch again. `config.json` "app_settings" overrides the file's location.
+
 A session = the GPU switch's own launcher (star/gpu_helper.GpuHelper: the same llama-server command line and
 checks) + night school (`python -m nightschool run`) pointed at it, with its own share of the practice tasks
 (`share`, default 2/4: server 1 has 0,1/4, server 2 3/4), the tasks server 1 already answered left out, server 1's
@@ -27,6 +33,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -54,6 +61,7 @@ DEFAULTS = {
     "other_gpu_percent": 15,              # another process this busy on the card (two looks in a row) blocks
     "block_processes": [],                # program names (e.g. "RobloxPlayerBeta.exe") that always block
     "back_seconds": 10,                   # input this recent while running = the owner is back
+    "app_settings": "",                   # the STAR app's settings.json; "" = <app data>/STAR/settings.json
 }
 POLL_S = 2.0
 GPU_LOOK_S = 15.0
@@ -69,6 +77,28 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 def default_home() -> Path:
     return Path(os.environ.get("STAR_TURBO_HOME") or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "STAR-night-turbo")
+
+
+def app_settings_path(config: dict) -> Path:
+    if config.get("app_settings"):
+        return Path(config["app_settings"]).expanduser()
+    if os.name == "nt":
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "STAR" / "settings.json"
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "star-ai" / "settings.json"
+
+
+def app_switch_blocker(config: dict, hour: int) -> str:
+    """"" when the app's "Use my PC" switch is on (or it is night and auto-night is on); else why not.
+    Read only; unreadable counts as off."""
+    try:
+        data = json.loads(app_settings_path(config).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "the STAR app's Use my PC switch is off (its settings could not be read)"
+    if isinstance(data, dict) and data.get("use_my_gpu") is True:
+        return ""
+    if isinstance(data, dict) and data.get("use_my_pc_auto_night", True) is True and night_now(config, hour):
+        return ""
+    return "the STAR app's Use my PC switch is off"
 
 
 def load_config(home: Path) -> dict:
@@ -217,6 +247,9 @@ class Turbo:
     def start_blocker(self) -> str:
         if (self.home / "OFF").exists():
             return "off (the OFF file exists)"
+        switch = app_switch_blocker(self.config, self._hour())
+        if switch:
+            return switch
         if self._clock() < self.cool_until:
             return "cooling down after a failure"
         night = night_now(self.config, self._hour())
@@ -234,6 +267,8 @@ class Turbo:
     def stop_reason(self) -> str:
         if (self.home / "OFF").exists():
             return "off switch"
+        if app_switch_blocker(self.config, self._hour()):
+            return "the Use my PC switch was turned off"
         if self.probe.idle_seconds() < float(self.config["back_seconds"]):
             return "the owner is back"
         if self.worker is not None and self.worker.poll() is not None:
@@ -362,6 +397,7 @@ def worker_env(config: dict, ns: Path, brain_url: str) -> dict:
         "STAR_NS_SHARE": config["share"], "STAR_NS_VALIDATION_SHARE": str(config["validation_share"]),
         "STAR_NS_SKIP_FILE": str(ns / "skip.json"), "STAR_NS_SANDBOX_SSH": config["server_ssh"],
         "STAR_NS_DIAGNOSE_MODEL": "",                    # only star-fast is loaded here
+        "STAR_NS_CONDUCTOR_MODELS": "star-fast", "STAR_NS_CONDUCTOR_TAG": "pc-",   # its new tasks go to server 1's pool
         "PYTHONIOENCODING": "utf-8",
         "APPDATA": str(ns / "appdata"), "XDG_DATA_HOME": str(ns / "appdata"),   # never the owner's STAR profile
     }
@@ -457,10 +493,28 @@ def apply_server_state(ns: Path, state: dict) -> str:
     return f"{len(tried)} tasks answered on server 1 are skipped" + seeded
 
 
+def push_conductor_tasks(config: dict, ns: Path) -> int:
+    """Copy the PC conductor's pool files (pool/conductor-pc-*.json, already checked by the same validators) into
+    server 1's pool, so every worker practises them and the next pool sync does not lose them. Returns files sent."""
+    sent = 0
+    for path in sorted((ns / "pool").glob("conductor-pc-*.json")) if config["server_ssh"] else ():
+        name = path.name
+        if not re.fullmatch(r"conductor-pc-\d{8}\.json", name):
+            continue
+        done = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", config["server_ssh"],
+             f"lxc exec {config['container']} -- sh -c 'cat > {SERVER_HOME}/pool/.{name}.tmp && "
+             f"chown star:star {SERVER_HOME}/pool/.{name}.tmp && mv {SERVER_HOME}/pool/.{name}.tmp {SERVER_HOME}/pool/{name}'"],
+            input=path.read_bytes(), capture_output=True, timeout=90, creationflags=NO_WINDOW)
+        sent += done.returncode == 0
+    return sent
+
+
 def sync_from_server(config: dict, ns: Path) -> str:
     if not config["server_ssh"]:
         return "no server_ssh in config.json: using the pool already here"
     try:
+        push_conductor_tasks(config, ns)          # before the local pool is replaced by server 1's copy
         data = _ssh(config, f"tar c -C {SERVER_HOME} pool")
         with tempfile.TemporaryDirectory(dir=ns.parent if ns.parent.is_dir() else None) as folder:
             _untar(data, Path(folder))
@@ -525,6 +579,11 @@ def merge_now(config: dict, home: Path) -> str:
             except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
                 note = f"server 1's outbox not reachable ({type(exc).__name__}); "
         sources.append(("pc-gpu", home / "ns"))
+        try:
+            if push_conductor_tasks(config, home / "ns"):
+                note += "PC conductor tasks copied to server 1's pool; "
+        except (OSError, subprocess.SubprocessError) as exc:
+            note += f"PC conductor tasks not copied ({type(exc).__name__}); "
         done = merge_outboxes(sources, home / "merged")
     return note + f"{done['lessons']} lessons, {done['examples']} worked examples in merged/"
 

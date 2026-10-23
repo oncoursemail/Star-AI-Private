@@ -63,6 +63,7 @@ from . import gpu_helper
 from .chat_media import prepare_turn
 from .roblox_cloud import (ROBLOX_ACTIONS, ROBLOX_NETWORK_ACTIONS, RobloxCloud,
                            handle_action as handle_roblox_action)
+from .research_activity import sanitize_research_event
 
 ALLOWED_ACTIONS = frozenset({
     'bootstrap','brainSnapshot','plannerStatus','switchProject','pickFiles','sendMessage','saveSettings',
@@ -82,6 +83,9 @@ ALLOWED_ACTIONS = frozenset({
 })
 # Voice calls keep their own action list (star/voice/bridge.py, docs/STAR_VOICE_CALLS.md).
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | VOICE_ACTIONS
+# The Identify-a-song dialog (star/music_recognition.py); refused while Settings > Song recognition is off.
+MUSIC_ACTIONS = frozenset({'musicStatus', 'musicChooseWav', 'musicClear', 'musicIdentify'})
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | MUSIC_ACTIONS
 # Voice actions that make sound must run where Settings → Where STAR generates says (star/media_places.py).
 VOICE_PLACE_ACTIONS = frozenset({'voiceStartCall', 'voicePreviewVoice', 'voiceSpeak'})
 # Learning: review of lessons and thumbs on answers (star/lessons.py), plus the optional
@@ -112,6 +116,20 @@ CLIP_INTEROP_ACTIONS = frozenset({
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_INTEROP_ACTIONS
 # A static read-only source index; no arbitrary fetch/install/execute capability.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | {'gameLabCatalog'}
+# Business uses only local draft and review actions; it cannot publish, spend or contact buyers.
+# Do not import the commerce package at desktop startup: its art scanner uses Pillow.
+COMMERCE_ACTIONS = frozenset({
+    'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview',
+    'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
+    'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
+    'commerceLearning', 'commerceImportDailyMetrics',
+    'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
+    'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
+    'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
+    'commerceApprovals', 'commerceApprovalDecide', 'commerceApprovalExecute',
+})
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
+
 # Owner-selected bulk work has its own durable ledger and cancellation, outside chat.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | BULK_ACTIONS
 
@@ -127,28 +145,49 @@ WARM_UP_STOPPERS = frozenset({
 # server keys go straight to the OS keyring through saveProviderKey.
 PERMITTED_SETTINGS = frozenset({
     'endpoint','model','fast_model','reasoning_model','roblox_model','vision_model',
-    'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled',
+    'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled','commerce_enabled',
     'tool_workshop_enabled','specialists_enabled','specialist_parallelism','provider',
-    'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','max_calls',
+    'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','debug_evidence_enabled','minecraft_tools_enabled','live_show_enabled','max_calls',
     'context_chars','reduced_motion','comfy_workflow','comfy_prompt_node','comfy_port',
     'obsidian_vault','obsidian_enabled','skills_enabled','graphify_enabled',
     'mcp_graphify_docs','mcp_graphify_local','mcp_graphify_port','mcp_obsidian_live',
-    'blender_enabled','blender_edit','blender_executable','blender_brain2',
+    'mcp_github_repositories','github_repository_access_source',
+    'blender_enabled','blender_edit','blender_executable','blender_brain2','blender_motion_qa',
     'server_endpoint','server_timeout','server_parallel','server_context_tokens','allow_cgnat',
     'instant_route_enabled','web_auto_search',
     'knowledge_endpoint','luau_run_before_answer',
-    'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'presolve_enabled',
+    'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','deep_research_enabled','scholarly_research_enabled','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'presolve_enabled',
     'media_images','media_voice','media_video','media_chat_auto','session_capabilities_prompt','media_use_references','comfy_home','ffmpeg_dir',
     'picture_max_side',
     'best_of_n','best_of_n_max',
     # Use my GPU: where its files are and when it unloads. The switch itself is `gpuHelperSet`, saved at once.
-    'gpu_helper_server','gpu_helper_model','gpu_idle_minutes',
+    'gpu_helper_server','gpu_helper_model','gpu_idle_minutes','use_my_pc_auto_night',
     'prefill_while_typing',   # star/prefill_warm.py: warm the prompt cache with the draft, off by default
+    'edit_diff',              # star/edit_format.py: changed lines only for pasted-code edits, off by default
+    'music_recognition_enabled','fpcalc_path',   # star/music_recognition.py, off by default
 })
 
 # Settings > Media "session capabilities" line: put before the owner's words of every turn (and of a draft warm-up).
 SESSION_CAPABILITIES = ('Session capabilities: Image creation is available through STAR chat when the local engine is configured. '
                         'Other features depend on the current setup.\n\n')
+
+
+def song_lookup_request(raw, files: list, selected: list[Path], settings) -> tuple[Path, str] | None:
+    """The composer's per-message song lookup approval: {provider, file (one of `files`, a .wav), consent: true}.
+
+    Only this owner-side flag attaches star_identify_song to a turn; the model cannot set it.
+    """
+    if raw is None:
+        return None
+    if settings.music_recognition_enabled is not True:
+        raise PermissionError('Song recognition is off. Turn it on in Settings > Song recognition.')
+    if (not isinstance(raw, dict) or set(raw) != {'provider', 'file', 'consent'} or raw['consent'] is not True
+            or raw['provider'] not in ('audd', 'acoustid') or raw['file'] not in files):
+        raise ValueError('Invalid song lookup approval')
+    path = selected[files.index(raw['file'])]
+    if path.suffix.lower() != '.wav':
+        raise ValueError('Song lookup needs an attached WAV file')
+    return path, raw['provider']
 
 
 def prepare_desktop_update(bridge, request_id: str, home: Path) -> dict:
@@ -287,6 +326,15 @@ _TOOL_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,47}')
 # A model id as a server or provider names it ("star-voice", "openai/gpt-oss-20b"). Shown as
 # plain text in the status popover and the activity record; anything else is not forwarded.
 _MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/+-]{0,79}')
+_REPAIR_CHECKS = {
+    'python.compile': 'Python syntax check',
+    'json.loads': 'JSON syntax check',
+    'tomllib.loads': 'TOML syntax check',
+    'luau.lint': 'Luau advisory check',
+    'tool.result': 'Tool result check',
+    'none': 'Repair check',
+}
+_REPAIR_KINDS = frozenset({'syntax', 'advisory', 'tool_error', 'unknown_outcome', 'budget'})
 
 
 def _model_name(value):
@@ -312,6 +360,9 @@ def sanitize_event(event: dict) -> dict:
     are never included.
     """
     kind = str(event.get('event', 'working'))[:36]
+    research_activity = sanitize_research_event(event)
+    if research_activity is not None:
+        return research_activity
     if kind == 'team_planned':
         steps = []
         tasks = event.get('tasks')
@@ -423,6 +474,41 @@ def sanitize_event(event: dict) -> dict:
         return {'phase':'Reading the official documentation' if kind == 'knowledge_started'
                 else 'Documentation ready' if activity['state'] == 'done' else 'Documentation unavailable',
                 'activity':activity}
+    if kind in {'repair_detected', 'repair_check_passed', 'repair_blocked'}:
+        # Adapter-owned facts only. Diagnostics, file paths, model text and opaque
+        # output never cross into the page, even when an event carries extra fields.
+        checker = event.get('checker')
+        checker = checker if isinstance(checker, str) and checker in _REPAIR_CHECKS else 'none'
+        repair_kind = event.get('kind')
+        repair_kind = (repair_kind if isinstance(repair_kind, str) and repair_kind in _REPAIR_KINDS
+                       else 'unknown_outcome')
+        result = {'repair_detected': 'detected', 'repair_check_passed': 'check_passed',
+                  'repair_blocked': 'blocked'}[kind]
+        # An unknown checker or outcome cannot be promoted into a passed check.
+        if result == 'check_passed' and (checker == 'none' or repair_kind in {'unknown_outcome', 'budget'}):
+            result = 'blocked'
+        advisory = result == 'detected' and repair_kind == 'advisory' and checker == 'luau.lint'
+        state = 'done' if result == 'check_passed' or advisory else 'failed' if result == 'detected' else 'blocked'
+        repair_activity: dict = {'type': 'repair', 'result': result, 'state': state,
+                                 'checker': checker, 'kind': repair_kind}
+        for key, top in (('count', 100), ('attempt', 2)):
+            count = _bounded_int(event.get(key), top)
+            if count is not None:
+                repair_activity[key] = count
+        if result == 'check_passed':
+            phase = ('Tool call returned successfully' if checker == 'tool.result'
+                     else _REPAIR_CHECKS[checker] + ' passed')
+        elif result == 'blocked':
+            phase = ('Focused repair limit reached' if repair_kind == 'budget' and repair_activity.get('attempt') == 2
+                     else 'Work paused for a repair' if repair_kind == 'budget'
+                     else 'Tool outcome needs inspection' if repair_kind == 'unknown_outcome'
+                     else 'Automatic repair paused')
+        else:
+            phase = ('Luau advisory check reported possible issues' if advisory
+                     else 'A tool reported a problem' if repair_kind == 'tool_error'
+                     else 'A tool outcome is unconfirmed' if repair_kind == 'unknown_outcome'
+                     else _REPAIR_CHECKS[checker] + ' reported a problem')
+        return {'phase': phase, 'activity': repair_activity}
     if kind in {'luau_check_started','luau_repair_started','luau_check_finished'}:
         state=str(event.get('state',''))
         result=state if state in {'passed','failed','repaired','unavailable'} else ''
@@ -725,6 +811,14 @@ def launch():
             self.research_timer.timeout.connect(self._research_tick)
             self.research_timer.start()
             QTimer.singleShot(10_000, self._research_tick)
+            # Commerce Pilot scans private, owner-imported supplier rows while STAR
+            # Desktop is open. Opt-in only, rate-capped, no external writes/network.
+            self.commerce_pilot_running = threading.Event()
+            self.commerce_pilot_timer = QTimer(self)
+            self.commerce_pilot_timer.setInterval(15 * 60 * 1000)
+            self.commerce_pilot_timer.timeout.connect(self._commerce_pilot_tick)
+            self.commerce_pilot_timer.start()
+            QTimer.singleShot(30_000, self._commerce_pilot_tick)
             self.shutdownRequested.connect(QApplication.instance().quit)
             self.allowed_files: set[Path] = set()
             self.active_task = False
@@ -737,7 +831,7 @@ def launch():
             self.bulk_lock = threading.RLock()
             self.bulk_config_lock = threading.RLock()
             self.warmer = Warmer()
-            self.draft_warmer = DraftWarmer()
+            self.draft_warmer = DraftWarmer(keep_fresh=True)
             self.digester = Digester()
             self.comfy_launcher = ComfyLauncher()
             self.clips = ClipService()  # No capture until explicit owner-controlled OBS actions.
@@ -753,6 +847,7 @@ def launch():
                 pass
             from . import presolve   # opt-in overnight pre-solving: until it is switched on it only reads the setting
             presolve.start_nightly(self.settings_file, app_data())
+            self.music = None   # star.music_recognition.DesktopSession, made on first use
             self.voice = VoiceBridge(lambda call_id, data: self._emit(call_id, 'voice', data),
                                      settings_path=app_data() / 'voice.json', save_turn=self._save_voice_turn)
 
@@ -802,6 +897,30 @@ def launch():
                 self.pool.submit(worker)
             except RuntimeError:
                 self.research_running.clear()
+
+        def _commerce_pilot_tick(self):
+            """Opt-in local seller-catalog safety check; never an external worker.
+
+            Runs at most one scan job per desktop scheduler tick. A paused shop,
+            an opt-out, or a not-yet-due configured business results in no work.
+            """
+            if self._closing or self.commerce_pilot_running.is_set():
+                return
+            self.commerce_pilot_running.set()
+
+            def worker():
+                try:
+                    from .commerce.autopilot import run_due_pilot_checks
+                    current = Settings.load(self.settings_file)
+                    if current.commerce_enabled is True:
+                        run_due_pilot_checks(app_data(), current.project)
+                finally:
+                    self.commerce_pilot_running.clear()
+
+            try:
+                self.pool.submit(worker)
+            except RuntimeError:
+                self.commerce_pilot_running.clear()
 
         def _warm_target(self):
             """What a message sent now would talk to. Runs on the warm-up thread."""
@@ -939,7 +1058,8 @@ def launch():
             source = info.executable if info is not None else Settings.load(self.settings_file).llama_server
             return self.runtime, self.settings_file, app_data(), source
 
-        def _run_chat(self, request_id, prompt, selected, mode='auto', research=False, github=False, retry_id=None):
+        def _run_chat(self, request_id, prompt, selected, mode='auto', research=False, github=False, retry_id=None,
+                      song=None):
             home=app_data()
             settings=Settings.load(self.settings_file)
             if not settings.model.strip():
@@ -960,8 +1080,9 @@ def launch():
                 # about looks; the "not watched" rule for a bare video link (star/chat_media.py).
                 if any(path.suffix.lower() in {'.mp4','.mov','.mkv','.webm','.avi'} for path in selected):
                     self._emit(request_id,'progress',{'phase':'Sampling frames and transcribing the sound…'})
-                media=prepare_turn(settings,home,prompt,selected,Path(directory)/('m_'+uuid.uuid4().hex),
-                                   cancelled=self.cancel_chat.is_set)
+                # A WAV approved for song lookup goes to star_identify_song, not to speech-to-text.
+                media=prepare_turn(settings,home,prompt,[path for path in selected if song is None or path!=song[0]],
+                                   Path(directory)/('m_'+uuid.uuid4().hex),cancelled=self.cancel_chat.is_set)
                 pics=media.pictures
                 full_prompt=media.prompt(prompt)
                 documents=media.documents
@@ -985,7 +1106,7 @@ def launch():
                 answer=run_task(settings,full_prompt,pics,on_event=relay,
                     stream_tokens=True, mode=mode, research=research, cancel_event=self.cancel_chat, github_enabled=github, chat_id=active_chat,
                     owner_text=prompt, studio_configuration_home=self.settings_file.parent, attachment_count=len(selected),
-                    **({'documents': documents} if documents else {}))
+                    **({'documents': documents} if documents else {}), **({'song_lookup': song} if song else {}))
                 # STAR states what a video answer was based on, whatever the model wrote.
                 answer+=media.footer
             if self.cancel_chat.is_set():
@@ -1090,6 +1211,28 @@ def launch():
                 "elapsed_ms": team.elapsed_ms,
             }
 
+        def _music_action(self, action: str, body: dict, rid: str) -> str:
+            """Identify-a-song dialog. Replies carry booleans and a file name only, never a key."""
+            from .music_recognition import DesktopSession
+            settings = Settings.load(self.settings_file)
+            if self.music is None:
+                self.music = DesktopSession()
+            if action == 'musicStatus':
+                return json.dumps({'ok': True, 'data': self.music.status(settings)})
+            if settings.music_recognition_enabled is not True:
+                raise PermissionError('Song recognition is off. Turn it on in Settings > Song recognition.')
+            if action == 'musicChooseWav':
+                chosen, _ = QFileDialog.getOpenFileName(self.host, 'Choose a WAV recording', '', 'PCM16 WAV (*.wav)')
+                return json.dumps({'ok': True, 'data': self.music.choose(Path(chosen)) if chosen else {'cancelled': True}})
+            if action == 'musicClear':
+                return json.dumps({'ok': True, 'data': self.music.clear()})
+            if self.active_task or self._in_voice_call():
+                raise RuntimeError('Finish the current chat or voice call before identifying a song')
+            music = self.music
+            self._run(rid, action, lambda: music.identify(
+                body, settings, progress=lambda phase: self._emit(rid, 'progress', {'phase': phase})))
+            return json.dumps({'ok': True, 'pending': True, 'requestId': rid})
+
         def _clip_action(self, action: str, body: dict, rid: str) -> str:
             """STAR Clips, clip folder, SteelSeries Moments and Game Lab (kept out of invoke for pyright)."""
             if action == 'gameLabCatalog':
@@ -1175,6 +1318,8 @@ def launch():
                     return json.dumps({'ok':True,'data':handle_discord_action(action,self.discord,autostart=saved.discord_autostart)})
                 if action == 'gameLabCatalog' or action in CLIP_INTEROP_ACTIONS or action in CLIP_ACTIONS:
                     return self._clip_action(action, body, rid)
+                if action in MUSIC_ACTIONS:
+                    return self._music_action(action, body, rid)
                 if action in MEDIA_ACTIONS:
                     def media_worker():
                         return handle_media_action(
@@ -1205,6 +1350,24 @@ def launch():
                         self._run(rid, action, research_task)
                         return json.dumps({'ok':True,'pending':True,'requestId':rid})
                     return json.dumps({'ok':True,'data':research_task()},default=str)
+                # String literals preserve the standalone Qt bridge test harness that
+                # extracts invoke() without its module globals. Keep in sync with the allowlist.
+                if action in (
+                    'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview',
+                    'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
+                    'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
+    'commerceLearning', 'commerceImportDailyMetrics',
+    'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
+    'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
+    'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
+    'commerceApprovals', 'commerceApprovalDecide', 'commerceApprovalExecute',
+                ):
+                    from .commerce.workspace import handle_commerce
+                    current = Settings.load(self.settings_file)
+                    if current.commerce_enabled is not True:
+                        raise PermissionError('Business tools are off. Turn them on in Settings > Tools.')
+                    result = handle_commerce(action, body, project=current.project, home=app_data())
+                    return json.dumps({'ok':True,'data':result})
                 if action=='bootstrap':return json.dumps({'ok':True,'data':_get_state(self.settings_file,self.runtime,busy=self.active_task,studio_status=self.studio_status)})
                 if action=='brainSnapshot':return json.dumps({'ok':True,'data':brain_snapshot(self.settings_file,app_data())})
                 if action=='plannerStatus':return json.dumps({'ok':True,'data':planner_snapshot(self.settings_file)})
@@ -1447,6 +1610,7 @@ def launch():
                     github=body.get('github',False)
                     if not isinstance(github,bool) or (github and mode != 'agent'):
                         raise ValueError('GitHub inspection requires Agent mode')
+                    song=song_lookup_request(body.get('songLookup'),files,selected,Settings.load(self.settings_file))
                     self.cancel_chat = threading.Event()
                     self.active_task=True
                     try:
@@ -1460,7 +1624,7 @@ def launch():
                                 chats.recover_turn(current,chats.active_chat(current),retry_id,prompt)
                             finally:
                                 chats.close()
-                        self._run(rid,action,lambda:self._run_chat(rid,prompt,selected,mode=mode,research=research,github=github,retry_id=retry_id))
+                        self._run(rid,action,lambda:self._run_chat(rid,prompt,selected,mode=mode,research=research,github=github,retry_id=retry_id,song=song))
                     except Exception:
                         self.active_task=False
                         raise
@@ -1579,12 +1743,12 @@ def launch():
                     self._run(rid,action,worker)
                 elif action=='testMcpConnection':
                     server=str(body.get('server',''))
-                    if server not in {'graphify_docs','graphify_local','obsidian_live'}:
+                    if server not in {'graphify_docs','graphify_local','obsidian_live','github_repositories'}:
                         raise ValueError('Unknown MCP connector')
                     def worker():
                         import asyncio
                         gateway=MCPGateway(Settings.load(self.settings_file))
-                        # Probe does not call any server tool or perform writes.
+                        # Probe uses curated read-only connection checks; never writes.
                         return asyncio.run(gateway.probe(server))
                     self._run(rid,action,worker)
                 elif action=='discoverStudio':

@@ -1,0 +1,38 @@
+[Unit]
+Description=STAR night conductor (one cycle: new practice tasks from the newest failures and notes, free local models only)
+After=star-brain.service star-knowledge.service
+
+# What it does: python -m nightschool conduct. Between 18:00 and 09:00 owner-local time (STAR_NS_CONDUCTOR_WINDOW and
+# STAR_NS_CONDUCTOR_TZ_HOURS) it waits for a quiet brain, asks STAR's own models for a diagnosis and smaller practice
+# tasks per failure group, keeps only tasks that pass STAR's validators and writes pool/conductor-YYYYMMDD.json plus
+# conductor/report-YYYYMMDD.md. When the night-school loop is working, the loop runs the same cycle itself after a
+# batch and this timer run finds the brain busy and does nothing. Nothing leaves the server.
+# Off:  touch /opt/star/learning/data/CONDUCTOR_OFF   (or STAR_NS_CONDUCTOR=off in /opt/star/learning/env, or
+#       systemctl disable --now star-night-conductor.timer).  Pause everything: touch /opt/star/learning/data/HOLD
+[Service]
+Type=oneshot
+User=star
+Group=star
+WorkingDirectory=/opt/star/learning/app/server/night_school
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=STAR_NS_HOME=/opt/star/learning
+Environment=HOME=/opt/star/learning/data/home
+Environment=XDG_DATA_HOME=/opt/star/learning/data/home/share
+EnvironmentFile=-/opt/star/learning/env
+ExecStart=/opt/star/learning/venv/bin/python -m nightschool conduct
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=5
+TimeoutStartSec=3h
+KillMode=mixed
+MemoryMax=3G
+TasksMax=128
+LimitCORE=0
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/star/learning
+RestrictSUIDSGID=yes
+LockPersonality=yes

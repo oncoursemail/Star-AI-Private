@@ -278,8 +278,11 @@ def test_every_indexed_corpus_licence_is_accepted(tmp_path, monkeypatch):
     an exact-match allowlist without it dropped every pair of the main corpus."""
     corpora = json.loads((Path(__file__).resolve().parents[1] / "server" / "knowledge" / "corpora.json")
                          .read_text(encoding="utf-8"))
-    licences = {source["licence"] for source in corpora["sources"]}
+    licences = {source["licence"] for source in corpora["sources"] if source.get("group", "roblox") == "roblox"}
     assert licences and licences <= build_pairs._ALLOWED_LICENCES
+    # the other corpora (knowledge school) include non-commercial books: never training pairs
+    others = {source["licence"] for source in corpora["sources"]} - licences
+    assert "CC-BY-NC-SA-4.0" in others and "CC-BY-NC-SA-4.0" not in build_pairs._ALLOWED_LICENCES
     db_path = tmp_path / "kb.sqlite3"
     make_db(db_path)
     with sqlite3.connect(db_path) as db:

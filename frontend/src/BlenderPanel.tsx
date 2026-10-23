@@ -55,6 +55,16 @@ export function BlenderPanel({draft,onChange,status,invoke,disabled=false}:{
          <span>Create</span>
        </label>
      </div>
+     <div className="integrated-connector">
+       <div><strong>Check animation motion</strong>
+         <small>Lets STAR measure joint speed, sharp jumps and loop seams in an animation plan, and compare it with an approved clip. Reads the plan only; Blender does not start.</small></div>
+       <label className="integrated-switch">
+         <input type="checkbox" aria-label="Check animation motion" checked={!!draft.blender_motion_qa}
+           disabled={disabled||!draft.blender_enabled}
+           onChange={e=>onChange({...draft,blender_motion_qa:e.target.checked})}/>
+         <span>Check</span>
+       </label>
+     </div>
    </div>
    <label className="integrated-field">Blender executable (optional; blank searches installed Blender)
      <input aria-label="Blender executable path" type="text" spellCheck={false}

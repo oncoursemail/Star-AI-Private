@@ -34,7 +34,8 @@ DOCUMENT_LIBRARIES = {"pypdf", "docx", "pptx", "openpyxl"}
 
 def ci_argv() -> list[str]:
     text = WORKFLOW.read_text(encoding="utf-8")
-    found = re.search(r"(?ms)^\s*python -m PyInstaller\s+(.*?)^\s*if \(\$LASTEXITCODE", text)
+    # Release runs call `python -m PyInstaller`, validation runs the layered wrapper: one argument list for both.
+    found = re.search(r"(?ms)^\s*python @pyinstaller\s+(.*?)^\s*if \(\$LASTEXITCODE", text)
     assert found, "CI PyInstaller command not found in windows-desktop.yml"
     return shlex.split(found.group(1).replace("`", " "))
 

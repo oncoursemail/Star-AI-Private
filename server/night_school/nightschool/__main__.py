@@ -6,11 +6,13 @@
   guard          write the hash list that keeps copies of evaluation tasks out of the pool
   look           one look at the brain: idle or busy (two status reads, no model request)
   report         print the report rebuilt from the stored state
+  conduct        one night-conductor cycle (conductor.py): new practice tasks from the newest failures and notes
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import signal
 import sys
@@ -20,7 +22,7 @@ import time
 from . import report
 from .config import Settings
 from .engine import Engine, Result, Store, Yielded
-from .idle import BrainWatch, IdleGate, PlannedGate, make_planner
+from .idle import BrainWatch, IdleGate, PlannedGate, PriorityGate, make_planner
 
 
 def log(text: str) -> None:
@@ -43,6 +45,14 @@ class Stopper:
         return self.requested
 
 
+def make_gate(settings: Settings, watch: BrainWatch, *, planner, log=print, holder: str = "nightschool",
+              slot: int | None = None, extra_lane: bool = False):
+    """STAR_NS_GATE=priority: the priority-proxy gate (works beside other clients); otherwise the planner/idle gate."""
+    if settings.gate.lower() == "priority":
+        return PriorityGate(settings, watch, log=log)
+    return PlannedGate(settings, watch, planner=planner, holder=holder, slot=slot, extra_lane=extra_lane, log=log)
+
+
 def run(settings: Settings) -> int:
     from .pool import load_pool
     from .real import RealModel, bootstrap, export_outbox
@@ -62,14 +72,14 @@ def run(settings: Settings) -> int:
     # The resource planner admits night school while chat is quiet and asks it to yield otherwise; when the planner
     # is off or unreachable this is exactly the old idle gate.
     planner = make_planner(settings, key)
-    gate = PlannedGate(settings, BrainWatch(settings.brain_url, key), planner=planner, log=gate_log)
+    gate = make_gate(settings, BrainWatch(settings.brain_url, key), planner=planner, log=gate_log)
     pool = load_pool(settings.pool)
     log("night school started; " + pool.summary() + f"; lanes {settings.lanes}")
     model = RealModel(settings, gate, knowledge=settings.knowledge_url, stop=stop)
     for k in range(1, settings.lanes):
-        model.add_lane(PlannedGate(settings, BrainWatch(settings.brain_url, key), planner=planner,
-                                   holder=f"nightschool-{k}", slot=settings.slot + k, extra_lane=True,
-                                   log=lambda text, k=k: log(f"lane {k + 1}: {text}")), settings.slot + k)
+        model.add_lane(make_gate(settings, BrainWatch(settings.brain_url, key), planner=planner,
+                                 holder=f"nightschool-{k}", slot=settings.slot + k, extra_lane=True,
+                                 log=lambda text, k=k: log(f"lane {k + 1}: {text}")), settings.slot + k)
     lanes = [lambda work, k=k: model.in_lane(k, work) for k in range(settings.lanes)] if settings.lanes > 1 else None
     engine = Engine(settings, pool, store, solve=model.solve, diagnose=model.diagnose,
                     check_lesson=model.check_lesson, log=log)
@@ -109,9 +119,50 @@ def run(settings: Settings) -> int:
             export_outbox(settings, store.state)
         except Exception as exc:
             log("report or outbox could not be written (" + type(exc).__name__ + ")")
+        if settings.conductor.lower() not in ("off", "0", "no", "false"):
+            from . import conductor
+            conductor.after_batch(settings, model, log=log)       # never raises; at most once per interval
     for lane_gate in model.gates:
         lane_gate.close()
     log("night school stopped")
+    return 0
+
+
+def conduct(settings: Settings) -> int:
+    """One conductor cycle outside the night-school loop (the star-night-conductor timer). It waits up to
+    STAR_NS_CONDUCTOR_WAIT_S for a quiet brain; a busy brain means the night-school loop is working and runs the
+    conductor itself after its batch."""
+    from . import conductor
+    from .real import RealModel, bootstrap
+    settings.ensure_dirs()
+    key = bootstrap(settings)
+    state = conductor.load_state(settings)
+    reason = conductor.due(settings, state)
+    if reason:
+        log("night conductor: not now (" + reason + ")")
+        return 0
+    stop = Stopper()
+    gate = IdleGate(settings, BrainWatch(settings.brain_url, key), log=log)
+    deadline = time.monotonic() + float(os.environ.get("STAR_NS_CONDUCTOR_WAIT_S", "1500"))
+    while gate.look():
+        if stop() or time.monotonic() > deadline:
+            log("night conductor: the brain was not quiet; nothing done")
+            return 0
+        time.sleep(settings.poll_s)
+    model = RealModel(settings, gate, knowledge=settings.knowledge_url, stop=stop)
+    try:
+        with conductor.CycleLock(settings) as got:
+            if not got:
+                log("night conductor: another cycle is running")
+                return 0
+            models = conductor.pick_models(settings, gate.watch)
+            if not models:
+                log("night conductor: no model with a free slot; nothing done")
+            conductor.run_cycle(settings, model.complete, conductor.validators_for(settings, model), log=log, models=models)
+    except Yielded as yielded:
+        log(f"night conductor: stopped ({yielded})")
+    finally:
+        model.close()
     return 0
 
 
@@ -214,6 +265,7 @@ def main(argv=None) -> int:
     guard.add_argument("--out", required=True, type=Path)
     sub.add_parser("look")
     sub.add_parser("report")
+    sub.add_parser("conduct")
     sub.add_parser("lane-solve", help="(internal) one answer for a parallel lane; request on stdin")
     args = parser.parse_args(argv)
     settings = Settings()
@@ -243,6 +295,8 @@ def main(argv=None) -> int:
         return dry_run(settings, args.items, args.real_checks)
     if args.command == "lane-solve":
         return lane_solve(settings)
+    if args.command == "conduct":
+        return conduct(settings)
     return run(settings)
 
 

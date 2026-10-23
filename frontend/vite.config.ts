@@ -16,7 +16,8 @@ export default defineConfig({
   plugins: [react()],
   define: { __STAR_SKILL_PACKS__: JSON.stringify(String(skillPacks)), __STAR_LESSONS__: JSON.stringify(String(lessons)) },
   base: './',
-  build: { outDir: 'dist', emptyOutDir: true, sourcemap: false, cssCodeSplit: false },
+  // Keep Vite 7's browser floor when adopting Vite 8's Rolldown/Oxc pipeline.
+  build: { target: ['chrome107', 'edge107', 'firefox104', 'safari16'], outDir: 'dist', emptyOutDir: true, sourcemap: false, cssCodeSplit: false },
   server: { strictPort: true },
   // The tests that mount the whole Desktop take 1 to 3 seconds each alone and pass the default 5 second limit when
   // every test file runs at once on a busy PC. The limit only decides when a test counts as hung.

@@ -56,8 +56,10 @@ PRIVATE_PROVIDERS: dict[str, Provider] = {
 }
 ALL_PROVIDERS: dict[str, Provider] = {**PRIVATE_PROVIDERS, **PROVIDERS}
 SEARCH_KEYS = {"brave": "BRAVE_SEARCH_API_KEY", "tavily": "TAVILY_API_KEY"}
+# Song recognition catalogs (star/music_recognition.py): the owner's AudD token / AcoustID client key.
+MUSIC_KEYS = {"audd": "STAR_AUDD_API_TOKEN", "acoustid": "STAR_ACOUSTID_CLIENT_KEY"}
 KEY_ENV = {**{name: provider.env_var for name, provider in ALL_PROVIDERS.items()
-              if provider.requires_key}, **SEARCH_KEYS}
+              if provider.requires_key}, **SEARCH_KEYS, **MUSIC_KEYS}
 
 # Use explicit ranges: ipaddress.is_private also includes non-LAN addresses.
 # Left out on purpose: link-local (169.254.0.0/16, fe80::/10), where cloud metadata services
@@ -222,7 +224,11 @@ def open_client(settings, *, request_timeout: float | None = None):
     timeout = httpx.Timeout(request_timeout or limits.request_timeout, connect=limits.connect_timeout)
     extra = {} if limits.trust_env else {
         "http_client": httpx.AsyncClient(trust_env=False, timeout=timeout)}
-    return AsyncOpenAI(base_url=endpoint, api_key=key, timeout=timeout, max_retries=0, **extra)
+    # The owner's own STAR server schedules by class (star/priority_proxy.py): STAR_PRIORITY=P0..P3 says how urgent
+    # this process is (night school and evals P3). Sent only to the owner's server, never to a cloud provider.
+    priority = os.environ.get("STAR_PRIORITY", "").strip().upper()
+    headers = {"X-Star-Priority": priority} if priority in ("P0", "P1", "P2", "P3") and provider_kind(settings) == "lan"         else None
+    return AsyncOpenAI(base_url=endpoint, api_key=key, timeout=timeout, max_retries=0, default_headers=headers, **extra)
 
 # Context size and slot count last reported by a server's own /props endpoint.
 # Process memory only: nothing here is a secret and nothing is written to disk.
@@ -495,7 +501,18 @@ def llama_request_fields(settings, *, conversation: str = "", tools: bool = Fals
     if kind == "cloud":
         return {}
     fields: dict = {"cache_prompt": True, "chat_template_kwargs": {"preserve_thinking": True}}
+    if getattr(settings, "api_lock_enabled", False) is True:
+        fields["api_lock"] = True       # star/api_lock.py; a server without llama.cpp patch 0004 ignores it
     slots = server_slots(settings, model or None) if kind == "lan" else 0
+    from . import background_cap
+    if kind == "lan" and background_cap.process_is_background() and background_cap.is_capped(
+            _instance(settings, model or None)[1]):
+        # A background process (evals): every star-fast request names the highest background slot, so the
+        # server runs at most background_cap.limit() background requests and slot 0 stays free for chat.
+        allowed = background_cap.background_slots(slots)
+        if allowed or not slots:            # slot count unknown: slot 1; a single-slot model: no pin
+            fields["id_slot"] = (allowed or [background_cap.FALLBACK_SLOT])[-1]
+        return fields
     if slots >= 2 and conversation and not background and not _server_places_every_request():
         fields["id_slot"] = _conversation_slot(_instance(settings, model or None), str(conversation), slots,
                                                prime=prime)

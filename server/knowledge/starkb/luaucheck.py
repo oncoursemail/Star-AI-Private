@@ -66,7 +66,8 @@ def tool_paths(tools_dir: Path = TOOLS_DIR) -> dict[str, Path]:
 
 
 def available(tools_dir: Path = TOOLS_DIR) -> bool:
-    return all(path.is_file() and os.access(path, os.X_OK) for path in tool_paths(tools_dir).values())
+    return (shutil.which("prlimit") is not None
+            and all(path.is_file() and os.access(path, os.X_OK) for path in tool_paths(tools_dir).values()))
 
 
 def tool_version(tools_dir: Path = TOOLS_DIR) -> str:
@@ -78,15 +79,11 @@ def tool_version(tools_dir: Path = TOOLS_DIR) -> str:
         return "unknown"
 
 
-def _limits(cpu_seconds: int, memory_bytes: int):
-    def apply() -> None:  # runs in the child between fork and exec
-        import resource
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
-        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
-        resource.setrlimit(resource.RLIMIT_FSIZE, (OUTPUT_BYTES, OUTPUT_BYTES))
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
-    return apply
+def limited(argv: list[str], cpu_seconds: int, memory_bytes: int) -> list[str]:
+    """argv under util-linux prlimit. Not preexec_fn: Python code between fork and exec can deadlock in a threaded
+    server (the HTTP service is one), as the Python docs warn; luaurun.py avoids it the same way."""
+    return [shutil.which("prlimit") or "prlimit", f"--cpu={cpu_seconds}", f"--as={memory_bytes}",
+            f"--fsize={OUTPUT_BYTES}", "--core=0", "--nofile=64", "--", *argv]
 
 
 def _run(argv: list[str], cwd: Path, *, timeout: float, memory_bytes: int) -> tuple[int | None, str, bool]:
@@ -95,9 +92,8 @@ def _run(argv: list[str], cwd: Path, *, timeout: float, memory_bytes: int) -> tu
     timed_out = False
     with open(out_path, "wb") as sink:
         proc = subprocess.Popen(
-            argv, cwd=str(cwd), stdin=subprocess.DEVNULL, stdout=sink, stderr=subprocess.STDOUT,
-            env={"LANG": "C.UTF-8"}, close_fds=True, start_new_session=True, shell=False,
-            preexec_fn=_limits(int(timeout) + 1, memory_bytes))
+            limited(argv, int(timeout) + 1, memory_bytes), cwd=str(cwd), stdin=subprocess.DEVNULL, stdout=sink,
+            stderr=subprocess.STDOUT, env={"LANG": "C.UTF-8"}, close_fds=True, start_new_session=True, shell=False)
         try:
             code: int | None = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
