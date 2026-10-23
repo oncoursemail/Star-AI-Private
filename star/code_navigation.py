@@ -11,7 +11,9 @@ import json
 import os
 import re
 import stat
+from collections import OrderedDict
 from pathlib import Path
+from threading import RLock
 
 SOURCE_TYPES = frozenset({'.py', '.lua', '.luau', '.ts', '.tsx', '.js', '.jsx', '.gd', '.cs'})
 SKIP_DIRS = frozenset({'node_modules', '__pycache__', 'dist', 'build', '.git',
@@ -44,6 +46,82 @@ _CS_DECLARATION = re.compile(
 )
 
 
+# Experimental: repeat code investigations on the same workspace should not reread
+# and re-casefold unchanged source files. The app still resolves and validates
+# every file on EVERY query; this is only a bounded in-process content cache.
+# Enabled only by STAR_CODE_SEARCH_CACHE=on until repeated on-device evaluation.
+_CACHE_BYTES_LIMIT = 24 * 1024 * 1024
+_CACHE_ENTRIES_LIMIT = 512
+_CACHE_FILE_LIMIT = 96_000
+_cache_lock = RLock()
+_cache: OrderedDict[str, tuple[tuple[int, ...], str, str, int]] = OrderedDict()
+_cache_bytes = 0
+
+
+def _stamp(info) -> tuple[int, ...]:
+    """Require identical metadata and inode before reusing a text snapshot."""
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _cached_source(path: Path, info, *, enabled: bool) -> tuple[str, str]:
+    """Return (source, casefold) with bounded LRU reuse and automatic invalidation.
+
+    Call only AFTER Workspace.resolve, suffix/path checks and stat validation in
+    _files. Never use cached text for paths not actually present in the workspace.
+    File reads and casefolding happen outside the global lock.
+    """
+    global _cache_bytes
+    if not enabled or info.st_size > _CACHE_FILE_LIMIT:
+        source = path.read_text(encoding='utf-8')
+        return source, source.casefold()
+    key = str(path)
+    signature = _stamp(info)
+    with _cache_lock:
+        cached = _cache.get(key)
+        if cached is not None and cached[0] == signature:
+            _cache.move_to_end(key)
+            return cached[1], cached[2]
+    source = path.read_text(encoding='utf-8')
+    folded = source.casefold()
+    if '\x00' in source:
+        return source, folded
+    try:
+        # If a file changes during reading, do not preserve a mixed snapshot.
+        if _stamp(path.stat()) != signature:
+            return source, folded
+    except (OSError, ValueError):
+        return source, folded
+    # Count folded Unicode conservatively; do not cache huge entries.
+    cost = info.st_size + 4 * len(folded) + 128
+    if cost > _CACHE_BYTES_LIMIT:
+        return source, folded
+    with _cache_lock:
+        old = _cache.pop(key, None)
+        if old is not None:
+            _cache_bytes -= old[3]
+        _cache[key] = (signature, source, folded, cost)
+        _cache_bytes += cost
+        while _cache_bytes > _CACHE_BYTES_LIMIT or len(_cache) > _CACHE_ENTRIES_LIMIT:
+            _, removed = _cache.popitem(last=False)
+            _cache_bytes -= removed[3]
+    return source, folded
+
+
+def clear_source_cache() -> None:
+    """Clear in-process cache without touching files or on-disk metadata."""
+    global _cache_bytes
+    with _cache_lock:
+        _cache.clear()
+        _cache_bytes = 0
+
+
+def source_cache_stats() -> dict:
+    """Internal diagnostic: aggregate sizes only, never source text or paths."""
+    with _cache_lock:
+        return {'entries': len(_cache), 'bytes': _cache_bytes,
+                'max_entries': _CACHE_ENTRIES_LIMIT, 'max_bytes': _CACHE_BYTES_LIMIT}
+
+
 def _files(workspace, suffixes, scan):
     """Walk real files only, avoiding generated/hidden trees before descent."""
     seen = 0
@@ -71,7 +149,7 @@ def _files(workspace, suffixes, scan):
                 continue
             if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_SOURCE_BYTES:
                 continue
-            yield resolved, relative
+            yield resolved, relative, info
             seen += 1
             if seen >= MAX_FILES:
                 scan['limited'] = True
@@ -224,30 +302,32 @@ def search_workspace(workspace, query: str, mode: str = 'text') -> dict:
     results = []
     scanned = 0
     scan = {'limited': False}
+    folded_query = query.casefold()
+    cache_on = os.environ.get('STAR_CODE_SEARCH_CACHE') == 'on'
     # Text search reads every small UTF-8 file, whatever its type (C, Ruby, a Godot scene, a Makefile):
     # a list of known types would silently report "no match" for the rest. Symbols need a known language.
     extensions = SOURCE_TYPES if mode == 'symbols' else None
-    for path, relative in _files(workspace, extensions, scan):
+    for path, relative, info in _files(workspace, extensions, scan):
         scanned += 1
         try:
-            content = path.read_text(encoding='utf-8')
+            content, folded = _cached_source(path, info, enabled=cache_on)
         except (OSError, UnicodeError):
             continue
         if '\x00' in content:
             continue
         if mode == 'text':
-            if query.casefold() not in content.casefold():
+            if folded_query not in folded:
                 continue
             found = []
             for lineno, line in enumerate(content.splitlines(), 1):
-                if query.casefold() in line.casefold():
+                if folded_query in line.casefold():
                     found.append({'file': relative, 'line': lineno, 'text': line[:200]})
                     if len(results) + len(found) >= MAX_RESULTS:
                         break
             _add_enclosing(found, content, path.suffix.lower())
             results.extend(found)
         else:
-            if not any(word in content.casefold() or word in relative.casefold() for word in words):
+            if not any(word in folded or word in relative.casefold() for word in words):
                 continue
             symbols = _py_symbols(content) if path.suffix.lower() == '.py' else _other_symbols(content, path.suffix.lower())
             for lineno, name, kind, signature in symbols:
