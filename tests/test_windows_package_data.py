@@ -34,6 +34,7 @@ PACKAGE_DATA_SITES = {
     "star/lesson_import.py": "star/skill_packs",
     "star/player_twins/bundle.py": "star/player_twins/luau",  # Player Twins engine doubles + driver
     "star/verify_ladder.py": "star/player_twins/luau",  # check-fix loop runs blocks in the same engine doubles
+    "star/mistake_memory.py": "star/data/mistake_memory",  # seed rows + validated fixers (star/data is bundled)
     "star/react_shell.py": "frontend/dist",
     "star/reverse_engineering.py": "star/re_scripts",  # Ghidra scripts (PR #344), not in the PyInstaller lists
     "star/roblox_api_confusions.py": "data/roblox_api_confusions.json",
@@ -168,7 +169,7 @@ def test_runtime_missing_resources_are_recorded_and_not_claimed_bundled():
     assert missing == PENDING_OWNER_REVIEW
     bundled = set(PACKAGE_DATA_SITES.values()) - missing
     assert all(_bundle_has(resource, local_data) for resource in bundled)
-    assert len(bundled) == 9  # five readers share the skill-pack directory
+    assert len(bundled) == 10  # five readers share the skill-pack directory; star/data/mistake_memory (S2) rides star/data
 
 
 def test_actual_packaged_root_readers_resolve_resources(tmp_path):
