@@ -62,7 +62,7 @@ def test_capture_copies_only_current_supported_settings_and_no_edit_grants(store
     workspace = tmp_path / "project"
     workspace.mkdir()
     settings = Settings(model="local-test", workspace=str(workspace), workspace_edit=True,
-                        studio_luau=True, server_endpoint="http://192.168.1.99:8080/v1")
+                        studio_luau=True, server_endpoint="http://192.168.1.99:8080/v1")  # star:allow test address
     store.set_enabled(True)
     profile = store.capture(settings, name="  Project brain  ")
     assert profile["name"] == "Project brain"
@@ -92,17 +92,17 @@ def test_cloud_targets_cannot_be_captured(store, provider):
 def test_lan_credentials_remain_bound_after_current_key_and_endpoint_change(store, monkeypatch):
     first_key, next_key = "synthetic-first-token", "synthetic-next-token"
     monkeypatch.setenv("STAR_SERVER_API_KEY", first_key)
-    settings = Settings(provider="star_server", model="brain-a", server_endpoint="http://192.168.1.10:8080/v1/")
+    settings = Settings(provider="star_server", model="brain-a", server_endpoint="http://192.168.1.10:8080/v1/")  # star:allow test address
     store.set_enabled(True)
     first = store.capture(settings, name="First brain")
-    assert first["settings"]["server_endpoint"] == "http://192.168.1.10:8080/v1"
+    assert first["settings"]["server_endpoint"] == "http://192.168.1.10:8080/v1"  # star:allow test address
     monkeypatch.setenv("STAR_SERVER_API_KEY", next_key)
-    settings.server_endpoint = "http://192.168.1.11:8080/v1"
+    settings.server_endpoint = "http://192.168.1.11:8080/v1"  # star:allow test address
     second = store.capture(settings, name="Second brain")
     assert first["credential_ref"] != second["credential_ref"]
     assert store.credential(first) == first_key
     assert store.credential(second) == next_key
-    assert store.get(first["id"])["settings"]["server_endpoint"] == "http://192.168.1.10:8080/v1"
+    assert store.get(first["id"])["settings"]["server_endpoint"] == "http://192.168.1.10:8080/v1"  # star:allow test address
     serialized = store.path.read_text(encoding="utf-8") + json.dumps(store.catalog())
     assert first_key not in serialized and next_key not in serialized
     assert "credential_ref" not in store.catalog()["targets"][0]
@@ -116,7 +116,7 @@ def test_missing_captured_credential_fails_without_falling_back_to_current_key(s
     monkeypatch.setenv("STAR_SERVER_API_KEY", "synthetic-captured-token")
     store.set_enabled(True)
     profile = store.capture(Settings(provider="star_server", model="brain-a",
-                                     server_endpoint="http://192.168.1.10:8080/v1"), name="LAN")
+                                     server_endpoint="http://192.168.1.10:8080/v1"), name="LAN")  # star:allow test address
     store.secrets.values.clear()
     monkeypatch.setenv("STAR_SERVER_API_KEY", "synthetic-current-different-token")
     with pytest.raises(PermissionError, match="unavailable"):
@@ -136,7 +136,7 @@ def test_secure_store_failure_does_not_save_a_plaintext_fallback(store, monkeypa
     store.secrets = UnavailableSecrets()
     with pytest.raises(RuntimeError, match="secure-store"):
         store.capture(Settings(provider="star_server", model="brain-a",
-                               server_endpoint="http://192.168.1.10:8080/v1"), name="LAN")
+                               server_endpoint="http://192.168.1.10:8080/v1"), name="LAN")  # star:allow test address
     assert store.ids() == ()
     assert "synthetic-must-not-persist" not in store.path.read_text(encoding="utf-8")
 
@@ -145,7 +145,7 @@ def test_enabled_state_and_profiles_survive_restart_and_removal_deletes_only_the
     monkeypatch.setenv("STAR_SERVER_API_KEY", "synthetic-captured-token")
     store.set_enabled(True)
     profile = store.capture(Settings(provider="star_server", model="brain-a",
-                                     server_endpoint="http://192.168.1.10:8080/v1"), name="LAN")
+                                     server_endpoint="http://192.168.1.10:8080/v1"), name="LAN")  # star:allow test address
     store.set_enabled(False)
     reopened = BulkProfiles(store.path, secrets=store.secrets)
     assert reopened.enabled is False
@@ -204,9 +204,9 @@ def test_endpoint_tampering_in_saved_metadata_cannot_rebind_an_existing_secret(s
     monkeypatch.setenv("STAR_SERVER_API_KEY", "synthetic-captured-token")
     store.set_enabled(True)
     store.capture(Settings(provider="star_server", model="test",
-                           server_endpoint="http://192.168.1.10:8080/v1"), name="LAN")
+                           server_endpoint="http://192.168.1.10:8080/v1"), name="LAN")  # star:allow test address
     data = json.loads(store.path.read_text(encoding="utf-8"))
-    data["targets"][0]["settings"]["server_endpoint"] = "http://192.168.1.11:8080/v1"
+    data["targets"][0]["settings"]["server_endpoint"] = "http://192.168.1.11:8080/v1"  # star:allow test address
     store.path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="damaged"):
         BulkProfiles(store.path, secrets=store.secrets)

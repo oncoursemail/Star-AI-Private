@@ -138,12 +138,12 @@ def test_service_starts_off_with_no_implicit_targets(make_host):
 
 
 @pytest.mark.parametrize("action,extra", [
-    ("bulkTaskCapture", {"endpoint": "http://192.168.1.20:8080/v1"}),
+    ("bulkTaskCapture", {"endpoint": "http://192.168.1.20:8080/v1"}),  # star:allow test address
     ("bulkTaskCapture", {"workspace": "/unapproved"}),
     ("bulkTaskCapture", {"apiKey": "synthetic-unapproved-token"}),
     ("bulkTaskPreview", {"settings": {"provider": "groq"}}),
     ("bulkTaskPreview", {"shell": "arbitrary command"}),
-    ("bulkTaskSend", {"endpoint": "http://192.168.1.21:8080/v1"}),
+    ("bulkTaskSend", {"endpoint": "http://192.168.1.21:8080/v1"}),  # star:allow test address
     ("bulkTaskSetEnabled", {"command": "arbitrary command"}),
 ])
 def test_webchannel_rejects_extra_addresses_secrets_roots_and_commands(make_host, action, extra):
@@ -465,14 +465,14 @@ def test_captured_lan_endpoint_uses_its_saved_key_after_current_credential_rotat
     monkeypatch.setenv("STAR_SERVER_API_KEY", "synthetic-original-secret")
     host = make_host()
     host.enable()
-    target = host.capture(provider="star_server", server_endpoint="http://192.168.1.10:8080/v1", model="original")
+    target = host.capture(provider="star_server", server_endpoint="http://192.168.1.10:8080/v1", model="original")  # star:allow test address
     batch = host.preview([target])
     monkeypatch.setenv("STAR_SERVER_API_KEY", "synthetic-next-secret")
-    host.current = replace(host.current, server_endpoint="http://192.168.1.11:8080/v1", model="next")
+    host.current = replace(host.current, server_endpoint="http://192.168.1.11:8080/v1", model="next")  # star:allow test address
     host.send(batch)
     result = finished(host, batch)
     assert result["status"] == "succeeded"
-    assert host.calls[0]["settings"].server_endpoint == "http://192.168.1.10:8080/v1"
+    assert host.calls[0]["settings"].server_endpoint == "http://192.168.1.10:8080/v1"  # star:allow test address
     assert host.calls[0]["secret"] == "synthetic-original-secret"
     assert "synthetic-original-secret" not in json.dumps(result)
     assert "synthetic-next-secret" not in json.dumps(result)
@@ -486,7 +486,7 @@ def test_capture_holds_configuration_lock_until_original_endpoint_and_key_are_bo
     credential = {"value": "synthetic-original-pair-key"}
     host = make_host(configuration_lock=configuration_lock)
     host.current = replace(host.current, provider="star_server", model="original",
-                           server_endpoint="http://192.168.1.10:8080/v1")
+                           server_endpoint="http://192.168.1.10:8080/v1")  # star:allow test address
     host.enable()
 
     def paused_connection(settings):
@@ -499,7 +499,7 @@ def test_capture_holds_configuration_lock_until_original_endpoint_and_key_are_bo
     def mutate_current_configuration():
         mutation_attempted.set()
         with configuration_lock:
-            host.current = replace(host.current, model="changed", server_endpoint="http://192.168.1.11:8080/v1")
+            host.current = replace(host.current, model="changed", server_endpoint="http://192.168.1.11:8080/v1")  # star:allow test address
             credential["value"] = "synthetic-next-pair-key"
             mutation_finished.set()
 
@@ -520,9 +520,9 @@ def test_capture_holds_configuration_lock_until_original_endpoint_and_key_are_bo
         result = capture.result(timeout=3)
         mutation.result(timeout=3)
     profile = host.service.profiles.get(result["targets"][0]["id"])
-    assert profile["settings"]["server_endpoint"] == "http://192.168.1.10:8080/v1"
+    assert profile["settings"]["server_endpoint"] == "http://192.168.1.10:8080/v1"  # star:allow test address
     assert host.service.profiles.credential(profile) == "synthetic-original-pair-key"
-    assert host.current.server_endpoint == "http://192.168.1.11:8080/v1"
+    assert host.current.server_endpoint == "http://192.168.1.11:8080/v1"  # star:allow test address
     assert credential["value"] == "synthetic-next-pair-key"
 
 

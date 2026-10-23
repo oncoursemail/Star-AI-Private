@@ -1885,4 +1885,3 @@ def launch():
 
     # Closes the window and releases the instance lock, then runs a staged update Setup.
     return run_desktop(app, make_shell, instance, adopt)
-

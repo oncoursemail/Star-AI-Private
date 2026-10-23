@@ -12,7 +12,7 @@ from star.desktop_core import Settings
 
 
 def settings():
-    return Settings(provider="star_server", server_endpoint="http://10.20.30.40:8080/v1",
+    return Settings(provider="star_server", server_endpoint="http://10.20.30.40:8080/v1",  # star:allow test address
                     model="bulk-test-model")
 
 
@@ -47,7 +47,7 @@ def test_real_sdk_uses_exact_endpoint_one_read_only_call_and_closes(monkeypatch)
     calls, options, clients = install_transport(monkeypatch, lambda _: response())
     result = asyncio.run(_call_brain(settings(), "Review this setting", "fake-test-key", threading.Event()))
     assert len(calls) == 1
-    assert str(calls[0].url) == "http://10.20.30.40:8080/v1/chat/completions"
+    assert str(calls[0].url) == "http://10.20.30.40:8080/v1/chat/completions"  # star:allow test address
     assert calls[0].headers["authorization"] == "Bearer fake-test-key"
     body = json.loads(calls[0].content)
     assert body["model"] == "bulk-test-model"
@@ -82,7 +82,7 @@ def test_redirect_is_not_followed(monkeypatch):
     with pytest.raises(OperationFailed):
         asyncio.run(_call_brain(settings(), "Task", "fake-test-key", threading.Event()))
     assert len(calls) == 1
-    assert calls[0].url.host == "10.20.30.40"
+    assert calls[0].url.host == "10.20.30.40"  # star:allow test address
 
 
 def test_reported_wrong_model_is_not_success(monkeypatch):

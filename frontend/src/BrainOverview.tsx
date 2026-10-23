@@ -49,4 +49,3 @@ export function BrainOverview({snapshot,load=true}:{snapshot?:BrainSnapshot;load
   <MachineLoad load={load}/>
  </section><BulkTasksPanel disabled={!load}/></>
 }
-
