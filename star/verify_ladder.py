@@ -32,7 +32,7 @@ from pathlib import Path
 import re
 import time
 from time import monotonic
-from typing import Any
+from typing import Any, cast
 
 MAX_BLOCKS = 2
 MAX_DETAIL = 600
@@ -814,7 +814,7 @@ async def _xray_studio_root(studio, root: str, *, fix, rounds: int, max_parts: i
         if not highs:
             break
         record["rounds"] += 1
-        reply = await asyncio.wait_for(fix(xray_fix_request(prompt, root, highs)), timeout=timeout)
+        reply = await asyncio.wait_for(cast(Any, fix)(xray_fix_request(prompt, root, highs)), timeout=timeout)
         code = parse_fix(reply)
         if not code:
             record["stopped"] = "the fix reply had no Luau block"

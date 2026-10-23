@@ -3,6 +3,7 @@ import json
 import asyncio
 import os
 import re
+from typing import cast
 from datetime import datetime
 from time import monotonic
 from types import SimpleNamespace
@@ -708,8 +709,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                       max_tokens=response_tokens, **sample)
         # Some local model servers do not accept null tools/tool_choice values.
         kwargs = {k:v for k,v in kwargs.items() if v is not None}
-        if extras and type(extras.get("reasoning_budget_tokens")) is int:
-            kwargs["max_tokens"] += extras["reasoning_budget_tokens"]   # thinking is counted in max_tokens; the answer keeps its own room
+        think_tokens = cast("dict[str, object]", extras or {}).get("reasoning_budget_tokens")
+        if type(think_tokens) is int:      # thinking is counted in max_tokens; the answer keeps its own room
+            kwargs["max_tokens"] = cast(int, kwargs["max_tokens"]) + think_tokens
         validate_model_roles(messages)
         if on_first_request is not None and step == 0:
             try:

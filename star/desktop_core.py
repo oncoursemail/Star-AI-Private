@@ -13,7 +13,7 @@ from .analytics import AnalyticsStore
 from .atomic_io import atomic_write_text, move_aside
 from dataclasses import dataclass, asdict, replace, field
 from contextlib import AsyncExitStack
-from typing import Callable
+from typing import Any, Callable, cast
 
 from .agent import execute, HistoryWindowPressure
 from .media import image_part
@@ -635,7 +635,7 @@ class Conversations:
                 'UPDATE chats SET updated=? WHERE project=? AND id=?',
                 (stamp, project, target)
             )
-        return int(row)
+        return int(cast(int, row))
 
     def add_terminal(self, project: str, chat_id: str, user_id: int, status: str, detail: str) -> int | None:
         """Record that the turn started by user message ``user_id`` ended without an answer.
@@ -728,7 +728,7 @@ class Conversations:
             'SELECT id,role,body,status,reply_to FROM messages WHERE project=? AND chat_id=? '
             'ORDER BY id DESC LIMIT 16', (project, target)
         ).fetchall()
-        found = {'message_id': None, 'previous': None}
+        found: dict[str, Any] = {'message_id': None, 'previous': None}
         users = [index for index, row in enumerate(rows) if row[1] == 'user']
         if not users:
             return found
@@ -1311,7 +1311,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
     metrics = AnalyticsStore(home / 'analytics.sqlite3')
     started = time.monotonic()
     first_visible_token = False
-    token_timing = {'requested': None, 'first': None, 'last': None}
+    token_timing: dict[str, float | None] = {'requested': None, 'first': None, 'last': None}
     metrics.record(settings.project, 'run_started')
     def audited_event(event):
         nonlocal first_visible_token
@@ -1544,7 +1544,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             # Do not touch the PC's model unless this standalone text turn is eligible.
             # The loopback /models probe reads only residency; a router's unloaded model
             # is never selected and no llama.cpp process is started or downloaded.
-            eligible = dict(prompt=prompt, mode=mode, provider=kind,
+            eligible: dict[str, Any] = dict(prompt=prompt, mode=mode, provider=kind,
                             enabled=settings.instant_route_enabled is True and not strata_plan.active,
                             installed=bool(settings.gguf_model or settings.router_models_dir),
                             attachments=len(images) + len(documents or ()) + max(0, attachment_count),
