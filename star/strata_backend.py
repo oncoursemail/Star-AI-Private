@@ -20,7 +20,7 @@ from .providers import provider_kind
 
 _LOOPBACK = re.compile(r"^http://(?:127\.0\.0\.1|localhost):(\d{2,5})/v1/?$")
 _REASONING = frozenset({"auto", "none", "low", "medium", "high"})
-_PROFILES = frozenset({"reasoning", "roblox", "research", "agent"})
+_PROFILES = frozenset({"reasoning", "roblox", "research", "vision", "agent"})
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,7 @@ def _effort(settings: Any, profile: str) -> str:
         return chosen
     if profile in {"roblox", "agent"}:
         return "high"
-    if profile in {"reasoning", "research"}:
+    if profile in {"reasoning", "research", "vision"}:
         return "medium"
     return "none"
 
@@ -94,7 +94,7 @@ def choose(settings: Any, route: Any, prompt: str, *, mode: str, image_count: in
     endpoint = validate_endpoint(getattr(settings, "strata_endpoint", ""))
     effort = _effort(settings, profile)
     thinking = effort != "none"
-    response = {"reasoning": 4096, "roblox": 6144, "research": 4096, "agent": 8192}[profile]
+    response = {"reasoning": 4096, "roblox": 6144, "research": 4096, "vision": 4096, "agent": 8192}[profile]
     # Qwen thinking is part of the output budget.  A small cap can expire inside
     # the think block without ever producing the useful answer/tool call.
     response = max(response, int(getattr(route, "response_tokens", 0) or 0))
@@ -143,7 +143,7 @@ class _FallbackStream:
     """Switch to the resident brain only if Strata fails before its first chunk."""
 
     def __init__(self, primary, start_fallback: Callable[[], Any], fail: Callable[[BaseException], bool]):
-        self._stream = primary
+        self._stream = primary.__aiter__() if hasattr(primary, "__aiter__") else primary
         self._start_fallback = start_fallback
         self._fail = fail
         self._seen = False
@@ -165,7 +165,8 @@ class _FallbackStream:
                     raise
                 self._using_fallback = True
                 self._fail(exc)
-                self._stream = await self._start_fallback()
+                replacement = await self._start_fallback()
+                self._stream = replacement.__aiter__() if hasattr(replacement, "__aiter__") else replacement
 
 
 class BackgroundClient:
