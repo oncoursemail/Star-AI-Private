@@ -163,7 +163,7 @@ def source_cache_stats() -> dict:
                 'max_entries': _CACHE_ENTRIES_LIMIT, 'max_bytes': _CACHE_BYTES_LIMIT}
 
 
-def _files(workspace, suffixes, scan):
+def _files(workspace, suffixes, scan, *, with_stat: bool = False):
     """Walk real files only, avoiding generated/hidden trees before descent."""
     seen = 0
     visited_dirs = 0
@@ -190,7 +190,7 @@ def _files(workspace, suffixes, scan):
                 continue
             if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_SOURCE_BYTES:
                 continue
-            yield resolved, relative, info
+            yield (resolved, relative, info) if with_stat else (resolved, relative)
             seen += 1
             if seen >= MAX_FILES:
                 scan['limited'] = True
@@ -352,7 +352,7 @@ def search_workspace(workspace, query: str, mode: str = 'text') -> dict:
     # Text search reads every small UTF-8 file, whatever its type (C, Ruby, a Godot scene, a Makefile):
     # a list of known types would silently report "no match" for the rest. Symbols need a known language.
     extensions = SOURCE_TYPES if mode == 'symbols' else None
-    for path, relative, info in _files(workspace, extensions, scan):
+    for path, relative, info in _files(workspace, extensions, scan, with_stat=True):
         scanned += 1
         if info.st_size <= _CACHE_FILE_LIMIT:
             admitted_raw_bytes += info.st_size
