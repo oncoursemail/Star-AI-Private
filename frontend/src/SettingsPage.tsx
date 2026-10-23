@@ -224,6 +224,24 @@ export function SettingsPage(props:SettingsPageProps) {
        {modelCheck&&<div className="health-result" role="status"><Check size={16} aria-hidden="true"/> <span>Live response: {modelCheck.sample}</span></div>}{modelList.length>0&&<small>Available: {modelList.join(', ')}</small>}
      </Panel>
    </Block>
+   <Block id="strata" keywords="strata qwen qwen3.8 flash next large model reasoning coding roblox local second engine">
+     <Panel className="settings-section"><div className="section-heading"><div><h3 className="settings-group-title">Strata + Qwen3.8 specialist</h3><p>Optional second local engine for harder code, Roblox, research and Agent tasks. Simple chat stays on your normal resident model.</p></div><Sparkles size={20} aria-hidden="true"/></div>
+       <Switch label="Use Strata for hard local work" hint="Off by default. When enabled with the Local provider, STAR routes complex tasks to the separate Strata endpoint and falls back to the resident model if Strata is unavailable before output starts." checked={draft.strata_enabled===true} disabled={inactive||draft.provider!=='local'} onChange={on=>set({strata_enabled:on})}/>
+       <div className="field-grid">
+         <label>Strata endpoint<input value={draft.strata_endpoint??'http://127.0.0.1:8082/v1'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_endpoint:e.target.value})} placeholder="http://127.0.0.1:8082/v1"/></label>
+         <label>Strata model ID<input value={draft.strata_model??'strata'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_model:e.target.value})} placeholder="strata"/></label>
+         <label>Reasoning
+           <select value={draft.strata_reasoning??'auto'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_reasoning:e.target.value as AppSettings['strata_reasoning']})}>
+             <option value="auto">Automatic by task</option><option value="none">None</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+           </select>
+         </label>
+         <label>Context tokens<input type="number" min="4096" max="262144" step="1024" value={draft.strata_context_tokens??32768} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_context_tokens:Number(e.target.value)})}/></label>
+         <label>Request timeout (seconds)<input type="number" min="60" max="1800" step="30" value={draft.strata_timeout??900} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_timeout:Number(e.target.value)})}/></label>
+       </div>
+       <Switch label="Let Strata inspect images" hint="Use Qwen3.8's image input for complex visual/Roblox debugging when the Strata model supports it." checked={draft.strata_vision_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_vision_enabled:on})}/>
+       <small>STAR never downloads or starts Strata automatically. Run Strata separately on this loopback endpoint; keeping it separate lets the small model stay fast for everyday chat.</small>
+     </Panel>
+   </Block>
    <Block id="provider" keywords="api key cloud groq openrouter gemini cerebras star server provider lan">
      <ProviderPanel draft={draft} onChange={setDraft} credentials={data.credentials||{}} invoke={act} refresh={sync} disabled={inactive}/>
    </Block>
