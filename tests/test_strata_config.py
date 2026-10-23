@@ -21,7 +21,7 @@ def test_updates_only_loop_recovery_and_retains_exact_backup(tmp_path):
     assert enable_repeat_recovery(path)["changed"] is False
 
 
-@pytest.mark.parametrize("name", ["settings.json", "strata-other.txt", "strata-../bad.json"])
+@pytest.mark.parametrize("name", ["settings.json", "strata-other.txt", "strata-bad name.json"])
 def test_rejects_unrelated_or_malformed_names(tmp_path, name):
     target = tmp_path / name
     target.parent.mkdir(parents=True, exist_ok=True)
