@@ -68,6 +68,7 @@ class Settings:
     strata_context_tokens: int = 32768
     strata_timeout: int = 900
     strata_vision_enabled: bool = True
+    strata_loop_guard_enabled: bool = True   # issue #728; stop runaway repeat passages
     project: str = 'STAR'
     workspace: str = ''
     studio_id: str = ''
@@ -213,7 +214,8 @@ class Settings:
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
                             'blender_enabled', 'blender_edit', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'skill_pack_embeddings', 'presolve_enabled',
-                            'strata_enabled', 'strata_vision_enabled')):
+                            'strata_enabled', 'strata_vision_enabled',
+                            'strata_loop_guard_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if self.obsidian_vault and not Path(self.obsidian_vault).expanduser().is_dir():
             raise ValueError('Obsidian vault must be an existing folder')
@@ -1094,6 +1096,10 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             # Type name only; raw transport/model errors can contain local paths.
             metrics.record(settings.project, 'strata_fallback',
                            detail=str(event.get('reason', ''))[:80])
+        elif event.get('event') == 'strata_loop_stopped':
+            # Never store repeated generated text or model/tool arguments.
+            metrics.record(settings.project, 'strata_loop_stopped',
+                           detail=str(event.get('section', ''))[:24])
         if on_event:
             on_event(event)
     memory = Memory(home / 'checkpoints.sqlite3')
@@ -1351,7 +1357,11 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                         fallback_model=settings.model,
                         on_fallback=lambda exc: audited_event({
                             'event':'strata_fallback','model':settings.model,
-                            'reason':type(exc).__name__}))
+                            'reason':type(exc).__name__}),
+                        loop_guard=settings.strata_loop_guard_enabled,
+                        on_loop=lambda exc: audited_event({
+                            'event':'strata_loop_stopped',
+                            'section':str(getattr(exc, 'section', 'unknown'))[:24]}))
                 else:
                     client = primary_client
                 if kind == 'lan' and settings.use_my_gpu is True:
