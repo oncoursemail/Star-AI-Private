@@ -30,6 +30,7 @@ PACKAGE_DATA_SITES = {
     "star/design_db.py": "star/data/design/ui-ux-pro-max",
     "star/gold_bank.py": "data/gold_bank/bank.jsonl",  # opt-in gold examples (gold-bank-20261020)
     "star/learned_week.py": "star/skill_packs",
+    "star/studio_atlas.py": "data/studio_atlas",  # tested reference systems (studio-atlas-20261022)
     "star/luau_record_type_lessons.py": "docs/lessons/luau-record-types.md",
     "star/lesson_import.py": "star/skill_packs",
     "star/player_twins/bundle.py": "star/player_twins/luau",  # Player Twins engine doubles + driver
@@ -71,6 +72,7 @@ PENDING_OWNER_REVIEW = frozenset({
     "data/roblox_api_confusions.json",
     "data/roblox_api/roblox_api.json",  # bundled API dump (#331): not packaged yet
     "data/gold_bank/bank.jsonl",  # gold bank: not packaged yet (missing file = no examples)
+    "data/studio_atlas",  # studio atlas: not packaged yet (missing folder = no reference systems)
     "evals/studio",  # do not bundle protected evaluation manifests blindly
 })
 
