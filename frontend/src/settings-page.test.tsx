@@ -125,6 +125,27 @@ describe('Unsaved changes', () => {
   })
 })
 
+describe('Strata specialist settings', () => {
+  it('keeps the second engine opt-in and saves its bounded local configuration', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Model'}))
+    const enabled = screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}) as HTMLInputElement
+    expect(enabled.checked).toBe(false)
+    await user.click(enabled)
+    const model = screen.getByLabelText('Strata model ID') as HTMLInputElement
+    await user.clear(model); await user.type(model, 'strata')
+    const effort = screen.getByLabelText('Reasoning') as HTMLSelectElement
+    await user.selectOptions(effort, 'high')
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    const saved = desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>
+    expect(saved.strata_enabled).toBe(true)
+    expect(saved.strata_endpoint).toBe('http://127.0.0.1:8082/v1')
+    expect(saved.strata_reasoning).toBe('high')
+    expect(saved.strata_context_tokens).toBe(32768)
+  })
+})
+
 describe('Web search keys', () => {
   it('stores a Brave key through the OS vault action and never keeps it in the page', async () => {
     desktop.onAction('saveProviderKey', () => ({ok: true, data: {connected: true}}))
