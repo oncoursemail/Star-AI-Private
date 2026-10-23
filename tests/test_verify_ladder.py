@@ -236,3 +236,112 @@ def test_mistake_memory_keeps_no_addresses_or_keys(tmp_path):
     assert vl.remember([record], path=path) == 1
     text = path.read_text(encoding="utf-8")
     assert address not in text and "abc123" not in text and "A" * 40 not in text
+
+
+# --- X-ray rung (fake Studio connection) -------------------------------------------------------------------------
+
+def _xray_finding(severity="high"):
+    return {"severity": severity, "detector": "floating", "path": "Workspace.Hut.Roof", "value": 6, "unit": "studs",
+            "message": "Roof floats 6 studs above the walls.", "fix": "Lower the roof."}
+
+
+class FakeXrayStudio:
+    """Stands in for GuardedStudio: its session answers the X-ray snippet from a script of reports."""
+
+    def __init__(self, reports, journal_entries, editable=True, kind="blank"):
+        self.reports, self.scans, self.edits = list(reports), [], []
+        self.studio_id, self.verdict = "s1", SimpleNamespace(editable=editable, kind=kind)
+        self.journal = SimpleNamespace(entries=journal_entries)
+        self.session = SimpleNamespace(call_tool=self._scan)
+
+    async def _scan(self, name, arguments=None, **kw):
+        arguments = arguments or kw.get("arguments")
+        self.scans.append(arguments["code"])
+        report = self.reports[min(len(self.scans), len(self.reports)) - 1]
+        return {"content": [{"type": "text", "text": "STAR_XRAY " + json.dumps(report)}]}
+
+    async def call_tool(self, name, arguments):
+        self.edits.append(arguments["code"])
+        return {"content": [{"type": "text", "text": "ok"}]}
+
+
+def _report(*findings, parts=40, **extra):
+    return {"mode": "studio", "parts": parts, "findings": list(findings), "changes": [], "counts": {}, "skipped": {}, **extra}
+
+
+BUILD = [{"kind": "luau", "ok": True, "added": ["Model Workspace.Hut", "Script Workspace.Hut.Door"]}]
+XRAY_ON = SimpleNamespace(verify_ladder="on", verify_xray="on", verify_rounds=2)
+
+
+def _run_xray(studio, settings=XRAY_ON, fix=None, **kw):
+    outcome = ("Built a hut.", [], [])
+    return asyncio.run(vl.xray_outcome(outcome, studio, settings=settings, fix=fix, prompt="build a hut", **kw))
+
+
+def test_xray_rung_runs_on_a_build_turn_and_scans_only_the_managed_root():
+    studio = FakeXrayStudio([_report(_xray_finding("medium"))], BUILD)
+    answer, _messages, archive = _run_xray(studio)
+    assert len(studio.scans) == 1 and '"rootPath": "Workspace.Hut"' in studio.scans[0]
+    assert "X-ray Eyes" in answer and "1 medium" in answer and "Workspace.Hut.Roof" in answer
+    assert archive[-1]["star_xray"][0]["root"] == "Workspace.Hut" and studio.edits == []
+
+
+def test_xray_rung_skips_a_code_only_turn_and_the_settings_off():
+    code_only = FakeXrayStudio([_report()], [{"kind": "script", "ok": True, "path": "ServerScriptService.A"},
+                                             {"kind": "luau", "ok": True, "added": ["Script Workspace.X"]}])
+    assert _run_xray(code_only)[0] == "Built a hut." and code_only.scans == []
+    build = FakeXrayStudio([_report()], BUILD)
+    for off in (SimpleNamespace(verify_ladder="off", verify_xray="on"), SimpleNamespace(verify_ladder="on", verify_xray="off")):
+        assert _run_xray(build, settings=off)[0] == "Built a hut." and build.scans == []
+
+
+def test_xray_high_finding_makes_one_fix_round_and_the_rest_is_shown():
+    studio = FakeXrayStudio([_report(_xray_finding()), _report(_xray_finding("low"))], BUILD)
+    calls = []
+
+    async def fix_call(request):
+        calls.append(request)
+        return fence("local roof = workspace.Hut.Roof\nroof.Position -= Vector3.new(0, 6, 0)\n")
+    answer = _run_xray(studio, fix=fix_call)[0]
+    assert len(calls) == 1 and "Roof floats 6 studs" in calls[0] and "Build root: Workspace.Hut" in calls[0]
+    assert studio.edits == ["local roof = workspace.Hut.Roof\nroof.Position -= Vector3.new(0, 6, 0)\n"]
+    assert len(studio.scans) == 2 and "1 high before 1 fix round" in answer and "1 low" in answer
+
+
+def test_xray_safe_fixes_are_applied_as_a_journaled_edit_only_when_editable():
+    change = {"op": "translate", "path": "Workspace.Hut.Roof", "dx": 0, "dy": -0.5, "dz": 0, "reason": "gap"}
+    rep = _report(_xray_finding("medium"), changes=[change])
+    studio = FakeXrayStudio([rep, _report()], BUILD)
+    answer = _run_xray(studio)[0]
+    assert len(studio.edits) == 1 and '"Workspace.Hut.Roof"' in studio.edits[0] and "moved 1 part" in answer
+    read_only = FakeXrayStudio([rep], BUILD, editable=False)
+    answer = _run_xray(read_only)[0]
+    assert read_only.edits == [] and "proposed, not applied" in answer
+
+
+def test_xray_cap_skips_a_large_scene_and_a_denied_place():
+    capped = FakeXrayStudio([_report(parts=9000, skipped={"cap": "9000 parts, over the limit of 4000"})], BUILD)
+    answer = _run_xray(capped)[0]
+    assert "not checked (9000 parts" in answer and capped.edits == []
+    assert '"maxParts": 4000' in capped.scans[0]
+    denied = FakeXrayStudio([_report()], BUILD, kind="denied")
+    assert _run_xray(denied)[0] == "Built a hut." and denied.scans == []
+
+
+def test_xray_headless_fallback_scans_a_place_file_written_this_turn(tmp_path, monkeypatch):
+    from star import xray
+    place = tmp_path / "hut.rbxl"
+    place.write_bytes(b"x")
+    seen = []
+    monkeypatch.setattr(xray, "scan_file", lambda path: seen.append(path) or _report(_xray_finding("medium"), parts=7))
+    outcome = (f"Saved the build to {place}.", [], [])
+    answer = asyncio.run(vl.xray_outcome(outcome, None, settings=XRAY_ON, since=place.stat().st_mtime - 1))[0]
+    assert seen == [place] and "hut.rbxl (7 parts): 1 medium" in answer
+    old = asyncio.run(vl.xray_outcome(outcome, None, settings=XRAY_ON, since=place.stat().st_mtime + 100))[0]
+    assert old == outcome[0] and len(seen) == 1
+
+
+def test_settings_verify_xray_defaults_on_and_validates():
+    assert Settings().verify_xray == "on"
+    with pytest.raises(ValueError):
+        Settings(verify_xray="maybe").validate()

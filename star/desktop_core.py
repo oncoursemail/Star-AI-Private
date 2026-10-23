@@ -37,7 +37,7 @@ from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
 from . import edit_format
-from . import studio_loop, studio_tool_examples
+from . import studio_loop, studio_tool_examples, verify_ladder
 from . import project_rules
 from . import gpu_helper
 from .studio_connections import default_target, validate_target
@@ -185,6 +185,9 @@ class Settings:
     verify_ladder: str = 'on'
     verify_rounds: int = 2
     verify_budget_s: int = 240
+    # X-ray Eyes rung of the check-fix loop (star/xray.py, BUILD turns only): measures the model or folder a turn
+    # built in Studio (or a place file it wrote, via Lune) and feeds high findings back as a fix round. Needs verify_ladder.
+    verify_xray: str = 'on'
     # Mistake memory (star/mistake_memory.py): 'retrieve' (default) adds a short note of verified fixes for failures like
     # the request's to the turn; 'fix' also lets the check-fix loop apply its validated self-written rewrite rules
     # (no model call) before any model fix; 'off' does neither. Rules stay off until the owner sets 'fix'.
@@ -283,6 +286,8 @@ class Settings:
                 or not 0 <= self.verify_rounds <= 4 or type(self.verify_budget_s) is not int
                 or not 30 <= self.verify_budget_s <= 900):
             raise ValueError('Check-fix loop must be off or on, with 0 to 4 rounds and a 30 to 900 second budget')
+        if self.verify_xray not in ('off', 'on'):
+            raise ValueError('X-ray rung must be off or on')
         if type(self.specialist_parallelism) is not int or self.specialist_parallelism not in (1,2):
             raise ValueError('Limit specialists to 1 or 2 concurrent model calls')
         if (type(self.team_timeout_min) is not int or type(self.team_timeout_max) is not int
@@ -1707,6 +1712,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 async def answer_with(model):
                     nonlocal prepared_conversation
                     window, candidate = history_window, None
+                    turn_started = time.time()
                     for attempt in range(5):
                         candidate = await conversation_memory.prepare(
                             helper, model, home / 'conversations.sqlite3', settings.project, chat_id,
@@ -1751,9 +1757,15 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                         discovered=discovered, studio_id=settings.studio_id,
                                         may_edit=guarded.verdict.editable,
                                         allow_luau=guarded.verdict.editable and settings.studio_luau)
+                                    outcome = await verify_ladder.xray_outcome(
+                                        outcome, guarded, settings=settings, prompt=prompt, since=turn_started,
+                                        on_event=audited_event,
+                                        fix=verify_ladder.xray_fix_tool(tool_kwargs['client'], tool_kwargs['model'], prompt))
                                     result = studio_loop.with_report(outcome, guarded)
                                 else:
-                                    result = await execute(**tool_kwargs)
+                                    result = await verify_ladder.xray_outcome(
+                                        await execute(**tool_kwargs), None, settings=settings, prompt=prompt,
+                                        since=turn_started, on_event=audited_event)
                         except HistoryWindowPressure as pressure:
                             if pressure.dispatched or pressure.tool_actions_started:
                                 raise conversation_memory.ConversationRetentionError(

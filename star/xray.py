@@ -113,7 +113,9 @@ def exam(trials: int = 50, seed: int = 1, lune: str | None = None) -> dict:
 
 def studio_code(options: dict | None = None) -> str:
     """The module plus a Studio host: exact text bounds, engine spatial queries, pathfinding, terrain,
-    the measured R15 rig. Reads only; the one instance it creates (the R15 rig) is never parented."""
+    the measured R15 rig. Reads only; the one instance it creates (the R15 rig) is never parented.
+    Options `rootPath` (dotted full name, e.g. Workspace.Obby) scans only that model or folder; `maxParts`
+    returns a `cap` skip instead of a scan when the root holds more parts."""
     module = (LUAU_DIR / "xray.luau").read_text(encoding="utf-8").replace("\r\n", "\n")
     body, sep, _tail = module.rpartition("\nreturn Xray")
     if not sep:
@@ -180,7 +182,29 @@ if okRig and rig then
 		heightClassic = Xray.AVATAR.heightClassic, width = math.max(extents.X, extents.Z), source = "studio R15 rig" }}
 	rig:Destroy()
 end
-local report = Xray.scan(game, OPTIONS, env)
+local root: any = game
+local rootPath = OPTIONS.rootPath
+if rootPath then
+	for segment in string.gmatch(rootPath, "[^%.]+") do
+		root = root:FindFirstChild(segment)
+		if not root then
+			return "{STUDIO_MARK}" .. HttpService:JSONEncode({{ mode = "studio", parts = 0, skipped = {{ root = "not found: " .. rootPath }} }})
+		end
+	end
+end
+if OPTIONS.maxParts then
+	local count = if root:IsA("BasePart") then 1 else 0
+	for _, d in root:GetDescendants() do
+		if d:IsA("BasePart") then
+			count += 1
+		end
+	end
+	if count > OPTIONS.maxParts then
+		return "{STUDIO_MARK}" .. HttpService:JSONEncode({{ mode = "studio", parts = count,
+			skipped = {{ cap = count .. " parts, over the limit of " .. OPTIONS.maxParts }} }})
+	end
+end
+local report = Xray.scan(root, OPTIONS, env)
 return "{STUDIO_MARK}" .. HttpService:JSONEncode(report)
 """
     return body + "\n" + host
@@ -189,7 +213,7 @@ return "{STUDIO_MARK}" .. HttpService:JSONEncode(report)
 async def scan_studio(options: dict | None = None, studio_id: str | None = None) -> dict:
     """Run the read-only snippet in a connected Studio. Refuses deny-listed places (e.g. owner projects)."""
     from . import studio as studio_mcp
-    from .studio_loop import _marked_json, identify, judge, name_is_denied, result_failed, result_text
+    from .studio_loop import identify, judge, name_is_denied
 
     connect: Any = studio_mcp.connect  # an asynccontextmanager; pyright misreads it without the mcp stubs
     async with connect() as client:
@@ -210,14 +234,21 @@ async def scan_studio(options: dict | None = None, studio_id: str | None = None)
         identity = await identify(client, chosen["id"], tools=names, studio_name=chosen["name"])
         if judge(identity, opted_in=False, studio_name=chosen["name"]).kind == "denied":
             raise XrayError("this place is on STAR's deny-list; X-ray does not read it")
-        result = await client.call_tool("execute_luau", {"studio_id": chosen["id"], "datamodel_type": "Edit",
-                                                         "code": studio_code(options)})
-        text = result_text(result)
-        report = None if result_failed(result) else _marked_json(text, STUDIO_MARK)
-        if report is None:
-            raise XrayError("Studio did not return an X-ray report: " + text[:300])
+        report = await scan_session(client, chosen["id"], options)
         report["studio"] = {"id": chosen["id"], "name": chosen["name"][:120]}
-        return normalize(report)
+        return report
+
+
+async def scan_session(session: Any, studio_id: str, options: dict | None = None) -> dict:
+    """Run the read-only snippet over an already judged Studio session (the check-fix loop's rung)."""
+    from .studio_loop import _marked_json, result_failed, result_text
+    result = await session.call_tool("execute_luau", {"studio_id": studio_id, "datamodel_type": "Edit",
+                                                      "code": studio_code(options)})
+    text = result_text(result)
+    report = None if result_failed(result) else _marked_json(text, STUDIO_MARK)
+    if report is None:
+        raise XrayError("Studio did not return an X-ray report: " + text[:300])
+    return normalize(report)
 
 
 # --------------------------------------------------------------------------- report
