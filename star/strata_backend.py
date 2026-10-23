@@ -177,7 +177,7 @@ def _fallback_worthy(exc: BaseException) -> bool:
 class _FallbackStream:
     """Switch to the resident brain only if Strata fails before its first chunk."""
 
-    def __init__(self, primary, start_fallback: Callable[[], Any], fail: Callable[[BaseException], bool]):
+    def __init__(self, primary, start_fallback: Callable[[], Any], fail: Callable[[BaseException], None]):
         self._stream = primary.__aiter__() if hasattr(primary, "__aiter__") else primary
         self._start_fallback = start_fallback
         self._fail = fail
