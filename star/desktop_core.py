@@ -1342,7 +1342,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             async with AsyncExitStack() as model_connections:
                 primary_client = await model_connections.enter_async_context(
                     open_client(model_settings, request_timeout=(
-                        settings.strata_timeout if strata_plan.active else None)))
+                        settings.strata_timeout if strata_plan.active else None),
+                        trust_env=False if strata_plan.active else None))
                 if strata_plan.active:
                     resident_client = await model_connections.enter_async_context(open_client(settings))
                     client = strata_backend.RoutingClient(
