@@ -1,7 +1,9 @@
 # STAR AI: Code Search Acceleration + Intelligence Research
 
-**Research / measured development:** October 22, 2026  
-**Branch:** `feat/star-code-search-speed-20261022` (private STAR repository)  
+**Research / measured development:** October 22, 2026
+
+**Branch:** `feat/star-code-search-speed-20261022` (private STAR repository)
+
 **Status:** Tested isolated opt-in development change. NOT enabled in the public Windows installer, not merged into `star/next`, and not proof that model answers are 2x faster.
 
 ## Executive decision
