@@ -126,6 +126,18 @@ describe('Unsaved changes', () => {
 })
 
 describe('Strata specialist settings', () => {
+  it('applies the Strata engine recovery through a native owner-picked config', async () => {
+    desktop.onAction('repairStrataConfig', () => ({
+      ok:true,data:{configured:true,changed:true,restart_required:true,backup_name:'strata-qwen.json.star-before-recovery.bak'}
+    }))
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Model'}))
+    await user.click(screen.getByRole('button', {name: 'Apply engine loop recovery…'}))
+    await waitFor(() => expect(desktop.sent('repairStrataConfig').length).toBe(1))
+    expect(desktop.sent('repairStrataConfig')[0].payload).toEqual({})
+    expect(await screen.findByText(/Recovery enabled in Strata config/)).toBeTruthy()
+  })
+
   it('can disable the issue #728 watchdog for intentional repetition', async () => {
     const user = await openSettings()
     await user.click(screen.getByRole('tab', {name: 'Model'}))
