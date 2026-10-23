@@ -121,10 +121,24 @@ def effective_settings(settings: Any, plan: StrataPlan):
 
 
 def request_extras(plan: StrataPlan) -> dict:
-    """OpenAI-compatible fields understood by Strata/Qwen's chat template."""
+    """Strata/Qwen sampling plus an explicit finite thinking budget (issue #728).
+
+    The model can spend thousands of tokens repeating reasoning before
+    reaching content. Give it at most 60% of the output cap for thinking so
+    that useful answers and tool calls retain their own output allowance.
+    This mitigates, but cannot repair, quantization/model-specific loops.
+    """
     if not plan.active:
         return {}
-    return {"reasoning_effort": plan.reasoning_effort, "top_k": plan.top_k}
+    fields = {"reasoning_effort": plan.reasoning_effort, "top_k": plan.top_k}
+    if plan.reasoning_effort == "none":
+        # Card-recommended Qwen3.8 no-thinking penalty. This must be explicit
+        # because legacy Strata configs and clients can override defaults.
+        fields["presence_penalty"] = 1.5
+    else:
+        fields["reasoning_budget_tokens"] = max(
+            256, min(8192, int(plan.response_tokens * 0.60)))
+    return fields
 
 
 async def probe(settings: Any, *, endpoint: str | None = None, model: str | None = None) -> dict:
@@ -175,25 +189,65 @@ def _fallback_worthy(exc: BaseException) -> bool:
 
 
 class _FallbackStream:
-    """Switch to the resident brain only if Strata fails before its first chunk."""
+    """Stream Strata with no-replay fallback and bounded repetition detection."""
 
-    def __init__(self, primary, start_fallback: Callable[[], Any], fail: Callable[[BaseException], None]):
+    def __init__(self, primary, start_fallback: Callable[[], Any],
+                 fail: Callable[[BaseException], None], *,
+                 loop_guard: bool = True,
+                 on_loop: Callable[[BaseException], None] | None = None):
+        from .strata_loop_guard import StrataRepetitionGuard
         self._stream = primary.__aiter__() if hasattr(primary, "__aiter__") else primary
         self._start_fallback = start_fallback
         self._fail = fail
         self._seen = False
         self._using_fallback = False
+        self._guard = StrataRepetitionGuard() if loop_guard else None
+        self._on_loop = on_loop
+
+    def __aiter__(self):
+        return self
+
+    def _inspect(self, item) -> None:
+        """Only user text and reasoning, never tool-call arguments, are inspected."""
+        if self._guard is None or self._using_fallback:
+            return
+        choices = getattr(item, "choices", None)
+        if not choices:
+            return
+        delta = getattr(choices[0], "delta", None)
+        if delta is None:
+            return
+        for key, section in (("reasoning_content", "reasoning"),
+                             ("content", "answer")):
+            value = getattr(delta, key, None)
+            if isinstance(value, str) and value:
+                self._guard.feed(section, value)
 
     def __aiter__(self):
         return self
 
     async def __anext__(self):
+        from .strata_loop_guard import StrataRepetitionError
         while True:
             try:
                 item = await self._stream.__anext__()
                 self._seen = True
+                self._inspect(item)
                 return item
             except StopAsyncIteration:
+                raise
+            except StrataRepetitionError as exc:
+                if self._on_loop is not None:
+                    try:
+                        self._on_loop(exc)
+                    except Exception:
+                        pass
+                close = getattr(self._stream, "aclose", None)
+                if callable(close):
+                    try:
+                        await close()
+                    except Exception:
+                        pass
                 raise
             except Exception as exc:
                 if self._seen or self._using_fallback or not _fallback_worthy(exc):
@@ -222,10 +276,28 @@ class BackgroundClient:
 
     async def create(self, **kwargs):
         options = dict(kwargs)
+        # Internal helper calls can originate with a legacy greedy temperature
+        # of 0, a known contributor to Qwen3.8 repetition in Strata #728.
+        if options.get("temperature") in (None, 0, 0.0):
+            options["temperature"] = 1.0
         options.setdefault("temperature", 1.0)
         options.setdefault("top_p", 0.95)
-        if "extra_body" not in options:
-            options["extra_body"] = {"reasoning_effort": "low", "top_k": 20}
+        extra = options.get("extra_body")
+        if extra is None:
+            extra = {}
+        if isinstance(extra, dict):
+            extra = dict(extra)
+            extra.setdefault("reasoning_effort", "low")
+            extra.setdefault("top_k", 20)
+            effort = extra["reasoning_effort"]
+            if effort == "none":
+                extra.setdefault("presence_penalty", 1.5)
+            else:
+                cap = options.get("max_tokens", 850)
+                tokens = cap if type(cap) is int and cap >= 128 else 850
+                extra.setdefault("reasoning_budget_tokens",
+                                 min(768, max(96, tokens // 2)))
+            options["extra_body"] = extra
         return await self._client.chat.completions.create(**options)
 
 
@@ -237,12 +309,16 @@ class RoutingClient:
     """
 
     def __init__(self, primary, fallback, *, strata_model: str, fallback_model: str,
-                 on_fallback: Callable[[BaseException], None] | None = None):
+                 on_fallback: Callable[[BaseException], None] | None = None,
+                 loop_guard: bool = True,
+                 on_loop: Callable[[BaseException], None] | None = None):
         self._primary = primary
         self._fallback = fallback
         self._strata_model = strata_model
         self._fallback_model = fallback_model
         self._on_fallback = on_fallback
+        self._on_loop = on_loop
+        self._loop_guard = loop_guard
         self._failed = False
         self.chat = self
         self.completions = self
@@ -268,6 +344,31 @@ class RoutingClient:
             except Exception:
                 pass
 
+    def _inspect_complete(self, result) -> None:
+        if not self._loop_guard:
+            return
+        from .strata_loop_guard import StrataRepetitionGuard, StrataRepetitionError
+        guard = StrataRepetitionGuard()
+        choices = getattr(result, "choices", None)
+        if not choices:
+            return
+        message = getattr(choices[0], "message", None)
+        if message is None:
+            return
+        try:
+            for key, section in (("reasoning_content", "reasoning"),
+                                 ("content", "answer")):
+                value = getattr(message, key, None)
+                if isinstance(value, str) and value:
+                    guard.feed(section, value)
+        except StrataRepetitionError as exc:
+            if self._on_loop is not None:
+                try:
+                    self._on_loop(exc)
+                except Exception:
+                    pass
+            raise
+
     async def create(self, **kwargs):
         if self._failed or str(kwargs.get("model", "")) != self._strata_model:
             return await self._fallback.chat.completions.create(**self._fallback_kwargs(kwargs))
@@ -284,5 +385,8 @@ class RoutingClient:
             return await fallback_call()
 
         if hasattr(result, "__aiter__"):
-            return _FallbackStream(result, fallback_call, self._mark_failed)
+            return _FallbackStream(
+                result, fallback_call, self._mark_failed,
+                loop_guard=self._loop_guard, on_loop=self._on_loop)
+        self._inspect_complete(result)
         return result
