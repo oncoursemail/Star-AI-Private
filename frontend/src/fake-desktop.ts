@@ -47,7 +47,7 @@ export function installFakeDesktop() {
   const handlers = new Map<string, (call: Call) => Reply | void>()
 
   const boot = () => ({
-    version: '1.0.0', project: 'STAR', projects: ['STAR'], active_chat: 'chat-1',
+    version: '2.0.0', project: 'STAR', projects: ['STAR'], active_chat: 'chat-1',
     chats: [{id: 'chat-1', title: 'Test chat', created: stamp(), updated: stamp()}],
     // Like the real host: every stored answer carries its row id, so it can be rated.
     messages: db.map((m, i) => ({...m, id: `saved-${i}`, ...(m.role === 'assistant' ? {mid: m.mid ?? i + 1} : {})})), retry,
