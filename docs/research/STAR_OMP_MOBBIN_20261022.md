@@ -429,6 +429,12 @@ pytest 9.1.1 and Ruff 0.17.2. The targeted tests cover 27 existing catalog tests
 67 new Mobbin tests and 82 new OMP tests. They are regression evidence for the
 candidate code, not a measurement of intelligence, design quality or latency.
 
+The repository's pinned Pyright 1.1.414 check was also run against a separate,
+empty Python 3.12 environment. Its existing baseline gate passed with **433
+known errors, none new**. An initial CI finding about narrowing the validated
+`mode` string to its literal type was fixed in the source. The baseline and
+type-checking configuration were not changed.
+
 The final PR description records commands actually run and their results. Live
 Mobbin authentication/entitlement, native Windows behavior, full OMP editing,
 model quality improvement and end-to-end speed gains remain unverified unless

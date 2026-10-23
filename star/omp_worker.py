@@ -163,7 +163,7 @@ def prepare_review(text: str, config: OmpReviewConfig, *, mode: str = "review") 
         raise ValueError("OMP review preparation is disabled")
     if not config.provider or not config.model:
         raise ValueError("An explicit provider and model are required")
-    if mode not in {"plan", "review"}:
+    if mode != "plan" and mode != "review":
         raise ValueError("mode must be plan or review")
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Supply non-empty text to review")
