@@ -95,6 +95,59 @@ Do not enable the STAR switch until Strata is installed and the model has enough
 local RAM/VRAM/disk for the chosen quant.  The fallback prevents a hard outage,
 but it does not make an undersized Strata configuration fast.
 
+## Strata issue #728: infinite reasoning/answer repetition
+
+STAR includes a **client-side stop guard** for the looping behavior reported in
+[Strata #728](https://github.com/Niko1221/Strata/issues/728).
+
+**The engine and client have different responsibilities.** In Strata engine
+0.1.40+, the engine can detect repeated whole passages and optionally recover.
+This is off by default. In 0.1.45+, newer Strata releases also improved the
+model-card sampling defaults and automatic room for answers. These are
+mitigations, not evidence that no model/quantization can ever loop.
+
+On the machine **running Strata**, open its `strata-<model>.json` config and
+add this top-level setting (not inside `args` or `sampling`):
+
+```json
+"reasoning_loop_recovery": "recover"
+```
+
+The complete object must remain valid JSON. Restart the Strata engine after
+changing the file. `"recover"` tries one continuation at reduced effort;
+`"stop"` terminates the repeating reply instead. Both can mistake deliberately
+repeated content for a loop. Compare quality before leaving recovery on for
+all tasks. Do not place the option in STAR's settings.json: it is a Strata
+server-side engine setting, not a chat request parameter.
+
+**STAR's own guard is enabled by default whenever Strata is selected** and
+can be turned off in Model Settings for tasks that intentionally need thousands
+of repeated lines. It examines reasoning and answer text, but not tool
+arguments. When a passage repeats excessively, STAR closes the stream, fails
+the current response, and **does not replay** tools or project edits. Its
+analytics store only the `reasoning`/`answer` section, never source text.
+
+STAR also sends explicit per-request safeguards:
+
+- Qwen thinking: temperature 1.0, top-p 0.95, top-k 20, plus a
+  `reasoning_budget_tokens` of at most 60% of the output allowance;
+- Qwen no-thinking: temperature 0.7, top-p 0.8, top-k 20,
+  presence penalty 1.5;
+- background summaries/subagents: replace legacy greedy temperature 0,
+  keep a small capped thinking budget and leave the rest for an answer.
+
+These are deliberate model sampling choices, not proof that a response is
+correct. The stream watchdog also covers no-thinking output (the original
+issue includes both varieties). In non-stream requests, client-side detection
+can only reject a completed repeated response; the server-side budget and
+recovery controls are needed to bound generation time.
+
+**Status on the owner's PC at implementation time:** Strata was not available
+on PATH and no Strata API answered at port 8082. The code and offline tests
+were applied to STAR, but Strata server recovery cannot be enabled on a
+nonexistent/running-elsewhere engine. No model files were downloaded and the
+selected STAR brain was left untouched.
+
 ## Measuring whether it is actually better
 
 Token speed is not the promotion criterion.  Use STAR's existing benchmark and
