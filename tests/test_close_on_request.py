@@ -55,7 +55,7 @@ def test_real_close_cleans_children_before_watchdog(
     now = [0.0]
     cancellation = threading.Event()
     bridge = SimpleNamespace(
-        _closing=False, cancel_chat=cancellation,
+        _closing=False, cancel_chat=cancellation, bulk_lock=threading.RLock(), bulk_tasks=None,
         turn=shell_module.TurnRef('default', chat_id, user_id) if running else None,
     )
     record_failure = shell_module.record_turn_failure
