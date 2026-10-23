@@ -25,7 +25,7 @@ I inspected current `star/next` routing, memory, code navigation, cache banks an
 ### Resource observation at time of inspection
 
 - Brain server `starai`: 125 GiB RAM, about 59 GiB available, 8 GiB swap with ~3.3 GiB used; **15 GB disk available (93% filesystem usage)**; load average around 21. These are snapshots, not service-level trend measurements.
-- Smaller server `alexbuz1`: 15 GiB RAM, ~2.2 GiB available, 4 GiB swap nearly fully used; running additional resident models may cause major swapping.
+- Smaller server (server 2): 15 GiB RAM, ~2.2 GiB available, 4 GiB swap nearly fully used; running additional resident models may cause major swapping.
 - Main Windows PC: 61 GB reported free on C:, and user-described NVIDIA RTX 3060 Ti with 8 GB VRAM; test actual GPU free memory during work before admitting heavy voice/image/video jobs.
 
 These constraints argue against a "spawn every agent" configuration, speculative GPU offloads without capacity checks, and multiple concurrent heavy image/voice jobs.
