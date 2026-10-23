@@ -31,7 +31,7 @@ Fields:
   When overlays exist, the "prompt" must describe the picture WITHOUT the text and say which area stays plain and empty
   (for example "the top band is an empty dark sky"). Game screenshots: draw the scene, put scores and labels in overlays.
 "checks": exactly 3 short yes/no questions a careful viewer can answer from the picture alone (subject, key objects, setting,
-  style). No questions about text.
+  style). No questions about text or about empty or plain areas.
 Keep every fact the owner stated. Do not add people or animals they did not ask for. No explanations."""
 
 _CACHE: OrderedDict[str, 'Plan'] = OrderedDict()

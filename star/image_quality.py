@@ -24,7 +24,7 @@ from .comfy import ENGINES, ComfyClient, klein_text_to_image, zimage_text_to_ima
 from .image_gen import DEFAULT_SIZE, SIZES, _png, _save
 from .pil_safe import Image
 
-DEFAULT_ENGINE = 'klein'           # the benchmark winner (docs/agents/image-quality-20261023.md)
+DEFAULT_ENGINE = 'zimage'          # A/B winner on exact text and the pictures themselves, 5-6x slower (docs/agents/image-quality-20261023.md)
 JUDGE_SIDE = 768                   # pictures are judged at this size (the vision server reads ~30 s per megapixel)
 MAX_DRAFTS = 5
 
@@ -63,7 +63,7 @@ def run_rounds(plan, *, drafts: int, seed: int, render, judge_one, cancel=lambda
     """Draw and judge. `render(prompt, seed) -> png bytes`; `judge_one(png, plan) -> Verdict`.
 
     Returns (items, best index, rounds) where items are dicts {png, seed, verdict}. At most two rounds: the second
-    only when no draft of the first passed, with new seeds and the judge's complaints in the prompt.
+    only when no draft of the first passed, with new seeds and the judge's complaints in the prompt, and with half as many drafts (the time is the cost).
     """
     items: list[dict] = []
     judge_dead = False
@@ -71,7 +71,7 @@ def run_rounds(plan, *, drafts: int, seed: int, render, judge_one, cancel=lambda
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         for round_no in (0, 1):
             pending = []
-            for index in range(drafts):
+            for index in range(drafts if round_no == 0 else max(1, -(-drafts // 2))):   # the repair round is half as big
                 if cancel():
                     raise RuntimeError('STAR image generation cancelled by user')
                 draft_seed = (seed + round_no * 7919 + index) % 2 ** 48

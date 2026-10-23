@@ -74,7 +74,7 @@ def test_rewrite_caches_per_request():
 
 def test_repaired_prompt_adds_the_judges_complaints():
     plan = image_prompt.parse_plan('cow', GOOD_PLAN)
-    fixed = image_prompt.repaired(plan, ['cow: exactly 4 legs each, not 5', 'cow: exactly 4 legs, not 5'])
+    fixed = image_prompt.repaired(plan, ['cow: exactly 4 legs each, not 5', 'cow: exactly 4 legs each, not 5'])
     assert fixed.prompt.count('exactly 4 legs') == 1 and fixed.prompt.startswith(plan.prompt)
 
 
@@ -109,6 +109,8 @@ def test_people_fingers_arms_and_limb_attachment():
 def test_numbers_can_be_strings_or_null_and_unknown_kinds_are_not_guessed():
     assert image_judge.check_anatomy([{'kind': 'cow', 'visible_legs': '4', 'heads': None}]) == ([], [])
     assert image_judge.check_anatomy([{'kind': 'blob', 'visible_legs': 12}]) == ([], [])
+    assert image_judge.kind_of('player ship') == '' and image_judge.kind_of('Holstein cows') == 'quadruped'
+    assert image_judge.check_anatomy([{'kind': 'player_ship', 'limbs_attach_naturally': False}])[0] == []
 
 
 def test_parse_blind_and_answers():
@@ -167,6 +169,11 @@ def test_blank_picture_fails_without_a_vision_call(tmp_path):
     assert verdict.blank and not verdict.passed and not ask.seen
 
 
+def test_two_of_three_checks_passes():
+    assert image_judge.Verdict(checks_yes=2, checks_total=3).passed
+    assert not image_judge.Verdict(checks_yes=1, checks_total=3).passed
+
+
 def test_pick_prefers_passing_then_score():
     low = image_judge.Verdict(score=0.2)
     fail = image_judge.Verdict(anatomy_ok=False, issues=['x'], score=0.9)
@@ -192,6 +199,15 @@ def test_overlay_draws_text_where_asked_and_nowhere_else():
     assert changed
     assert max(x for x, _ in changed) < 640 * 0.5 and max(y for _, y in changed) < 360 * 0.25      # top-left only
     assert image_post.draw_overlays(base, []) is base
+
+
+def test_two_overlays_of_one_style_share_one_size():
+    base = png(color=(10, 10, 40), size=(800, 450), noisy=False)
+    out = image_post.draw_overlays(base, [image_prompt.Overlay('SCORE 0420 PLUS', 'top-left', 'pixel'),
+                                          image_prompt.Overlay('3', 'top-right', 'pixel')])
+    after = Image.open(io.BytesIO(out)).convert('RGB')
+    right = [(x, y) for x in range(400, 800) for y in range(0, 225) if after.getpixel((x, y)) != (10, 10, 40)]
+    assert right and (max(y for _, y in right) - min(y for _, y in right)) < 450 * 0.16     # a lone "3" is not blown up
 
 
 def test_overlay_text_fits_the_picture_even_when_long():
@@ -224,21 +240,21 @@ def test_run_rounds_does_one_repair_round_with_new_seeds_and_the_complaints():
 
     def judge_one(png_, plan):
         prompts.append(plan.prompt)
-        ok = len(prompts) > 3 and png_.endswith(b'7931')
+        ok = len(prompts) > 3 and png_.endswith(b'7930')
         return image_judge.Verdict() if ok else image_judge.Verdict(anatomy_ok=False, issues=['cow: exactly 4 legs each, not 5'])
 
     items, best, rounds = image_quality.run_rounds(
         plan_of(), drafts=3, seed=10, render=lambda prompt, seed: b'png%d' % seed, judge_one=judge_one)
-    assert rounds == 2 and len(items) == 6
+    assert rounds == 2 and len(items) == 5          # 3 drafts, then a repair round of half the size (2)
     assert all('exactly 4 legs' not in p for p in prompts[:3]) and all('exactly 4 legs' in p for p in prompts[3:])
-    assert items[best]['round'] == 1 and items[best]['seed'] == 10 + 7919 + 2
+    assert items[best]['round'] == 1 and items[best]['seed'] == 10 + 7919 + 1
 
 
 def test_run_rounds_never_does_a_third_round_and_keeps_the_best_of_a_bad_lot():
     items, best, rounds = image_quality.run_rounds(
         plan_of(), drafts=2, seed=1, render=lambda prompt, seed: b'x',
         judge_one=lambda png_, plan: image_judge.Verdict(anatomy_ok=False, issues=['i'], score=0.05))
-    assert rounds == 2 and len(items) == 4 and not items[best]['verdict'].passed
+    assert rounds == 2 and len(items) == 3 and not items[best]['verdict'].passed
 
 
 def test_dead_judge_stops_judging_and_keeps_the_first_draft():
@@ -347,3 +363,11 @@ def test_chat_entry_uses_the_careful_pipeline_by_default_and_not_for_edits(tmp_p
     chat_images.generate_chat_image(Settings(project='T', image_quality=False), 'a cat', tmp_path)
     chat_images.generate_chat_image(Settings(project='T'), 'make it blue', tmp_path, source=tmp_path / 'x.png')
     assert seen == [('best', 'wide'), ('single', 'square'), ('single', 'square')]
+
+
+def test_careful_pipeline_result_must_be_on_disk_too(tmp_path, monkeypatch):
+    from star import chat_images
+    monkeypatch.setattr(image_quality, 'generate_best', lambda *a, **k: {
+        'answer': 'x', 'image': 'data:', 'message': chat_images.PREFIX + 'star-20260101-000000-00001.png'})
+    with pytest.raises(RuntimeError, match='not in the STAR data folder'):
+        chat_images.generate_chat_image(Settings(project='T'), 'a cow', tmp_path)

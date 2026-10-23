@@ -54,7 +54,7 @@ class Verdict:
     @property
     def passed(self) -> bool:
         return (self.judged and self.anatomy_ok and not self.blank
-                and (self.checks_total == 0 or self.checks_yes / self.checks_total >= 0.67))
+                and (self.checks_total == 0 or self.checks_yes * 3 >= self.checks_total * 2))
 
     def brief(self) -> str:
         if not self.judged:
@@ -83,11 +83,17 @@ def _number(value):
 
 
 def kind_of(name: str) -> str:
-    """The species class of a name the judge gave ('Holstein cows' -> 'quadruped'), or ''."""
-    for word in re.findall(r'[a-z]+', str(name).lower()):
-        for form in (word, word[:-1] if word.endswith('s') else word, word[:-2] if word.endswith('es') else word):
-            if form in _KIND:
-                return _KIND[form]
+    """The species class of a name the judge gave ('Holstein cows' -> 'quadruped'), or ''.
+
+    Only the last word counts (the head noun): "player ship" is a ship, not a player.
+    """
+    words = re.findall(r'[a-z]+', str(name).lower())
+    if not words:
+        return ''
+    word = words[-1]
+    for form in (word, word[:-1] if word.endswith('s') else word, word[:-2] if word.endswith('es') else word):
+        if form in _KIND:
+            return _KIND[form]
     return ''
 
 

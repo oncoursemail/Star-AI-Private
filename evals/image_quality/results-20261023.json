@@ -1,6 +1,582 @@
 {
  "rows": [
   {
+   "engine": "zimage",
+   "id": "cow",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 42.9,
+   "file": "zimage-cow-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "cow",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 30.3,
+   "file": "zimage-cow-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "horse",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 46.2,
+   "file": "zimage-horse-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "horse",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 37.8,
+   "file": "zimage-horse-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "dogcat",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 42.0,
+   "file": "zimage-dogcat-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "dogcat",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 36.2,
+   "file": "zimage-dogcat-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "mug",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 41.8,
+   "file": "zimage-mug-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "mug",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 37.3,
+   "file": "zimage-mug-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "hands",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 42.6,
+   "file": "zimage-hands-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "hands",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 32.7,
+   "file": "zimage-hands-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "spider",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 37.2,
+   "file": "zimage-spider-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "spider",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 32.9,
+   "file": "zimage-spider-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "retro",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 36.3,
+   "file": "zimage-retro-1111.png",
+   "expected_text": [
+    "SCORE 0420",
+    "LIVES 3"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "SCORE",
+     "0420",
+     "LIVES",
+     "3"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "zimage",
+   "id": "retro",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 29.7,
+   "file": "zimage-retro-2222.png",
+   "expected_text": [
+    "SCORE 0420",
+    "LIVES 3"
+   ],
+   "judge": {
+    "anatomy_ok": false,
+    "issues": [
+     "each player_ship needs limbs that attach naturally to the body"
+    ],
+    "soft": [
+     "invader: limbs may not attach naturally"
+    ],
+    "text_read": [
+     "SCORE",
+     "0420",
+     "LIVES",
+     "3"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.1,
+    "passed": false
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "zimage",
+   "id": "open",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 41.3,
+   "file": "zimage-open-1111.png",
+   "expected_text": [
+    "OPEN 24 HOURS"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "OPEN",
+     "24",
+     "HOURS"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "zimage",
+   "id": "open",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 41.3,
+   "file": "zimage-open-2222.png",
+   "expected_text": [
+    "OPEN 24 HOURS"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "OPEN",
+     "24",
+     "HOURS"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "zimage",
+   "id": "book",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 41.1,
+   "file": "zimage-book-1111.png",
+   "expected_text": [
+    "THE LAST LIGHTHOUSE"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "THE LAST LIGHTHOUSE"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "zimage",
+   "id": "book",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 38.3,
+   "file": "zimage-book-2222.png",
+   "expected_text": [
+    "THE LAST LIGHTHOUSE"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "THE LAST LIGHTHOUSE"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "zimage",
+   "id": "neon",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 46.8,
+   "file": "zimage-neon-1111.png",
+   "expected_text": [
+    "PIZZA"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "PIZZA"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "zimage",
+   "id": "neon",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 32.4,
+   "file": "zimage-neon-2222.png",
+   "expected_text": [
+    "PIZZA"
+   ],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "PIZZA"
+    ],
+    "checks_yes": 0,
+    "checks_total": 0,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": 1.0
+  },
+  {
+   "engine": "zimage",
+   "id": "interior",
+   "category": "scene",
+   "seed": 1111,
+   "seconds": 44.5,
+   "file": "zimage-interior-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "interior",
+   "category": "scene",
+   "seed": 2222,
+   "seconds": 34.3,
+   "file": "zimage-interior-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "food",
+   "category": "scene",
+   "seed": 1111,
+   "seconds": 39.3,
+   "file": "zimage-food-1111.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
+   "engine": "zimage",
+   "id": "food",
+   "category": "scene",
+   "seed": 2222,
+   "seconds": 37.3,
+   "file": "zimage-food-2222.png",
+   "expected_text": [],
+   "judge": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true
+   },
+   "text_exact": null
+  },
+  {
    "engine": "klein",
    "id": "cow",
    "category": "anatomy",
@@ -185,18 +761,16 @@
    "file": "klein-hands-1111.png",
    "expected_text": [],
    "judge": {
-    "anatomy_ok": false,
-    "issues": [
-     "human: 1-1 heads, saw 0"
-    ],
+    "anatomy_ok": true,
+    "issues": [],
     "soft": [],
     "text_read": [],
-    "checks_yes": 0,
-    "checks_total": 0,
+    "checks_yes": 3,
+    "checks_total": 3,
     "blank": false,
     "judged": true,
-    "score": 0.1,
-    "passed": false
+    "score": 0.9,
+    "passed": true
    },
    "text_exact": null
   },
@@ -209,18 +783,16 @@
    "file": "klein-hands-2222.png",
    "expected_text": [],
    "judge": {
-    "anatomy_ok": false,
-    "issues": [
-     "human: 1-1 heads, saw 0"
-    ],
+    "anatomy_ok": true,
+    "issues": [],
     "soft": [],
     "text_read": [],
-    "checks_yes": 0,
-    "checks_total": 0,
+    "checks_yes": 3,
+    "checks_total": 3,
     "blank": false,
     "judged": true,
-    "score": 0.1,
-    "passed": false
+    "score": 0.9,
+    "passed": true
    },
    "text_exact": null
   },
@@ -280,13 +852,13 @@
     "LIVES 3"
    ],
    "judge": {
-    "anatomy_ok": false,
-    "issues": [
-     "each invader needs limbs that attach naturally to the body",
-     "each invader has one head",
-     "each spaceship needs limbs that attach naturally to the body"
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [
+     "alien: limbs may not attach naturally",
+     "spaceship: limbs may not attach naturally",
+     "judge noted: aliens are pixelated sprites with no visible limbs; some appear to have fused or missing lower bodie"
     ],
-    "soft": [],
     "text_read": [
      "SCORE",
      "0420",
@@ -296,8 +868,8 @@
     "checks_total": 0,
     "blank": false,
     "judged": true,
-    "score": 0.0,
-    "passed": false
+    "score": 0.75,
+    "passed": true
    },
    "text_exact": 0.5
   },
@@ -313,11 +885,8 @@
     "LIVES 3"
    ],
    "judge": {
-    "anatomy_ok": false,
-    "issues": [
-     "each green alien has one head",
-     "each orange alien has one head"
-    ],
+    "anatomy_ok": true,
+    "issues": [],
     "soft": [],
     "text_read": [
      "SCORE",
@@ -328,8 +897,8 @@
     "checks_total": 0,
     "blank": false,
     "judged": true,
-    "score": 0.05,
-    "passed": false
+    "score": 0.9,
+    "passed": true
    },
    "text_exact": 1.0
   },
@@ -373,10 +942,8 @@
     "OPEN 24 HOURS"
    ],
    "judge": {
-    "anatomy_ok": false,
-    "issues": [
-     "person: exactly 1 heads, not 2"
-    ],
+    "anatomy_ok": true,
+    "issues": [],
     "soft": [],
     "text_read": [
      "OPEN 24 HOURS"
@@ -385,8 +952,8 @@
     "checks_total": 0,
     "blank": false,
     "judged": true,
-    "score": 0.1,
-    "passed": false
+    "score": 0.9,
+    "passed": true
    },
    "text_exact": 1.0
   },
@@ -431,10 +998,7 @@
     "issues": [],
     "soft": [],
     "text_read": [
-     "THE LAST",
-     "LIGHTHOUSE",
-     "THE LAST",
-     "LIGHTHOUSE"
+     "THE LAST LIGHTHOUSE"
     ],
     "checks_yes": 0,
     "checks_total": 0,
@@ -587,7 +1151,8 @@
   }
  ],
  "warmup": {
-  "klein": 8.1
+  "klein": 8.1,
+  "zimage": 58.9
  },
  "prompts": {
   "cow": {

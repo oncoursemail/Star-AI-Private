@@ -151,7 +151,7 @@ export function MediaPlaces({settings,invoke,disabled=false,refresh}:{settings:A
            <option value="1">1 (fastest)</option><option value="2">2</option><option value="3">3 (default)</option><option value="4">4</option><option value="5">5 (slowest)</option></select></label>
        <label className="media-field">Picture model
          <select value={settings.image_engine??'auto'} disabled={disabled} onChange={event=>void save({image_engine:event.target.value as 'auto'|'klein'|'zimage'})}>
-           <option value="auto">Automatic (the better one that is installed)</option><option value="klein">FLUX.2 klein 4B (fast)</option><option value="zimage">Z-Image Turbo</option></select></label>
+           <option value="auto">Automatic (Z-Image Turbo when installed, else klein)</option><option value="klein">FLUX.2 klein 4B (about 6x faster)</option><option value="zimage">Z-Image Turbo</option></select></label>
      </div>
    </div>}
    {notice&&<p className="learn-notice" role="status">{notice}</p>}

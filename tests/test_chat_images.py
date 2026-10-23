@@ -55,4 +55,4 @@ def test_a_picture_that_is_not_on_disk_is_never_added_to_the_chat(tmp_path, monk
     monkeypatch.setattr(image_gen, 'generate', lambda *a, **k: fake)
     import pytest
     with pytest.raises(RuntimeError, match='not in the STAR data folder'):
-        chat_images.generate_chat_image(Settings(project='Test'), 'a cow', tmp_path)
+        chat_images.generate_chat_image(Settings(project='Test', image_quality=False), 'a cow', tmp_path)

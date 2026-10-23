@@ -59,16 +59,20 @@ def draw_overlays(picture: bytes, overlays: tuple[Overlay, ...] | list[Overlay])
     width, height = canvas.size
     layer = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
+    # Fit each text to its own box, then give every text of one style the smallest size, so SCORE and LIVES match.
+    fitted = []
     for item in overlays:
         max_w = int(width * (0.88 if item.where in ('top', 'center', 'bottom') else 0.44))
         max_h = int(height * (0.16 if item.style != 'plain' else 0.10))
-        font = _fit(draw, item.text, item.style, max_w, max_h)
+        fitted.append(_fit(draw, item.text, item.style, max_w, max_h).size)
+    smallest = {style: min(size for item, size in zip(overlays, fitted) if item.style == style)
+                for style in {item.style for item in overlays}}
+    for item in overlays:
+        font = _font(item.style, smallest[item.style])
         box = draw.textbbox((0, 0), item.text, font=font)
         x, y = anchor(item.where, width, height, box)
-        size = getattr(font, 'size', 16)
-        stroke = max(2, size // 14)
-        light = item.style == 'pixel'
-        fill = (255, 255, 255, 255) if not light else (255, 238, 120, 255)
+        stroke = max(2, font.size // 14)
+        fill = (255, 238, 120, 255) if item.style == 'pixel' else (255, 255, 255, 255)
         draw.text((x + stroke, y + stroke), item.text, font=font, fill=(0, 0, 0, 150))
         draw.text((x, y), item.text, font=font, fill=fill, stroke_width=stroke, stroke_fill=(0, 0, 0, 255))
     out = io.BytesIO()

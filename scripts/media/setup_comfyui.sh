@@ -26,6 +26,10 @@ MODELS=(
 "black-forest-labs/FLUX.2-klein-4b-fp8|5b4408e59397a4a37ccb46afe426d8ed86379441|flux-2-klein-4b-fp8.safetensors|diffusion_models|4070624520|97ed34fe0567e436200f2faee3939b88f2b5d99f8af2a4dc16532c4245c0ccb6"
 "Comfy-Org/vae-text-encorder-for-flux-klein-4b|5f526678002e43af5551dadb73ce2e8c91b43afe|split_files/text_encoders/qwen_3_4b_fp4_flux2.safetensors|text_encoders|3848213998|3eab03a77adb0ee5304a4e677d5c10ac22f9049c1d7c894adca4f8bb39206ca8"
 "Comfy-Org/vae-text-encorder-for-flux-klein-4b|5f526678002e43af5551dadb73ce2e8c91b43afe|split_files/vae/flux2-vae.safetensors|vae|336211292|868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3"
+# Z-Image Turbo (Tongyi-MAI, Apache-2.0; Comfy-Org repack): STAR's default picture model when installed (star/comfy.py ZIMAGE_FILES)
+"Comfy-Org/z_image_turbo|6fc90a3b1b653e935a0d175e260736de25b84df5|split_files/diffusion_models/z_image_turbo_bf16.safetensors|diffusion_models|12309866400|2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6"
+"Comfy-Org/z_image_turbo|6fc90a3b1b653e935a0d175e260736de25b84df5|split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors|text_encoders|3479416193|7ca32dcf07dfe7692945d80fff86e3a74cb83c6206b9b223ac6836b939bb85d6"
+"Comfy-Org/z_image_turbo|6fc90a3b1b653e935a0d175e260736de25b84df5|split_files/vae/ae.safetensors|vae|335304388|afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
 )
 
 install_code() {
