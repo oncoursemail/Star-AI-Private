@@ -37,7 +37,7 @@ from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
 from . import edit_format
-from . import studio_loop, studio_tool_examples, verify_ladder
+from . import studio_loop, studio_tool_examples, thinking_budget, verify_ladder
 from . import project_rules
 from . import gpu_helper
 from .studio_connections import default_target, validate_target
@@ -192,6 +192,9 @@ class Settings:
     # the request's to the turn; 'fix' also lets the check-fix loop apply its validated self-written rewrite rules
     # (no model call) before any model fix; 'off' does neither. Rules stay off until the owner sets 'fix'.
     mistake_memory: str = 'retrieve'
+    # Thinking budget (star/thinking_budget.py): 'auto' picks no thinking for easy turns and a small to large budget for hard
+    # ones (and a growing one for check-fix rounds) on llama.cpp brains; 'off' never turns thinking on; 'always' = large.
+    thinking_budget: str = 'off'
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
     # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
     api_hints_enabled: bool = False
@@ -280,6 +283,8 @@ class Settings:
             raise ValueError('Best-of-N must be off or auto, with 2 to 8 candidates')
         if self.mistake_memory not in ('off', 'retrieve', 'fix'):
             raise ValueError('Mistake memory must be off, retrieve or fix')
+        if self.thinking_budget not in ('auto', 'off', 'always'):
+            raise ValueError('Thinking budget must be auto, off or always')
         if self.slop_check not in ('off', 'flag', 'trim', 'repair'):
             raise ValueError('Slop check must be off, flag, trim or repair')
         if (self.verify_ladder not in ('off', 'on') or type(self.verify_rounds) is not int
@@ -1636,8 +1641,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     # ordinary local/LAN llama.cpp keeps STAR's prompt-cache fields.
                     if strata_plan.active:
                         return lambda tools: strata_backend.request_extras(strata_plan)
-                    return lambda tools: llama_request_fields(
-                        model_settings, conversation=memory_scope, tools=tools, model=model)
+                    think = thinking_budget.plan_turn(
+                        settings.thinking_budget, prompt, profile=route.profile, quick=quick
+                    ) if provider_kind(model_settings) == 'lan' else thinking_budget.Plan()
+                    if think.active:
+                        audited_event({'event': 'thinking_budget', 'level': think.level, 'tokens': think.tokens,
+                                       'why': think.why})
+                    return lambda tools: thinking_budget.merge_fields(llama_request_fields(
+                        model_settings, conversation=memory_scope, tools=tools, model=model), think.tokens)
                 docs, turn_context_chars = await reference_sections(
                     settings, home, route, prompt, recent_users, turn_sections, mode=mode, quick=quick,
                     memory_limit=memory_limit, allowed_context_chars=allowed_context_chars,

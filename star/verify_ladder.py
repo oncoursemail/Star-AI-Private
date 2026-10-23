@@ -633,16 +633,27 @@ def default_runner():
     return _RUNNER[target]
 
 
-def model_tools(model_client, model: str, prompt: str, *, max_tokens: int = 1600):
-    """(write_tests, fix) callbacks on the turn's own model."""
+def model_tools(model_client, model: str, prompt: str, *, max_tokens: int = 1600, thinking: str = "off"):
+    """(write_tests, fix) callbacks on the turn's own model. `thinking` = the `thinking_budget` setting: with auto or
+    always, each fix call (a failed rung) thinks longer than the one before (star/thinking_budget.py), on a llama.cpp
+    brain whose helper client carries slot fields (providers.background_client); other clients are asked as before."""
     from .luau_run_repair import _write
+    from . import thinking_budget
+    from .providers import _PinnedClient
+    asked = [0]
 
     async def write_tests(code: str) -> str:
         return await _write(model_client, model, prompt, code)
 
     async def fix(code: str, failure: Rung, members: str) -> str:
+        asked[0] += 1
+        extra = {}
+        if isinstance(model_client, _PinnedClient):
+            budget = thinking_budget.rung_budget(asked[0], thinking)
+            if budget:
+                extra["thinking_tokens"] = budget
         response = await model_client.chat.completions.create(
-            model=model, temperature=0, max_tokens=min(max_tokens, len(code) // 3 + 400),
+            model=model, temperature=0, max_tokens=min(max_tokens, len(code) // 3 + 400), **extra,
             messages=[{"role": "system", "content": _FIX_SYSTEM},
                       {"role": "user", "content": fix_request(prompt, code, failure, members)}])
         return response.choices[0].message.content or ""
