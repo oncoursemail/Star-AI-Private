@@ -51,7 +51,7 @@ _CS_DECLARATION = re.compile(
 # every file on EVERY query; this is only a bounded in-process content cache.
 # Enabled only by STAR_CODE_SEARCH_CACHE=on until repeated on-device evaluation.
 _CACHE_BYTES_LIMIT = 24 * 1024 * 1024
-_CACHE_ENTRIES_LIMIT = 512
+_CACHE_ENTRIES_LIMIT = 3072
 _CACHE_FILE_LIMIT = 96_000
 _cache_lock = RLock()
 _cache: OrderedDict[str, tuple[tuple[int, ...], str, str, int, tuple | None]] = OrderedDict()
@@ -345,13 +345,21 @@ def search_workspace(workspace, query: str, mode: str = 'text') -> dict:
     scan = {'limited': False}
     folded_query = query.casefold()
     cache_on = os.environ.get('STAR_CODE_SEARCH_CACHE') == 'on'
+    # Cache only a scan prefix whose estimated full index can fit in memory.
+    # Full-project scans on projects larger than the budget must not churn
+    # through and evict every file every turn; remaining files are read fresh.
+    admitted_raw_bytes = 0
     # Text search reads every small UTF-8 file, whatever its type (C, Ruby, a Godot scene, a Makefile):
     # a list of known types would silently report "no match" for the rest. Symbols need a known language.
     extensions = SOURCE_TYPES if mode == 'symbols' else None
     for path, relative, info in _files(workspace, extensions, scan):
         scanned += 1
+        if info.st_size <= _CACHE_FILE_LIMIT:
+            admitted_raw_bytes += info.st_size
+        cache_file = (cache_on and scanned <= _CACHE_ENTRIES_LIMIT
+                      and admitted_raw_bytes <= _CACHE_BYTES_LIMIT // 6)
         try:
-            content, folded = _cached_source(path, info, enabled=cache_on)
+            content, folded = _cached_source(path, info, enabled=cache_file)
         except (OSError, UnicodeError):
             continue
         if '\x00' in content:
@@ -370,7 +378,7 @@ def search_workspace(workspace, query: str, mode: str = 'text') -> dict:
         else:
             if not any(word in folded or word in relative.casefold() for word in words):
                 continue
-            symbols = (_cached_py_symbols(path, info, content, enabled=cache_on)
+            symbols = (_cached_py_symbols(path, info, content, enabled=cache_file)
                        if path.suffix.lower() == '.py' else _other_symbols(content, path.suffix.lower()))
             for lineno, name, kind, signature in symbols:
                 score = _rank(query, words, relative, name, signature)
