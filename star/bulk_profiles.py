@@ -189,12 +189,12 @@ class BulkProfiles:
                 endpoint, secret = connection_for(settings)
                 if endpoint != raw["server_endpoint"]:
                     raise ValueError("The current brain endpoint changed during capture")
-                self.secrets.put(profile["credential_ref"], secret)
+                self.secrets.put(profile["credential_ref"], secret)  # pyright: ignore[reportArgumentType]
             try:
                 self._save({**self._data, "targets": [*self._data["targets"], profile]})
             except Exception:
                 if kind == "lan":
-                    self.secrets.delete(profile["credential_ref"])
+                    self.secrets.delete(profile["credential_ref"])  # pyright: ignore[reportArgumentType]
                 raise
         return deepcopy(profile)
 

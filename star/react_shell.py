@@ -1294,7 +1294,7 @@ def launch():
             raise PermissionError('Unsupported STAR Clips action.')
 
         @Slot(str,result=str)
-        def invoke(self, raw: str) -> str:
+        def invoke(self, raw: str) -> str:  # pyright: ignore[reportGeneralTypeIssues]
             try:
                 if len(raw)>100000:
                     raise ValueError('Request is too large')

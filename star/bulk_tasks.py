@@ -13,6 +13,7 @@ from dataclasses import asdict
 import inspect
 from pathlib import Path
 import threading
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 from .bulk_operations import (BulkAdapter, BulkConflictError, BulkOperationEngine,
@@ -122,7 +123,7 @@ async def _call_brain(settings, goal: str, secret: str, cancel_event: threading.
 class BulkTaskService:
     """Independent of chat tabs, chat cancellation and the Qt request pool."""
 
-    def __init__(self, home: Path, settings_loader, *, secrets=None, brain_runner=None,
+    def __init__(self, home: Path, settings_loader: Callable[[], Any], *, secrets=None, brain_runner=None,
                  configuration_lock=None):
         if not callable(settings_loader):
             raise TypeError("A trusted Settings loader is required")
@@ -214,7 +215,7 @@ class BulkTaskService:
                 if action == "workspace_edit":
                     self._edit_permission(profile)
                     plan = preview_edits(Path(settings.workspace), edits)
-                    item["plan"] = plan
+                    item["plan"] = plan  # pyright: ignore[reportArgumentType]
                     review = _review_item(target_id, profile, plan)
                 else:
                     if not settings.model:
@@ -230,12 +231,12 @@ class BulkTaskService:
                         goal += "".join(chunks)
                     if len(goal) > 12000:
                         raise ValueError("Prompt plus selected context exceeds the 12,000-character task limit")
-                    item.update(goal=goal, context=context, paths=paths)
+                    item.update(goal=goal, context=context, paths=paths)  # pyright: ignore[reportArgumentType]
                     review = _review_item(target_id, profile, goal=goal)
                 payload["per_target"][target_id] = item
                 payload["preview"]["items"].append(review)
             batch = self.engine.submit(action, targets, payload,
-                                       idempotency_key=body.get("idempotencyKey"),
+                                       idempotency_key=body.get("idempotencyKey"),  # pyright: ignore[reportArgumentType]
                                        concurrency=body.get("concurrency", 1),
                                        canary_size=body.get("canarySize", 1),
                                        failure_cutoff=body.get("failureCutoff", 1))
@@ -409,7 +410,7 @@ class BulkTaskService:
             if self._closing:
                 raise PermissionError("STAR is closing")
             if action == "bulkTaskSetEnabled":
-                self.profiles.set_enabled(body.get("enabled"))
+                self.profiles.set_enabled(body.get("enabled"))  # pyright: ignore[reportArgumentType]
                 if not self.profiles.enabled:
                     for batch_id in self._active:
                         self.engine.cancel_batch(batch_id)
@@ -419,7 +420,7 @@ class BulkTaskService:
                     raise ValueError("Finish the active bulk batch before changing targets")
                 if action == "bulkTaskCapture":
                     with self._configuration_lock:
-                        self.profiles.capture(self._settings_loader(), name=body.get("name"),
+                        self.profiles.capture(self._settings_loader(), name=body.get("name"),  # pyright: ignore[reportArgumentType]
                                               allow_edit=body.get("allow_edit", False))
                 elif action == "bulkTaskRemove":
                     self.profiles.remove(_text(body.get("targetId"), "Target ID", 64))

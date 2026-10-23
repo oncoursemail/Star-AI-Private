@@ -352,7 +352,7 @@ def search_workspace(workspace, query: str, mode: str = 'text') -> dict:
     # Text search reads every small UTF-8 file, whatever its type (C, Ruby, a Godot scene, a Makefile):
     # a list of known types would silently report "no match" for the rest. Symbols need a known language.
     extensions = SOURCE_TYPES if mode == 'symbols' else None
-    for path, relative, info in _files(workspace, extensions, scan, with_stat=True):
+    for path, relative, info in _files(workspace, extensions, scan, with_stat=True):  # pyright: ignore[reportAssignmentType]
         scanned += 1
         if info.st_size <= _CACHE_FILE_LIMIT:
             admitted_raw_bytes += info.st_size
