@@ -9,6 +9,7 @@ def test_react_native_bridge_commands_are_explicit():
     assert 'installBrain' in ALLOWED_ACTIONS
     assert 'discoverStudio' in ALLOWED_ACTIONS
     assert 'testStrata' in ALLOWED_ACTIONS
+    assert 'repairStrataConfig' in ALLOWED_ACTIONS
     assert 'run_arbitrary_shell' not in ALLOWED_ACTIONS
 
 def test_strata_settings_are_permitted_but_no_secret_or_remote_host_is_added():
