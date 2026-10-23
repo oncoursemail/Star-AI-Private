@@ -150,6 +150,22 @@ SESSION_CAPABILITIES = ('Session capabilities: Image creation is available throu
                         'Other features depend on the current setup.\n\n')
 
 
+def _repair_strata_config(host, active_task) -> dict:
+    """User-selected local JSON repair, independent of the oversized action router.
+
+    A model cannot supply this path: only the Qt file chooser supplies it.
+    """
+    if active_task:
+        raise RuntimeError('Finish the current chat before editing Strata settings')
+    selected, _ = QFileDialog.getOpenFileName(
+        host, 'Choose an installed Strata model config',
+        str(Path.home()), 'Strata model settings (strata-*.json)')
+    if not selected:
+        return {'configured': False, 'cancelled': True}
+    from .strata_config import enable_repeat_recovery
+    return enable_repeat_recovery(Path(selected))
+
+
 def prepare_desktop_update(bridge, request_id: str, home: Path) -> dict:
     """Stage an official verified Setup and record it before asking Qt to exit."""
     from .updates import ADMIN_PROMPT_NOTE, install_scope, stage_installer, get_latest, select_downloaded_installer
@@ -1516,18 +1532,7 @@ def launch():
                     def worker():return {'models':query_models(Settings.load(self.settings_file))}
                     self._run(rid,action,worker)
                 elif action=='repairStrataConfig':
-                    if self.active_task:
-                        raise RuntimeError('Finish the current chat before editing Strata settings')
-                    # The owner must choose the file via the native picker. No model,
-                    # web result, chat or JSON payload may provide the filesystem path.
-                    selected, _ = QFileDialog.getOpenFileName(
-                        self.host, 'Choose an installed Strata model config',
-                        str(Path.home()), 'Strata model settings (strata-*.json)')
-                    if not selected:
-                        return json.dumps({'ok': True, 'data': {'configured': False, 'cancelled': True}})
-                    from .strata_config import enable_repeat_recovery
-                    applied = enable_repeat_recovery(Path(selected))
-                    return json.dumps({'ok': True, 'data': applied})
+                    return json.dumps({'ok': True, 'data': _repair_strata_config(self.host, self.active_task)})
                 elif action=='testStrata':
                     if self.active_task:
                         raise RuntimeError('Finish the current chat before testing Strata')
