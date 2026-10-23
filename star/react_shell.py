@@ -124,6 +124,8 @@ WARM_UP_STOPPERS = frozenset({
 # server keys go straight to the OS keyring through saveProviderKey.
 PERMITTED_SETTINGS = frozenset({
     'endpoint','model','fast_model','reasoning_model','roblox_model','vision_model',
+    'strata_enabled','strata_endpoint','strata_model','strata_reasoning',
+    'strata_context_tokens','strata_timeout','strata_vision_enabled',
     'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled',
     'tool_workshop_enabled','specialists_enabled','specialist_parallelism','provider',
     'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','max_calls',
