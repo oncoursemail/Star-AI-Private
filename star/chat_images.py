@@ -73,7 +73,7 @@ def generate_chat_image(settings, prompt: str, home: Path, cancel_event=None, *,
         from .image_gen import generate as generate_built_in
         made = generate_built_in(settings, prompt, home, size=size, source=source, mask=mask,
                                  cancel_event=cancel_event)
-        return {"answer": made["answer"], "image": made["image"], "message": made["message"]}
+        return _on_disk(home, {"answer": made["answer"], "image": made["image"], "message": made["message"]})
     from . import media_places
     media_places.require(settings, "images", home)
     from .comfy import generate
@@ -84,8 +84,16 @@ def generate_chat_image(settings, prompt: str, home: Path, cancel_event=None, *,
     first = images[0]
     if not NAME.fullmatch(first.name):
         raise RuntimeError("Unexpected generated image filename")
-    return {"answer": "Image generated locally · original saved in STAR/generated-images",
-            "image": preview_image(first), "message": PREFIX + first.name}
+    return _on_disk(home, {"answer": "Image generated locally · original saved in STAR/generated-images",
+                           "image": preview_image(first), "message": PREFIX + first.name})
+
+
+def _on_disk(home: Path, result: dict) -> dict:
+    """Refuse to hand the chat a reference to a file that is not in the generated-images folder."""
+    name = result["message"][len(PREFIX):]
+    if not (home / "generated-images" / name).is_file():
+        raise RuntimeError("The picture was made but its file is not in the STAR data folder, so it was not added to the chat")
+    return result
 
 
 def latest_generated_path(home: Path, project: str, chat_id: str) -> Path | None:
