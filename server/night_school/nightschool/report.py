@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from .engine import scrub, utc
+from . import insights
 
 LIMIT = 4000
 
@@ -54,32 +55,55 @@ def build(state: dict, *, status: str = "") -> str:
         f"{c.get('lessons_held_back', 0)} | retired later: {c.get('lessons_retired', 0)}",
         f"paired gate inconclusive (below the noise floor, kept as candidate): {c.get('lessons_inconclusive', 0)}",
     ]
+    lines.extend(["", *insights.build(state), ""])
+    lesson_lines = []
     for lesson in sorted(by_status.get("active", []), key=lambda l: l.get("promoted", ""))[-6:]:
         proof = lesson.get("promotion", {})
-        lines.append(f"- active {lesson['id']}: {lesson['text'][:170]} (fixed {len(set(lesson['fixed']))} tasks; "
+        lesson_lines.append(f"- active {lesson['id']}: {lesson['text'][:170]} (fixed {len(set(lesson['fixed']))} tasks; "
                      f"validation {proof.get('validation_before', '?')} -> {proof.get('validation_with', '?')}"
                      + (f", p={proof['gate'].get('p_better')}" if isinstance(proof.get("gate"), dict) else ", old rule")
                      + ")")
     for lesson in sorted(by_status.get("candidate", []), key=lambda l: -len(l["fixed"]))[:4]:
-        lines.append(f"- candidate {lesson['id']}: {lesson['text'][:140]} (fixed {len(set(lesson['fixed']))})")
+        lesson_lines.append(f"- candidate {lesson['id']}: {lesson['text'][:140]} (fixed {len(set(lesson['fixed']))})")
     for lesson in by_status.get("retired", [])[-3:]:
-        lines.append(f"- retired {lesson['id']}: {lesson['text'][:110]} ({lesson.get('retirement', {}).get('validation_now', '?')})")
-    lines += ["", "## Validation slice over time (tasks never used to write lessons)"]
+        lesson_lines.append(f"- retired {lesson['id']}: {lesson['text'][:110]} ({lesson.get('retirement', {}).get('validation_now', '?')})")
+    validation_lines = []
     history = state.get("validation", [])
     if history:
         for row in history[-8:]:
-            lines.append(f"- {row['ts']}: {row['passed']}/{row['total']} with {len(row.get('active_lessons', []))} "
+            validation_lines.append(f"- {row['ts']}: {row['passed']}/{row['total']} with {len(row.get('active_lessons', []))} "
                          f"lesson(s) ({row.get('why', '')})")
     else:
-        lines.append("- not measured yet")
-    lines += ["", "## Most common failure causes (first failed check; one example each)"]
+        validation_lines.append("- not measured yet")
+    cause_lines = []
     causes = sorted(state.get("causes", {}).items(), key=lambda item: -item[1]["count"])[:10]
     if not causes:
-        lines.append("- none recorded yet")
+        cause_lines.append("- none recorded yet")
     for name, entry in causes:
-        lines.append(f"- {entry['count']}x {name}. Example {entry.get('example', '')[:150]}"
+        cause_lines.append(f"- {entry['count']}x {name}. Example {entry.get('example', '')[:150]}"
                      + (f" Model's own explanation: {entry['model_says'][:110]}" if entry.get("model_says") else ""))
-    text = scrub("\n".join(line for line in lines if line is not None)).strip() + "\n"
+    shortened = False
+
+    def render() -> str:
+        sections = (lines + lesson_lines
+                    + ["", "## Validation slice over time (tasks never used to write lessons)"] + validation_lines
+                    + ["", "## Most common failure causes (first failed check; one example each)"] + cause_lines)
+        if shortened:
+            sections.append("(detail shortened to fit 4000 characters)")
+        return scrub("\n".join(line for line in sections if line is not None)).strip() + "\n"
+
+    text = render()
+    # Trim optional detail before cutting diagnostics off. Retain an active lesson
+    # when present, the latest validation row and the leading failure example.
+    while len(text) > LIMIT and (len(lesson_lines) > 1 or len(validation_lines) > 1 or len(cause_lines) > 1):
+        if len(lesson_lines) > 1:
+            lesson_lines.pop()
+        elif len(validation_lines) > 1:
+            validation_lines.pop(0)
+        else:
+            cause_lines.pop()
+        shortened = True
+        text = render()
     if len(text) > LIMIT:
         text = text[:LIMIT - 30].rsplit("\n", 1)[0] + "\n(cut to 4000 characters)\n"
     return text
