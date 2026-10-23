@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-22",
+  "issue": "https://github.com/oncoursemail/Star-AI-Private/issues/551",
+  "method": "Layered vector parts drawn in code (frontend/src/companions/art.ts) in the chibi style of the existing designs; no AI generation for the rig. ComfyUI FLUX turnaround sheets were the first plan, but split sheets do not line up between views and frames, so the issue's fallback (layered vector art) was used.",
+  "parts": "Per character, front and side views: back hair mass, hair curtain (long hair), back strands, side locks, pigtails and bows (Star), crown with bangs, face, eye whites, irises, lashes (open/half/closed/happy/squeeze), brows, mouths (smile/open/wide/o/flat/kiss/frown/cat), blush, neck, torso, skirt, capelet (front and back), arms (upper+lower, weighted), hands (open/fist), legs (thigh+shin, weighted), boots, clip (Star star, Astra moon; Gemini none), glasses (Ember; study glasses for the others), cat and dog ears, cat and dog tails, study props (cushion, desk, book with page, laptop with glow, notebook, pencil), particles (heart, sparkle, twinkle, zzz, sweat, bang, question, note, dust, smoke).",
+  "portraits": {
+    "note": "Companion shelf portraits rendered from the rig (front view, idle) with scratchpad tool portrait.mjs; transparent PNG.",
+    "sha256": {
+      "ember.png": "4ab635b9b7d7a90353301a1386f42b48b164fa765e89c722554bac1049ede1b7",
+      "astra.png": "9d6245a7dfef4fafe6cff3463d47b76fd44a0b44cb2d538a9574cb5cedbf1eb2",
+      "gemini.png": "e1c42bdb5d9ffdbe8928e226254a7d7c98cc7c7f288ee10f70a79e87019f999f"
+    }
+  },
+  "removed": [
+    "astra-closed.png",
+    "ember-closed.png",
+    "gemini-closed.png",
+    "star-closed.png",
+    "astra-plain.png"
+  ]
+}
