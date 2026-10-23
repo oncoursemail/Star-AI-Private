@@ -1,31 +1,31 @@
 # STAR AI: Code Search Acceleration + Intelligence Research
 
 **Research / measured development:** October 22, 2026  
-**Branch:** \`feat/star-code-search-speed-20261022\` (private STAR repository)  
-**Status:** Tested isolated opt-in development change. NOT enabled in the public Windows installer, not merged into \`star/next\`, and not proof that model answers are 2x faster.
+**Branch:** `feat/star-code-search-speed-20261022` (private STAR repository)  
+**Status:** Tested isolated opt-in development change. NOT enabled in the public Windows installer, not merged into `star/next`, and not proof that model answers are 2x faster.
 
 ## Executive decision
 
 STAR does not primarily need another heavyweight model, more simultaneously running agent copies, or thousands of auto-loaded skill prompts. On the current hardware, prioritize (1) reducing repeated computation, (2) preserving llama.cpp prefix-cache locality, (3) dynamically assigning verification effort, and (4) improving task exploration and evidence collection. Each improvement must survive a realistic task-quality and latency gate, including contention with other models.
 
-I inspected current \`star/next\` routing, memory, code navigation, cache banks and resource planners, reviewed recent performance/oracle PRs, checked the connected machine resource summaries, and ran isolated local benchmarks on the STAR server. The implementation in this branch addresses one directly observed pure-Python bottleneck: repeated workspace source reads and Python AST parsing.
+I inspected current `star/next` routing, memory, code navigation, cache banks and resource planners, reviewed recent performance/oracle PRs, checked the connected machine resource summaries, and ran isolated local benchmarks on the STAR server. The implementation in this branch addresses one directly observed pure-Python bottleneck: repeated workspace source reads and Python AST parsing.
 
 ## Current STAR architecture: do not duplicate
 
-- \`star/brain_router.py\` routes requests deterministically without an extra classifier-model call. \`star/instant_route.py\` offers a conservative local-only fast path.
-- \`star/context_layout.py\` preserves byte-stable request prefixes, and \`star/turn_memory.py\` retains sticky tool ordering for prompt-cache locality.
-- \`star/cache_banks.py\` already has an opt-in, revision-pinned server-side stable-prefix KV snapshot mechanism; avoid untested alternative cache formats.
-- \`star/skill_routing.py\` already has keyword-first and embedding fallback selection with opt-in disk caching.
-- \`star/cascade_router.py\`, \`star/agent_resource_planner.py\` and \`star/skill_evolution_lab.py\` model routing, resource admission and bounded skill evolution.
-- \`star/code_navigation.py\` scans user-authorized workspaces and parses Python ASTs on each query. Its \`_files()\` helper is shared by \`star/repo_map.py\`.
+- `star/brain_router.py` routes requests deterministically without an extra classifier-model call. `star/instant_route.py` offers a conservative local-only fast path.
+- `star/context_layout.py` preserves byte-stable request prefixes, and `star/turn_memory.py` retains sticky tool ordering for prompt-cache locality.
+- `star/cache_banks.py` already has an opt-in, revision-pinned server-side stable-prefix KV snapshot mechanism; avoid untested alternative cache formats.
+- `star/skill_routing.py` already has keyword-first and embedding fallback selection with opt-in disk caching.
+- `star/cascade_router.py`, `star/agent_resource_planner.py` and `star/skill_evolution_lab.py` model routing, resource admission and bounded skill evolution.
+- `star/code_navigation.py` scans user-authorized workspaces and parses Python ASTs on each query. Its `_files()` helper is shared by `star/repo_map.py`.
 - Existing PR #545 measured hardware trials and did not switch the service: the reported speculative configuration improved single-stream generation by 3.9%, while CPU pinning lost 31%/55% under contention; the priority-proxy trial failed its user-latency rules and was reverted.
 - Existing PR #546's oracle does not yet predict observed pass-rate changes reliably (its L2 sign matched 5 of 9 past tests and Spearman was -0.07), so do not let it auto-select "improved" models.
 - Existing PR #554 explores mistake memory/fixers; treat verified task evidence and independent tests as a hard prerequisite for activating self-written repairs.
 
 ### Resource observation at time of inspection
 
-- Brain server \`starai\`: 125 GiB RAM, about 59 GiB available, 8 GiB swap with ~3.3 GiB used; **15 GB disk available (93% filesystem usage)**; load average around 21. These are snapshots, not service-level trend measurements.
-- Smaller server \`alexbuz1\`: 15 GiB RAM, ~2.2 GiB available, 4 GiB swap nearly fully used; running additional resident models may cause major swapping.
+- Brain server `starai`: 125 GiB RAM, about 59 GiB available, 8 GiB swap with ~3.3 GiB used; **15 GB disk available (93% filesystem usage)**; load average around 21. These are snapshots, not service-level trend measurements.
+- Smaller server `alexbuz1`: 15 GiB RAM, ~2.2 GiB available, 4 GiB swap nearly fully used; running additional resident models may cause major swapping.
 - Main Windows PC: 61 GB reported free on C:, and user-described NVIDIA RTX 3060 Ti with 8 GB VRAM; test actual GPU free memory during work before admitting heavy voice/image/video jobs.
 
 These constraints argue against a "spawn every agent" configuration, speculative GPU offloads without capacity checks, and multiple concurrent heavy image/voice jobs.
@@ -38,7 +38,7 @@ Google Research reports experiments over 180 configurations: multi-agent coordin
 
 ### Llama.cpp: cache and speculation are workload-dependent
 
-Current llama.cpp server documentation specifies \`--cache-prompt\`, \`--cache-reuse\`, slot management and model load modes. Its speculative decoding documentation includes draft-model, n-gram map and other approaches. These are promising only if the actual STAR model, history shape and simultaneous load benefit; a benchmark or blog claim on another GPU does not transfer.
+Current llama.cpp server documentation specifies `--cache-prompt`, `--cache-reuse`, slot management and model load modes. Its speculative decoding documentation includes draft-model, n-gram map and other approaches. These are promising only if the actual STAR model, history shape and simultaneous load benefit; a benchmark or blog claim on another GPU does not transfer.
 
 - https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md
 - https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md
@@ -80,17 +80,17 @@ An August 2026 study of indirect prompt injection found that some defenses reduc
 
 ### Mechanism
 
-\`star/code_navigation.py\` now supports \`STAR_CODE_SEARCH_CACHE=on\` to reuse text/casefold and parsed Python symbols from repeated scans. The cache is only in process RAM: no saved source content, no background indexing, no subprocess, no network, no changes to the workspace, and no additional model calls.
+`star/code_navigation.py` now supports `STAR_CODE_SEARCH_CACHE=on` to reuse text/casefold and parsed Python symbols from repeated scans. The cache is only in process RAM: no saved source content, no background indexing, no subprocess, no network, no changes to the workspace, and no additional model calls.
 
-- The original \`Workspace.resolve\` checks still run for **every** file and query; denied secrets, symlinks, generated directories and out-of-scope paths remain prohibited.
+- The original `Workspace.resolve` checks still run for **every** file and query; denied secrets, symlinks, generated directories and out-of-scope paths remain prohibited.
 - A file's cache key includes canonical path, device ID, inode, byte size, nanosecond mtime and ctime. Normal edits and atomic replacements invalidate the snapshot. This is **not an adversarial cryptographic integrity guarantee** against forged filesystem metadata.
 - Each cache has a 24 MiB estimated memory cap and at most 3,072 entries, with a 96 KB per-file size limit; raw-byte scan admission avoids thrashing on extremely large projects. The 24 MiB is a conservative estimated payload bound, not an exact Python heap limit.
-- \`_files(..., with_stat=False)\` preserves the shared historical two-tuple API for \`repo_map\`. Search itself requests the optional stat object, avoiding a second filesystem stat on cache hits.
+- `_files(..., with_stat=False)` preserves the shared historical two-tuple API for `repo_map`. Search itself requests the optional stat object, avoiding a second filesystem stat on cache hits.
 - Default remains **OFF** until full Windows tests, loaded-runtime validation and representative quality/performance evaluations. Normal behavior is byte-for-byte compatible when OFF.
 
 ### Measured timings
 
-Tests run on an isolated checkout snapshot on the connected \`starai\` server. The AI model and live inference services were not restarted or benchmarked. Synthetic files contain Python classes and methods; benchmarks run repeated searches with identical output assertions.
+Tests run on an isolated checkout snapshot on the connected `starai` server. The AI model and live inference services were not restarted or benchmarked. Synthetic files contain Python classes and methods; benchmarks run repeated searches with identical output assertions.
 
 | Workload | Cache OFF median | Cache ON warm median | Speedup |
 | --- | ---: | ---: | ---: |
@@ -107,14 +107,14 @@ The first implementation cached file text only and achieved about 1.058x in a 30
 
 - Focused new + existing code navigation tests: 22 passed.
 - Broader integration including repo map, workspace validation and protected paths: **86 passed**.
-- First broader run caught a breaking change to \`_files()\` used by \`repo_map.py\`; fixed by restoring the old default iterator contract, followed by the 86/86 pass.
-- Compilation via \`compileall\` succeeded. Tests are not proof of production performance, full suite compatibility or security review.
+- First broader run caught a breaking change to `_files()` used by `repo_map.py`; fixed by restoring the old default iterator contract, followed by the 86/86 pass.
+- Compilation via `compileall` succeeded. Tests are not proof of production performance, full suite compatibility or security review.
 
 Reproduce without touching production:
-\`\`\`bash
+```bash
 python -m benchmarks.code_search_cache --files 300 --repeats 10
 python -m benchmarks.code_search_cache --files 800 --repeats 10
-\`\`\`
+```
 
 ## Original next-stage ideas (proposals, not shipped features)
 
@@ -124,7 +124,7 @@ For each task, select the cheapest **independent verification** expected to elim
 
 ### 2. STAR Task Shape Compiler
 
-Convert an owner goal into a typed DAG: \`inspect -> modify -> build -> run -> compare -> report\`, marking each operation’s tool scope, input artifact, output artifact, verification proof and dependency. Sequential edits keep one worker; independent tasks can parallelize only when resource admission says they will not starve real-time chat. Reuse \`star/agent_resource_planner.py\` and \`star/agent_runtime.py\` rather than creating unbounded independent agents.
+Convert an owner goal into a typed DAG: `inspect -> modify -> build -> run -> compare -> report`, marking each operation’s tool scope, input artifact, output artifact, verification proof and dependency. Sequential edits keep one worker; independent tasks can parallelize only when resource admission says they will not starve real-time chat. Reuse `star/agent_resource_planner.py` and `star/agent_runtime.py` rather than creating unbounded independent agents.
 
 ### 3. STAR Symbol Graph with Change Journal
 
