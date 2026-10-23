@@ -133,3 +133,26 @@ def test_threads_agree_without_crossing_scopes(tmp_path, monkeypatch):
     assert outputs and all(row == outputs[0] for row in outputs)
     stats = code_navigation.source_cache_stats()
     assert 0 < stats['entries'] <= stats['max_entries']
+
+
+def test_python_symbols_parsed_only_once_until_source_changes(tmp_path, monkeypatch):
+    monkeypatch.setenv('STAR_CODE_SEARCH_CACHE', 'on')
+    source = tmp_path / 'fast.py'
+    source.write_text('def old_state():\n    return 1\n', encoding='utf-8')
+    original = code_navigation._py_symbols
+    calls = []
+
+    def checked(text):
+        calls.append(True)
+        return original(text)
+
+    monkeypatch.setattr(code_navigation, '_py_symbols', checked)
+    workspace = Workspace(tmp_path)
+    for _ in range(3):
+        assert workspace.call('workspace_search', {'query': 'old_state', 'mode': 'symbols'})['matches']
+    assert len(calls) == 1
+
+    source.write_text('def new_state():\n    return 2\n', encoding='utf-8')
+    assert workspace.call('workspace_search', {'query': 'new_state', 'mode': 'symbols'})['matches']
+    assert len(calls) == 2
+    assert workspace.call('workspace_search', {'query': 'old_state', 'mode': 'symbols'})['matches'] == []
