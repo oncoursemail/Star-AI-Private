@@ -59,7 +59,9 @@ def test_roblox_agent_get_more_reasoning_and_budget():
 def test_owner_can_reduce_reasoning_and_disable_vision():
     plan = choose(settings(strata_reasoning="none"), route("reasoning"), "explain", mode="auto")
     assert plan.reasoning_effort == "none" and plan.temperature == 0.7 and plan.top_p == 0.8
-    assert not choose(settings(strata_vision_enabled=False), route("research"), "inspect",
+    vision = choose(settings(), route("vision"), "inspect screenshot", mode="auto", image_count=1)
+    assert vision.active and vision.reasoning_effort == "medium" and vision.response_tokens >= 4096
+    assert not choose(settings(strata_vision_enabled=False), route("vision"), "inspect",
                       mode="auto", image_count=1).active
 
 
