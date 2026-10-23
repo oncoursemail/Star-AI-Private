@@ -22,6 +22,20 @@ def route(profile="reasoning", **changes):
     return SimpleNamespace(**base)
 
 
+def test_saved_settings_are_backward_compatible_and_validate_strata():
+    from star.desktop_core import Settings
+    cfg = Settings()
+    assert cfg.strata_enabled is False
+    assert cfg.strata_endpoint == "http://127.0.0.1:8082/v1"
+    cfg.strata_enabled = True
+    cfg.strata_reasoning = "high"
+    cfg.strata_context_tokens = 65536
+    cfg.validate()
+    cfg.strata_endpoint = "http://192.168.1.2:8080/v1"
+    with pytest.raises(ValueError, match="loopback"):
+        cfg.validate()
+
+
 def test_routes_complex_work_but_not_fast_or_simple_chat():
     plan = choose(settings(), route("reasoning"), "debug this", mode="auto")
     assert plan.active and plan.model == "strata"
