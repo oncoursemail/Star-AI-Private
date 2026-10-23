@@ -272,6 +272,7 @@ export function SettingsPage(props:SettingsPageProps) {
          <label>Request timeout (seconds)<input type="number" min="60" max="1800" step="30" value={draft.strata_timeout??900} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_timeout:Number(e.target.value)})}/></label>
        </div>
        <Switch label="Let Strata inspect images" hint="Use Qwen3.8's image input for complex visual/Roblox debugging when the Strata model supports it." checked={draft.strata_vision_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_vision_enabled:on})}/>
+       <Switch label="Stop runaway Strata repetition" hint="On by default when Strata is enabled. Detects repeated reasoning or answer passages (issue #728) and stops the request without replaying project tools. Does not modify Strata itself." checked={draft.strata_loop_guard_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_loop_guard_enabled:on})}/>
        <StrataProbe draft={draft} invoke={act} disabled={inactive||draft.strata_enabled!==true}/>
        <small>STAR never downloads or starts Strata automatically. Run Strata separately on this loopback endpoint; keeping it separate lets the small model stay fast for everyday chat.</small>
      </Panel>
