@@ -163,7 +163,8 @@ async def probe(settings: Any, *, endpoint: str | None = None, model: str | None
                 {"role": "user", "content": "Reply with the exact words: Strata is ready."},
             ],
             max_tokens=96, temperature=0.7, top_p=0.8,
-            extra_body={"reasoning_effort": "none", "top_k": 20},
+            extra_body={"reasoning_effort": "none", "top_k": 20,
+                        "presence_penalty": 1.5},
         )
     if not getattr(completion, "choices", None):
         raise RuntimeError("Strata returned no completion choices")
@@ -203,9 +204,6 @@ class _FallbackStream:
         self._using_fallback = False
         self._guard = StrataRepetitionGuard() if loop_guard else None
         self._on_loop = on_loop
-
-    def __aiter__(self):
-        return self
 
     def _inspect(self, item) -> None:
         """Only user text and reasoning, never tool-call arguments, are inspected."""
