@@ -126,6 +126,18 @@ describe('Unsaved changes', () => {
 })
 
 describe('Strata specialist settings', () => {
+  it('tests the Strata endpoint and model currently on screen', async () => {
+    desktop.onAction('testStrata', () => ({ok:true,data:{ok:true,model:'strata',sample:'Strata is ready.',elapsed_ms:12}}))
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Model'}))
+    await user.click(screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}))
+    await user.click(screen.getByRole('button', {name: 'Test Strata'}))
+    await waitFor(() => expect(desktop.sent('testStrata').length).toBe(1))
+    const call = desktop.sent('testStrata')[0]
+    expect(call.payload).toEqual({endpoint:'http://127.0.0.1:8082/v1',model:'strata'})
+    expect(await screen.findByText(/Strata is ready/)).toBeTruthy()
+  })
+
   it('keeps the second engine opt-in and saves its bounded local configuration', async () => {
     const user = await openSettings()
     await user.click(screen.getByRole('tab', {name: 'Model'}))
