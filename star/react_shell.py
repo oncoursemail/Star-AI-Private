@@ -65,7 +65,7 @@ from .roblox_cloud import (ROBLOX_ACTIONS, ROBLOX_NETWORK_ACTIONS, RobloxCloud,
 
 ALLOWED_ACTIONS = frozenset({
     'bootstrap','brainSnapshot','plannerStatus','switchProject','pickFiles','sendMessage','saveSettings',
-    'installBrain','startBrain','listModels','testModel','discoverStudio','selectStudio',
+    'installBrain','startBrain','listModels','testModel','testStrata','discoverStudio','selectStudio',
     'checkUpdates','installUpdate','transcribe','openDataFolder', 'copyText', 'openLegacy', 'selectFolder',
     'generateImage','saveProviderKey','clearProviderKey','cancelMessage','exportReviewBundle',
     'newChat','switchChat','testMcpConnection','runTeam','rememberDecision','listLearning',
@@ -115,7 +115,7 @@ ALLOWED_ACTIONS = ALLOWED_ACTIONS | {'gameLabCatalog'}
 # A background warm-up (server check + prompt-cache priming) gives way at once to
 # anything that talks to the model server or changes what it would talk to.
 WARM_UP_STOPPERS = frozenset({
-    'sendMessage','runTeam','generateImage','testServer','testModel','testModelTeam','listModels',
+    'sendMessage','runTeam','generateImage','testServer','testModel','testStrata','testModelTeam','listModels',
     'startModelRouter','stopBrain','startBrain','installBrain','saveSettings','switchProject',
     'saveProviderKey','clearProviderKey','newChat','switchChat','testBlender','deleteChat',
 })
@@ -1514,6 +1514,18 @@ def launch():
                     self._run(rid,action,lambda:probe_server(Settings.load(self.settings_file)))
                 elif action=='listModels':
                     def worker():return {'models':query_models(Settings.load(self.settings_file))}
+                    self._run(rid,action,worker)
+                elif action=='testStrata':
+                    if self.active_task:
+                        raise RuntimeError('Finish the current chat before testing Strata')
+                    def worker():
+                        import asyncio
+                        from .strata_backend import probe
+                        current=Settings.load(self.settings_file)
+                        return asyncio.run(probe(
+                            current,
+                            endpoint=str(body.get('endpoint') or current.strata_endpoint),
+                            model=str(body.get('model') or current.strata_model)))
                     self._run(rid,action,worker)
                 elif action=='testModel':
                     def worker():
