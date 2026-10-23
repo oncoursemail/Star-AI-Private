@@ -54,7 +54,7 @@ _CACHE_BYTES_LIMIT = 24 * 1024 * 1024
 _CACHE_ENTRIES_LIMIT = 512
 _CACHE_FILE_LIMIT = 96_000
 _cache_lock = RLock()
-_cache: OrderedDict[str, tuple[tuple[int, ...], str, str, int]] = OrderedDict()
+_cache: OrderedDict[str, tuple[tuple[int, ...], str, str, int, tuple | None]] = OrderedDict()
 _cache_bytes = 0
 
 
@@ -99,12 +99,53 @@ def _cached_source(path: Path, info, *, enabled: bool) -> tuple[str, str]:
         old = _cache.pop(key, None)
         if old is not None:
             _cache_bytes -= old[3]
-        _cache[key] = (signature, source, folded, cost)
+        _cache[key] = (signature, source, folded, cost, None)
         _cache_bytes += cost
         while _cache_bytes > _CACHE_BYTES_LIMIT or len(_cache) > _CACHE_ENTRIES_LIMIT:
             _, removed = _cache.popitem(last=False)
             _cache_bytes -= removed[3]
     return source, folded
+
+
+def _cached_py_symbols(path: Path, info, content: str, *, enabled: bool):
+    """Reuse parsed Python declarations only when the underlying source is unchanged.
+
+    Symbol entries share the same byte/entry LRU as source text. No on-disk
+    index or execution of project Python source is required.
+    """
+    global _cache_bytes
+    if not enabled or info.st_size > _CACHE_FILE_LIMIT:
+        return _py_symbols(content)
+    key, signature = str(path), _stamp(info)
+    with _cache_lock:
+        existing = _cache.get(key)
+        if existing is not None and existing[0] == signature and existing[4] is not None:
+            _cache.move_to_end(key)
+            return existing[4]
+    symbols = tuple(_py_symbols(content))
+    try:
+        if _stamp(path.stat()) != signature:
+            return symbols
+    except (OSError, ValueError):
+        return symbols
+    extra = sum(64 + 4 * (len(name) + len(kind) + len(signature_text))
+                for _, name, kind, signature_text in symbols)
+    with _cache_lock:
+        existing = _cache.get(key)
+        if existing is not None and existing[0] == signature:
+            if existing[4] is not None:
+                _cache.move_to_end(key)
+                return existing[4]
+            cost = existing[3] + extra
+            if cost <= _CACHE_BYTES_LIMIT:
+                _cache_bytes -= existing[3]
+                _cache[key] = (existing[0], existing[1], existing[2], cost, symbols)
+                _cache_bytes += cost
+                _cache.move_to_end(key)
+                while _cache_bytes > _CACHE_BYTES_LIMIT or len(_cache) > _CACHE_ENTRIES_LIMIT:
+                    _, removed = _cache.popitem(last=False)
+                    _cache_bytes -= removed[3]
+    return symbols
 
 
 def clear_source_cache() -> None:
@@ -329,7 +370,8 @@ def search_workspace(workspace, query: str, mode: str = 'text') -> dict:
         else:
             if not any(word in folded or word in relative.casefold() for word in words):
                 continue
-            symbols = _py_symbols(content) if path.suffix.lower() == '.py' else _other_symbols(content, path.suffix.lower())
+            symbols = (_cached_py_symbols(path, info, content, enabled=cache_on)
+                       if path.suffix.lower() == '.py' else _other_symbols(content, path.suffix.lower()))
             for lineno, name, kind, signature in symbols:
                 score = _rank(query, words, relative, name, signature)
                 if score:
