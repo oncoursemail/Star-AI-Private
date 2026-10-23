@@ -1087,6 +1087,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             metrics.record(settings.project, 'tool_completed', detail=str(event.get('tool', ''))[:80])
         elif event.get('event') == 'tool_rejected':
             metrics.record(settings.project, 'tool_rejected')
+        elif event.get('event') == 'strata_selected':
+            metrics.record(settings.project, 'strata_selected',
+                           detail=str(event.get('profile', ''))[:40])
+        elif event.get('event') == 'strata_fallback':
+            # Type name only; raw transport/model errors can contain local paths.
+            metrics.record(settings.project, 'strata_fallback',
+                           detail=str(event.get('reason', ''))[:80])
         if on_event:
             on_event(event)
     memory = Memory(home / 'checkpoints.sqlite3')
