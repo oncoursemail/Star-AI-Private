@@ -141,7 +141,7 @@ async def probe(settings: Any, *, endpoint: str | None = None, model: str | None
     timeout = int(getattr(settings, "strata_timeout", 900) or 900)
     candidate = replace(settings, provider="local", endpoint=target, model=name)
     started = monotonic()
-    async with open_client(candidate, request_timeout=timeout) as client:
+    async with open_client(candidate, request_timeout=timeout, trust_env=False) as client:
         completion = await client.chat.completions.create(
             model=name,
             messages=[
