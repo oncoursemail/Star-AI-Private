@@ -308,7 +308,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   github_enabled=False, intelligence=None, mcp_gateway=None, mcp_registry=None, blender=None,
                   subagent_model=None, tool_workshop=None, specialists=None,
                   history=None, turn_sections=None, mode="", guidance="",
-                  turn_context_chars=10000, request_extras=None, today=None,
+                  turn_context_chars=10000, request_extras=None, sampling=None, today=None,
                   tool_memory=None, helper_client=None, document_tools=None, image_max_side=None,
                   reverse_engineering=None,
                   preserve_history=False, complete_code_answers=None,
@@ -326,8 +326,8 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
     `on_first_request({"messages", "tools", "max_tokens"})` is called once, just before the
     first model request, with that request's messages and tool list (star/best_of_n.py samples
     extra candidates of the same request while this one is written). It cannot fail the turn.
-    `request_extras` are provider-specific body fields from
-    `providers.llama_request_fields`; they are empty for cloud providers.
+    `request_extras` are provider/engine-specific body fields. `sampling` may override only
+    temperature/top_p for a known local engine; callers cannot inject arbitrary request keys.
     `tool_memory` (star/turn_memory.py) keeps the prompt-selected tools of a
     conversation attached, in a fixed order, so the tool list at the start of
     the prompt stays byte-identical from turn to turn. `helper_client` is the
@@ -628,8 +628,23 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
             checkpoint(summary)
             project_memory = summary
         require_fit(messages)
-        kwargs = dict(model=model, messages=messages, tools=definitions or None, tool_choice="auto" if definitions else None,
-                      temperature=0, max_tokens=response_tokens)
+        sample = {"temperature": 0.0}
+        if sampling is not None:
+            if not isinstance(sampling, dict) or not set(sampling) <= {"temperature", "top_p"}:
+                raise ValueError("Unsupported model sampling options")
+            if "temperature" in sampling:
+                value = sampling["temperature"]
+                if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 2:
+                    raise ValueError("Model temperature must be between 0 and 2")
+                sample["temperature"] = float(value)
+            if "top_p" in sampling:
+                value = sampling["top_p"]
+                if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 < value <= 1:
+                    raise ValueError("Model top_p must be greater than 0 and at most 1")
+                sample["top_p"] = float(value)
+        kwargs = dict(model=model, messages=messages, tools=definitions or None,
+                      tool_choice="auto" if definitions else None,
+                      max_tokens=response_tokens, **sample)
         # Some local model servers do not accept null tools/tool_choice values.
         kwargs = {k:v for k,v in kwargs.items() if v is not None}
         validate_model_roles(messages)

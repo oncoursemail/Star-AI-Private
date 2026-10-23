@@ -1,6 +1,6 @@
 """React source/host checks without requiring Qt imports on Linux."""
 from pathlib import Path
-from star.react_shell import ALLOWED_ACTIONS, react_index
+from star.react_shell import ALLOWED_ACTIONS, PERMITTED_SETTINGS, react_index
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -8,7 +8,19 @@ def test_react_native_bridge_commands_are_explicit():
     assert 'sendMessage' in ALLOWED_ACTIONS
     assert 'installBrain' in ALLOWED_ACTIONS
     assert 'discoverStudio' in ALLOWED_ACTIONS
+    assert 'testStrata' in ALLOWED_ACTIONS
+    assert 'repairStrataConfig' in ALLOWED_ACTIONS
     assert 'run_arbitrary_shell' not in ALLOWED_ACTIONS
+
+def test_strata_settings_are_permitted_but_no_secret_or_remote_host_is_added():
+    expected = {
+        'strata_enabled','strata_endpoint','strata_model','strata_reasoning',
+        'strata_context_tokens','strata_timeout','strata_vision_enabled',
+        'strata_loop_guard_enabled',
+    }
+    assert expected <= PERMITTED_SETTINGS
+    assert 'strata_api_key' not in PERMITTED_SETTINGS
+
 
 def test_react_web_sources_exist():
     assert (ROOT/'frontend/src/App.tsx').is_file()

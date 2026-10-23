@@ -66,7 +66,7 @@ export type BackendReply<T> = {ok:boolean;data?:T; pending?:boolean;requestId?:s
 /** Native file dialogs wait on the user, not the model. Do not falsely report a
  *  broken desktop connection if choosing a file takes over 30 seconds. */
 export function requestTimeoutMs(action:string):number {
-  return action==='pickFiles'||action==='selectFolder'||action==='clipChooseFolder'||action==='exportReviewBundle'||action==='exportLessons'
+  return action==='pickFiles'||action==='selectFolder'||action==='repairStrataConfig'||action==='clipChooseFolder'||action==='exportReviewBundle'||action==='exportLessons'
     ? 10*60*1000 : 30*1000
 }
 export function request<T=unknown>(action:string, payload:Record<string,unknown>={}, providedId?:string):Promise<BackendReply<T>> {
