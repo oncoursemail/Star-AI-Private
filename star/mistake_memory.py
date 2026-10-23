@@ -23,6 +23,7 @@ import os
 import re
 import time
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 
 MODES = ("off", "retrieve", "fix")
@@ -274,7 +275,7 @@ def validate(fixer: dict, cases: list[tuple[str, str]], guard: list[tuple[str, s
             "changed": changed[:5], "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
-def guard_blocks(extra_answers: list[tuple[str, str]] = ()) -> list[tuple[str, str]]:
+def guard_blocks(extra_answers: Sequence[tuple[str, str]] = ()) -> list[tuple[str, str]]:
     """Luau blocks the fixers must never change: the verified gold bank and the evaluation reference answers
     (plus any `extra_answers`: (label, markdown))."""
     blocks: list[tuple[str, str]] = []
@@ -545,7 +546,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import glob
     import sys
-    parser = argparse.ArgumentParser(prog="python -m star.mistake_memory", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="python -m star.mistake_memory", description=(__doc__ or "").splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("seed", help="mine stored answers + mistake logs, write seed rows and validated fixers")
     s.add_argument("--evals", nargs="*", default=[], help="eval result json globs (work/eval-runs/**/*.json)")
@@ -570,7 +571,8 @@ def main(argv: list[str] | None = None) -> int:
         for fixer in fixers:      # informational: passing stored answers a fixer would still touch (not a blocker)
             fixer["validation"]["passing_eval_answers"] = len(extra)
             fixer["validation"]["passing_eval_answers_changed"] = sum(
-                1 for _, text in extra if apply_one(_FENCE.search(text).group(1), fixer) != _FENCE.search(text).group(1))
+                1 for _, text in extra
+                if (m := _FENCE.search(text)) and apply_one(m.group(1), fixer) != m.group(1))
         out = Path(args.out)
         out.mkdir(parents=True, exist_ok=True)
         with (out / "seed.jsonl").open("w", encoding="utf-8") as handle:
