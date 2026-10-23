@@ -140,6 +140,29 @@ function StrataProbe({draft,invoke,disabled}:{draft:AppSettings;invoke:Invoke;di
  </div>
 }
 
+function StrataEngineRepair({invoke,disabled}:{invoke:Invoke;disabled:boolean}) {
+ const [busy,setBusy]=useState(false)
+ const [result,setResult]=useState('')
+ const apply=async()=>{
+   if(disabled||busy)return
+   setBusy(true);setResult('')
+   try {
+     // Native Qt file picker decides the path; no file path is accepted from React.
+     const reply=await invoke('repairStrataConfig') as
+       {configured?:boolean;changed?:boolean;restart_required?:boolean;cancelled?:boolean}|null
+     if(reply?.cancelled||!reply)return
+     if(reply.configured)setResult(reply.changed
+       ?'Recovery enabled in Strata config. Restart the Strata server to activate it; a local backup was kept.'
+       :'Recovery was already enabled in this Strata config.')
+   } finally {setBusy(false)}
+ }
+ return <div className="settings-actions">
+   <button type="button" className="secondary-button" onClick={()=>void apply()}
+     disabled={disabled||busy}>{busy?<LoaderCircle className="spin" size={14} aria-hidden="true"/>:<ShieldCheck size={14} aria-hidden="true"/>} Apply engine loop recovery…</button>
+   {result&&<small role="status">{result}</small>}
+ </div>
+}
+
 /** Brave or Tavily key for web search. The key goes to the OS credential vault through saveProviderKey and is never
  * shown again; the page only learns whether one is stored. */
 function SearchKey({provider,label,stored,invoke,disabled,onSaved}:{provider:'brave'|'tavily';label:string;stored:boolean;invoke:Invoke;disabled:boolean;onSaved:()=>void}) {
@@ -272,8 +295,10 @@ export function SettingsPage(props:SettingsPageProps) {
          <label>Request timeout (seconds)<input type="number" min="60" max="1800" step="30" value={draft.strata_timeout??900} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_timeout:Number(e.target.value)})}/></label>
        </div>
        <Switch label="Let Strata inspect images" hint="Use Qwen3.8's image input for complex visual/Roblox debugging when the Strata model supports it." checked={draft.strata_vision_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_vision_enabled:on})}/>
-       <Switch label="Stop runaway Strata repetition" hint="On by default when Strata is enabled. Detects repeated reasoning or answer passages (issue #728) and stops the request without replaying project tools. Does not modify Strata itself." checked={draft.strata_loop_guard_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_loop_guard_enabled:on})}/>
+       <Switch label="Stop runaway Strata repetition" hint="On by default when Strata is enabled. Detects repeated reasoning or answer passages (issue #728) and stops the request without replaying project tools." checked={draft.strata_loop_guard_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_loop_guard_enabled:on})}/>
        <StrataProbe draft={draft} invoke={act} disabled={inactive||draft.strata_enabled!==true}/>
+       <StrataEngineRepair invoke={act} disabled={inactive||draft.provider!=='local'}/>
+       <small>Engine recovery requires Strata 0.1.40 or newer. Choose its installed strata-*.json file to enable recovery with an exact local backup; restart Strata afterwards.</small>
        <small>STAR never downloads or starts Strata automatically. Run Strata separately on this loopback endpoint; keeping it separate lets the small model stay fast for everyday chat.</small>
      </Panel>
    </Block>
