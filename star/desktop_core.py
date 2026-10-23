@@ -60,6 +60,16 @@ class Settings:
     reasoning_model: str = ''
     roblox_model: str = ''
     vision_model: str = ''
+    # Optional second local engine: Strata + Qwen3.8-Flash-Next.  It is never
+    # installed or started implicitly; complex routes use it only when enabled.
+    strata_enabled: bool = False
+    strata_endpoint: str = 'http://127.0.0.1:8082/v1'
+    strata_model: str = 'strata'
+    strata_reasoning: str = 'auto'   # auto | none | low | medium | high
+    strata_context_tokens: int = 32768
+    strata_timeout: int = 900
+    strata_vision_enabled: bool = True
+    strata_loop_guard_enabled: bool = True   # issue #728; stop runaway repeat passages
     project: str = 'STAR'
     workspace: str = ''
     studio_id: str = ''
@@ -218,8 +228,16 @@ class Settings:
 
     def validate(self):
         validate_target(self.studio_target)
-        for name in ('model', 'fast_model', 'reasoning_model', 'roblox_model', 'vision_model'):
+        for name in ('model', 'fast_model', 'reasoning_model', 'roblox_model', 'vision_model', 'strata_model'):
             validate_alias(getattr(self, name), field=name)
+        from .strata_backend import validate_endpoint as validate_strata_endpoint
+        validate_strata_endpoint(self.strata_endpoint)
+        if self.strata_reasoning not in ('auto', 'none', 'low', 'medium', 'high'):
+            raise ValueError('Strata reasoning must be automatic, none, low, medium or high')
+        if type(self.strata_context_tokens) is not int or not 4096 <= self.strata_context_tokens <= 262144:
+            raise ValueError('Strata context must be 4096 to 262144 tokens')
+        if type(self.strata_timeout) is not int or not 60 <= self.strata_timeout <= 1800:
+            raise ValueError('Strata timeout must be 60 to 1800 seconds')
         if not isinstance(self.provider, str) or self.provider not in ALL_PROVIDERS:
             raise ValueError('Unknown model provider')
         if not re.fullmatch(r'http://(?:127\.0\.0\.1|localhost):\d{2,5}/v1/?', self.endpoint):
@@ -238,7 +256,8 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled')):
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
+                            'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -1302,6 +1321,17 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             metrics.record(settings.project, 'tool_completed', detail=str(event.get('tool', ''))[:80])
         elif event.get('event') == 'tool_rejected':
             metrics.record(settings.project, 'tool_rejected')
+        elif event.get('event') == 'strata_selected':
+            metrics.record(settings.project, 'strata_selected',
+                           detail=str(event.get('profile', ''))[:40])
+        elif event.get('event') == 'strata_fallback':
+            # Type name only; raw transport/model errors can contain local paths.
+            metrics.record(settings.project, 'strata_fallback',
+                           detail=str(event.get('reason', ''))[:80])
+        elif event.get('event') == 'strata_loop_stopped':
+            # Never store repeated generated text or model/tool arguments.
+            metrics.record(settings.project, 'strata_loop_stopped',
+                           detail=str(event.get('section', ''))[:24])
         if on_event:
             on_event(event)
     memory = Memory(home / 'checkpoints.sqlite3')
@@ -1395,13 +1425,26 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             # workspace, Studio, or network capability.
             route = replace(route, quick=False, max_calls=max(3, route.max_calls),
                             response_tokens=max(1600, route.response_tokens))
+        # Optional second local engine.  This is a pure routing decision: it does
+        # not install/start Strata and it never changes the saved provider.
+        from . import strata_backend
+        strata_plan = strata_backend.choose(
+            settings, route, prompt, mode=mode, image_count=len(images))
+        model_settings = strata_backend.effective_settings(settings, strata_plan)
+        if strata_plan.active:
+            route = replace(route, model=strata_plan.model, subagent_model=strata_plan.model,
+                            response_tokens=max(route.response_tokens, strata_plan.response_tokens),
+                            task_timeout=max(route.task_timeout, strata_plan.task_timeout))
+            audited_event({'event':'strata_selected','profile':route.profile,
+                           'model':route.model,'reasoning_effort':strata_plan.reasoning_effort})
         song_tool = None
         if song_lookup is not None and settings.music_recognition_enabled is True:
             from .music_recognition import ChatSongLookup
             song_tool = ChatSongLookup(song_lookup[0], song_lookup[1], settings)
             route = replace(route, quick=False, max_calls=max(3, route.max_calls))
         audited_event({'event':'route_selected','profile':route.profile,
-                       'description':route.description,'model':route.model})
+                       'description':route.description,'model':route.model,
+                       'engine':'strata' if strata_plan.active else 'default'})
         quick = route.quick
         turn_sections, recalled = base_sections(settings.project, prompt, quick, knowledge, lesson_store,
                                                 document_block)
@@ -1413,7 +1456,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         use_tools = route.use_tools
         from .live_context import wants_fresh_web
         auto_web = bool(not research and settings.web_auto_search is not False and wants_fresh_web(prompt))
-        allowed_context_chars = model_context_char_budget(settings, route.model)
+        allowed_context_chars = (strata_plan.context_chars if strata_plan.active
+                                 else model_context_char_budget(settings, route.model))
         intelligence = for_settings(settings, home) if use_tools else None
         workspace = (Workspace(Path(settings.workspace), validate=settings.incremental_repair is True)
                      if use_tools and settings.workspace else None)
@@ -1445,8 +1489,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         # Searchable public metadata only; no connector is installed or approved.
         from .mcp_registry import RegistryDiscovery
         mcp_registry = RegistryDiscovery() if use_tools and research and mode == 'agent' else None
-        connection_for(settings)  # fail early (missing key, bad address) before any work
-        limits = call_limits(settings)
+        connection_for(model_settings)  # fail early before retrieval/tool work
+        limits = call_limits(model_settings)
         # Own hardware only: the conversation's tool list stays put from turn to turn (STAR
         # Server), and the shape of this request is kept for the post-answer warm-up.
         tools_kept = (turn_memory.for_conversation(memory_scope, sticky=kind == 'lan')
@@ -1491,7 +1535,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             # The loopback /models probe reads only residency; a router's unloaded model
             # is never selected and no llama.cpp process is started or downloaded.
             eligible = dict(prompt=prompt, mode=mode, provider=kind,
-                            enabled=settings.instant_route_enabled is True,
+                            enabled=settings.instant_route_enabled is True and not strata_plan.active,
                             installed=bool(settings.gguf_model or settings.router_models_dir),
                             attachments=len(images) + len(documents or ()) + max(0, attachment_count),
                             tools=use_tools or document_tools is not None or bool(github_enabled),
@@ -1537,8 +1581,27 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 if web_text:
                     turn_sections.append(('WEB SEARCH', web_text))
                 audited_event({'event': 'search_finished'})
-            # One client per task, with the selected provider's own time limits.
-            async with open_client(settings) as client:
+            # One client per task.  When Strata is selected, keep the ordinary
+            # resident local brain open as a no-replay fallback for transport/model
+            # failures that happen before Strata produces output.
+            async with AsyncExitStack() as model_connections:
+                primary_client = await model_connections.enter_async_context(
+                    open_client(model_settings, request_timeout=settings.strata_timeout, trust_env=False)
+                    if strata_plan.active else open_client(model_settings))
+                if strata_plan.active:
+                    resident_client = await model_connections.enter_async_context(open_client(settings))
+                    client = strata_backend.RoutingClient(
+                        primary_client, resident_client, strata_model=strata_plan.model,
+                        fallback_model=settings.model,
+                        on_fallback=lambda exc: audited_event({
+                            'event':'strata_fallback','model':settings.model,
+                            'reason':type(exc).__name__}),
+                        loop_guard=settings.strata_loop_guard_enabled,
+                        on_loop=lambda exc: audited_event({
+                            'event':'strata_loop_stopped',
+                            'section':str(getattr(exc, 'section', 'unknown'))[:24]}))
+                else:
+                    client = primary_client
                 if kind == 'lan' and gpu_helper.pc_allowed(settings):
                     # STAR's code model on this PC's graphics card when it is ready; the server otherwise and
                     # whenever the PC fails (star/gpu_helper.py). Everything else in this turn is unchanged.
@@ -1547,13 +1610,15 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     client = gpu_helper.GpuRoutingClient(client, settings)
                 # Summaries, sub-agents, specialists and code repair are not the conversation:
                 # on STAR Server they carry no id_slot, the server places them (providers.llama_request_fields).
-                helper = background_client(client, settings, conversation=memory_scope)
+                helper = (strata_backend.BackgroundClient(client) if strata_plan.active
+                          else background_client(client, model_settings, conversation=memory_scope))
                 specialists = (ResearchTeam(
                     client=helper,model=route.subagent_model,project=settings.project,
                     knowledge=knowledge,workspace=workspace,intelligence=intelligence,
                     parallelism=settings.specialist_parallelism,on_event=audited_event,
-                    speed_key=(settings.provider, settings.server_endpoint if provider_kind(settings) == "lan"
-                               else settings.endpoint, route.subagent_model),
+                    speed_key=(model_settings.provider,
+                               model_settings.server_endpoint if provider_kind(model_settings) == "lan"
+                               else model_settings.endpoint, route.subagent_model),
                     timeout_min=settings.team_timeout_min, timeout_max=settings.team_timeout_max,
                     web_enabled=bool(research),
                 ) if use_tools and settings.specialists_enabled else None)
@@ -1562,9 +1627,12 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 # discovered tool schemas before adding this turn's context.
                 memory_limit = max(700, allowed_context_chars - 3200)
                 def slot_fields(model):
-                    # llama.cpp cache fields; {} for cloud providers.
+                    # Engine-specific request body.  Strata gets Qwen reasoning/top-k;
+                    # ordinary local/LAN llama.cpp keeps STAR's prompt-cache fields.
+                    if strata_plan.active:
+                        return lambda tools: strata_backend.request_extras(strata_plan)
                     return lambda tools: llama_request_fields(
-                        settings, conversation=memory_scope, tools=tools, model=model)
+                        model_settings, conversation=memory_scope, tools=tools, model=model)
                 docs, turn_context_chars = await reference_sections(
                     settings, home, route, prompt, recent_users, turn_sections, mode=mode, quick=quick,
                     memory_limit=memory_limit, allowed_context_chars=allowed_context_chars,
@@ -1584,6 +1652,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                               # plain-chat rules carry their own Roblox line).
                               guidance=ROBLOX_QUALITY_NOTES,
                               request_extras=slot_fields(route.model),
+                              sampling=strata_plan.sampling if strata_plan.active else None,
                               tool_memory=tools_kept, helper_client=helper,
                               image_max_side=picture_limit(settings),
                               max_calls=route.max_calls,

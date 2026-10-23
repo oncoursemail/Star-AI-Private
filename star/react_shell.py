@@ -66,7 +66,7 @@ from .research_activity import sanitize_research_event
 
 ALLOWED_ACTIONS = frozenset({
     'bootstrap','brainSnapshot','plannerStatus','switchProject','pickFiles','sendMessage','saveSettings',
-    'installBrain','startBrain','listModels','testModel','discoverStudio','selectStudio',
+    'installBrain','startBrain','listModels','testModel','testStrata','repairStrataConfig','discoverStudio','selectStudio',
     'checkUpdates','installUpdate','transcribe','openDataFolder', 'copyText', 'openLegacy', 'selectFolder',
     'generateImage','saveProviderKey','clearProviderKey','cancelMessage','exportReviewBundle',
     'newChat','switchChat','testMcpConnection','runTeam','rememberDecision','listLearning',
@@ -132,7 +132,7 @@ ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
 # A background warm-up (server check + prompt-cache priming) gives way at once to
 # anything that talks to the model server or changes what it would talk to.
 WARM_UP_STOPPERS = frozenset({
-    'sendMessage','runTeam','generateImage','testServer','testModel','testModelTeam','listModels',
+    'sendMessage','runTeam','generateImage','testServer','testModel','testStrata','repairStrataConfig','testModelTeam','listModels',
     'startModelRouter','stopBrain','startBrain','installBrain','saveSettings','switchProject',
     'saveProviderKey','clearProviderKey','newChat','switchChat','testBlender','deleteChat',
 })
@@ -141,6 +141,8 @@ WARM_UP_STOPPERS = frozenset({
 # server keys go straight to the OS keyring through saveProviderKey.
 PERMITTED_SETTINGS = frozenset({
     'endpoint','model','fast_model','reasoning_model','roblox_model','vision_model',
+    'strata_enabled','strata_endpoint','strata_model','strata_reasoning',
+    'strata_context_tokens','strata_timeout','strata_vision_enabled','strata_loop_guard_enabled',
     'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled','commerce_enabled',
     'tool_workshop_enabled','specialists_enabled','specialist_parallelism','provider',
     'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','debug_evidence_enabled','minecraft_tools_enabled','live_show_enabled','max_calls',
@@ -166,6 +168,24 @@ PERMITTED_SETTINGS = frozenset({
 # Settings > Media "session capabilities" line: put before the owner's words of every turn (and of a draft warm-up).
 SESSION_CAPABILITIES = ('Session capabilities: Image creation is available through STAR chat when the local engine is configured. '
                         'Other features depend on the current setup.\n\n')
+
+
+def _repair_strata_config(host, active_task) -> dict:
+    """User-selected local JSON repair, independent of the oversized action router.
+
+    A model cannot supply this path: only the Qt file chooser supplies it.
+    """
+    if active_task:
+        raise RuntimeError('Finish the current chat before editing Strata settings')
+    # Qt is an optional desktop-only dependency: never import it at module load.
+    from PySide6.QtWidgets import QFileDialog
+    selected, _ = QFileDialog.getOpenFileName(
+        host, 'Choose an installed Strata model config',
+        str(Path.home()), 'Strata model settings (strata-*.json)')
+    if not selected:
+        return {'configured': False, 'cancelled': True}
+    from .strata_config import enable_repeat_recovery
+    return enable_repeat_recovery(Path(selected))
 
 
 def song_lookup_request(raw, files: list, selected: list[Path], settings) -> tuple[Path, str] | None:
@@ -1675,6 +1695,20 @@ def launch():
                     self._run(rid,action,lambda:probe_server(Settings.load(self.settings_file)))
                 elif action=='listModels':
                     def worker():return {'models':query_models(Settings.load(self.settings_file))}
+                    self._run(rid,action,worker)
+                elif action=='repairStrataConfig':
+                    return json.dumps({'ok': True, 'data': _repair_strata_config(self.host, self.active_task)})
+                elif action=='testStrata':
+                    if self.active_task:
+                        raise RuntimeError('Finish the current chat before testing Strata')
+                    def worker():
+                        import asyncio
+                        from .strata_backend import probe
+                        current=Settings.load(self.settings_file)
+                        return asyncio.run(probe(
+                            current,
+                            endpoint=str(body.get('endpoint') or current.strata_endpoint),
+                            model=str(body.get('model') or current.strata_model)))
                     self._run(rid,action,worker)
                 elif action=='testModel':
                     def worker():

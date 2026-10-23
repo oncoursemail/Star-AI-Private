@@ -211,7 +211,8 @@ def connection_for(settings) -> tuple[str, str]:
         raise ValueError(f"{spec.label} needs an API key. Add it in Settings → AI providers.")
     return spec.base_url, key
 
-def open_client(settings, *, request_timeout: float | None = None):
+def open_client(settings, *, request_timeout: float | None = None,
+                trust_env: bool | None = None):
     """Build the AsyncOpenAI client for the selected provider with its own limits.
 
     A private LAN server gets an explicit httpx client with `trust_env=False`,
@@ -222,7 +223,8 @@ def open_client(settings, *, request_timeout: float | None = None):
     endpoint, key = connection_for(settings)
     limits = call_limits(settings)
     timeout = httpx.Timeout(request_timeout or limits.request_timeout, connect=limits.connect_timeout)
-    extra = {} if limits.trust_env else {
+    use_environment = limits.trust_env if trust_env is None else trust_env
+    extra = {} if use_environment else {
         "http_client": httpx.AsyncClient(trust_env=False, timeout=timeout)}
     # The owner's own STAR server schedules by class (star/priority_proxy.py): STAR_PRIORITY=P0..P3 says how urgent
     # this process is (night school and evals P3). Sent only to the owner's server, never to a cloud provider.
