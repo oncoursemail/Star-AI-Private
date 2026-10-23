@@ -16,6 +16,7 @@ from contextlib import AsyncExitStack
 from typing import Any, Callable, cast
 
 from .agent import execute, HistoryWindowPressure
+from .reasoning_guard import ReasoningLoop
 from .media import image_part
 from .memory import Memory
 from . import conversation_memory
@@ -1419,7 +1420,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         project_tools = needs_project_tools(prompt, recent_users, blender=settings.blender_enabled is True,
                                             github_repositories=settings.mcp_github_repositories is True)
         referential = len(prompt) <= 160 and bool(re.search(
-            r'\b(?:it|this|that|same|continue|again|those|these)\b', prompt, re.I))
+            r'\b(?:it|this|that|same|continue|again|those|these|remember|recall|earlier|before|previous(?:ly)?|'
+            r'first|last|asked|said|told|mentioned)\b|\bwhat did (?:i|you)\b', prompt, re.I))
         roblox_context = bool(project_tools and referential
                               and any(is_roblox_task(turn) for turn in recent_users[-3:]))
         # STAR Server may offer several models: blank role fields are filled from what the
@@ -1807,7 +1809,18 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     audited_event({'event': 'route_busy_quick', 'model': quick_name})
                 try:
                     try:
-                        result = await answer_with(used.model)
+                        try:
+                            result = await answer_with(used.model)
+                        except ReasoningLoop:
+                            # The quick model wrote out its reasoning (or looped) instead of answering and nothing was
+                            # shown: the same turn goes to the main model, once (star/reasoning_guard.py).
+                            target = str(getattr(server_roles.effective(settings), 'reasoning_model', '') or settings.model)
+                            if target == used.model:
+                                raise ValueError('The model wrote out its reasoning instead of answering. Ask again, '
+                                                 'more precisely, or turn Fast mode off.')
+                            audited_event({'event': 'route_fallback', 'model': target, 'why': 'reasoning_loop'})
+                            used = replace(route, model=target, quick=False)
+                            result = await answer_with(target)
                     except Exception as exc:
                         # A role's model that is missing or will not load: answer with the single
                         # configured model instead, once, and only if nothing was shown or run yet.
