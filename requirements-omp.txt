@@ -1,0 +1,5 @@
+# Optional candidate integration only; not part of the desktop/base requirements.
+# Install the matching OMP CLI v18.12.6 separately. This Python client does not
+# supply a model, enable tools, or grant any execution permission.
+# Source pin: https://github.com/can1357/oh-my-pi/releases/tag/v18.12.6
+omp-rpc @ git+https://github.com/can1357/oh-my-pi.git@45c35e40c46166dc726ccc52f5d27f40f2449f99#subdirectory=sdk/python/omp-rpc
