@@ -1149,6 +1149,15 @@ async def reference_sections(settings: Settings, home: Path, route, prompt: str,
         turn_sections.insert(1 if docs.block else 0, (skill_packs.BLOCK_HEADING, pack_block))
         event({'event': 'skill_packs', 'names': [pack.name for pack in packs], 'chars': len(pack_block)})
     # <<< Skill packs
+    # >>> Anti-slop rules (star/antislop.py): UI, web, copy and code-generation turns, never quick chat.
+    if not quick:
+        from . import antislop
+        slop_names = antislop.select(prompt)
+        slop_block = antislop.render(slop_names)
+        if slop_block:
+            turn_sections.append((antislop.HEADING, slop_block))
+            event({'event': 'antislop', 'names': slop_names, 'chars': len(slop_block)})
+    # <<< Anti-slop rules
     if settings.api_hints_enabled is True and route.profile == 'roblox':
         # Opt-in (star/api_hints.py): real member names of the classes the request names, from the
         # local API dump; reference data after the documentation, before the packs.
