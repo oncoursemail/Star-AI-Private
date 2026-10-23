@@ -21,7 +21,7 @@ export const backendSettings = {
   endpoint: 'http://127.0.0.1:8080/v1', provider: 'local', model: 'qwen-test', fast_model: '',
   reasoning_model: '', roblox_model: '', vision_model: '', strata_enabled: false,
   strata_endpoint: 'http://127.0.0.1:8082/v1', strata_model: 'strata', strata_reasoning: 'auto',
-  strata_context_tokens: 32768, strata_timeout: 900, strata_vision_enabled: true,
+  strata_context_tokens: 32768, strata_timeout: 900, strata_vision_enabled: true, strata_loop_guard_enabled: true,
   router_models_dir: '', router_context: 4096,
   gpu_layers: 25, instant_route_enabled: false, project: 'STAR', workspace: '', studio_id: '', studio_target: 'local_pc', studio_edit: false, workspace_edit: false,
   max_calls: 12, context_chars: 26000, reduced_motion: true, obsidian_vault: '', obsidian_enabled: false,
