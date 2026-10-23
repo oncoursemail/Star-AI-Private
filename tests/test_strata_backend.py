@@ -31,7 +31,12 @@ def test_saved_settings_are_backward_compatible_and_validate_strata():
     cfg.strata_enabled = True
     cfg.strata_reasoning = "high"
     cfg.strata_context_tokens = 65536
+    cfg.strata_loop_guard_enabled = False
     cfg.validate()
+    cfg.strata_loop_guard_enabled = "yes"
+    with pytest.raises(ValueError, match="Tool access settings"):
+        cfg.validate()
+    cfg.strata_loop_guard_enabled = True
     cfg.strata_endpoint = "http://192.168.1.2:8080/v1"
     with pytest.raises(ValueError, match="loopback"):
         cfg.validate()
