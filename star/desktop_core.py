@@ -13,7 +13,7 @@ from .analytics import AnalyticsStore
 from .atomic_io import atomic_write_text, move_aside
 from dataclasses import dataclass, asdict, replace, field
 from contextlib import AsyncExitStack
-from typing import Callable
+from typing import Any, Callable, cast
 
 from .agent import execute, HistoryWindowPressure
 from .media import image_part
@@ -37,7 +37,7 @@ from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
 from . import edit_format
-from . import studio_loop, studio_tool_examples, verify_ladder
+from . import studio_loop, studio_tool_examples, thinking_budget, verify_ladder
 from . import project_rules
 from . import gpu_helper
 from .studio_connections import default_target, validate_target
@@ -192,6 +192,10 @@ class Settings:
     # the request's to the turn; 'fix' also lets the check-fix loop apply its validated self-written rewrite rules
     # (no model call) before any model fix; 'off' does neither. Rules stay off until the owner sets 'fix'.
     mistake_memory: str = 'retrieve'
+    # Thinking budget (star/thinking_budget.py): 'auto' picks no thinking for easy turns and a small to large budget for hard
+    # ones (and a growing one for check-fix rounds) on llama.cpp brains; 'off' never turns thinking on; 'always' = large.
+    # Default off: paired eval 2026-10-23 had no pass gain and +66% median time (docs/agents/thinking-budget-20261023.md).
+    thinking_budget: str = 'off'
     # Opt-in (star/api_hints.py): the real member names of the Roblox classes a request names, from the local API
     # dump, as a per-turn reference section. Aimed at invented members, the most common slop in stored answers.
     api_hints_enabled: bool = False
@@ -280,6 +284,8 @@ class Settings:
             raise ValueError('Best-of-N must be off or auto, with 2 to 8 candidates')
         if self.mistake_memory not in ('off', 'retrieve', 'fix'):
             raise ValueError('Mistake memory must be off, retrieve or fix')
+        if self.thinking_budget not in ('auto', 'off', 'always'):
+            raise ValueError('Thinking budget must be auto, off or always')
         if self.slop_check not in ('off', 'flag', 'trim', 'repair'):
             raise ValueError('Slop check must be off, flag, trim or repair')
         if (self.verify_ladder not in ('off', 'on') or type(self.verify_rounds) is not int
@@ -630,7 +636,7 @@ class Conversations:
                 'UPDATE chats SET updated=? WHERE project=? AND id=?',
                 (stamp, project, target)
             )
-        return int(row)
+        return int(cast(int, row))
 
     def add_terminal(self, project: str, chat_id: str, user_id: int, status: str, detail: str) -> int | None:
         """Record that the turn started by user message ``user_id`` ended without an answer.
@@ -723,7 +729,7 @@ class Conversations:
             'SELECT id,role,body,status,reply_to FROM messages WHERE project=? AND chat_id=? '
             'ORDER BY id DESC LIMIT 16', (project, target)
         ).fetchall()
-        found = {'message_id': None, 'previous': None}
+        found: dict[str, Any] = {'message_id': None, 'previous': None}
         users = [index for index, row in enumerate(rows) if row[1] == 'user']
         if not users:
             return found
@@ -1306,7 +1312,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
     metrics = AnalyticsStore(home / 'analytics.sqlite3')
     started = time.monotonic()
     first_visible_token = False
-    token_timing = {'requested': None, 'first': None, 'last': None}
+    token_timing: dict[str, float | None] = {'requested': None, 'first': None, 'last': None}
     metrics.record(settings.project, 'run_started')
     def audited_event(event):
         nonlocal first_visible_token
@@ -1539,7 +1545,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             # Do not touch the PC's model unless this standalone text turn is eligible.
             # The loopback /models probe reads only residency; a router's unloaded model
             # is never selected and no llama.cpp process is started or downloaded.
-            eligible = dict(prompt=prompt, mode=mode, provider=kind,
+            eligible: dict[str, Any] = dict(prompt=prompt, mode=mode, provider=kind,
                             enabled=settings.instant_route_enabled is True and not strata_plan.active,
                             installed=bool(settings.gguf_model or settings.router_models_dir),
                             attachments=len(images) + len(documents or ()) + max(0, attachment_count),
@@ -1636,8 +1642,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     # ordinary local/LAN llama.cpp keeps STAR's prompt-cache fields.
                     if strata_plan.active:
                         return lambda tools: strata_backend.request_extras(strata_plan)
-                    return lambda tools: llama_request_fields(
-                        model_settings, conversation=memory_scope, tools=tools, model=model)
+                    think = thinking_budget.plan_turn(
+                        settings.thinking_budget, prompt, profile=route.profile, quick=quick
+                    ) if provider_kind(model_settings) == 'lan' else thinking_budget.Plan()
+                    if think.active:
+                        audited_event({'event': 'thinking_budget', 'level': think.level, 'tokens': think.tokens,
+                                       'why': think.why})
+                    return lambda tools: thinking_budget.merge_fields(llama_request_fields(
+                        model_settings, conversation=memory_scope, tools=tools, model=model), think.tokens)
                 docs, turn_context_chars = await reference_sections(
                     settings, home, route, prompt, recent_users, turn_sections, mode=mode, quick=quick,
                     memory_limit=memory_limit, allowed_context_chars=allowed_context_chars,
