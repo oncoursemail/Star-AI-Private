@@ -243,7 +243,10 @@ class _FallbackStream:
                 close = getattr(self._stream, "aclose", None)
                 if callable(close):
                     try:
-                        await close()
+                        from inspect import isawaitable
+                        pending_close = close()
+                        if isawaitable(pending_close):
+                            await pending_close
                     except Exception:
                         pass
                 raise
