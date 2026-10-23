@@ -126,6 +126,19 @@ describe('Unsaved changes', () => {
 })
 
 describe('Strata specialist settings', () => {
+  it('can disable the issue #728 watchdog for intentional repetition', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Model'}))
+    await user.click(screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}))
+    const control = screen.getByRole('checkbox', {name: 'Stop runaway Strata repetition'}) as HTMLInputElement
+    expect(control.checked).toBe(true)
+    await user.click(control)
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    const saved = desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>
+    expect(saved.strata_loop_guard_enabled).toBe(false)
+  })
+
   it('tests the Strata endpoint and model currently on screen', async () => {
     desktop.onAction('testStrata', () => ({ok:true,data:{ok:true,model:'strata',sample:'Strata is ready.',elapsed_ms:12}}))
     const user = await openSettings()
@@ -155,6 +168,7 @@ describe('Strata specialist settings', () => {
     expect(saved.strata_endpoint).toBe('http://127.0.0.1:8082/v1')
     expect(saved.strata_reasoning).toBe('high')
     expect(saved.strata_context_tokens).toBe(32768)
+    expect(saved.strata_loop_guard_enabled).toBe(true)
   })
 })
 
