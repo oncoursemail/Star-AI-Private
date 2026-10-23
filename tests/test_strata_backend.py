@@ -3,7 +3,7 @@ import asyncio
 from types import SimpleNamespace
 import pytest
 
-from star.strata_backend import BackgroundClient, RoutingClient, choose, request_extras, validate_endpoint
+from star.strata_backend import BackgroundClient, RoutingClient, choose, probe, request_extras, validate_endpoint
 
 
 def settings(**changes):
@@ -114,6 +114,28 @@ def test_background_helpers_use_low_reasoning_without_overriding_callers():
     assert second["extra_body"] == {"reasoning_effort": "none"}
 
 
+def test_probe_uses_no_thinking_and_does_not_change_saved_settings(monkeypatch):
+    from star import providers
+    from star.desktop_core import Settings
+
+    completion = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="Strata is ready."))])
+    raw = FakeClient([completion])
+
+    class Opened:
+        async def __aenter__(self): return raw
+        async def __aexit__(self, *args): return False
+
+    monkeypatch.setattr(providers, "open_client", lambda *args, **kwargs: Opened())
+    cfg = Settings(model="resident-small")
+    result = asyncio.run(probe(cfg, endpoint="http://127.0.0.1:8082/v1", model="strata"))
+    assert result["ok"] and result["model"] == "strata"
+    call = raw.chat.completions.calls[0]
+    assert call["extra_body"] == {"reasoning_effort": "none", "top_k": 20}
+    assert call["temperature"] == 0.7 and call["top_p"] == 0.8
+    assert cfg.model == "resident-small" and cfg.endpoint == "http://127.0.0.1:8080/v1"
+
+
 def test_falls_back_before_output_and_stays_on_resident_model():
     primary = FakeClient([ConnectionError("connection refused")])
     fallback = FakeClient([{"ok": 1}, {"ok": 2}])
@@ -127,6 +149,8 @@ def test_falls_back_before_output_and_stays_on_resident_model():
     assert events == ["ConnectionError"]
     assert fallback.chat.completions.calls[0]["model"] == "qwen-small"
     assert "extra_body" not in fallback.chat.completions.calls[0]
+    assert "top_p" not in fallback.chat.completions.calls[0]
+    assert fallback.chat.completions.calls[0]["temperature"] == 0.0
 
 
 def test_stream_can_fail_over_before_first_chunk():
