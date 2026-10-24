@@ -231,3 +231,29 @@ def test_query_coverage_beats_generic_single_token_match():
     )
     result = CapabilityForge([generic, exact]).select("currency exchange", now=2_000)
     assert result.winner and result.winner.option.key == exact.key
+
+
+
+def test_mcp_identifier_components_are_searchable():
+    tool = mcp_option(
+        name="org.example/weather-stations",
+        description="Meteorological readouts",
+        source="registry",
+    )
+    matches = CapabilityIndex([tool]).search("weather stations")
+    assert matches and matches[0][0].name == "org.example/weather-stations"
+
+
+def test_failed_cached_provider_is_reconsidered_immediately(tmp_path):
+    option = _rest("Weather Verified", "weather forecast", "weather.test", official=True)
+    store = CapabilityStore(tmp_path / "forge.sqlite3")
+    try:
+        forge = CapabilityForge([option], store=store)
+        initial = forge.select("weather forecast", now=2000.0)
+        assert not initial.from_cache
+        assert forge.select("weather forecast", now=2001.0).from_cache
+        store.record_result(option.key, success=False, latency_ms=900.0, now=2002.0)
+        retried = forge.select("weather forecast", now=2003.0)
+        assert not retried.from_cache
+    finally:
+        store.close()
