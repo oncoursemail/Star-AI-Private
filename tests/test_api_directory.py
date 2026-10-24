@@ -131,6 +131,9 @@ def test_spec_inspection_is_read_only_and_resolves_no_references(tmp_path):
     assert result["auth_schemes"] == ["ApiKeyAuth"]
     assert result["publisher_verified"] is False
     assert result["executable"] is False
+    assert result["typed_read_contracts"]
+    assert result["typed_read_contracts"][0]["method"] == "GET"
+    assert result["typed_read_contracts"][0]["status"] == "preview_only_no_execution"
     assert result["external_refs_resolved"] is False
     assert len(events) == 2
     assert all(method == "GET" and auth is None for method, _, auth in events)
