@@ -129,3 +129,23 @@ def test_arazzo_summary_flags_credentialed_or_plaintext_sources():
     })
     assert any("not HTTPS" in warning for warning in summary.warnings)
     assert any("contains credentials" in warning for warning in summary.warnings)
+
+
+
+def test_public_apis_parser_accepts_current_2026_header_shape():
+    current = """
+## Index
+
+### Transportation
+API | Description | Auth | HTTPS | CORS |
+|:---|:---|:---|:---|:---|
+| [ADS-B Exchange](https://www.adsbexchange.com/data/) | Aircraft tracking | No | Yes | Unknown |
+
+### Currency Exchange
+API | Description | Auth | HTTPS | CORS |
+|:---|:---|:---|:---|:---|
+| [Currency Demo](https://currency.example.test/) | Currency exchange rates | No | Yes | Yes |
+"""
+    rows = parse_public_apis_markdown(current)
+    assert [row.category for row in rows] == ["Transportation", "Currency Exchange"]
+    assert rows[1].name == "Currency Demo"
