@@ -96,6 +96,8 @@ def _operation_contract(
     method: str,
     operation: dict[str, Any],
     inherited_parameters: list[dict[str, Any]],
+    *,
+    global_security: bool,
 ) -> tuple[dict[str, Any] | None, str]:
     if not _SAFE_PATH.fullmatch(path) or len(path) > 400:
         return None, "unsupported route syntax"
@@ -161,7 +163,7 @@ def _operation_contract(
             "required": outer_required,
             "additionalProperties": False,
         },
-        "security_declaration_present": security is not None,
+        "security_declaration_present": security is not None or global_security,
         "status": "preview_only_no_execution",
     }, ""
 
@@ -192,7 +194,10 @@ def compile_read_contracts(spec: dict[str, Any], *, max_contracts: int = 6) -> d
             if count > MAX_WALKED_OPERATIONS:
                 skipped["operation scan limit"] = 1
                 break
-            result, reason = _operation_contract(path, method, operation, inherited)
+            result, reason = _operation_contract(
+                path, method, operation, inherited,
+                global_security="security" in spec,
+            )
             if result is None:
                 skipped[reason] = skipped.get(reason, 0) + 1
             elif len(json.dumps(result["input_schema"], ensure_ascii=False)) > 4000:
