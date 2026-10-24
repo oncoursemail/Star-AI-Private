@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import ipaddress
 import json
 import math
 from pathlib import Path
@@ -131,6 +132,34 @@ def parse_directory(data: Any) -> tuple[DirectoryEntry, ...]:
             origin_urls=tuple(dict.fromkeys(origins)),
         ))
     return tuple(sorted(entries, key=lambda row: row.provider_id.lower()))
+
+
+def _displayable_server_urls(values: tuple[str, ...]) -> list[str]:
+    """Hide credential-bearing, private, plaintext or malformed server URLs."""
+    display: list[str] = []
+    for value in values[:100]:
+        if not isinstance(value, str) or len(value) > 500:
+            continue
+        try:
+            parts = urlsplit(value)
+            host = (parts.hostname or "").lower()
+            if (parts.scheme != "https" or not host or parts.username is not None
+                    or parts.password is not None or parts.query or parts.fragment
+                    or parts.port not in (None, 443)):
+                continue
+        except ValueError:
+            continue
+        if host == "localhost" or host.endswith((".localhost", ".local", ".internal", ".lan", ".home.arpa")):
+            continue
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if not address.is_global:
+                continue
+        display.append(value)
+    return display
 
 
 def _parse_bytes(blob: bytes, fingerprint: str) -> tuple[DirectoryEntry, ...]:
@@ -287,6 +316,10 @@ class ApiGuruDirectory:
         spec = json.loads(blob)
         summary = summarize_openapi(spec)
         contracts = compile_read_contracts(spec, max_contracts=4)
+        display_servers = _displayable_server_urls(summary.servers)
+        warnings = list(summary.warnings)
+        if len(display_servers) < len(summary.servers):
+            warnings.append("Unsafe, local, credential-bearing or unsupported server URLs were hidden")
         return {
             "provider_id": provider_id,
             "name": selected.title,
@@ -299,13 +332,15 @@ class ApiGuruDirectory:
             "spec_stale": stale,
             "openapi_version": summary.version,
             "title": summary.title,
-            "server_urls": list(summary.servers[:12]),
+            "server_urls": display_servers[:12],
+            "server_count": len(summary.servers),
+            "server_urls_hidden": len(summary.servers) - len(display_servers),
             "auth_schemes": list(summary.auth_schemes[:20]),
             "operation_count": len(summary.operations),
             "operations": list(summary.operations[:32]),
             "write_operation_count": len(summary.write_operations),
             "write_operations": list(summary.write_operations[:12]),
-            "warnings": list(summary.warnings),
+            "warnings": warnings,
             "typed_read_contracts": contracts["contracts"],
             "typed_contracts_scanned": contracts["scanned_operations"],
             "typed_contracts_skipped": contracts["skipped"],
