@@ -23,7 +23,8 @@ from jsonschema import Draft202012Validator
 
 from .api_intelligence import ApiCandidate, parse_public_apis_markdown
 from .api_directory import ApiGuruDirectory, DirectoryEntry, DIRECTORY_URL
-from .capability_forge import CapabilityIndex, rest_option
+from .capability_forge import CapabilityIndex, mcp_option, rest_option
+from .mcp_registry import REGISTRY_URL as MCP_REGISTRY_URL
 
 
 CATALOG_URL = "https://raw.githubusercontent.com/public-apis/public-apis/master/README.md"
@@ -46,7 +47,7 @@ TOOL = {
         "properties": {
             "query": {"type": "string", "minLength": 2, "maxLength": 160},
             "limit": {"type": "integer", "minimum": 1, "maximum": 12},
-            "source": {"type": "string", "enum": ["public", "openapi", "all"]},
+            "source": {"type": "string", "enum": ["public", "openapi", "mcp", "all"]},
         },
         "required": ["query"],
         "additionalProperties": False,
@@ -191,12 +192,12 @@ def _guru_index(snapshot) -> tuple[CapabilityIndex, dict[str, DirectoryEntry]]:
 _HOT_COMBINED: dict[str, CapabilityIndex] = {}
 
 
-def _combined_index(public_index: CapabilityIndex, guru_index: CapabilityIndex, fingerprint: str) -> CapabilityIndex:
+def _combined_index(indexes: tuple[CapabilityIndex, ...], fingerprint: str) -> CapabilityIndex:
     with _HOT_LOCK:
         existing = _HOT_COMBINED.get(fingerprint)
         if existing is not None:
             return existing
-    index = CapabilityIndex((*public_index.options, *guru_index.options))
+    index = CapabilityIndex(option for current in indexes for option in current.options)
     with _HOT_LOCK:
         _HOT_COMBINED[fingerprint] = index
         while len(_HOT_COMBINED) > 2:
@@ -213,12 +214,14 @@ class ApiCatalogDiscovery:
         home: Path,
         transport: httpx.AsyncBaseTransport | None = None,
         now_fn=time.time,
+        mcp_registry: Any = None,
     ):
         self.cache_path = _cache_path(home)
         _ensure_schema(self.cache_path)
         self.transport = transport
         self.now_fn = now_fn
         self._home = Path(home)
+        self.mcp_registry = mcp_registry
         self._guru: ApiGuruDirectory | None = None
         self.calls = 0
 
@@ -324,19 +327,60 @@ class ApiCatalogDiscovery:
                     raise
                 failures.append("OpenAPI directory unavailable")
 
-        if public_index is None and guru_index is None:
-            raise RuntimeError("No API catalog is currently available")
+        mcp_index: CapabilityIndex | None = None
+        mcp_rows: dict[str, dict[str, Any]] = {}
+        mcp_meta: tuple[float, str, bool] | None = None
+        if source in {"mcp", "all"}:
+            if self.mcp_registry is None:
+                if source == "mcp":
+                    raise RuntimeError("MCP Registry discovery is not configured")
+                failures.append("MCP Registry not configured")
+            else:
+                try:
+                    payload = await self.mcp_registry.call(
+                        "star_mcp_registry_search",
+                        {"query": query, "limit": min(20, max(limit * 2, 8))},
+                    )
+                    servers = payload.get("servers", []) if isinstance(payload, dict) else []
+                    options = []
+                    for server in servers[:20]:
+                        if not isinstance(server, dict):
+                            continue
+                        label = server.get("name")
+                        if not isinstance(label, str) or not label:
+                            continue
+                        option = mcp_option(
+                            name=label,
+                            description=str(server.get("description") or "")[:240],
+                            source=MCP_REGISTRY_URL,
+                            repository_url=str(server.get("repository_url") or "")[:500],
+                        )
+                        options.append(option)
+                        mcp_rows[option.key] = server
+                    mcp_index = CapabilityIndex(options)
+                    serialized = ":".join(
+                        f"{option.key}:{option.summary}" for option in mcp_index.options
+                    )
+                    mcp_meta = (
+                        float(self.now_fn()),
+                        hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+                        False,
+                    )
+                except (httpx.HTTPError, OSError, RuntimeError, ValueError):
+                    if source == "mcp":
+                        raise
+                    failures.append("MCP Registry unavailable")
 
-        if public_index is not None and guru_index is not None:
-            digest = hashlib.sha256(
-                (public_meta[1] + ":" + guru_meta[1]).encode("utf-8")
-            ).hexdigest()
-            combined = _combined_index(public_index, guru_index, digest)
-            ranked = combined.search(query, limit=min(60, max(limit * 6, 20)))
-        else:
-            index = public_index if public_index is not None else guru_index
-            assert index is not None
-            ranked = index.search(query, limit=min(60, max(limit * 6, 20)))
+        indexes = tuple(
+            item for item in (public_index, guru_index, mcp_index) if item is not None
+        )
+        if not indexes:
+            raise RuntimeError("No capability catalog is currently available")
+        metas = [item for item in (public_meta, guru_meta, mcp_meta) if item is not None]
+        fingerprints = ":".join(item[1] for item in metas)
+        digest = hashlib.sha256(fingerprints.encode("utf-8")).hexdigest() if len(metas) > 1 else metas[0][1]
+        ranked_index = indexes[0] if len(indexes) == 1 else _combined_index(indexes, digest)
+        ranked = ranked_index.search(query, limit=min(60, max(limit * 6, 20)))
 
         results = []
         for option, score in ranked:
@@ -356,37 +400,53 @@ class ApiCatalogDiscovery:
                 })
             else:
                 match = guru_rows.get(option.key)
-                if match is None:
-                    continue
-                results.append({
-                    "kind": "rest", "origin": "apis.guru",
-                    "provider_id": match.provider_id,
-                    "name": match.title,
-                    "category": " ".join(match.categories),
-                    "description": match.description[:500],
-                    "spec_url": match.spec_url,
-                    "openapi_version": match.openapi_version,
-                    "updated_at": match.last_updated,
-                    "documentation_url": match.spec_url,
-                    "auth": "unknown", "https": True, "cors": "unknown",
-                    "relevance_score": round(float(score), 3),
-                    "status": "discovery_only_unverified",
-                })
+                if match is not None:
+                    results.append({
+                        "kind": "rest", "origin": "apis.guru",
+                        "provider_id": match.provider_id,
+                        "name": match.title,
+                        "category": " ".join(match.categories),
+                        "description": match.description[:500],
+                        "spec_url": match.spec_url,
+                        "openapi_version": match.openapi_version,
+                        "updated_at": match.last_updated,
+                        "documentation_url": match.spec_url,
+                        "auth": "unknown", "https": True, "cors": "unknown",
+                        "relevance_score": round(float(score), 3),
+                        "status": "discovery_only_unverified",
+                    })
+                else:
+                    server = mcp_rows.get(option.key)
+                    if server is None:
+                        continue
+                    results.append({
+                        "kind": "mcp", "origin": "official-mcp-registry",
+                        "name": str(server.get("name") or "")[:180],
+                        "description": str(server.get("description") or "")[:240],
+                        "repository_url": str(server.get("repository_url") or "")[:500],
+                        "version": str(server.get("version") or "")[:80],
+                        "registry_listed": True,
+                        "publisher_verified": False,
+                        "installed": False, "connected": False,
+                        "relevance_score": round(float(score), 3),
+                        "status": "discovery_only_unverified",
+                    })
             if len(results) >= limit:
                 break
 
-        meta = [item for item in (public_meta, guru_meta) if item is not None]
-        digest = hashlib.sha256(
-            ":".join(item[1] for item in meta).encode("utf-8")
-        ).hexdigest() if len(meta) > 1 else meta[0][1]
         return {
             "query": query,
-            "source": CATALOG_URL if source == "public" else DIRECTORY_URL if source == "openapi" else "public-apis + APIs.guru",
+            "source": (
+                CATALOG_URL if source == "public"
+                else DIRECTORY_URL if source == "openapi"
+                else MCP_REGISTRY_URL if source == "mcp"
+                else "Public APIs + APIs.guru + MCP Registry"
+            ),
             "selected_source": source,
             "catalog_sha256": digest,
-            "catalog_fetched_at": min(item[0] for item in meta),
-            "catalog_stale": any(item[2] for item in meta),
-            "catalog_entries": sum(len(idx.options) for idx in (public_index, guru_index) if idx is not None),
+            "catalog_fetched_at": min(item[0] for item in metas),
+            "catalog_stale": any(item[2] for item in metas),
+            "catalog_entries": sum(len(idx.options) for idx in indexes),
             "source_failures": failures,
             "results": results,
             "notice": (
