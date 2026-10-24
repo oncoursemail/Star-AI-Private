@@ -10,6 +10,7 @@ stale cache may still be searched and is clearly labelled stale.
 """
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 from pathlib import Path
 import re
@@ -92,7 +93,7 @@ def _cache_path(home: Path) -> Path:
 def _read_cache(path: Path) -> tuple[str, float, str] | None:
     if not path.exists():
         return None
-    with sqlite3.connect(str(path), timeout=10) as db:
+    with closing(sqlite3.connect(str(path), timeout=10)) as db:
         row = db.execute(
             "SELECT body,fetched_at,sha256 FROM catalog_cache WHERE source_url=?",
             (CATALOG_URL,),
@@ -115,7 +116,7 @@ def _write_cache(path: Path, body: str, *, fetched_at: float) -> str:
     if not encoded or len(encoded) > MAX_REPLY_BYTES:
         raise ValueError("API catalog body is empty or too large")
     fingerprint = hashlib.sha256(encoded).hexdigest()
-    with sqlite3.connect(str(path), timeout=10) as db:
+    with closing(sqlite3.connect(str(path), timeout=10)) as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("""CREATE TABLE IF NOT EXISTS catalog_cache (
             source_url TEXT PRIMARY KEY,
@@ -135,7 +136,7 @@ def _write_cache(path: Path, body: str, *, fetched_at: float) -> str:
 
 
 def _ensure_schema(path: Path) -> None:
-    with sqlite3.connect(str(path), timeout=10) as db:
+    with closing(sqlite3.connect(str(path), timeout=10)) as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("""CREATE TABLE IF NOT EXISTS catalog_cache (
             source_url TEXT PRIMARY KEY,
