@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .api_intelligence import summarize_openapi
+from .api_contracts import compile_read_contracts
 
 
 DIRECTORY_URL = "https://api.apis.guru/v2/list.json"
@@ -285,6 +286,7 @@ class ApiGuruDirectory:
                 stale = True
         spec = json.loads(blob)
         summary = summarize_openapi(spec)
+        contracts = compile_read_contracts(spec, max_contracts=4)
         return {
             "provider_id": provider_id,
             "name": selected.title,
@@ -304,6 +306,9 @@ class ApiGuruDirectory:
             "write_operation_count": len(summary.write_operations),
             "write_operations": list(summary.write_operations[:12]),
             "warnings": list(summary.warnings),
+            "typed_read_contracts": contracts["contracts"],
+            "typed_contracts_scanned": contracts["scanned_operations"],
+            "typed_contracts_skipped": contracts["skipped"],
             "publisher_verified": False,
             "executable": False,
             "external_refs_resolved": False,
