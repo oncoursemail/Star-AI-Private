@@ -112,20 +112,26 @@ def parse_public_apis_markdown(markdown: str, *, source: str = PUBLIC_APIS_REPO)
     headers: list[str] = []
     for raw in markdown.splitlines():
         line = raw.strip()
+        if line.startswith("### "):
+            category = line[4:].strip()
+            headers = []
+            continue
         if line.startswith("## "):
             category = line[3:].strip()
             headers = []
             continue
-        if not line.startswith("|") or line.count("|") < 3:
+        # public-apis historically used both "| API | Description ..." and
+        # "API | Description ..." header rows. Data rows still begin with "|".
+        if line.count("|") < 3:
             continue
         cells = [_cell(part) for part in line.strip("|").split("|")]
-        lowered = [c.lower() for c in cells]
-        if not headers and ("api" in lowered or "name" in lowered) and "description" in lowered:
+        lowered = [value.lower() for value in cells]
+        if ("api" in lowered or "name" in lowered) and "description" in lowered:
             headers = lowered
             continue
-        if all(re.fullmatch(r":?-{3,}:?", c.replace(" ", "")) for c in cells if c):
+        if all(re.fullmatch(r":?-{3,}:?", value.replace(" ", "")) for value in cells if value):
             continue
-        if not headers or len(cells) != len(headers):
+        if not line.startswith("|") or not headers or len(cells) != len(headers):
             continue
         row = dict(zip(headers, cells))
         api_cell = row.get("api") or row.get("name") or ""
