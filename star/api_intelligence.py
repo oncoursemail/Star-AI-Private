@@ -222,7 +222,8 @@ def summarize_openapi(spec: dict[str, Any]) -> OpenApiSummary:
     if not isinstance(spec, dict):
         raise TypeError("OpenAPI document must be an object")
     version = str(spec.get("openapi") or spec.get("swagger") or "")
-    info = spec.get("info") if isinstance(spec.get("info"), dict) else {}
+    raw_info = spec.get("info")
+    info: dict[str, Any] = raw_info if isinstance(raw_info, dict) else {}
     title = str(info.get("title") or "Untitled API")
     servers: list[str] = []
     if isinstance(spec.get("servers"), list):
@@ -231,9 +232,9 @@ def summarize_openapi(spec: dict[str, Any]) -> OpenApiSummary:
                 servers.append(server["url"])
     elif isinstance(spec.get("host"), str):
         scheme = "https"
-        schemes = spec.get("schemes")
-        if isinstance(schemes, list) and schemes and isinstance(schemes[0], str):
-            scheme = schemes[0]
+        swagger_schemes = spec.get("schemes")
+        if isinstance(swagger_schemes, list) and swagger_schemes and isinstance(swagger_schemes[0], str):
+            scheme = swagger_schemes[0]
         base_path = spec.get("basePath") if isinstance(spec.get("basePath"), str) else ""
         servers.append(f"{scheme}://{spec['host']}{base_path}")
 
@@ -347,7 +348,8 @@ def summarize_arazzo(document: dict[str, Any]) -> ArazzoSummary:
     if not isinstance(document, dict):
         raise TypeError("Arazzo document must be an object")
     version = str(document.get("arazzo") or "")
-    info = document.get("info") if isinstance(document.get("info"), dict) else {}
+    raw_info = document.get("info")
+    info: dict[str, Any] = raw_info if isinstance(raw_info, dict) else {}
     title = str(info.get("title") or "Untitled workflow")
     sources: list[str] = []
     warnings: list[str] = []
