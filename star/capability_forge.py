@@ -44,6 +44,7 @@ class CapabilityOption:
     endpoint: str = ""
     auth: str = "unknown"
     operations: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
     risk_flags: tuple[str, ...] = ()
     spec_fingerprint: str = ""
     verified_at: float | None = None
@@ -153,6 +154,7 @@ def capability_set_fingerprint(options: Iterable[CapabilityOption]) -> str:
             "endpoint": option.endpoint,
             "spec": option.spec_fingerprint,
             "operations": option.operations,
+            "tags": option.tags,
             "official": option.official,
         })
     body = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -192,6 +194,7 @@ def rest_option(
         endpoint=endpoint,
         auth=candidate.auth,
         operations=operations,
+        tags=(candidate.category,) if candidate.category else (),
         risk_flags=tuple(dict.fromkeys(risk)),
         spec_fingerprint=spec_fingerprint,
         verified_at=verified_at,
@@ -225,6 +228,7 @@ def mcp_option(
         endpoint=repository_url,
         auth="unknown",
         operations=clean_tools,
+        tags=("mcp",),
         spec_fingerprint=version_fingerprint,
         verified_at=verified_at,
         official=official,
@@ -255,6 +259,7 @@ class CapabilityIndex:
                 (option.name, 4.0),
                 (option.summary, 1.0),
                 (" ".join(option.operations), 1.7),
+                (" ".join(option.tags), 3.0),
                 (option.kind, 1.2),
             )
             for text, weight in fields:
@@ -288,14 +293,31 @@ class CapabilityIndex:
         for index in candidate_indexes:
             weights = self._weights[index]
             score = 0.0
+            matched = 0
             for token in query_tokens:
                 weight = weights.get(token)
                 if weight is None:
                     continue
+                matched += 1
                 df = self._doc_freq.get(token, 1)
                 idf = math.log(1.0 + (total - df + 0.5) / (df + 0.5))
                 score += idf * weight
-            if score > 0:
+            if matched:
+                coverage = matched / len(query_tokens)
+                score += coverage * 3.0
+                if matched == len(query_tokens) and len(query_tokens) > 1:
+                    score += 2.0
+                option = self.options[index]
+                phrase = " ".join(query_tokens)
+                name_text = " ".join(_tokens(option.name))
+                tag_text = " ".join(_tokens(" ".join(option.tags)))
+                summary_text = " ".join(_tokens(option.summary))
+                if phrase and phrase in name_text:
+                    score += 5.0
+                elif phrase and phrase in tag_text:
+                    score += 4.0
+                elif phrase and phrase in summary_text:
+                    score += 2.0
                 scored.append((index, score))
         scored.sort(key=lambda item: (-item[1], self.options[item[0]].name.lower(), self.options[item[0]].key))
         result = tuple(scored[:limit])
