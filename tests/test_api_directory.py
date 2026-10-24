@@ -210,6 +210,7 @@ class FakeRegistry:
 
     async def call(self, name, args):
         assert name == "star_mcp_registry_search"
+        assert len(args["query"]) <= 100
         self.calls.append(args)
         return {"servers": [{
             "name": "example/weather",
@@ -278,3 +279,20 @@ def test_registry_only_mode_never_installs_or_authorizes(tmp_path):
     assert result["results"][0]["connected"] is False
     assert result["results"][0]["status"] == "discovery_only_unverified"
     assert len(registry.calls) == 1
+
+
+
+def test_long_combined_query_respects_registry_parameter_limit(tmp_path):
+    registry = FakeRegistry()
+    catalog = ApiCatalogDiscovery(
+        home=tmp_path,
+        transport=httpx.MockTransport(response),
+        now_fn=lambda: 1000.0,
+        mcp_registry=registry,
+    )
+    query = "weather forecast " + "x" * 115
+    result = run(catalog.call("star_api_catalog_search", {
+        "query": query, "source": "mcp",
+    }))
+    assert result["results"] == []
+    assert registry.calls[0]["query"] == query[:100]
