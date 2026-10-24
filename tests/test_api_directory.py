@@ -294,5 +294,5 @@ def test_long_combined_query_respects_registry_parameter_limit(tmp_path):
     result = run(catalog.call("star_api_catalog_search", {
         "query": query, "source": "mcp",
     }))
-    assert result["results"] == []
+    assert result["results"][0]["kind"] == "mcp"
     assert registry.calls[0]["query"] == query[:100]
