@@ -102,7 +102,7 @@ def parse_directory(data: Any) -> tuple[DirectoryEntry, ...]:
         if not isinstance(definition, dict):
             continue
         spec_url = definition.get("swaggerUrl")
-        if not spec_url_allowed(spec_url):
+        if not isinstance(spec_url, str) or not spec_url_allowed(spec_url):
             continue
         info = definition.get("info")
         if not isinstance(info, dict):
