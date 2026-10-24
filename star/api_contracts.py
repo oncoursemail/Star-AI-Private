@@ -44,7 +44,7 @@ def _field_schema(source: Any) -> dict[str, Any] | None:
     if any(field in source for field in ("$ref", "oneOf", "anyOf", "allOf", "not", "items", "properties")):
         return None
     kind = source.get("type")
-    if kind not in _ALLOWED_TYPES or not isinstance(kind, str):
+    if not isinstance(kind, str) or kind not in _ALLOWED_TYPES:
         return None
     output: dict[str, Any] = {"type": kind}
     if kind == "string":
@@ -213,6 +213,32 @@ def compile_read_contracts(spec: dict[str, Any], *, max_contracts: int = 6) -> d
     }
 
 
+_SAFE_SCHEMA_KEYS = frozenset({
+    "type", "properties", "required", "additionalProperties", "minLength", "maxLength",
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "enum",
+})
+
+
+def _safe_compiled_schema(schema: Any, *, depth: int = 0) -> bool:
+    """Defense in depth: never let a forged contract smuggle in external references."""
+    if depth > 4 or not isinstance(schema, dict):
+        return False
+    if any(key not in _SAFE_SCHEMA_KEYS for key in schema):
+        return False
+    props = schema.get("properties")
+    if props is not None:
+        if not isinstance(props, dict) or len(props) > MAX_PARAMETERS_PER_OPERATION + 2:
+            return False
+        if schema.get("additionalProperties") is not False:
+            return False
+        return all(
+            isinstance(name, str) and len(name) <= 80
+            and _safe_compiled_schema(child, depth=depth + 1)
+            for name, child in props.items()
+        )
+    return isinstance(schema.get("type"), str) and schema["type"] in _ALLOWED_TYPES
+
+
 def validate_contract_arguments(contract: dict[str, Any], arguments: Any) -> dict[str, Any]:
     """Check proposed inputs with our restricted schema; never construct an HTTP request."""
     if not isinstance(contract, dict) or contract.get("status") != "preview_only_no_execution":
@@ -220,6 +246,8 @@ def validate_contract_arguments(contract: dict[str, Any], arguments: Any) -> dic
     schema = contract.get("input_schema")
     if not isinstance(schema, dict) or not isinstance(arguments, dict):
         raise ValueError("Contract arguments must be an object")
+    if len(json.dumps(schema, ensure_ascii=False, allow_nan=False)) > 12_000 or not _safe_compiled_schema(schema):
+        raise ValueError("Contract schema was not generated from the supported, no-reference subset")
     Draft202012Validator(schema).validate(arguments)
     # Normalizing through JSON refuses custom Python objects and NaN/Infinity.
     return json.loads(json.dumps(arguments, allow_nan=False))
