@@ -106,9 +106,21 @@ class SelectionResult:
 
 
 def _tokens(text: str) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(
-        match.group(0).lower() for match in _TOKEN.finditer(text) if len(match.group(0)) > 1
-    ))
+    """Keep whole identifiers *and* word components for dotted/slashed MCP/API names.
+
+    For example, `example/weather-forecast` is searchable as `weather`,
+    `forecast`, and the original identifier.  Duplicates are removed to avoid
+    overweighting punctuation-heavy provider names.
+    """
+    found: dict[str, None] = {}
+    for match in _TOKEN.finditer(text):
+        original = match.group(0).lower()
+        if len(original) > 1:
+            found[original] = None
+        for part in re.split(r"[^a-z0-9]+", original):
+            if len(part) > 1:
+                found[part] = None
+    return tuple(found)
 
 
 def _safe_https_endpoint(url: str) -> bool:
@@ -414,6 +426,13 @@ class CapabilityStore:
                 open_until,
             ),
         )
+        # A failed call must invalidate hot winner choices immediately.  Otherwise
+        # STAR could keep choosing a failing provider until TTL expiry even when
+        # a healthier fallback was already known.
+        if not success:
+            self.db.execute(
+                "DELETE FROM capability_selection_cache WHERE winner_key=?", (key,)
+            )
         self.db.commit()
         return self.health(key)
 
