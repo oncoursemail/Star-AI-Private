@@ -129,6 +129,8 @@ def test_spec_inspection_is_read_only_and_resolves_no_references(tmp_path):
     assert "GET /forecast (getForecast)" in result["operations"]
     assert result["write_operation_count"] == 1
     assert result["auth_schemes"] == ["ApiKeyAuth"]
+    assert result["server_urls"] == ["https://api.weather.test"]
+    assert result["server_urls_hidden"] == 1
     assert result["publisher_verified"] is False
     assert result["executable"] is False
     assert result["typed_read_contracts"]
