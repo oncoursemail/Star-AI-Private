@@ -479,10 +479,11 @@ def _evidence_adjustment(
 ) -> tuple[float, tuple[str, ...]]:
     score = 0.0
     reasons: list[str] = []
-    if option.verified:
+    verified_at = option.verified_at
+    if option.spec_fingerprint and verified_at is not None:
         score += 4.0
         reasons.append("verified specification/version evidence")
-        age_days = max(0.0, (now - float(option.verified_at)) / 86_400)
+        age_days = max(0.0, (now - verified_at) / 86_400)
         if age_days > 90:
             penalty = min(4.0, (age_days - 90) / 90)
             score -= penalty
