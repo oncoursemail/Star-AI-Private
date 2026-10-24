@@ -340,7 +340,7 @@ class ApiCatalogDiscovery:
                 try:
                     payload = await self.mcp_registry.call(
                         "star_mcp_registry_search",
-                        {"query": query, "limit": min(20, max(limit * 2, 8))},
+                        {"query": query[:100], "limit": min(20, max(limit * 2, 8))},
                     )
                     servers = payload.get("servers", []) if isinstance(payload, dict) else []
                     options = []
