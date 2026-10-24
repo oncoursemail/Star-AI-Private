@@ -381,6 +381,6 @@ class ApiCatalogDiscovery:
             "notice": (
                 "Untrusted discovery metadata only. APIs.guru descriptions may be third-party "
                 "and outdated. Verify first-party docs, licenses, auth, limits and test safely; "
-                "no discovered API was called or authorized."
+                "No discovered API was called or authorized."
             ),
         }
