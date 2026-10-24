@@ -7,6 +7,7 @@ installation, local file access, or recursive $ref resolution.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import ipaddress
@@ -17,7 +18,7 @@ import re
 import sqlite3
 import threading
 import time
-from typing import Any
+from typing import Any, Iterator
 from urllib.parse import urlsplit
 
 import httpx
@@ -198,11 +199,18 @@ class ApiGuruDirectory:
                 body BLOB NOT NULL, sha256 TEXT NOT NULL, fetched_at REAL NOT NULL
             )""")
 
-    def _connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        # sqlite3.Connection.__exit__ commits but DOES NOT close its handle.
+        # Closing explicitly avoids leaking descriptors during repeated searches.
         db = sqlite3.connect(str(self.path), timeout=10)
-        db.execute("PRAGMA busy_timeout=10000")
-        db.execute("PRAGMA journal_mode=WAL")
-        return db
+        try:
+            db.execute("PRAGMA busy_timeout=10000")
+            db.execute("PRAGMA journal_mode=WAL")
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def _cached(self, table: str, key: str | None) -> tuple[bytes, str, float, str] | None:
         with self._connection() as db:
