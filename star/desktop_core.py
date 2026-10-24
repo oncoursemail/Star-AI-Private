@@ -1212,7 +1212,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         from .api_catalog import ApiCatalogDiscovery
         discovery_enabled = bool(use_tools and research and mode == 'agent')
         mcp_registry = RegistryDiscovery() if discovery_enabled else None
-        api_catalog = ApiCatalogDiscovery(home=home) if discovery_enabled else None
+        api_catalog = (ApiCatalogDiscovery(home=home, mcp_registry=mcp_registry)
+                       if discovery_enabled else None)
         connection_for(settings)  # fail early (missing key, bad address) before any work
         limits = call_limits(settings)
         # Own hardware only: the conversation's tool list stays put from turn to turn (STAR
