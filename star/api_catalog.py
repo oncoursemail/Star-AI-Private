@@ -218,8 +218,19 @@ class ApiCatalogDiscovery:
         _ensure_schema(self.cache_path)
         self.transport = transport
         self.now_fn = now_fn
-        self.guru = ApiGuruDirectory(home=home, transport=transport, now_fn=now_fn)
+        self._home = Path(home)
+        self._guru: ApiGuruDirectory | None = None
         self.calls = 0
+
+    @property
+    def guru(self) -> ApiGuruDirectory:
+        # The 9 MB directory and its SQLite schema should not slow the default
+        # (Public APIs only) hot path. Instantiate only for a requested lookup.
+        if self._guru is None:
+            self._guru = ApiGuruDirectory(
+                home=self._home, transport=self.transport, now_fn=self.now_fn,
+            )
+        return self._guru
 
     @staticmethod
     def owns(name: str) -> bool:
