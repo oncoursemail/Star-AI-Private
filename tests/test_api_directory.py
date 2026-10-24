@@ -199,10 +199,29 @@ def test_stale_fallback_is_labelled_but_expires(tmp_path):
         run(expired.listing())
 
 
+class FakeRegistry:
+    def __init__(self):
+        self.calls = []
+
+    async def call(self, name, args):
+        assert name == "star_mcp_registry_search"
+        self.calls.append(args)
+        return {"servers": [{
+            "name": "example/weather",
+            "description": "weather forecast tools for climate data",
+            "repository_url": "https://github.com/example/weather",
+            "version": "1.0",
+        }]}
+
+
 def test_combined_api_search_and_guru_only_search(tmp_path):
     calls = []
     transport = httpx.MockTransport(lambda request: response(request, events=calls))
-    catalog = ApiCatalogDiscovery(home=tmp_path, transport=transport, now_fn=lambda: 1000.0)
+    registry = FakeRegistry()
+    catalog = ApiCatalogDiscovery(
+        home=tmp_path, transport=transport, now_fn=lambda: 1000.0,
+        mcp_registry=registry,
+    )
     openapi = run(catalog.call("star_api_catalog_search", {
         "query": "weather forecast", "source": "openapi", "limit": 3,
     }))
@@ -212,9 +231,14 @@ def test_combined_api_search_and_guru_only_search(tmp_path):
     combined = run(catalog.call("star_api_catalog_search", {
         "query": "weather forecast", "source": "all", "limit": 4,
     }))
-    assert {item["origin"] for item in combined["results"]} == {"public-apis", "apis.guru"}
-    assert combined["catalog_entries"] == 2
+    assert {item["origin"] for item in combined["results"]} == {
+        "public-apis", "apis.guru", "official-mcp-registry",
+    }
+    assert combined["catalog_entries"] == 3
     assert combined["source_failures"] == []
+    assert len(registry.calls) == 1
+    mcp = next(row for row in combined["results"] if row["kind"] == "mcp")
+    assert mcp["installed"] is False and mcp["publisher_verified"] is False
 
 
 def test_tool_can_inspect_only_catalog_listed_provider(tmp_path):
@@ -232,3 +256,20 @@ def test_schema_refuses_user_supplied_host(tmp_path):
         run(catalog.call("star_api_catalog_search", {"query": "weather", "source": "https://evil.test"}))
     with pytest.raises(Exception):
         run(catalog.call("star_api_spec_inspect", {"provider_id": "weather.test", "url": "https://evil.test"}))
+
+
+
+def test_registry_only_mode_never_installs_or_authorizes(tmp_path):
+    registry = FakeRegistry()
+    catalog = ApiCatalogDiscovery(
+        home=tmp_path, transport=httpx.MockTransport(response), now_fn=lambda: 1000.0,
+        mcp_registry=registry,
+    )
+    result = run(catalog.call("star_api_catalog_search", {
+        "query": "weather forecast", "source": "mcp", "limit": 3,
+    }))
+    assert result["catalog_entries"] == 1
+    assert result["results"][0]["kind"] == "mcp"
+    assert result["results"][0]["connected"] is False
+    assert result["results"][0]["status"] == "discovery_only_unverified"
+    assert len(registry.calls) == 1
