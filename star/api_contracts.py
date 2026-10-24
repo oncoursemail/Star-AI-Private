@@ -195,6 +195,10 @@ def compile_read_contracts(spec: dict[str, Any], *, max_contracts: int = 6) -> d
             result, reason = _operation_contract(path, method, operation, inherited)
             if result is None:
                 skipped[reason] = skipped.get(reason, 0) + 1
+            elif len(json.dumps(result["input_schema"], ensure_ascii=False)) > 4000:
+                skipped["parameter schema exceeds response budget"] = (
+                    skipped.get("parameter schema exceeds response budget", 0) + 1
+                )
             elif len(built) < max_contracts:
                 built.append(result)
         if count > MAX_WALKED_OPERATIONS:
