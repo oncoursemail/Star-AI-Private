@@ -200,3 +200,34 @@ def test_capability_set_fingerprint_is_order_independent():
     a = _rest("A", "weather", "a.test")
     b = _rest("B", "weather", "b.test")
     assert capability_set_fingerprint([a, b]) == capability_set_fingerprint([b, a])
+
+
+
+def test_query_coverage_beats_generic_single_token_match():
+    exact = CapabilityOption(
+        key="rest:currency",
+        kind="rest",
+        name="Rates",
+        summary="foreign currency conversion",
+        source="test",
+        endpoint="https://rates.test",
+        auth="No",
+        operations=("GET /rates",),
+        tags=("Currency Exchange",),
+        spec_fingerprint="spec-rates",
+        verified_at=1_000,
+    )
+    generic = CapabilityOption(
+        key="rest:generic",
+        kind="rest",
+        name="Data Exchange",
+        summary="generic file exchange service",
+        source="test",
+        endpoint="https://exchange.test",
+        auth="No",
+        operations=("GET /data",),
+        spec_fingerprint="spec-generic",
+        verified_at=1_000,
+    )
+    result = CapabilityForge([generic, exact]).select("currency exchange", now=2_000)
+    assert result.winner and result.winner.option.key == exact.key
