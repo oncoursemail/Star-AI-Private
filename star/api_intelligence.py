@@ -7,7 +7,7 @@ an executable instruction or an automatic credentialed request.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import hashlib
 import json
 import re
@@ -49,6 +49,18 @@ class OpenApiSummary:
     operations: tuple[str, ...]
     auth_schemes: tuple[str, ...]
     write_operations: tuple[str, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ArazzoSummary:
+    title: str
+    version: str
+    source_descriptions: tuple[str, ...]
+    workflows: tuple[str, ...]
+    operation_references: tuple[str, ...]
+    workflow_references: tuple[str, ...]
+    step_count: int
     warnings: tuple[str, ...]
 
 
@@ -149,7 +161,7 @@ def _security_warnings(candidate: ApiCandidate) -> list[str]:
     if candidate.https is False:
         warnings.append("catalog marks API as not HTTPS")
     auth = candidate.auth.strip().lower()
-    if auth in {"", "unknown", "null", "none", "no"}:
+    if auth in {"", "unknown", "null"}:
         warnings.append("authentication requirements need verification")
     if "oauth" in auth:
         warnings.append("OAuth requires an explicit owner-authorized connection")
@@ -316,3 +328,97 @@ def snapshot_manifest(*, source_url: str, body: str, retrieved_at: str) -> str:
         "bytes": len(body.encode("utf-8")),
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+
+def summarize_arazzo(document: dict[str, Any]) -> ArazzoSummary:
+    """Summarize an Arazzo workflow description without executing any step.
+
+    Arazzo documents are untrusted orchestration descriptions.  STAR records source
+    descriptions and operation/workflow references so a later verifier can map them
+    onto already-verified OpenAPI/AsyncAPI capabilities before any execution.
+    """
+    if not isinstance(document, dict):
+        raise TypeError("Arazzo document must be an object")
+    version = str(document.get("arazzo") or "")
+    info = document.get("info") if isinstance(document.get("info"), dict) else {}
+    title = str(info.get("title") or "Untitled workflow")
+    sources: list[str] = []
+    warnings: list[str] = []
+    raw_sources = document.get("sourceDescriptions")
+    if isinstance(raw_sources, list):
+        for source in raw_sources:
+            if not isinstance(source, dict):
+                continue
+            name = str(source.get("name") or "").strip()
+            url = str(source.get("url") or "").strip()
+            source_type = str(source.get("type") or "").strip()
+            label = " ".join(part for part in (name, source_type, url) if part)
+            if label:
+                sources.append(label)
+            if url:
+                parsed = urlparse(url)
+                if parsed.scheme not in {"https", ""}:
+                    warnings.append("a workflow source description is not HTTPS")
+                if parsed.username is not None or parsed.password is not None:
+                    warnings.append("a workflow source URL contains credentials and must be refused")
+    elif raw_sources is not None:
+        warnings.append("sourceDescriptions is malformed")
+
+    workflow_ids: list[str] = []
+    operation_refs: list[str] = []
+    workflow_refs: list[str] = []
+    step_count = 0
+    seen_workflows: set[str] = set()
+    raw_workflows = document.get("workflows")
+    if isinstance(raw_workflows, list):
+        for workflow in raw_workflows:
+            if not isinstance(workflow, dict):
+                continue
+            workflow_id = str(workflow.get("workflowId") or "").strip()
+            if workflow_id:
+                if workflow_id in seen_workflows:
+                    warnings.append("duplicate workflowId")
+                seen_workflows.add(workflow_id)
+                workflow_ids.append(workflow_id)
+            steps = workflow.get("steps")
+            if not isinstance(steps, list):
+                continue
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                step_count += 1
+                for field in ("operationId", "operationPath"):
+                    value = step.get(field)
+                    if isinstance(value, str) and value.strip():
+                        operation_refs.append(value.strip())
+                value = step.get("workflowId")
+                if isinstance(value, str) and value.strip():
+                    workflow_refs.append(value.strip())
+                timeout = step.get("timeout")
+                if timeout is not None and (type(timeout) is not int or timeout < 0):
+                    warnings.append("a workflow step has an invalid timeout")
+    elif raw_workflows is not None:
+        warnings.append("workflows is malformed")
+
+    if not version:
+        warnings.append("missing Arazzo version")
+    if not workflow_ids:
+        warnings.append("no workflow IDs found")
+    if not sources:
+        warnings.append("no source descriptions found")
+    if step_count > 500:
+        warnings.append("workflow is unusually large and should be reviewed before use")
+    # Arazzo itself explicitly leaves security enforcement to the consumer.  Preserve that
+    # boundary in the summary so downstream planning never treats a workflow as permission.
+    warnings.append("workflow description is orchestration data, not execution permission")
+    return ArazzoSummary(
+        title=title,
+        version=version,
+        source_descriptions=tuple(dict.fromkeys(sources)),
+        workflows=tuple(dict.fromkeys(workflow_ids)),
+        operation_references=tuple(dict.fromkeys(operation_refs)),
+        workflow_references=tuple(dict.fromkeys(workflow_refs)),
+        step_count=step_count,
+        warnings=tuple(dict.fromkeys(warnings)),
+    )
