@@ -21,7 +21,8 @@ from typing import Any
 import httpx
 from jsonschema import Draft202012Validator
 
-from .api_intelligence import parse_public_apis_markdown
+from .api_intelligence import ApiCandidate, parse_public_apis_markdown
+from .api_directory import ApiGuruDirectory, DirectoryEntry, DIRECTORY_URL
 from .capability_forge import CapabilityIndex, rest_option
 
 
@@ -36,24 +37,40 @@ TRIGGER = re.compile(
 TOOL = {
     "name": "star_api_catalog_search",
     "description": (
-        "Search STAR's cached public API catalog for possible integrations. "
-        "Discovery only: results are untrusted metadata, not verified, connected, "
-        "authorized, or executed. Use first-party docs/specs before integration."
+        "Search cached public APIs or APIs.guru OpenAPI definitions, or both. "
+        "Use source=public for quickest lookups and source=all for deeper search. "
+        "Discovery only: results never authorize access, installation, or execution."
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
             "query": {"type": "string", "minLength": 2, "maxLength": 160},
             "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+            "source": {"type": "string", "enum": ["public", "openapi", "all"]},
         },
         "required": ["query"],
         "additionalProperties": False,
     },
 }
-OWN_NAMES = frozenset({TOOL["name"]})
+SPEC_TOOL = {
+    "name": "star_api_spec_inspect",
+    "description": (
+        "Read one cached APIs.guru provider's machine-readable OpenAPI specification "
+        "using its provider_id from star_api_catalog_search. Reports methods, "
+        "auth and risks; NO endpoint execution, credentials or external $ref resolution."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {"provider_id": {"type": "string", "minLength": 1, "maxLength": 180}},
+        "required": ["provider_id"],
+        "additionalProperties": False,
+    },
+}
+OWN_NAMES = frozenset({TOOL["name"], SPEC_TOOL["name"]})
 
 _HOT_LOCK = threading.Lock()
 _HOT_INDEXES: dict[str, tuple[CapabilityIndex, dict[str, Any]]] = {}
+_HOT_GURU: dict[str, tuple[CapabilityIndex, dict[str, DirectoryEntry]]] = {}
 
 
 def _safe_query(value: str) -> str:
@@ -149,8 +166,46 @@ def _index_for(body: str, fingerprint: str) -> tuple[CapabilityIndex, dict[str, 
     return value
 
 
+def _guru_index(snapshot) -> tuple[CapabilityIndex, dict[str, DirectoryEntry]]:
+    with _HOT_LOCK:
+        previous = _HOT_GURU.get(snapshot.sha256)
+        if previous is not None:
+            return previous
+    candidates = [
+        ApiCandidate(
+            name=entry.title, url=entry.spec_url, description=entry.description,
+            category=" ".join(entry.categories), auth="unknown", https=True,
+            source=DIRECTORY_URL,
+        ) for entry in snapshot.entries
+    ]
+    options = [rest_option(candidate) for candidate in candidates]
+    index = CapabilityIndex(options)
+    mapping = {option.key: entry for option, entry in zip(options, snapshot.entries)}
+    with _HOT_LOCK:
+        _HOT_GURU[snapshot.sha256] = (index, mapping)
+        while len(_HOT_GURU) > 2:
+            del _HOT_GURU[next(iter(_HOT_GURU))]
+    return index, mapping
+
+
+_HOT_COMBINED: dict[str, CapabilityIndex] = {}
+
+
+def _combined_index(public_index: CapabilityIndex, guru_index: CapabilityIndex, fingerprint: str) -> CapabilityIndex:
+    with _HOT_LOCK:
+        existing = _HOT_COMBINED.get(fingerprint)
+        if existing is not None:
+            return existing
+    index = CapabilityIndex((*public_index.options, *guru_index.options))
+    with _HOT_LOCK:
+        _HOT_COMBINED[fingerprint] = index
+        while len(_HOT_COMBINED) > 2:
+            del _HOT_COMBINED[next(iter(_HOT_COMBINED))]
+    return index
+
+
 class ApiCatalogDiscovery:
-    """Prompt-gated, bounded discovery over one cached public catalog."""
+    """Prompt-gated, bounded API discovery over one or both cached public catalogs."""
 
     def __init__(
         self,
@@ -163,6 +218,7 @@ class ApiCatalogDiscovery:
         _ensure_schema(self.cache_path)
         self.transport = transport
         self.now_fn = now_fn
+        self.guru = ApiGuruDirectory(home=home, transport=transport, now_fn=now_fn)
         self.calls = 0
 
     @staticmethod
@@ -170,7 +226,7 @@ class ApiCatalogDiscovery:
         return name in OWN_NAMES
 
     def definitions(self, prompt: str) -> list[dict]:
-        return [TOOL] if isinstance(prompt, str) and TRIGGER.search(prompt) else []
+        return [TOOL, SPEC_TOOL] if isinstance(prompt, str) and TRIGGER.search(prompt) else []
 
     async def _download(self) -> str:
         timeout = httpx.Timeout(12.0, connect=4.0, read=8.0, write=3.0, pool=2.0)
@@ -215,47 +271,116 @@ class ApiCatalogDiscovery:
     async def call(self, name: str, arguments: dict) -> dict:
         if name not in OWN_NAMES:
             raise PermissionError("Unknown API catalog tool")
-        Draft202012Validator(TOOL["inputSchema"]).validate(arguments)
-        query = _safe_query(arguments["query"])
+        schema = SPEC_TOOL if name == SPEC_TOOL["name"] else TOOL
+        Draft202012Validator(schema["inputSchema"]).validate(arguments)
         if self.calls >= MAX_CALLS_PER_TURN:
             raise RuntimeError("API catalog discovery budget exhausted")
         self.calls += 1
 
-        body, fetched_at, fingerprint, stale = await self._catalog()
-        index, by_key = _index_for(body, fingerprint)
+        if name == SPEC_TOOL["name"]:
+            result = await self.guru.inspect(arguments["provider_id"])
+            result["status"] = "spec_observed_unverified_vendor"
+            return result
+
+        query = _safe_query(arguments["query"])
+        source = arguments.get("source", "public")
         limit = int(arguments.get("limit", 8))
-        ranked = index.search(query, limit=min(40, max(limit * 4, 12)))
+        public_index = None
+        public_rows: dict[str, Any] = {}
+        public_meta: tuple[float, str, bool] | None = None
+        guru_index = None
+        guru_rows: dict[str, DirectoryEntry] = {}
+        guru_meta: tuple[float, str, bool] | None = None
+        failures: list[str] = []
+
+        if source in {"public", "all"}:
+            try:
+                body, fetched_at, fingerprint, stale = await self._catalog()
+                public_index, public_rows = _index_for(body, fingerprint)
+                public_meta = (fetched_at, fingerprint, stale)
+            except (httpx.HTTPError, OSError, RuntimeError, ValueError):
+                if source == "public":
+                    raise
+                failures.append("public catalog unavailable")
+
+        if source in {"openapi", "all"}:
+            try:
+                snapshot = await self.guru.listing()
+                guru_index, guru_rows = _guru_index(snapshot)
+                guru_meta = (snapshot.fetched_at, snapshot.sha256, snapshot.stale)
+            except (httpx.HTTPError, OSError, RuntimeError, ValueError):
+                if source == "openapi":
+                    raise
+                failures.append("OpenAPI directory unavailable")
+
+        if public_index is None and guru_index is None:
+            raise RuntimeError("No API catalog is currently available")
+
+        if public_index is not None and guru_index is not None:
+            digest = hashlib.sha256(
+                (public_meta[1] + ":" + guru_meta[1]).encode("utf-8")
+            ).hexdigest()
+            combined = _combined_index(public_index, guru_index, digest)
+            ranked = combined.search(query, limit=min(60, max(limit * 6, 20)))
+        else:
+            index = public_index if public_index is not None else guru_index
+            assert index is not None
+            ranked = index.search(query, limit=min(60, max(limit * 6, 20)))
 
         results = []
         for option, score in ranked:
-            candidate = by_key.get(option.key)
-            if candidate is None:
-                continue
-            results.append({
-                "name": candidate.name,
-                "category": candidate.category,
-                "description": candidate.description[:500],
-                "documentation_url": candidate.url,
-                "auth": candidate.auth,
-                "https": candidate.https,
-                "cors": candidate.cors,
-                "relevance_score": round(float(score), 3),
-                "status": "discovery_only_unverified",
-            })
+            match = public_rows.get(option.key)
+            if match is not None:
+                results.append({
+                    "kind": "rest", "origin": "public-apis",
+                    "name": match.name,
+                    "category": match.category,
+                    "description": match.description[:500],
+                    "documentation_url": match.url,
+                    "auth": match.auth,
+                    "https": match.https,
+                    "cors": match.cors,
+                    "relevance_score": round(float(score), 3),
+                    "status": "discovery_only_unverified",
+                })
+            else:
+                match = guru_rows.get(option.key)
+                if match is None:
+                    continue
+                results.append({
+                    "kind": "rest", "origin": "apis.guru",
+                    "provider_id": match.provider_id,
+                    "name": match.title,
+                    "category": " ".join(match.categories),
+                    "description": match.description[:500],
+                    "spec_url": match.spec_url,
+                    "openapi_version": match.openapi_version,
+                    "updated_at": match.last_updated,
+                    "documentation_url": match.spec_url,
+                    "auth": "unknown", "https": True, "cors": "unknown",
+                    "relevance_score": round(float(score), 3),
+                    "status": "discovery_only_unverified",
+                })
             if len(results) >= limit:
                 break
 
+        meta = [item for item in (public_meta, guru_meta) if item is not None]
+        digest = hashlib.sha256(
+            ":".join(item[1] for item in meta).encode("utf-8")
+        ).hexdigest() if len(meta) > 1 else meta[0][1]
         return {
             "query": query,
-            "source": CATALOG_URL,
-            "catalog_sha256": fingerprint,
-            "catalog_fetched_at": fetched_at,
-            "catalog_stale": stale,
-            "catalog_entries": len(index.options),
+            "source": CATALOG_URL if source == "public" else DIRECTORY_URL if source == "openapi" else "public-apis + APIs.guru",
+            "selected_source": source,
+            "catalog_sha256": digest,
+            "catalog_fetched_at": min(item[0] for item in meta),
+            "catalog_stale": any(item[2] for item in meta),
+            "catalog_entries": sum(len(idx.options) for idx in (public_index, guru_index) if idx is not None),
+            "source_failures": failures,
             "results": results,
             "notice": (
-                "Untrusted discovery metadata only. Verify current first-party documentation, "
-                "terms, auth, limits and OpenAPI/MCP metadata before proposing an integration. "
-                "No discovered API was called or authorized."
+                "Untrusted discovery metadata only. APIs.guru descriptions may be third-party "
+                "and outdated. Verify first-party docs, licenses, auth, limits and test safely; "
+                "no discovered API was called or authorized."
             ),
         }
