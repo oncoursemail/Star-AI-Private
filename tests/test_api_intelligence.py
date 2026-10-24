@@ -8,6 +8,7 @@ from star.api_intelligence import (
     parse_public_apis_markdown,
     rank_api_candidates,
     snapshot_manifest,
+    summarize_arazzo,
     summarize_openapi,
 )
 
@@ -92,3 +93,39 @@ def test_snapshot_manifest_is_deterministic_and_requires_https():
     assert payload["bytes"] == 3
     with pytest.raises(ValueError):
         snapshot_manifest(source_url="http://example.test/catalog", body="abc", retrieved_at="now")
+
+
+
+def test_arazzo_summary_extracts_workflows_without_granting_execution():
+    summary = summarize_arazzo({
+        "arazzo": "1.1.0",
+        "info": {"title": "Weather workflow", "version": "1"},
+        "sourceDescriptions": [
+            {"name": "weather", "url": "https://api.example.test/openapi.json", "type": "openapi"}
+        ],
+        "workflows": [{
+            "workflowId": "forecastAndAlert",
+            "steps": [
+                {"stepId": "forecast", "operationId": "getForecast", "timeout": 2000},
+                {"stepId": "notify", "operationPath": "$sourceDescriptions.weather#/paths/~1alerts/post"},
+            ],
+        }],
+    })
+    assert summary.version == "1.1.0"
+    assert summary.workflows == ("forecastAndAlert",)
+    assert summary.step_count == 2
+    assert "getForecast" in summary.operation_references
+    assert any("not execution permission" in warning for warning in summary.warnings)
+
+
+def test_arazzo_summary_flags_credentialed_or_plaintext_sources():
+    summary = summarize_arazzo({
+        "arazzo": "1.1.0",
+        "info": {"title": "Unsafe", "version": "1"},
+        "sourceDescriptions": [
+            {"name": "bad", "url": "http://user:pass@example.test/openapi.json", "type": "openapi"}
+        ],
+        "workflows": [{"workflowId": "one", "steps": []}],
+    })
+    assert any("not HTTPS" in warning for warning in summary.warnings)
+    assert any("contains credentials" in warning for warning in summary.warnings)
