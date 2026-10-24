@@ -139,3 +139,14 @@ def test_result_count_and_request_limit_are_bounded():
     assert len(result["contracts"]) == 3
     with pytest.raises(ValueError):
         compile_read_contracts(spec, max_contracts=10000)
+
+
+
+def test_global_security_declaration_is_preserved():
+    spec = {
+        "openapi": "3.2.1",
+        "security": [{"ApiKeyAuth": []}],
+        "paths": {"/reports": {"get": {"operationId": "getReports"}}},
+    }
+    plan = compile_read_contracts(spec)["contracts"][0]
+    assert plan["security_declaration_present"] is True
