@@ -149,7 +149,7 @@ def _security_warnings(candidate: ApiCandidate) -> list[str]:
     if candidate.https is False:
         warnings.append("catalog marks API as not HTTPS")
     auth = candidate.auth.strip().lower()
-    if auth in {"", "unknown", "null", "none"}:
+    if auth in {"", "unknown", "null", "none", "no"}:
         warnings.append("authentication requirements need verification")
     if "oauth" in auth:
         warnings.append("OAuth requires an explicit owner-authorized connection")
