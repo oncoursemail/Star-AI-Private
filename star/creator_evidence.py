@@ -46,11 +46,10 @@ def _number(value: Any) -> float | None:
 def _rect(value: Any) -> tuple[float, float, float, float] | None:
     if (not isinstance(value, list) or len(value) != 4):
         return None
-    coords = [_number(x) for x in value]
-    if any(x is None for x in coords):
+    x, y, w, h = (_number(value[0]), _number(value[1]), _number(value[2]), _number(value[3]))
+    if x is None or y is None or w is None or h is None or w <= 0 or h <= 0:
         return None
-    x, y, w, h = coords
-    return (x, y, w, h) if w > 0 and h > 0 else None
+    return x, y, w, h
 
 
 def _intersection(a: tuple[float, ...], b: tuple[float, ...]) -> float:
