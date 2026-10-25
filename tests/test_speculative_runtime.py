@@ -57,9 +57,10 @@ class SpeculativeRuntimeTests(unittest.TestCase):
             self.flags(speculative="off", max_draft_tokens=True)
 
     def test_no_executable_or_model_bypass(self):
+        other = self.exe.with_name("other.exe")
+        other.write_bytes(b"test executable")
         with self.assertRaises(ValueError):
-            Runtime.arguments(self.exe.with_name("other.exe"), self.model,
-                              speculative="ngram-simple")
+            Runtime.arguments(other, self.model, speculative="ngram-simple")
         with self.assertRaises(ValueError):
             Runtime.arguments(self.exe, self.exe, speculative="ngram-simple")
 
