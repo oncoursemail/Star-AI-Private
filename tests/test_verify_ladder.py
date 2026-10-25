@@ -170,7 +170,7 @@ def test_generated_tests_are_written_once_run_and_reported_as_generated():
     state = {}
     rungs = asyncio.run(vl.run_rungs(module, vl.Tools(checker=checker, write_tests=write_tests, runner=runner),
                                      state))
-    assert [r.status for r in rungs] == ["pass", "skip", "pass", "fail"]   # api: no dump given
+    assert [r.status for r in rungs] == ["pass", "skip", "pass", "pass", "fail"]   # api: no dump given
     assert rungs[-1].detail == "generated test assert(result.add(2, 2) == 5) failed: assertion failed!"
     assert "local result = (function()" in runner.sources[-1] and "@@T" in runner.sources[-1]
     asyncio.run(vl.run_rungs(module, vl.Tools(checker=checker, write_tests=write_tests, runner=runner), state))

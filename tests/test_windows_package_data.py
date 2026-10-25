@@ -41,6 +41,7 @@ PACKAGE_DATA_SITES = {
     "star/reverse_engineering.py": "star/re_scripts",  # Ghidra scripts (PR #344), not in the PyInstaller lists
     "star/roblox_api_confusions.py": "data/roblox_api_confusions.json",
     "star/roblox_api_dataset.py": "data/roblox_api/roblox_api.json",
+    "star/roblox_deprecated.py": "data/roblox_api",  # deprecated list + beta status (missing folder = rung skips)
     "star/roblox_cutscene_studio.py": "star/skill_packs",  # roblox-cutscenes pack luau/ (PR #351)
     "star/roblox_vfx_studio.py": "star/skill_packs",  # roblox-vfx-composer pack luau/ (PR #327)
     "star/skill_import.py": "star/skill_packs",  # SkillForge: refuses to shadow a bundled pack name
@@ -74,6 +75,7 @@ PENDING_OWNER_REVIEW = frozenset({
     "examples/roblox-templates",
     "data/roblox_api_confusions.json",
     "data/roblox_api/roblox_api.json",  # bundled API dump (#331): not packaged yet
+    "data/roblox_api",  # deprecated.json + feature_status.json: package together with the API dump
     "data/gold_bank/bank.jsonl",  # gold bank: not packaged yet (missing file = no examples)
     "data/studio_atlas",  # studio atlas: not packaged yet (missing folder = no reference systems)
     "evals/studio",  # do not bundle protected evaluation manifests blindly
