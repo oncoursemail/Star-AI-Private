@@ -278,7 +278,7 @@ GENERATED_ABILITIES: dict[str, dict] = {
     # no copying another creator's models, textures, particles or source code.
     "frost_cyclone": {
         "keywords": ("ice vortex", "ice cyclone", "ice storm", "frost cyclone", "ice shards",
-                     "crystal storm", "glacial", "blizzard", "frost", "ice"),
+                     "crystal storm", "glacial", "blizzard", "frost", "ice blast", "ice spike"),
         "cues": [
             _cue("charge", 0, "aura", dur=0.9),
             _cue("charge", 0.18, "burst", count=20, inward=True, radius=8, speed=9, life=0.8,

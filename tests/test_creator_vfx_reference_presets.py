@@ -35,3 +35,8 @@ def test_ice_palette_inherits_approved_recolouring_path():
 
 def test_sword_slash_without_extra_words_selects_new_preset():
     assert vfx.choose_ability("sword slash")["name"] == "cinematic_sword_arc"
+
+
+def test_ice_inside_other_words_does_not_pick_the_frost_preset():
+    # Keywords are substring matches: a bare "ice" matched "nice", "slice", "device".
+    assert vfx.choose_ability("make a nice dash effect")["name"] != "frost_cyclone"

@@ -8,7 +8,7 @@ description: Official Roblox 2026 EditableMesh batch methods, serial mesh writes
 For Roblox procedural waves, mesh deformation, destruction, surface raycasts, geometry scanning, dynamic mesh creation, or performance fixes. Always inspect the current official API version. This pack is **off by default** until independently benchmarked on Star's evaluation gate.
 
 ## Verified API rules
-1. Roblox announced the beta on **August 6, 2026** and published-experience availability on **September 15, 2026**. Up to ~8x batch call speed and ~2x read-query throughput were reported on specific benchmark workloads; these are **not** guaranteed FPS gains.
+1. Roblox announced the beta on **August 6, 2026** and live-experience availability on **September 15, 2026**. Up to ~8x batch call speed and ~2x read-query throughput were reported on specific benchmark workloads; these are **not** guaranteed FPS gains.
 2. `EditableMesh:BatchAdd(Enum.MeshAttribute.Vertex, positions)` takes a `{Vector3}` array and returns ordered vertex IDs. `BatchAdd(Enum.MeshAttribute.Face, triangles)` takes an array of arrays of vertex IDs. Use proper winding order.
 3. `EditableMesh:BatchSetValues(vertexIds, positions)` takes **two** same-length arrays and determines the attribute type from the IDs; it has NO `Enum.MeshAttribute` argument. Never mix different ID types or pass face IDs to this method.
 4. Color creation takes color AND alpha arrays. Batch reads include `BatchGetValues`, `BatchGetVertexAttributes`, `BatchGetFaceAttributes`, and `BatchGetVertexFaceAttributes`. Some getters return a second array of alpha values for color IDs.
@@ -26,13 +26,10 @@ print(estimate_wave_panel({"quality": "mobile"}))
 luau_source = compile_wave_panel({"quality": "mobile", "span": 32, "amplitude": 0.5})
 # Owner reviews this string, then optionally installs it into a TEST place.
 ```
-The generator only returns Luau source; it does **not** edit Roblox Studio, upload assets, publish a game, or benchmark GPU hardware. To preview, owner may save the output as a LocalScript in StarterPlayerScripts in an authorized test place.
+The generator only returns Luau source; it does **not** edit Roblox Studio, upload assets, release a game, or benchmark GPU hardware. To preview, owner may save the output as a LocalScript in StarterPlayerScripts in an authorized test place.
 
 ## Anti-slop VFX and procedural mesh review
 Use clear silhouette, readable direction, staged impact, limited glow, differentiated palette, and temporal decay. Prefer custom shape language over piles of neon rings. Compare footage at impact, follow-through and dissipation, not just a single best-looking frame. Pair with `roblox-vfx-composer` and `roblox-animation-craft` under explicit opt-in; keep hit detection server authoritative and VFX client visual only.
 
 ## References
-- [R1] Roblox announcement: https://devforum.roblox.com/t/full-release-editablemesh-batching-apis-parallel-queries/4779401
-- [R2] Official EditableMesh reference (signatures, capabilities, limits): https://create.roblox.com/docs/reference/engine/classes/EditableMesh
-- [R3] Roblox AssetService (creation and Content.fromObject): https://create.roblox.com/docs/reference/engine/classes/AssetService
-- [R4] Existing STAR memory/streaming guidance: `star/skill_packs/roblox-editable-memory-streaming/SKILL.md`
+See `references/sources.md` (official Roblox pages and the announcement this pack was written from).

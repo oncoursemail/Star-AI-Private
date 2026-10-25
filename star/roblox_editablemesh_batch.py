@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 import math
-from typing import Mapping
+from typing import Any, Mapping
 
 
 QUALITY_TIERS: dict[str, tuple[int, int]] = {
@@ -32,7 +32,7 @@ class WavePanelOptions:
 
 
 def _finite_number(value: object, *, name: str, minimum: float, maximum: float) -> float:
-    if type(value) not in (int, float) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ValueError(f"{name} must be a finite number")
     number = float(value)
     if not minimum <= number <= maximum:
@@ -40,7 +40,7 @@ def _finite_number(value: object, *, name: str, minimum: float, maximum: float) 
     return number
 
 
-def _validated(value: WavePanelOptions | Mapping[str, object]) -> WavePanelOptions:
+def _validated(value: WavePanelOptions | Mapping[str, Any]) -> WavePanelOptions:
     if isinstance(value, Mapping):
         expected = {item.name for item in fields(WavePanelOptions)}
         unknown = set(value) - expected

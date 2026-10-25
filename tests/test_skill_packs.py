@@ -20,7 +20,7 @@ NAMES = ["godot-scenes-and-nodes", "godot-gdscript-typing-and-signals", "godot-p
          "design-level-and-obby-layout", "design-economy-and-fair-monetisation", "design-ui-ux-for-games",
          "roblox-datastore-service-patterns", "roblox-remote-event-function-patterns",
          "roblox-tweenservice-easing",
-         "roblox-studio-mcp-workflow", "roblox-replication-hot-paths", "roblox-editable-memory-streaming",
+         "roblox-studio-mcp-workflow", "roblox-replication-hot-paths", "roblox-editablemesh-batching", "roblox-editable-memory-streaming",
          "roblox-asset-upload-moderation", "roblox-multi-agent-studio", "roblox-architecture-blender", "roblox-combat-hitboxes", "roblox-pathfinding-npc", "roblox-physics-constraints", "roblox-collection-tags", "roblox-input-devices", "roblox-sound-design", "roblox-luau-specs", "roblox-marketplace-purchases", "roblox-teleport-matchmaking", "roblox-open-cloud",
          "roblox-purchases-badges", "roblox-vfx-composer", "roblox-cutscenes", "roblox-secondary-motion-lab"]
 ENGINEERING = {"eng-debugging", "eng-test-first", "eng-verify-before-done"}
@@ -64,6 +64,11 @@ def test_implementation_packs_cite_official_documentation_and_list_the_api_names
         elif pack.name == "roblox-architecture-blender":
             # Experimental pack is OFF until API lookup and independent evaluation.
             assert sources.count("https://create.roblox.com/docs/") >= 5, pack.name
+            assert pack.name not in skill_packs.DEFAULT_ENABLED
+            assert "API names not yet verified by STAR Knowledge /api-lookup" in sources
+        elif pack.name == "roblox-editablemesh-batching":
+            # Experimental 2026 batching pack (#578): official pages, OFF until API lookup and evaluation.
+            assert sources.count("https://create.roblox.com/docs/") >= 4, pack.name
             assert pack.name not in skill_packs.DEFAULT_ENABLED
             assert "API names not yet verified by STAR Knowledge /api-lookup" in sources
         elif pack.name == "roblox-secondary-motion-lab":
