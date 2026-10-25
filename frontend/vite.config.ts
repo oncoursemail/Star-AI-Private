@@ -21,5 +21,5 @@ export default defineConfig({
   server: { strictPort: true },
   // The tests that mount the whole Desktop take 1 to 3 seconds each alone and pass the default 5 second limit when
   // every test file runs at once on a busy PC. The limit only decides when a test counts as hung.
-  test: { testTimeout: 20000 },
+  test: { testTimeout: 20000, setupFiles: ['./src/test-animation-event.ts'] },
 })
