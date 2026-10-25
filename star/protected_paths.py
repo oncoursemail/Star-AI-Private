@@ -13,19 +13,25 @@ Branch-name convention for generators (case-insensitive):
     star/selfbuild-*, star/genesis-*            STAR's self-builder and its GitHub App
     star/gen-*                any future generator (use this prefix when adding one)
 
-Work that legitimately changes the closure (a new holdout by its custodian, a grader fix) is done on a branch that
-is not a generator branch, reviewed by the owner. On GitHub the owner can also put the label
-`owner-approved-eval-change` on a generator PR to let the CI job pass; `star commit` in the workspace has no override.
+Integrity gate (issue #562, no owner click): a generator diff that only ADDS evaluation material passes by itself:
+new files under evals/ (not evals/sealed/ or evals/results/), and new tasks appended to an existing task-list JSON
+while every existing task stays byte-for-byte the same. Anything that edits or deletes an existing task, a test, a
+reference, a grader, the gate, a sealed manifest, night school's promotion code or CI is still refused, because it
+could make grading easier. Work that legitimately changes the closure (a new holdout by its custodian, a grader fix)
+is done on a branch that is not a generator branch. The label `owner-approved-eval-change` remains a manual
+override on GitHub; `star commit` in the workspace has no override.
 
 Limits (said once, plainly): the guard keys on branch names, so it stops generators that follow the convention, not
 a person or process that names a branch otherwise. The label override is only as strong as who can add labels.
 
     python -m star.protected_paths --branch star/chatgpt-x --base origin/star/next     # exit 1 on a violation
     python -m star.protected_paths --branch star/chatgpt-x --files evals/a.json star/x.py
+    python -m star.protected_paths --branch star/chatgpt-x --files evals/a.json --base-sha B --head-sha H  # + gate
 """
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -127,6 +133,54 @@ def changed_files(base: str, head: str = "HEAD", cwd=None) -> list[str]:
     return [p for p in done.stdout.decode("utf-8", "replace").split("\0") if p]
 
 
+# --- integrity gate: additions only (self-contained: CI runs this file alone from the base branch) ----------------
+
+ADDITIVE_ROOT = "evals/"
+NEVER_ADDITIVE = ("evals/sealed/", "evals/results/")
+
+
+def _blob(rev: str, path: str, cwd=None) -> bytes | None:
+    done = subprocess.run(["git", "--no-replace-objects", "show", f"{rev}:{path}"], cwd=cwd, capture_output=True)
+    return done.stdout if done.returncode == 0 else None
+
+
+def additive_problem(path: str, old: bytes | None, new: bytes | None) -> str:
+    """'' when the change to `path` only adds evaluation material, else why it is refused."""
+    p = norm(path)
+    if not p.startswith(ADDITIVE_ROOT) or p.startswith(NEVER_ADDITIVE):
+        return "not evaluation data (graders, gate, CI, sealed manifests and results are never additive)"
+    if new is None:
+        return "file deleted"
+    if old is None:
+        return ""                                   # a new file: new tasks, tests or references
+    if old == new:
+        return ""
+    if not p.endswith(".json"):
+        return "existing file edited (tests and references may not change)"
+    try:
+        before, after = json.loads(old.decode("utf-8")), json.loads(new.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return "not readable JSON"
+    if not (isinstance(before, list) and isinstance(after, list)):
+        return "existing JSON edited (only task lists may grow)"
+    if after[:len(before)] != before:
+        return "existing tasks edited, removed or reordered (only appending new tasks is allowed)"
+    ids = [t.get("id") for t in after if isinstance(t, dict)]
+    if len(ids) != len(after) or len(set(ids)) != len(ids):
+        return "new tasks need unique ids"
+    return ""
+
+
+def integrity_violations(found: list[tuple[str, str]], base_sha: str, head_sha: str, cwd=None) -> list[tuple[str, str]]:
+    """The violations the additions-only gate cannot clear (empty = every protected change only adds material)."""
+    left = []
+    for path, pattern in found:
+        problem = additive_problem(path, _blob(base_sha, path, cwd), _blob(head_sha, path, cwd))
+        if problem:
+            left.append((path, f"{pattern}; {problem}"))
+    return left
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m star.protected_paths", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -134,6 +188,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", default="", help="compare HEAD with the merge base of this ref")
     parser.add_argument("--files", nargs="*", default=None, help="check these paths instead of a git diff")
     parser.add_argument("--labels", default="", help="comma list of the PR's labels (CI)")
+    parser.add_argument("--base-sha", default="", help="with --head-sha: run the additions-only integrity gate")
+    parser.add_argument("--head-sha", default="")
     args = parser.parse_args(argv)
     labels = {x.strip() for x in args.labels.split(",") if x.strip()}
     if not is_generator_branch(args.branch):
@@ -147,6 +203,16 @@ def main(argv: list[str] | None = None) -> int:
     found = violations(args.branch, paths, owner_approved=OWNER_LABEL in labels)
     if OWNER_LABEL in labels and violations(args.branch, paths):
         print(f"protected closure: label '{OWNER_LABEL}' present: protected paths allowed for this PR")
+    base_sha = args.base_sha
+    if not base_sha and args.files is None:
+        done = subprocess.run(["git", "merge-base", args.base or "origin/star/next", "HEAD"], capture_output=True, text=True)
+        base_sha = done.stdout.strip() if done.returncode == 0 else ""
+    head_sha = args.head_sha or ("HEAD" if args.files is None else "")
+    if found and base_sha and head_sha:
+        cleared = len(found)
+        found = integrity_violations(found, base_sha, head_sha)
+        if not found:
+            print(f"protected closure: integrity gate passed ({cleared} protected file(s), additions only)")
     if not found:
         print(f"protected closure: OK ({len(paths)} changed files from generator branch '{args.branch}')")
         return 0

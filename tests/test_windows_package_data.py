@@ -61,6 +61,7 @@ OTHER_FILE_ANCHORS = {
     "star/failure_ledger.py": "developer-only evaluation prelude",
     "star/general_knowledge_benchmark.py": "source-only benchmark",
     "star/gold_bank_verify.py": "developer-only gold bank build tool (needs STAR Server)",
+    "star/sealed_eval.py": "developer-only sealed eval runner (manifest in evals/sealed, tasks outside the repo)",
     "star/github_app.py": "source-root check blocks credential files",
     "star/media_actions.py": "owner-installed external ComfyUI",
     "star/oracle/__main__.py": "developer-only Star Oracle CLI defaults (gold bank, eval suites, calibration)",
