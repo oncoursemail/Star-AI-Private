@@ -1,5 +1,5 @@
 # STAR: independently verified gameplay learning + natural VTuber research
-**Research and implementation checkpoint:** 2026-10-25  
+**Research and implementation checkpoint:** 2026-10-25
 **Status:** draft, offline-only experimental modules; no real-game or streaming activation.
 
 ## What this patch actually contributes
