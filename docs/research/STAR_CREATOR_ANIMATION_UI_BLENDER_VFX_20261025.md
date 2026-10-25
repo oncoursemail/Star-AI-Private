@@ -29,7 +29,7 @@ Do not replace existing sources, automatic review requirements, permissions, lic
 3. Blender 5.x NLA *authoring plan* (1-based frames, strip order, `REPLACE` / `ADD` / `COMBINE`, fade regions, `NOTHING` extrapolation, explicit repeat counts); a plan, not a `bpy` execution.
 4. A Roblox Animation Graph *handoff*, including marker and cue linkage. This does not create/publish graph assets; users or authorized tools must build and validate them in Studio.
 5. Cheap static warnings for declared missing/overlapping full-body base motion, questionable additive full-body layers, questionable partial replaces, and over-limit *declared* event concurrency. These warnings are not actual frame-time or deformation measurements.
-6. `camera`/`ui` event requirements for reduced-motion alternatives; no gameplay damage requests or arbitrary commands accepted in the input.
+6. `camera`/`ui` event requirements for reduced-motion alternatives, separate sound concurrency budgets, and low-influence marker timing warnings; no gameplay damage requests or arbitrary commands accepted in the input.
 7. A read-only manual CLI, tests, and an original 90-frame sword demonstration.
 
 The `weight sum` warning is a heuristic envelope, *not Blender's mathematical NLA compositing*. NLA `REPLACE` applies sequential mix semantics, while `COMBINE` uses property-specific math (quaternion multiplication for rotations), per Blender documentation. Native render and F-curve inspection remain mandatory.
@@ -57,6 +57,9 @@ Blender NLA 5.2 allows reusable named Actions and strips, tracks, modifiers and 
 
 Roblox Animation Graphs reached full release July 15, 2026. Graphs can implement Blend1D, Blend2D, state/sequence nodes, masks, phase synchronization and additive motion. Drive their published graph track parameters with `AnimationTrack:SetParameter`; listen to `GetMarkerReachedSignal` for cosmetic cues. Graph publication remains a separately approved owner/engine operation. Gameplay hits, inventory changes and combat authority must remain server-validated; animation markers can request display but cannot grant damage.
 
+**October 25 event semantics follow-up:** The official Animation Graph Editor documentation specifies that graph marker events propagate upward with blend weights, and zero-weight events are silenced. This complicates effects synchronized to transitions: even a valid source clip marker may not reach `GetMarkerReachedSignal()` when that clip's graph contribution vanishes. The choreography auditor now warns when a marker lies in a low-influence *declared Blender layer* as an inexpensive risk indicator, but native graph weights are not equivalent. Test actual signal delivery, interruption, replay, parameter changes and replication with a provenance-bound Studio trace. A missing cosmetic cue must fail visual QA, not cause a server-authoritative hit to be skipped or forged. Source: https://create.roblox.com/docs/animation/graph-editor (Global event rules).
+
+
 ### Blender 5.2 LTS capabilities to turn into reviewed skills
 
 * **NLA and reusable Action assets:** named semantic clip libraries with character, rig, slot compatibility, contact markers, looping contracts, and clear licensing.
@@ -70,7 +73,7 @@ Prefer the production 5.2 LTS maintenance line (5.2.3 dated October 22, 2026) ov
 
 ## Professional UI/UX research and checks
 
-Think in reusable systems: type scale, text roles, colors, contrast, shadows, layout constraints, accessibility and explicit interaction semantics. A nice screenshot is not an input-operable GUI. The Roblox Style Editor and native stylesheet ecosystem support `StyleSheet`, `StyleLink`, tokens, selectors, themes, responsive queries, hover transitions and style-defined component states. Prefer first-class native Roblox UI and a single editable design system to rasterizing an entire HUD.
+Think in reusable systems: type scale, text roles, colors, contrast, shadows, layout constraints, accessibility and explicit interaction semantics. A nice screenshot is not an input-operable GUI. The Roblox Style Editor and native stylesheet ecosystem support `StyleSheet`, `StyleLink`, tokens, selectors, themes, responsive queries, hover transitions and style-defined component states. The official guide warns not to delete the generated `BaseStyleSheet`, since removing its derivation can change expected default UI instance values (including zero sizes). STAR should preserve that base sheet when assembling style-driven interfaces and verify responsive conditions under device emulation. Prefer first-class native Roblox UI and a single editable design system to rasterizing an entire HUD.
 
 Automated checks should include screen-safe areas, hit targets, interactive collision/overlap, text clipping, missing essential buttons, label/action association, color contrast, Xbox/controller focus and selection transitions, reduced-motion behavior, and real touch/click activation. Collect screenshots from phone/desktop/console emulator settings plus a physical lower-powered device; don't infer all device behavior from a desktop capture. Avoid animated UI that obscures essential health, ammo, ability keycaps or characters.
 
