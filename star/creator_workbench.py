@@ -6,10 +6,12 @@ provenance receipts; this wrapper is NOT such a trust boundary.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from .capability_frontier import MAX_FINDINGS, plan_frontier
-from .creator_evidence import assess_creation
+from .creator_evidence import assess_creation, propose_memory
 from .scene_topology import audit_scene
 
 
@@ -61,10 +63,18 @@ def review_and_plan(
     errors = sum(row.get("severity") == "error" for row in findings)
     unverified = sum(row.get("severity") == "unverified" for row in findings)
     readiness = "needs_repair" if errors else "needs_evidence"
+    evidence_digest = hashlib.sha256(json.dumps(
+        {"creation": creative_report, "scene": scene_report}, sort_keys=True,
+        ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
+    candidate_issues = [{**issue, "domain": issue.get("domain", "building")} for issue in findings]
+    learning_proposal = propose_memory({
+        "project": project, "capture_sha256": evidence_digest, "findings": candidate_issues
+    })
     # Even a zero-defect inferred report is not a valid Studio pass or art approval.
     return {"project": project, "readiness": readiness,
             "error_count_at_least": errors, "unverified_count_at_least": unverified,
             "truncated": truncated, "creation": creative_report, "scene": scene_report,
-            "capability_frontier": proposal, "studio_verified": False,
+            "capability_frontier": proposal, "learning_proposal": learning_proposal,
+            "studio_verified": False,
             "owner_approved": False, "executed": False,
             "next_gate": "trusted Studio live readback, human visual review and measured paired trials"}
