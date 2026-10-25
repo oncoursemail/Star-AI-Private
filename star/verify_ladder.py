@@ -7,6 +7,9 @@ stop at the first failure:
   compile  the knowledge service's Luau compiler + type checker (/luau/check; nothing is executed there)
   api      every Roblox class, service and member against the local API dump (star/roblox_api_checker.py), plus
            the API lock's audit when star/api_lock.py is present (branch star/api-lock-20261021)
+  deprecated  members Roblox lists as deprecated (data/roblox_api/deprecated.json, the official inventory) and APIs
+           the docs mark beta-only (feature_status.json), with the replacement text (star/roblox_deprecated.py;
+           setting `verify_deprecated`, default on)
   run      the block runs on the STAR server (star/eval_sandbox.py: LXD container, user `star`, prlimit, timeout),
            never on this PC, inside the Player Twins engine doubles (a small mock Roblox server). Errors that only
            say the mock does not cover something make the rung `skip`, not `fail`.
@@ -40,7 +43,7 @@ FIX_RESERVE_SECONDS = 45.0        # a fix call is stopped this long before the t
 MIN_FIX_SECONDS = 40.0            # no fix call when less than this is left
 WRITE_TESTS_SECONDS = 120.0       # the test-writing call is dropped (no tests) after this long (a cold prompt on
                                   # a busy star-fast slot reads ~45 tokens/s, so ~60 s is common)
-RUNGS = ("compile", "api", "run", "tests")
+RUNGS = ("compile", "api", "deprecated", "run", "tests")
 ENGINE = Path(__file__).with_name("player_twins") / "luau" / "engine.luau"
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
 _FENCE = re.compile(r"```[ \t]*(?:lua|luau)\b[^\n]*\n(.*?)```", re.S | re.I)
@@ -98,6 +101,7 @@ class Tools:
     first_block: bool = True    # later blocks are usually usage examples: unknown globals there are placeholders
     extra_rungs: list = field(default_factory=list)   # callables (code) -> Rung | None, after `tests`
     fixers: list = field(default_factory=list)        # active self-written fixers (star/mistake_memory.py): no model call
+    deprecated: bool = True     # the deprecated / beta-only API rung (star/roblox_deprecated.py)
 
 
 def _bounded(text: str, limit: int = MAX_DETAIL) -> str:
@@ -196,6 +200,13 @@ def check_api(code: str, tools: Tools) -> Rung:
     items.sort()
     listing = "; ".join(f"line {line}: {msg}" for line, msg, _ in items)
     return Rung("api", "fail", _bounded(listing), items[0][0], len(items), "api:" + items[0][2], tuple(classes))
+
+
+def check_deprecated(code: str, tools: Tools) -> Rung:
+    if not tools.deprecated:
+        return Rung("deprecated", "skip", "the deprecated-API rung is off (setting verify_deprecated)")
+    from .roblox_deprecated import rung
+    return rung(code, tools.prompt)
 
 
 # --- rung 3: run with Roblox mocks on the server ---------------------------------------------------------------
@@ -369,7 +380,7 @@ async def run_rungs(code: str, tools: Tools, state: dict) -> list[Rung]:
     """All rungs in order, stopping at the first failure. `state` carries the generated tests across rounds
     and the seconds spent per rung."""
     out: list[Rung] = []
-    for rung in (check_compile, check_api):
+    for rung in (check_compile, check_api, check_deprecated):
         since = monotonic()
         result = await asyncio.to_thread(rung, code, tools)
         _took(state, result.rung, since)
@@ -546,6 +557,7 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
 # --- notes ---------------------------------------------------------------------------------------------------
 
 _PASSED = {"compile": "compiles and type-checks", "api": "uses only real Roblox API members (local API dump)",
+           "deprecated": "uses no deprecated or beta-only Roblox API (Roblox's deprecated list)",
            "run": "ran in STAR's mock Roblox server without errors"}
 
 
