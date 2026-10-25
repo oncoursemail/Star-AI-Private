@@ -113,6 +113,23 @@ class GameNavigationTests(unittest.TestCase):
         self.assertTrue(a.exploratory)
         self.assertEqual(a.path[-1], (2, 0))
 
+    def test_large_belief_has_bounded_frontier(self):
+        b = NavigationBelief()
+        # Fill most of a 64x64 map through legal snapshots, 256 cells max
+        # per frame, all from the same host. Leave a right-side frontier.
+        points = [(x, y) for y in range(64) for x in range(63)
+                  if (x, y) != (0, 0)]
+        for seq, start in enumerate(range(0, len(points), 255), start=1):
+            visible = {(0, 0): "floor"}
+            visible.update({p: "floor" for p in points[start:start + 255]})
+            b.observe(frame(seq=seq, width=64, height=64, tiles=visible),
+                      trusted_host=True)
+        self.assertEqual(b.observed_cells, 63 * 64)
+        move = b.advise(mode="practice", sandbox_approved=True)
+        self.assertTrue(move.exploratory)
+        self.assertEqual(move.path[-1][0], 63)
+        self.assertIn(move.action, {"right", "down"})
+
     def test_idempotent_and_mode_validation(self):
         b = NavigationBelief()
         b.observe(frame(), trusted_host=True)
