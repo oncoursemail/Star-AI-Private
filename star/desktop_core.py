@@ -1944,6 +1944,12 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             'answer_stats': stats}), ensure_ascii=False, default=str), encoding='utf-8')
         (runs / 'answer.md').write_text(redact_text(answer), encoding='utf-8')
         memory.event(memory_scope, {'run_id': stamp, 'answer': redact_text(answer[:10000])})
+        # Failed/cancelled answers, budget refusals and required archive/log
+        # failures never advance retention. Validate source/CAS after persistence.
+        if prepared_conversation is not None:
+            conversation_memory.commit(home / 'conversations.sqlite3', prepared_conversation,
+                                       cancel_event=cancel_event)
+        audited_event({'event': 'saved', 'run_id': stamp})
         if selfhood is not None:
             try:
                 # Never store a raw user prompt, provider output, file path or tool arguments.
@@ -1951,12 +1957,6 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                         origin='host', evidence=stamp)
             except Exception as exc:
                 _log.warning('Selfhood event not saved (%s)', type(exc).__name__)
-        # Failed/cancelled answers, budget refusals and required archive/log
-        # failures never advance retention. Validate source/CAS after persistence.
-        if prepared_conversation is not None:
-            conversation_memory.commit(home / 'conversations.sqlite3', prepared_conversation,
-                                       cancel_event=cancel_event)
-        audited_event({'event': 'saved', 'run_id': stamp})
         metrics.record(settings.project, 'run_succeeded',elapsed_ms=int((time.monotonic()-started)*1000))
         # The answer exists: count the lessons that were in its context, then learn from the turn.
         try:
