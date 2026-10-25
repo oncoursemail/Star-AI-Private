@@ -108,6 +108,9 @@ def test_missing_unbounded_or_symlink_input_is_rejected(tmp_path):
     original = tmp_path / "ordinary.json"
     original.write_text(json.dumps(row(24)))
     alias = tmp_path / "alias.json"
-    alias.symlink_to(original)
+    try:
+        alias.symlink_to(original)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks unavailable (Windows without the privilege)")
     with pytest.raises(ValueError, match="ordinary"):
         load_bench(alias)
