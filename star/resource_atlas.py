@@ -18,7 +18,7 @@ from pathlib import Path
 import re
 import sqlite3
 import sys
-from typing import Callable
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -461,7 +461,7 @@ def main(argv: list[str] | None = None) -> int:
         if not 1 <= args.limit <= MAX_PER_PROVIDER:
             parser.error("Limit must be 1-10")
         store = AtlasStore(args.db)
-        report: dict[str, object] = {"query":query,"providers":{}}
+        report: dict[str, Any] = {"query":query,"providers":{}}
         total = 0
         # Only a few reads overlap; DB writes are serialized by this thread.
         with ThreadPoolExecutor(max_workers=min(3, len(providers))) as workers:
