@@ -502,7 +502,7 @@ class PlannedSandbox:
 
 
 _SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check", "prefill_while_typing", "verify_ladder",
-                       "verify_rounds", "verify_budget_s", "mistake_memory", "thinking_budget"})
+                       "verify_rounds", "verify_budget_s", "verify_retry", "mistake_memory", "thinking_budget"})
 
 
 def parse_sets(pairs: list[str]) -> dict:

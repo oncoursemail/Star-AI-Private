@@ -71,13 +71,27 @@ def test_a_failing_block_is_fixed_with_the_exact_error_and_shown_as_verified(iso
 
 def test_a_fix_that_does_not_help_keeps_the_original_and_says_unverified_plainly(isolated):
     fix, calls = fixer(fence(BROKEN.replace("print(x)", "print(x, 2)")))
-    answer, record = review(fence(BROKEN), vl.Tools(checker=checker, fix=fix), rounds=2)
-    assert len(calls) == 1                     # no progress: the second round is not tried
+    answer, record = review(fence(BROKEN), vl.Tools(checker=checker, fix=fix, retry_rejected=True), rounds=2)
+    assert len(calls) == 2                     # verify_retry: the second round asks again from the best version
+    assert vl.RETRY_NOTE not in calls[0][1].detail and calls[1][1].detail.endswith(vl.RETRY_NOTE)
+    assert calls[1][0] == BROKEN               # the rejected candidate is not what the second round fixes
     assert fence(BROKEN) in answer
-    assert "unverified: compile failed: line 2: Expected identifier" in answer and "1 fix round(s) tried" in answer
+    assert "unverified: compile failed: line 2: Expected identifier" in answer and "2 fix round(s) tried" in answer
     assert not record["verified"] and record["blocks"][0]["stopped"] == "the fix did not get further up the ladder"
-    row = json.loads(isolated.read_text(encoding="utf-8"))
-    assert row["verified"] is False and row["diff"] == ""
+    assert record["blocks"][0]["rejected"] == 2
+    rows = [json.loads(line) for line in isolated.read_text(encoding="utf-8").splitlines()]
+    assert all(row["verified"] is False and row["diff"] == "" for row in rows)
+    fix, calls = fixer(fence(BROKEN.replace("print(x)", "print(x, 2)")))
+    review(fence(BROKEN), vl.Tools(checker=checker, fix=fix), rounds=2)
+    assert len(calls) == 1                     # default: stop at the first round that does not help
+
+
+def test_a_rejected_round_keeps_the_best_version_and_the_next_round_can_still_fix_it(isolated):
+    worse = "local Players = \nlocal x = \nprint(x)\n"          # two errors: lower on the ladder than BROKEN
+    fix, calls = fixer(fence(worse), fence(GOOD))
+    answer, record = review(fence(BROKEN), vl.Tools(checker=checker, fix=fix, retry_rejected=True), rounds=2)
+    assert [c[0] for c in calls] == [BROKEN, BROKEN] and fence(GOOD) in answer and worse not in answer
+    assert record["verified"] and record["blocks"][0]["rejected"] == 1 and "stopped" not in record["blocks"][0]
 
 
 def test_no_fix_call_without_time_or_rounds_and_an_unchanged_reply_stops():
@@ -339,6 +353,12 @@ def test_xray_headless_fallback_scans_a_place_file_written_this_turn(tmp_path, m
     assert seen == [place] and "hut.rbxl (7 parts): 1 medium" in answer
     old = asyncio.run(vl.xray_outcome(outcome, None, settings=XRAY_ON, since=place.stat().st_mtime + 100))[0]
     assert old == outcome[0] and len(seen) == 1
+
+
+def test_settings_verify_retry_defaults_off_and_reaches_the_ladder():
+    assert Settings().verify_retry == "off" and parse_sets(["verify_retry=on"]) == {"verify_retry": "on"}
+    with pytest.raises(ValueError):
+        Settings(verify_retry="yes").validate()
 
 
 def test_settings_verify_xray_defaults_on_and_validates():

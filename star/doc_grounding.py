@@ -483,6 +483,7 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
             tools = verify_ladder.Tools(checker=knowledge.luau_check if knowledge is not None else None,
                                         dump=slop.bundled_api_dump(), runner=verify_ladder.default_runner(),
                                         write_tests=write_tests, fix=fix, prompt=prompt,
+                                        retry_rejected=getattr(settings, "verify_retry", "off") == "on",
                                         fixers=(mistake_memory.active_fixers()
                                                 if getattr(settings, "mistake_memory", "retrieve") == "fix" else []))
             answer, ladder_record = await verify_ladder.review(
