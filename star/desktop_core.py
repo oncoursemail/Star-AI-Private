@@ -1509,9 +1509,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         mcp_gateway = MCPGateway(settings) if use_tools else None
         reverse_engineering = (reverse_engineering_for(settings, home)
                                if use_tools and settings.reverse_engineering_enabled else None)
-        # Searchable public metadata only; no connector is installed or approved.
+        # Searchable public metadata only; no connector/API is installed, approved or executed.
         from .mcp_registry import RegistryDiscovery
-        mcp_registry = RegistryDiscovery() if use_tools and research and mode == 'agent' else None
+        from .api_catalog import ApiCatalogDiscovery
+        discovery_enabled = bool(use_tools and research and mode == 'agent')
+        mcp_registry = RegistryDiscovery() if discovery_enabled else None
+        api_catalog = (ApiCatalogDiscovery(home=home, mcp_registry=mcp_registry)
+                       if discovery_enabled else None)
         connection_for(model_settings)  # fail early before retrieval/tool work
         limits = call_limits(model_settings)
         # Own hardware only: the conversation's tool list stays put from turn to turn (STAR
@@ -1696,7 +1700,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                               subagent_parallelism=limits.parallel,
                               github_enabled=bool(mode == 'agent' and github_enabled),
                               intelligence=intelligence, mcp_gateway=mcp_gateway,
-                              mcp_registry=mcp_registry,
+                              mcp_registry=mcp_registry, api_catalog=api_catalog,
                               tool_workshop=workshop, specialists=specialists,
                               incremental_repair=settings.incremental_repair is True)
                 if document_tools is not None:

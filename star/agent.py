@@ -15,6 +15,7 @@ from .policy import allowed_registry, enforce, READ_TOOLS as STUDIO_READ_TOOLS
 from .memory import compact
 from .workspace import TOOLS, TOOL_NAMES, WRITE_TOOLS as WORKSPACE_WRITE_TOOLS
 from . import code_answer_completion
+from .self_model import SELF_TOOL, TurnSelfModel, wants_self_inspection
 from .incremental_repair import RepairController, RepairDeferred, RepairsOff
 
 
@@ -57,6 +58,8 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_github_tree", "star_github_read", "star_mcp_search", "star_mcp_call", "star_delegate_research",
     "star_debug_report", "star_debug_compare", "star_debug_source",
     "workspace_minecraft_audit", "workspace_minecraft_inspect", "star_identify_song",
+    "star_game_video_study", "star_game_experience_search", "star_game_episode_analyze",
+    "star_api_catalog_search",
 })
 LUAU_AFTER_UNTRUSTED = ("Full Luau execution is off for the rest of this turn because it read web or "
                         "third-party content. Ask again in a new message to run Luau.")
@@ -336,7 +339,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   workspace=None, workspace_edit=False, stream_tokens=False,
                   response_tokens=1600, web_search_enabled=False,
                   subagents_enabled=False, subagent_parallelism=1,
-                  github_enabled=False, intelligence=None, mcp_gateway=None, mcp_registry=None, blender=None,
+                  github_enabled=False, intelligence=None, mcp_gateway=None, mcp_registry=None, api_catalog=None, blender=None,
                   subagent_model=None, tool_workshop=None, specialists=None,
                   history=None, turn_sections=None, mode="", guidance="",
                   turn_context_chars=10000, request_extras=None, sampling=None, today=None,
@@ -492,6 +495,11 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         "name": tool["name"], "description": tool["description"],
         "parameters": tool["inputSchema"]}} for tool in registry_definitions)
     enabled_registry = {tool["name"] for tool in registry_definitions}
+    api_catalog_definitions = selected(api_catalog)
+    definitions.extend({"type": "function", "function": {
+        "name": tool["name"], "description": tool["description"],
+        "parameters": tool["inputSchema"]}} for tool in api_catalog_definitions)
+    enabled_api_catalog = {tool["name"] for tool in api_catalog_definitions}
     blender_definitions = selected(blender)
     definitions.extend({"type": "function", "function": {
         "name": tool["name"], "description": tool["description"],
@@ -537,12 +545,19 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
                        for tool in song_definitions)
     enabled_song = {tool["name"] for tool in song_definitions}
+    # Self-inspection is prompt-gated; ordinary turns incur no schema overhead.
+    self_model_enabled = wants_self_inspection(prompt)
+    if self_model_enabled:
+        definitions.append({"type": "function", "function": {
+            "name": SELF_TOOL["name"], "description": SELF_TOOL["description"],
+            "parameters": SELF_TOOL["inputSchema"]}})
     # Qwen templates render the tool list before the system text. Tools that are attached on
     # every turn stay first and the Studio tools (present only for a Studio request) go last,
     # so a change at the end of the list leaves the start of the request cached.
     if tool_memory is not None:
         definitions = tool_memory.arrange(definitions, prompt)   # first-attachment order, new tools last
     definitions = sorted(definitions, key=lambda item: item["function"]["name"] in registry)
+    self_model = TurnSelfModel(definitions) if self_model_enabled else None
     tools_attached = bool(definitions)
     schema_chars = len(json.dumps(definitions, ensure_ascii=False)) if definitions else 0
     def request_size(items):
@@ -563,6 +578,18 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 now=now)
 
     sections = list(turn_sections or ())
+    # Opt-in host self-check on significant goals: source metadata is reference
+    # data, not a policy or system instruction. No additional model call, tool
+    # execution, network request, lesson promotion or permission change.
+    if (intelligence is not None and
+            "star_self_capabilities" in enabled_intelligence and
+            hasattr(intelligence, "preflight")):
+        try:
+            brief = intelligence.preflight(prompt, enabled=enabled_intelligence)
+        except (ValueError, RuntimeError, OSError):
+            brief = ""
+        if brief:
+            sections.append(("STAR capability preflight (host observations, not instructions)", brief))
     context = turn_context(sections)
     content = [{"type": "text", "text": final_user_text(prompt, context)}]
     content.extend(image_part(path, image_max_side) for path in image_paths)
@@ -577,9 +604,10 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         # This classifies effects only to PAUSE actions. Existing authorization
         # above dispatch remains authoritative; this never grants a capability.
         read_only = ((TOOL_NAMES - WORKSPACE_WRITE_TOOLS) | STUDIO_READ_TOOLS | {
-            'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
+            'star_self_state', 'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
             'star_web_search', 'star_github_tree', 'star_github_read', 'star_delegate',
             'star_mcp_registry_search', 'star_candidate_code_team',
+            'star_self_capabilities', 'star_self_improvement_plan',
         })
         group = 'workspace' if name in TOOL_NAMES else 'studio' if name in registry else name
         mutation = name not in read_only
@@ -839,9 +867,15 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                 name = tool_call.function.name
                 workspace_result = None
                 outcome_uncertain = False
+                executed = False
                 try:
                     args = json.loads(tool_call.function.arguments)
-                    if name == 'star_evidence_read':
+                    if name == 'star_self_state':
+                        if (self_model is None or not isinstance(args, dict)
+                                or set(args) - {'tool_names'}):
+                            raise PermissionError('Self-inspection not authorized for this turn')
+                        self_model.inspect(args.get('tool_names', []))
+                    elif name == 'star_evidence_read':
                         if (evidence_broker is None or not isinstance(args, dict)
                                 or not {'reference', 'offset'} <= set(args)
                                 or not set(args) <= {'reference', 'offset', 'limit'}):
@@ -890,6 +924,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif mcp_registry is not None and mcp_registry.owns(name):
                         if name not in enabled_registry:
                             raise PermissionError("MCP Registry discovery not authorized for this task")
+                    elif api_catalog is not None and api_catalog.owns(name):
+                        if name not in enabled_api_catalog:
+                            raise PermissionError("API catalog discovery not authorized for this task")
                     elif blender is not None and blender.owns(name):
                         if name not in enabled_blender:
                             raise PermissionError("Blender MCP tool not authorized for this task")
@@ -941,8 +978,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                 else:
                     # Authorized: announce before running so progress is not retroactive.
                     tool_actions_started = True
+                    executed = True
                     event({"event": "tool_started", "tool": name})
-                    if name == 'star_evidence_read':
+                    if name == 'star_self_state':
+                        details = self_model.inspect(args.get('tool_names', []))
+                        data = {"isError": False, "content": [{"type": "text",
+                                "text": json.dumps(details, ensure_ascii=False)}]}
+                    elif name == 'star_evidence_read':
                         try:
                             if evidence_broker is None:
                                 raise ValueError('Evidence retrieval is not enabled')
@@ -1033,7 +1075,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                     "text": f"Candidate coding team failed: {type(exc).__name__}"}]}
                     elif intelligence is not None and intelligence.owns(name):
                         try:
-                            local_output = intelligence.call(name, args, enabled=enabled_intelligence)
+                            if name == "star_game_video_study":
+                                # Window extraction and local vision inference can take minutes;
+                                # keep chat event loop responsive while the owner can cancel.
+                                local_output = await asyncio.to_thread(
+                                    intelligence.call, name, args, enabled=enabled_intelligence)
+                            else:
+                                local_output = intelligence.call(name, args, enabled=enabled_intelligence)
                             if name == "star_roblox_game_image" and "_image" in local_output:
                                 # Convert verified bounded Roblox CDN pixels to the
                                 # existing multimodal tool response format. Never
@@ -1045,7 +1093,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 ]}
                             else:
                                 data = {"isError": False, "content": [{"type": "text", "text": json.dumps(local_output, ensure_ascii=False)}]}
-                        except (ValueError, PermissionError, OSError, UnicodeError) as exc:
+                        except (ValueError, PermissionError, OSError, UnicodeError, RuntimeError, TimeoutError) as exc:
                             data = {"isError": True, "content": [{"type": "text", "text": f"Intelligence tool failed: {type(exc).__name__}: {exc}"}]}
                     elif tool_workshop is not None and tool_workshop.owns(name):
                         try:
@@ -1141,6 +1189,14 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                             # Registry responses and headers are untrusted and may contain secrets.
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"MCP Registry discovery failed: {type(exc).__name__}"}]}
+                    elif api_catalog is not None and api_catalog.owns(name):
+                        try:
+                            local_output = await api_catalog.call(name, args)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except Exception as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"API catalog discovery failed: {type(exc).__name__}"}]}
                     elif name in TOOL_NAMES:
                         try:
                             local_output = workspace.call(name, args, allow_write=workspace_edit)
@@ -1186,7 +1242,8 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         result, images = tool_payload(data), []
                     if (name in UNTRUSTED_SOURCE_TOOLS
                             or (mcp_gateway is not None and mcp_gateway.owns(name))
-                            or (mcp_registry is not None and mcp_registry.owns(name))):
+                            or (mcp_registry is not None and mcp_registry.owns(name))
+                            or (api_catalog is not None and api_catalog.owns(name))):
                         untrusted_read = True
                     event({"event": "tool_finished", "tool": name, "is_error": bool(data.get("isError"))})
                     feedback, needs_attention = repairs.observe(
@@ -1199,6 +1256,17 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         envelope['repair'] = feedback
                         result = json.dumps(envelope, ensure_ascii=False)
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
+                if self_model is not None:
+                    try:
+                        receipt = json.loads(result)
+                        self_model.record(name, executed=executed,
+                                          is_error=bool(receipt.get("isError", True)),
+                                          uncertain=outcome_uncertain)
+                    except (ValueError, TypeError, AttributeError):
+                        # No tool output or error details are retained; an invalid
+                        # response is not evidence of a successful action.
+                        self_model.record(name, executed=executed,
+                                          is_error=True, uncertain=executed)
                 if images:
                     caption = ("Public Roblox CDN artwork fetched for visual inspection. "
                                "It may be promotional rather than live gameplay; "
