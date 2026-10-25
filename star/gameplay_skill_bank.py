@@ -98,6 +98,16 @@ def wilson_lower(successes: int, attempts: int, *, z: float = 1.959963984540054)
     return max(0.0, min(1.0, numerator / den))
 
 
+@dataclass(frozen=True)
+class PracticeEvidence:
+    """Fresh, signed PRACTICE aggregates; independent holdouts are never exposed."""
+
+    action_id: str
+    trials: int
+    successes: int
+    most_recent_unix_s: int
+
+
 class GameplaySkillBank:
     """SQLite-backed evidence ledger; owners can review advice before use.
 
@@ -187,6 +197,134 @@ class GameplaySkillBank:
         if any(type(p) is not str or not _ID.fullmatch(p) for p in parts):
             raise ValueError("game, version, objective and situation must be bounded IDs")
         return parts
+
+    def practice_evidence(self, game_id: str, game_version: str,
+                          objective_id: str, situation_id: str, *,
+                          now_unix_s: int) -> tuple[PracticeEvidence, ...]:
+        """Summarize fresh, signed practice only; never disclose holdout results.
+
+        External agents can use these aggregates to select which skill to
+        rehearse next. Neither withheld validation outcomes nor receipts, raw
+        evidence, keys or individual run IDs leave this boundary. An invalid
+        row fails closed rather than becoming training evidence.
+        """
+        scope = self._scope(game_id, game_version, objective_id, situation_id)
+        now = _seconds(now_unix_s)
+        rows = self._db.execute(
+            "SELECT trial_id, run_id, payload_json, receipt FROM gameplay_trials "
+            "WHERE game_id=? AND game_version=? AND objective_id=? AND situation_id=?",
+            scope,
+        ).fetchall()
+        aggregates: dict[str, list[int]] = {}
+        for trial_id, run_id, payload_json, receipt in rows:
+            try:
+                payload = json.loads(payload_json)
+                if type(payload) is not dict:
+                    raise ValueError("invalid trial JSON")
+                trial = GameTrial(**payload)
+                if (trial.trial_id != trial_id or trial.run_id != run_id
+                        or self._scope(trial.game_id, trial.game_version,
+                                       trial.objective_id, trial.situation_id) != scope):
+                    raise ValueError("trial scope/identity mismatch")
+                self._check_receipt(trial, receipt)
+            except (TypeError, ValueError, PermissionError) as exc:
+                raise sqlite3.IntegrityError("gameplay evidence ledger corrupted") from exc
+            # Withheld validation is checked for integrity but NEVER used in
+            # action selection. Otherwise the curriculum leaks its test set.
+            if trial.split != "practice":
+                continue
+            age = now - trial.observed_unix_s
+            if not 0 <= age <= _PRACTICE_MAX_AGE_S:
+                continue
+            entry = aggregates.setdefault(trial.action_id, [0, 0, 0])
+            entry[0] += 1
+            entry[1] += int(trial.outcome == "success")
+            entry[2] = max(entry[2], trial.observed_unix_s)
+        return tuple(PracticeEvidence(action, *totals)
+                     for action, totals in sorted(aggregates.items()))
+
+    def verify_practice_trial(self, trial: GameTrial, *, now_unix_s: int) -> bool:
+        """Match an *exact* PRACTICE outcome to an existing signed bank record.
+
+        This is stronger than signed_practice_run(), which deliberately checks
+        only a reservation's action/run. Do not use a reservation match as proof
+        of a particular outcome: a caller might substitute "success" for a
+        legitimately recorded failure. Validation/holdout data is never exposed.
+        False means absent, mismatched or stale; corrupt bank rows fail closed.
+        """
+        if not isinstance(trial, GameTrial):
+            raise TypeError("expected GameTrial")
+        now = _seconds(now_unix_s)
+        if trial.split != "practice":
+            return False
+        age = now - trial.observed_unix_s
+        if not 0 <= age <= _PRACTICE_MAX_AGE_S:
+            return False
+        row = self._db.execute(
+            "SELECT game_id, game_version, objective_id, situation_id, "
+            "run_id, payload_json, receipt FROM gameplay_trials WHERE trial_id=?",
+            (trial.trial_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        game, version, objective, situation, run, payload, receipt = row
+        if (game, version, objective, situation, run) != (
+            trial.game_id, trial.game_version, trial.objective_id,
+            trial.situation_id, trial.run_id
+        ):
+            raise sqlite3.IntegrityError("gameplay trial index/payload mismatch")
+        try:
+            stored = GameTrial(**json.loads(payload))
+            if stored.trial_id != trial.trial_id:
+                raise ValueError("trial ID mismatch")
+            self._check_receipt(stored, receipt)
+        except (ValueError, TypeError, PermissionError) as exc:
+            raise sqlite3.IntegrityError("invalid stored gameplay receipt") from exc
+        return stored == trial
+
+    def signed_practice_run(self, game_id: str, game_version: str,
+                            objective_id: str, situation_id: str,
+                            action_id: str, run_id: str, *,
+                            not_before_unix_s: int,
+                            now_unix_s: int) -> bool:
+        """Validate one exact host-assigned practice run without leaking receipts.
+
+        The host must use the reservation's run ID when creating its signed
+        GameTrial. Other recent practice or held-out validation cannot be used
+        to acknowledge this specific request.
+        """
+        scope = self._scope(game_id, game_version, objective_id, situation_id)
+        for value in (action_id, run_id):
+            if type(value) is not str or not _ID.fullmatch(value):
+                raise ValueError("action and run must be bounded symbolic IDs")
+        earliest = _seconds(not_before_unix_s)
+        now = _seconds(now_unix_s)
+        if earliest > now:
+            raise ValueError("reservation starts after current time")
+        row = self._db.execute(
+            "SELECT trial_id, payload_json, receipt FROM gameplay_trials "
+            "WHERE game_id=? AND game_version=? AND objective_id=? AND "
+            "situation_id=? AND run_id=?",
+            (*scope, run_id),
+        ).fetchone()
+        if row is None:
+            return False
+        trial_id, payload_json, receipt = row
+        try:
+            payload = json.loads(payload_json)
+            if type(payload) is not dict:
+                raise ValueError("invalid signed trial")
+            trial = GameTrial(**payload)
+            if (trial.trial_id != trial_id or trial.run_id != run_id
+                    or self._scope(trial.game_id, trial.game_version,
+                                   trial.objective_id, trial.situation_id) != scope):
+                raise ValueError("trial identity mismatch")
+            self._check_receipt(trial, receipt)
+        except (TypeError, ValueError, PermissionError) as exc:
+            raise sqlite3.IntegrityError("gameplay run receipt corrupted") from exc
+        return (trial.split == "practice" and trial.action_id == action_id
+                and earliest <= trial.observed_unix_s <= now
+                and now - trial.observed_unix_s <= _PRACTICE_MAX_AGE_S)
 
     def suggest(self, game_id: str, game_version: str, objective_id: str,
                 situation_id: str, *, now_unix_s: int,

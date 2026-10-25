@@ -20,12 +20,15 @@ from threading import RLock
 import time
 from typing import Callable, Sequence
 
+from .stream_budget import StreamTelemetry
+from .stream_episode import EpisodePacket
 from .stream_director import SpeechIntent, StreamDirector, StreamSignal
 from .stream_knowledge import KnowledgePacket
 from .stream_motion import (
     AudioLevel, ExpressionCue, MotionFrame, neutral_frame, plan_motion,
 )
 from .stream_persona import event_message
+from .stream_turntaking import TurnAdvice
 
 MODES = frozenset({"normal", "cat", "puppy"})
 
@@ -169,18 +172,35 @@ class StarStage:
                 voice_speaking: bool = False,
                 viewer_speaking: bool = False,
                 gameplay_critical: bool = False,
-                knowledge: KnowledgePacket | None = None) -> StagePlan | None:
-        """Propose one short reaction; return None when talking would be wrong."""
+                knowledge: KnowledgePacket | None = None,
+                telemetry: StreamTelemetry | None = None,
+                episode: EpisodePacket | None = None,
+                turn: TurnAdvice | None = None) -> StagePlan | None:
+        """Propose a short reaction; measured overload favors silence and gameplay."""
         current = _time(self._clock() if now is None else now)
         if knowledge is not None and not isinstance(knowledge, KnowledgePacket):
             raise TypeError("knowledge must be a host-approved KnowledgePacket")
+        if telemetry is not None and not isinstance(telemetry, StreamTelemetry):
+            raise TypeError("telemetry must be host-provided StreamTelemetry")
+        if episode is not None and not isinstance(episode, EpisodePacket):
+            raise TypeError("episode must be a host-approved EpisodePacket")
+        if turn is not None and not isinstance(turn, TurnAdvice):
+            raise TypeError("turn must be a host-provided TurnAdvice")
+        # The host, not chat or a prompt, supplies validated GPU/FPS/voice data.
+        # Preserve urgent danger/owner preemption; defer commentary when gameplay,
+        # VRAM or speech queues are under strain. No unbounded TTS queue buildup.
+        measured_pressure = bool(telemetry and (
+            (telemetry.game_active and telemetry.game_fps < 50.0)
+            or telemetry.speech_backlog_ms > 250.0
+            or (telemetry.live and telemetry.free_vram_mib < 1536.0)
+        ))
         with self._lock:
             if not self._enabled or self._plan is not None:
                 return None
             intent = self._director.propose(
                 now=current, voice_speaking=voice_speaking,
-                viewer_speaking=viewer_speaking,
-                gameplay_critical=gameplay_critical,
+                viewer_speaking=viewer_speaking or bool(turn and turn.hold),
+                gameplay_critical=gameplay_critical or measured_pressure,
             )
             if intent is None:
                 return None
@@ -196,6 +216,12 @@ class StarStage:
             # unsolicited idle remark or high-priority gameplay interruption.
             if knowledge is not None and intent.kind == "viewer_question":
                 prompt += "\n" + knowledge.context_record
+            # Session-scoped, signed-practice aggregates: never attach them to
+            # urgent warnings, idle banter or unrelated viewer comments.
+            if episode is not None and intent.kind in {
+                "game_observation", "game_success", "viewer_question"
+            }:
+                prompt += "\n" + episode.context_record
             plan = StagePlan(
                 sequence=self._sequence, signal_id=intent.signal_id,
                 kind=intent.kind, evidence=intent.evidence,
