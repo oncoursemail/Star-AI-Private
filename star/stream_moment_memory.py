@@ -58,6 +58,15 @@ class VoiceCue:
     # must still validate the current turn and interruptions.
 
 
+@dataclass(frozen=True)
+class CueOffer:
+    """Ephemeral proposal: not a TTS permission or an authentication token."""
+    ticket: int
+    cue: VoiceCue
+    proposed_ms: int
+    expires_ms: int
+
+
 class StreamMomentMemory:
     """Bounded in-session narrative arc selector. Pure in-memory advisory data."""
 
@@ -79,6 +88,8 @@ class StreamMomentMemory:
         self._occurred: dict[str, int] = {}
         self._last_cue: dict[str, int] = {}
         self._total = 0
+        self._ticket_counter = 0
+        self._pending: dict[str, CueOffer] = {}
 
     def observe(self, moment: GameMoment, *, trusted_game_adapter: bool = False) -> None:
         if trusted_game_adapter is not True:
@@ -99,39 +110,98 @@ class StreamMomentMemory:
         self._occurred[moment.session] = moment.occurred_ms
         self._total += 1
 
-    def next_cue(self, session: str, now_ms: int, *, audience_can_hear: bool = False) -> VoiceCue | None:
-        _identifier(session)
+    @staticmethod
+    def _clock(now_ms: int) -> None:
         if type(now_ms) is not int or not 0 <= now_ms <= 10**12:
             raise ValueError("now_ms must be bounded monotonic milliseconds")
-        if audience_can_hear is not True:
-            return None
-        last = self._last_cue.get(session)
-        if last is not None and now_ms - last < self._min_gap:
-            return None
+
+    def _candidate(self, session: str, now_ms: int) -> tuple[VoiceCue, int] | None:
         recent = [e for e in self._events.get(session, [])
                   if 0 <= now_ms - e.occurred_ms <= self._max_age
                   and (session, e.event_id) not in self._used]
         if not recent:
             return None
         newest = recent[-1]
-        # A genuine comeback uses the earlier observed failure in the SAME
-        # session/topic. It need not be in 'recent' because it may have been
-        # commented on already; it still must be inside the five-minute arc.
         if newest.kind == "recovery":
-            history = self._events.get(session, [])
-            failures = [e for e in history if e.kind == "failure" and e.topic == newest.topic
-                        and e.seq < newest.seq and 0 <= newest.occurred_ms - e.occurred_ms <= 300_000]
+            failures = [e for e in self._events[session]
+                        if e.kind == "failure" and e.topic == newest.topic
+                        and e.seq < newest.seq
+                        and 0 <= newest.occurred_ms - e.occurred_ms <= 300_000]
             if failures:
                 failure = failures[-1]
-                self._used.add((session, newest.event_id))
-                self._used.add((session, failure.event_id))
-                self._last_cue[session] = now_ms
-                return VoiceCue("callback", (failure.event_id, newest.event_id),
-                                "Reference the verified earlier setback and verified recovery. "
-                                "Use casual, brief in-game continuity; do not invent a personal past.")
-        self._used.add((session, newest.event_id))
-        self._last_cue[session] = now_ms
-        return VoiceCue(newest.kind, (newest.event_id,), _PHRASES[newest.kind])
+                return (VoiceCue("callback", (failure.event_id, newest.event_id),
+                                 "Reference the verified earlier setback and verified recovery. "
+                                 "Use casual, brief in-game continuity; do not invent a personal past."),
+                        newest.occurred_ms)
+        return VoiceCue(newest.kind, (newest.event_id,), _PHRASES[newest.kind]), newest.occurred_ms
+
+    def propose_cue(self, session: str, now_ms: int, *,
+                    audience_can_hear: bool = False) -> CueOffer | None:
+        """Reserve one evidence-grounded cue without pretending it was spoken.
+
+        Hosts should use a separate, generation-bound playback gate and call
+        complete_cue only after the corresponding voice was actually audible.
+        Return None when consent is absent, cooldown is active or data is stale.
+        """
+        _identifier(session)
+        self._clock(now_ms)
+        if audience_can_hear is not True:
+            return None
+        pending = self._pending.get(session)
+        if pending is not None:
+            if pending.proposed_ms <= now_ms <= pending.expires_ms:
+                return pending
+            del self._pending[session]
+        last = self._last_cue.get(session)
+        if last is not None and now_ms - last < self._min_gap:
+            return None
+        selected = self._candidate(session, now_ms)
+        if selected is None:
+            return None
+        cue, observed_ms = selected
+        self._ticket_counter += 1
+        offer = CueOffer(self._ticket_counter, cue, now_ms,
+                         min(now_ms + 15_000, observed_ms + self._max_age))
+        self._pending[session] = offer
+        return offer
+
+    def complete_cue(self, session: str, ticket: int, *, delivered: bool,
+                     now_ms: int) -> bool:
+        """Finalize a proposed cue, without consuming canceled audio.
+
+        False means stale/mismatched ticket; the host must suppress late audio.
+        A failed/canceled voice turn releases the cue for a possible retry.
+        """
+        _identifier(session)
+        self._clock(now_ms)
+        if type(ticket) is not int or ticket < 1 or type(delivered) is not bool:
+            raise ValueError("Invalid cue acknowledgement")
+        pending = self._pending.get(session)
+        if pending is None or pending.ticket != ticket:
+            return False
+        del self._pending[session]
+        if not pending.proposed_ms <= now_ms <= pending.expires_ms:
+            return False
+        if delivered:
+            for event_id in pending.cue.event_ids:
+                self._used.add((session, event_id))
+            self._last_cue[session] = now_ms
+        return True
+
+    def cancel_pending(self, session: str) -> bool:
+        """Invalidate the pending proposal on owner stop or barge-in."""
+        _identifier(session)
+        return self._pending.pop(session, None) is not None
+
+    def next_cue(self, session: str, now_ms: int, *,
+                 audience_can_hear: bool = False) -> VoiceCue | None:
+        """Legacy eager cue API. Prefer propose_cue + complete_cue for TTS."""
+        offer = self.propose_cue(session, now_ms, audience_can_hear=audience_can_hear)
+        if offer is None:
+            return None
+        if not self.complete_cue(session, offer.ticket, delivered=True, now_ms=now_ms):
+            return None
+        return offer.cue
 
     def summary(self) -> dict[str, int]:
         return {"sessions": len(self._seq), "moments": self._total, "cues": len(self._used)}
