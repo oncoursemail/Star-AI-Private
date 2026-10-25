@@ -80,10 +80,11 @@ class SkillPromotionTests(unittest.TestCase):
         self.fill(32)
         self.assertEqual(self.g.report("obby", "dash", "v1").holdout_sessions, 0)
 
-    def test_new_revision_can_reuse_scenario_id_but_not_auto_transfer(self):
+    def test_new_revision_cannot_reuse_scenario_id(self):
         self.record(trial(1))
-        self.record(trial(1, revision="v2"))
-        self.assertEqual(self.g.summary()["trials"], 2)
+        with self.assertRaises(ValueError):
+            self.record(trial(1, revision="v2"))
+        self.assertEqual(self.g.summary()["trials"], 1)
 
     def test_replay_not_mutate_count(self):
         self.record(trial())
