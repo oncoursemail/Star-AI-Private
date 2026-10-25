@@ -2,9 +2,9 @@
 
 # STAR AI — Autonomous Streamer and Humanlike Gaming Intelligence
 
-**Deep research and technical design — October 24, 2026**  
-**Status:** Research, design specification, and proposed tests. **NOT** implemented, integrated, trained, benchmarked, released, or deployed by this document.  
-**Project:** STAR AI, Windows/local-first desktop and distributed STAR servers.  
+**Deep research and technical design — October 24, 2026**
+**Status:** Research, design specification, and proposed tests. **NOT** implemented, integrated, trained, benchmarked, released, or deployed by this document.
+**Project:** STAR AI, Windows/local-first desktop and distributed STAR servers.
 **Design intent:** An unmistakably original, transparent AI entertainer with a cute and attractive synthetic speaking voice, compelling personality, high-quality animated avatar, precise game control, real learning progress, safe viewer interactions, and reliable streams.
 
 ---

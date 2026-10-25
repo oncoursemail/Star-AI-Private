@@ -1,5 +1,5 @@
 # STAR Public API Intelligence — research and implementation
-**Date:** 2026-10-24  
+**Date:** 2026-10-24
 **Source prompt:** InsiderForce YouTube Short, “Get 1000 Free APIs for Claude Code to Build Anything You Want” (video id `4qIZmI_1Zgs`, published 2026-09-18).
 
 ## What the Short is showing

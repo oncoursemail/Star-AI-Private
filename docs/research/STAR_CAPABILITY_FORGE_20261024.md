@@ -1,6 +1,6 @@
 # STAR Capability Forge — verified tool discovery, routing, and reuse
 
-**Date:** 2026-10-24  
+**Date:** 2026-10-24
 **Status:** candidate implementation on a review branch; no auto-merge or release.
 
 ## Goal
@@ -57,7 +57,7 @@ Source: https://registry.modelcontextprotocol.io/docs
 
 APIs.guru maintains a public directory of machine-readable API definitions, updates definitions from upstream sources, validates them, and exposes the collection through a REST API. This is a strong second-stage discovery source after a broad catalog match because it can lead STAR directly to OpenAPI metadata.
 
-Source: https://github.com/APIs-guru/openapi-directory  
+Source: https://github.com/APIs-guru/openapi-directory
 API: https://api.apis.guru/v2/list.json
 
 ### Security model

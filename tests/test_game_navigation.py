@@ -35,7 +35,7 @@ class GameNavigationTests(unittest.TestCase):
 
     def test_duplicate_and_capacity(self):
         with self.assertRaises(ValueError):
-            GameFrame("g", "s", 1, 5, 5, (0, 0), 
+            GameFrame("g", "s", 1, 5, 5, (0, 0),
                       (SeenTile((0, 0), "floor"), SeenTile((0, 0), "goal")))
         with self.assertRaises(ValueError):
             GameFrame("g", "s", 1, 5, 5, (0, 0),

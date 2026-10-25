@@ -1,8 +1,8 @@
 > **Archived research.** This records design and tool investigations, NOT deployed STAR capabilities. Revalidate external release, model-license, platform and legal claims before execution. A passing test or source link does not mean a feature is installed.
 
 # STAR STREAMER — Research and Engineering Blueprint
-**Research date:** 24 October 2026  
-**Project:** Star AI, an original chibi animated autonomous game-playing streamer  
+**Research date:** 24 October 2026
+**Project:** Star AI, an original chibi animated autonomous game-playing streamer
 **Status:** Research and proposed design only. Not merged, installed, trained or demonstrated.
 
 ## Executive conclusion
@@ -153,7 +153,7 @@ Artwork pipeline:
 5. Actions must be actual keyed animation cycles for sitting, walking, landing, skipping, cheering, hugging a companion, high fives and paw poses. Secondary emotions from real events, not randomly generated claims that the game has ended.
 6. Render: alpha transparency, 1080p/60fps output target where feasible, accessible high-contrast text, reduced-motion support and consistent face/proportions at avatar sizes.
 
-**Rig technology decision:** Prototype a full rig in **Inochi2D** for permissive integration (BSD-2-Clause) and also do a **VTube Studio + Live2D** quality/latency comparison, including release license review. Preserve original editable sources regardless of chosen runtime. Do not assume Inochi2D accepts an existing Live2D model without re-rigging. 
+**Rig technology decision:** Prototype a full rig in **Inochi2D** for permissive integration (BSD-2-Clause) and also do a **VTube Studio + Live2D** quality/latency comparison, including release license review. Preserve original editable sources regardless of chosen runtime. Do not assume Inochi2D accepts an existing Live2D model without re-rigging.
 
 A co-host companion (Astra/Ember etc.) should react based on actual agent status or explicitly labeled decorative idle activities. Cat/dog switches and affectionate interactions are opt-in. Never pretend that model-provider branding is an affiliated product.
 
