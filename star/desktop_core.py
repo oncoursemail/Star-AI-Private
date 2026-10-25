@@ -229,6 +229,10 @@ class Settings:
     # Settings > "Start thinking while I type" (star/prefill_warm.py): while the owner types, the server reads the
     # conversation and the draft into its prompt cache, so the answer starts sooner. Off by default.
     prefill_while_typing: bool = False
+    # One fixed tool list for every Roblox conversation on own hardware (star/turn_memory.py ROBLOX_FIXED_TOOLS), so
+    # the tools + rules at the start of the prompt are the same bytes for every Roblox task and the server reuses
+    # them from its prompt cache (docs/agents/speed-numa-prefix-20261025.md). Off = tools picked per message.
+    fixed_roblox_tools: bool = True
     # Settings > Song recognition (star/music_recognition.py): off until the owner turns it on. The AudD and AcoustID
     # keys live in the OS keyring. fpcalc_path = Chromaprint's fpcalc for AcoustID ('' = look on PATH; never downloaded).
     music_recognition_enabled: bool = False
@@ -366,6 +370,8 @@ class Settings:
             raise ValueError('Automatically turn on at night must be on or off')
         if type(self.prefill_while_typing) is not bool:
             raise ValueError('Start thinking while I type must be on or off')
+        if type(self.fixed_roblox_tools) is not bool:
+            raise ValueError('Fixed Roblox tool list must be on or off')
         for key in ('gpu_helper_server', 'gpu_helper_model'):
             value = getattr(self, key)
             if (not isinstance(value, str) or len(value) > 1024 or '\x00' in value
@@ -1549,10 +1555,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         # Server), and the shape of this request is kept for the post-answer warm-up.
         tools_kept = (turn_memory.for_conversation(memory_scope, sticky=kind == 'lan')
                       if kind != 'cloud' else None)
-        if (tools_kept is not None and tools_kept.sticky and use_tools and settings.prefill_while_typing is True
+        if (tools_kept is not None and tools_kept.sticky and use_tools
+                and (settings.prefill_while_typing is True or settings.fixed_roblox_tools is True)
                 and (is_roblox_task(prompt) or is_roblox_dev_prompt(prompt))):
-            # Type-ahead only pays when the start of the prompt does not change: a Roblox chat gets one fixed tool
-            # list from its first Roblox message on (star/turn_memory.py), not one to three more per message.
+            # The server reuses a prompt start only when it is byte-identical up to a user message (hybrid model:
+            # cache checkpoints sit at user-message starts). A Roblox chat therefore gets one fixed tool list from its
+            # first Roblox message on (star/turn_memory.py), not one to three more per message, and every Roblox
+            # task starts with the same tools + rules, which the server keeps from earlier tasks.
             tools_kept.pin(turn_memory.ROBLOX_FIXED_TOOLS)
         answered_by = ''
         model_stats = {}

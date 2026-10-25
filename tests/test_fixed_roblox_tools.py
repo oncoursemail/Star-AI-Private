@@ -1,7 +1,9 @@
-"""With "Start thinking while I type" on, a Roblox chat keeps one tool list from its first Roblox message.
+"""A Roblox chat keeps one tool list from its first Roblox message (setting fixed_roblox_tools, on by default, or
+"Start thinking while I type").
 
 The Qwen template writes the tool list first, so a tool added in the middle of a chat means the server reads the
-whole prompt again (the owner's draft was read for nothing). Off, nothing changes: tools still follow each message.
+whole prompt again. The fixed tools lead the list, so different Roblox tasks also start with the same bytes and the
+server reuses them from its prompt cache. Both off: tools follow each message.
 """
 import json
 
@@ -41,8 +43,18 @@ def test_a_tool_that_follows_a_message_runs_when_it_was_pinned(desk):  # noqa: F
     assert any(e.get("event") == "tool_finished" and e.get("tool") == "star_calculate" for e in desk.events)
 
 
+def test_on_by_default_two_new_roblox_chats_start_with_the_same_tool_bytes(desk):  # noqa: F811
+    from star import turn_memory
+    first = desk.turn(FIRST, "Done.", mode="agent")
+    assert EXTRA <= set(names(first))
+    turn_memory.forget()                            # a new conversation: nothing sticky carried over
+    other = desk.turn(LATER[0], "Ok.", mode="agent")
+    assert json.dumps(other["tools"]) == json.dumps(first["tools"])
+    assert other["messages"][0] == first["messages"][0]
+
+
 def test_off_the_tools_follow_each_message_as_before(desk):  # noqa: F811
-    settings = fleet_settings()
+    settings = fleet_settings(fixed_roblox_tools=False)
     first = desk.turn(FIRST, "Done.", mode="agent", settings=settings)
     assert not EXTRA & set(names(first))
     later = desk.turn(LATER[0], "Ok.", mode="agent", settings=settings)
@@ -51,7 +63,7 @@ def test_off_the_tools_follow_each_message_as_before(desk):  # noqa: F811
 
 
 def test_a_chat_that_is_not_about_roblox_gets_no_pinned_tools(desk):  # noqa: F811
-    settings = fleet_settings(prefill_while_typing=True)
+    settings = fleet_settings()
     sent = desk.turn("Use a skill and delegate research to a team of agents", "Done.", mode="agent", settings=settings)
     assert not EXTRA & set(names(sent))
 
@@ -63,6 +75,9 @@ def test_a_pinned_text_selects_through_each_source_so_a_switched_off_source_drop
     memory.pin("roblox audit")                      # pinning twice changes nothing
     assert memory.pinned == ["roblox audit"]
     assert [t["name"] for t in memory.choose(source.definitions, "thanks")] == ["tool_a", "tool_b"]
+    # the pinned tools lead, whatever the message selects
+    assert [t["name"] for t in memory.choose(Source({"own": ["tool_c"], "roblox": ["tool_a"], "audit": ["tool_b"]}).definitions,
+                                             "own")] == ["tool_a", "tool_b", "tool_c"]
     source.enabled = False
     assert memory.choose(source.definitions, "thanks") == []
     plain = TurnMemory(sticky=False)

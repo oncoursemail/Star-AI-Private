@@ -150,8 +150,9 @@ def desk(tmp_path, monkeypatch):
     events = []
 
     def turn(prompt, *, settings=None, answers=(), **options):
+        # fixed_roblox_tools off: these tests are about which tools each message selects
         settings = settings or Settings(provider="star_server", server_endpoint=LAN, model="star-fast",
-                                        knowledge_endpoint="off")
+                                        knowledge_endpoint="off", fixed_roblox_tools=False)
         chats = Conversations(home / "conversations.sqlite3")
         try:
             chat = chats.new_chat(settings.project)
@@ -217,7 +218,8 @@ def everything_settings(desk, **fields) -> Settings:
     vault.mkdir(exist_ok=True)
     return Settings(**{"provider": "star_server", "server_endpoint": LAN, "model": "star-fast",
                        "knowledge_endpoint": "off", "workspace": str(workspace), "obsidian_enabled": True,
-                       "obsidian_vault": str(vault), "mcp_graphify_docs": True, **fields})
+                       "obsidian_vault": str(vault), "mcp_graphify_docs": True, "fixed_roblox_tools": False,
+                       **fields})
 
 
 def everything_on(desk, monkeypatch, *, knowledge: bool, **fields):
