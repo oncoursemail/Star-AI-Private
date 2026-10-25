@@ -463,6 +463,20 @@ def paired_decision(baseline: dict, candidate: dict, *, alpha: float = DEFAULT_A
     return report
 
 
+def sensitive_tasks(screening: dict) -> list[str]:
+    """The sensitive task pool: tasks whose outcome varied across screening samples (task id -> outcomes from runs
+    that are NOT part of the decision). A task that always passed or always failed carries no paired signal for small
+    changes (32 of 57 dev+creation tasks never changed result: docs/research/smarter-faster-20261025.md 1.2), so a
+    pool of varying tasks needs about 2.3x fewer runs for the same MDE. Select on separate runs only: selecting on the
+    runs being compared biases the verdict. Tasks with fewer than 2 screening samples are kept (unknown = sensitive)."""
+    pool = []
+    for tid, samples in sorted(screening.items()):
+        seen = _clean(samples)
+        if len(seen) < 2 or 0 < sum(seen) < len(seen):
+            pool.append(tid)
+    return pool
+
+
 def simulate(n_tasks: int, k: int, effect_tasks: int, *, runs: int = 1000, seed: int = 0, base_pass_share: float = 0.5,
              noise_discordance: float = DEFAULT_NOISE_DISCORDANCE, alpha: float = DEFAULT_ALPHA,
              method: str = "sign") -> dict:

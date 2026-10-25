@@ -329,7 +329,8 @@ def _when(value) -> datetime | None:
 def compare_paired(baseline_runs: list, candidate_runs: list, *, alpha: float = eval_stats.DEFAULT_ALPHA,
                    method: str = "sign", canary=(), seed: int = 0, allow_partial: bool = False,
                    max_session_hours: float = MAX_SESSION_HOURS, allow_model_change: bool = False,
-                   smallest_effect: float = eval_stats.DEFAULT_SMALLEST_EFFECT) -> Verdict:
+                   smallest_effect: float = eval_stats.DEFAULT_SMALLEST_EFFECT, pool=None,
+                   noise_discordance: float = eval_stats.DEFAULT_NOISE_DISCORDANCE) -> Verdict:
     """Paired verdict from k result files per arm that were run in the same session.
 
     Sample j of the baseline (the j-th run by start time) is paired with sample j of the candidate. All runs must be
@@ -390,6 +391,12 @@ def compare_paired(baseline_runs: list, candidate_runs: list, *, alpha: float = 
                      if isinstance(row, dict) and row.get("status") in _SCORED})
     if not scored:
         return Verdict(UNUSABLE, notes=["the baseline runs have no scored tasks"])
+    if pool is not None:
+        kept = [tid for tid in scored if tid in set(pool)]
+        notes.append(f"sensitive task pool: {len(kept)} of {len(scored)} tasks (outcome varied in separate screening runs)")
+        scored = kept
+        if not scored:
+            return Verdict(UNUSABLE, notes=notes + ["the sensitive pool has no task in common with these runs"])
     not_covered = [tid for tid in scored if all(_status(run, tid) == "missing" for run in cand_order)]
     if not_covered and allow_partial:
         notes.append(f"targeted run: {len(not_covered)} baseline tasks were not run by the candidate")
@@ -397,7 +404,7 @@ def compare_paired(baseline_runs: list, candidate_runs: list, *, alpha: float = 
     base_samples = {tid: [_SAMPLE.get(_status(run, tid)) for run in base_order] for tid in scored}
     cand_samples = {tid: [_SAMPLE.get(_status(run, tid)) for run in cand_order] for tid in scored}
     report = eval_stats.paired_decision(base_samples, cand_samples, alpha=alpha, method=method, canary=canary, seed=seed,
-                                        smallest_effect=smallest_effect)
+                                        smallest_effect=smallest_effect, noise_discordance=noise_discordance)
     code = _PAIRED_CODE[report.decision]
     if not_covered and not allow_partial and code != BLOCKED:
         code = INCOMPLETE
@@ -441,6 +448,16 @@ def gate_paired(run_baseline, run_candidate, *, samples: int = 2, **options) -> 
     return compare_paired(base, cand, **options)
 
 
+def screening_samples(runs: list[dict]) -> dict:
+    """task id -> outcomes (True pass / False fail) across result files, for eval_stats.sensitive_tasks."""
+    out: dict[str, list] = {}
+    for run in runs:
+        for tid, row in (run.get("tasks") or {}).items():
+            if isinstance(row, dict) and row.get("status") in _SCORED:
+                out.setdefault(tid, []).append(row["status"] == "pass")
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m star.evals gate")
     parser.add_argument("--baseline", required=True, type=Path, nargs="+",
@@ -461,13 +478,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--smallest-effect", type=float, default=eval_stats.DEFAULT_SMALLEST_EFFECT,
                         help="smallest improvement worth deciding on, as a share of tasks (paired mode; default 0.10): "
                              "without 80%% power for it a non-significant result is NOT ENOUGH POWER (exit 5)")
+    parser.add_argument("--pool-from", type=Path, nargs="+", default=None,
+                        help="paired mode: screening result files (separate runs, not the compared ones); decide only "
+                             "on tasks whose outcome varied across them (the sensitive task pool)")
+    parser.add_argument("--noise-discordance", type=float, default=eval_stats.DEFAULT_NOISE_DISCORDANCE,
+                        help="pair discordance with no real change, for the MDE (default 1/6; measured 0.12-0.15)")
     parser.add_argument("--json", action="store_true", help="print the verdict as JSON")
     args = parser.parse_args(argv)
+    pool = None
+    if args.pool_from:
+        if set(map(str, args.pool_from)) & set(map(str, args.baseline + args.candidate)):
+            parser.error("--pool-from must name separate screening runs, not the compared ones")
+        pool = eval_stats.sensitive_tasks(screening_samples([load_result(p) for p in args.pool_from]))
     if args.paired_session:
         verdict = evaluate_paired(args.baseline, args.candidate, alpha=args.alpha, method=args.method,
                                   canary=[c.strip() for c in args.canary.split(",") if c.strip()], seed=args.seed,
                                   allow_partial=args.allow_partial, max_session_hours=args.max_session_hours,
-                                  allow_model_change=args.allow_model_change, smallest_effect=args.smallest_effect)
+                                  allow_model_change=args.allow_model_change, smallest_effect=args.smallest_effect,
+                                  pool=pool, noise_discordance=args.noise_discordance)
     elif args.allow_model_change:
         parser.error("--allow-model-change needs --paired-session")
     elif len(args.baseline) != 1 or len(args.candidate) != 1:

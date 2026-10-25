@@ -258,3 +258,23 @@ def test_answer_key_first_and_whole_refuse_guess_lists():
     assert answer_checks(exact, "Answer: **Canberra**.\n\nHope that helps")[0].ok
     assert not answer_checks(exact, "Answer: Canberra or Sydney")[0].ok
     assert not answer_checks(exact, "Answer:")[0].ok
+
+
+def test_promote_cli_needs_the_sealed_holdout_to_promote(sealed, home):
+    folder, manifest = sealed
+    from star.eval_runner import grader_sha256
+    manifest = {**manifest, "grader_sha256": grader_sha256()}
+    se.manifest_path("s1").write_text(json.dumps(manifest), encoding="utf-8")
+    (folder / "results").mkdir()
+    (folder / "results" / "b.json").write_text(json.dumps({"tasks": {"A": {"status": "fail"}, "B": {"status": "fail"}}}))
+    (folder / "results" / "c.json").write_text(json.dumps({"tasks": {"A": {"status": "pass"}, "B": {"status": "pass"},
+                                                                     "C": {"status": "pass"}}}))
+    dev = folder.parent / "dev.json"
+    dev.write_text(json.dumps({"paired": {"decision": "PROMOTE"}}))
+    code = integrity.main(["promote", "--change", "x", "--apply", "flag=on", "--dev", str(dev), "--set", "s1",
+                           "--baseline", "b", "--candidate", "c"])
+    assert code == 1                                         # 2 tasks: underpowered, and a canary passed
+    receipt = json.loads(sorted((home / "receipts").glob("*refusal*"))[0].read_text())
+    assert any("canary passed" in r for r in receipt["reasons"])
+    assert any("sealed holdout verdict is UNDERPOWERED" in r for r in receipt["reasons"])
+    assert not (home / "promotions.json").exists()

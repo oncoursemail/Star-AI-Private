@@ -295,3 +295,22 @@ def test_tasks_needed_matches_the_exact_power_model():
     assert s.power(need, 1, -(-need // 10)) == pytest.approx(0.8, abs=0.06)
     assert s.tasks_needed(0.10, 2) < need and s.tasks_needed(0.05, 1) > 3 * need
     assert s.tasks_needed(0, 1) is None
+
+
+def test_sensitive_pool_keeps_only_tasks_that_varied_in_screening():
+    screening = {"A": [True, True], "B": [False, False], "C": [True, False], "D": [True], "E": [None, True, False]}
+    assert s.sensitive_tasks(screening) == ["C", "D", "E"]
+
+
+def test_gate_decides_on_the_sensitive_pool_from_separate_runs(tmp_path):
+    files = {}
+    for name, statuses, hour in (("s1", dict(BASE, T0="pass"), 1), ("s2", BASE, 2), ("b", BASE, 3), ("c", BETTER, 4)):
+        files[name] = tmp_path / f"{name}.json"
+        files[name].write_text(json.dumps(result(statuses, **at(hour))), encoding="utf-8")
+    pool = s.sensitive_tasks(gate.screening_samples([gate.load_result(files["s1"]), gate.load_result(files["s2"])]))
+    assert pool == ["T0"]
+    v = gate.evaluate_paired([files["b"]], [files["c"]], pool=pool)
+    assert v.compared == 1 and any("sensitive task pool: 1 of 12" in n for n in v.notes)
+    with pytest.raises(SystemExit):
+        gate.main(["--paired-session", "--baseline", str(files["b"]), "--candidate", str(files["c"]),
+                   "--pool-from", str(files["b"])])

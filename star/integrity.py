@@ -290,6 +290,36 @@ def watch(receipt_path: Path, live_pass: int, live_total: int, **options) -> dic
     return {"healthy": True, "problems": []}
 
 
+def _promote(args) -> int:
+    """`promote`: the sealed set must be intact with its frozen grader, the candidate may not pass more canaries,
+    and both the dev verdict and the sealed-holdout re-measure must be PROMOTE; then decide() writes the receipt."""
+    from . import sealed_eval as se
+    manifest = json.loads(se.manifest_path(args.set).read_text(encoding="utf-8"))
+    grader = se.verify(args.set, manifest=manifest) or se.grader_problems(manifest)
+    folder = se.set_dir(args.set) / "results"
+    base = [json.loads((folder / f"{n}.json").read_text(encoding="utf-8")) for n in args.baseline]
+    cand = [json.loads((folder / f"{n}.json").read_text(encoding="utf-8")) for n in args.candidate]
+    canaries = canary_alarm(sorted({t for r in base for t in se.canary_passes(r, manifest)}),
+                            sorted({t for r in cand for t in se.canary_passes(r, manifest)}))
+    families = [f for f in args.families.split(",") if f] or None
+    report = se.paired_report(base, cand, manifest, families=families)
+    holdout = {**report["summary"], "candidate_pass": report["candidate_pass"], "samples": report["samples"]}
+    dev_raw = json.loads(args.dev.read_text(encoding="utf-8"))
+    dev = dev_raw.get("paired") or dev_raw
+    easier = []
+    if args.old_suite and args.new_suite:
+        easier = easier_grading(json.loads(args.old_suite.read_text(encoding="utf-8")),
+                                json.loads(args.new_suite.read_text(encoding="utf-8")))
+    apply = {}
+    for pair in args.apply:
+        name, _, value = pair.partition("=")
+        apply[name.strip()] = {"true": True, "false": False}.get(value.strip().lower(), value.strip())
+    d = decide(args.change, apply=apply, dev=dev, holdout=holdout, grader=grader, canaries=canaries, easier=easier,
+               extra={"sealed_set": {"set": args.set, "set_sha256": manifest.get("set_sha256")}})
+    print(json.dumps({"change": d.change, "promote": d.promote, "reasons": d.reasons, "receipt": d.receipt}, indent=1))
+    return 0 if d.promote else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m star.integrity", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -302,7 +332,19 @@ def main(argv: list[str] | None = None) -> int:
     wt.add_argument("--live-pass", required=True, type=int)
     wt.add_argument("--live-total", required=True, type=int)
     wt.add_argument("--canary-passes", type=int, default=0)
+    pr = sub.add_parser("promote", help="decide a change: dev verdict + sealed-holdout re-measure + integrity checks")
+    pr.add_argument("--change", required=True)
+    pr.add_argument("--apply", nargs="+", required=True, metavar="NAME=VALUE", help="overlay values to promote")
+    pr.add_argument("--dev", required=True, type=Path, help="`python -m star.evals gate --paired-session --json` output")
+    pr.add_argument("--set", required=True, help="sealed holdout set id")
+    pr.add_argument("--baseline", nargs="+", required=True, help="sealed result names of the baseline arm")
+    pr.add_argument("--candidate", nargs="+", required=True, help="sealed result names of the candidate arm")
+    pr.add_argument("--families", default="", help="decide on these families only (comma list)")
+    pr.add_argument("--old-suite", type=Path, help="with --new-suite: a changed task list to check for easier grading")
+    pr.add_argument("--new-suite", type=Path)
     args = parser.parse_args(argv)
+    if args.command == "promote":
+        return _promote(args)
     if args.command == "easier":
         problems = easier_grading(json.loads(args.old.read_text(encoding="utf-8")),
                                   json.loads(args.new.read_text(encoding="utf-8")))

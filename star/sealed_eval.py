@@ -182,10 +182,11 @@ def canary_passes(result: dict, manifest: dict) -> list[str]:
 
 
 def paired_report(baseline: list[dict], candidate: list[dict], manifest: dict, *, families=None,
-                  smallest_effect: float = eval_stats.DEFAULT_SMALLEST_EFFECT) -> dict:
+                  smallest_effect: float = eval_stats.DEFAULT_SMALLEST_EFFECT, pool=None,
+                  noise_discordance: float = eval_stats.DEFAULT_NOISE_DISCORDANCE) -> dict:
     """Paired verdict over the scored tasks both arms answered (optionally only some families), with power."""
     fam = {row["id"]: row["family"] for row in manifest["tasks"] if row["scored"]}
-    keep = {t for t, f in fam.items() if families is None or f in families}
+    keep = {t for t, f in fam.items() if (families is None or f in families) and (pool is None or t in set(pool))}
 
     def samples(runs):
         out: dict[str, list] = {}
@@ -198,8 +199,9 @@ def paired_report(baseline: list[dict], candidate: list[dict], manifest: dict, *
     base, cand = samples(baseline), samples(candidate)
     both = sorted(set(base) & set(cand))
     report = eval_stats.paired_decision({t: base[t] for t in both}, {t: cand[t] for t in both},
-                                        smallest_effect=smallest_effect)
+                                        smallest_effect=smallest_effect, noise_discordance=noise_discordance)
     return {"tasks": len(both), "families": sorted({fam[t] for t in both}), "summary": report.summary(),
+            "candidate_pass": report.candidate_pass, "baseline_pass": report.baseline_pass, "samples": report.samples,
             "text": report.text()}
 
 
@@ -234,6 +236,9 @@ def main(argv: list[str] | None = None) -> int:
     rep.add_argument("--baseline", nargs="+", required=True)
     rep.add_argument("--candidate", nargs="+", required=True)
     rep.add_argument("--families", default="", help="comma list: decide on these families only")
+    rep.add_argument("--pool-from", nargs="+", default=None,
+                     help="screening result names (separate runs): decide on the sensitive pool as well")
+    rep.add_argument("--noise-discordance", type=float, default=eval_stats.DEFAULT_NOISE_DISCORDANCE)
     args, rest = parser.parse_known_args(argv)
 
     if args.command == "verify":
@@ -254,9 +259,18 @@ def main(argv: list[str] | None = None) -> int:
                "candidate": [family_scores(r, manifest) for r in cand],
                "canary_passes": {"baseline": [canary_passes(r, manifest) for r in base],
                                  "candidate": [canary_passes(r, manifest) for r in cand]},
-               "paired": paired_report(base, cand, manifest, families=fams)}
+               "paired": paired_report(base, cand, manifest, families=fams, noise_discordance=args.noise_discordance)}
         print(json.dumps({k: v for k, v in out.items() if k != "paired"}, indent=1))
         print(out["paired"]["text"])
+        if args.pool_from:
+            if set(args.pool_from) & set(args.baseline + args.candidate):
+                print("refused: --pool-from must name separate screening runs")
+                return 2
+            from .eval_gate import screening_samples
+            pool = eval_stats.sensitive_tasks(screening_samples(_results(args.set, args.pool_from)))
+            print(f"sensitive pool ({len(pool)} tasks):")
+            print(paired_report(base, cand, manifest, families=fams, pool=pool,
+                                noise_discordance=args.noise_discordance)["text"])
         return 0
     # run
     from .eval_runner import add_common, build_real, run_suite
