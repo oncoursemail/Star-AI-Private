@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "ArcaneSword",
+  "fps": 30,
+  "total_frames": 90,
+  "clips": [
+    {"id": "run", "action": "RunCycle", "duration": 30, "loop": true, "target": "full_body", "markers": [{"id": "FootDownL", "frame": 6}, {"id": "FootDownR", "frame": 21}]},
+    {"id": "slash", "action": "SwordSlash", "duration": 28, "loop": false, "target": "upper_body", "markers": [{"id": "Impact", "frame": 14}]}
+  ],
+  "layers": [
+    {"id": "locomotion", "clip": "run", "start": 0, "end": 90, "blend": "replace", "weight": 1, "fade_in": 0, "fade_out": 0},
+    {"id": "attack", "clip": "slash", "start": 20, "end": 48, "blend": "add", "weight": 0.85, "fade_in": 3, "fade_out": 5}
+  ],
+  "cues": [
+    {"id": "SwordTrail", "layer": "attack", "marker": "Impact", "kind": "vfx", "resource": "CinematicSwordArc", "offset": -3, "duration": 13},
+    {"id": "SwordHit", "layer": "attack", "marker": "Impact", "kind": "sound", "resource": "SwordHitSound", "offset": 0, "duration": 1},
+    {"id": "HudPulse", "layer": "attack", "marker": "Impact", "kind": "ui", "resource": "ComboIndicator", "offset": 0, "duration": 7, "reduced_motion": "instant"},
+    {"id": "Footstep", "layer": "locomotion", "marker": "FootDownL", "kind": "sound", "resource": "Step", "offset": 0, "duration": 1}
+  ],
+  "budgets": {"max_vfx": 2, "max_ui": 2, "max_camera": 1, "require_base_pose": true}
+}
