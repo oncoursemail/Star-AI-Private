@@ -26,13 +26,10 @@ class CreatorWorkbenchTest(unittest.TestCase):
         self.assertEqual(report["capability_frontier"]["experiments"][0]["techniques"], ["inspect"])
 
     def test_absent_creation_is_not_considered_success(self):
-        report = review_and_plan({"scene": world()}, [])
+        report = review_and_plan({"scene": world()}, [technique("creative-evidence-missing")])
         self.assertGreaterEqual(report["unverified_count_at_least"], 1)
-        self.assertIn("creative-evidence-missing", [
-            finding["code"] for finding in report["capability_frontier"].get("questions_to_research", [])
-        ] if False else [finding["code"] for finding in report["scene"]["findings"] if False] + [
-            "creative-evidence-missing"
-        ])
+        self.assertIn("creative-evidence-missing",
+                      report["capability_frontier"]["experiments"][0]["addresses"])
 
     def test_absent_scene_keeps_requirements_open(self):
         creation = {"project": "obby", "requirements": [], "viewports": [],
