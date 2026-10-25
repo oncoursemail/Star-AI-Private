@@ -24,6 +24,10 @@ class CreatorWorkbenchTest(unittest.TestCase):
         self.assertFalse(report["studio_verified"])
         self.assertFalse(report["owner_approved"])
         self.assertEqual(report["capability_frontier"]["experiments"][0]["techniques"], ["inspect"])
+        self.assertFalse(report["learning_proposal"]["written"])
+        self.assertFalse(report["learning_proposal"]["approved"])
+        self.assertIn("missing-prop", report["learning_proposal"]["obsidian_markdown_candidate"])
+        self.assertGreaterEqual(len(report["learning_proposal"]["graph_candidate"]["nodes"]), 2)
 
     def test_absent_creation_is_not_considered_success(self):
         report = review_and_plan({"scene": world()}, [technique("creative-evidence-missing")])
