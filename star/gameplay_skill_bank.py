@@ -199,12 +199,12 @@ class GameplaySkillBank:
         """
         scope = self._scope(game_id, game_version, objective_id, situation_id)
         now = _seconds(now_unix_s)
-        if (type(min_practice) is not int or not 3 <= min_practice <= 100
-                or type(min_validation) is not int or not 5 <= min_validation <= 100
+        if (type(min_practice) is not int or not 5 <= min_practice <= 100
+                or type(min_validation) is not int or not 8 <= min_validation <= 100
                 or isinstance(min_validation_lower_bound, bool)
                 or not isinstance(min_validation_lower_bound, (float, int))
                 or not math.isfinite(min_validation_lower_bound)
-                or not 0.50 <= min_validation_lower_bound <= 0.95):
+                or not 0.55 <= min_validation_lower_bound <= 0.95):
             raise ValueError("invalid offline evidence thresholds")
         rows = self._db.execute(
             "SELECT trial_id, run_id, payload_json, receipt FROM gameplay_trials "
@@ -243,7 +243,8 @@ class GameplaySkillBank:
             vlb = wilson_lower(vs, vn) if vn else 0.0
             if pn >= min_practice and vn >= min_validation and vlb >= min_validation_lower_bound:
                 ready.append((vlb, vn, pn, action))
-            elif pn >= min_practice and (vn < min_validation or vlb >= min_validation_lower_bound):
+            elif (pn >= min_practice and ps / pn >= 0.70
+                  and (vn < min_validation or vlb >= min_validation_lower_bound)):
                 rehearsal.append((plb, pn, action, vn, vlb))
         if ready:
             lb, vn, pn, action = sorted(ready, key=lambda x: (-x[0], -x[1], -x[2], x[3]))[0]
