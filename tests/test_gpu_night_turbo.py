@@ -344,3 +344,30 @@ def test_pc_conductor_tasks_are_pushed_to_server_1s_pool(tmp_path, monkeypatch):
     assert turbo.push_conductor_tasks(config, tmp_path / "ns") == 1
     assert "pool/conductor-pc-20261017.json" in calls[0][0][-1] and calls[0][1]["input"] == b"[]"
     assert turbo.push_conductor_tasks(dict(config, server_ssh=""), tmp_path / "ns") == 0
+
+
+def test_curiosity_queue_goes_to_server_1_and_studied_items_come_back(tmp_path, monkeypatch):
+    from star import curiosity
+    queue = tmp_path / "curiosity.jsonl"
+    monkeypatch.setenv("STAR_CURIOSITY_FILE", str(queue))
+    config = dict(turbo.DEFAULTS, server_ssh="star@host.invalid")
+    assert turbo.sync_curiosity(config) == ""                                      # no queue yet: nothing to do
+    curiosity.record("weak_retrieval", "how do tween chains work", path=queue)
+    curiosity.record("tool_failure", "tool star_x failed", path=queue)               # never leaves the PC
+    key = curiosity.make_key("weak_retrieval", "how do tween chains work")
+    sent = []
+    monkeypatch.setattr(turbo, "_ssh", lambda cfg, cmd, timeout=90: json.dumps(
+        {"ts": "2099-01-01T00:00:00Z", "key": key, "resolved": "taught", "by": "conductor-1"}).encode() + b"\n")
+    monkeypatch.setattr(turbo.subprocess, "run",
+                        lambda argv, **kw: sent.append((argv, kw)) or turbo.SimpleNamespace(returncode=0))
+    note = turbo.sync_curiosity(config)
+    assert "0 open items sent, 1 studied items brought back" in note                  # studied first, so it is not re-sent
+    assert sent == []
+    assert curiosity.ranked(5, paths=(queue,)) == []
+    curiosity.record("weak_retrieval", "another gap in the docs", path=queue)
+    monkeypatch.setattr(turbo, "_ssh", lambda cfg, cmd, timeout=90: (_ for _ in ()).throw(OSError("no file yet")))
+    assert "1 open items sent, 0 studied" in turbo.sync_curiosity(config)
+    argv, kw = sent[0]
+    assert "data/curiosity.jsonl" in argv[-1] and b"another gap in the docs" in kw["input"]
+    assert b"star_x" not in kw["input"] and b"tween chains" not in kw["input"]
+    assert turbo.sync_curiosity(dict(config, server_ssh="")) == ""

@@ -85,6 +85,20 @@ class Settings:
     conductor_docs: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_DOCS", ""))   # "" = home/docs-recent
     conductor_tag: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_TAG", ""))     # "pc-": pool/conductor-pc-<night>.json
 
+    # Curiosity queue (star/curiosity.py): the conductor turns the app's open "did not know / got wrong" items into
+    # practice tasks. data/curiosity.jsonl is the app PC's snapshot (pc/turbo.py sync); the conductor's own results go to
+    # data/curiosity-done.jsonl, which the PC brings back. "off" = the conductor ignores the queue.
+    curiosity: str = field(default_factory=lambda: _env("STAR_NS_CURIOSITY", "on"))
+    curiosity_items: int = field(default_factory=lambda: int(_env("STAR_NS_CURIOSITY_ITEMS", "6")))
+
+    @property
+    def curiosity_file(self) -> Path:
+        return self.data / "curiosity.jsonl"
+
+    @property
+    def curiosity_done_file(self) -> Path:
+        return self.data / "curiosity-done.jsonl"
+
     @property
     def app(self) -> Path:          # a copy of the repository (the folder that holds `star/`)
         return Path(_env("STAR_NS_APP", str(self.home / "app")))

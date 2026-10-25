@@ -51,6 +51,8 @@ PACKAGE_DATA_SITES = {
     "star/voice/catalog.py": "star/voice/voices.json",
 }
 OTHER_FILE_ANCHORS = {
+    "star/api_dump_diff.py": "developer-only API dump change list (data/roblox_api/changes.json, written by the refresh scripts)",
+    "star/self_audit.py": "weekly self-audit reads eval results and the API dump from a source checkout; a missing source is reported, not guessed",
     "star/architecture_pipeline.py": "opt-in Blender export runs scripts/blender_building.py from a source checkout",
     "star/best_of_n.py": "developer-only evaluation prelude ('' in the packaged app)",
     "star/cli.py": "source-only CLI",

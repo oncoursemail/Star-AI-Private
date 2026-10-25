@@ -196,6 +196,23 @@ def build(raw: bytes, *, studio_version: str, upload: str, generated: str) -> st
     return text
 
 
+def report_changes(old: dict, new: dict, changes_file: Path) -> str:
+    """List what the new dump added or deprecated (star/api_dump_diff.py), store the lists beside the data file and
+    queue them as curiosity items for night school. A failure here never stops the refresh."""
+    try:
+        sys.path.insert(0, str(ROOT))
+        from star import api_dump_diff
+        changes = api_dump_diff.diff_dumps(old, new)
+        if not api_dump_diff.has_changes(changes):
+            return "no API changes since the previous dump"
+        api_dump_diff.write_changes(changes, changes_file)
+        queued = api_dump_diff.queue_changes(changes)
+        return (f"API changes: {len(changes['added_classes'])} classes, {len(changes['added_members'])} members added, "
+                f"{len(changes['newly_deprecated'])} deprecated; {queued} queued for night school ({changes_file})")
+    except Exception as exc:  # noqa: BLE001 - the refresh itself succeeded
+        return f"API change list not written ({type(exc).__name__})"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--input", type=Path, help="a local Full-API-Dump.json instead of downloading")
@@ -231,9 +248,12 @@ def main(argv: list[str] | None = None) -> int:
         raw = _fetch(DUMP_URL.format(upload=upload))
     text = build(raw, studio_version=studio_version, upload=upload,
                  generated=_dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d"))
+    old_text = args.output.read_text(encoding="utf-8") if args.output.is_file() else ""
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(text, encoding="utf-8", newline="\n")
     data = json.loads(text)
+    if old_text:
+        print(report_changes(json.loads(old_text), data, args.output.with_name("changes.json")))
     print(f"wrote {args.output} ({len(text.encode('utf-8'))} bytes): {len(data['Classes'])} classes, "
           f"{len(data['Enums'])} enums from Studio {studio_version} ({upload})")
     return 0

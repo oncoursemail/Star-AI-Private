@@ -36,6 +36,12 @@ def _no_owner_roblox_key(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _own_curiosity_queue(monkeypatch, tmp_path):
+    """No test writes to the machine's real curiosity queue (star/curiosity.py)."""
+    monkeypatch.setenv("STAR_CURIOSITY_FILE", str(tmp_path / "curiosity-queue.jsonl"))
+
+
+@pytest.fixture(autouse=True)
 def _default_slot_pinning(monkeypatch):
     """The slot rules are tested as the app ships them, whatever the machine's environment says."""
     monkeypatch.delenv("STAR_SERVER_SLOT_PINNING", raising=False)

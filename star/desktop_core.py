@@ -41,6 +41,7 @@ from . import best_of_n
 from . import edit_format
 from . import studio_loop, studio_tool_examples, thinking_budget, verify_ladder
 from . import project_rules
+from . import curiosity
 from . import gpu_helper
 from .studio_connections import default_target, validate_target
 
@@ -1987,6 +1988,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             except Exception as exc:
                 _log.warning('Selfhood event not saved (%s)', type(exc).__name__)
         metrics.record(settings.project, 'run_succeeded',elapsed_ms=int((time.monotonic()-started)*1000))
+        # An answer that says STAR did not know is queued for night school (star/curiosity.py; a local file append).
+        curiosity.note_answer(owner_text or prompt, answer)
         # The answer exists: count the lessons that were in its context, then learn from the turn.
         try:
             lesson_store.mark_used(settings.project, recalled)

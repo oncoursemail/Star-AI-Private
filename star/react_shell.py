@@ -54,6 +54,8 @@ from .lessons import (LESSON_ACTIONS, handle_action as handle_lesson_action,
                       import_bundled_lessons, learning_status, write_export)
 from .learned_week import LEARNED_ACTIONS, handle_action as handle_learned_action, import_bundled as import_learning_bundle
 from .corrections import CORRECTION_ACTIONS, handle_action as handle_correction_action
+from . import self_audit
+from .self_audit import ACTIONS as SELF_AUDIT_ACTIONS
 from .lesson_digest import Digester, may_start_automatic
 from . import image_gen
 from .media_actions import (MEDIA_ACTIONS, SLOW_MEDIA_ACTIONS, ComfyLauncher, effective_comfy_home,
@@ -93,7 +95,7 @@ VOICE_PLACE_ACTIONS = frozenset({'voiceStartCall', 'voicePreviewVoice', 'voiceSp
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | LESSON_ACTIONS | {'digestLessons'}
 # What STAR learned this week (undo / restore / keep) and owner corrections that may become regression tests
 # (star/learned_week.py, star/corrections.py, docs/SELF_LEARNING_LOOP.md).
-ALLOWED_ACTIONS = ALLOWED_ACTIONS | LEARNED_ACTIONS | CORRECTION_ACTIONS
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | LEARNED_ACTIONS | CORRECTION_ACTIONS | SELF_AUDIT_ACTIONS
 # Media: where images, voice and video run, the image engine on this PC, and a project's
 # visual references (star/media_actions.py, docs/STAR_MEDIA.md).
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | MEDIA_ACTIONS
@@ -749,6 +751,7 @@ def _get_state(settings_file: Path, runtime: Runtime, busy: bool = False, studio
                                                  project=settings.project)
     except (OSError, ValueError, sqlite3.Error) as exc:
         learning_bundle = {'status': 'error', 'message': str(exc)[:160]}
+    self_audit.run_if_due(home)  # weekly report from stored data, in a background thread, only when 7 days old
     chat = _chat_view(home, settings, busy)
     brain = BrainInstall.load(home / 'brain.json')
     workshop = ToolWorkshop(home=home,project=settings.project)
@@ -1461,6 +1464,10 @@ def launch():
                     # Only an explicit "Take screenshot" press reaches here (consent: true, per use).
                     require_screen_consent(body)
                     return json.dumps({'ok':True,'data':self._capture_screen()})
+                if action in SELF_AUDIT_ACTIONS:
+                    # The newest weekly self-audit (star/self_audit.py); read only.
+                    settings=Settings.load(self.settings_file)
+                    return json.dumps({'ok':True,'data':self_audit.handle_action(app_data(),settings.project,action,body)},default=str)
                 if action in LEARNED_ACTIONS or action in CORRECTION_ACTIONS:
                     # Owner clicks in What STAR learned this week / corrections; `approved` is the click itself.
                     settings=Settings.load(self.settings_file)
