@@ -227,3 +227,57 @@ provenance check.
 - Recommended next measurable milestone: compare identical tasks
   with governor advisories OFF vs ON, using the same models and
   resource ceilings, with the independent grader controlling both.
+
+## Implemented extension: controlled import of existing STAR evaluation reports
+
+Files: `star/cognitive_evals.py`, `tests/test_cognitive_evals.py`.
+A second offline-tested host/owner entry point makes the governor usable with
+existing `star.eval_runner/1` JSON reports without editing the grader.
+**Preview is the default. No stored learning or behavior change occurs unless
+the operator independently reviews evaluator provenance and explicitly records.**
+
+```bash
+sha256sum evals/results/control-nopacks.json
+python -m star.cognitive_evals \
+  --file evals/results/control-nopacks.json \
+  --approved-sha256 <digest-from-operator-review> \
+  --project OwnedTestProject
+# Read-only preview: suite/model/revision/number of checkable cases
+
+# ONLY after independently verifying source, grader and intended evaluation:
+python -m star.cognitive_evals \
+  --file evals/results/control-nopacks.json \
+  --approved-sha256 <digest-from-operator-review> \
+  --project OwnedTestProject \
+  --db <private-profile-path>/cognitive.sqlite3 \
+  --record-reviewed
+```
+
+The importer checks the pinned full-file hash, clean app commit, known runner
+identifier, config fingerprint, known **development** suite, exact case selection,
+finite timings and verdict consistency. It intentionally refuses holdouts and
+incomplete or contradictory reports. Raw reports and private addresses are
+**never stored** in the evidence ledger. However, a matching SHA only proves
+the bytes match the expected digest; it cannot prove the grader was authentic,
+tests were legitimate, or the operator looked at them.
+
+**Real-file smoke check (read-only):** the existing
+`evals/results/control-nopacks.json` preview validated six development-task
+records. `baseline-v2.json` and `control-creation.json` were rejected due
+to mismatched selected-task and result-case sets. Neither was imported.
+That is deliberate fail-closed handling, not a claim they are corrupted.
+
+**Offline checks:** `python3 -m unittest discover -s tests -p 'test_cognitive_*.py' -v`
+ran **33 tests successfully** on an isolated Linux checkout. Still requires
+independent real runtime A/B to prove gains.
+
+## Why first-attempt reliability, not cherry-picked success
+
+[Anthropic's agent evaluation guidance](https://www.anthropic.com/research/demystifying-evals-for-ai-agents)
+distinguishes single-attempt performance from best-of-k capability and
+repeat-run reliability. In this governor, the FIRST externally graded run for
+each distinct development case is the reliability observation in a given
+model/revision. Future revised methods are compared under a new version.
+This prevents an agent from turning one failure followed by 40 retries into
+a fabricated 100% success statistic. Repeated-run robustness and pass^k
+should be reported separately by the independent evaluation harness.
