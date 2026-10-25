@@ -159,7 +159,7 @@ class Settings:
     web_auto_search: bool = True
     # Learning (star/lessons.py). Lessons are local project notes, never weights.
     learning_auto_accept: bool = True     # False = "review everything": even my own words wait for approval
-    autobiographical_self_enabled: bool = False  # opt-in: local verified continuity section per chat; unmeasured, so off
+    autobiographical_self_enabled: bool = False  # opt-in: measured 2026-10-25 worse (blind A/B 10 vs 21 wins) and +1.4 s per turn, so off (docs/agents/human-voice-20261025.md)
     learning_digest: bool = True          # let the fast model reword raw captures into candidates, in the background
     learning_digest_cloud: bool = False   # ...also when the selected provider is a hosted one
     practice_lessons_enabled: bool = False  # off until the owner opts in
