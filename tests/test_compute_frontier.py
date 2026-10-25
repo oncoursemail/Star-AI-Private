@@ -1,6 +1,5 @@
 """Unit tests for STAR's offline measured compute frontier."""
 import json
-from pathlib import Path
 
 import pytest
 
