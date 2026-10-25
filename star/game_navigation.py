@@ -141,7 +141,7 @@ class NavigationBelief:
         player = self._player
         if self._known.get(player) == "goal":
             return NavigationAdvice(None, player, (player,), "goal_reached", False, known)
-        parent = {player: None}
+        parent: dict[tuple[int, int], tuple[int, int] | None] = {player: None}
         distance = {player: 0}
         queue = deque([player])
         while queue:
