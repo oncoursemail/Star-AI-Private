@@ -78,6 +78,18 @@ TOOLS = [
          "path": {"type": "string"}, "action": {"type": "string", "enum": ["validate", "import", "test", "export"]},
          "preset": {"type": "string"}, "output": {"type": "string"}},
          "required": ["path", "action"], "additionalProperties": False}},
+    {"name": "workspace_starry_eye_audit",
+     "description": "Read-only visual self-check: verify workspace screenshots, declared UI bounds/contrast, frame changes and game run traces. Returns evidence-grounded failures, NOT artistic approval or a claim that tests were executed.",
+     "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}},
+                     "required": ["path"], "additionalProperties": False}},
+    {"name": "workspace_game_concept_rank",
+     "description": "Rank original game design candidates by structured differences from prior concepts, preserving an optional required genre. Local diversity check only, NOT proof of global originality.",
+     "inputSchema": {"type": "object", "properties": {
+         "candidates": {"type": "array", "minItems": 1, "maxItems": 80, "items": {"type": "object"}},
+         "history": {"type": "array", "maxItems": 80, "items": {"type": "object"}},
+         "count": {"type": "integer", "minimum": 1, "maximum": 10},
+         "required_genre": {"type": "string"}},
+         "required": ["candidates"], "additionalProperties": False}},
 ]
 TOOL_NAMES = {t['name'] for t in TOOLS}
 WRITE_TOOLS = frozenset({'workspace_write', 'workspace_edit'})
@@ -125,6 +137,13 @@ class Workspace:
             validate(args, schema)
         except ValidationError:
             raise ValueError('Invalid workspace tool arguments') from None
+        if name in {'workspace_starry_eye_audit', 'workspace_game_concept_rank'}:
+            from . import starry_eye_quality
+            if name == 'workspace_starry_eye_audit':
+                return starry_eye_quality.audit(self, args['path'])
+            return starry_eye_quality.rank_concepts(
+                args['candidates'], args.get('history', []), count=args.get('count', 3),
+                required_genre=args.get('required_genre', ''))
         if name == 'workspace_binary_triage':
             from . import binary_evidence
             return binary_evidence.triage(self, args['path'])
