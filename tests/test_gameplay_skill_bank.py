@@ -78,6 +78,16 @@ class GameplaySkillBankTests(unittest.TestCase):
         self.assertEqual(info.status, "rehearsal_only")
         self.assertEqual(info.validation_trials, 0)
 
+    def test_failed_practice_is_not_recommended_even_for_rehearsal(self):
+        for _ in range(10):
+            self.add(outcome="failure")
+        self.assertEqual(self.advice().status, "no_evidence")
+
+    def test_partial_practice_success_stays_unrecommended(self):
+        for i in range(5):
+            self.add(outcome="success" if i < 3 else "failure")
+        self.assertEqual(self.advice().status, "no_evidence")
+
     def test_validation_only_cannot_qualify(self):
         for _ in range(20):
             self.add("validation")
