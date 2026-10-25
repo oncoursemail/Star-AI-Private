@@ -39,6 +39,8 @@ import re
 from time import monotonic
 from typing import Any, Awaitable, Callable
 
+from . import candidate_pool
+
 MIN_N, MAX_N = 1, 8
 DEFAULT_MAX_N = 4
 ENV_VAR = "STAR_BEST_OF_N"              # off | auto | 2..8 (forces N); the desktop setting wins when it is on
@@ -809,6 +811,7 @@ class BestOfN:
                           state="repaired" if best.repaired and not best.hard_failures else state,
                           verification_work=verification_work)
         outcome.footer = evidence(outcome, kind)
+        candidate_pool.record_best_of_n(self.prompt, outcome)       # M5 offline replay; no-op unless the pool flag is set
         _emit(self._on_event, {"event": "best_of_n_selected", "index": best.index, "n": len(candidates),
                                "passed": best.passed, "ran": best.ran, "state": outcome.state})
         return outcome
@@ -1021,6 +1024,27 @@ def model_repair(client, model: str, kind: str, *, max_tokens: int = 1600, extra
     return repair
 
 
+def draft_fields(settings, model: str, tools: bool) -> dict:
+    """Request fields of a draft candidate: the server's background slot fields, thinking off."""
+    from .providers import llama_request_fields
+    fields = dict(llama_request_fields(settings, model=model, background=True, tools=tools) or {})
+    kwargs = dict(fields.get("chat_template_kwargs") or {})
+    kwargs["enable_thinking"] = False        # a candidate is a draft answer, not a thinking session
+    fields["chat_template_kwargs"] = kwargs
+    return fields
+
+
+def resample_tool(client, settings, request: dict, *, model: str, max_tokens: int):
+    """`async (temperature) -> answer text`: the turn's own request asked again at another temperature, for the
+    check-fix ladder's opt-in resample (setting verify_resample, star/verify_ladder.py)."""
+    draw = sampler(client, request, max_tokens=max_tokens,
+                   extra_body_for=lambda name: draft_fields(settings, name, bool(request.get("tools"))))
+
+    async def resample(temperature: float) -> str:
+        return await draw(Target(model, 1), temperature)
+    return resample
+
+
 def sampler(client, request: dict, *, max_tokens: int, extra_body_for=None):
     """sample(target, temperature): the main answer's own request (same messages and tools, so the server can
     reuse the prompt it already read) at another temperature on the target's model."""
@@ -1150,13 +1174,7 @@ class DesktopTurn:
         self._tools = None
 
     def _extra_body(self, model: str) -> dict:
-        from .providers import llama_request_fields
-        fields = dict(llama_request_fields(self.settings, model=model, background=True,
-                                           tools=bool(self._tools)) or {})
-        kwargs = dict(fields.get("chat_template_kwargs") or {})
-        kwargs["enable_thinking"] = False        # a candidate is a draft answer, not a thinking session
-        fields["chat_template_kwargs"] = kwargs
-        return fields
+        return draft_fields(self.settings, model, bool(self._tools))
 
     def on_first_request(self, request: dict) -> None:
         if self.run.started:

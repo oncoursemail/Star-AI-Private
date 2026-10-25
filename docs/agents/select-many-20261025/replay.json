@@ -1,0 +1,963 @@
+{
+ "tasks_with_candidates": 81,
+ "candidates": 469,
+ "mixed_tasks": 45,
+ "first_mean": 0.4231,
+ "alpha_per_rule": 0.0018,
+ "caveat": "pool candidates are runs of different STAR settings on the same tasks, not exactly iid samples of one generator; the answer to 'does selection help' is a screen, not a promotion decision",
+ "budgets": {
+  "2": {
+   "tasks": 81,
+   "rules": {
+    "verified_first": {
+     "tasks": 81,
+     "rule": 0.4377,
+     "base": 0.4231,
+     "delta": 0.0146,
+     "ci95": [
+      -0.0012,
+      0.0305
+     ],
+     "task_wins": 16,
+     "task_losses": 5,
+     "p_better": 0.0133,
+     "p_worse": 0.9964,
+     "mde_tasks": 15,
+     "generations": 1.09,
+     "verdict": "no clear difference"
+    },
+    "verified_rank": {
+     "tasks": 81,
+     "rule": 0.438,
+     "base": 0.4231,
+     "delta": 0.0149,
+     "ci95": [
+      -0.0024,
+      0.0328
+     ],
+     "task_wins": 17,
+     "task_losses": 9,
+     "p_better": 0.0843,
+     "p_worse": 0.9622,
+     "mde_tasks": 15,
+     "generations": 2.0,
+     "verdict": "no clear difference"
+    },
+    "compile_first": {
+     "tasks": 81,
+     "rule": 0.4453,
+     "base": 0.4231,
+     "delta": 0.0222,
+     "ci95": [
+      0.0112,
+      0.0351
+     ],
+     "task_wins": 13,
+     "task_losses": 0,
+     "p_better": 0.0001,
+     "p_worse": 1.0,
+     "mde_tasks": 15,
+     "generations": 1.07,
+     "verdict": "CLEAR WIN"
+    },
+    "ladder_first": {
+     "tasks": 81,
+     "rule": 0.4451,
+     "base": 0.4231,
+     "delta": 0.022,
+     "ci95": [
+      0.0063,
+      0.0376
+     ],
+     "task_wins": 17,
+     "task_losses": 3,
+     "p_better": 0.0013,
+     "p_worse": 0.9998,
+     "mde_tasks": 15,
+     "generations": 1.1,
+     "verdict": "CLEAR WIN"
+    },
+    "ladder_rank": {
+     "tasks": 81,
+     "rule": 0.4406,
+     "base": 0.4231,
+     "delta": 0.0175,
+     "ci95": [
+      -0.0014,
+      0.0367
+     ],
+     "task_wins": 20,
+     "task_losses": 7,
+     "p_better": 0.0096,
+     "p_worse": 0.997,
+     "mde_tasks": 15,
+     "generations": 2.0,
+     "verdict": "no clear difference"
+    },
+    "consensus": {
+     "tasks": 81,
+     "rule": 0.4231,
+     "base": 0.4231,
+     "delta": 0.0,
+     "ci95": [
+      0.0,
+      0.0
+     ],
+     "task_wins": 0,
+     "task_losses": 0,
+     "p_better": 1.0,
+     "p_worse": 1.0,
+     "mde_tasks": 15,
+     "generations": 2.0,
+     "verdict": "no clear difference"
+    },
+    "consensus_clean": {
+     "tasks": 81,
+     "rule": 0.4377,
+     "base": 0.4231,
+     "delta": 0.0146,
+     "ci95": [
+      -0.0012,
+      0.0305
+     ],
+     "task_wins": 16,
+     "task_losses": 5,
+     "p_better": 0.0133,
+     "p_worse": 0.9964,
+     "mde_tasks": 15,
+     "generations": 2.0,
+     "verdict": "no clear difference"
+    },
+    "oracle": {
+     "tasks": 81,
+     "rule": 0.5555,
+     "base": 0.4231,
+     "delta": 0.1324,
+     "ci95": [
+      0.1042,
+      0.161
+     ],
+     "task_wins": 45,
+     "task_losses": 0,
+     "p_better": 0.0,
+     "p_worse": 1.0,
+     "mde_tasks": 15,
+     "generations": 1.13,
+     "verdict": "ceiling (not a rule)"
+    }
+   }
+  },
+  "3": {
+   "tasks": 81,
+   "rules": {
+    "verified_first": {
+     "tasks": 81,
+     "rule": 0.4453,
+     "base": 0.4231,
+     "delta": 0.0222,
+     "ci95": [
+      0.0019,
+      0.0438
+     ],
+     "task_wins": 16,
+     "task_losses": 5,
+     "p_better": 0.0133,
+     "p_worse": 0.9964,
+     "mde_tasks": 15,
+     "generations": 1.15,
+     "verdict": "no clear difference"
+    },
+    "verified_rank": {
+     "tasks": 81,
+     "rule": 0.442,
+     "base": 0.4231,
+     "delta": 0.0189,
+     "ci95": [
+      -0.0044,
+      0.0428
+     ],
+     "task_wins": 17,
+     "task_losses": 9,
+     "p_better": 0.0843,
+     "p_worse": 0.9622,
+     "mde_tasks": 15,
+     "generations": 3.0,
+     "verdict": "no clear difference"
+    },
+    "compile_first": {
+     "tasks": 81,
+     "rule": 0.4526,
+     "base": 0.4231,
+     "delta": 0.0295,
+     "ci95": [
+      0.0139,
+      0.0476
+     ],
+     "task_wins": 13,
+     "task_losses": 0,
+     "p_better": 0.0001,
+     "p_worse": 1.0,
+     "mde_tasks": 15,
+     "generations": 1.11,
+     "verdict": "CLEAR WIN"
+    },
+    "ladder_first": {
+     "tasks": 81,
+     "rule": 0.4505,
+     "base": 0.4231,
+     "delta": 0.0275,
+     "ci95": [
+      0.0052,
+      0.0498
+     ],
+     "task_wins": 17,
+     "task_losses": 3,
+     "p_better": 0.0013,
+     "p_worse": 0.9998,
+     "mde_tasks": 15,
+     "generations": 1.17,
+     "verdict": "CLEAR WIN"
+    },
+    "ladder_rank": {
+     "tasks": 81,
+     "rule": 0.4423,
+     "base": 0.4231,
+     "delta": 0.0192,
+     "ci95": [
+      -0.0062,
+      0.045
+     ],
+     "task_wins": 20,
+     "task_losses": 8,
+     "p_better": 0.0178,
+     "p_worse": 0.9937,
+     "mde_tasks": 15,
+     "generations": 3.0,
+     "verdict": "no clear difference"
+    },
+    "consensus": {
+     "tasks": 81,
+     "rule": 0.4362,
+     "base": 0.4231,
+     "delta": 0.0131,
+     "ci95": [
+      -0.0204,
+      0.0458
+     ],
+     "task_wins": 20,
+     "task_losses": 13,
+     "p_better": 0.1481,
+     "p_worse": 0.9186,
+     "mde_tasks": 15,
+     "generations": 3.0,
+     "verdict": "no clear difference"
+    },
+    "consensus_clean": {
+     "tasks": 81,
+     "rule": 0.4517,
+     "base": 0.4231,
+     "delta": 0.0287,
+     "ci95": [
+      -0.0059,
+      0.0606
+     ],
+     "task_wins": 23,
+     "task_losses": 9,
+     "p_better": 0.01,
+     "p_worse": 0.9965,
+     "mde_tasks": 15,
+     "generations": 3.0,
+     "verdict": "no clear difference"
+    },
+    "oracle": {
+     "tasks": 81,
+     "rule": 0.6291,
+     "base": 0.4231,
+     "delta": 0.206,
+     "ci95": [
+      0.1612,
+      0.2516
+     ],
+     "task_wins": 45,
+     "task_losses": 0,
+     "p_better": 0.0,
+     "p_worse": 1.0,
+     "mde_tasks": 15,
+     "generations": 1.28,
+     "verdict": "ceiling (not a rule)"
+    }
+   }
+  },
+  "4": {
+   "tasks": 76,
+   "rules": {
+    "verified_first": {
+     "tasks": 76,
+     "rule": 0.4666,
+     "base": 0.4378,
+     "delta": 0.0288,
+     "ci95": [
+      0.0028,
+      0.0563
+     ],
+     "task_wins": 16,
+     "task_losses": 5,
+     "p_better": 0.0133,
+     "p_worse": 0.9964,
+     "mde_tasks": 15,
+     "generations": 1.2,
+     "verdict": "no clear difference"
+    },
+    "verified_rank": {
+     "tasks": 76,
+     "rule": 0.4613,
+     "base": 0.4378,
+     "delta": 0.0236,
+     "ci95": [
+      -0.0055,
+      0.0541
+     ],
+     "task_wins": 17,
+     "task_losses": 9,
+     "p_better": 0.0843,
+     "p_worse": 0.9622,
+     "mde_tasks": 15,
+     "generations": 4.0,
+     "verdict": "no clear difference"
+    },
+    "compile_first": {
+     "tasks": 76,
+     "rule": 0.4738,
+     "base": 0.4378,
+     "delta": 0.0361,
+     "ci95": [
+      0.0157,
+      0.0596
+     ],
+     "task_wins": 13,
+     "task_losses": 0,
+     "p_better": 0.0001,
+     "p_worse": 1.0,
+     "mde_tasks": 15,
+     "generations": 1.15,
+     "verdict": "CLEAR WIN"
+    },
+    "ladder_first": {
+     "tasks": 76,
+     "rule": 0.4699,
+     "base": 0.4378,
+     "delta": 0.0321,
+     "ci95": [
+      0.0049,
+      0.0606
+     ],
+     "task_wins": 17,
+     "task_losses": 3,
+     "p_better": 0.0013,
+     "p_worse": 0.9998,
+     "mde_tasks": 15,
+     "generations": 1.22,
+     "verdict": "CLEAR WIN"
+    },
+    "ladder_rank": {
+     "tasks": 76,
+     "rule": 0.4592,
+     "base": 0.4378,
+     "delta": 0.0214,
+     "ci95": [
+      -0.0117,
+      0.0534
+     ],
+     "task_wins": 19,
+     "task_losses": 9,
+     "p_better": 0.0436,
+     "p_worse": 0.9822,
+     "mde_tasks": 15,
+     "generations": 4.0,
+     "verdict": "no clear difference"
+    },
+    "consensus": {
+     "tasks": 76,
+     "rule": 0.4603,
+     "base": 0.4378,
+     "delta": 0.0225,
+     "ci95": [
+      -0.0244,
+      0.0716
+     ],
+     "task_wins": 19,
+     "task_losses": 18,
+     "p_better": 0.5,
+     "p_worse": 0.6286,
+     "mde_tasks": 15,
+     "generations": 4.0,
+     "verdict": "no clear difference"
+    },
+    "consensus_clean": {
+     "tasks": 76,
+     "rule": 0.4824,
+     "base": 0.4378,
+     "delta": 0.0446,
+     "ci95": [
+      -0.0017,
+      0.0909
+     ],
+     "task_wins": 23,
+     "task_losses": 15,
+     "p_better": 0.1279,
+     "p_worse": 0.9283,
+     "mde_tasks": 15,
+     "generations": 4.0,
+     "verdict": "no clear difference"
+    },
+    "oracle": {
+     "tasks": 76,
+     "rule": 0.6941,
+     "base": 0.4378,
+     "delta": 0.2563,
+     "ci95": [
+      0.1957,
+      0.3157
+     ],
+     "task_wins": 43,
+     "task_losses": 0,
+     "p_better": 0.0,
+     "p_worse": 1.0,
+     "mde_tasks": 15,
+     "generations": 1.43,
+     "verdict": "ceiling (not a rule)"
+    }
+   }
+  },
+  "6": {
+   "tasks": 45,
+   "rules": {
+    "verified_first": {
+     "tasks": 45,
+     "rule": 0.4816,
+     "base": 0.4271,
+     "delta": 0.0545,
+     "ci95": [
+      0.0093,
+      0.1071
+     ],
+     "task_wins": 16,
+     "task_losses": 7,
+     "p_better": 0.0466,
+     "p_worse": 0.9827,
+     "mde_tasks": 12,
+     "generations": 1.29,
+     "verdict": "no clear difference"
+    },
+    "verified_rank": {
+     "tasks": 45,
+     "rule": 0.4657,
+     "base": 0.4271,
+     "delta": 0.0386,
+     "ci95": [
+      -0.0135,
+      0.0957
+     ],
+     "task_wins": 14,
+     "task_losses": 10,
+     "p_better": 0.2706,
+     "p_worse": 0.8463,
+     "mde_tasks": 12,
+     "generations": 6.0,
+     "verdict": "no clear difference"
+    },
+    "compile_first": {
+     "tasks": 45,
+     "rule": 0.4843,
+     "base": 0.4271,
+     "delta": 0.0572,
+     "ci95": [
+      0.0171,
+      0.1068
+     ],
+     "task_wins": 15,
+     "task_losses": 7,
+     "p_better": 0.0669,
+     "p_worse": 0.9738,
+     "mde_tasks": 12,
+     "generations": 1.21,
+     "verdict": "no clear difference"
+    },
+    "ladder_first": {
+     "tasks": 45,
+     "rule": 0.4687,
+     "base": 0.4271,
+     "delta": 0.0416,
+     "ci95": [
+      -0.0098,
+      0.0987
+     ],
+     "task_wins": 15,
+     "task_losses": 8,
+     "p_better": 0.105,
+     "p_worse": 0.9534,
+     "mde_tasks": 12,
+     "generations": 1.32,
+     "verdict": "no clear difference"
+    },
+    "ladder_rank": {
+     "tasks": 45,
+     "rule": 0.4515,
+     "base": 0.4271,
+     "delta": 0.0244,
+     "ci95": [
+      -0.0326,
+      0.085
+     ],
+     "task_wins": 16,
+     "task_losses": 8,
+     "p_better": 0.0758,
+     "p_worse": 0.968,
+     "mde_tasks": 12,
+     "generations": 6.0,
+     "verdict": "no clear difference"
+    },
+    "consensus": {
+     "tasks": 45,
+     "rule": 0.4433,
+     "base": 0.4271,
+     "delta": 0.0162,
+     "ci95": [
+      -0.0428,
+      0.0777
+     ],
+     "task_wins": 13,
+     "task_losses": 11,
+     "p_better": 0.4194,
+     "p_worse": 0.7294,
+     "mde_tasks": 12,
+     "generations": 6.0,
+     "verdict": "no clear difference"
+    },
+    "consensus_clean": {
+     "tasks": 45,
+     "rule": 0.5031,
+     "base": 0.4271,
+     "delta": 0.076,
+     "ci95": [
+      0.0018,
+      0.1519
+     ],
+     "task_wins": 15,
+     "task_losses": 9,
+     "p_better": 0.1537,
+     "p_worse": 0.9242,
+     "mde_tasks": 12,
+     "generations": 6.0,
+     "verdict": "no clear difference"
+    },
+    "oracle": {
+     "tasks": 45,
+     "rule": 0.6928,
+     "base": 0.4271,
+     "delta": 0.2657,
+     "ci95": [
+      0.1811,
+      0.3527
+     ],
+     "task_wins": 25,
+     "task_losses": 0,
+     "p_better": 0.0,
+     "p_worse": 1.0,
+     "mde_tasks": 12,
+     "generations": 1.58,
+     "verdict": "ceiling (not a rule)"
+    }
+   }
+  }
+ },
+ "signals": {
+  "all": {
+   "n": 469,
+   "pass": 200,
+   "rate": 0.426,
+   "ci95": [
+    0.382,
+    0.472
+   ]
+  },
+  "compile_ok": {
+   "n": 361,
+   "pass": 163,
+   "rate": 0.452,
+   "ci95": [
+    0.401,
+    0.503
+   ]
+  },
+  "compile_fail": {
+   "n": 65,
+   "pass": 0,
+   "rate": 0.0,
+   "ci95": [
+    0.0,
+    0.056
+   ]
+  },
+  "api_fail": {
+   "n": 25,
+   "pass": 13,
+   "rate": 0.52,
+   "ci95": [
+    0.335,
+    0.7
+   ]
+  },
+  "api_ok": {
+   "n": 392,
+   "pass": 153,
+   "rate": 0.39,
+   "ci95": [
+    0.343,
+    0.439
+   ]
+  },
+  "deprecated_fail": {
+   "n": 3,
+   "pass": 0,
+   "rate": 0.0,
+   "ci95": [
+    0.0,
+    0.561
+   ]
+  },
+  "slop_hard": {
+   "n": 26,
+   "pass": 6,
+   "rate": 0.231,
+   "ci95": [
+    0.11,
+    0.421
+   ]
+  },
+  "slop_clean": {
+   "n": 443,
+   "pass": 194,
+   "rate": 0.438,
+   "ci95": [
+    0.392,
+    0.484
+   ]
+  },
+  "clean (compile ok, no hard slop)": {
+   "n": 384,
+   "pass": 194,
+   "rate": 0.505,
+   "ci95": [
+    0.455,
+    0.555
+   ]
+  }
+ },
+ "leave_one_out": {
+  "rule": "compile_first",
+  "budget": 2,
+  "rows": {
+   "all": {
+    "tasks": 81,
+    "rule": 0.4453,
+    "base": 0.4231,
+    "delta": 0.0222,
+    "ci95": [
+     0.0112,
+     0.0351
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "eval-runs/v090-creation": {
+    "tasks": 81,
+    "rule": 0.4476,
+    "base": 0.4256,
+    "delta": 0.022,
+    "ci95": [
+     0.0106,
+     0.0353
+    ],
+    "task_wins": 12,
+    "task_losses": 0,
+    "p_better": 0.0002,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "eval-runs/v090-holdout": {
+    "tasks": 81,
+    "rule": 0.4443,
+    "base": 0.4241,
+    "delta": 0.0202,
+    "ci95": [
+     0.0096,
+     0.0328
+    ],
+    "task_wins": 11,
+    "task_losses": 0,
+    "p_better": 0.0005,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "eval-runs/v090-v2": {
+    "tasks": 81,
+    "rule": 0.4472,
+    "base": 0.4245,
+    "delta": 0.0227,
+    "ci95": [
+     0.0107,
+     0.0365
+    ],
+    "task_wins": 12,
+    "task_losses": 0,
+    "p_better": 0.0002,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "eval-runs/v100-creation": {
+    "tasks": 81,
+    "rule": 0.4517,
+    "base": 0.4286,
+    "delta": 0.023,
+    "ci95": [
+     0.0118,
+     0.0363
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "eval-runs/v100-holdout-final": {
+    "tasks": 81,
+    "rule": 0.4463,
+    "base": 0.4221,
+    "delta": 0.0243,
+    "ci95": [
+     0.0123,
+     0.0379
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "eval-runs/v100-v2": {
+    "tasks": 81,
+    "rule": 0.4403,
+    "base": 0.4183,
+    "delta": 0.022,
+    "ci95": [
+     0.011,
+     0.0349
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "gate-20261020/golden-tasks-creation-v1-none": {
+    "tasks": 81,
+    "rule": 0.4435,
+    "base": 0.4212,
+    "delta": 0.0222,
+    "ci95": [
+     0.0112,
+     0.0351
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "gate-20261020/golden-tasks-v2-none": {
+    "tasks": 81,
+    "rule": 0.4444,
+    "base": 0.4233,
+    "delta": 0.021,
+    "ci95": [
+     0.0107,
+     0.0333
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "model-eval/base-v2": {
+    "tasks": 81,
+    "rule": 0.4388,
+    "base": 0.4201,
+    "delta": 0.0188,
+    "ci95": [
+     0.0092,
+     0.0301
+    ],
+    "task_wins": 12,
+    "task_losses": 0,
+    "p_better": 0.0002,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "night1/golden-tasks-creation-v1-fast": {
+    "tasks": 81,
+    "rule": 0.4461,
+    "base": 0.4247,
+    "delta": 0.0214,
+    "ci95": [
+     0.0105,
+     0.0341
+    ],
+    "task_wins": 12,
+    "task_losses": 0,
+    "p_better": 0.0002,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "night1/golden-tasks-v2-fast": {
+    "tasks": 81,
+    "rule": 0.4496,
+    "base": 0.4262,
+    "delta": 0.0233,
+    "ci95": [
+     0.0116,
+     0.0371
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "qab-20261020/golden-tasks-creation-v1-A": {
+    "tasks": 81,
+    "rule": 0.4375,
+    "base": 0.4177,
+    "delta": 0.0198,
+    "ci95": [
+     0.009,
+     0.0322
+    ],
+    "task_wins": 11,
+    "task_losses": 0,
+    "p_better": 0.0005,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "qab-20261020/golden-tasks-creation-v1-base": {
+    "tasks": 81,
+    "rule": 0.4433,
+    "base": 0.4202,
+    "delta": 0.023,
+    "ci95": [
+     0.0117,
+     0.0361
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "qab-20261020/golden-tasks-v2-A": {
+    "tasks": 81,
+    "rule": 0.4387,
+    "base": 0.4165,
+    "delta": 0.0222,
+    "ci95": [
+     0.0113,
+     0.0352
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "qab-20261020/golden-tasks-v2-base": {
+    "tasks": 81,
+    "rule": 0.4499,
+    "base": 0.426,
+    "delta": 0.0239,
+    "ci95": [
+     0.0121,
+     0.0379
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "qab-20261020/holdout-v1-A": {
+    "tasks": 81,
+    "rule": 0.4484,
+    "base": 0.4262,
+    "delta": 0.0222,
+    "ci95": [
+     0.011,
+     0.0352
+    ],
+    "task_wins": 12,
+    "task_losses": 0,
+    "p_better": 0.0002,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "qab-20261020/holdout-v1-base": {
+    "tasks": 81,
+    "rule": 0.4422,
+    "base": 0.42,
+    "delta": 0.0222,
+    "ci95": [
+     0.0107,
+     0.0355
+    ],
+    "task_wins": 12,
+    "task_losses": 0,
+    "p_better": 0.0002,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "vl-20261021/golden-tasks-creation-v1-off": {
+    "tasks": 81,
+    "rule": 0.4476,
+    "base": 0.4235,
+    "delta": 0.0241,
+    "ci95": [
+     0.012,
+     0.0381
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   },
+   "vl-20261021/golden-tasks-v2-off": {
+    "tasks": 81,
+    "rule": 0.4536,
+    "base": 0.4298,
+    "delta": 0.0239,
+    "ci95": [
+     0.012,
+     0.0378
+    ],
+    "task_wins": 13,
+    "task_losses": 0,
+    "p_better": 0.0001,
+    "p_worse": 1.0,
+    "mde_tasks": 15
+   }
+  }
+ }
+}
