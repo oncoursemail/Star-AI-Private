@@ -28,6 +28,7 @@ from .stream_motion import (
     AudioLevel, ExpressionCue, MotionFrame, neutral_frame, plan_motion,
 )
 from .stream_persona import event_message
+from .stream_turntaking import TurnAdvice
 
 MODES = frozenset({"normal", "cat", "puppy"})
 
@@ -173,7 +174,8 @@ class StarStage:
                 gameplay_critical: bool = False,
                 knowledge: KnowledgePacket | None = None,
                 telemetry: StreamTelemetry | None = None,
-                episode: EpisodePacket | None = None) -> StagePlan | None:
+                episode: EpisodePacket | None = None,
+                turn: TurnAdvice | None = None) -> StagePlan | None:
         """Propose a short reaction; measured overload favors silence and gameplay."""
         current = _time(self._clock() if now is None else now)
         if knowledge is not None and not isinstance(knowledge, KnowledgePacket):
@@ -182,6 +184,8 @@ class StarStage:
             raise TypeError("telemetry must be host-provided StreamTelemetry")
         if episode is not None and not isinstance(episode, EpisodePacket):
             raise TypeError("episode must be a host-approved EpisodePacket")
+        if turn is not None and not isinstance(turn, TurnAdvice):
+            raise TypeError("turn must be a host-provided TurnAdvice")
         # The host, not chat or a prompt, supplies validated GPU/FPS/voice data.
         # Preserve urgent danger/owner preemption; defer commentary when gameplay,
         # VRAM or speech queues are under strain. No unbounded TTS queue buildup.
@@ -195,7 +199,7 @@ class StarStage:
                 return None
             intent = self._director.propose(
                 now=current, voice_speaking=voice_speaking,
-                viewer_speaking=viewer_speaking,
+                viewer_speaking=viewer_speaking or bool(turn and turn.hold),
                 gameplay_critical=gameplay_critical or measured_pressure,
             )
             if intent is None:
