@@ -8,21 +8,21 @@ for rotated gable-roof parts. This is a geometric *preflight*, not physics.
 from __future__ import annotations
 
 from copy import deepcopy
-from math import cos, hypot, isfinite, radians, sin
-from typing import Any
+from math import cos, isfinite, radians, sin
+from typing import Any, TypeGuard
 
 _MAX_ISSUES = 60
 _EPS = 0.025
 
 
-def _xyz(value: object, *, positive: bool = False) -> bool:
+def _xyz(value: Any, *, positive: bool = False) -> bool:
     return (type(value) in (list, tuple) and len(value) == 3
             and all(type(n) in (int, float) and isfinite(n)
                     and (0.01 <= n <= 10_000 if positive else abs(n) <= 10_000)
                     for n in value))
 
 
-def _box(part: object) -> bool:
+def _box(part: object) -> TypeGuard[dict[str, Any]]:
     return (isinstance(part, dict) and part.get("kind") == "box"
             and _xyz(part.get("center")) and _xyz(part.get("size"), positive=True)
             and type(part.get("angle_y")) in (int, float)
@@ -86,7 +86,7 @@ def _textures(part: dict, issue) -> None:
     if not isinstance(texture, dict):
         issue("texture_metadata", [name], "Texture binding must be an object")
         return
-    tile = texture.get("tile_studs")
+    tile: Any = texture.get("tile_studs")
     if (type(tile) not in (int, float) or not isfinite(tile)
             or not 0.05 <= tile <= 128):
         issue("texture_scale", [name], "Texture tile_studs must be finite, 0.05..128")
@@ -145,7 +145,8 @@ def audit_scene(parts: object) -> dict:
         if not isinstance(placement, dict):
             issue("placement_metadata", [name], "Placement metadata is not an object")
             continue
-        intended, limit = placement.get("target_center"), placement.get("max_offset_studs", 0.1)
+        intended: Any = placement.get("target_center")
+        limit: Any = placement.get("max_offset_studs", 0.1)
         if (not _xyz(intended) or type(limit) not in (int, float)
                 or not isfinite(limit) or not 0 <= limit <= 5):
             issue("placement_metadata", [name], "Invalid expected prop center or tolerance")
@@ -313,7 +314,8 @@ def audit_scene_contract(plan: object) -> dict:
             add("invalid_contract", [], "Required part record must be an object")
             continue
         name = required.get("name")
-        center, size = required.get("center"), required.get("size")
+        center: Any = required.get("center")
+        size: Any = required.get("size")
         tolerance = required.get("tolerance_studs", 0.1)
         if (not isinstance(name, str) or not 1 <= len(name) <= 100
                 or name in checked or not _xyz(center) or not _xyz(size, positive=True)
