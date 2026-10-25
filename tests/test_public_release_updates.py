@@ -12,6 +12,13 @@ from star import updates
 from star.version import REPO, __version__
 
 
+@pytest.fixture(autouse=True)
+def _installed_v1(monkeypatch):
+    """The release fixtures below (v1.0.2, v1.0.5, ...) describe updates for a 1.0.x install; pin the
+    installed version so they stay "newer" whatever version the source tree is at."""
+    monkeypatch.setattr(updates, "__version__", "1.0.0")
+
+
 class Response:
     def __init__(self, code=200, body=None, data=b''):
         self.status_code=code

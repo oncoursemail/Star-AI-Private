@@ -18,7 +18,7 @@ describe('published v1.0.0 website and README release status',()=>{
   expect(modelLabelForRelease({...release,tag:'unverified'})).toBe('Check GitHub')
  })
  it('documents actual published v1.0.0 assets rather than a source candidate',()=>{
-  expect(SOURCE_VERSION).toBe('1.0.0')
+  expect(SOURCE_VERSION).toBe('2.0.0')
   expect(readme).toContain('**v1.0.0** was published')
   expect(readme).toContain('STAR-Setup-v1.0.0.exe')
   expect(readme).toContain('docs/release/v1.0/RELEASE_NOTES.md')
