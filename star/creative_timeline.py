@@ -19,6 +19,7 @@ MAX_LAYERS = 32
 MAX_CUES = 48
 MAX_EVENTS = 256
 MAX_FRAMES = 1_800
+MIN_MARKER_LAYER_INFLUENCE = 0.05  # Heuristic: native graph event weight can differ.
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}\Z")
 _TARGETS = frozenset({"full_body", "upper_body", "face", "secondary"})
 _MODES = {"replace": "REPLACE", "add": "ADD", "combine": "COMBINE"}
@@ -183,8 +184,8 @@ def validate_spec(spec: dict | str) -> dict:
     _unique(cues, "cues")
 
     budgets = spec.get("budgets", {})
-    _object(budgets, {"max_vfx", "max_ui", "max_camera", "require_base_pose"}, set(), "budgets")
-    for key in ("max_vfx", "max_ui", "max_camera"):
+    _object(budgets, {"max_vfx", "max_ui", "max_camera", "max_sound", "require_base_pose"}, set(), "budgets")
+    for key in ("max_vfx", "max_ui", "max_camera", "max_sound"):
         if key in budgets:
             _int(budgets[key], f"budgets.{key}", 0, 32)
     if "require_base_pose" in budgets and type(budgets["require_base_pose"]) is not bool:
@@ -248,13 +249,26 @@ def audit_timeline(spec: dict | str) -> dict:
                           ("base_pose_overlap", [v > 1.02 for v in weights])):
             for span in _runs(bad):
                 findings.append({"code": kind, "severity": "review", **span})
+    # Advisory only: Blender's declared strip influence is not the native
+    # Roblox Animation Graph weight. Roblox can suppress zero-weight markers,
+    # so low-influence cue markers deserve a real engine trace.
+    for cue in data["cues"]:
+        layer = next(l for l in data["layers"] if l["id"] == cue["layer"])
+        clip = clips[layer["clip"]]
+        marker_frame = next(m["frame"] for m in clip["markers"] if m["id"] == cue["marker"])
+        count = (layer["end"] - layer["start"]) // clip["duration"]
+        for repetition in range(count):
+            at = layer["start"] + repetition * clip["duration"] + marker_frame
+            if _layer_influence(layer, at) < MIN_MARKER_LAYER_INFLUENCE:
+                findings.append({"code": "possible_suppressed_marker", "severity": "review",
+                                 "cue": cue["id"], "marker_frame": at})
     for layer in data["layers"]:
         clip = clips[layer["clip"]]
         if layer["blend"] in {"add", "combine"} and clip["target"] == "full_body":
             findings.append({"code": "full_body_additive_requires_review", "severity": "review", "layer": layer["id"]})
         if layer["blend"] == "replace" and clip["target"] != "full_body":
             findings.append({"code": "partial_replace_requires_fcurve_audit", "severity": "review", "layer": layer["id"]})
-    for kind, key in (("vfx", "max_vfx"), ("ui", "max_ui"), ("camera", "max_camera")):
+    for kind, key in (("vfx", "max_vfx"), ("ui", "max_ui"), ("camera", "max_camera"), ("sound", "max_sound")):
         if key not in data.get("budgets", {}):
             continue
         limit = data["budgets"][key]
@@ -311,7 +325,7 @@ def roblox_graph_handoff(spec: dict | str) -> dict:
                    "markers": [m["id"] for m in clip["markers"]]} for clip in data["clips"]],
         "cues": expand_cues(data), "published_graph_asset_id": None,
         "needs_owner_approved_import": True, "native_graph_created": False, "studio_tested": False,
-        "guidance": "Import verified compatible clips, create Graph Editor nodes and masks, publish with owner approval; drive parameters via AnimationTrack:SetParameter and route cosmetic marker events via GetMarkerReachedSignal. Do not drive gameplay authority from client effects.",
+        "guidance": "Import verified compatible clips, create Graph Editor nodes and masks, publish with owner approval; drive parameters via AnimationTrack:SetParameter and route cosmetic marker events via GetMarkerReachedSignal. Native graph node event weights may silence markers at zero blend influence; independently test transitions, interrupt/cancel, and timing. Do not drive gameplay authority from client effects.",
     }
 
 
