@@ -25,7 +25,10 @@ dropped and the loop stops; with `Tools.retry_rejected` (setting `verify_retry`,
 from the best version, told that one attempt failed (the failed candidate is not shown). Measured 2026-10-25 on 47
 stored answers (action-wave1-20261025): 11 blocks had a rejected first round, the retry recovered 0 of them and cost
 one more fix call each, so it stays off. At most `rounds` fix calls per block, stopped early when the time budget
-is spent. The answer then shows
+is spent. Opt-in `Tools.resample` (setting `verify_resample`, off by default): when a block fails the compile rung
+a fresh complete answer is asked for, up to RESAMPLE_MAX times, and the first one whose blocks compile replaces the
+answer (docs/agents/select-many-20261025.md: offline replay of stored runs, rule "compile_first"; the API rung is left
+out because answers it flags pass as often as the rest); the check-fix rounds then run on whichever answer is kept. The answer then shows
 the verified code, or the best attempt with a plain "unverified: <reason>" line. Every failure and every verified
 fix is appended to the mistake memory (JSONL, S2 groundwork).
 """
@@ -42,9 +45,15 @@ import time
 from time import monotonic
 from typing import Any, cast
 
+from . import candidate_pool
+
 MAX_BLOCKS = 2
 MAX_DETAIL = 600
 FIX_RESERVE_SECONDS = 45.0        # a fix call is stopped this long before the turn's deadline
+RESAMPLE_MAX = 2                  # fresh answers asked for after a compile failure (a budget of N=3 in the replay)
+RESAMPLE_TEMPERATURES = (0.7, 0.9)   # the same first two as star/best_of_n.TEMPERATURES; temperature 0 would repeat
+RESAMPLE_MIN_SECONDS = 150.0      # a fresh answer is not asked for when the turn has less than this left
+RESAMPLE_DEFAULT_SECONDS = 600.0  # the time a fresh answer gets when the caller gave no turn deadline
 MIN_FIX_SECONDS = 40.0            # no fix call when less than this is left
 WRITE_TESTS_SECONDS = 120.0       # the test-writing call is dropped (no tests) after this long (a cold prompt on
                                   # a busy star-fast slot reads ~45 tokens/s, so ~60 s is common)
@@ -110,6 +119,8 @@ class Tools:
     fixers: list = field(default_factory=list)        # active self-written fixers (star/mistake_memory.py): no model call
     deprecated: bool = True     # the deprecated / beta-only API rung (star/roblox_deprecated.py)
     retry_rejected: bool = False  # a round that did not help leaves rounds for another try (setting verify_retry)
+    resample: Any = None        # async (temperature) -> a fresh complete answer to the same request (setting verify_resample)
+    pool_answer: str = ""        # candidate-pool id of the raw answer being checked (star/candidate_pool.py; "" = pool off)
 
 
 def _bounded(text: str, limit: int = MAX_DETAIL) -> str:
@@ -423,6 +434,47 @@ async def run_rungs(code: str, tools: Tools, state: dict) -> list[Rung]:
 _ASSERT_LINE = re.compile(r"^assert\(.{4,300}\)$")
 
 
+async def compile_failure(blocks, tools: Tools) -> Rung | None:
+    """The first compile failure over the first MAX_BLOCKS blocks, None when they all compile (or cannot be checked)."""
+    for number, (_start, _end, code) in enumerate(blocks[:MAX_BLOCKS], 1):
+        result = await asyncio.to_thread(check_compile, code, replace(tools, first_block=number == 1))
+        if result.status == "fail":
+            return result
+    return None
+
+
+async def resample_answer(answer: str, blocks, tools: Tools, left) -> tuple[str, dict]:
+    """(answer, record). When a block fails the compile rung and `tools.resample` is set: ask for up to RESAMPLE_MAX
+    fresh complete answers (`left()` = seconds the turn still has; each ask gets all but FIX_RESERVE_SECONDS of it)
+    and return the first whose blocks all compile. Anything else keeps `answer`."""
+    from .doc_grounding import luau_blocks
+    failure = await compile_failure(blocks, tools)
+    if failure is None:
+        return answer, {}
+    record: dict = {"first_failure": failure.record(), "tried": 0, "accepted": False}
+    candidate_pool.record_answer(tools.prompt, answer, blocks)
+    for attempt in range(RESAMPLE_MAX):
+        room = left() - FIX_RESERVE_SECONDS
+        if room < RESAMPLE_MIN_SECONDS:
+            record["stopped"] = "time budget spent"
+            break
+        record["tried"] += 1
+        try:
+            fresh = await asyncio.wait_for(tools.resample(RESAMPLE_TEMPERATURES[attempt]), timeout=room)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            record["stopped"] = "resample failed (" + type(exc).__name__ + ")"
+            break
+        fresh = _THINK.sub("", fresh or "")
+        fresh_blocks = luau_blocks(fresh)
+        candidate_pool.record_answer(tools.prompt, fresh, fresh_blocks, origin="resample")
+        if fresh_blocks and await compile_failure(fresh_blocks, tools) is None:
+            record["accepted"] = True
+            return fresh, record
+    return answer, record
+
+
 def parse_tests(reply: str) -> str:
     """Two to six one-line `assert(...)` statements from one fenced block (they run only in the server sandbox)."""
     from .eval_checks import strip_luau
@@ -498,11 +550,26 @@ def parse_fix(reply: str) -> str:
     return found.group(1) if found and found.group(1).strip() else ""
 
 
-async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
+async def verify_block(code: str, tools: Tools, *, rounds: int, left, block: int = 0) -> dict:
     """The ladder on one block plus up to `rounds` fix rounds. `left()` = seconds of budget left."""
     state: dict = {}
     current = code
+    pooled = candidate_pool.active() and bool(tools.pool_answer)
+    spent: dict = {}
+
+    def pool(idx, origin, parent, text, found, accepted, fix_seconds=None):
+        """One line in the candidate pool (M5): this version, its rungs, the seconds its checks took."""
+        if pooled:
+            now = state.get("seconds", {})
+            took = {k: round(v - spent.get(k, 0.0), 1) for k, v in now.items() if v - spent.get(k, 0.0) > 0}
+            spent.update(now)
+            candidate_pool.record_ladder_candidate(
+                tools.prompt, tools.pool_answer, block, idx, origin, parent, text, [r.record() for r in found],
+                ladder_rank(found), accepted, fix_seconds, took)
+
     rungs = await run_rungs(current, tools, state)
+    pool(0, "first", None, current, rungs, True)
+    best_idx, made = 0, 0
     first_fail = first_failure(rungs)
     record = {"rungs": [r.record() for r in rungs], "rounds": 0, "fixed": False, "code": current,
               "first_failure": first_fail.record() if first_fail else None, "mistakes": []}
@@ -511,7 +578,11 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
         rewritten, used = mistake_memory.apply(current, tools.fixers)
         if used:
             new_rungs = await run_rungs(rewritten, tools, state)
-            if ladder_rank(new_rungs) >= ladder_rank(rungs):
+            made += 1
+            kept = ladder_rank(new_rungs) >= ladder_rank(rungs)
+            pool(made, "rewrite", best_idx, rewritten, new_rungs, kept)
+            if kept:
+                best_idx = made
                 by_id = {f["id"]: f for f in tools.fixers}
                 for fixer_id in used:
                     record["mistakes"].append({
@@ -544,16 +615,21 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
             break
         finally:
             _took(state, "fix", since)
+        fix_seconds = monotonic() - since
         candidate = parse_fix(reply)
         if (not candidate or candidate.strip() == current.strip()
                 or len(candidate.strip()) < 0.5 * len(current.strip())):
             record["stopped"] = "the fix changed nothing usable"
         else:
             new_rungs = await run_rungs(candidate, tools, state)
+            made += 1
             if ladder_rank(new_rungs) <= ladder_rank(rungs):
                 record["stopped"] = "the fix did not get further up the ladder"
             else:
                 record.pop("stopped", None)
+            pool(made, "fix", best_idx, candidate, new_rungs, "stopped" not in record, round(fix_seconds, 1))
+            if "stopped" not in record:
+                best_idx = made
         if "stopped" in record:            # the best version so far stays
             rejected += 1
             record["rejected"] = rejected
@@ -567,6 +643,9 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
         record["fixed"] = True
     record.update(code=current, rungs=[r.record() for r in rungs], ok=first_failure(rungs) is None,
                   seconds=state.get("seconds", {}))
+    if pooled:
+        candidate_pool.record_block_final(tools.prompt, tools.pool_answer, block, best_idx, record["ok"],
+                                          record["rounds"], record.get("stopped", ""), record["seconds"])
     record["_rungs"] = rungs
     return record
 
@@ -701,6 +780,15 @@ async def review(answer: str, tools: Tools, *, rounds: int = 2, budget: float = 
     blocks = luau_blocks(answer)
     if not blocks:
         return answer, {}
+    resampled: dict = {}
+    if tools.resample is not None:       # before the ladder's own clock starts: a fresh answer takes minutes
+        turn_left = (lambda: deadline - monotonic()) if deadline is not None else (lambda: RESAMPLE_DEFAULT_SECONDS)
+        answer, resampled = await resample_answer(answer, blocks, tools, turn_left)
+        if resampled.get("accepted"):
+            blocks = luau_blocks(answer)
+        if resampled:
+            _emit(on_event, {"event": "verify_resampled", "accepted": resampled["accepted"],
+                             "tried": resampled["tried"], "rung": resampled["first_failure"]["rung"]})
     started = monotonic()
     stop = started + budget if deadline is None else min(started + budget, deadline - FIX_RESERVE_SECONDS)
 
@@ -709,8 +797,11 @@ async def review(answer: str, tools: Tools, *, rounds: int = 2, budget: float = 
 
     _emit(on_event, {"event": "verify_started", "blocks": min(len(blocks), MAX_BLOCKS)})
     records, replacements = [], []
+    if candidate_pool.active():
+        tools = replace(tools, pool_answer=candidate_pool.record_answer(tools.prompt, answer, blocks))
     for number, (start, end, code) in enumerate(blocks[:MAX_BLOCKS], 1):
-        record = await verify_block(code, replace(tools, first_block=number == 1), rounds=rounds, left=left)
+        record = await verify_block(code, replace(tools, first_block=number == 1), rounds=rounds, left=left,
+                                    block=number)
         record["block"] = number
         failure = first_failure(record["_rungs"])
         record["signature"] = failure.signature if failure else ""
@@ -722,12 +813,17 @@ async def review(answer: str, tools: Tools, *, rounds: int = 2, budget: float = 
         answer = answer[:start] + fixed + answer[end:]
     names = ["The code block"] if len(blocks) == 1 else [f"Code block {r['block']}" for r in records]
     notes = [block_note(name, r) for name, r in zip(names, records)]
+    if resampled.get("accepted"):
+        first = resampled["first_failure"]
+        notes.insert(0, f"The first version failed the {first['rung']} check ({_bounded(first.get('detail', ''), 120)}); "
+                        f"STAR wrote the answer again ({resampled['tried']} time(s)) and this version passes it.")
     if len(blocks) > MAX_BLOCKS:
         notes.append(f"{len(blocks) - MAX_BLOCKS} other code block(s) were not checked.")
     remember(records, task=tools.prompt)
     summary = {"blocks": [{k: v for k, v in r.items() if k not in ("_rungs", "code")} for r in records],
                "seconds": round(monotonic() - started, 1),
-               "verified": all(r["ok"] for r in records), "fixed": any(r["fixed"] for r in records)}
+               "verified": all(r["ok"] for r in records), "fixed": any(r["fixed"] for r in records),
+               **({"resample": resampled} if resampled else {})}
     _emit(on_event, {"event": "verify_finished", "verified": summary["verified"], "fixed": summary["fixed"],
                      "rounds": sum(r["rounds"] for r in records), "seconds": summary["seconds"],
                      "rungs": [[x["rung"] + ":" + x["status"] for x in r["rungs"]] for r in records],

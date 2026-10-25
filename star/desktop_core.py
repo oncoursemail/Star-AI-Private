@@ -202,6 +202,10 @@ class Settings:
     verify_deprecated: str = 'on'
     # After a fix round that did not help, try again from the best version (opt-in: 0 of 11 recovered, 2026-10-25).
     verify_retry: str = 'off'
+    # Fresh answer after a compile failure (star/verify_ladder.resample_answer): when the answer's Luau code does not compile,
+    # STAR writes the whole answer again (at most twice) and keeps the first that compiles, before the fix rounds run.
+    # Opt-in: stored-run replay +2 to +3.6 points, 13 tasks better and 0 worse (docs/agents/select-many-20261025.md); not yet measured live.
+    verify_resample: str = 'off'
     # Mistake memory (star/mistake_memory.py): 'retrieve' (default) adds a short note of verified fixes for failures like
     # the request's to the turn; 'fix' also lets the check-fix loop apply its validated self-written rewrite rules
     # (no model call) before any model fix; 'off' does neither. Rules stay off until the owner sets 'fix'.
@@ -316,6 +320,8 @@ class Settings:
             raise ValueError('Deprecated-API rung must be off or on')
         if self.verify_retry not in ('off', 'on'):
             raise ValueError('Check-fix retry must be off or on')
+        if self.verify_resample not in ('off', 'on'):
+            raise ValueError('Check-fix resample must be off or on')
         if type(self.specialist_parallelism) is not int or self.specialist_parallelism not in (1,2):
             raise ValueError('Limit specialists to 1 or 2 concurrent model calls')
         if (type(self.team_timeout_min) is not int or type(self.team_timeout_max) is not int
@@ -1756,14 +1762,21 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.
                 # None = the turn runs exactly as before.
+                plain_code_turn = (kind == 'lan' and mode != 'agent' and not images and document_tools is None
+                                   and not document_block and not allow_studio and not allow_blender)
                 several = await best_of_n.for_turn(
                     settings, route, prompt, client=helper, knowledge=docs.client,
-                    eligible=(kind == 'lan' and mode != 'agent' and not images and document_tools is None
-                              and not document_block and not allow_studio and not allow_blender),
+                    eligible=plain_code_turn,
                     quick_model=str(getattr(server_roles.effective(settings), 'fast_model', '') or ''),
                     on_event=audited_event)
                 if several is not None:
                     kwargs['on_first_request'] = several.on_first_request
+                # Opt-in fresh answer after a compile failure (settings.verify_resample): keep the first request so the
+                # check-fix loop can ask it again. Not with best-of-N (it has its own candidates).
+                resample_request: list[dict] = []
+                if (settings.verify_resample == 'on' and settings.verify_ladder == 'on' and several is None
+                        and plain_code_turn):
+                    kwargs['on_first_request'] = resample_request.append  # type: ignore[assignment]  # as above: kwargs' value type is inferred
                 # Opt-in diff-only edits (star/edit_format.py): pasted code plus a change request is answered with
                 # SEARCH/REPLACE blocks that STAR applies and checks here. Plain chat turns only, not with best-of-N.
                 edit = (edit_format.find_edit(prompt)
@@ -1917,8 +1930,12 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     result = await several.apply(result, used.model, started=started, budget=route.task_timeout,
                                                  tools_ran=tools_ran)
                 # STAR Knowledge: static Luau check of the answer's code, then the sources list.
+                resample = (best_of_n.resample_tool(helper, settings, resample_request[0], model=used.model,
+                                                    max_tokens=route.response_tokens)
+                            if resample_request and not tools_ran else None)
                 result = await doc_grounding.finalize(docs, used, result, model_client=helper, prompt=prompt,
                                                       started=started, on_event=audited_event, settings=settings,
+                                                      resample=resample,
                                                       retry_ladder=settings.luau_retry_ladder is True,
                                                       thinking=provider_kind(settings) in ('local', 'lan'))
                 return several.footer(result) if several is not None else result

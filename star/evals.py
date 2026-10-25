@@ -59,6 +59,12 @@ def main(argv=None) -> int:
     star/innovation_gate.py)."""
     import sys
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "pool":                 # python -m star.evals pool <grade|replay|inspect> ... (star/pool_replay.py)
+        from .pool_replay import main as pool_main
+        return pool_main(args[1:])
+    if args and args[0] == "run":                  # --pool DIR [--pool-tag NAME]: save every candidate (star/candidate_pool.py)
+        from .candidate_pool import take_flags
+        args = take_flags(args)
     if args and args[0] == "ledger":
         from .failure_ledger import main as ledger_main
         return ledger_main(args[1:])

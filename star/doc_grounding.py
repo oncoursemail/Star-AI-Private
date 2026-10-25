@@ -460,10 +460,11 @@ async def repair_slop(answer: str, report, *, model_client, model: str, timeout:
 
 async def finalize(grounding: Grounding, route, result, *, model_client=None, prompt: str = "",
                    started: float | None = None, on_event=None, settings=None, retry_ladder: bool = False,
-                   thinking: bool = False):
+                   thinking: bool = False, resample=None):
     """Luau self-check, then the sources list. Returns the same (answer, messages, archive) shape.
     Any failure here leaves the model's answer exactly as it was. `retry_ladder` adds the second repair
-    rung; `thinking` (llama.cpp brains only) asks that rung with thinking on."""
+    rung; `thinking` (llama.cpp brains only) asks that rung with thinking on. `resample` (async temperature -> answer text;
+    only used with settings.verify_resample = on) asks the whole request again after a compile failure."""
     answer, messages, archive = result
     original = answer
     try:
@@ -490,6 +491,7 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
                                         write_tests=write_tests, fix=fix, prompt=prompt,
                                         deprecated=getattr(settings, "verify_deprecated", "on") == "on",
                                         retry_rejected=getattr(settings, "verify_retry", "off") == "on",
+                                        resample=resample if getattr(settings, "verify_resample", "off") == "on" else None,
                                         fixers=(mistake_memory.active_fixers()
                                                 if getattr(settings, "mistake_memory", "retrieve") == "fix" else []))
             answer, ladder_record = await verify_ladder.review(
