@@ -81,6 +81,7 @@ class Settings:
     studio_own_places: bool = False       # ...and, when on, in places owned by STAR's own Roblox account
     studio_luau: bool = False             # let STAR run Luau in that sandbox (needed to create instances)
     studio_tool_examples: bool = False    # opt-in: one example call appended to each error-prone Studio tool
+    studio_inspect: bool = False          # opt-in: read the scene for the request's objects before a Studio turn (star/studio_inspect.py)
     workspace_edit: bool = False
     debug_evidence_enabled: bool = False  # opt-in report analysis; never grants process execution or attachment
     live_show_enabled: bool = False       # opt-in offline episode-manifest planner (star/live_show.py); no posting or rendering
@@ -275,7 +276,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'studio_inspect', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
                             'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
@@ -1807,6 +1808,12 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                     # it may not look like lessons (guard_sections).
                                     sections.extend(learning.guard_sections(
                                         [('ROBLOX STUDIO PLACE', guarded.verdict.reason)]))
+                                    if settings.studio_inspect:
+                                        from .studio_inspect import scene_section
+                                        scene = await scene_section(guarded, prompt)
+                                        if scene:
+                                            sections.extend(learning.guard_sections([('ROBLOX STUDIO SCENE', scene)]))
+                                            audited_event({'event': 'studio_inspected', 'chars': len(scene)})
                                     outcome = await execute(**{**tool_kwargs, 'turn_sections': sections}, studio=guarded,
                                         discovered=discovered, studio_id=settings.studio_id,
                                         may_edit=guarded.verdict.editable,
