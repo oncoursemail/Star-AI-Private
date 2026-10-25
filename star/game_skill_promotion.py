@@ -99,7 +99,7 @@ class SkillPromotionGate:
         self.minimum_lower = minimum_lower
         self.max_trials = max_trials
         self._trials: list[SkillTrial] = []
-        self._scenario: set[tuple[str, str, str, str]] = set()
+        self._scenario: set[tuple[str, str, str]] = set()
         self._session: set[tuple[str, str, str, str]] = set()
 
     def record(self, trial: SkillTrial, *, trusted_host: bool = False) -> None:
@@ -110,7 +110,7 @@ class SkillPromotionGate:
         if len(self._trials) >= self.max_trials:
             raise OverflowError("Evidence capacity reached; must rotate with review")
         common = (trial.game, trial.skill, trial.revision)
-        scenario = (*common, trial.scenario_sha256)
+        scenario = (trial.game, trial.skill, trial.scenario_sha256)
         session = (*common, trial.session)
         if scenario in self._scenario:
             raise ValueError("Scenario reused; no repeated or cross-split evaluation")
