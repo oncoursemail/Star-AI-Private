@@ -299,7 +299,7 @@ GENERATED_ABILITIES: dict[str, dict] = {
     },
     "cinematic_sword_arc": {
         "keywords": ("anime sword", "sword slash", "blade arc", "katana", "weapon swing",
-                     "sword trail", "blade trail", "slash arc", "crescent slash"),
+                     "sword trail", "blade trail", "slash arc", "crescent slash", "slash"),
         "cues": [
             _cue("charge", 0, "aura", dur=0.32),
             _cue("charge", 0.30, "burst", count=9, speed=6, life=0.28, size=0.22,
