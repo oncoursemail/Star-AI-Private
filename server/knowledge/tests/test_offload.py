@@ -57,7 +57,7 @@ def stored(index: Path) -> dict[str, list[float]]:
         db.close()
 
 
-SHA = {name: (name * 64)[:64] for name in "abcd"}       # hex text hashes, as the index stores them
+SHA = {name: (name * 64)[:64] for name in "abcdef"}       # hex text hashes, as the index stores them
 
 
 def test_export_lists_only_texts_without_a_vector_with_the_exact_embedding_input(tmp_path):
@@ -195,3 +195,128 @@ def test_gpu_job_stops_on_input_and_ignores_its_own_server(tmp_path):
     assert g.stop_reason() == ""
     probe.idle = 2.0
     assert g.stop_reason() == "the owner is back"
+
+
+# ---- offload-run: the automatic embedding on a LAN worker ------------------------------------------------------------
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+CHICAGO = timezone(timedelta(hours=-5))          # CDT on the test dates (this PC's Python has no tz database)
+NIGHT = datetime(2026, 10, 26, 2, 0, tzinfo=CHICAGO)
+EVENING = datetime(2026, 10, 26, 19, 0, tzinfo=CHICAGO)
+
+
+def worker_index(tmp_path: Path, pending_names: str = "bcd") -> tuple[Path, dict[str, str]]:
+    """An index whose chunk 'a' already has the vector FakeServer gives (so the parity check passes)."""
+    texts = {SHA[n]: n * (3 + i) for i, n in enumerate("a" + pending_names)}
+    vec = FakeServer().embed([store.embed_input("T", "T", texts[SHA["a"]])])[0][0]
+    return make_index(tmp_path, texts, {SHA["a"]: vec}), texts
+
+
+def run_worker(index, tmp_path, server=None, **kw):
+    kw.setdefault("wait", lambda log, stop: 0.0)
+    return offload.run_on_worker(index, server or FakeServer(), MODEL, claim_path=tmp_path / "claim.json", dim=DIM,
+                                 log=lambda _m: None, at=kw.pop("at", NIGHT), tz=CHICAGO, **kw)
+
+
+def test_run_on_worker_stores_the_pending_vectors_keeps_the_brains_and_then_has_nothing_to_do(tmp_path):
+    index, texts = worker_index(tmp_path)
+    before = stored(index)[SHA["a"]]
+    result = run_worker(index, tmp_path, batch=2)
+    assert (result["pending_before"], result["embedded_now"], result["pending_after"], result["stopped"]) == (3, 3, 0, "done")
+    vectors = stored(index)
+    assert set(vectors) == set(texts) and vectors[SHA["a"]] == before
+    for sha in "bcd":
+        want = FakeServer().embed([store.embed_input("T", "T", texts[SHA[sha]])])[0][0]
+        assert all(abs(x - y) < 1e-6 for x, y in zip(vectors[SHA[sha]], want))
+    assert not (tmp_path / "claim.json").exists()                      # released
+    again = run_worker(index, tmp_path)
+    assert again["stopped"] == "nothing pending" and again["embedded_now"] == 0
+
+
+def test_run_on_worker_is_resumable_and_respects_the_time_budget_and_a_stop(tmp_path):
+    index, _ = worker_index(tmp_path, "bcdef")
+    ticks = iter([0.0, 0.0, 100.0, 100.0, 100.0, 100.0, 100.0])         # second group starts after the 50 s budget
+    first = run_worker(index, tmp_path, batch=2, in_flight=1, max_seconds=50, clock=lambda: next(ticks))
+    assert first["embedded_now"] == 2 and first["stopped"] == "time budget used" and first["pending_after"] == 3
+    stops = iter([False, True])
+    second = run_worker(index, tmp_path, batch=2, in_flight=1, stop=lambda: next(stops))
+    assert second["embedded_now"] == 2 and second["stopped"] == "stop requested"
+    third = run_worker(index, tmp_path, batch=2, in_flight=1)
+    assert third["embedded_now"] == 1 and third["stopped"] == "done" and third["embeddings_total"] == 6
+
+
+def test_a_bulk_change_waits_for_the_night_a_small_one_does_not(tmp_path):
+    index, _ = worker_index(tmp_path)
+    held = run_worker(index, tmp_path, at=EVENING, small=2)
+    assert held["embedded_now"] == 0 and "waits for 00:00-08:00" in held["stopped"]
+    assert run_worker(index, tmp_path, at=EVENING, small=3)["stopped"] == "done"       # 3 pending: not bulk
+    (tmp_path / "b").mkdir()
+    index2, _ = worker_index(tmp_path / "b")
+    assert run_worker(index2, tmp_path, at=NIGHT, small=2)["embedded_now"] == 3        # bulk, but at night
+
+
+def test_the_window_wraps_past_midnight():
+    late = datetime(2026, 10, 26, 23, 0, tzinfo=CHICAGO)
+    assert offload.in_window((22, 6), CHICAGO, late) and not offload.in_window((22, 6), CHICAGO, EVENING)
+    assert offload.in_window((0, 8), CHICAGO, NIGHT) and not offload.in_window((0, 8), CHICAGO, EVENING)
+    utc_night = datetime(2026, 10, 26, 7, 0, tzinfo=timezone.utc)                   # 02:00 in Chicago (CDT)
+    assert offload.in_window((0, 8), CHICAGO, utc_night)
+
+
+class WrongServer(FakeServer):
+    def embed(self, texts):
+        return [unit(1, 0, 0, 0) for _ in texts], 0
+
+
+class DownServer:
+    def embed(self, texts):
+        raise RuntimeError("/v1/embeddings failed: ConnectionError")
+
+
+def test_a_worker_that_disagrees_with_the_brain_or_is_down_stores_nothing(tmp_path):
+    index, _ = worker_index(tmp_path)
+    wrong = run_worker(index, tmp_path, WrongServer())
+    assert wrong["ok"] is False and wrong["stopped"] == "parity check failed" and wrong["embedded_now"] == 0
+    down = run_worker(index, tmp_path, DownServer())
+    assert down["ok"] is True and down["stopped"].startswith("worker not usable") and down["embedded_now"] == 0
+    assert set(stored(index)) == {SHA["a"]} and not (tmp_path / "claim.json").exists()
+
+
+def test_a_worker_failing_midway_keeps_what_was_stored_and_a_non_unit_vector_is_refused(tmp_path):
+    index, _ = worker_index(tmp_path, "bcdef")
+
+    class Flaky(FakeServer):
+        def embed(self, texts):
+            if len(self.calls) == 2:                                   # call 1 = parity check, call 2 = group 1, call 3 fails
+                self.calls.append(texts)
+                raise RuntimeError("/v1/embeddings failed: ReadTimeout")
+            return super().embed(texts)
+    result = run_worker(index, tmp_path, Flaky(), batch=2, in_flight=1)
+    assert result["embedded_now"] == 2 and result["stopped"].startswith("worker failed")
+    assert len(stored(index)) == 3
+
+    class Loud(FakeServer):
+        def embed(self, texts):
+            vectors, used = super().embed(texts)
+            return ([[v * 2 for v in vec] for vec in vectors] if len(self.calls) > 1 else vectors), used
+    bad = run_worker(index, tmp_path, Loud(), batch=2, in_flight=1)
+    assert bad["ok"] is False and bad["stopped"] == "worker returned a bad vector" and len(stored(index)) == 3
+
+
+def test_the_claim_keeps_the_pc_and_the_laptop_apart_and_expires(tmp_path):
+    path, clock = tmp_path / "claim.json", [1000.0]
+    assert offload.claim(path, "pc", 100, clock=lambda: clock[0]) == ""
+    assert offload.claim(path, "laptop", 100, clock=lambda: clock[0]) == "pc"
+    assert offload.claim(path, "pc", 100, clock=lambda: clock[0]) == ""            # the holder renews
+    assert offload.release(path, "laptop") is False and path.exists()               # only the owner releases
+    clock[0] += 101
+    assert offload.claim(path, "laptop", 100, clock=lambda: clock[0]) == ""         # expired: taken over
+    assert offload.release(path, "laptop") is True and not path.exists()
+    path.write_text("not json")
+    assert offload.claim(path, "pc", 100, clock=lambda: clock[0]) == ""            # an unreadable claim counts as expired
+    index, _ = worker_index(tmp_path)
+    offload.claim(tmp_path / "claim.json", "pc", 3600)
+    held = run_worker(index, tmp_path)
+    assert held["stopped"] == "pc holds the claim" and held["embedded_now"] == 0
+    assert offload.release(tmp_path / "claim.json", "pc")
