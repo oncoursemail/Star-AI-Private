@@ -31,6 +31,7 @@ from .chunker import SentenceChunker, speakable
 from .game_context import GameMomentWindow
 from .metrics import TurnMetrics
 from .pcm import FRAME_MS, rms
+from ..persona import leaked_reasoning
 from .persona import system_message
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
 
@@ -83,6 +84,11 @@ class CallConfig:
     ptt_voice_barge_in: bool = True       # push-to-talk: talking over Star (without the key) still silences her
     acknowledgements: bool = False        # play a short pre-rendered "okay" in Star's voice once the turn is understood
     game_context_for_voice: bool = False  # opt-in ephemeral, typed game telemetry; never enables game control
+
+
+# Said when the model twice wrote its plan instead of an answer, and when asking again: see _generate_and_speak.
+RETRY_NOTE = "\n\n(Say only the words you speak out loud: no plans, no notes to yourself.)"
+FALLBACK_LINE = "Sorry, I lost my words for a second. Say that again for me?"
 
 
 def _same_words(a: str, b: str) -> bool:
@@ -465,35 +471,64 @@ class CallSession:
         speech = threading.Thread(target=self._speak, args=(reply, sentences),
                                   name=f"star-voice-tts-{metrics.turn}", daemon=True)
         speech.start()
-        chunker = SentenceChunker(first_clause_words=self.config.first_clause_words)
         try:
-            reply.stream = self.brain.stream(messages)
-            if reply.cancel.is_set():
-                return
-            for delta in reply.stream:
-                if reply.cancel.is_set():
-                    break
-                if metrics.first_token_at is None:
-                    metrics.first_token_at = self.clock()
-                metrics.tokens += 1
-                metrics.last_token_at = self.clock()
-                reply.raw_text += delta
-                self._emit({"type": "assistant_delta", "turn": metrics.turn, "text": delta})
-                for sentence in chunker.feed(delta):
-                    if metrics.first_sentence_at is None:
-                        metrics.first_sentence_at = self.clock()
-                    sentences.put(sentence)
-            if not reply.cancel.is_set():
-                for sentence in chunker.flush():
-                    if metrics.first_sentence_at is None:
-                        metrics.first_sentence_at = self.clock()
-                    sentences.put(sentence)
+            released = self._stream_sentences(reply, messages, sentences)
+            if released is False and not reply.cancel.is_set():
+                # The model wrote its plan instead of an answer (star/persona.leaked_reasoning); none of it was
+                # spoken. Ask once more for the spoken words only, then fall back to one honest line.
+                self._emit({"type": "reasoning_dropped", "turn": metrics.turn, "retry": True})
+                reply.raw_text = ""
+                retry = messages[:-1] + [{"role": "user", "content": messages[-1]["content"] + RETRY_NOTE}]
+                if self._stream_sentences(reply, retry, sentences) is False and not reply.cancel.is_set():
+                    self._emit({"type": "reasoning_dropped", "turn": metrics.turn, "retry": False})
+                    reply.raw_text = ""
+                    sentences.put(FALLBACK_LINE)
         finally:
             sentences.put(None)
             self._close_stream(reply)
             speech.join()
         while not reply.cancel.is_set() and self.speaker.pending_seconds() > 0:
             time.sleep(0.01)                    # let the last sentence finish playing
+
+    def _stream_sentences(self, reply: _Reply, messages: list[dict], sentences: queue.Queue) -> bool | None:
+        """Stream one model reply into the speech queue. A sentence in which the model talks to itself is never
+        spoken and ends the reply (what follows is the same plan). Returns False when the reply was only such
+        a plan (nothing spoken), True when something was queued, None when the call was cancelled first."""
+        metrics = reply.metrics
+        chunker = SentenceChunker(first_clause_words=self.config.first_clause_words)
+        queued = 0
+        leaked = False
+
+        def release(parts: list[str]) -> None:
+            nonlocal queued, leaked
+            for sentence in parts:
+                if leaked_reasoning(sentence):
+                    leaked = True
+                    return
+                if metrics.first_sentence_at is None:
+                    metrics.first_sentence_at = self.clock()
+                sentences.put(sentence)
+                queued += 1
+
+        reply.stream = self.brain.stream(messages)
+        if reply.cancel.is_set():
+            return None
+        for delta in reply.stream:
+            if reply.cancel.is_set():
+                return None
+            if metrics.first_token_at is None:
+                metrics.first_token_at = self.clock()
+            metrics.tokens += 1
+            metrics.last_token_at = self.clock()
+            reply.raw_text += delta
+            self._emit({"type": "assistant_delta", "turn": metrics.turn, "text": delta})
+            release(chunker.feed(delta))
+            if leaked:
+                self._close_stream(reply)       # stop generating the plan
+                break
+        if not leaked and not reply.cancel.is_set():
+            release(chunker.flush())
+        return not (leaked and not queued)
 
     def _speak(self, reply: _Reply, sentences: queue.Queue) -> None:
         metrics = reply.metrics

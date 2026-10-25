@@ -42,9 +42,15 @@ _ASKS_CAPABILITIES = re.compile(r"\bwhat (?:can|could) you do\b|\bwhat are you a
 
 
 _REASONING = re.compile(
-    r"\bI should\b|\bI need to (?:let|tell|answer|respond|give|say)\b|\bLet me (?:respond|answer|check|think)\b|"
-    r"\bthe (?:owner|user) (?:asks|asked|wants|is asking)\b|\b(?:based on|from) the (?:live )?status (?:line|block)s?\b|"
-    r"\bLIVE STATUS\b|\bKeep it short\b|\bstatus lines?\b", re.I)
+    r"\bI should\b|\bI need to (?:let|tell|answer|respond|reply|give|say|start|begin|keep|check|recall|remember|stay|"
+    r"stick|write|make sure)\b|\bLet me (?:respond|answer|check|think|recall|craft|draft|figure)\b|"
+    r"\bthe (?:owner|user) (?:asks|asked|wants|is asking|just asked|said|says|wrote|seems)\b|"
+    r"\b(?:based on|from) the (?:live )?status (?:line|block)s?\b|"
+    r"\bLIVE STATUS\b|\bKeep it short\b|\bstatus lines?\b|"
+    # The model reading its own instructions back (seen 2026-10-25 on the voice persona and the desktop chat rules).
+    r"\b(?:short|brief) warm reaction\b|\bending (?:with )?a full stop\b|\b(?:two|2) to (?:five|5) words\b|"
+    r"\bI(?:'ll| will) keep (?:the|my|this|it) (?:\w+ ){0,2}(?:short|concise|brief)\b|"
+    r"\bthe context provided\b|\bwe previously set\b|\bStar (?:needs|should|wants|has) to\b", re.I)
 
 
 _META_PREFIX = re.compile(r"(?:\bI can see |\b)from (?:my|the) (?:live )?status(?: lines?)?(?: that)?,?\s*", re.I)
