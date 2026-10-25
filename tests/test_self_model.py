@@ -157,3 +157,64 @@ def test_actual_agent_ordinary_turn_has_no_self_tool():
     ))
     assert answer == "Hello."
     assert not completions.requests[0].get("tools")
+
+
+def test_agent_self_inspection_reports_observed_prior_read_result():
+    from star.agent import execute
+
+    class ReadTool:
+        def definitions(self, prompt):
+            return [{"name": "fixture_read", "description": "Fixture read",
+                     "inputSchema": {"type": "object", "properties": {},
+                                     "additionalProperties": False}}]
+
+        def owns(self, name):
+            return name == "fixture_read"
+
+        def call(self, name, args, *, enabled):
+            assert name in enabled and args == {}
+            return {"read": "ok"}
+
+    completions = FakeCompletions([
+        reply(calls=[tool_call("fixture_read", {})]),
+        reply(calls=[tool_call("star_self_state", {"tool_names": ["fixture_read"]})]),
+        reply("A read tool returned normally; I still need independent validation."),
+    ])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    _answer, messages, _archive = asyncio.run(execute(
+        client=client, model="fixture", prompt="What tools do you have?",
+        image_paths=[], intelligence=ReadTool(), max_calls=4,
+        now="", today="2026-10-25",
+    ))
+    receipts = [json.loads(m["content"]) for m in messages if m["role"] == "tool"]
+    assert len(receipts) == 2
+    report = json.loads(receipts[-1]["output"])
+    assert report["recent_tool_outcomes"] == [
+        {"tool": "fixture_read", "attached": True, "status": "tool_returned_without_error"}
+    ]
+    assert report["requested_tools"][0]["status"] == "attached_schema_only"
+    assert "verify" in report["suggested_next_check"].lower()
+
+
+def test_agent_self_inspection_cannot_escalate_unauthorized_capabilities():
+    from star.agent import execute
+
+    completions = FakeCompletions([
+        reply(calls=[tool_call("workspace_write", {"path": "secret", "content": "x"})]),
+        reply(calls=[tool_call("star_self_state", {"tool_names": ["workspace_write"]})]),
+        reply("The write was rejected."),
+    ])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    _answer, messages, _archive = asyncio.run(execute(
+        client=client, model="fixture", prompt="What can you actually do?",
+        image_paths=[], max_calls=4, now="", today="2026-10-25",
+    ))
+    receipts = [json.loads(m["content"]) for m in messages if m["role"] == "tool"]
+    assert len(receipts) == 2
+    assert receipts[0]["isError"] is True
+    report = json.loads(receipts[-1]["output"])
+    assert report["recent_tool_outcomes"] == [
+        {"tool": "workspace_write", "attached": False,
+         "status": "rejected_before_execution"}
+    ]
+    assert report["requested_tools"][0]["status"] == "not_attached_to_this_turn"
