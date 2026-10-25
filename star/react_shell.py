@@ -32,7 +32,7 @@ from .intelligence import for_settings
 from .providers import credential_status, save_api_key, clear_api_key, provider_kind
 from .model_health import (explain_model_failure, missing_model_message, note_server_result,
                            probe_server, server_status)
-from .chat_images import chat_image, generate_chat_image, latest_generated_path
+from .chat_images import chat_image, generate_chat_image, latest_generated_path, refused_to_make_picture
 from .comfy import ComfyError
 from .warmup import Warmer
 from .prefill_warm import DraftWarmer
@@ -1132,6 +1132,11 @@ def launch():
                 answer+=media.footer
             if self.cancel_chat.is_set():
                 raise RuntimeError('cancelled by user')
+            # The text model has no picture tool: when it refuses a message that asked for a picture (the chat's own
+            # detector missed the wording), the same turn goes to the image engine instead of showing the refusal.
+            if (not pics and not documents and song is None and settings.media_chat_auto is not False
+                    and refused_to_make_picture(prompt,answer)):
+                return self._run_image(request_id,prompt,display_prompt=prompt,turn_user_id=user_id)
             if provider_kind(settings)=='lan' and not instant_used:
                 note_server_result(settings,True,'ok')
             chats=Conversations(home/'conversations.sqlite3')
@@ -1146,7 +1151,8 @@ def launch():
                 self._warm(check=False,then=self._digest_when_idle)
             return {'answer':answer,'learned':learned} if learned else {'answer':answer}
 
-        def _run_image(self, request_id, prompt, files=(), size='square', followup=False, display_prompt=None, retry_id=None):
+        def _run_image(self, request_id, prompt, files=(), size='square', followup=False, display_prompt=None, retry_id=None,
+                       turn_user_id=None):
             settings=Settings.load(self.settings_file)
             home=app_data()
             shown=display_prompt or prompt     # the words the owner typed; `prompt` is what the picture model gets
@@ -1154,7 +1160,9 @@ def launch():
             chats=Conversations(home/'conversations.sqlite3')
             try:
                 active_chat=chats.active_chat(settings.project)
-                if retry_id is not None:
+                if turn_user_id is not None:     # the question is already stored: a refused text turn handed over
+                    user_id=turn_user_id
+                elif retry_id is not None:
                     user_id=chats.recover_turn(settings.project,active_chat,retry_id,shown)
                 else:
                     user_id=chats.add(settings.project,'user',shown,chat_id=active_chat)

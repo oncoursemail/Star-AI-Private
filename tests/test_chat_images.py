@@ -56,3 +56,22 @@ def test_a_picture_that_is_not_on_disk_is_never_added_to_the_chat(tmp_path, monk
     import pytest
     with pytest.raises(RuntimeError, match='not in the STAR data folder'):
         chat_images.generate_chat_image(Settings(project='Test', image_quality=False), 'a cow', tmp_path)
+
+
+def test_a_text_models_refusal_of_a_make_request_is_recognised_but_an_ability_question_is_not():
+    from star.chat_images import refused_to_make_picture as refused
+    no = "I can't create or show images directly, but I can describe one."
+    assert refused('Generate a real cow with no weird legs', no)
+    assert refused('please draw me a dragon', "I'm unable to generate pictures.")
+    assert refused('Can you make me a poster', "I cannot make images.")
+    assert not refused('Can you create images?', no)                       # asks what STAR can do, names nothing to draw
+    assert not refused('Write me a poem about cows', no)                   # not a request for a picture
+    assert not refused('Generate a real cow', 'Here is a cow: ' + 'moo ' * 200 + no)   # a long answer that did the work
+    assert not refused('Generate a real cow', 'A cow has four legs.')
+
+
+def test_a_note_that_cannot_be_written_never_costs_the_picture(tmp_path):
+    from star import image_gen
+    path = image_gen._save(tmp_path, b'\x89PNG data', {'seed': 3, 'answer': 'x', 'bad': object()})
+    assert path.is_file() and path.read_bytes() == b'\x89PNG data'
+    assert not path.with_suffix('.json').exists()

@@ -12,6 +12,31 @@ ImageOps = lazy_module("PIL.ImageOps")
 PREFIX = "STAR_GENERATED_IMAGE:"
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,190}$")
 
+# A text model has no picture tool, so when it answers a "make me a ..." message with "I can't create or show images"
+# the message was a picture request the chat's own detector (frontend/src/imageIntent.ts) did not recognise.
+_REFUSAL = re.compile(
+    r"\b(?:can(?:['’]t|not)|can not|unable to|not able to|(?:do not|don['’]t) have (?:the )?(?:ability|capability))\b"
+    r"[^.!?\n]{0,60}?\b(?:create|generate|make|draw|produce|render|show|display)\b[^.!?\n]{0,40}?"
+    r"\b(?:images?|pictures?|photos?|drawings?|illustrations?|artwork|visuals?)\b", re.I)
+_MAKE_VERB = re.compile(
+    r"^(?:(?:please|kindly|can you|could you|would you|will you|go ahead and|i want you to|i need you to|i'd like you to)\s+){0,2}"
+    r"(?:generate|create|make|draw|render|paint|sketch|illustrate|design|produce|doodle|show|give|send|get)\b", re.I)
+_FILLER = re.compile(r"\b(?:please|kindly|can|could|would|will|you|to|generate|create|make|draw|render|paint|sketch|illustrate|"
+                     r"design|produce|doodle|show|give|send|get|me|an?|the|some|images?|pictures?|photos?|pics?|drawings?)\b", re.I)
+
+
+def refused_to_make_picture(prompt: str, answer: str) -> bool:
+    """True when a short text answer says STAR cannot make pictures to a message that asked for one to be made.
+
+    "Can you create images?" (nothing left to draw once the filler words go) and a long answer that only
+    mentions the limit while doing the work are not picture requests.
+    """
+    if len(answer or "") > 600 or not _REFUSAL.search(answer):
+        return False
+    request = (prompt or "").replace("’", "'").strip()
+    return bool(_MAKE_VERB.match(request) and re.search(r"\w", _FILLER.sub(" ", request)))
+
+
 def preview_image(path: Path) -> str:
     """Return a small thumbnail for Qt WebChannel, cached across chat refreshes."""
     path = path.resolve(strict=True)
