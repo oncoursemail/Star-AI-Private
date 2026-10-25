@@ -64,7 +64,7 @@ def test_holdout_regressions_veto_successful_dev_candidate():
         return BETTER
 
     async def evaluate(text):
-        return development(4)
+        return development(2 if text == BASE else 4)
 
     async def holdout(arm, text):
         return fake_trials(arm, bad=True)
@@ -128,7 +128,7 @@ def test_invalid_holdout_results_are_never_treated_as_pass():
         return BETTER
 
     async def check(text):
-        return development(4)
+        return development(2 if text == BASE else 4)
 
     async def holdout(arm, text):
         return [{"status": "pass", "answer": "I passed"}]
@@ -139,3 +139,136 @@ def test_invalid_holdout_results_are_never_treated_as_pass():
         sealed_holdout_evaluate=holdout))
     assert result["reason"] == "holdout_evaluation_invalid"
     assert not result["executed_changes"]
+
+
+# Incumbent-first verification prevents the optimizer from calling an inferior
+# draft "best" merely because the previous code initialized its score at -1.
+
+
+def test_a_worse_variant_never_reaches_expensive_holdout():
+    calls = []
+
+    async def mutate(text, feedback, index):
+        assert feedback["passed"] == 3  # Genuine baseline diagnostics reach the proposer.
+        return WORSE
+
+    async def evaluate(text):
+        calls.append(text)
+        return development(3 if text == BASE else 1)
+
+    async def holdout(*args):
+        raise AssertionError("A worse development result is not a promotion candidate")
+
+    result = asyncio.run(evolve.propose_and_compare(
+        evolve.EvolutionConfig("docs/skills/round.md", variants=2),
+        BASE, mutate=mutate, development_evaluate=evaluate,
+        sealed_holdout_evaluate=holdout))
+    assert result["decision"] == "do_not_promote"
+    assert result["reason"] == "no_development_improvement"
+    assert result["baseline_development_score"] == 0.75
+    assert calls.count(BASE) == 1
+    assert not result["executed_changes"]
+
+
+def test_development_ceiling_skips_mutations_and_holdout():
+    async def no_call(*args):
+        raise AssertionError("No improvement in correctness possible over 4/4")
+
+    result = asyncio.run(evolve.propose_and_compare(
+        evolve.EvolutionConfig("docs/skills/round.md"),
+        BASE, mutate=no_call,
+        development_evaluate=lambda text: _return_development(4),
+        sealed_holdout_evaluate=no_call))
+    assert result["reason"] == "baseline_development_at_ceiling"
+    assert result["iterations"] == []
+
+
+async def _return_development(score):
+    return development(score)
+
+
+def test_invalid_baseline_evidence_fails_closed_without_mutation():
+    async def invalid(text):
+        return {"executed": False, "passed": 0}
+
+    async def no_call(*args):
+        raise AssertionError("Nothing should run after an invalid baseline")
+
+    result = asyncio.run(evolve.propose_and_compare(
+        evolve.EvolutionConfig("docs/skills/round.md"),
+        BASE, mutate=no_call, development_evaluate=invalid,
+        sealed_holdout_evaluate=no_call))
+    assert result["reason"] == "baseline_development_invalid"
+    assert result["candidate_sha256"] is None and result["iterations"] == []
+
+
+def test_hard_failing_baseline_does_not_promote_a_mutation():
+    async def invalid(text):
+        return development(3, hard=True)
+
+    async def no_call(*args):
+        raise AssertionError("Do not mutate on a hard-failing baseline")
+
+    result = asyncio.run(evolve.propose_and_compare(
+        evolve.EvolutionConfig("docs/skills/round.md"),
+        BASE, mutate=no_call, development_evaluate=invalid,
+        sealed_holdout_evaluate=no_call))
+    assert result["reason"] == "baseline_development_hard_failure"
+
+
+@pytest.mark.parametrize("changed", ["evaluator", "total"])
+def test_incomparable_development_results_are_not_ranked(changed):
+    async def mutate(text, feedback, index):
+        return BETTER
+
+    async def check(text):
+        if text == BASE:
+            return development(2)
+        d = development(4)
+        if changed == "evaluator":
+            d["evaluator"] = "different-test-runner"
+        else:
+            d["total"] = 5
+            d["passed"] = 5
+        return d
+
+    async def no_holdout(*args):
+        raise AssertionError("A different test runner or task count must not be compared")
+
+    result = asyncio.run(evolve.propose_and_compare(
+        evolve.EvolutionConfig("docs/skills/round.md", variants=2),
+        BASE, mutate=mutate, development_evaluate=check,
+        sealed_holdout_evaluate=no_holdout))
+    assert result["reason"] == "no_development_improvement"
+    assert result["iterations"][0]["status"] == "incomparable_development"
+    assert result["candidate_sha256"] is None
+
+
+def test_selection_is_against_baseline_not_first_candidate_and_keeps_sealed_data():
+    proposed = []
+    first = BASE + " Add one assertion in the join lifecycle."
+    second = BETTER
+
+    async def mutate(best, feedback, i):
+        proposed.append((best, dict(feedback)))
+        return first if i == 0 else second
+
+    async def check(text):
+        return development(1 if text == BASE else 2 if text == first else 4)
+
+    async def holdout(arm, text):
+        if arm == "candidate":
+            assert text == second
+        return fake_trials(arm)
+
+    result = asyncio.run(evolve.propose_and_compare(
+        evolve.EvolutionConfig("docs/skills/round.md", variants=2),
+        BASE, mutate=mutate, development_evaluate=check,
+        sealed_holdout_evaluate=holdout))
+    assert result["decision"] == "candidate_for_independent_review"
+    assert result["development_score"] == 1.0
+    assert result["baseline_development_score"] == 0.25
+    assert proposed[1][0] == first
+    assert all("sealed-task" not in str(item) for item in proposed)
+    assert result["candidate_text"] == second
+    assert not result["promoted"]
