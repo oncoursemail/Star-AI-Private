@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+from math import ceil, isfinite
 
 
 @dataclass
@@ -50,6 +51,62 @@ class TurnMetrics:
         data = asdict(self)
         data["stages"] = {k: (None if v is None else round(v, 3)) for k, v in self.stages().items()}
         return data
+
+
+def latency_summary(turns: list[TurnMetrics]) -> dict:
+    """Report tail latency from real voice-clock stamps without capturing user text.
+
+    The first-audio stamp means a PCM chunk was *submitted* to the speaker; it
+    cannot prove when the user physically heard it. An errored, missing, or
+    clock-invalid turn must never silently improve p95. Nearest-rank percentiles
+    are descriptive and are not a quality or deployment promotion gate.
+    """
+    if len(turns) > 10000 or any(not isinstance(t, TurnMetrics) for t in turns):
+        raise ValueError("Expected at most 10000 voice turns")
+    pairs = {
+        "speech_end_to_audio_submitted": ("speech_end", "first_audio_at"),
+        "endpointer": ("speech_end", "turn_end"),
+        "transcription": ("turn_end", "transcript_at"),
+        "brain_first_token": ("transcript_at", "first_token_at"),
+        "tts_and_queue": ("first_token_at", "first_audio_at"),
+    }
+    samples: dict[str, list[float]] = {key: [] for key in pairs}
+    failed = invalid = incomplete = 0
+
+    def valid(value) -> bool:
+        return type(value) in (float, int) and isfinite(value)
+
+    for turn in turns:
+        if turn.error:
+            failed += 1
+            continue
+        a, b = turn.speech_end, turn.first_audio_at
+        if a is None or b is None:
+            incomplete += 1
+            continue
+        if not valid(a) or not valid(b) or b < a or (
+            turn.first_token_at is not None and
+            (not valid(turn.first_token_at) or turn.first_token_at > b)
+        ):
+            invalid += 1
+            continue
+        for key, (begin, end) in pairs.items():
+            x, y = getattr(turn, begin), getattr(turn, end)
+            if valid(x) and valid(y) and y >= x:
+                samples[key].append((y - x) * 1000)
+
+    def quantiles(values: list[float]) -> dict:
+        if not values:
+            return {"n": 0, "p50_ms": None, "p95_ms": None, "max_ms": None}
+        ordered = sorted(values)
+        index = lambda percentile: ordered[ceil(percentile * len(ordered)) - 1]
+        return {"n": len(ordered), "p50_ms": round(index(0.50), 1),
+                "p95_ms": round(index(0.95), 1), "max_ms": round(ordered[-1], 1)}
+
+    return {"total_turns": len(turns), "errored_turns": failed,
+            "incomplete_turns": incomplete, "invalid_clock_turns": invalid,
+            "interrupted_turns": sum(t.interrupted for t in turns),
+            "latency": {key: quantiles(values) for key, values in samples.items()}}
 
 
 def _cell(value: float | None, width: int, digits: int = 2) -> str:

@@ -279,7 +279,15 @@ class ChangeJournal:
             if entry.get("diagnostic"):
                 changes[-1]["diagnostic"] = entry["diagnostic"]
         steps = sum(1 for entry in self.entries if entry["kind"] in ("script", "luau"))
-        return {"changes": changes, "edits": steps,
+        # Track inspection coverage separately from successful changes. Unscoped
+        # execute_luau edits cannot claim their touched scene objects were inspected.
+        inspections = {"existing_scripts_inspected": sum(
+            1 for e in self.entries if e["kind"] == "script" and not e["created"]
+            and e.get("target_inspected") is True),
+            "new_script_paths": sum(1 for e in self.entries
+                                    if e["kind"] == "script" and e["created"]),
+            "unscoped_luau_edits": sum(1 for e in self.entries if e["kind"] == "luau")}
+        return {"changes": changes, "edits": steps, "inspection": inspections,
                 "undo": {"available": steps > 0,
                          # Only what exists: the journal lives for this session, so a later turn
                          # cannot take these edits back by itself; Studio's own undo can.
@@ -738,6 +746,34 @@ class GuardedStudio:
             return _Refused("Edit refused: unsupported script path or edit list")
         before = await self._read(path)
         created = before is None
+        # OpenGameEval-style inspect-before-edit: reading a script's text is not
+        # the same as verifying the object, its class and its current Studio path.
+        # This is a host tool read, never a model assertion. If it fails, no write
+        # or durable operation is dispatched. New scripts have no target to inspect.
+        inspected = False
+        if not created:
+            if "inspect_instance" not in self.tools:
+                return _Refused("Edit refused: Studio cannot inspect the existing script instance")
+            observation = await _call(self.session, "inspect_instance", {
+                "studio_id": self.studio_id, "path": path})
+            observed_text = result_text(observation).strip()
+            if result_failed(observation) or not observed_text or observed_text.lower() == "not found":
+                return _Refused("Edit refused: existing Studio script inspection failed")
+            try:
+                facts = json.loads(observed_text)
+            except (ValueError, TypeError):
+                facts = None  # Some Studio versions return an unstructured description.
+            if isinstance(facts, dict):
+                observed_path = facts.get("path", facts.get("fullPath"))
+                if observed_path is not None and (
+                    type(observed_path) is not str or
+                    observed_path.removeprefix("game.") != path.removeprefix("game.")
+                ):
+                    return _Refused("Edit refused: Studio inspected a different script path")
+                kind = facts.get("className")
+                if kind is not None and kind not in {"Script", "LocalScript", "ModuleScript"}:
+                    return _Refused("Edit refused: inspected object is not a script")
+            inspected = True
         class_name = arguments.get("className")
         remaining = edits
         if created:
@@ -773,7 +809,8 @@ class GuardedStudio:
             code = _bound_code(self.verdict.identity, code)
         except ValueError as exc:
             return _Refused("Edit refused: " + str(exc))
-        entry = {"kind": "script", "path": path, "created": created, "before": before,
+        entry = {"kind": "script", "path": path, "created": created,
+                 "target_inspected": inspected, "before": before,
                  "after": after, "tag": tag, "instance_id": None, "restorable": False,
                  "known": False, "ok": False, "undo_can": None, "undo_name": None,
                  "recorded": False, "connector_recorded": False}
