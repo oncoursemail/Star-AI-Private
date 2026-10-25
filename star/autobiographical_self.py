@@ -61,7 +61,9 @@ def _evidence(value: str) -> str:
 class AutobiographicalSelf:
     """Long-lived self-reference independent of individual chats and projects.
 
-    SQLite stores no raw prompts, transcripts, names, emails, secrets or outputs.
+    Intended for host-authored, non-sensitive summaries; untrusted callers must
+    not pass names or private conversation text. Sanitization blocks common
+    secrets, paths and contact strings, but cannot detect every personal name.
     Constructor creates no external processes. This is an *auditable model of*
     STAR's experiences, not evidence of subjective experience.
     """
