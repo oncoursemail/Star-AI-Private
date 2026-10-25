@@ -11,4 +11,4 @@ python-pptx>=1.0.2,<2
 openpyxl>=3.1,<4
 defusedxml>=0.7.1,<1
 # IANA time zones for star_clock (Windows has no system zone database)
-tzdata>=2024.1; sys_platform == "win32"
+tzdata>=2026.5; sys_platform == "win32"
