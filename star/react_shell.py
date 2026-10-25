@@ -160,7 +160,7 @@ PERMITTED_SETTINGS = frozenset({
     'knowledge_endpoint','luau_run_before_answer',
     'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','deep_research_enabled','scholarly_research_enabled','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'presolve_enabled',
     'media_images','media_voice','media_video','media_chat_auto','session_capabilities_prompt','media_use_references','comfy_home','ffmpeg_dir',
-    'picture_max_side',
+    'picture_max_side','image_quality','image_drafts','image_engine',
     'best_of_n','best_of_n_max',
     # Use my GPU: where its files are and when it unloads. The switch itself is `gpuHelperSet`, saved at once.
     'gpu_helper_server','gpu_helper_model','gpu_idle_minutes','use_my_pc_auto_night',

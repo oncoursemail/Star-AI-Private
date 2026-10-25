@@ -546,7 +546,12 @@ class _PinnedClient:
 
     async def create(self, **kwargs):
         send = self._client.chat.completions.create
+        thinking = kwargs.pop("thinking_tokens", 0)      # star/thinking_budget.py: thinking tokens for this call
         extras = None if "extra_body" in kwargs else self._fields_for(str(kwargs.get("model", "")))
+        if thinking and extras is not None:
+            from .thinking_budget import merge_fields
+            extras = merge_fields(extras, thinking)
+            kwargs["max_tokens"] = int(kwargs.get("max_tokens") or 0) + int(thinking)
         if not extras:
             return await send(**kwargs)
         try:

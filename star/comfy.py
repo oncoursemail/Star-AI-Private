@@ -113,6 +113,15 @@ KLEIN_FILES = {
     'vae': 'flux2-vae.safetensors',
 }
 KLEIN_NAME = 'FLUX.2 klein 4B (distilled, fp8)'
+# Z-Image Turbo (Tongyi-MAI, Apache-2.0), Comfy-Org repack. The bf16 file is 12.3 GB and streams through the 8 GB card.
+ZIMAGE_FILES = {
+    'diffusion_models': 'z_image_turbo_bf16.safetensors',
+    'text_encoders': 'qwen_3_4b_fp4_mixed.safetensors',
+    'vae': 'ae.safetensors',
+}
+ZIMAGE_NAME = 'Z-Image Turbo (bf16)'
+ZIMAGE_STEPS = 8
+ENGINES = {'klein': (KLEIN_NAME, KLEIN_FILES), 'zimage': (ZIMAGE_NAME, ZIMAGE_FILES)}
 KLEIN_STEPS = 4
 START_HINT = ('Start it in Settings → Where STAR generates → Start ComfyUI '
               '(or run scripts/media/start_comfyui.sh), then try again.')
@@ -153,6 +162,27 @@ def _klein_base(prompt: str, width: int, height: int, seed: int) -> dict:
                               'sigmas': ['sigmas', 0], 'latent_image': ['latent', 0]}},
         'decode': {'class_type': 'VAEDecode', 'inputs': {'samples': ['sample', 0], 'vae': ['vae', 0]}},
         # PreviewImage keeps ComfyUI's own output folder empty: the one original lives in STAR's data.
+        'out': {'class_type': 'PreviewImage', 'inputs': {'images': ['decode', 0]}},
+    }
+
+
+def zimage_text_to_image(prompt: str, width: int, height: int, seed: int) -> dict:
+    """Z-Image Turbo text to image (8 steps, CFG 1, no negative: the model is distilled). ComfyUI nodes only."""
+    return {
+        'unet': {'class_type': 'UNETLoader',
+                 'inputs': {'unet_name': ZIMAGE_FILES['diffusion_models'], 'weight_dtype': 'default'}},
+        'clip': {'class_type': 'CLIPLoader',
+                 'inputs': {'clip_name': ZIMAGE_FILES['text_encoders'], 'type': 'lumina2', 'device': 'default'}},
+        'vae': {'class_type': 'VAELoader', 'inputs': {'vae_name': ZIMAGE_FILES['vae']}},
+        'text': {'class_type': 'CLIPTextEncode', 'inputs': {'clip': ['clip', 0], 'text': prompt}},
+        'blank': {'class_type': 'ConditioningZeroOut', 'inputs': {'conditioning': ['text', 0]}},
+        'model': {'class_type': 'ModelSamplingAuraFlow', 'inputs': {'model': ['unet', 0], 'shift': 3.0}},
+        'latent': {'class_type': 'EmptySD3LatentImage', 'inputs': {'width': width, 'height': height, 'batch_size': 1}},
+        'sample': {'class_type': 'KSampler',
+                   'inputs': {'model': ['model', 0], 'positive': ['text', 0], 'negative': ['blank', 0],
+                              'latent_image': ['latent', 0], 'seed': seed, 'steps': ZIMAGE_STEPS, 'cfg': 1.0,
+                              'sampler_name': 'res_multistep', 'scheduler': 'simple', 'denoise': 1.0}},
+        'decode': {'class_type': 'VAEDecode', 'inputs': {'samples': ['sample', 0], 'vae': ['vae', 0]}},
         'out': {'class_type': 'PreviewImage', 'inputs': {'images': ['decode', 0]}},
     }
 
@@ -250,10 +280,10 @@ class ComfyClient:
                 'device': str(device.get('name', ''))[:120], 'device_type': str(device.get('type', ''))[:20],
                 'vram_total': int(device.get('vram_total') or 0), 'vram_free': int(device.get('vram_free') or 0)}
 
-    def missing_models(self) -> list[str]:
+    def missing_models(self, engine: str = 'klein') -> list[str]:
         """Model files the built-in workflows need that ComfyUI does not list."""
         missing = []
-        for folder, name in KLEIN_FILES.items():
+        for folder, name in ENGINES[engine][1].items():
             reply = self._call('GET', f'/models/{folder}', timeout=10.0)
             listed = reply.json() if reply.status_code == 200 else []
             if name not in (listed if isinstance(listed, list) else []):

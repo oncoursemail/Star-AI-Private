@@ -478,7 +478,8 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
         if verify and (not timed or left() > REVIEW_RESERVE_SECONDS):
             from . import mistake_memory, slop, verify_ladder
             write_tests, fix = verify_ladder.model_tools(model_client, route.model, prompt,
-                                                         max_tokens=getattr(route, "response_tokens", 1600))
+                                                         max_tokens=getattr(route, "response_tokens", 1600),
+                                                         thinking=getattr(settings, "thinking_budget", "off"))
             tools = verify_ladder.Tools(checker=knowledge.luau_check if knowledge is not None else None,
                                         dump=slop.bundled_api_dump(), runner=verify_ladder.default_runner(),
                                         write_tests=write_tests, fix=fix, prompt=prompt,
