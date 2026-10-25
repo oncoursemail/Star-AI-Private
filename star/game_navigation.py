@@ -142,26 +142,32 @@ class NavigationBelief:
         if self._known.get(player) == "goal":
             return NavigationAdvice(None, player, (player,), "goal_reached", False, known)
         parent = {player: None}
+        distance = {player: 0}
         queue = deque([player])
         while queue:
             here = queue.popleft()
             for _, nxt in self._neighbors(here, width, height):
                 if nxt not in parent and self._known.get(nxt) in _WALKABLE:
                     parent[nxt] = here
+                    distance[nxt] = distance[here] + 1
                     queue.append(nxt)
         goals = [p for p in parent if self._known.get(p) == "goal"]
         if goals:
-            goal = min(goals, key=lambda p: (len(self._route(parent, p)), p[1], p[0]))
+            goal = min(goals, key=lambda p: (distance[p], p[1], p[0]))
             return self._first_move(self._route(parent, goal), "verified_route", False, known)
         if mode != "practice" or sandbox_approved is not True:
             return NavigationAdvice(None, None, (), "no_verified_goal_route", False, known)
-        frontiers = []
+        # Score candidate frontiers without rebuilding a full path for every
+        # visited square. Reconstruct ONLY the chosen route: O(grid cells).
+        best: tuple[tuple[int, int, int, int, int], tuple[int, int], tuple[int, int]] | None = None
         for here in parent:
-            path = self._route(parent, here)
             for _, nxt in self._neighbors(here, width, height):
                 if nxt not in self._known:
-                    frontiers.append((len(path), nxt[1], nxt[0], path + (nxt,)))
-        if not frontiers:
+                    score = (distance[here] + 1, nxt[1], nxt[0], here[1], here[0])
+                    if best is None or score < best[0]:
+                        best = (score, here, nxt)
+        if best is None:
             return NavigationAdvice(None, None, (), "no_safe_frontier", False, known)
-        path = min(frontiers)[-1]
+        _, here, nxt = best
+        path = self._route(parent, here) + (nxt,)
         return self._first_move(path, "sandbox_frontier_probe", True, known)
