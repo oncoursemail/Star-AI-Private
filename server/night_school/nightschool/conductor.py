@@ -470,6 +470,20 @@ def due(settings, state: dict, now: dt.datetime | None = None, wall: float | Non
     return ""
 
 
+def loop_practising(settings, wall: float | None = None) -> str:
+    """The time of the night-school loop's last batch when it finished one within 2 x conductor_interval_min, else "".
+    That loop runs the conductor itself after its batches (after_batch); a timer cycle beside it finds the loop's own
+    requests on the brain and waits in vain (10-25: 17 timer runs 23:35Z-14:06Z ended "not quiet" while the loop
+    finished 24 batches and 12 conductor cycles)."""
+    try:
+        last = json.loads((Path(settings.data) / "state.json").read_text(encoding="utf-8")).get("last_batch") or ""
+        when = dt.datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc).timestamp()
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+    age = (wall if wall is not None else time.time()) - when
+    return last if 0 <= age < 2 * settings.conductor_interval_min * 60 else ""
+
+
 def pool_file(settings, night: str) -> Path:
     return Path(settings.pool) / f"conductor-{getattr(settings, 'conductor_tag', '')}{night}.json"   # getattr: a loop started before the deploy
 

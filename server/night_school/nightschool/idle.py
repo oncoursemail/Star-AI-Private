@@ -116,6 +116,7 @@ class IdleGate:
         self.settings, self.watch, self._log, self._clock, self._sleep = settings, watch, log, clock, sleep
         self._last: dict | None = None          # the newest snapshot
         self._quiet_since: float | None = None  # start of the current quiet period
+        self.signs: list[str] = []              # the busy "model/slot"s of the newest look
         self._said = ""
         self._said_at = -1e9
 
@@ -135,6 +136,7 @@ class IdleGate:
     def look(self) -> str:
         """One look. "" when nothing speaks against working now, else the reason. Updates the quiet timer."""
         now = self._clock()
+        self.signs = []
         if Path(self.settings.hold_file).exists():
             self._quiet_since = None
             return "HOLD file present, paused"
@@ -150,6 +152,7 @@ class IdleGate:
         # worker's checks) are not somebody using the brain; every chat turn also shows on a chat model's slot.
         signs = activity(self._last if self._last is not None else {}, table, skip_helpers=True)
         self._last = table
+        self.signs = sorted(signs)[:4]         # who made the brain busy, for a log line that names it
         if signs:
             self._quiet_since = None
             return "brain busy, waiting"

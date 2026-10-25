@@ -430,6 +430,46 @@ def test_repair_that_still_fails_is_rejected_and_capped(tmp_path):
     assert any(k.startswith("reference fails its own task") for k in result["rejected"])
 
 
+def _conduct_with(tmp_path, monkeypatch, *, table, last_batch=None):
+    """One timer cycle (python -m nightschool conduct) with a scripted slot table and no wait for quiet."""
+    from nightschool import __main__ as cli, real
+    from nightschool.idle import BrainWatch
+    s = settings_for(tmp_path, brain_url="http://127.0.0.1:9")
+    if last_batch is not None:
+        (s.data / "state.json").write_text(json.dumps({"last_batch": last_batch}), encoding="utf-8")
+    monkeypatch.setattr(real, "bootstrap", lambda settings: "")
+    monkeypatch.setattr(conductor, "due", lambda settings, state: "")
+    monkeypatch.setattr(cli, "BrainWatch", lambda url, key="": BrainWatch(url, fetch=lambda path: table[path]))
+    monkeypatch.setenv("STAR_NS_CONDUCTOR_WAIT_S", "0")
+    lines = []
+    monkeypatch.setattr(cli, "log", lines.append)
+    assert cli.conduct(s) == 0
+    return lines
+
+
+BUSY_LOOP = {"/v1/models": {"data": [{"id": "star-fast"}]},
+             "/slots?model=star-fast": [{"id": 0, "is_processing": False, "id_task": 5},
+                                        {"id": 1, "is_processing": True, "id_task": 9}]}
+
+
+def test_the_timer_cycle_steps_aside_at_once_while_the_night_school_loop_is_practising(tmp_path, monkeypatch):
+    # Brain 1, night of 10-24/25: 17 timer runs waited 25 minutes each and logged "the brain was not quiet" while the
+    # busy client was the night-school loop itself, which ran 12 conductor cycles after its own batches.
+    import time
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    lines = _conduct_with(tmp_path, monkeypatch, table=BUSY_LOOP, last_batch=now)
+    assert len(lines) == 1 and "night-school loop is practising" in lines[0] and now in lines[0]
+    s = settings_for(tmp_path)
+    when = dt.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc).timestamp()
+    assert conductor.loop_practising(s, wall=when + 59 * 60) == now
+    assert conductor.loop_practising(s, wall=when + 61 * 60) == ""          # a stopped loop: the timer works again
+
+
+def test_a_timer_cycle_that_finds_the_brain_busy_names_the_busy_slot(tmp_path, monkeypatch):
+    lines = _conduct_with(tmp_path, monkeypatch, table=BUSY_LOOP, last_batch="2026-10-20T01:00:00Z")
+    assert lines == ["night conductor: the brain was not quiet (star-fast/1); nothing done"]
+
+
 def test_pc_turbo_conductor_uses_its_own_slot_0_and_a_tagged_pool_file(tmp_path):
     from nightschool.idle import BrainWatch
     table = {"/v1/models": {"data": [{"id": "star-fast"}]}, "/slots?model=star-fast": [{"id": 0, "is_processing": False}]}
