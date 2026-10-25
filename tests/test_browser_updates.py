@@ -15,6 +15,13 @@ import pytest
 from star import updates
 
 
+@pytest.fixture(autouse=True)
+def _installed_v1(monkeypatch):
+    """The release fixtures below (v1.0.3, v0.6.0, ...) describe updates for a 1.0.x install; pin the
+    installed version so they keep their meaning whatever version the source tree is at."""
+    monkeypatch.setattr(updates, "__version__", "1.0.0")
+
+
 class FakeResponse:
     def __init__(self, status_code=200, body=None, data=b''):
         self.status_code = status_code

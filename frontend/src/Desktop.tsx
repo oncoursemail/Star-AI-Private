@@ -107,7 +107,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  const [companionPreferences,setCompanionPreferences]=useCompanionPreferences()
  const compactStudio=useCompactStudio()
  const [tab,setTab]=useState<Tab>(()=>initialPreviewTab(preview))
- const [data,setData]=useState<BootData>(initial??{version:'1.0.0',project:'STAR',projects:[],messages:[],active_chat:'',chats:[],settings:defaultSettings,brain_installed:false,brain_running:false,analytics:emptyAnalytics,release_url:WEBSITE_RELEASES,credentials:{}})
+ const [data,setData]=useState<BootData>(initial??{version:'2.0.0',project:'STAR',projects:[],messages:[],active_chat:'',chats:[],settings:defaultSettings,brain_installed:false,brain_running:false,analytics:emptyAnalytics,release_url:WEBSITE_RELEASES,credentials:{}})
  const [messages,setMessages]=useState<ChatMessage[]>(initial?.messages??[])
  const [prompt,setPrompt]=useState('')
  const [showStar,setShowStar]=useState(()=>readPreference('star.pet.visible')==='on')
