@@ -10,6 +10,7 @@
 | Consistent cute Star personality, anime-like original fictional history, real verified episodes, cat/puppy modes, emotes and streaming brand | docs/STAR_CHARACTER_AND_CHANNEL_BIBLE_PROPOSAL_20261024.md | **Fiction is a proposal**, not approved existing history |
 | Long-form research: conversational humanlike performance, games, memory, streaming, creator software | docs/research/STAR_STREAMER_HUMANLIKE_FULL_RESEARCH_20261024.md | Research archive |
 | Long-form autonomous game-playing agent and architecture | docs/research/STAR_AUTONOMOUS_GAME_STREAMER_FULL_RESEARCH_20261024.md | Research archive |
+| Discoverable STAR read-only VTuber planning skill | star/skill_packs/vtuber-creator-studio/SKILL.md | Bundled skill reference; not a tool, not enabled automatically by skill-pack trigger routing |
 | Premium rig voice/eye/cloth/twin-tail signal prototype | frontend/src/vtuber/performanceMotion.ts, performanceMotion.test.ts | Numeric simulation only; not drawn, played or wired |
 | Moderated chat, game-focus speech scheduling, Twitch overlay restrictions, fictional/real provenance, owner go-live plan | star/streamer_creator.py, tests/test_streamer_creator.py | Offline pure-Python contract, no platform login |
 | Real PCM waveform envelope, externally tagged laughs/purrs/meows/woofs | star/streamer_media.py, tests/test_streamer_media.py | Offline PCM analysis, not voice synthesis or audio capture |
