@@ -104,7 +104,10 @@ def prefix_requests(settings: Settings, home: Path, chat_id: str | None) -> list
     routed = server_roles.effective(settings)
     quick = select_route(routed, 'hello', mode='fast').model
     main = select_route(routed, MAIN_MODEL_PROBE, mode='fast').model
-    shape = turn_memory.last_shape(scope)
+    # Do not reuse a previous request shape when this profile/chat has no
+    # persisted history. This also prevents an in-process profile switch (and
+    # test profiles) from priming unrelated tool prompts under the same scope.
+    shape = turn_memory.last_shape(scope) if history else None
     if shape and shape.get('model'):
         targets = [build(shape['model'], shape.get('tools'), str(shape.get('guidance') or ''))]
     else:

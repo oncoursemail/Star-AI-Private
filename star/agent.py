@@ -59,6 +59,7 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_debug_report", "star_debug_compare", "star_debug_source",
     "workspace_minecraft_audit", "workspace_minecraft_inspect", "star_identify_song",
     "star_game_video_study", "star_game_experience_search", "star_game_episode_analyze",
+    "star_api_catalog_search",
 })
 LUAU_AFTER_UNTRUSTED = ("Full Luau execution is off for the rest of this turn because it read web or "
                         "third-party content. Ask again in a new message to run Luau.")
@@ -338,7 +339,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   workspace=None, workspace_edit=False, stream_tokens=False,
                   response_tokens=1600, web_search_enabled=False,
                   subagents_enabled=False, subagent_parallelism=1,
-                  github_enabled=False, intelligence=None, mcp_gateway=None, mcp_registry=None, blender=None,
+                  github_enabled=False, intelligence=None, mcp_gateway=None, mcp_registry=None, api_catalog=None, blender=None,
                   subagent_model=None, tool_workshop=None, specialists=None,
                   history=None, turn_sections=None, mode="", guidance="",
                   turn_context_chars=10000, request_extras=None, sampling=None, today=None,
@@ -494,6 +495,11 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         "name": tool["name"], "description": tool["description"],
         "parameters": tool["inputSchema"]}} for tool in registry_definitions)
     enabled_registry = {tool["name"] for tool in registry_definitions}
+    api_catalog_definitions = selected(api_catalog)
+    definitions.extend({"type": "function", "function": {
+        "name": tool["name"], "description": tool["description"],
+        "parameters": tool["inputSchema"]}} for tool in api_catalog_definitions)
+    enabled_api_catalog = {tool["name"] for tool in api_catalog_definitions}
     blender_definitions = selected(blender)
     definitions.extend({"type": "function", "function": {
         "name": tool["name"], "description": tool["description"],
@@ -918,6 +924,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif mcp_registry is not None and mcp_registry.owns(name):
                         if name not in enabled_registry:
                             raise PermissionError("MCP Registry discovery not authorized for this task")
+                    elif api_catalog is not None and api_catalog.owns(name):
+                        if name not in enabled_api_catalog:
+                            raise PermissionError("API catalog discovery not authorized for this task")
                     elif blender is not None and blender.owns(name):
                         if name not in enabled_blender:
                             raise PermissionError("Blender MCP tool not authorized for this task")
@@ -1180,6 +1189,14 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                             # Registry responses and headers are untrusted and may contain secrets.
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"MCP Registry discovery failed: {type(exc).__name__}"}]}
+                    elif api_catalog is not None and api_catalog.owns(name):
+                        try:
+                            local_output = await api_catalog.call(name, args)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except Exception as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"API catalog discovery failed: {type(exc).__name__}"}]}
                     elif name in TOOL_NAMES:
                         try:
                             local_output = workspace.call(name, args, allow_write=workspace_edit)
@@ -1225,7 +1242,8 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         result, images = tool_payload(data), []
                     if (name in UNTRUSTED_SOURCE_TOOLS
                             or (mcp_gateway is not None and mcp_gateway.owns(name))
-                            or (mcp_registry is not None and mcp_registry.owns(name))):
+                            or (mcp_registry is not None and mcp_registry.owns(name))
+                            or (api_catalog is not None and api_catalog.owns(name))):
                         untrusted_read = True
                     event({"event": "tool_finished", "tool": name, "is_error": bool(data.get("isError"))})
                     feedback, needs_attention = repairs.observe(

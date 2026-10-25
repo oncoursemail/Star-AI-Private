@@ -1,0 +1,458 @@
+"""Discovery-only public API catalog search for STAR Agent/Research mode.
+
+The catalog is untrusted metadata. This module can download one hard-coded public
+catalog, cache it locally, parse/index it, and return ranked discovery candidates.
+It never calls a discovered API, stores credentials, generates permissions, or
+marks a catalog row as verified.
+
+A fresh cache avoids network traffic on the hot path. If refresh fails, an existing
+stale cache may still be searched and is clearly labelled stale.
+"""
+from __future__ import annotations
+
+from contextlib import closing
+import hashlib
+from pathlib import Path
+import re
+import sqlite3
+import threading
+import time
+from typing import Any
+
+import httpx
+from jsonschema import Draft202012Validator
+
+from .api_intelligence import ApiCandidate, parse_public_apis_markdown
+from .api_directory import ApiGuruDirectory, DirectoryEntry, DIRECTORY_URL
+from .capability_forge import CapabilityIndex, mcp_option, rest_option
+from .mcp_registry import REGISTRY_URL as MCP_REGISTRY_URL
+
+
+CATALOG_URL = "https://raw.githubusercontent.com/public-apis/public-apis/master/README.md"
+MAX_REPLY_BYTES = 700_000
+CACHE_TTL_SECONDS = 24 * 60 * 60
+MAX_CALLS_PER_TURN = 3
+TRIGGER = re.compile(
+    r"\b(?:api|apis|web\s*service|endpoint|integration|data\s+source)\b", re.IGNORECASE
+)
+
+TOOL = {
+    "name": "star_api_catalog_search",
+    "description": (
+        "Search cached public APIs or APIs.guru OpenAPI definitions, or both. "
+        "Use source=public for quickest lookups and source=all for deeper search. "
+        "Discovery only: results never authorize access, installation, or execution."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "minLength": 2, "maxLength": 160},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+            "source": {"type": "string", "enum": ["public", "openapi", "mcp", "all"]},
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+SPEC_TOOL = {
+    "name": "star_api_spec_inspect",
+    "description": (
+        "Read one cached APIs.guru provider's machine-readable OpenAPI specification "
+        "using its provider_id from star_api_catalog_search. Reports methods, "
+        "auth and risks; NO endpoint execution, credentials or external $ref resolution."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {"provider_id": {"type": "string", "minLength": 1, "maxLength": 180}},
+        "required": ["provider_id"],
+        "additionalProperties": False,
+    },
+}
+OWN_NAMES = frozenset({TOOL["name"], SPEC_TOOL["name"]})
+
+_HOT_LOCK = threading.Lock()
+_HOT_INDEXES: dict[str, tuple[CapabilityIndex, dict[str, Any]]] = {}
+_HOT_GURU: dict[str, tuple[CapabilityIndex, dict[str, DirectoryEntry]]] = {}
+
+
+def _safe_query(value: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError("API catalog query must be text")
+    value = " ".join(value.split())
+    if not 2 <= len(value) <= 160 or any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError("API catalog query must be 2-160 plain-text characters")
+    return value
+
+
+def _cache_path(home: Path) -> Path:
+    home = Path(home).expanduser().resolve()
+    home.mkdir(parents=True, exist_ok=True)
+    return home / "api-catalog.sqlite3"
+
+
+def _read_cache(path: Path) -> tuple[str, float, str] | None:
+    if not path.exists():
+        return None
+    with closing(sqlite3.connect(str(path), timeout=10)) as db:
+        row = db.execute(
+            "SELECT body,fetched_at,sha256 FROM catalog_cache WHERE source_url=?",
+            (CATALOG_URL,),
+        ).fetchone()
+    if row is None:
+        return None
+    body, fetched_at, fingerprint = row
+    if not isinstance(body, str) or not isinstance(fingerprint, str):
+        return None
+    encoded = body.encode("utf-8")
+    if not body or len(encoded) > MAX_REPLY_BYTES:
+        return None
+    if hashlib.sha256(encoded).hexdigest() != fingerprint:
+        return None
+    return body, float(fetched_at), fingerprint
+
+
+def _write_cache(path: Path, body: str, *, fetched_at: float) -> str:
+    encoded = body.encode("utf-8")
+    if not encoded or len(encoded) > MAX_REPLY_BYTES:
+        raise ValueError("API catalog body is empty or too large")
+    fingerprint = hashlib.sha256(encoded).hexdigest()
+    with closing(sqlite3.connect(str(path), timeout=10)) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("""CREATE TABLE IF NOT EXISTS catalog_cache (
+            source_url TEXT PRIMARY KEY,
+            fetched_at REAL NOT NULL,
+            sha256 TEXT NOT NULL,
+            body TEXT NOT NULL
+        )""")
+        db.execute(
+            """INSERT INTO catalog_cache(source_url,fetched_at,sha256,body)
+               VALUES(?,?,?,?)
+               ON CONFLICT(source_url) DO UPDATE SET
+                 fetched_at=excluded.fetched_at,sha256=excluded.sha256,body=excluded.body""",
+            (CATALOG_URL, float(fetched_at), fingerprint, body),
+        )
+        db.commit()
+    return fingerprint
+
+
+def _ensure_schema(path: Path) -> None:
+    with closing(sqlite3.connect(str(path), timeout=10)) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("""CREATE TABLE IF NOT EXISTS catalog_cache (
+            source_url TEXT PRIMARY KEY,
+            fetched_at REAL NOT NULL,
+            sha256 TEXT NOT NULL,
+            body TEXT NOT NULL
+        )""")
+        db.commit()
+
+
+def _index_for(body: str, fingerprint: str) -> tuple[CapabilityIndex, dict[str, Any]]:
+    with _HOT_LOCK:
+        cached = _HOT_INDEXES.get(fingerprint)
+        if cached is not None:
+            return cached
+
+    candidates = parse_public_apis_markdown(body, source=CATALOG_URL)
+    options = [rest_option(candidate) for candidate in candidates]
+    index = CapabilityIndex(options)
+    by_key = {option.key: candidate for option, candidate in zip(options, candidates)}
+    value = (index, by_key)
+    with _HOT_LOCK:
+        _HOT_INDEXES[fingerprint] = value
+        while len(_HOT_INDEXES) > 2:
+            oldest = next(iter(_HOT_INDEXES))
+            if oldest == fingerprint and len(_HOT_INDEXES) > 1:
+                oldest = next(key for key in _HOT_INDEXES if key != fingerprint)
+            _HOT_INDEXES.pop(oldest, None)
+    return value
+
+
+def _guru_index(snapshot) -> tuple[CapabilityIndex, dict[str, DirectoryEntry]]:
+    with _HOT_LOCK:
+        previous = _HOT_GURU.get(snapshot.sha256)
+        if previous is not None:
+            return previous
+    candidates = [
+        ApiCandidate(
+            name=entry.title, url=entry.spec_url, description=entry.description,
+            category=" ".join(entry.categories), auth="unknown", https=True,
+            source=DIRECTORY_URL,
+        ) for entry in snapshot.entries
+    ]
+    options = [rest_option(candidate) for candidate in candidates]
+    index = CapabilityIndex(options)
+    mapping = {option.key: entry for option, entry in zip(options, snapshot.entries)}
+    with _HOT_LOCK:
+        _HOT_GURU[snapshot.sha256] = (index, mapping)
+        while len(_HOT_GURU) > 2:
+            del _HOT_GURU[next(iter(_HOT_GURU))]
+    return index, mapping
+
+
+_HOT_COMBINED: dict[str, CapabilityIndex] = {}
+
+
+def _combined_index(indexes: tuple[CapabilityIndex, ...], fingerprint: str) -> CapabilityIndex:
+    with _HOT_LOCK:
+        existing = _HOT_COMBINED.get(fingerprint)
+        if existing is not None:
+            return existing
+    index = CapabilityIndex(option for current in indexes for option in current.options)
+    with _HOT_LOCK:
+        _HOT_COMBINED[fingerprint] = index
+        while len(_HOT_COMBINED) > 2:
+            del _HOT_COMBINED[next(iter(_HOT_COMBINED))]
+    return index
+
+
+class ApiCatalogDiscovery:
+    """Prompt-gated, bounded API discovery over one or both cached public catalogs."""
+
+    def __init__(
+        self,
+        *,
+        home: Path,
+        transport: httpx.AsyncBaseTransport | None = None,
+        now_fn=time.time,
+        mcp_registry: Any = None,
+    ):
+        self.cache_path = _cache_path(home)
+        _ensure_schema(self.cache_path)
+        self.transport = transport
+        self.now_fn = now_fn
+        self._home = Path(home)
+        self.mcp_registry = mcp_registry
+        self._guru: ApiGuruDirectory | None = None
+        self.calls = 0
+
+    @property
+    def guru(self) -> ApiGuruDirectory:
+        # The 9 MB directory and its SQLite schema should not slow the default
+        # (Public APIs only) hot path. Instantiate only for a requested lookup.
+        if self._guru is None:
+            self._guru = ApiGuruDirectory(
+                home=self._home, transport=self.transport, now_fn=self.now_fn,
+            )
+        return self._guru
+
+    @staticmethod
+    def owns(name: str) -> bool:
+        return name in OWN_NAMES
+
+    def definitions(self, prompt: str) -> list[dict]:
+        return [TOOL, SPEC_TOOL] if isinstance(prompt, str) and TRIGGER.search(prompt) else []
+
+    async def _download(self) -> str:
+        timeout = httpx.Timeout(12.0, connect=4.0, read=8.0, write=3.0, pool=2.0)
+        async with httpx.AsyncClient(
+            transport=self.transport,
+            trust_env=False,
+            follow_redirects=False,
+            timeout=timeout,
+            headers={"Accept": "text/plain", "User-Agent": "STAR-api-catalog/1.0"},
+        ) as client:
+            async with client.stream("GET", CATALOG_URL) as response:
+                if response.status_code != 200:
+                    raise RuntimeError("Public API catalog unavailable")
+                content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                if content_type not in {"text/plain", "text/markdown", "application/octet-stream"}:
+                    raise ValueError("Public API catalog returned an unexpected content type")
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > MAX_REPLY_BYTES:
+                        raise ValueError("Public API catalog response too large")
+        return bytes(body).decode("utf-8", errors="replace")
+
+    async def _catalog(self) -> tuple[str, float, str, bool]:
+        now = float(self.now_fn())
+        cached = _read_cache(self.cache_path)
+        if cached is not None:
+            body, fetched_at, fingerprint = cached
+            if now - fetched_at <= CACHE_TTL_SECONDS:
+                return body, fetched_at, fingerprint, False
+
+        try:
+            body = await self._download()
+            fingerprint = _write_cache(self.cache_path, body, fetched_at=now)
+            return body, now, fingerprint, False
+        except (httpx.HTTPError, OSError, RuntimeError, ValueError):
+            if cached is None:
+                raise
+            body, fetched_at, fingerprint = cached
+            return body, fetched_at, fingerprint, True
+
+    async def call(self, name: str, arguments: dict) -> dict:
+        if name not in OWN_NAMES:
+            raise PermissionError("Unknown API catalog tool")
+        schema = SPEC_TOOL if name == SPEC_TOOL["name"] else TOOL
+        Draft202012Validator(schema["inputSchema"]).validate(arguments)
+        if self.calls >= MAX_CALLS_PER_TURN:
+            raise RuntimeError("API catalog discovery budget exhausted")
+        self.calls += 1
+
+        if name == SPEC_TOOL["name"]:
+            result = await self.guru.inspect(arguments["provider_id"])
+            result["status"] = "spec_observed_unverified_vendor"
+            return result
+
+        query = _safe_query(arguments["query"])
+        source = arguments.get("source", "public")
+        limit = int(arguments.get("limit", 8))
+        public_index = None
+        public_rows: dict[str, Any] = {}
+        public_meta: tuple[float, str, bool] | None = None
+        guru_index = None
+        guru_rows: dict[str, DirectoryEntry] = {}
+        guru_meta: tuple[float, str, bool] | None = None
+        failures: list[str] = []
+
+        if source in {"public", "all"}:
+            try:
+                body, fetched_at, fingerprint, stale = await self._catalog()
+                public_index, public_rows = _index_for(body, fingerprint)
+                public_meta = (fetched_at, fingerprint, stale)
+            except (httpx.HTTPError, OSError, RuntimeError, ValueError):
+                if source == "public":
+                    raise
+                failures.append("public catalog unavailable")
+
+        if source in {"openapi", "all"}:
+            try:
+                snapshot = await self.guru.listing()
+                guru_index, guru_rows = _guru_index(snapshot)
+                guru_meta = (snapshot.fetched_at, snapshot.sha256, snapshot.stale)
+            except (httpx.HTTPError, OSError, RuntimeError, ValueError):
+                if source == "openapi":
+                    raise
+                failures.append("OpenAPI directory unavailable")
+
+        mcp_index: CapabilityIndex | None = None
+        mcp_rows: dict[str, dict[str, Any]] = {}
+        mcp_meta: tuple[float, str, bool] | None = None
+        if source in {"mcp", "all"}:
+            if self.mcp_registry is None:
+                if source == "mcp":
+                    raise RuntimeError("MCP Registry discovery is not configured")
+                failures.append("MCP Registry not configured")
+            else:
+                try:
+                    payload = await self.mcp_registry.call(
+                        "star_mcp_registry_search",
+                        {"query": query[:100], "limit": min(20, max(limit * 2, 8))},
+                    )
+                    servers = payload.get("servers", []) if isinstance(payload, dict) else []
+                    options = []
+                    for server in servers[:20]:
+                        if not isinstance(server, dict):
+                            continue
+                        label = server.get("name")
+                        if not isinstance(label, str) or not label:
+                            continue
+                        option = mcp_option(
+                            name=label,
+                            description=str(server.get("description") or "")[:240],
+                            source=MCP_REGISTRY_URL,
+                            repository_url=str(server.get("repository_url") or "")[:500],
+                        )
+                        options.append(option)
+                        mcp_rows[option.key] = server
+                    mcp_index = CapabilityIndex(options)
+                    serialized = ":".join(
+                        f"{option.key}:{option.summary}" for option in mcp_index.options
+                    )
+                    mcp_meta = (
+                        float(self.now_fn()),
+                        hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+                        False,
+                    )
+                except (httpx.HTTPError, OSError, RuntimeError, ValueError):
+                    if source == "mcp":
+                        raise
+                    failures.append("MCP Registry unavailable")
+
+        indexes = tuple(
+            item for item in (public_index, guru_index, mcp_index) if item is not None
+        )
+        if not indexes:
+            raise RuntimeError("No capability catalog is currently available")
+        metas = [item for item in (public_meta, guru_meta, mcp_meta) if item is not None]
+        fingerprints = ":".join(item[1] for item in metas)
+        digest = hashlib.sha256(fingerprints.encode("utf-8")).hexdigest() if len(metas) > 1 else metas[0][1]
+        ranked_index = indexes[0] if len(indexes) == 1 else _combined_index(indexes, digest)
+        ranked = ranked_index.search(query, limit=min(60, max(limit * 6, 20)))
+
+        results = []
+        for option, score in ranked:
+            match = public_rows.get(option.key)
+            if match is not None:
+                results.append({
+                    "kind": "rest", "origin": "public-apis",
+                    "name": match.name,
+                    "category": match.category,
+                    "description": match.description[:500],
+                    "documentation_url": match.url,
+                    "auth": match.auth,
+                    "https": match.https,
+                    "cors": match.cors,
+                    "relevance_score": round(float(score), 3),
+                    "status": "discovery_only_unverified",
+                })
+            else:
+                match = guru_rows.get(option.key)
+                if match is not None:
+                    results.append({
+                        "kind": "rest", "origin": "apis.guru",
+                        "provider_id": match.provider_id,
+                        "name": match.title,
+                        "category": " ".join(match.categories),
+                        "description": match.description[:500],
+                        "spec_url": match.spec_url,
+                        "openapi_version": match.openapi_version,
+                        "updated_at": match.last_updated,
+                        "documentation_url": match.spec_url,
+                        "auth": "unknown", "https": True, "cors": "unknown",
+                        "relevance_score": round(float(score), 3),
+                        "status": "discovery_only_unverified",
+                    })
+                else:
+                    server = mcp_rows.get(option.key)
+                    if server is None:
+                        continue
+                    results.append({
+                        "kind": "mcp", "origin": "official-mcp-registry",
+                        "name": str(server.get("name") or "")[:180],
+                        "description": str(server.get("description") or "")[:240],
+                        "repository_url": str(server.get("repository_url") or "")[:500],
+                        "version": str(server.get("version") or "")[:80],
+                        "registry_listed": True,
+                        "publisher_verified": False,
+                        "installed": False, "connected": False,
+                        "relevance_score": round(float(score), 3),
+                        "status": "discovery_only_unverified",
+                    })
+            if len(results) >= limit:
+                break
+
+        return {
+            "query": query,
+            "source": (
+                CATALOG_URL if source == "public"
+                else DIRECTORY_URL if source == "openapi"
+                else MCP_REGISTRY_URL if source == "mcp"
+                else "Public APIs + APIs.guru + MCP Registry"
+            ),
+            "selected_source": source,
+            "catalog_sha256": digest,
+            "catalog_fetched_at": min(item[0] for item in metas),
+            "catalog_stale": any(item[2] for item in metas),
+            "catalog_entries": sum(len(idx.options) for idx in indexes),
+            "source_failures": failures,
+            "results": results,
+            "notice": (
+                "Untrusted discovery metadata only. APIs.guru descriptions may be third-party "
+                "and outdated. Verify first-party docs, licenses, auth, limits and test safely; "
+                "No discovered API was called or authorized."
+            ),
+        }
