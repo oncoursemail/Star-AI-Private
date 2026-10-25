@@ -274,6 +274,48 @@ def _cue(stage: str, at: float, fx: str, **params) -> dict:
 
 
 GENERATED_ABILITIES: dict[str, dict] = {
+    # Original, editable compositions inspired by user-supplied reference footage:
+    # no copying another creator's models, textures, particles or source code.
+    "frost_cyclone": {
+        "keywords": ("ice vortex", "ice cyclone", "ice storm", "frost cyclone", "ice shards",
+                     "crystal storm", "glacial", "blizzard", "frost", "ice blast", "ice spike"),
+        "cues": [
+            _cue("charge", 0, "aura", dur=0.9),
+            _cue("charge", 0.18, "burst", count=20, inward=True, radius=8, speed=9, life=0.8,
+                 size=0.35, color="accent", texture="spark", y=3),
+            _cue("impact", 0, "flash", strength=0.32, dur=0.13, invert=False),
+            _cue("impact", 0, "spikes", count=8, radius=7, height=6, dur=0.85, force=True),
+            _cue("impact", 0.12, "light", dur=0.3, range=26, brightness=3),
+            _cue("impact", 0.20, "sparks", count=36, speed=48),
+            _cue("shockwave", 0, "ringSegments", radius=16, segments=10, height=0.9, thickness=0.3, dur=0.58),
+            _cue("shockwave", 0.22, "ring", radius=21, dur=0.52),
+            _cue("linger", 0, "vortex", radius=8, arms=5, dur=1.0),
+            _cue("linger", 0.18, "burst", count=26, speed=8, life=1.0, size=0.5,
+                 color="glow", texture="glow", spread=120, gravity=-5),
+            _cue("dissipate", 0.08, "smoke", count=9, life=0.9, size=1.8, speed=4),
+            _cue("dissipate", 0.25, "burst", count=12, speed=4, life=0.6, size=0.25,
+                 color="accent", texture="spark", spread=180),
+        ],
+    },
+    "cinematic_sword_arc": {
+        "keywords": ("anime sword", "sword slash", "blade arc", "katana", "weapon swing",
+                     "sword trail", "blade trail", "slash arc", "crescent slash", "slash"),
+        "cues": [
+            _cue("charge", 0, "aura", dur=0.32),
+            _cue("charge", 0.30, "burst", count=9, speed=6, life=0.28, size=0.22,
+                 color="accent", texture="spark", spread=25, y=2.5),
+            _cue("impact", 0, "slashes", count=2, length=21, dur=0.24, gap=0.05, y=2.8),
+            _cue("impact", 0, "flash", strength=0.24, dur=0.10, invert=False),
+            _cue("impact", 0.12, "light", dur=0.20, range=24, brightness=3),
+            _cue("impact", 0.16, "sparks", count=24, speed=44),
+            _cue("impact", 0.32, "shake", amplitude=0.28, dur=0.16),
+            _cue("shockwave", 0, "ringSegments", radius=10, segments=8, height=0.4,
+                 thickness=0.2, dur=0.24),
+            _cue("linger", 0, "slashes", count=1, length=23, dur=0.32, y=2.6),
+            _cue("dissipate", 0, "burst", count=14, speed=6, life=0.52, size=0.2,
+                 color="accent", texture="spark", spread=70, y=2.7),
+        ],
+    },
     "heal_aura": {"keywords": ("heal", "healing", "buff", "regen", "bless", "restore", "shield up", "aura"),
                   "cues": [
                       _cue("charge", 0, "aura", dur=2.2),
