@@ -19,6 +19,9 @@ from .asset_forge import PolyHavenCatalog, plan_building, preview_terrain
 from .architecture_pipeline import PALETTES, make_plan, validate_brief
 from .architecture_quality import design_summary
 from .agent_skills import SkillLibrary, install_starters
+from .operational_awareness import (SELF_TOOLS, observe as awareness_observe,
+                                    improvement_plan as awareness_plan,
+                                    preflight_brief as awareness_brief)
 from .skill_packs import PACKS_DIR
 from .brain_router import is_roblox_dev_prompt
 from .doc_knowledge import client_for
@@ -317,7 +320,7 @@ _CLOUD_TRIGGER = re.compile(r"\b(open.?cloud|owned.universe|owner.analytics|auth
 ALL_TOOLS = {tool["name"]: tool for tool in (*SKILL_TOOLS, *OBSIDIAN_TOOLS, *GRAPHIFY_TOOLS,
              *ROBLOX_GAME_TOOLS, *ROBLOX_KNOWLEDGE_TOOLS, *DOC_KNOWLEDGE_TOOLS, *ROBLOX_VIDEO_TOOLS,
              *ROBLOX_CLOUD_TOOLS, *ROBLOX_HUB_TOOLS, *CRAFT_TOOLS, *ASSET_TOOLS, *DESIGN_TOOLS, *MAP_PLAN_TOOLS, *STUDIO_LAB_TOOLS, *ROBLOX_DOCS_LIVE_TOOLS, *RUNTIME_TOOLS, *ARCHITECTURE_TOOLS,
-             *VFX_TOOLS, *COMMERCE_TOOLS)}
+             *VFX_TOOLS, *COMMERCE_TOOLS, *SELF_TOOLS)}
 _DOC_TOOL_NAMES = frozenset(tool["name"] for tool in DOC_KNOWLEDGE_TOOLS)
 _SHARED_TOOL_NAMES = frozenset(tool["name"] for tool in RUNTIME_TOOLS)
 _LEGACY_GRAPH_READ_NAMES = frozenset({"star_graphify_query", "star_graphify_stats"})
@@ -351,6 +354,12 @@ _GAME_TRIGGER = re.compile(r"\b(games?|experiences?|types?|genres?|playing|playe
 _DOCS_TRIGGER = re.compile(r"\b(roblox|luau|studio|code|scripts?|api|docs?|build|create|debug|fix|learn|architecture|research|design|ui|performance)\b", re.I)
 _FORUM_TRIGGER = re.compile(r"\b(forum|devforum|community|news|announcement|update|research|bug|discussion|issue|help)\b", re.I)
 _VIDEO_TRIGGER = re.compile(r"\b(youtube|videos?|watch|footage|clip|trailer|tutorial|creator)\b", re.I)
+_AWARENESS_TRIGGER = re.compile(
+    r"\b(?:self[- ]?aware(?:ness)?|self[- ]?assess(?:ment)?|metacognit\w*|"
+    r"capabilit\w*|what can (?:you|star) (?:do|build)|which tools (?:do you|does star) have|"
+    r"where (?:are you|is star) weak|how (?:can you|can star) improv\w*|"
+    r"(?:make|build|create|design)\s+(?:(?:a|an|the|my)\s+)?(?:[\w-]+\s+){0,6}game|"
+    r"your (?:weakness\w*|limitation\w*|strengths?)|learn (?:faster|more efficiently))\b", re.I)
 
 
 class LocalIntelligence:
@@ -364,12 +373,14 @@ class LocalIntelligence:
                  vfx_studio_enabled: bool = False,
                  docs_live: RobloxDocsLive | None = None,
                  registered_workspaces: Iterable[Path | str] = (),
-                 graph_boundary_check: Callable[[], bool] | None = None):
+                 graph_boundary_check: Callable[[], bool] | None = None,
+                 awareness_enabled: bool = False):
         self.home = home
         self.workspace = workspace
         self.design_enabled = design_enabled
         self.map_plans_enabled = map_plans_enabled
         self.studio_lab_enabled = studio_lab_enabled is True
+        self.awareness_enabled = awareness_enabled is True
         self.vfx_studio_enabled = vfx_studio_enabled is True
         self.docs_live = docs_live   # None unless the owner enabled live Roblox docs retrieval
         self.docs = docs   # star.doc_knowledge.KnowledgeClient, or None when not configured
@@ -446,6 +457,8 @@ class LocalIntelligence:
         shared = self._shared_status()
         graph_detected = bool(self.graph and self.graph.path.is_file() and not self.graph.path.is_symlink())
         return {
+            "operational_awareness": {"enabled": self.awareness_enabled, "read_only": True,
+                                      "tool_presence_does_not_prove_competence": True},
             "skills": {"enabled": self.skills is not None, "count": len(catalog),
                        "names": [s.name for s in catalog[:12]]},
             "graphify": {"enabled": self._graph_allowed(),
@@ -483,6 +496,8 @@ class LocalIntelligence:
         if self._closed:
             return []
         result = []
+        if self.awareness_enabled and _AWARENESS_TRIGGER.search(prompt):
+            result.extend(SELF_TOOLS)
         if self.asset_forge_enabled and _ASSET_TRIGGER.search(prompt) and (_ROBLOX_TRIGGER.search(prompt) or
                 is_roblox_dev_prompt(prompt) or re.search(r"\b(blender|3d|procedural|poly.?haven|game\s?dev)\b", prompt, re.I)):
             # Only the first asset tool uses a third-party HTTP endpoint.
@@ -541,6 +556,15 @@ class LocalIntelligence:
             result.extend(ARCHITECTURE_TOOLS)
         return result
 
+    def preflight(self, prompt: str, *, enabled: set[str]) -> str:
+        """Short host-observed self-check offered only on owner-opted-in turns."""
+        if (self._closed or not self.awareness_enabled or
+                "star_self_capabilities" not in enabled or
+                not _AWARENESS_TRIGGER.search(prompt)):
+            return ""
+        goal = prompt.strip()[:260].strip()
+        return awareness_brief(goal, status=self.status(), enabled_tools=tuple(enabled))
+
     @staticmethod
     def owns(name: str) -> bool:
         return name in ALL_TOOLS
@@ -549,6 +573,16 @@ class LocalIntelligence:
         if self._closed or name not in enabled or name not in ALL_TOOLS or not isinstance(args, dict):
             raise PermissionError("Intelligence tool is not enabled for this task")
         Draft202012Validator(ALL_TOOLS[name]["inputSchema"]).validate(args)
+        if name in {"star_self_capabilities", "star_self_improvement_plan"}:
+            if not self.awareness_enabled:
+                raise PermissionError("Operational awareness is not enabled")
+            # This host data is read-only. The attached list proves schema
+            # availability, not that a backend operation succeeded.
+            basis = dict(status=self.status(), enabled_tools=tuple(enabled),
+                         atlas_db=self.home / "resource_atlas.sqlite3")
+            if name == "star_self_capabilities":
+                return awareness_observe(args["goal"], **basis)
+            return awareness_plan(args["goal"], limit=args.get("limit", 5), **basis)
         if name in _HUB_TOOL_NAMES:
             hub = self.roblox_hub
             if hub is None:
@@ -923,4 +957,5 @@ def for_settings(settings, home: Path) -> LocalIntelligence:
                             or _env_on("STAR_VFX_STUDIO", default=False)),
         docs_live=(RobloxDocsLive(cache_dir=Path(home) / "cache" / "roblox-docs")
                    if live_enabled(settings) else None),
+        awareness_enabled=_env_on("STAR_SELF_AWARENESS", default=False),
     )
