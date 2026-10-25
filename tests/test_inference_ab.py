@@ -70,7 +70,7 @@ class InferenceABTests(unittest.TestCase):
             self.assertEqual(port, 8080)
         for invalid in [
             "https://127.0.0.1:8080/v1", "http://localhost:8080/v1",
-            "http://8.8.8.8:8080/v1", "http://192.168.1.2:8080/v1",
+            "http://8.8.8.8:8080/v1", "http://192.168.1.2:8080/v1",  # star:allow test address
             "http://evil.com@127.0.0.1:8080/v1", "http://127.0.0.1:8080/v1?x=1",
             "http://127.0.0.1:8080/v2", "http://127.0.0.1:99999/v1",
         ]:
