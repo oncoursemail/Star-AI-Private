@@ -7,9 +7,9 @@ a variability heuristic, NOT a confidence interval or quality evidence.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
