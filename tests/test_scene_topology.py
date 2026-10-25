@@ -62,8 +62,8 @@ class SceneTopologyTest(unittest.TestCase):
 
     def test_yaw_rotated_boxes_have_bounded_separation(self):
         p = scene()
-        p["parts"].append({"id": "rotated", "center": [0, 2, 0], "size": [4, 2, 1], "yaw_degrees": 45})
-        p["parts"].append({"id": "clip", "center": [0.5, 2, 0.5], "size": [1, 2, 1]})
+        p["parts"].append({"id": "rotated", "center": [4, 3, 0], "size": [4, 2, 1], "yaw_degrees": 45})
+        p["parts"].append({"id": "clip", "center": [4.5, 3, 0.5], "size": [1, 2, 1]})
         self.assertIn("unexpected-box-overlap", self.codes(p))
         p["parts"][-1]["center"] = [9, 2, 9]
         self.assertNotIn("unexpected-box-overlap", self.codes(p))
