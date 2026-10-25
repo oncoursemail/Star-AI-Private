@@ -90,7 +90,9 @@ def _findings(report: Any) -> list[tuple[str, str, int]]:
         if not isinstance(row, dict) or row.get("severity") not in WEIGHTS:
             raise ValueError("invalid finding severity")
         code = _name(row.get("code"), "finding.code")
-        target = _name(row.get("target"), "finding.target")
+        target = row.get("target")
+        if not isinstance(target, str) or not 1 <= len(target) <= 200 or any(ord(c) < 32 for c in target):
+            raise ValueError("finding target must be short, printable text")
         out.append((code, target, WEIGHTS[row["severity"]]))
     return out
 
@@ -133,10 +135,6 @@ def plan_frontier(
     for t in catalog_items:
         if set(t.requires) - set(catalog):
             raise ValueError("unknown technique dependency")
-    for t in catalog_items:
-        _order(tuple(sorted({t.ident, *t.requires})), catalog) if all(
-            not catalog[r].requires for r in t.requires
-        ) else None
     # Full graph cycle detection even if dependency depth exceeds the plan limit.
     def visit(ident: str, visiting: set[str], visited: set[str]) -> None:
         if ident in visiting:
@@ -214,7 +212,7 @@ def plan_frontier(
         if len(unique) >= 5:
             break
 
-    coverable = set().union(*(set(p["addresses"]) for p in unique)) if unique else set()
+    coverable = set().union(*(set(p["addresses"]) for p in combos)) if combos else set()
     unavailable = sorted(requested_codes - coverable)
     blocked_scopes = sorted({t.scope for t in catalog_items
                              if t.scope not in allowed_scopes and set(t.addresses) & requested_codes})
