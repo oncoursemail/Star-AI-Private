@@ -15,8 +15,11 @@ _OPENER = re.compile(
     r"^\s*(?:we need to\b|we have to\b|let'?s (?:compute|calculate|parse|think|solve|see|figure|interpret)\b|"
     r"okay,? (?:so|let)\b|hmm\b|the user (?:is asking|wants|asks|wrote|says)\b|i need to (?:figure|compute|parse|solve|interpret)\b)", re.I)
 _HEDGES = re.compile(r"\b(?:alternatively|could be|but maybe|maybe they|perhaps they|wait,|let'?s assume|or maybe)\b", re.I)
+_FENCE = re.compile(r"```.*?(?:```|\Z)", re.S)
+_SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?:\s+|$)|\n+")
 START_CHECK_CHARS = 24          # enough to see an opener; the first words of a normal answer are not held back
 HEDGE_LIMIT = 3
+HOLD_CHARS = 60                 # an unfinished sentence is held back at most this long, so a plan sentence is cut whole
 
 
 class ReasoningLoop(Exception):
@@ -48,3 +51,28 @@ def trim_loop(text: str) -> str:
     cut = cut.rstrip()
     end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "), cut.rfind("\n"))
     return cut[:end + 1].rstrip() if end > 40 else cut
+
+
+def prose_only(text: str) -> str:
+    """The text with fenced code blocks (also an unfinished one) blanked out, same length, so offsets still match."""
+    return _FENCE.sub(lambda m: " " * len(m.group()), text)
+
+
+def plan_start(prose: str) -> int | None:
+    """Offset of the first sentence in which the model talks about how it will answer (persona.leaked_reasoning),
+    None when there is none. An unfinished last sentence counts too."""
+    from .persona import leaked_reasoning
+    start = 0
+    for end in [m.end() for m in _SENTENCE_END.finditer(prose)] + [len(prose)]:
+        if end > start and leaked_reasoning(prose[start:end]):
+            return start
+        start = max(start, end)
+    return None
+
+
+def safe_end(prose: str) -> int:
+    """How much of the text may be shown: up to the last sentence end, or everything once the unfinished sentence is
+    longer than HOLD_CHARS (the plan phrases come in its first words)."""
+    ends = [m.start() + len(m.group().rstrip()) for m in _SENTENCE_END.finditer(prose)]   # the space after it waits
+    done = ends[-1] if ends else 0
+    return len(prose) if len(prose) - done > HOLD_CHARS else done

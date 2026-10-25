@@ -77,3 +77,33 @@ def test_the_quick_model_that_reasons_aloud_hands_the_turn_to_the_main_model(tmp
     monkeypatch.setattr(core, 'model_slots_full', lambda *_a, **_k: asyncio.sleep(0, False))
     answer = core.run_task(settings, 'Say hello to me in a pleasant way', mode='fast', stream_tokens=True)
     assert answer == 'The answer is 42.' and asked == ['star-voice', 'star-main']
+
+
+def small(text, size=7):
+    return [text[i:i + size] for i in range(0, len(text), size)]
+
+
+def test_a_plan_after_a_real_answer_is_cut_before_it_is_shown():
+    # The model answered, then wrote its plan (seen 2026-10-25): the plan sentence never reaches the screen.
+    reply = ("Night school is running, twenty answers an hour. Okay, the user just asked about night school, "
+             "so I'll keep the response concise. Let me recall the guidelines.")
+    text, shown = read(*small(reply))
+    assert text == shown == 'Night school is running, twenty answers an hour.'
+
+
+def test_a_plan_with_nothing_before_it_goes_to_the_main_model():
+    with pytest.raises(guard.ReasoningLoop):
+        read(*small("I'll keep the response concise and warm, and the user just asked about the weather."))
+
+
+def test_a_reply_without_a_plan_is_shown_whole_whatever_the_chunking():
+    reply = "Good morning. It builds fine now, the fix was one line. Anything else before lunch?"
+    for size in (1, 5, 400):
+        assert read(*small(reply, size)) == (reply, reply)
+
+
+def test_code_blocks_are_not_read_as_plans_and_a_long_sentence_is_not_held_for_ever():
+    reply = "Here it is:\n```python\n# I should check the status line first\nprint('hi')\n```\nThat prints hi."
+    assert read(*small(reply, 3)) == (reply, reply)
+    long = "word " * 40
+    assert read(*small(long, 4)) == (long, long)
