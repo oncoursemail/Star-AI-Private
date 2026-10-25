@@ -21,6 +21,7 @@ import time
 from typing import Callable, Sequence
 
 from .stream_budget import StreamTelemetry
+from .stream_episode import EpisodePacket
 from .stream_director import SpeechIntent, StreamDirector, StreamSignal
 from .stream_knowledge import KnowledgePacket
 from .stream_motion import (
@@ -171,13 +172,16 @@ class StarStage:
                 viewer_speaking: bool = False,
                 gameplay_critical: bool = False,
                 knowledge: KnowledgePacket | None = None,
-                telemetry: StreamTelemetry | None = None) -> StagePlan | None:
+                telemetry: StreamTelemetry | None = None,
+                episode: EpisodePacket | None = None) -> StagePlan | None:
         """Propose a short reaction; measured overload favors silence and gameplay."""
         current = _time(self._clock() if now is None else now)
         if knowledge is not None and not isinstance(knowledge, KnowledgePacket):
             raise TypeError("knowledge must be a host-approved KnowledgePacket")
         if telemetry is not None and not isinstance(telemetry, StreamTelemetry):
             raise TypeError("telemetry must be host-provided StreamTelemetry")
+        if episode is not None and not isinstance(episode, EpisodePacket):
+            raise TypeError("episode must be a host-approved EpisodePacket")
         # The host, not chat or a prompt, supplies validated GPU/FPS/voice data.
         # Preserve urgent danger/owner preemption; defer commentary when gameplay,
         # VRAM or speech queues are under strain. No unbounded TTS queue buildup.
@@ -208,6 +212,12 @@ class StarStage:
             # unsolicited idle remark or high-priority gameplay interruption.
             if knowledge is not None and intent.kind == "viewer_question":
                 prompt += "\n" + knowledge.context_record
+            # Session-scoped, signed-practice aggregates: never attach them to
+            # urgent warnings, idle banter or unrelated viewer comments.
+            if episode is not None and intent.kind in {
+                "game_observation", "game_success", "viewer_question"
+            }:
+                prompt += "\n" + episode.context_record
             plan = StagePlan(
                 sequence=self._sequence, signal_id=intent.signal_id,
                 kind=intent.kind, evidence=intent.evidence,
