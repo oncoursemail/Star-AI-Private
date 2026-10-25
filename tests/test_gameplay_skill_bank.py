@@ -196,8 +196,7 @@ class GameplaySkillBankTests(unittest.TestCase):
             with GameplaySkillBank(path, practice_key=PRACTICE,
                                    validation_key=VALIDATION) as reopened:
                 self.assertEqual(reopened.suggest(
-                    "obby", "v1", "cross", "bridge", now_unix_s=NOW,
-                    min_practice=3).status, "no_evidence")
+                    "obby", "v1", "cross", "bridge", now_unix_s=NOW).status, "no_evidence")
             raw = path.read_bytes()
             self.assertNotIn(PRACTICE, raw)
             self.assertNotIn(VALIDATION, raw)
@@ -234,7 +233,8 @@ class GameplaySkillBankTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.bank.suggest("../../secret", "v1", "cross", "bridge",
                               now_unix_s=NOW)
-        for options in ({"min_practice": 0}, {"min_validation": True},
+        for options in ({"min_practice": 3}, {"min_validation": 5},
+                        {"min_validation": True},
                         {"min_validation_lower_bound": float("nan")},
                         {"min_validation_lower_bound": 1.0}):
             with self.subTest(options=options), self.assertRaises(ValueError):
