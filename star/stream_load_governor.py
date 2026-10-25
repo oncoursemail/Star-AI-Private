@@ -170,7 +170,7 @@ class StreamLoadGovernor:
         chat_cap = 64 if tier != "normal" else 256
         if owner_approved is not True:
             allowed, reason = False, "owner_approval_required"
-        elif stale:
+        elif s is None or stale:
             # Even emergency voice/control need live admission by the actual host;
             # a stale heartbeat never authorizes independent execution.
             allowed, reason = False, "telemetry_unavailable"
