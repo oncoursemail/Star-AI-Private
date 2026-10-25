@@ -89,7 +89,10 @@ def _save(home: Path, picture: bytes, note: dict) -> Path:
     path = folder / name
     # The note first, the picture last and under a temporary name: a picture that exists is complete and has its note,
     # and the chat only ever names a file that is on disk (a reference must never run ahead of the file).
-    path.with_suffix('.json').write_text(json.dumps(note, ensure_ascii=False, indent=1), encoding='utf-8')
+    try:
+        path.with_suffix('.json').write_text(json.dumps(note, ensure_ascii=False, indent=1), encoding='utf-8')
+    except (OSError, TypeError, ValueError):
+        pass        # the note is a nicety: a picture that was made is never thrown away because its note could not be written
     partial = path.with_name(path.name + '.part')
     with open(partial, 'wb') as out:
         out.write(picture)
