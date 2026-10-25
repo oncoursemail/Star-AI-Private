@@ -178,10 +178,13 @@ def summarize(tasks: dict) -> dict:
                if slops else {})}
 
 
+GRADER_FILES = ("eval_checks.py", "eval_runner.py", "eval_sandbox.py", "knowledge_checks.py")
+
+
 def grader_sha256(root: Path = ROOT) -> str:
     """Fingerprint code that computes grades, not just the answers being rescored."""
     digest = hashlib.sha256()
-    for name in ("eval_checks.py", "eval_runner.py", "eval_sandbox.py"):
+    for name in GRADER_FILES:
         path = root / "star" / name
         digest.update(name.encode("utf-8") + b"\\0")
         digest.update(_lf(path.read_bytes()))
@@ -549,6 +552,10 @@ def build_real(args, log=print):
     # The Luau VM runs (sandbox) may go to another STAR container (brain 2: CPU work off the model machine); the
     # quiet-lock probe always asks brain 1.
     sandbox_ssh = getattr(args, "sandbox_ssh", "") or os.environ.get("STAR_EVAL_SANDBOX_SSH", "") or ssh
+    # Python / JavaScript tasks run in the star-judge container (no network) on the host that has it.
+    judge_ssh = getattr(args, "judge_ssh", "") or os.environ.get("STAR_EVAL_JUDGE_SSH", "")
+    from .eval_sandbox import JudgeSandbox
+    judge = JudgeSandbox(judge_ssh) if judge_ssh else None
     sandbox = ContainerSandbox(sandbox_ssh) if sandbox_ssh else None
     lock_box = ContainerSandbox(ssh) if ssh else None
     if sandbox is not None and lock_box is not None and sandbox_ssh != ssh:
@@ -579,7 +586,7 @@ def build_real(args, log=print):
 
     def scorer(task: dict, answer: str) -> checks.TaskScore:
         return checks.score_answer(task, answer, luau_check=luau_check, sandbox=sandbox,
-                                   prelude=suite.prelude, test_body=suite.test_body(task))
+                                   prelude=suite.prelude, test_body=suite.test_body(task), judge=judge)
 
     served = served_models(server, key)
     fingerprint_source = {"mode": args.mode, "model": args.model, "packs": args.packs, "provider": "star_server",
@@ -596,7 +603,8 @@ def build_real(args, log=print):
     }
     probe = lock_box.lock_present if lock_box else None
     return run_info, ask, scorer, probe, [key, server, ssh, ssh.split("@")[-1] if ssh else "",
-                                          sandbox_ssh, sandbox_ssh.split("@")[-1] if sandbox_ssh else ""]
+                                          sandbox_ssh, sandbox_ssh.split("@")[-1] if sandbox_ssh else "",
+                                          judge_ssh, judge_ssh.split("@")[-1] if judge_ssh else ""]
 
 
 def rescore(suite: Suite, result: dict, scorer, *, log=print) -> dict:
@@ -697,6 +705,8 @@ def add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ssh", default="", help="user@host of the server's LXD host (or STAR_EVAL_SSH)")
     parser.add_argument("--sandbox-ssh", default="", help="user@host whose STAR container runs the Luau VM checks "
                         "(or STAR_EVAL_SANDBOX_SSH; default: --ssh). Brain 2 takes this CPU work off the model machine")
+    parser.add_argument("--judge-ssh", default="", help="user@host whose star-judge container runs Python/JavaScript "
+                        "task tests (or STAR_EVAL_JUDGE_SSH)")
     parser.add_argument("--key-file", default=str(DEFAULT_KEY_FILE))
     parser.add_argument("--model", default="star-fast")
     parser.add_argument("--mode", default="auto", choices=["auto", "fast", "agent"])

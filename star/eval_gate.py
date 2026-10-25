@@ -10,12 +10,16 @@ Exit status:
     1  blocked: the pass count dropped, or a previously passing task now fails
     2  unusable input: different suite, unreadable file, nothing to compare
     3  incomplete: tasks are missing or errored in the candidate run, so no verdict can be given
-    4  inconclusive (paired mode only): the difference is below what the task count can resolve; never allowed
+    4  inconclusive (paired mode only): powered for the smallest effect of interest and not significant ("no effect
+       of that size"); never allowed
+    5  underpowered (paired mode only): not significant and the design could not have detected the smallest effect
+       of interest with 80 % power ("not enough power": more tasks or samples needed); never allowed
 
 Paired-session mode (W1, `star/eval_stats.py`) is the honest gate: baseline and candidate are run in the SAME session,
 interleaved, k times each (k >= 2 recommended), and compared pair by pair with an exact sign test; the minimum
 detectable effect is printed next to the verdict. Only a significant improvement is ALLOWED (PROMOTE); a significant
-loss or a reproducible canary failure is BLOCKED (REJECT); anything else is INCONCLUSIVE (exit 4) and never promotes:
+loss or a reproducible canary failure is BLOCKED (REJECT); a non-significant result is UNDERPOWERED (exit 5) when the
+design lacked power for `--smallest-effect` and INCONCLUSIVE (exit 4) when it had it; neither promotes:
 
     python -m star.evals gate --paired-session --baseline base-1.json base-2.json --candidate cand-1.json cand-2.json
 
@@ -41,11 +45,11 @@ from pathlib import Path
 
 from . import eval_stats
 
-ALLOWED, BLOCKED, UNUSABLE, INCOMPLETE, INCONCLUSIVE = 0, 1, 2, 3, 4
+ALLOWED, BLOCKED, UNUSABLE, INCOMPLETE, INCONCLUSIVE, UNDERPOWERED = 0, 1, 2, 3, 4, 5
 _HEADS = {ALLOWED: "ALLOWED", BLOCKED: "BLOCKED", UNUSABLE: "UNUSABLE INPUT", INCOMPLETE: "INCOMPLETE",
-          INCONCLUSIVE: "INCONCLUSIVE"}
+          INCONCLUSIVE: "INCONCLUSIVE", UNDERPOWERED: "NOT ENOUGH POWER"}
 _PAIRED_CODE = {eval_stats.PROMOTE: ALLOWED, eval_stats.REJECT: BLOCKED, eval_stats.INCONCLUSIVE: INCONCLUSIVE,
-                eval_stats.INCOMPLETE: INCOMPLETE}
+                eval_stats.INCOMPLETE: INCOMPLETE, eval_stats.UNDERPOWERED: UNDERPOWERED}
 _LEGACY = {"baseline-v2.json", "baseline-creation-v1.json"}
 _VALID_STATUS = {"pass", "fail", "error", "skipped"}
 _SCORED = ("pass", "fail")
@@ -324,7 +328,8 @@ def _when(value) -> datetime | None:
 
 def compare_paired(baseline_runs: list, candidate_runs: list, *, alpha: float = eval_stats.DEFAULT_ALPHA,
                    method: str = "sign", canary=(), seed: int = 0, allow_partial: bool = False,
-                   max_session_hours: float = MAX_SESSION_HOURS, allow_model_change: bool = False) -> Verdict:
+                   max_session_hours: float = MAX_SESSION_HOURS, allow_model_change: bool = False,
+                   smallest_effect: float = eval_stats.DEFAULT_SMALLEST_EFFECT) -> Verdict:
     """Paired verdict from k result files per arm that were run in the same session.
 
     Sample j of the baseline (the j-th run by start time) is paired with sample j of the candidate. All runs must be
@@ -391,7 +396,8 @@ def compare_paired(baseline_runs: list, candidate_runs: list, *, alpha: float = 
         scored = [tid for tid in scored if tid not in not_covered]
     base_samples = {tid: [_SAMPLE.get(_status(run, tid)) for run in base_order] for tid in scored}
     cand_samples = {tid: [_SAMPLE.get(_status(run, tid)) for run in cand_order] for tid in scored}
-    report = eval_stats.paired_decision(base_samples, cand_samples, alpha=alpha, method=method, canary=canary, seed=seed)
+    report = eval_stats.paired_decision(base_samples, cand_samples, alpha=alpha, method=method, canary=canary, seed=seed,
+                                        smallest_effect=smallest_effect)
     code = _PAIRED_CODE[report.decision]
     if not_covered and not allow_partial and code != BLOCKED:
         code = INCOMPLETE
@@ -452,13 +458,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-session-hours", type=float, default=MAX_SESSION_HOURS)
     parser.add_argument("--allow-model-change", action="store_true",
                         help="paired mode only: the candidate arm may use another model than the baseline arm")
+    parser.add_argument("--smallest-effect", type=float, default=eval_stats.DEFAULT_SMALLEST_EFFECT,
+                        help="smallest improvement worth deciding on, as a share of tasks (paired mode; default 0.10): "
+                             "without 80%% power for it a non-significant result is NOT ENOUGH POWER (exit 5)")
     parser.add_argument("--json", action="store_true", help="print the verdict as JSON")
     args = parser.parse_args(argv)
     if args.paired_session:
         verdict = evaluate_paired(args.baseline, args.candidate, alpha=args.alpha, method=args.method,
                                   canary=[c.strip() for c in args.canary.split(",") if c.strip()], seed=args.seed,
                                   allow_partial=args.allow_partial, max_session_hours=args.max_session_hours,
-                                  allow_model_change=args.allow_model_change)
+                                  allow_model_change=args.allow_model_change, smallest_effect=args.smallest_effect)
     elif args.allow_model_change:
         parser.error("--allow-model-change needs --paired-session")
     elif len(args.baseline) != 1 or len(args.candidate) != 1:

@@ -45,19 +45,20 @@ def test_wilson_interval_and_flip_probability():
 
 # --- the cases that motivated W1 ------------------------------------------------------------------------------
 
-def test_the_observed_3_to_7_of_12_swing_is_inconclusive_in_either_direction():
+def test_the_observed_3_to_7_of_12_swing_is_not_enough_power_in_either_direction():
     base = {f"V{i}": [i < 3] for i in range(12)}
     cand = {f"V{i}": [i < 7] for i in range(12)}
     up = s.paired_decision(base, cand)
-    assert up.decision == s.INCONCLUSIVE and not up.promote
+    assert up.decision == s.UNDERPOWERED and not up.promote
+    assert "not enough power" in up.text() and up.power_at_smallest < 0.8
     assert (up.wins, up.losses, up.baseline_pass, up.candidate_pass) == (4, 0, 3, 7)
     assert up.p_better == pytest.approx(1 / 16) and up.mde["effect_tasks"] == 8
     assert "MDE" in up.text() and "+8 of 12" in up.text()
     down = s.paired_decision(cand, base)
-    assert down.decision == s.INCONCLUSIVE                    # and never a retirement on noise
+    assert down.decision == s.UNDERPOWERED                    # and never a retirement on noise
     # The same totals arranged less favourably (some tasks swap) are inconclusive too.
     mixed = {f"V{i}": [i in (0, 1, 2, 3, 4, 5, 8)] for i in range(12)}
-    assert s.paired_decision(base, mixed).decision == s.INCONCLUSIVE
+    assert s.paired_decision(base, mixed).decision == s.UNDERPOWERED
 
 
 def test_the_unchanged_night_school_slice_series_never_decides():
@@ -66,7 +67,7 @@ def test_the_unchanged_night_school_slice_series_never_decides():
         for b in series:
             base = {f"V{i}": [i < a] for i in range(12)}
             cand = {f"V{i}": [i < b] for i in range(12)}
-            assert s.paired_decision(base, cand).decision == s.INCONCLUSIVE
+            assert s.paired_decision(base, cand).decision == s.UNDERPOWERED
 
 
 def test_a_clear_improvement_promotes_and_a_clear_loss_rejects():
@@ -203,10 +204,11 @@ def test_paired_session_allows_only_a_significant_improvement():
     assert v.to_dict()["paired"]["k"] == 2
 
 
-def test_paired_session_inconclusive_is_exit_4_and_never_allowed():
+def test_paired_session_without_power_is_exit_5_and_never_allowed():
     small = dict(BASE, T0="pass", T1="pass")                     # +2 tasks: below the noise floor
     v = gate.compare_paired([result(BASE, **at(1))], [result(small, **at(2))])
-    assert v.code == gate.INCONCLUSIVE == 4 and not v.allowed and "INCONCLUSIVE" in v.text()
+    assert v.code == gate.UNDERPOWERED == 5 and not v.allowed and "NOT ENOUGH POWER" in v.text()
+    assert v.paired["decision"] == "UNDERPOWERED"
 
 
 def test_paired_session_blocks_a_significant_loss_and_names_the_regressions():
@@ -262,9 +264,34 @@ def test_gate_cli_paired_session_json_and_exit_codes(tmp_path, capsys):
                       "--candidate", str(files["c1"]), str(files["c2"]), "--json"])
     out = json.loads(capsys.readouterr().out)
     assert code == 0 and out["paired"]["decision"] == "PROMOTE" and out["allowed"]
-    assert gate.main(["--paired-session", "--baseline", str(files["b1"]), "--candidate", str(files["b2"])]) == gate.INCONCLUSIVE
+    assert gate.main(["--paired-session", "--baseline", str(files["b1"]), "--candidate", str(files["b2"])]) == gate.UNDERPOWERED
     with pytest.raises(SystemExit):
         gate.main(["--baseline", str(files["b1"]), str(files["b2"]), "--candidate", str(files["c1"])])
     capsys.readouterr()
     assert gate.main(["--baseline", str(files["b1"]), "--candidate", str(files["c1"])]) == gate.ALLOWED
     assert "legacy single-run gate" in capsys.readouterr().out
+
+
+# --- power: "not enough power" versus a powered null ----------------------------------------------------------
+
+def test_a_powered_null_is_inconclusive_and_a_small_set_is_underpowered():
+    big_base = {f"T{i}": [i % 2 == 0] for i in range(400)}
+    big_cand = dict(big_base)
+    for i in range(10):                       # 10 wins and 10 losses: no effect, on a set powered for +10 %
+        big_cand[f"T{2 * i}"] = [False]
+        big_cand[f"T{2 * i + 1}"] = [True]
+    powered = s.paired_decision(big_base, big_cand)
+    assert powered.decision == s.INCONCLUSIVE and powered.power_at_smallest >= 0.8
+    assert "unlikely" in " ".join(powered.notes)
+    small = s.paired_decision({k: big_base[k] for k in list(big_base)[:30]}, {k: big_cand[k] for k in list(big_base)[:30]})
+    assert small.decision == s.UNDERPOWERED and "tasks at k=1" in " ".join(small.notes)
+    stricter = s.paired_decision(big_base, big_cand, smallest_effect=0.03)
+    assert stricter.decision == s.UNDERPOWERED                 # 400 tasks cannot resolve +3 % at k=1
+
+
+def test_tasks_needed_matches_the_exact_power_model():
+    need = s.tasks_needed(0.10, 1)
+    assert 180 <= need <= 240
+    assert s.power(need, 1, -(-need // 10)) == pytest.approx(0.8, abs=0.06)
+    assert s.tasks_needed(0.10, 2) < need and s.tasks_needed(0.05, 1) > 3 * need
+    assert s.tasks_needed(0, 1) is None
