@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterable, Iterator, Protocol
 
 from .chunker import SentenceChunker, speakable
+from .game_context import GameMomentWindow
 from .metrics import TurnMetrics
 from .pcm import FRAME_MS, rms
 from .persona import system_message
@@ -81,6 +82,7 @@ class CallConfig:
     ptt_tail_ms: int = 160                # keep recording this long after the key is released (trailing words)
     ptt_voice_barge_in: bool = True       # push-to-talk: talking over Star (without the key) still silences her
     acknowledgements: bool = False        # play a short pre-rendered "okay" in Star's voice once the turn is understood
+    game_context_for_voice: bool = False  # opt-in ephemeral, typed game telemetry; never enables game control
 
 
 def _same_words(a: str, b: str) -> bool:
@@ -115,8 +117,10 @@ class CallSession:
     def __init__(self, *, vad: VoiceActivity, asr: SpeechToText, brain: Brain, tts: TextToSpeech,
                  speaker: Speaker, endpointer: Endpointer | None = None, config: CallConfig | None = None,
                  on_event: Callable[[dict], None] | None = None,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 game_events: GameMomentWindow | None = None) -> None:
         self.config = config or CallConfig()
+        self.game_events = game_events
         self.vad, self.asr, self.brain, self.tts, self.speaker = vad, asr, brain, tts, speaker
         self.detector = TurnDetector(self.config.turn, endpointer)
         self.echo_gate = EchoGate(self.config.echo_margin_db) if self.config.use_echo_gate else None
@@ -415,6 +419,10 @@ class CallSession:
             self.speaker.reset()
             self._acknowledge(reply)
             messages = self._context() + [{"role": "user", "content": reply.user_text}]
+            if self.config.game_context_for_voice and self.game_events is not None:
+                context = self.game_events.render(now=self.clock())
+                if context:
+                    messages[-1] = {"role": "user", "content": reply.user_text + "\n\n" + context}
             self._generate_and_speak(reply, messages)
         except Exception as exc:
             reply.error = exc
