@@ -50,7 +50,7 @@ For desktop companions, borrow **the state-event pattern** from ThatPet, not its
 - Obsidian Local REST API can expose read/write operations over authenticated loopback; require independent opt-in and avoid unrestricted write or shell command access. Keep default reader read-only.
 
 ## Evaluation and release gates
-**Delivered in this PR:** offline source generator, unit tests, opt-in skill routing and evidence-backed research note. **Not delivered:** a new frontier model, automatic model training, production-ready water, installed plugins, video ingestion UI, real Roblox playtests, Blender code execution, any public release or auto-merge.
+**Delivered in this PR:** the original `frost_cyclone` and `cinematic_sword_arc` cue presets on the existing guarded VFX Studio pathway; offline EditableMesh preview source generator; unit tests; opt-in mesh skill routing; VFX composer guidance; and evidence-backed research notes. **Not delivered:** a new frontier model, automatic model training, production-ready water, installed plugins, video ingestion UI, real Roblox playtests, Blender code execution, any public release or auto-merge.
 
 Acceptance before enabling defaults: Python `compileall` / pytest / Luau analyzer; review generated syntax; Studio playtest and 2-client visuals on authorized test place; profile low-end phone vs baseline; measure visual review; compare held-out coding/VFX eval outcomes with unchanged baseline; independent reviewer and green CI. Keep `STAR_SKILL_PACKS` opt-in for `roblox-editablemesh-batching` until tests show benefit.
 
