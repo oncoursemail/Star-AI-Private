@@ -54,7 +54,7 @@ def audio_motion_frames(
     duration_ms = len(pcm16_mono) * 500 // sample_rate
     ordered: list[VocalRegion] = []
     for region in regions:
-        if not isinstance(region, VocalRegion) or region.kind not in {
+        if not isinstance(region, VocalRegion) or not isinstance(region.kind, str) or region.kind not in {
             "speech", "laugh", "purr", "meow", "woof"
         } or type(region.start_ms) is not int or type(region.end_ms) is not int \
                 or not 0 <= region.start_ms < region.end_ms <= duration_ms + 1:
@@ -131,12 +131,12 @@ def plan_highlights(
     any FFmpeg assembly or public post. source times always refer to one
     separately verified recording.
     """
-    if not isinstance(recording, VerifiedRecording) or not recording.host_verified \
+    if not isinstance(recording, VerifiedRecording) or recording.host_verified is not True \
             or not isinstance(recording.recording_id, str) \
             or not _ID.fullmatch(recording.recording_id) \
             or type(recording.duration_ms) is not int or not 1000 <= recording.duration_ms <= 86_400_000:
         raise ValueError("A real verified source recording is required")
-    if aspect not in {"landscape", "portrait"}:
+    if not isinstance(aspect, str) or aspect not in {"landscape", "portrait"}:
         raise ValueError("Unknown output aspect")
     if type(budget_ms) is not int or not 1000 <= budget_ms <= 3_600_000:
         raise ValueError("Invalid output duration budget")
@@ -152,11 +152,11 @@ def plan_highlights(
                 or not _ID.fullmatch(m.evidence_id) or m.moment_id in seen \
                 or type(m.start_ms) is not int or type(m.end_ms) is not int \
                 or not 0 <= m.start_ms < m.end_ms <= recording.duration_ms \
-                or m.category not in {"discovery", "funny", "achievement", "setback", "conversation"} \
+                or not isinstance(m.category, str) or m.category not in {"discovery", "funny", "achievement", "setback", "conversation"} \
                 or not isinstance(m.score, (int, float)) or not 0 <= m.score <= 1:
             raise ValueError("Invalid, duplicate or out-of-range moment")
         seen.add(m.moment_id)
-        if m.rights_cleared and m.privacy_cleared and m.score >= min_score:
+        if m.rights_cleared is True and m.privacy_cleared is True and m.score >= min_score:
             valid.append(m)
     selected: list[TimelineCut] = []
     used = 0
