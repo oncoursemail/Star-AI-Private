@@ -16,6 +16,8 @@ class TurnMetrics:
     first_token_at: float | None = None  # first text from the brain
     first_sentence_at: float | None = None   # first chunk handed to text-to-speech
     first_audio_at: float | None = None  # first audio handed to the speaker
+    first_ack_at: float | None = None    # acknowledgement clip handed to the speaker (star/voice/acks.py)
+    ack_text: str = ""
     last_token_at: float | None = None   # last text from the brain
     done_at: float | None = None
     end_reason: str = ""            # how the turn ended: model | silence | max_silence | max_turn
@@ -43,6 +45,9 @@ class TurnMetrics:
             "transcript_to_first_token": self._gap(self.transcript_at, self.first_token_at),
             "first_token_to_first_audio": self._gap(self.first_token_at, self.first_audio_at),
             "total": self._gap(self.speech_end, self.first_audio_at),
+            # what the user waits for until Star makes a sound: the acknowledgement clip when one played
+            "perceived": self._gap(self.speech_end, min((t for t in (self.first_ack_at, self.first_audio_at)
+                                                         if t is not None), default=None)),
             "tokens_per_second": ((self.tokens - 1) / generation) if generation and self.tokens > 2 else None,
         }
 

@@ -21,6 +21,7 @@ actually played stay in the conversation history, so Star knows what the user di
 from __future__ import annotations
 
 import queue
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -79,6 +80,11 @@ class CallConfig:
     push_to_talk: bool = False            # True: turns are opened and closed by push_to_talk(), not by the VAD
     ptt_tail_ms: int = 160                # keep recording this long after the key is released (trailing words)
     ptt_voice_barge_in: bool = True       # push-to-talk: talking over Star (without the key) still silences her
+    acknowledgements: bool = False        # play a short pre-rendered "okay" in Star's voice once the turn is understood
+
+
+def _same_words(a: str, b: str) -> bool:
+    return re.findall(r"\w+", a.lower()) == re.findall(r"\w+", b.lower())
 
 
 @dataclass
@@ -138,6 +144,11 @@ class CallSession:
         self._ptt_released_at: float | None = None
         self._ptt_tail_frames = 0               # frames recorded since the key was released
         self._ptt_barge_ms = 0
+        self.acks = None
+        if self.config.acknowledgements:
+            from .acks import AckClips
+            self.acks = AckClips(tts)
+            threading.Thread(target=self.acks.render, name="star-voice-acks", daemon=True).start()
 
     # -- lifecycle --------------------------------------------------------------------------
     def start(self) -> None:
@@ -402,12 +413,29 @@ class CallSession:
                 return                           # the user kept talking: _finish_reply carries these words over
             self._emit({"type": "final_transcript", "turn": metrics.turn, "text": reply.user_text})
             self.speaker.reset()
+            self._acknowledge(reply)
             messages = self._context() + [{"role": "user", "content": reply.user_text}]
             self._generate_and_speak(reply, messages)
         except Exception as exc:
             reply.error = exc
         finally:
             self._finish_reply(reply)
+
+    def _acknowledge(self, reply: _Reply) -> None:
+        """Play the acknowledgement clip for this turn, if any. Its length is counted as reply audio, so the
+        sentence offsets used for "what the user heard" after a barge-in stay right; it never enters the history."""
+        clip = self.acks.pick(reply.user_text) if self.acks is not None else None
+        if clip is None:
+            return
+        with reply.play_lock:
+            if reply.cancel.is_set():
+                return
+            reply.metrics.first_ack_at = self.clock()
+            reply.metrics.ack_text = clip.text
+            for pcm, sample_rate in clip.chunks:
+                self.speaker.play(pcm, sample_rate)
+            reply.audio_seconds += clip.seconds
+        self._emit({"type": "acknowledgement", "turn": reply.metrics.turn, "text": clip.text})
 
     def _context(self) -> list[dict]:
         """System prompt plus history, trimmed in big blocks rather than a little every turn.
@@ -467,6 +495,8 @@ class CallSession:
                 return
             if reply.cancel.is_set() or reply.error is not None:
                 continue                         # keep draining so the producer never blocks
+            if not reply.sentences and metrics.ack_text and _same_words(sentence, metrics.ack_text):
+                continue                         # the reply opens with the words the clip just said
             started = self.clock()
             begin = reply.audio_seconds
             try:
