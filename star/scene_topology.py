@@ -14,6 +14,7 @@ from typing import Any
 
 MAX_PARTS = 128
 MAX_CONSTRAINTS = 128
+MAX_FINDINGS = 200
 EPSILON = 0.02
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 
@@ -60,6 +61,8 @@ def _triple(value: Any, field: str, positive: bool = False) -> tuple[float, floa
 def _box(value: Any, field: str) -> Box:
     if not isinstance(value, dict):
         raise ValueError(f"{field} must be a part record")
+    if "pitch_degrees" in value or "roll_degrees" in value:
+        raise ValueError("tilted geometry cannot be represented in a yaw-only preflight")
     solid = value.get("solid", True)
     if type(solid) is not bool:
         raise ValueError(f"{field}.solid must be boolean")
@@ -121,7 +124,7 @@ def audit_scene(packet: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("scene must be a mapping")
     project = _name(packet.get("project"), "project")
     complete = packet.get("complete") is True
-    if packet.get("complete") not in (True, False):
+    if type(packet.get("complete")) is not bool:
         raise ValueError("complete must be boolean")
     items = _records(packet.get("parts"), "parts", MAX_PARTS)
     boxes = [_box(item, f"parts[{index}]") for index, item in enumerate(items)]
@@ -139,8 +142,16 @@ def audit_scene(packet: dict[str, Any]) -> dict[str, Any]:
     issues: list[dict[str, str]] = []
 
     def add(code: str, target: str, detail: str, remedy: str, severity: str = "error") -> None:
-        issues.append({"code": code, "target": target, "severity": severity,
-                       "evidence": detail, "suggested_fix": remedy})
+        if len(issues) < MAX_FINDINGS:
+            issues.append({"code": code, "target": target, "severity": severity,
+                           "evidence": detail, "suggested_fix": remedy})
+
+    if not expected:
+        add("expected-props-missing", project, "No authored required-prop manifest was supplied.",
+            "Supply a complete expected-instance list and inspect the real Studio hierarchy.", "unverified")
+    if not boxes:
+        add("scene-empty", project, "No parts were observed.",
+            "Capture a populated Studio scene before quality review.", "unverified")
 
     for ident in expected:
         if ident not in parts:
@@ -216,6 +227,7 @@ def audit_scene(packet: dict[str, Any]) -> dict[str, Any]:
     return {"project": project, "status": status, "findings": issues,
             "counts": {"error": errors, "unverified": unverified},
             "inspected_parts": len(parts), "complete_manifest": complete, "studio_verified": False,
+            "findings_truncated": len(issues) == MAX_FINDINGS,
             "limitations": [
                 "Yaw-only oriented boxes; tilted objects, mesh cavities, decorative trim and arbitrary CFrames are not represented.",
                 "Manifests, intentional overlap flags and support IDs can be wrong or fabricated.",
