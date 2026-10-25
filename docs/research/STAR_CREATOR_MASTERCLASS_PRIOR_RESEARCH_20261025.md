@@ -1,7 +1,7 @@
 # Star AI — Animation, Blender, UI, and VFX Creator Mastery
 
-**Research date:** 2026-10-25  
-**Purpose:** A practical, source-grounded engineering plan to help Star produce editable, polished, performance-conscious creative assets, and independently check the results.  
+**Research date:** 2026-10-25
+**Purpose:** A practical, source-grounded engineering plan to help Star produce editable, polished, performance-conscious creative assets, and independently check the results.
 **Implementation status:** **Research/design document, not installed or integrated into Star.** No model weights were trained or changed, no Studio session was run, and no native Blender scene was rendered as part of this report.
 
 ## Executive finding
