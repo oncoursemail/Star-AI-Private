@@ -67,6 +67,11 @@ SHARED_BRAIN = ["shared_brain_query", "shared_brain_stats"]
 # Studio lab tool: tests/test_studio_lab.py).
 DESIGN_MAPS = ["star_design_search", "star_design_md", "star_roblox_map_plan", "star_roblox_studio_lab",
                "star_roblox_docs_live_search", "star_roblox_docs_live_page", "star_roblox_vfx_make"]
+# Opt-in, prompt-scoped game study; recording access is limited to a selected workspace.
+GAME_EXPERIENCE = ["star_game_episode_analyze", "star_game_episode_save", "star_game_experience_search"]
+VIDEO_STUDY = ["star_game_video_study"]
+# Source-first read-only general knowledge research curriculum; no automatic fetching or model training.
+GENERAL_KNOWLEDGE = ["star_general_knowledge_curriculum"]
 # The workspace folder (star/workspace.py TOOLS); workspace_write only with Settings.workspace_edit.
 WORKSPACE_READ = ["workspace_list", "workspace_read", "workspace_search"]
 WORKSPACE_WRITE = ["workspace_write", "workspace_edit"]
@@ -265,11 +270,15 @@ def test_the_written_lists_are_the_whole_built_in_catalogue():
     from star import intelligence, mcp_connections, mcp_registry, specialist_agents, tool_workshop, workspace
     assert set(intelligence.ALL_TOOLS) == set(SKILLS + OBSIDIAN + GRAPHIFY + ROBLOX_GAMES + ROBLOX_LINKS
                                              + ROBLOX_FORUM + ROBLOX_VIDEO + STAR_KNOWLEDGE + ROBLOX_CLOUD
-                                             + HUB + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE + COMMERCE)
+                                             + HUB + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE + COMMERCE
+                                             + GAME_EXPERIENCE + VIDEO_STUDY + GENERAL_KNOWLEDGE)
     assert [tool["name"] for tool in intelligence.ROBLOX_HUB_TOOLS] == HUB
     assert [tool["name"] for tool in intelligence.ARCHITECTURE_TOOLS] == ARCHITECTURE
     assert [tool["name"] for tool in intelligence.ASSET_TOOLS] == ASSET
     assert [tool["name"] for tool in intelligence.COMMERCE_TOOLS] == COMMERCE
+    assert [tool["name"] for tool in intelligence.GAME_EXPERIENCE_TOOLS] == GAME_EXPERIENCE
+    assert [tool["name"] for tool in intelligence.VIDEO_STUDY_TOOLS] == VIDEO_STUDY
+    assert [tool["name"] for tool in intelligence.GENERAL_KNOWLEDGE_TOOLS] == GENERAL_KNOWLEDGE
     assert [tool["name"] for tool in intelligence.SKILL_TOOLS] == SKILLS
     assert [tool["name"] for tool in intelligence.OBSIDIAN_TOOLS] == OBSIDIAN
     assert {tool["name"] for tool in workspace.TOOLS} == set(WORKSPACE_READ + WORKSPACE_WRITE + WORKSPACE_CREATOR + WORKSPACE_GAME)

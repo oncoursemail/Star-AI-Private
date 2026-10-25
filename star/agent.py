@@ -57,6 +57,7 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_github_tree", "star_github_read", "star_mcp_search", "star_mcp_call", "star_delegate_research",
     "star_debug_report", "star_debug_compare", "star_debug_source",
     "workspace_minecraft_audit", "workspace_minecraft_inspect", "star_identify_song",
+    "star_game_video_study", "star_game_experience_search", "star_game_episode_analyze",
 })
 LUAU_AFTER_UNTRUSTED = ("Full Luau execution is off for the rest of this turn because it read web or "
                         "third-party content. Ask again in a new message to run Luau.")
@@ -1033,7 +1034,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                     "text": f"Candidate coding team failed: {type(exc).__name__}"}]}
                     elif intelligence is not None and intelligence.owns(name):
                         try:
-                            local_output = intelligence.call(name, args, enabled=enabled_intelligence)
+                            if name == "star_game_video_study":
+                                # Window extraction and local vision inference can take minutes;
+                                # keep chat event loop responsive while the owner can cancel.
+                                local_output = await asyncio.to_thread(
+                                    intelligence.call, name, args, enabled=enabled_intelligence)
+                            else:
+                                local_output = intelligence.call(name, args, enabled=enabled_intelligence)
                             if name == "star_roblox_game_image" and "_image" in local_output:
                                 # Convert verified bounded Roblox CDN pixels to the
                                 # existing multimodal tool response format. Never
@@ -1045,7 +1052,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 ]}
                             else:
                                 data = {"isError": False, "content": [{"type": "text", "text": json.dumps(local_output, ensure_ascii=False)}]}
-                        except (ValueError, PermissionError, OSError, UnicodeError) as exc:
+                        except (ValueError, PermissionError, OSError, UnicodeError, RuntimeError, TimeoutError) as exc:
                             data = {"isError": True, "content": [{"type": "text", "text": f"Intelligence tool failed: {type(exc).__name__}: {exc}"}]}
                     elif tool_workshop is not None and tool_workshop.owns(name):
                         try:
