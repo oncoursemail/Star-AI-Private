@@ -60,6 +60,8 @@ ASSET = ["star_asset_search", "star_building_plan", "star_terrain_preview"]
 COMMERCE = ["star_commerce_overview", "star_commerce_draft_candidate", "star_commerce_propose_action"]
 # Optional architectural planning tools; STAR_ARCHITECTURE_TOOLS=1 only.
 ARCHITECTURE = ["star_architecture_preview", "star_architecture_compare_styles"]
+# Operational self-awareness (star/operational_awareness.py); STAR_SELF_AWARENESS=1 and a self-assessment prompt only.
+SELF = ["star_self_capabilities", "star_self_improvement_plan"]
 # Prepared shared stores only: not in ordered general-prompt tool expectations.
 SHARED_BRAIN = ["shared_brain_query", "shared_brain_stats"]
 # Prompt-scoped design and map-plan tools, and the opt-in live Roblox docs (off unless enabled); not part
@@ -272,7 +274,7 @@ def test_the_written_lists_are_the_whole_built_in_catalogue():
     assert set(intelligence.ALL_TOOLS) == set(SKILLS + OBSIDIAN + GRAPHIFY + ROBLOX_GAMES + ROBLOX_LINKS
                                              + ROBLOX_FORUM + ROBLOX_VIDEO + STAR_KNOWLEDGE + ROBLOX_CLOUD
                                              + HUB + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE + COMMERCE
-                                             + GAME_EXPERIENCE + VIDEO_STUDY + GENERAL_KNOWLEDGE)
+                                             + GAME_EXPERIENCE + VIDEO_STUDY + GENERAL_KNOWLEDGE + SELF)
     assert [tool["name"] for tool in intelligence.ROBLOX_HUB_TOOLS] == HUB
     assert [tool["name"] for tool in intelligence.ARCHITECTURE_TOOLS] == ARCHITECTURE
     assert [tool["name"] for tool in intelligence.ASSET_TOOLS] == ASSET
@@ -280,6 +282,7 @@ def test_the_written_lists_are_the_whole_built_in_catalogue():
     assert [tool["name"] for tool in intelligence.GAME_EXPERIENCE_TOOLS] == GAME_EXPERIENCE
     assert [tool["name"] for tool in intelligence.VIDEO_STUDY_TOOLS] == VIDEO_STUDY
     assert [tool["name"] for tool in intelligence.GENERAL_KNOWLEDGE_TOOLS] == GENERAL_KNOWLEDGE
+    assert [tool["name"] for tool in intelligence.SELF_TOOLS] == SELF
     assert [tool["name"] for tool in intelligence.SKILL_TOOLS] == SKILLS
     assert [tool["name"] for tool in intelligence.OBSIDIAN_TOOLS] == OBSIDIAN
     assert {tool["name"] for tool in workspace.TOOLS} == set(WORKSPACE_READ + WORKSPACE_WRITE + WORKSPACE_CREATOR + WORKSPACE_GAME)
