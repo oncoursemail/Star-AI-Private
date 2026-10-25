@@ -243,6 +243,45 @@ class GameplaySkillBank:
         return tuple(PracticeEvidence(action, *totals)
                      for action, totals in sorted(aggregates.items()))
 
+    def verify_practice_trial(self, trial: GameTrial, *, now_unix_s: int) -> bool:
+        """Match an *exact* PRACTICE outcome to an existing signed bank record.
+
+        This is stronger than signed_practice_run(), which deliberately checks
+        only a reservation's action/run. Do not use a reservation match as proof
+        of a particular outcome: a caller might substitute "success" for a
+        legitimately recorded failure. Validation/holdout data is never exposed.
+        False means absent, mismatched or stale; corrupt bank rows fail closed.
+        """
+        if not isinstance(trial, GameTrial):
+            raise TypeError("expected GameTrial")
+        now = _seconds(now_unix_s)
+        if trial.split != "practice":
+            return False
+        age = now - trial.observed_unix_s
+        if not 0 <= age <= _PRACTICE_MAX_AGE_S:
+            return False
+        row = self._db.execute(
+            "SELECT game_id, game_version, objective_id, situation_id, "
+            "run_id, payload_json, receipt FROM gameplay_trials WHERE trial_id=?",
+            (trial.trial_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        game, version, objective, situation, run, payload, receipt = row
+        if (game, version, objective, situation, run) != (
+            trial.game_id, trial.game_version, trial.objective_id,
+            trial.situation_id, trial.run_id
+        ):
+            raise sqlite3.IntegrityError("gameplay trial index/payload mismatch")
+        try:
+            stored = GameTrial(**json.loads(payload))
+            if stored.trial_id != trial.trial_id:
+                raise ValueError("trial ID mismatch")
+            self._check_receipt(stored, receipt)
+        except (ValueError, TypeError, PermissionError) as exc:
+            raise sqlite3.IntegrityError("invalid stored gameplay receipt") from exc
+        return stored == trial
+
     def signed_practice_run(self, game_id: str, game_version: str,
                             objective_id: str, situation_id: str,
                             action_id: str, run_id: str, *,
