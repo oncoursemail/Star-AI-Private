@@ -187,7 +187,10 @@ class OperationalAwarenessTests(unittest.TestCase):
             src = Path(tmp) / "real.sqlite3"
             src.write_bytes(b"external")
             link = Path(tmp) / "link.sqlite3"
-            link.symlink_to(src)
+            try:
+                link.symlink_to(src)
+            except OSError:
+                self.skipTest("symlinks need a privilege this platform session lacks")
             self.assertNotIn("indexed_candidates", awareness._index_statistics(link))
             self.assertFalse(awareness._index_statistics(link)["installed"])
 

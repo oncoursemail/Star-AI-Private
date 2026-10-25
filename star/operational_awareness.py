@@ -11,7 +11,6 @@ enabled the adapter and exposed its tool schemas for the current turn.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 import re
 import sqlite3

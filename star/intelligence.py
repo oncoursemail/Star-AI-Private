@@ -578,11 +578,13 @@ class LocalIntelligence:
                 raise PermissionError("Operational awareness is not enabled")
             # This host data is read-only. The attached list proves schema
             # availability, not that a backend operation succeeded.
-            basis = dict(status=self.status(), enabled_tools=tuple(enabled),
-                         atlas_db=self.home / "resource_atlas.sqlite3")
+            status, tools = self.status(), tuple(enabled)
+            atlas_db = self.home / "resource_atlas.sqlite3"
             if name == "star_self_capabilities":
-                return awareness_observe(args["goal"], **basis)
-            return awareness_plan(args["goal"], limit=args.get("limit", 5), **basis)
+                return awareness_observe(args["goal"], status=status, enabled_tools=tools,
+                                         atlas_db=atlas_db)
+            return awareness_plan(args["goal"], limit=args.get("limit", 5), status=status,
+                                  enabled_tools=tools, atlas_db=atlas_db)
         if name in _HUB_TOOL_NAMES:
             hub = self.roblox_hub
             if hub is None:
