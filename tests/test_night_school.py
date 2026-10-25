@@ -886,6 +886,52 @@ def test_a_budget_paused_gate_never_promotes_on_an_incomplete_slice(tmp_path):
     assert run["done"] is False
 
 
+def test_a_paused_gate_resumes_when_the_candidate_fixes_more_tasks_meanwhile(tmp_path):
+    # Brain 1 on 10-25: L226 fixed 24 tasks but its gate restarted 8 times (one new paired run per new fix) and never
+    # decided. The paused run must resume where it stopped, whatever the candidate fixes meanwhile.
+    script = Script()
+    settings, store, engine = engine_for(tmp_path, ["H-1", "E-1", "H-2", "V-1"] + NEEDS
+                                         + [f"H-{n}" for n in range(3, 13)] + [f"E-{n}" for n in range(2, 40)],
+                                         script, batch=3, recheck_every=999, validation_share=1 / 3)
+    engine.run_batch()                                  # H-1, H-2 fixed: the gate starts and pauses on the budget
+    lesson = store.state["lessons"]["L1"]
+    for _ in range(40):                                 # H-3..H-12 are fixed by the candidate while the gate waits
+        if lesson["status"] != "candidate":
+            break
+        engine.run_batch()
+    assert len(lesson["fixed"]) > 2                     # it really fixed tasks while its gate was paused
+    assert lesson["status"] == "active" and lesson["promotion"]["gate"]["decision"] == "PROMOTE"
+    assert "gate_tag" not in lesson
+    paired = [a for a in map(json.loads, (settings.data / "attempts.jsonl").read_text(encoding="utf-8").splitlines())
+              if a["purpose"].startswith("validation ")]
+    assert len(paired) == 16                            # 4 tasks x 2 arms x k=2: no restart, nothing measured twice
+    assert len(store.state["paired_runs"]) == 1
+
+
+def test_a_new_candidate_is_tried_on_other_tasks_before_the_leader_takes_every_retry(tmp_path):
+    # Brain 1 on 10-25: ranked by raw fix count, one leader per cause took every retry and 64 of 92 candidates were
+    # never tried on a second task. The smoothed fix rate (fixed + 1) / (tried + 2) gives a new one its turns.
+    def lessons(new_tried: int):
+        cause = "required element missing (uses_expected_call)"
+        leader = {"id": "L1", "text": "Prefer the checked clamp call over chained ifs in every limit helper.",
+                  "cause": cause, "status": "candidate", "tried": [f"T-{n}" for n in range(10)],
+                  "fixed": ["T-0", "T-1", "T-2"], "evidence": []}
+        new = {"id": "L2", "text": "Return the clamped value instead of mutating the argument in limit helpers.",
+               "cause": cause, "status": "candidate", "tried": ["N-0"] + [f"N-{n}" for n in range(1, new_tried)],
+               "fixed": ["N-0"], "evidence": []}
+        return {"L1": leader, "L2": new}
+
+    for new_tried, expected in ((1, "candidate L2"), (6, "candidate L1")):
+        folder = tmp_path / str(new_tried)
+        script = Script()
+        settings, store, engine = engine_for(folder, ["X-1", "V-1"], script, retry_candidates=1)
+        store.state["lessons"] = lessons(new_tried)
+        engine._diagnose = lambda _task, _result: {}
+        assert engine.run_item(engine.training[0]) == "failed"
+        attempts = [json.loads(row) for row in (settings.data / "attempts.jsonl").read_text().splitlines()]
+        assert [row["purpose"] for row in attempts] == ["first", expected]
+
+
 def test_shares_split_the_practice_tasks_without_overlap_and_keep_the_validation_slice(tmp_path):
     from nightschool.engine import in_share
     ids = [f"T-{n}" for n in range(200)]

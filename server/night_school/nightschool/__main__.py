@@ -141,12 +141,17 @@ def conduct(settings: Settings) -> int:
     if reason:
         log("night conductor: not now (" + reason + ")")
         return 0
+    practising = conductor.loop_practising(settings)
+    if practising:
+        log(f"night conductor: not now (the night-school loop is practising, last batch {practising}; it runs the "
+            "conductor after its batches)")
+        return 0
     stop = Stopper()
     gate = IdleGate(settings, BrainWatch(settings.brain_url, key), log=log)
     deadline = time.monotonic() + float(os.environ.get("STAR_NS_CONDUCTOR_WAIT_S", "1500"))
-    while gate.look():
+    while (why := gate.look()):
         if stop() or time.monotonic() > deadline:
-            log("night conductor: the brain was not quiet; nothing done")
+            log("night conductor: the brain was not quiet (" + (", ".join(gate.signs) or why) + "); nothing done")
             return 0
         time.sleep(settings.poll_s)
     model = RealModel(settings, gate, knowledge=settings.knowledge_url, stop=stop)
