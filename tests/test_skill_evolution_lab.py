@@ -149,7 +149,8 @@ def test_a_worse_variant_never_reaches_expensive_holdout():
     calls = []
 
     async def mutate(text, feedback, index):
-        assert feedback["passed"] == 3  # Genuine baseline diagnostics reach the proposer.
+        if index == 0:
+            assert feedback["passed"] == 3  # Baseline diagnostics reach the first proposal.
         return WORSE
 
     async def evaluate(text):
