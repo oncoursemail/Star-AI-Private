@@ -95,7 +95,8 @@ class LatencyWindow:
         """Return stage p95s, end-to-end p50/p95 and an advisory, not an authorization."""
         turns = tuple(self._turns)
         good = [t for t in turns if t.status == "completed"]
-        latencies = [t.first_audible_ms - t.started_ms for t in good]
+        # completed implies first_audible_ms (checked in LiveTurn); the filter only narrows the type
+        latencies = [t.first_audible_ms - t.started_ms for t in good if t.first_audible_ms is not None]
         result = {
             "turns": len(turns),
             "completed": len(good),

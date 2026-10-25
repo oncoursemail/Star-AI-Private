@@ -155,10 +155,11 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
             reasons.append("increased_" + metric)
     # A faster result obtained by silently dropping the slowest opportunities
     # is not a latency win. Score the exact same *audible* opportunities only.
-    matched = [(base.first_audible_ms, candidate[ident].first_audible_ms)
-               for ident, base in baseline.items()
-               if base.should_reply and base.result == "spoken"
-               and candidate[ident].result == "spoken"]
+    # "spoken" implies first_audible_ms (checked in StreamAuditTurn); the None checks only narrow the type.
+    matched = [(old_ms, new_ms) for ident, base in baseline.items()
+               if base.should_reply and base.result == "spoken" and candidate[ident].result == "spoken"
+               for old_ms, new_ms in [(base.first_audible_ms, candidate[ident].first_audible_ms)]
+               if old_ms is not None and new_ms is not None]
     if len(matched) < min_spoken:
         reasons.append("insufficient_matched_audible_samples")
     old, new = _p95([a for a, _ in matched]), _p95([b for _, b in matched])
