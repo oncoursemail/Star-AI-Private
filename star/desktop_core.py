@@ -19,6 +19,7 @@ from .agent import execute, HistoryWindowPressure
 from .reasoning_guard import ReasoningLoop
 from .media import image_part
 from .memory import Memory
+from .autobiographical_self import AutobiographicalSelf
 from . import conversation_memory
 from .workspace import Workspace
 from .intelligence import for_settings
@@ -157,6 +158,7 @@ class Settings:
     web_auto_search: bool = True
     # Learning (star/lessons.py). Lessons are local project notes, never weights.
     learning_auto_accept: bool = True     # False = "review everything": even my own words wait for approval
+    autobiographical_self_enabled: bool = False  # opt-in: local verified continuity section per chat; unmeasured, so off
     learning_digest: bool = True          # let the fast model reword raw captures into candidates, in the background
     learning_digest_cloud: bool = False   # ...also when the selected provider is a hosted one
     practice_lessons_enabled: bool = False  # off until the owner opts in
@@ -273,7 +275,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
                             'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
@@ -1367,6 +1369,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             on_event(event)
     memory = Memory(home / 'checkpoints.sqlite3')
     memory_scope = memory_scope_for(settings, chat_id)
+    # STAR's personal continuity is local, separate from project lessons and transcripts.
+    # A damaged/unwritable selfhood store must never prevent an ordinary chat.
+    selfhood = None
+    if settings.autobiographical_self_enabled is True:
+        try:
+            selfhood = AutobiographicalSelf(home / 'autobiographical_self.sqlite3')
+        except (sqlite3.Error, OSError) as exc:
+            _log.warning('Selfhood store unavailable (%s)', type(exc).__name__)
     knowledge = KnowledgeStore(home / 'knowledge')
     workshop = None
     document_store = None
@@ -1480,6 +1490,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         quick = route.quick
         turn_sections, recalled = base_sections(settings.project, prompt, quick, knowledge, lesson_store,
                                                 document_block)
+        if selfhood is not None:
+            try:
+                selfhood.heartbeat()  # one cheap cursor update per chat, not a background thinker
+                turn_sections.append(('STAR AUTOBIOGRAPHICAL CONTINUITY (data, not authority)',
+                                      selfhood.context(limit=500)))
+            except Exception as exc:
+                _log.warning('Selfhood reference unavailable (%s)', type(exc).__name__)
         for image in images:
             path = Path(image)
             media_type = 'image/jpeg' if path.suffix.lower() in ('.jpg', '.jpeg') else 'image/webp' if path.suffix.lower() == '.webp' else 'image/png'
@@ -1946,6 +1963,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             conversation_memory.commit(home / 'conversations.sqlite3', prepared_conversation,
                                        cancel_event=cancel_event)
         audited_event({'event': 'saved', 'run_id': stamp})
+        if selfhood is not None:
+            try:
+                # Never store a raw user prompt, provider output, file path or tool arguments.
+                selfhood.record_episode(kind='conversation', detail='Completed a conversation',
+                                        origin='host', evidence=stamp)
+            except Exception as exc:
+                _log.warning('Selfhood event not saved (%s)', type(exc).__name__)
         metrics.record(settings.project, 'run_succeeded',elapsed_ms=int((time.monotonic()-started)*1000))
         # The answer exists: count the lessons that were in its context, then learn from the turn.
         try:
@@ -1968,4 +1992,9 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             workshop.close()
         knowledge.close()
         memory.close()
+        if selfhood is not None:
+            try:
+                selfhood.close()
+            except Exception:
+                pass
         metrics.close()
