@@ -240,6 +240,23 @@ TRIGGERS: dict[str, re.Pattern] = {
     "roblox-secondary-motion-lab": re.compile(
         r"\b(?:SmartBone(?: ?2)?|XPBD|secondary motion|jiggle bones?|spring bones?|bone chains?|hair physics|cloth physics|"
         r"cosmetic physics|AnimationConstraint|ponytail|capes?|dangling)\b", re.IGNORECASE),
+    # 2026 platform changes from the official docs (action-wave1-20261025). OFF until the evaluation gate measures them.
+    "roblox-server-authority": re.compile(
+        r"\b(?:server authority|server-authoritative (?:movement|physics|simulation|game)|AuthorityMode|"
+        r"BindToSimulation|SetPredictionMode|client prediction|predict\w*|rollback|resimulat\w*|netcode|"
+        r"NextGenerationReplication|UseFixedSimulation|competitive (?:game|shooter|fps|racing)|flyhacks?|speedhacks?|"
+        r"server authority game|for prediction|in the simulation)\b",
+        re.IGNORECASE),
+    "roblox-luau-new-solver": re.compile(
+        r"\b(?:type solver|new solver|UseNewLuauTypeSolver|LuauTypeCheckMode|--!strict|--!nonstrict|strict mode|"
+        r"type check\w*|type errors?|blocked type|type functions?|export type|type annotations?|typed Luau)\b",
+        re.IGNORECASE),
+    "roblox-data-limits-2026": re.compile(
+        r"\b(?:data ?store limits?|rate limits?|throttl\w*|request budgets?|GetRequestBudgetForRequestType|"
+        r"SetRateLimitForRequestType|DataStoreRequestType|quota\w*|how many (?:requests|saves|writes)|"
+        r"storage limit|4 ?MB|Open Cloud (?:limits?|data ?stores?)|data ?store errors?|30[1-6] error|limits?|"
+        r"per minute|how (?:big|large|long|many)|budgets?|storage|shared with Open Cloud)\b",
+        re.IGNORECASE),
 }
 
 

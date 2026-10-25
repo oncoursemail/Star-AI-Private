@@ -58,6 +58,7 @@ class VoiceSettings:
     barge_in_ms: int = 288               # speech needed to interrupt Star
     max_reply_tokens: int = 220
     partial_transcripts: bool = True
+    acknowledgements: bool = True        # short pre-rendered "okay" clips in the chosen voice while Star thinks
     input_device: str = ""               # sounddevice name or index; empty = system default
     output_device: str = ""
     system_extra: str = ""
@@ -121,4 +122,4 @@ class VoiceSettings:
                           barge_in_ms=int(self.barge_in_ms))
         return CallConfig(turn=turn, system_extra=self.system_extra, partial_transcripts=self.partial_transcripts,
                           use_echo_gate=self.output == "speakers", style=self.voice_style,
-                          push_to_talk=self.call_mode == "push-to-talk")
+                          push_to_talk=self.call_mode == "push-to-talk", acknowledgements=self.acknowledgements)

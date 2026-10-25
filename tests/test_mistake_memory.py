@@ -124,7 +124,8 @@ def test_a_rule_that_makes_the_block_worse_is_dropped():
         bad = "task.wait" in code
         errors = [{"line": 1, "column": 1, "kind": "SyntaxError", "message": "boom"}] if bad else []
         return {"ran": True, "ok": not bad, "errors": errors}
-    answer, summary = asyncio.run(vl.review(fence("wait(1)\n"), vl.Tools(checker=checker, fixers=[fixer])))
+    answer, summary = asyncio.run(vl.review(fence("wait(1)\n"), vl.Tools(checker=checker, fixers=[fixer],
+                                                                        deprecated=False)))
     assert "task.wait" not in answer and summary["fixed"] is False
 
 

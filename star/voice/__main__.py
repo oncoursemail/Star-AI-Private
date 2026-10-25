@@ -123,7 +123,7 @@ def cmd_file_call(args) -> int:
 
 def cmd_call(args) -> int:
     from .devices import Microphone, SoundSpeaker
-    from .metrics import latency_table
+    from .metrics import latency_summary, latency_table
     from .runtime import Engines, build_session
     settings = _settings(args)
     print("Getting ready (the first start downloads the speech recognition model)...", flush=True)
@@ -162,6 +162,16 @@ def cmd_call(args) -> int:
     if session.turns:
         print()
         print(latency_table(session.turns))
+        statistics = latency_summary(session.turns)
+        audio = statistics["latency"]["speech_end_to_audio_submitted"]
+        if audio["n"]:
+            print(f"First PCM submitted to speaker: p50={audio['p50_ms']:.1f} ms, "
+                  f"p95={audio['p95_ms']:.1f} ms ({audio['n']} reliable turns; "
+                  "not a measurement of physical speaker playback)")
+        if statistics["invalid_clock_turns"] or statistics["errored_turns"]:
+            print(f"Excluded from latency percentiles: "
+                  f"{statistics['errored_turns']} errored, "
+                  f"{statistics['invalid_clock_turns']} invalid clock")
     return 0
 
 

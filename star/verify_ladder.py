@@ -7,6 +7,9 @@ stop at the first failure:
   compile  the knowledge service's Luau compiler + type checker (/luau/check; nothing is executed there)
   api      every Roblox class, service and member against the local API dump (star/roblox_api_checker.py), plus
            the API lock's audit when star/api_lock.py is present (branch star/api-lock-20261021)
+  deprecated  members Roblox lists as deprecated (data/roblox_api/deprecated.json, the official inventory) and APIs
+           the docs mark beta-only (feature_status.json), with the replacement text (star/roblox_deprecated.py;
+           setting `verify_deprecated`, default on)
   run      the block runs on the STAR server (star/eval_sandbox.py: LXD container, user `star`, prlimit, timeout),
            never on this PC, inside the Player Twins engine doubles (a small mock Roblox server). Errors that only
            say the mock does not cover something make the rung `skip`, not `fail`.
@@ -16,8 +19,13 @@ stop at the first failure:
            turn created in Studio, or over a .rbxl/.rbxm file it wrote (Lune); see `xray_outcome` at the end.
 
 On a failure: one targeted fix call with the exact failing rung output and the lines around it, then the whole
-ladder again on the candidate. A candidate is kept only when it gets further up the ladder. At most `rounds` fix
-calls per block, stopped early when a round makes no progress or the time budget is spent. The answer then shows
+ladder again on the candidate. A candidate is kept only when it gets further up the ladder; the best version so far
+always stays (checkpoint rule, docs/research/coding-smarts-20261023.md finding 2). A round that does not help is
+dropped and the loop stops; with `Tools.retry_rejected` (setting `verify_retry`, opt-in) the next round asks again
+from the best version, told that one attempt failed (the failed candidate is not shown). Measured 2026-10-25 on 47
+stored answers (action-wave1-20261025): 11 blocks had a rejected first round, the retry recovered 0 of them and cost
+one more fix call each, so it stays off. At most `rounds` fix calls per block, stopped early when the time budget
+is spent. The answer then shows
 the verified code, or the best attempt with a plain "unverified: <reason>" line. Every failure and every verified
 fix is appended to the mistake memory (JSONL, S2 groundwork).
 """
@@ -40,7 +48,7 @@ FIX_RESERVE_SECONDS = 45.0        # a fix call is stopped this long before the t
 MIN_FIX_SECONDS = 40.0            # no fix call when less than this is left
 WRITE_TESTS_SECONDS = 120.0       # the test-writing call is dropped (no tests) after this long (a cold prompt on
                                   # a busy star-fast slot reads ~45 tokens/s, so ~60 s is common)
-RUNGS = ("compile", "api", "run", "tests")
+RUNGS = ("compile", "api", "deprecated", "run", "tests")
 ENGINE = Path(__file__).with_name("player_twins") / "luau" / "engine.luau"
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
 _FENCE = re.compile(r"```[ \t]*(?:lua|luau)\b[^\n]*\n(.*?)```", re.S | re.I)
@@ -58,6 +66,8 @@ _UNMOCKED = ("TweenInfo", "NumberSequence", "NumberSequenceKeypoint", "ColorSequ
              "PhysicalProperties", "Faces", "Axes", "Font", "DateTime", "PathWaypoint", "Vector3int16",
              "Vector2int16", "UDim", "SharedTable", "elapsedTime", "settings", "UserSettings", "plugin", "stats",
              "version", "DockWidgetPluginGuiInfo", "CatalogSearchParams")
+RETRY_NOTE = (" An earlier fix for this problem did not pass the checks; fix it in a different way, keeping the "
+              "rest of the code.")
 _FIX_SYSTEM = (
     "You fix one Luau code block for Roblox. STAR's checker found the problem listed below. Fix exactly that "
     "problem and keep everything else: behaviour, structure, names and comments. A member that is not in its "
@@ -98,6 +108,8 @@ class Tools:
     first_block: bool = True    # later blocks are usually usage examples: unknown globals there are placeholders
     extra_rungs: list = field(default_factory=list)   # callables (code) -> Rung | None, after `tests`
     fixers: list = field(default_factory=list)        # active self-written fixers (star/mistake_memory.py): no model call
+    deprecated: bool = True     # the deprecated / beta-only API rung (star/roblox_deprecated.py)
+    retry_rejected: bool = False  # a round that did not help leaves rounds for another try (setting verify_retry)
 
 
 def _bounded(text: str, limit: int = MAX_DETAIL) -> str:
@@ -196,6 +208,13 @@ def check_api(code: str, tools: Tools) -> Rung:
     items.sort()
     listing = "; ".join(f"line {line}: {msg}" for line, msg, _ in items)
     return Rung("api", "fail", _bounded(listing), items[0][0], len(items), "api:" + items[0][2], tuple(classes))
+
+
+def check_deprecated(code: str, tools: Tools) -> Rung:
+    if not tools.deprecated:
+        return Rung("deprecated", "skip", "the deprecated-API rung is off (setting verify_deprecated)")
+    from .roblox_deprecated import rung
+    return rung(code, tools.prompt)
 
 
 # --- rung 3: run with Roblox mocks on the server ---------------------------------------------------------------
@@ -369,7 +388,7 @@ async def run_rungs(code: str, tools: Tools, state: dict) -> list[Rung]:
     """All rungs in order, stopping at the first failure. `state` carries the generated tests across rounds
     and the seconds spent per rung."""
     out: list[Rung] = []
-    for rung in (check_compile, check_api):
+    for rung in (check_compile, check_api, check_deprecated):
         since = monotonic()
         result = await asyncio.to_thread(rung, code, tools)
         _took(state, result.rung, since)
@@ -501,6 +520,7 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
                         "diff": _changed_lines(current, rewritten)})
                 record.update(fixers=used, fixed=True)
                 current, rungs = rewritten, new_rungs
+    rejected = 0
     for _ in range(max(0, rounds)):
         failure = first_failure(rungs)
         if failure is None or tools.fix is None:
@@ -512,9 +532,10 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
         mistake = {"rung": failure.rung, "signature": failure.signature, "message": failure.detail[:300],
                    "verified": False}
         record["mistakes"].append(mistake)
+        asked = replace(failure, detail=failure.detail + RETRY_NOTE) if rejected else failure
         since = monotonic()
         try:
-            reply = await asyncio.wait_for(tools.fix(current, failure, _members(failure.classes, tools.dump)),
+            reply = await asyncio.wait_for(tools.fix(current, asked, _members(failure.classes, tools.dump)),
                                            timeout=max(1.0, left() - 5))
         except asyncio.CancelledError:
             raise
@@ -527,11 +548,18 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
         if (not candidate or candidate.strip() == current.strip()
                 or len(candidate.strip()) < 0.5 * len(current.strip())):
             record["stopped"] = "the fix changed nothing usable"
-            break
-        new_rungs = await run_rungs(candidate, tools, state)
-        if ladder_rank(new_rungs) <= ladder_rank(rungs):
-            record["stopped"] = "the fix did not get further up the ladder"
-            break
+        else:
+            new_rungs = await run_rungs(candidate, tools, state)
+            if ladder_rank(new_rungs) <= ladder_rank(rungs):
+                record["stopped"] = "the fix did not get further up the ladder"
+            else:
+                record.pop("stopped", None)
+        if "stopped" in record:            # the best version so far stays
+            rejected += 1
+            record["rejected"] = rejected
+            if not tools.retry_rejected:
+                break
+            continue
         mistake["diff"] = _changed_lines(current, candidate)
         still = first_failure(new_rungs)
         mistake["verified"] = still is None or still.rung != failure.rung
@@ -546,6 +574,7 @@ async def verify_block(code: str, tools: Tools, *, rounds: int, left) -> dict:
 # --- notes ---------------------------------------------------------------------------------------------------
 
 _PASSED = {"compile": "compiles and type-checks", "api": "uses only real Roblox API members (local API dump)",
+           "deprecated": "uses no deprecated or beta-only Roblox API (Roblox's deprecated list)",
            "run": "ran in STAR's mock Roblox server without errors"}
 
 

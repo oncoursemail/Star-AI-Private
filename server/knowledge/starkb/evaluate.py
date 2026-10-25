@@ -14,6 +14,7 @@ A mode without `+q` ignores generated questions even when the index has them.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 import statistics
@@ -43,10 +44,15 @@ def load_questions(path: Path) -> list[dict]:
 
 def parse_mode(mode: str) -> tuple[str, dict]:
     base, *flags = mode.split("+")
-    unknown = set(flags) - {"q", "fallback", "rerank", "f", "frrf"}
+    weights = [f for f in flags if re.fullmatch(r"lw\d+(?:\.\d+)?", f)]
+    unknown = set(flags) - {"q", "fallback", "rerank", "f", "frrf", "rr"} - set(weights)
     if unknown:
         raise ValueError(f"unknown mode flag in {mode!r}: {sorted(unknown)}")
     options = {"fallback": "fallback" in flags, "questions": "q" in flags, "facets": "f" in flags or "frrf" in flags}
+    if "rr" in flags:
+        options["remote_rerank_n"] = 10
+    if weights:
+        options["lexical_weight"] = float(weights[-1][2:])
     if "frrf" in flags:
         options["facet_merge"] = "rrf"
     return base + ("+rerank" if "rerank" in flags else ""), options
