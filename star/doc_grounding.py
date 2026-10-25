@@ -484,6 +484,7 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
                                         dump=slop.bundled_api_dump(), runner=verify_ladder.default_runner(),
                                         write_tests=write_tests, fix=fix, prompt=prompt,
                                         deprecated=getattr(settings, "verify_deprecated", "on") == "on",
+                                        retry_rejected=getattr(settings, "verify_retry", "off") == "on",
                                         fixers=(mistake_memory.active_fixers()
                                                 if getattr(settings, "mistake_memory", "retrieve") == "fix" else []))
             answer, ladder_record = await verify_ladder.review(

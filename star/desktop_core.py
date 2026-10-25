@@ -196,6 +196,8 @@ class Settings:
     # Deprecated / beta-only API rung of the check-fix loop (star/roblox_deprecated.py): Roblox's official list of 597
     # deprecated members with replacements, plus APIs the docs mark beta. Needs verify_ladder.
     verify_deprecated: str = 'on'
+    # After a fix round that did not help, try again from the best version (opt-in: 0 of 11 recovered, 2026-10-25).
+    verify_retry: str = 'off'
     # Mistake memory (star/mistake_memory.py): 'retrieve' (default) adds a short note of verified fixes for failures like
     # the request's to the turn; 'fix' also lets the check-fix loop apply its validated self-written rewrite rules
     # (no model call) before any model fix; 'off' does neither. Rules stay off until the owner sets 'fix'.
@@ -304,6 +306,8 @@ class Settings:
             raise ValueError('X-ray rung must be off or on')
         if self.verify_deprecated not in ('off', 'on'):
             raise ValueError('Deprecated-API rung must be off or on')
+        if self.verify_retry not in ('off', 'on'):
+            raise ValueError('Check-fix retry must be off or on')
         if type(self.specialist_parallelism) is not int or self.specialist_parallelism not in (1,2):
             raise ValueError('Limit specialists to 1 or 2 concurrent model calls')
         if (type(self.team_timeout_min) is not int or type(self.team_timeout_max) is not int
