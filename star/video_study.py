@@ -79,7 +79,7 @@ def plan_windows(duration: float, *, window_seconds: int = 60, max_windows: int 
 
 def validate_source(path: Path, ffprobe: str) -> dict:
     """Reject URLs, non-video paths, giant inputs, and unsupported durations."""
-    text = str(path)
+    text = str(path).replace("\\", "/")   # Windows: Path("https://x") prints as https:\x
     if "://" in text or text.lower().startswith(("http:/", "https:/")):
         raise video.VideoError("Only an authorized local video file can be studied; URLs are not fetched.")
     source = Path(path).expanduser().resolve(strict=True)

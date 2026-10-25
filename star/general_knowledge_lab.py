@@ -7,7 +7,6 @@ reproducible study plan with provenance, comparison and transfer tests.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 import re
 
 

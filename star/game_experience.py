@@ -64,7 +64,8 @@ def validate_episode(raw: Any) -> dict:
         if type(event) is not dict or set(event) - {"at", "action", "seen", "outcome", "success", "frame_sha256"}:
             raise ValueError(f"Invalid step {index}")
         at = event.get("at")
-        if type(at) not in (int, float) or not 0 <= at <= MAX_SECONDS or at <= previous:
+        if (isinstance(at, bool) or not isinstance(at, (int, float))
+                or not 0 <= at <= MAX_SECONDS or at <= previous):
             raise ValueError("Timestamps must strictly increase within 3 hours")
         previous = float(at)
         action = event.get("action")

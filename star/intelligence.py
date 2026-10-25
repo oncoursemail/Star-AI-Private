@@ -639,7 +639,6 @@ class LocalIntelligence:
             path = (root / requested).resolve(strict=True)
             if root not in path.parents or not path.is_file():
                 raise PermissionError("Video must be a local file inside the selected workspace")
-            from tempfile import TemporaryDirectory
             from . import video_study
             # The analysis performs blocking frame extraction and model calls; the
             # assistant dispatches this tool on a worker thread.
