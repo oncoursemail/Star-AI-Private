@@ -28,14 +28,14 @@ def ready():
     return q
 
 
-def train_route(q, *, kind, device, start=1000, duration=200, steps=5):
+def train_route(q, *, kind, device, start=1000, duration=200, steps=5, game=False):
     """Realistic synthetic host acknowledgements; NOT a hardware measurement."""
     for index in range(steps):
         at = start + index * 3000
         attempt = q.admit(
             job(f"cal-{kind}-{device}-{index}", at,
                 kind=kind, device=device, ttl=duration + 600),
-            snap(at), now_ms=at,
+            snap(at, game=game), now_ms=at,
         )
         assert attempt.admitted, attempt.reason
         assert attempt.device == device
@@ -100,7 +100,9 @@ def test_live_vision_rejects_uncalibrated_route_but_accepts_real_sample_history(
         job("image", 0, kind="vision"), snap(0, live=True), now_ms=0
     )
     assert not denied.admitted
-    train_route(q, kind="vision", device="gpu", start=1000)
+    # Calibration must be captured while a game is active; idle samples
+    # cannot certify live-game latency safety.
+    train_route(q, kind="vision", device="gpu", start=1000, game=True)
     metrics = snap(17000, live=True, game=True)
     result = q.admit(
         job("image-live", 17000, kind="vision"), metrics, now_ms=17000
@@ -112,20 +114,22 @@ def test_live_vision_rejects_uncalibrated_route_but_accepts_real_sample_history(
     assert q.finish(result.ticket, now_ms=17100, succeeded=True)
     denied = q.admit(
         job("other-image", 17400, kind="vision"),
-        snap(17400, live=True), now_ms=17400,
+        snap(17400, live=True, game=True), now_ms=17400,
     )
     assert denied.reason == "live_vision_at_most_one_hz"
     after = q.admit(
         job("new-image", 18100, kind="vision"),
-        snap(18100, live=True), now_ms=18100,
+        snap(18100, live=True, game=True), now_ms=18100,
     )
     assert after.admitted
 
 
 def test_live_game_prefers_calibrated_cpu_voice_even_with_faster_gpu():
     q = ready()
-    train_route(q, kind="speech", device="cpu", start=1000, duration=320)
-    train_route(q, kind="speech", device="gpu", start=17000, duration=100)
+    train_route(q, kind="speech", device="cpu", start=1000,
+                duration=320, game=True)
+    train_route(q, kind="speech", device="gpu", start=17000,
+                duration=100, game=True)
     attempt = q.admit(
         job("live-voice", 34000, kind="speech", ttl=1100),
         snap(34000, live=True, game=True), now_ms=34000,
@@ -301,3 +305,57 @@ def test_underloaded_offline_candidate_is_only_advisory_not_execution():
     assert report.admitted
     assert report.reason == "unmeasured_host_must_verify"
     assert q.status()["completed"] == 0  # No tool/model was run.
+
+
+def test_idle_calibration_cannot_certify_an_active_game():
+    """Critical: idle p95 used to falsely authorize live GPU vision."""
+    q = ready()
+    train_route(q, kind="vision", device="gpu", game=False)
+    denied = q.admit(
+        job("under-game", 17000, kind="vision", device="gpu"),
+        snap(17000, live=True, game=True), now_ms=17000,
+    )
+    assert not denied.admitted
+    assert denied.reason == "no_calibrated_deadline_safe_route_or_headroom"
+    assert "vision:gpu:idle" in q.status()["route_p95_ms"]
+    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+
+
+def test_game_load_profile_does_not_trust_unloaded_model_latency():
+    q = ready()
+    train_route(q, kind="speech", device="cpu", duration=300, game=False)
+    live = q.admit(
+        job("speech-game", 17000, kind="speech", device="cpu"),
+        snap(17000, live=True, game=True), now_ms=17000,
+    )
+    # Critical live voice may be allowed but must NOT be mislabeled calibrated.
+    assert live.admitted
+    assert live.predicted_p95_ms is None
+    assert live.reason == "unmeasured_host_must_verify"
+
+
+def test_calibration_expires_in_two_minutes_and_status_clears_old_p95():
+    q = ready()
+    train_route(q, kind="vision", device="gpu", game=True)
+    before = q.status()["route_p95_ms"]
+    assert before["vision:gpu:game_active"] == 200
+    at = 200000
+    denied = q.admit(
+        job("expired-calibration", at, kind="vision", device="gpu"),
+        snap(at, live=True, game=True), now_ms=at,
+    )
+    assert not denied.admitted
+    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+
+
+def test_bad_results_do_not_calibrate_active_game_profile():
+    q = ready()
+    for n in range(5):
+        at = 1000 + n * 3000
+        attempt = q.admit(
+            job(f"fail-{n}", at, kind="vision", device="gpu"),
+            snap(at, game=True), now_ms=at)
+        if not attempt.admitted:
+            break
+        assert q.finish(attempt.ticket, now_ms=at + 100, succeeded=False)
+    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]

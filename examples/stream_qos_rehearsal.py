@@ -26,13 +26,14 @@ def rehearsal() -> dict:
     scheduler = AdaptiveQoS()
     scheduler.enable(owner_approved=True)
 
-    # Simulate five completed host-measured CPU TTS jobs while offline.
+    # Simulate five completed CPU TTS jobs with a GAME ACTIVE but not live.
+    # Idle *no-game* measurements must never certify a realtime game workload.
     for i in range(5):
         at = 500 + 2200 * i
         speech = InferenceJob(f"voice-cal-{i}", "speech", at, at + 1500,
                               ram_mib=100, vram_mib=250, device="cpu")
         result = scheduler.admit(
-            speech, snapshot(at, live=False, game=False, fps=60, vram=6000),
+            speech, snapshot(at, live=False, game=True, fps=60, vram=6000),
             now_ms=at,
         )
         assert result.admitted and result.device == "cpu"

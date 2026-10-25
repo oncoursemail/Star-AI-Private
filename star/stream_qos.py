@@ -41,11 +41,18 @@ def _number(value: object, name: str, upper: float) -> float:
     return result
 
 
-def _p95(samples: deque[float]) -> float | None:
-    if len(samples) < 5:
+def _p95(samples: deque[tuple[float, float]], *, now_ms: float) -> float | None:
+    """Measured p95 for this game-load regime, expiring after two minutes."""
+    ordered = sorted(duration for sampled, duration in samples
+                     if 0 <= now_ms - sampled <= 120_000)
+    if len(ordered) < 5:
         return None
-    ordered = sorted(samples)
     return ordered[math.ceil(0.95 * len(ordered)) - 1]
+
+
+def _regime(snapshot: QoSSnapshot) -> str:
+    """Never borrow idle latency measurements for an active game."""
+    return "game_active" if snapshot.stream.game_active else "idle"
 
 
 @dataclass(frozen=True)
@@ -112,6 +119,7 @@ class QoSDecision:
 class _Reservation:
     job: InferenceJob
     device: str
+    regime: str
     started_ms: float
     expires_ms: float
 
@@ -140,7 +148,7 @@ class AdaptiveQoS:
         self._inflight: dict[int, _Reservation] = {}
         self._expired: set[int] = set()
         self._ids: set[str] = set()
-        self._samples: dict[tuple[str, str], deque[float]] = {}
+        self._samples: dict[tuple[str, str, str], deque[tuple[float, float]]] = {}
         self._consecutive_failures: dict[tuple[str, str], int] = {}
         self._last_vision_ms: float | None = None
         self._counts = dict(admitted=0, deferred=0, completed=0, failed=0, expired=0)
@@ -209,7 +217,10 @@ class AdaptiveQoS:
                      else 1024 if stream.live else 512)
             if stream.free_vram_mib - reserved < job.vram_mib + floor:
                 return None
-        estimate = _p95(self._samples.get(key, deque()))
+        estimate = _p95(
+            self._samples.get((job.kind, device, _regime(snap)), deque()),
+            now_ms=now,
+        )
         slack = job.deadline_ms - now
         if estimate is not None:
             # Conservative 20% scheduling margin for unmeasured queuing and GC.
@@ -278,7 +289,8 @@ class AdaptiveQoS:
             self._serial += 1
             ticket = self._serial
             expires = min(job.deadline_ms, now + self.lease_cap_ms)
-            self._inflight[ticket] = _Reservation(job, device, now, expires)
+            self._inflight[ticket] = _Reservation(
+                job, device, _regime(snap), now, expires)
             self._ids.add(job.job_id)
             if stream.live and job.kind == "vision":
                 self._last_vision_ms = now
@@ -299,7 +311,10 @@ class AdaptiveQoS:
             elapsed = now - pending.started_ms
             key = (pending.job.kind, pending.device)
             if succeeded:
-                self._samples.setdefault(key, deque(maxlen=32)).append(elapsed)
+                self._samples.setdefault(
+                    (pending.job.kind, pending.device, pending.regime),
+                    deque(maxlen=32),
+                ).append((now, elapsed))
                 self._consecutive_failures[key] = 0
                 self._counts["completed"] += 1
             else:
@@ -316,9 +331,9 @@ class AdaptiveQoS:
                 "inflight": len(self._inflight),
                 "expired_awaiting_host_stop": len(self._expired),
                 "route_p95_ms": {
-                    f"{kind}:{device}": round(value, 2)
-                    for (kind, device), samples in sorted(self._samples.items())
-                    if (value := _p95(samples)) is not None
+                    f"{kind}:{device}:{regime}": round(value, 2)
+                    for (kind, device, regime), samples in sorted(self._samples.items())
+                    if (value := _p95(samples, now_ms=self._clock_ms or 0)) is not None
                 },
                 "unhealthy_routes": sum(n >= 3 for n in self._consecutive_failures.values()),
                 "basis": "host-provided same-clock elapsed times; advisory only",
