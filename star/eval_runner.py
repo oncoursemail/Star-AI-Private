@@ -501,8 +501,9 @@ class PlannedSandbox:
         return self.default.lock_present(*args, **kwargs)
 
 
-_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check", "prefill_while_typing", "verify_ladder",
-                       "verify_rounds", "verify_budget_s", "verify_retry", "mistake_memory", "thinking_budget"})
+_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check", "prefill_while_typing", "fixed_roblox_tools",
+                       "verify_ladder", "verify_rounds", "verify_budget_s", "verify_retry", "mistake_memory",
+                       "thinking_budget"})
 
 
 def parse_sets(pairs: list[str]) -> dict:

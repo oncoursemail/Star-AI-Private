@@ -165,6 +165,7 @@ PERMITTED_SETTINGS = frozenset({
     # Use my GPU: where its files are and when it unloads. The switch itself is `gpuHelperSet`, saved at once.
     'gpu_helper_server','gpu_helper_model','gpu_idle_minutes','use_my_pc_auto_night',
     'prefill_while_typing',   # star/prefill_warm.py: warm the prompt cache with the draft, off by default
+    'fixed_roblox_tools',     # star/turn_memory.py: one fixed tool list for Roblox chats (prompt cache reuse), on
     'edit_diff',              # star/edit_format.py: changed lines only for pasted-code edits, off by default
     'music_recognition_enabled','fpcalc_path',   # star/music_recognition.py, off by default
 })

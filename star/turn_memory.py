@@ -63,7 +63,9 @@ class TurnMemory:
             return list(select(prompt))
         chosen: list[dict] = []
         seen: set[str] = set()
-        for text in (prompt, *self.pinned, *self.prompts):
+        # Pinned texts first: their tools then lead the list in the same order for every task, whatever the
+        # message itself selects (a hybrid model reuses a cached start only when it is byte-identical).
+        for text in (*self.pinned, prompt, *self.prompts):
             for tool in select(text):
                 if tool["name"] not in seen:
                     seen.add(tool["name"])
