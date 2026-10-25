@@ -86,7 +86,8 @@ def preview_run(path: Path, *, expected_sha256: str, project: str) -> CheckedDev
         if outcome != "error" and item.get("passed") is not expected_bool:
             raise ValueError("Contradictory pass/status fields")
         elapsed = item.get("seconds")
-        if type(elapsed) not in (int, float) or not math.isfinite(elapsed) or not 0 <= elapsed <= 86400:
+        if (isinstance(elapsed, bool) or not isinstance(elapsed, (int, float))
+                or not math.isfinite(elapsed) or not 0 <= elapsed <= 86400):
             raise ValueError("Missing or unreasonable evaluator duration")
         millis = round(elapsed * 1000)
         # Task families are explicit identifiers, never raw task prompts.

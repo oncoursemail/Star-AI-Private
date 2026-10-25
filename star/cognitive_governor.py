@@ -32,7 +32,7 @@ _MAX_CASES = 20_000
 _MAX_AGE_DAYS = 90
 
 
-def _label(value: str, what: str) -> str:
+def _label(value: object, what: str) -> str:
     if type(value) is not str or not _ID.fullmatch(value):
         raise ValueError(f"{what} must be a bounded identifier, never raw prompt text")
     return value

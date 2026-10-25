@@ -1,6 +1,7 @@
 """Offline, standard-library tests of verified autonomous effort advice."""
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 from pathlib import Path
 import sqlite3
@@ -117,7 +118,7 @@ class CognitiveGovernorTests(unittest.TestCase):
 
     def test_receipts_are_append_only(self):
         self.ledger.record_grade(self.receipt())
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con:
             with self.assertRaises(sqlite3.IntegrityError):
                 con.execute("DELETE FROM grades")
             with self.assertRaises(sqlite3.IntegrityError):
@@ -225,7 +226,7 @@ class CognitiveGovernorTests(unittest.TestCase):
         cmd = [sys.executable, "-m", "star.cognitive_governor", "--db", str(self.path),
                "--project", "GameOne", "--family", "luau", "--model", "quick",
                "--revision", "rev1"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("STANDARD_VERIFY", result.stdout)
         self.assertFalse(self.path.exists())

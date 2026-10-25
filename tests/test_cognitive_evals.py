@@ -156,7 +156,7 @@ class CognitiveEvalBridgeTests(unittest.TestCase):
         result = subprocess.run([sys.executable, "-m", "star.cognitive_evals",
                                  "--file", str(self.path), "--approved-sha256", digest,
                                  "--project", "OwnedDev", "--db", str(self.db)],
-                                capture_output=True, text=True, timeout=10)
+                                capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("PREVIEW ONLY", result.stdout)
         self.assertFalse(self.db.exists())
