@@ -314,10 +314,45 @@ _HUB_GAMEPLAY_TRIGGER = re.compile(r"\b(telemetry|instrumentation|funnel|analyti
 _CLOUD_TRIGGER = re.compile(r"\b(open.?cloud|owned.universe|owner.analytics|authorized.universe|api.key|publish\w*|headless|"
                             r"test.(?:place|experience|run)|run.(?:the.)?tests?|luau.execution|data.?stores?|"
                             r"(?:place|experience|universe).(?:info\w*|id))\b", re.I)
+GENERAL_KNOWLEDGE_TOOLS = (
+    _tool("star_general_knowledge_curriculum",
+          "Prepare a cross-disciplinary, evidence-first research curriculum with authoritative "
+          "source candidates, questions, experiments and transfer tests. This is NOT an "
+          "internet retrieval or automatic model training.",
+          {"topic": _s(500), "max_domains": _limit(8, 4)}, ("topic",)),
+)
+
+GAME_EXPERIENCE_TOOLS = (
+    _tool("star_game_episode_analyze",
+          "Analyze a bounded owner-observed gameplay trace. Returns time-referenced, "
+          "UNVERIFIED mechanic hypotheses, reproducible experiments and original design prototypes. "
+          "Does not control Roblox or watch video from a link.",
+          {"episode": {"type": "object"}}, ("episode",)),
+    _tool("star_game_episode_save",
+          "Opt-in: store a gameplay analysis as an UNREVIEWED, project-scoped candidate only. "
+          "No model-generated fact is promoted into trusted knowledge.",
+          {"episode": {"type": "object"}}, ("episode",)),
+    _tool("star_game_experience_search",
+          "Find earlier game observation candidates for this project, showing provenance and "
+          "review state. Unreviewed results cannot be stated as confirmed gameplay facts.",
+          {"query": _s(300), "limit": _limit(12, 6)}, ("query",)),
+)
+VIDEO_STUDY_TOOLS = (
+    _tool("star_game_video_study",
+          "Opt-in: actually examine multiple timestamped windows of a LOCAL video inside "
+          "the owner-selected workspace, with four frames per window and speech. "
+          "Uses the existing authorized local or STAR Server vision model, never a public URL "
+          "or automatic hosted provider. Results are unverified interpretations.",
+          {"path": _s(300), "question": _s(1000),
+           "max_windows": _limit(12, 4),
+           "window_seconds": {"type": "integer", "minimum": 5, "maximum": 120, "default": 60}},
+          ("path", "question")),
+)
+
 ALL_TOOLS = {tool["name"]: tool for tool in (*SKILL_TOOLS, *OBSIDIAN_TOOLS, *GRAPHIFY_TOOLS,
              *ROBLOX_GAME_TOOLS, *ROBLOX_KNOWLEDGE_TOOLS, *DOC_KNOWLEDGE_TOOLS, *ROBLOX_VIDEO_TOOLS,
              *ROBLOX_CLOUD_TOOLS, *ROBLOX_HUB_TOOLS, *CRAFT_TOOLS, *ASSET_TOOLS, *DESIGN_TOOLS, *MAP_PLAN_TOOLS, *STUDIO_LAB_TOOLS, *ROBLOX_DOCS_LIVE_TOOLS, *RUNTIME_TOOLS, *ARCHITECTURE_TOOLS,
-             *VFX_TOOLS, *COMMERCE_TOOLS)}
+             *VFX_TOOLS, *COMMERCE_TOOLS, *GAME_EXPERIENCE_TOOLS, *VIDEO_STUDY_TOOLS, *GENERAL_KNOWLEDGE_TOOLS)}
 _DOC_TOOL_NAMES = frozenset(tool["name"] for tool in DOC_KNOWLEDGE_TOOLS)
 _SHARED_TOOL_NAMES = frozenset(tool["name"] for tool in RUNTIME_TOOLS)
 _LEGACY_GRAPH_READ_NAMES = frozenset({"star_graphify_query", "star_graphify_stats"})
@@ -351,6 +386,14 @@ _GAME_TRIGGER = re.compile(r"\b(games?|experiences?|types?|genres?|playing|playe
 _DOCS_TRIGGER = re.compile(r"\b(roblox|luau|studio|code|scripts?|api|docs?|build|create|debug|fix|learn|architecture|research|design|ui|performance)\b", re.I)
 _FORUM_TRIGGER = re.compile(r"\b(forum|devforum|community|news|announcement|update|research|bug|discussion|issue|help)\b", re.I)
 _VIDEO_TRIGGER = re.compile(r"\b(youtube|videos?|watch|footage|clip|trailer|tutorial|creator)\b", re.I)
+_GAME_EXPERIENCE_TRIGGER = re.compile(
+    r"\b(roblox|gameplay|playtests?|games?|mechanics?|movement|learn(?:ing)?|"
+    r"videos?|watch|recordings?|experiences?|design)\b", re.I)
+_GENERAL_KNOWLEDGE_TRIGGER = re.compile(
+    r"\b(general knowledge|curriculum|teach me|learn about|research plan|study plan|"
+    r"knowledge gaps?|deep learning about|study physics|study science|study history|"
+    r"broader knowledge|learn everything)\b", re.I)
+
 
 
 class LocalIntelligence:
@@ -364,9 +407,17 @@ class LocalIntelligence:
                  vfx_studio_enabled: bool = False,
                  docs_live: RobloxDocsLive | None = None,
                  registered_workspaces: Iterable[Path | str] = (),
-                 graph_boundary_check: Callable[[], bool] | None = None):
+                 graph_boundary_check: Callable[[], bool] | None = None,
+                 game_experience_enabled: bool = False,
+                 game_experience_write_enabled: bool = False,
+                 video_study_enabled: bool = False, video_settings=None):
         self.home = home
         self.workspace = workspace
+        self.game_experience_enabled = game_experience_enabled is True
+        self.game_experience_write_enabled = (self.game_experience_enabled
+                                              and game_experience_write_enabled is True)
+        self.video_study_enabled = video_study_enabled is True
+        self.video_settings = video_settings
         self.design_enabled = design_enabled
         self.map_plans_enabled = map_plans_enabled
         self.studio_lab_enabled = studio_lab_enabled is True
@@ -462,6 +513,11 @@ class LocalIntelligence:
                             "online_search": self.asset_forge_enabled and self.roblox is not None},
             "craft": {"enabled": self.roblox is not None, "read_only": True,
                       "tools": [tool["name"] for tool in CRAFT_TOOLS] if self.roblox else []},
+            "game_experience": {"enabled": self.game_experience_enabled,
+                                "write_enabled": self.game_experience_write_enabled,
+                                "verified_mechanics": "requires separate playtest evidence"},
+            "video_study": {"enabled": self.video_study_enabled,
+                            "local_workspace_only": True, "needs_vision_provider": True},
             "roblox_research": self.roblox.status() if self.roblox else {"enabled": False},
             "roblox_intelligence_hub": ({**self.roblox_hub.status(),
                                         "analytics_configuration_error": self.roblox_hub_config_error}
@@ -483,6 +539,15 @@ class LocalIntelligence:
         if self._closed:
             return []
         result = []
+        if _GENERAL_KNOWLEDGE_TRIGGER.search(prompt):
+            result.extend(GENERAL_KNOWLEDGE_TOOLS)
+        if _GAME_EXPERIENCE_TRIGGER.search(prompt):
+            if self.game_experience_enabled:
+                result.extend(tool for tool in GAME_EXPERIENCE_TOOLS
+                              if tool["name"] != "star_game_episode_save"
+                              or self.game_experience_write_enabled)
+            if self.video_study_enabled and self.workspace is not None:
+                result.extend(VIDEO_STUDY_TOOLS)
         if self.asset_forge_enabled and _ASSET_TRIGGER.search(prompt) and (_ROBLOX_TRIGGER.search(prompt) or
                 is_roblox_dev_prompt(prompt) or re.search(r"\b(blender|3d|procedural|poly.?haven|game\s?dev)\b", prompt, re.I)):
             # Only the first asset tool uses a third-party HTTP endpoint.
@@ -549,6 +614,41 @@ class LocalIntelligence:
         if self._closed or name not in enabled or name not in ALL_TOOLS or not isinstance(args, dict):
             raise PermissionError("Intelligence tool is not enabled for this task")
         Draft202012Validator(ALL_TOOLS[name]["inputSchema"]).validate(args)
+        if name == "star_general_knowledge_curriculum":
+            from .general_knowledge_lab import plan
+            return plan(args["topic"], max_domains=args.get("max_domains", 4))
+        if name.startswith("star_game_episode_") or name == "star_game_experience_search":
+            from . import game_experience
+            if not self.game_experience_enabled:
+                raise PermissionError("Game experience tools are disabled")
+            if name == "star_game_episode_analyze":
+                return game_experience.analyze_episode(args["episode"])
+            if name == "star_game_episode_save":
+                if not self.game_experience_write_enabled:
+                    raise PermissionError("Gameplay candidate storage requires explicit opt-in")
+                return game_experience.save_candidate(self.home, self.project, args["episode"])
+            return game_experience.search_candidates(self.home, self.project,
+                                                     args["query"], args.get("limit", 6))
+        if name == "star_game_video_study":
+            if not self.video_study_enabled or self.workspace is None or self.video_settings is None:
+                raise PermissionError("Opt-in video study and an owner-selected workspace are required")
+            requested = Path(args["path"])
+            if requested.is_absolute() or any(piece in ("..", "") for piece in requested.parts):
+                raise PermissionError("Provide a relative path inside the selected workspace")
+            root = Path(self.workspace).expanduser().resolve(strict=True)
+            path = (root / requested).resolve(strict=True)
+            if root not in path.parents or not path.is_file():
+                raise PermissionError("Video must be a local file inside the selected workspace")
+            from tempfile import TemporaryDirectory
+            from . import video_study
+            # The analysis performs blocking frame extraction and model calls; the
+            # assistant dispatches this tool on a worker thread.
+            return video_study.analyze_local(
+                self.video_settings, self.home, path, args["question"],
+                max_windows=args.get("max_windows", 4),
+                window_seconds=args.get("window_seconds", 60),
+                ffmpeg_dir=getattr(self.video_settings, "ffmpeg_dir", ""),
+            )
         if name in _HUB_TOOL_NAMES:
             hub = self.roblox_hub
             if hub is None:
@@ -923,4 +1023,11 @@ def for_settings(settings, home: Path) -> LocalIntelligence:
                             or _env_on("STAR_VFX_STUDIO", default=False)),
         docs_live=(RobloxDocsLive(cache_dir=Path(home) / "cache" / "roblox-docs")
                    if live_enabled(settings) else None),
+        game_experience_enabled=(getattr(settings, "game_experience_enabled", False) is True
+                                 or _env_on("STAR_GAME_EXPERIENCE", default=False)),
+        game_experience_write_enabled=(getattr(settings, "game_experience_write_enabled", False) is True
+                                       or _env_on("STAR_GAME_EXPERIENCE_WRITE", default=False)),
+        video_study_enabled=(getattr(settings, "video_study_enabled", False) is True
+                             or _env_on("STAR_VIDEO_STUDY", default=False)),
+        video_settings=settings,
     )
