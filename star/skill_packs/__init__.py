@@ -50,7 +50,7 @@ DEFAULT_ENABLED: tuple[str, ...] = (
 _ROBLOX_CONTEXT = re.compile(
     r"\b(?:roblox|luau|studio|workspace|LocalScript|ModuleScript|ServerScriptService|ServerStorage|ReplicatedStorage|"
     r"StarterGui|StarterPlayer\w*|StarterCharacterScripts|PlayerGui|ScreenGui|Instance\.new|game:GetService|"
-    r"Humanoid|RemoteEvent|RemoteFunction|DataStore\w*|OnServerEvent|BindToClose|R6|R15)\b", re.IGNORECASE)
+    r"EditableMesh|Humanoid|RemoteEvent|RemoteFunction|DataStore\w*|OnServerEvent|BindToClose|R6|R15)\b", re.IGNORECASE)
 
 _GODOT_CONTEXT = re.compile(r"\b(?:godot(?:\s*4)?|gdscript|PackedScene|CharacterBody2D|Node2D|Control\s+node)\b", re.IGNORECASE)
 GODOT_PACKS = frozenset(("godot-scenes-and-nodes", "godot-gdscript-typing-and-signals",
@@ -161,6 +161,11 @@ TRIGGERS: dict[str, re.Pattern] = {
         r"\b(?:replication|replicat\w+|PivotTo|SetAttribute|GetAttribute|attributes?|UnreliableRemoteEvent|bandwidth|"
         r"network budget|network traffic|items per second|per-frame|hot path|allocations?|GetDescendants|"
         r"LocalTransparencyModifier|sequence numbers?)\b", re.IGNORECASE),
+    # 2026 geometry batching; never enabled without a measured evaluation gate.
+    "roblox-editablemesh-batching": re.compile(
+        r"\b(?:EditableMesh batch(?:ing)?|batch(?:ed)? mesh|BatchAdd|BatchSetValues|BatchGetValues|"
+        r"MeshAttribute|parallel (?:mesh )?quer(?:y|ies)|procedural (?:wave|water|mesh)|"
+        r"deform(?:able|ing)? mesh|wave mesh|geometry batches)\b", re.IGNORECASE),
     "roblox-editable-memory-streaming": re.compile(
         r"\b(?:EditableMesh|EditableImage|CreateEditableMeshAsync|CreateEditableImage\w*|FixedSize|memory budget|"
         r"Content\.fromObject|TintMask|AlphaMode|ModelStreamingMode|Persistent|Atomic|streams? in|streamed in|"
