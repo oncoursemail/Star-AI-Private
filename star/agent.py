@@ -15,6 +15,7 @@ from .policy import allowed_registry, enforce, READ_TOOLS as STUDIO_READ_TOOLS
 from .memory import compact
 from .workspace import TOOLS, TOOL_NAMES, WRITE_TOOLS as WORKSPACE_WRITE_TOOLS
 from . import code_answer_completion
+from .self_model import SELF_TOOL, TurnSelfModel, wants_self_inspection
 from .incremental_repair import RepairController, RepairDeferred, RepairsOff
 
 
@@ -538,12 +539,19 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
                        for tool in song_definitions)
     enabled_song = {tool["name"] for tool in song_definitions}
+    # Self-inspection is prompt-gated; ordinary turns incur no schema overhead.
+    self_model_enabled = wants_self_inspection(prompt)
+    if self_model_enabled:
+        definitions.append({"type": "function", "function": {
+            "name": SELF_TOOL["name"], "description": SELF_TOOL["description"],
+            "parameters": SELF_TOOL["inputSchema"]}})
     # Qwen templates render the tool list before the system text. Tools that are attached on
     # every turn stay first and the Studio tools (present only for a Studio request) go last,
     # so a change at the end of the list leaves the start of the request cached.
     if tool_memory is not None:
         definitions = tool_memory.arrange(definitions, prompt)   # first-attachment order, new tools last
     definitions = sorted(definitions, key=lambda item: item["function"]["name"] in registry)
+    self_model = TurnSelfModel(definitions) if self_model_enabled else None
     tools_attached = bool(definitions)
     schema_chars = len(json.dumps(definitions, ensure_ascii=False)) if definitions else 0
     def request_size(items):
@@ -578,7 +586,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         # This classifies effects only to PAUSE actions. Existing authorization
         # above dispatch remains authoritative; this never grants a capability.
         read_only = ((TOOL_NAMES - WORKSPACE_WRITE_TOOLS) | STUDIO_READ_TOOLS | {
-            'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
+            'star_self_state', 'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
             'star_web_search', 'star_github_tree', 'star_github_read', 'star_delegate',
             'star_mcp_registry_search', 'star_candidate_code_team',
         })
@@ -840,9 +848,15 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                 name = tool_call.function.name
                 workspace_result = None
                 outcome_uncertain = False
+                executed = False
                 try:
                     args = json.loads(tool_call.function.arguments)
-                    if name == 'star_evidence_read':
+                    if name == 'star_self_state':
+                        if (self_model is None or not isinstance(args, dict)
+                                or set(args) - {'tool_names'}):
+                            raise PermissionError('Self-inspection not authorized for this turn')
+                        self_model.inspect(args.get('tool_names', []))
+                    elif name == 'star_evidence_read':
                         if (evidence_broker is None or not isinstance(args, dict)
                                 or not {'reference', 'offset'} <= set(args)
                                 or not set(args) <= {'reference', 'offset', 'limit'}):
@@ -942,8 +956,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                 else:
                     # Authorized: announce before running so progress is not retroactive.
                     tool_actions_started = True
+                    executed = True
                     event({"event": "tool_started", "tool": name})
-                    if name == 'star_evidence_read':
+                    if name == 'star_self_state':
+                        details = self_model.inspect(args.get('tool_names', []))
+                        data = {"isError": False, "content": [{"type": "text",
+                                "text": json.dumps(details, ensure_ascii=False)}]}
+                    elif name == 'star_evidence_read':
                         try:
                             if evidence_broker is None:
                                 raise ValueError('Evidence retrieval is not enabled')
@@ -1206,6 +1225,17 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         envelope['repair'] = feedback
                         result = json.dumps(envelope, ensure_ascii=False)
                 messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
+                if self_model is not None:
+                    try:
+                        receipt = json.loads(result)
+                        self_model.record(name, executed=executed,
+                                          is_error=bool(receipt.get("isError", True)),
+                                          uncertain=outcome_uncertain)
+                    except (ValueError, TypeError, AttributeError):
+                        # No tool output or error details are retained; an invalid
+                        # response is not evidence of a successful action.
+                        self_model.record(name, executed=executed,
+                                          is_error=True, uncertain=executed)
                 if images:
                     caption = ("Public Roblox CDN artwork fetched for visual inspection. "
                                "It may be promotional rather than live gameplay; "
