@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from math import sqrt
 import re
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\\Z")
-_DIGEST = re.compile(r"[a-f0-9]{64}\\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
+_DIGEST = re.compile(r"[a-f0-9]{64}\Z")
 _Z = 1.959963984540054
 
 
