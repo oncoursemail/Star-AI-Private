@@ -71,7 +71,7 @@ def _no_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict:
     return result
 
 
-def validate_spec(spec: dict | str) -> dict:
+def validate_spec(spec: Any) -> dict:
     """Validate and return a detached canonical JSON object, never executable code."""
     if type(spec) is str:
         try:

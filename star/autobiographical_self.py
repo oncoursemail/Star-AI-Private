@@ -121,7 +121,7 @@ class AutobiographicalSelf:
             cur = self.db.execute("INSERT INTO episodes(at,kind,detail,origin,evidence,verified) "
                                   "VALUES(?,?,?,?,?,?)",
                                   (_utc(), kind, detail, origin, evidence, verified))
-        return int(cur.lastrowid)
+        return int(cur.lastrowid or 0)
 
     def propose_interest(self, area: str, reason: str) -> None:
         """A self-generated interest remains provisional until explicitly accepted."""
@@ -147,7 +147,7 @@ class AutobiographicalSelf:
         with self.db:
             cur = self.db.execute("INSERT INTO goals(area,question,status,at) VALUES(?,?,'proposed',?)",
                                   (area, question, _utc()))
-        return int(cur.lastrowid)
+        return int(cur.lastrowid or 0)
 
     def propose_belief(self, key: str, claim: str) -> None:
         """Personal hypotheses are labelled tentative and never become system rules."""

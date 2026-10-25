@@ -20,7 +20,7 @@ import re
 import secrets
 import sqlite3
 import sys
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 FAMILIES = ("route", "scheduler", "game-state", "fusion")
 CORE_FAMILIES = FAMILIES[:3]
@@ -173,7 +173,7 @@ def _scheduler_answer(spec: dict) -> dict:
         start = max((done[d] for d in task["after"]), default=0)
         starts[task["id"]] = start
         done[task["id"]] = start + task["duration"]
-    answer = {"makespan": max(done.values())}
+    answer: dict = {"makespan": max(done.values())}
     if spec["include_starts"]:
         answer["starts"] = starts
     return answer
@@ -301,7 +301,7 @@ def oracle_answer(family: str, spec: dict) -> dict:
     raise ValueError("Unsupported challenge family")
 
 
-def _exact(actual: object, expected: object) -> bool:
+def _exact(actual: Any, expected: Any) -> bool:
     if type(actual) is not type(expected):
         return False
     if isinstance(expected, dict):
@@ -399,7 +399,7 @@ class FrontierStore:
 
     def _choose_family(self, project: str) -> str:
         stats = {family: self._ensure(project, family) for family in CORE_FAMILIES}
-        eligible = list(CORE_FAMILIES)
+        eligible: list[str] = list(CORE_FAMILIES)
         if stats["route"]["level"] >= 3 and stats["scheduler"]["level"] >= 3:
             eligible.append("fusion")
             self._ensure(project, "fusion")
