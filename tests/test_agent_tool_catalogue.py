@@ -72,8 +72,9 @@ WORKSPACE_READ = ["workspace_list", "workspace_read", "workspace_search"]
 WORKSPACE_WRITE = ["workspace_write", "workspace_edit"]
 # Three additional read-only Creator Intelligence tools, in their actual registration order.
 WORKSPACE_CREATOR = ["workspace_binary_triage", "workspace_asset_audit", "workspace_game_graph"]
-# Added in integration round 5 (pull request 69, game projects of several engines); not in a7a36a3.
-WORKSPACE_GAME = ["workspace_game_discover", "workspace_game_inspect", "workspace_game_plan"]
+# Game project tools plus the deliberately read-only Starry Eye evidence and design diversity checks.
+WORKSPACE_GAME = ["workspace_game_discover", "workspace_game_inspect", "workspace_game_plan",
+                  "workspace_starry_eye_audit", "workspace_game_concept_rank"]
 # Read-only MCP connections (star/mcp_connections.py TOOLS): when one is switched on in Settings.
 MCP = ["star_mcp_search", "star_mcp_call"]
 # Public MCP Registry search (star/mcp_registry.py TOOLS): Agent mode with "Search the web" on, and a prompt
