@@ -158,7 +158,7 @@ class Settings:
     web_auto_search: bool = True
     # Learning (star/lessons.py). Lessons are local project notes, never weights.
     learning_auto_accept: bool = True     # False = "review everything": even my own words wait for approval
-    autobiographical_self_enabled: bool = True  # local verified continuity; no background model or external actions
+    autobiographical_self_enabled: bool = False  # opt-in: local verified continuity section per chat; unmeasured, so off
     learning_digest: bool = True          # let the fast model reword raw captures into candidates, in the background
     learning_digest_cloud: bool = False   # ...also when the selected provider is a hosted one
     practice_lessons_enabled: bool = False  # off until the owner opts in
@@ -270,7 +270,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
                             'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)

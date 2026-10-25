@@ -96,6 +96,12 @@ class TestAutobiographicalSelf(unittest.TestCase):
         self.assertEqual(self.store.snapshot()["verified_episodes"], [])
         self.assertNotEqual(self.store.snapshot()["instance_id"], before)
 
+    def test_the_chat_wiring_is_opt_in_and_a_valid_setting(self):
+        from star.desktop_core import Settings
+        self.assertIs(Settings().autobiographical_self_enabled, False)
+        with self.assertRaises(ValueError):
+            Settings(autobiographical_self_enabled="yes").validate()
+
 
 if __name__ == "__main__":
     unittest.main()
