@@ -42,3 +42,18 @@ Research perspective: Butlin et al., *Identifying indicators of consciousness in
 5. The branch remains **draft review only**. No automatic merge, installation, training, internet crawling, engine permissions, cloud usage or live publication.
 
 STAR's documented v1.0 benchmark was 9/24 on an automated Roblox blind holdout and noted no conclusive improvement over v0.9.0. This draft **does not claim to improve that score**. The desired future goal is demonstrably better verified outcomes per second, not a declaration of infallible intelligence.
+
+
+## Additional research validated against 2026 sources
+
+**GEPA — reflective evolutionary improvement.** The peer-reviewed ICLR 2026 paper reports that testing reflected edits of prompts/programs can be more sample-efficient than policy-gradient alternatives on its six selected tasks; this does not transfer automatically to STAR. Source: https://proceedings.iclr.cc/paper_files/paper/2026/hash/0e9e708b6f48e14fd0ac29e167413f76-Abstract-Conference.html . Experimental STAR use: evolve limited, rights-reviewed skill prompts in isolated tasks; let a fixed external verifier decide which proposed edit improves first-attempt success. Do not let the generator rewrite the grader or pick its own holdout.
+
+**AlphaEvolve — optimize measurable programs rather than prose.** Google's engineering documentation describes evolutionary search over program implementations guided by explicit functional and nonfunctional metrics: https://docs.cloud.google.com/gemini/enterprise/docs/alphaevolve/developer-guide/overview . STAR could use the same general pattern for cache/routing or procedural-generation algorithms, with independent correctness invariants and latency measurements. This is a research plan, not evidence that STAR already matches AlphaEvolve.
+
+**Self-prediction and calibration.** The 2026 research report *Know Thyself* found that agents in its experiments often predicted their own success poorly: https://library.sparai.org/reports/know-thyself-evaluating-self-prediction-capabilities-in-lm-agents-4o1vst/ . Proposed STAR benchmark: before a task, log a low-cost predicted success probability; after an independent grader returns a result, compute Brier score and per-skill calibration across fresh tasks. High self-confidence must not waive essential verification.
+
+**Consciousness indicators are not sufficient evidence.** The June 2026 review by Butlin et al. makes clear that indicator combinations do not establish consciousness: https://pubmed.ncbi.nlm.nih.gov/41219038/ . STAR should describe internal state as observed software state and avoid deceptive claims of feelings or consciousness merely because its generated text sounds human.
+
+## Proof threshold
+
+Only label this feature **an implemented truthful self-inventory** after tests. Label autonomous learning, lower latency, new model skills, reliable visual-world understanding, and general superhuman performance as **unverified future research** until separate independent task/latency/quality evaluations establish them.
