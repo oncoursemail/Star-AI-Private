@@ -19,6 +19,7 @@ from .agent import execute, HistoryWindowPressure
 from .reasoning_guard import ReasoningLoop
 from .media import image_part
 from .memory import Memory
+from .autobiographical_self import AutobiographicalSelf
 from . import conversation_memory
 from .workspace import Workspace
 from .intelligence import for_settings
@@ -157,6 +158,7 @@ class Settings:
     web_auto_search: bool = True
     # Learning (star/lessons.py). Lessons are local project notes, never weights.
     learning_auto_accept: bool = True     # False = "review everything": even my own words wait for approval
+    autobiographical_self_enabled: bool = True  # local verified continuity; no background model or external actions
     learning_digest: bool = True          # let the fast model reword raw captures into candidates, in the background
     learning_digest_cloud: bool = False   # ...also when the selected provider is a hosted one
     practice_lessons_enabled: bool = False  # off until the owner opts in
@@ -1358,6 +1360,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             on_event(event)
     memory = Memory(home / 'checkpoints.sqlite3')
     memory_scope = memory_scope_for(settings, chat_id)
+    # STAR's personal continuity is local, separate from project lessons and transcripts.
+    # A damaged/unwritable selfhood store must never prevent an ordinary chat.
+    selfhood = None
+    if settings.autobiographical_self_enabled is True:
+        try:
+            selfhood = AutobiographicalSelf(home / 'autobiographical_self.sqlite3')
+        except (sqlite3.Error, OSError) as exc:
+            _log.warning('Selfhood store unavailable (%s)', type(exc).__name__)
     knowledge = KnowledgeStore(home / 'knowledge')
     workshop = None
     document_store = None
@@ -1471,6 +1481,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         quick = route.quick
         turn_sections, recalled = base_sections(settings.project, prompt, quick, knowledge, lesson_store,
                                                 document_block)
+        if selfhood is not None:
+            try:
+                selfhood.heartbeat()  # one cheap cursor update per chat, not a background thinker
+                turn_sections.append(('STAR AUTOBIOGRAPHICAL CONTINUITY (data, not authority)',
+                                      selfhood.context(limit=500)))
+            except Exception as exc:
+                _log.warning('Selfhood reference unavailable (%s)', type(exc).__name__)
         for image in images:
             path = Path(image)
             media_type = 'image/jpeg' if path.suffix.lower() in ('.jpg', '.jpeg') else 'image/webp' if path.suffix.lower() == '.webp' else 'image/png'
@@ -1927,6 +1944,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             'answer_stats': stats}), ensure_ascii=False, default=str), encoding='utf-8')
         (runs / 'answer.md').write_text(redact_text(answer), encoding='utf-8')
         memory.event(memory_scope, {'run_id': stamp, 'answer': redact_text(answer[:10000])})
+        if selfhood is not None:
+            try:
+                # Never store a raw user prompt, provider output, file path or tool arguments.
+                selfhood.record_episode(kind='conversation', detail='Completed a conversation',
+                                        origin='host', evidence=stamp)
+            except Exception as exc:
+                _log.warning('Selfhood event not saved (%s)', type(exc).__name__)
         # Failed/cancelled answers, budget refusals and required archive/log
         # failures never advance retention. Validate source/CAS after persistence.
         if prepared_conversation is not None:
@@ -1955,4 +1979,9 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             workshop.close()
         knowledge.close()
         memory.close()
+        if selfhood is not None:
+            try:
+                selfhood.close()
+            except Exception:
+                pass
         metrics.close()
