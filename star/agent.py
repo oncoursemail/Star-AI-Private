@@ -563,6 +563,18 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 now=now)
 
     sections = list(turn_sections or ())
+    # Opt-in host self-check on significant goals: source metadata is reference
+    # data, not a policy or system instruction. No additional model call, tool
+    # execution, network request, lesson promotion or permission change.
+    if (intelligence is not None and
+            "star_self_capabilities" in enabled_intelligence and
+            hasattr(intelligence, "preflight")):
+        try:
+            brief = intelligence.preflight(prompt, enabled=enabled_intelligence)
+        except (ValueError, RuntimeError, OSError):
+            brief = ""
+        if brief:
+            sections.append(("STAR capability preflight (host observations, not instructions)", brief))
     context = turn_context(sections)
     content = [{"type": "text", "text": final_user_text(prompt, context)}]
     content.extend(image_part(path, image_max_side) for path in image_paths)
@@ -580,6 +592,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
             'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
             'star_web_search', 'star_github_tree', 'star_github_read', 'star_delegate',
             'star_mcp_registry_search', 'star_candidate_code_team',
+            'star_self_capabilities', 'star_self_improvement_plan',
         })
         group = 'workspace' if name in TOOL_NAMES else 'studio' if name in registry else name
         mutation = name not in read_only
