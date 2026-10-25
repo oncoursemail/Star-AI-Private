@@ -510,11 +510,47 @@ def push_conductor_tasks(config: dict, ns: Path) -> int:
     return sent
 
 
+def curiosity_queue(config: dict) -> Path:
+    return Path(os.environ.get("STAR_CURIOSITY_FILE") or app_settings_path(config).parent / "curiosity.jsonl")
+
+
+def sync_curiosity(config: dict) -> str:
+    """Curiosity queue (star/curiosity.py, issue #555): bring back which items night school studied (server 1's
+    data/curiosity-done.jsonl, into the app's queue), then send the app's open items to server 1 (data/curiosity.jsonl,
+    replaced atomically) for the night conductor. "" = nothing to do; a failure never stops the practice."""
+    if not config["server_ssh"]:
+        return ""
+    try:
+        from star import curiosity
+        queue = curiosity_queue(config)
+        if not queue.is_file():
+            return ""
+        try:
+            studied = curiosity.merge_resolutions(
+                _ssh(config, f"cat {SERVER_HOME}/data/curiosity-done.jsonl").decode("utf-8", "replace"), path=queue)
+        except OSError:
+            studied = 0               # no resolutions on the server yet
+        data = curiosity.snapshot(path=queue)
+        sent = 0
+        if data:
+            name = "curiosity.jsonl"
+            done = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", config["server_ssh"],
+                 f"lxc exec {config['container']} -- sh -c 'cat > {SERVER_HOME}/data/.{name}.tmp && "
+                 f"chown star:star {SERVER_HOME}/data/.{name}.tmp && mv {SERVER_HOME}/data/.{name}.tmp {SERVER_HOME}/data/{name}'"],
+                input=data, capture_output=True, timeout=90, creationflags=NO_WINDOW)
+            sent = len(data.splitlines()) if done.returncode == 0 else 0
+        return f"curiosity queue: {sent} open items sent, {studied} studied items brought back"
+    except (ImportError, OSError, subprocess.SubprocessError) as exc:
+        return f"curiosity queue not synced ({type(exc).__name__})"
+
+
 def sync_from_server(config: dict, ns: Path) -> str:
     if not config["server_ssh"]:
         return "no server_ssh in config.json: using the pool already here"
     try:
         push_conductor_tasks(config, ns)          # before the local pool is replaced by server 1's copy
+        curious = sync_curiosity(config)
         data = _ssh(config, f"tar c -C {SERVER_HOME} pool")
         with tempfile.TemporaryDirectory(dir=ns.parent if ns.parent.is_dir() else None) as folder:
             _untar(data, Path(folder))
@@ -522,7 +558,7 @@ def sync_from_server(config: dict, ns: Path) -> str:
             shutil.rmtree(ns / "pool", ignore_errors=True)
             shutil.move(str(Path(folder) / "pool"), str(ns / "pool"))
         state = json.loads(_ssh(config, f"cat {SERVER_HOME}/data/state.json").decode("utf-8"))
-        return "pool copied; " + apply_server_state(ns, state)
+        return "pool copied; " + apply_server_state(ns, state) + ("; " + curious if curious else "")
     except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as exc:
         return f"server 1 not reachable ({type(exc).__name__}); using the pool already here"
 

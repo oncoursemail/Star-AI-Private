@@ -23,6 +23,8 @@ export type LearnedWeek = { project:string; items:LearnedItem[]; counts:Record<s
 /** An owner correction that may become a regression test (star/corrections.py). */
 export type CorrectionItem = { id:number; created:string; source:'app'|'discord'; prompt:string; answer:string; correction:string; cause:string; status:'candidate'|'approved'|'dismissed'; task_id:string }
 export type CorrectionListing = { project:string; corrections:CorrectionItem[]; counts:{candidate:number; approved:number; dismissed:number}; suite:string }
+/** The newest weekly self-audit (star/self_audit.py): what STAR's own stored data says it is good and bad at. */
+export type SelfAuditReport = { generated:string; strengths:string[]; weaknesses:string[]; missing:string[] }
 export type IntelligenceStatus = {
   skills: {enabled:boolean;count:number;names:string[]};
   graphify: {enabled:boolean;export_detected:boolean;path:string;note:string};

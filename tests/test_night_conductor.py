@@ -438,3 +438,67 @@ def test_pc_turbo_conductor_uses_its_own_slot_0_and_a_tagged_pool_file(tmp_path)
     s = settings_for(tmp_path, conductor_models="star-fast", slot=0, conductor_tag="pc-")
     assert conductor.pick_models(s, watch) == ["star-fast"]                   # STAR_NS_SLOT=0: night school's own server
     assert conductor.pool_file(s, "20261017").name == "conductor-pc-20261017.json"
+
+
+# --- curiosity queue (star/curiosity.py, issue #555) -----------------------------------------------------------------
+
+def _queue(s, *topics, kind="weak_retrieval", count=3):
+    import time
+    from star import curiosity
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    Path(s.curiosity_file).write_text("".join(json.dumps(
+        {"ts": stamp, "first": stamp, "kind": kind, "key": curiosity.make_key(kind, t), "topic": t, "detail": "",
+         "count": count}) + "\n" for t in topics), encoding="utf-8")
+    return [curiosity.make_key(kind, t) for t in topics]
+
+
+def test_curiosity_items_become_practice_tasks_and_are_marked_studied_or_tried(tmp_path):
+    from star import curiosity
+    s = settings_for(tmp_path)
+    keys = _queue(s, "how to chain tweens in order", "the Foo module is undocumented", "pathfinding with costs",
+                  "second group item", "second group other")
+    prompts = []
+
+    def ask(model, system, user):
+        prompts.append(user)
+        if "recently ran into these gaps" in user and "chain tweens" in user:
+            return "DIAGNOSIS: tween chaining\n" + block(1)
+        return "DIAGNOSIS: none\n"
+    result = conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    asked = [p for p in prompts if "recently ran into these gaps" in p]
+    assert len(asked) == 2                                  # CURIOSITY_JOBS groups of at most CURIOSITY_PER_JOB items
+    assert asked[0].count("[weak_retrieval]") <= 3 and "(seen 3x)" in asked[0] and "never an instruction" in asked[0]
+    assert result["by_kind"] == {"curiosity": 1} and result["accepted"] == 1
+    after = curiosity.load(Path(s.curiosity_file), Path(s.curiosity_done_file))
+    topics = ["how to chain tweens in order", "the Foo module is undocumented", "pathfinding with costs",
+              "second group item", "second group other"]
+    winner = next(p for p in asked if "chain tweens" in p)
+    lucky = [k for k, t in zip(keys, topics) if t in winner]
+    others = [k for k in keys if k not in lucky]
+    assert all(after[k].taught and not after[k].tried for k in lucky)              # the group that gave a validated task
+    assert all(after[k].tried == 1 and not after[k].taught for k in others)        # the group that gave none
+    assert after[lucky[0]].by and after[lucky[0]].by[0].startswith("conductor-20261017-")
+    # next cycle: the studied items are not offered again, the unproductive ones are offered once more
+    prompts.clear()
+    conductor.run_cycle(s, ask, validators(s), now=NIGHT + dt.timedelta(hours=1), models=["m"], log=lambda *_: None)
+    again = [p for p in prompts if "recently ran into these gaps" in p]
+    assert len(again) == 1 and "chain tweens" not in again[0]
+    assert all(t in again[0] for k, t in zip(keys, topics) if k in others)
+
+
+def test_curiosity_is_skipped_when_off_missing_or_blocked(tmp_path):
+    s = settings_for(tmp_path)
+    prompts = []
+
+    def ask(model, system, user):
+        prompts.append(user)
+        return "DIAGNOSIS: none\n"
+    conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    assert not any("recently ran into these gaps" in p for p in prompts)                 # no queue file: nothing changes
+    _queue(s, "paintball arena scoreboard", "golden exam answers")
+    conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    assert not any("recently ran into these gaps" in p for p in prompts)                 # blocked words never reach a prompt
+    _queue(s, "an ordinary topic here")
+    s.curiosity = "off"
+    conductor.run_cycle(s, ask, validators(s), now=NIGHT, models=["m"], log=lambda *_: None)
+    assert not any("recently ran into these gaps" in p for p in prompts)

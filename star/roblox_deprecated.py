@@ -67,11 +67,21 @@ def refresh(markdown: str, *, path: Path = DEPRECATED_FILE, today: str | None = 
     rows = parse_inventory(markdown)
     if len(rows) < 100:
         raise ValueError(f"only {len(rows)} rows parsed: the page format changed, not writing")
+    try:
+        before = json.loads(path.read_text(encoding="utf-8"))["members"] if path.is_file() else []
+    except (OSError, ValueError, KeyError):
+        before = []
     data = {"source": SOURCE_URL, "fetched": today or date.today().isoformat(),
             "sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(), "count": len(rows), "members": rows}
     head = json.dumps({k: v for k, v in data.items() if k != "members"}, ensure_ascii=False)[:-1]
     body = ",\n".join(json.dumps(row, ensure_ascii=False) for row in rows)
     path.write_text(head + ', "members": [\n' + body + "\n]}\n", encoding="utf-8", newline="\n")
+    if before:   # members the docs list as deprecated now and did not before: queued for night school (#555)
+        from . import api_dump_diff
+        listed = api_dump_diff.diff_deprecated(before, rows)
+        if listed:
+            api_dump_diff.queue_changes({"newly_deprecated": listed, "new": {}})
+            data["newly_listed"] = listed
     return data
 
 

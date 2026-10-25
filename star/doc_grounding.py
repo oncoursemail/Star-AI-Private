@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import re
 from time import monotonic
 
+from . import curiosity
 from .brain_router import NO_GROUNDING, GroundingPlan, followup_grounding, retrieval_query
 from .doc_knowledge import KnowledgeClient, client_for
 
@@ -152,6 +153,8 @@ def _retrieve(client: KnowledgeClient, plan: GroundingPlan, query: str) -> list[
     passages: list[dict] = []
     if plan.retrieve == "api" and plan.symbols:
         for hit in client.api_lookup(list(plan.symbols)[:plan.passages]):
+            if not hit.get("found"):
+                curiosity.record("weak_retrieval", "API name not found in the documentation: " + str(hit.get("symbol", "")))
             if hit.get("found") and hit.get("text"):
                 passages.append({"rank": len(passages) + 1, "title": hit.get("title", ""),
                                  "heading": hit.get("heading") or hit["symbol"], "kind": hit.get("kind", ""),
@@ -201,6 +204,8 @@ def prepare(settings, route, prompt: str, prior_user_turns: list[str] | None = N
         return Grounding(status="unavailable", plan=plan, retrieval_ms=elapsed, query=query)
     elapsed = int((monotonic() - started) * 1000)
     status = "ok" if passages else "empty"
+    if not passages:
+        curiosity.record("weak_retrieval", retrieval_query(query), "documentation search returned nothing")
     _emit(on_event, {"event": "knowledge_finished", "state": status, "passages": len(passages), "elapsed_ms": elapsed})
     return Grounding(status=status, plan=plan, client=knowledge, passages=passages, block=block,
                      retrieval_ms=elapsed, query=query)

@@ -639,6 +639,11 @@ def remember(records: list[dict], *, path: Path | None = None, task: str = "") -
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     except Exception:
         return 0
+    if path is None:      # the owner's own log; an explicit path is a test or a tool
+        from . import curiosity
+        for row in rows:
+            if not row["verified"]:
+                curiosity.record("failed_verification", f"{row['rung']}: {row['signature']}", row.get("task", ""))
     return len(rows)
 
 

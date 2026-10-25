@@ -1246,6 +1246,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                             or (api_catalog is not None and api_catalog.owns(name))):
                         untrusted_read = True
                     event({"event": "tool_finished", "tool": name, "is_error": bool(data.get("isError"))})
+                    if data.get("isError"):
+                        from . import curiosity
+                        curiosity.record("tool_failure", f"tool {name} failed", result[:200])
                     feedback, needs_attention = repairs.observe(
                         name, args, is_error=bool(data.get('isError')), mutation=mutation,
                         group=effect_group, resource=resource, workspace_result=workspace_result,
