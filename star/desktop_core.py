@@ -240,6 +240,12 @@ class Settings:
 
     @classmethod
     def load(cls, file: Path):
+        # Promoted tuning values (star/autoloop.py, #562) go on top of what was saved; nothing is promoted by default.
+        from .autoloop import apply_promotions
+        return apply_promotions(cls._load_saved(file))
+
+    @classmethod
+    def _load_saved(cls, file: Path):
         if not file.exists():
             return cls()
         raw = _read_settings_object(file)
@@ -413,7 +419,8 @@ class Settings:
         self.validate()
         # configuration is nonsecret; never write bearer tokens here. Written in one step so a crash,
         # power cut or a reader in another STAR process never sees half a settings file.
-        atomic_write_text(file, json.dumps(asdict(self), indent=2))
+        from .autoloop import unpromoted
+        atomic_write_text(file, json.dumps(unpromoted(asdict(self), type(self)), indent=2))
 
 
 _log = logging.getLogger(__name__)
