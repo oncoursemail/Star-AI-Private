@@ -65,7 +65,7 @@ class ChatAttention:
             raise ValueError("Malformed chat observation")
         c = candidate
         valid = (
-            c.platform in PLATFORMS and isinstance(c.message_id, str)
+            isinstance(c.platform, str) and c.platform in PLATFORMS and isinstance(c.message_id, str)
             and bool(_ID.fullmatch(c.message_id)) and type(c.received_ms) is int
             and 0 <= now_ms - c.received_ms <= CHAT_TTL_MS and c.moderated is True
             and isinstance(c.text, str) and 1 <= len(c.text.strip()) <= 300
@@ -128,7 +128,7 @@ def validate_scenes(scenes: tuple[PlatformScene, ...]) -> None:
         raise ValueError("Select at least one platform output")
     seen: set[str] = set()
     for scene in scenes:
-        if not isinstance(scene, PlatformScene) or scene.platform not in PLATFORMS:
+        if not isinstance(scene, PlatformScene) or not isinstance(scene.platform, str) or scene.platform not in PLATFORMS:
             raise ValueError("Unknown streaming output")
         if scene.platform in seen:
             raise ValueError("Duplicate output")
@@ -155,7 +155,7 @@ class BroadcastPlan:
         self._preflight = False
 
     def preview(self, scenes: tuple[PlatformScene, ...], *, owner_confirmed: bool) -> None:
-        if not owner_confirmed:
+        if owner_confirmed is not True:
             raise PermissionError("Preview needs owner confirmation")
         if self.state != "offline":
             raise ValueError("Broadcast must be offline before preview")
@@ -165,12 +165,12 @@ class BroadcastPlan:
         self._preflight = False
 
     def mark_preflight(self, *, host_verified: bool, owner_confirmed: bool) -> None:
-        if self.state != "preview" or not host_verified or not owner_confirmed:
+        if self.state != "preview" or host_verified is not True or owner_confirmed is not True:
             raise PermissionError("Real host preflight and owner confirmation required")
         self._preflight = True
 
     def authorize_live_intent(self, *, owner_confirmed: bool) -> None:
-        if not owner_confirmed or self.state != "preview" or not self._preflight:
+        if owner_confirmed is not True or self.state != "preview" or not self._preflight:
             raise PermissionError("Explicit owner go-live approval after preflight required")
         self.state = "live_intent"
         # This records ONLY an authorization intent. It cannot start OBS.
@@ -190,8 +190,9 @@ class StoryFact:
     evidence_id: str = ""
 
     def __post_init__(self) -> None:
-        if self.kind not in {"fiction", "observed"} or not isinstance(self.text, str) \
-                or not 1 <= len(self.text.strip()) <= 700 or not self.approved_by_owner:
+        if not isinstance(self.kind, str) or self.kind not in {"fiction", "observed"} \
+                or not isinstance(self.text, str) or not 1 <= len(self.text.strip()) <= 700 \
+                or self.approved_by_owner is not True:
             raise ValueError("Story requires approved bounded content and an explicit kind")
         if self.kind == "observed":
             if not isinstance(self.evidence_id, str) or not _ID.fullmatch(self.evidence_id):
