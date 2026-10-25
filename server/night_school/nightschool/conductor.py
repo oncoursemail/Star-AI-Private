@@ -243,7 +243,7 @@ def curiosity_groups(settings, per_job: int = CURIOSITY_PER_JOB, jobs: int = CUR
         return []
     from star import curiosity
     wanted = max(1, int(settings.curiosity_items))
-    items = [i for i in curiosity.top(wanted * 2, paths=(Path(settings.curiosity_file), Path(settings.curiosity_done_file)))
+    items = [i for i in curiosity.ranked(wanted * 2, paths=(Path(settings.curiosity_file), Path(settings.curiosity_done_file)))
              if not BLOCKED.search(i.topic + " " + i.detail)][:wanted]
     return [items[i:i + per_job] for i in range(0, len(items), per_job)][:jobs]
 

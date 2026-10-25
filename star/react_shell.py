@@ -55,6 +55,7 @@ from .lessons import (LESSON_ACTIONS, handle_action as handle_lesson_action,
 from .learned_week import LEARNED_ACTIONS, handle_action as handle_learned_action, import_bundled as import_learning_bundle
 from .corrections import CORRECTION_ACTIONS, handle_action as handle_correction_action
 from . import self_audit
+from .self_audit import ACTIONS as SELF_AUDIT_ACTIONS
 from .lesson_digest import Digester, may_start_automatic
 from . import image_gen
 from .media_actions import (MEDIA_ACTIONS, SLOW_MEDIA_ACTIONS, ComfyLauncher, effective_comfy_home,
@@ -94,7 +95,7 @@ VOICE_PLACE_ACTIONS = frozenset({'voiceStartCall', 'voicePreviewVoice', 'voiceSp
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | LESSON_ACTIONS | {'digestLessons'}
 # What STAR learned this week (undo / restore / keep) and owner corrections that may become regression tests
 # (star/learned_week.py, star/corrections.py, docs/SELF_LEARNING_LOOP.md).
-ALLOWED_ACTIONS = ALLOWED_ACTIONS | LEARNED_ACTIONS | CORRECTION_ACTIONS | self_audit.ACTIONS
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | LEARNED_ACTIONS | CORRECTION_ACTIONS | SELF_AUDIT_ACTIONS
 # Media: where images, voice and video run, the image engine on this PC, and a project's
 # visual references (star/media_actions.py, docs/STAR_MEDIA.md).
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | MEDIA_ACTIONS
@@ -1463,7 +1464,7 @@ def launch():
                     # Only an explicit "Take screenshot" press reaches here (consent: true, per use).
                     require_screen_consent(body)
                     return json.dumps({'ok':True,'data':self._capture_screen()})
-                if action in self_audit.ACTIONS:
+                if action in SELF_AUDIT_ACTIONS:
                     # The newest weekly self-audit (star/self_audit.py); read only.
                     settings=Settings.load(self.settings_file)
                     return json.dumps({'ok':True,'data':self_audit.handle_action(app_data(),settings.project,action,body)},default=str)

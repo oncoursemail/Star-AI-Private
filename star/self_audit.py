@@ -199,7 +199,7 @@ def _curiosity(path: Path, now: float) -> dict | None:
         elif row["resolved"] == "tried":
             tried += 1
     items = curiosity.load(path)
-    openers = curiosity.top(5, paths=(path,), now=now)
+    openers = curiosity.ranked(5, paths=(path,), now=now)
     return {"recorded_this_week": dict(recorded), "studied_this_week": studied, "tried_without_result": tried,
             "open": sum(1 for i in items.values() if i.kind in curiosity.PRACTICE_KINDS and i.is_open()),
             "top_open": [{"kind": i.kind, "topic": i.topic, "count": i.count} for i in openers],

@@ -11,7 +11,7 @@ measurable to a chat turn. The five kinds:
   api_change           the Roblox API dump gained or deprecated a member (star/api_dump_diff.py)
 
 The queue is event-sourced: nothing is rewritten, `load()` folds the lines into one item per (kind, topic) with a
-count. Night school (server/night_school/nightschool/conductor.py) takes `top()` items, turns them into practice
+count. Night school (server/night_school/nightschool/conductor.py) takes `ranked()` items, turns them into practice
 tasks and appends a resolution line (`taught`, or `tried` when no task survived its validators). Text is passed
 through star.redact before it is stored. Developer tool: `python -m star.curiosity show`.
 """
@@ -191,7 +191,7 @@ def load(*paths: Path) -> dict[str, Item]:
     return items
 
 
-def top(limit: int = 8, *, kinds: tuple = PRACTICE_KINDS, paths: tuple = (), now: float | None = None) -> list[Item]:
+def ranked(limit: int = 8, *, kinds: tuple = PRACTICE_KINDS, paths: tuple = (), now: float | None = None) -> list[Item]:
     """The open items worth studying, best first: weight x log(count) x recency (two-week half-life)."""
     at = now if now is not None else time.time()
     live = [i for i in load(*paths).values()
@@ -216,7 +216,7 @@ def snapshot(limit: int = 200, *, path: Path | None = None, now: float | None = 
     """The open practice items as aggregate lines (what the PC pushes to server 1), best first."""
     lines = [json.dumps({"ts": i.last, "first": i.first, "kind": i.kind, "key": i.key, "topic": i.topic,
                          "detail": i.detail, "count": i.count}, ensure_ascii=False)
-             for i in top(limit, paths=(path,) if path else (), now=now)]
+             for i in ranked(limit, paths=(path,) if path else (), now=now)]
     return ("\n".join(lines) + "\n").encode("utf-8") if lines else b""
 
 
@@ -263,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
     import sys
     args = sys.argv[1:] if argv is None else argv
     if args[:1] == ["show"]:
-        for item in top(int(args[1]) if len(args) > 1 else 10):
+        for item in ranked(int(args[1]) if len(args) > 1 else 10):
             print(f"{item.score():6.2f}  {item.kind:20s} x{item.count:<3d} {item.topic}")
         return 0
     print("usage: python -m star.curiosity show [N]", file=sys.stderr)

@@ -363,7 +363,7 @@ def test_curiosity_queue_goes_to_server_1_and_studied_items_come_back(tmp_path, 
     note = turbo.sync_curiosity(config)
     assert "0 open items sent, 1 studied items brought back" in note                  # studied first, so it is not re-sent
     assert sent == []
-    assert curiosity.top(5, paths=(queue,)) == []
+    assert curiosity.ranked(5, paths=(queue,)) == []
     curiosity.record("weak_retrieval", "another gap in the docs", path=queue)
     monkeypatch.setattr(turbo, "_ssh", lambda cfg, cmd, timeout=90: (_ for _ in ()).throw(OSError("no file yet")))
     assert "1 open items sent, 0 studied" in turbo.sync_curiosity(config)

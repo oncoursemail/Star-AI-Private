@@ -94,7 +94,7 @@ def bridge(tmp_path, monkeypatch):
                      WARM_UP_STOPPERS=set(), VOICE_ACTIONS=set(), MEDIA_ACTIONS=set(), DISCORD_ACTIONS=set(),
                      CLIP_ACTIONS=set(), CLIP_INTEROP_ACTIONS=set(), MUSIC_ACTIONS=set(),
                      song_lookup_request=song_lookup_request,
-                     LESSON_ACTIONS=set(), LEARNED_ACTIONS=set(), CORRECTION_ACTIONS=set(),
+                     LESSON_ACTIONS=set(), LEARNED_ACTIONS=set(), CORRECTION_ACTIONS=set(), SELF_AUDIT_ACTIONS=set(),
                      ROBLOX_ACTIONS=set(), STUDIO_HOST_ACTIONS=set(), BULK_ACTIONS=set(),
                      QFileDialog=Dialog, Settings=SimpleNamespace(load=lambda path: settings),
                      Conversations=Chats, app_data=lambda: tmp_path / 'home',

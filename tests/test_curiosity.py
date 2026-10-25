@@ -63,11 +63,11 @@ def test_ranking_prefers_heavier_kinds_more_repeats_and_recent_events(tmp_path):
         event("weak_retrieval", "fresh retrieval miss", 0),
         event("tool_failure", "tool star_x failed", 0)] + [event("tool_failure", "tool star_x failed", 0)] * 5
     write(path, *rows)
-    ranked = [i.topic for i in curiosity.top(10, paths=(path,), now=NOW)]
+    ranked = [i.topic for i in curiosity.ranked(10, paths=(path,), now=NOW)]
     assert ranked[0] == "fresh verification failure"
     assert ranked.index("fresh retrieval miss") < ranked.index("old but often")
     assert "tool star_x failed" not in ranked            # counted, never studied
-    assert curiosity.top(10, paths=(path,), now=NOW + 60 * 86400) == []      # everything expired
+    assert curiosity.ranked(10, paths=(path,), now=NOW + 60 * 86400) == []      # everything expired
 
 
 def test_studied_items_close_reopen_on_a_new_event_and_unteachable_ones_stop(tmp_path):
@@ -76,16 +76,16 @@ def test_studied_items_close_reopen_on_a_new_event_and_unteachable_ones_stop(tmp
     key = curiosity.make_key("api_change", topic)
     real = time.time()
     write(path, {**event("api_change", topic), "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(real - 3600))})
-    assert [i.key for i in curiosity.top(5, paths=(path, done), now=real)] == [key]
+    assert [i.key for i in curiosity.ranked(5, paths=(path, done), now=real)] == [key]
     curiosity.resolve([key], "taught", "conductor-1", path=done)
-    assert curiosity.top(5, paths=(path, done), now=real + 5) == []
+    assert curiosity.ranked(5, paths=(path, done), now=real + 5) == []
     with path.open("a", encoding="utf-8") as handle:                      # it happens again after being studied
         handle.write(json.dumps({**event("api_change", topic), "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(real + 60))}) + chr(10))
-    assert [i.key for i in curiosity.top(5, paths=(path, done), now=real + 120)] == [key]
+    assert [i.key for i in curiosity.ranked(5, paths=(path, done), now=real + 120)] == [key]
     other = curiosity.make_key("weak_retrieval", "nobody can teach this")
     write(path, {**event("weak_retrieval", "nobody can teach this"), "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(real - 3600))})
     for tries in range(curiosity.MAX_TRIES + 1):
-        assert [i.key for i in curiosity.top(5, paths=(path, done), now=real + 5)] == ([other] if tries < curiosity.MAX_TRIES else [])
+        assert [i.key for i in curiosity.ranked(5, paths=(path, done), now=real + 5)] == ([other] if tries < curiosity.MAX_TRIES else [])
         curiosity.resolve([other], "tried", path=done)
     with pytest.raises(ValueError):
         curiosity.resolve([key], "maybe", path=done)
@@ -103,7 +103,7 @@ def test_snapshot_goes_to_server_and_resolutions_come_back(tmp_path):
     assert curiosity.merge_resolutions(done.read_text(encoding="utf-8"), path=app) == 1
     assert curiosity.merge_resolutions(done.read_text(encoding="utf-8"), path=app) == 0          # not twice
     assert curiosity.merge_resolutions('{"key": "../../x", "ts": "2026-01-01T00:00:00Z", "resolved": "taught"}', path=app) == 0
-    assert curiosity.top(5, paths=(app,), now=NOW + 86400) == []
+    assert curiosity.ranked(5, paths=(app,), now=NOW + 86400) == []
 
 
 def test_a_full_file_is_compacted_instead_of_growing(tmp_path, monkeypatch):
