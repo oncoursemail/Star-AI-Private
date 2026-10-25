@@ -5,7 +5,7 @@ faster-whisper>=1.2.1,<2
 pyttsx3>=2.99,<3
 # Voice calls (star/voice, see docs/STAR_VOICE_CALLS.md): microphone and speaker, voice activity,
 # end-of-turn model and the Kokoro voice. These defaults run on the CPU.
-numpy>=2.0,<2.3
+numpy>=2.4.6,<2.5
 sounddevice>=0.5.6,<1
 kokoro-onnx>=0.6.1,<0.7
 onnxruntime>=1.31.0,<2
