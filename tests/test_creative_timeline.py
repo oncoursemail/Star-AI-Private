@@ -203,6 +203,29 @@ class TimelineTests(unittest.TestCase):
         data["budgets"]["max_vfx"] = 1
         self.assertNotIn("declared_vfx_concurrency_exceeded", [x["code"] for x in audit_timeline(data)["findings"]])
 
+    def test_sound_budget_is_accounted_for(self):
+        data = sample()
+        data["budgets"]["max_sound"] = 0
+        r = audit_timeline(data)
+        self.assertIn("declared_sound_concurrency_exceeded", [x["code"] for x in r["findings"]])
+        data["budgets"]["max_sound"] = 1
+        self.assertNotIn("declared_sound_concurrency_exceeded", [x["code"] for x in audit_timeline(data)["findings"]])
+
+    def test_low_influence_marker_flags_engine_transition_risk(self):
+        data = sample()
+        # The attack starts at frame 20 and fades in over 28 frames.
+        # A marker at frame 0 has low contribution, and Roblox Graph nodes
+        # may suppress that cosmetic event when its graph weight hits zero.
+        data["clips"][1]["markers"][0]["frame"] = 0
+        data["layers"][1]["fade_in"] = 28
+        data["layers"][1]["fade_out"] = 0
+        results = audit_timeline(data)
+        self.assertIn("possible_suppressed_marker", [x["code"] for x in results["findings"]])
+        self.assertIn("event weights", roblox_graph_handoff(data)["guidance"])
+
+    def test_high_influence_marker_is_not_flagged(self):
+        self.assertNotIn("possible_suppressed_marker", [x["code"] for x in audit_timeline(sample())["findings"]])
+
     def test_repeated_event_bomb_rejected(self):
         data = sample()
         data["clips"][0]["duration"] = 2
