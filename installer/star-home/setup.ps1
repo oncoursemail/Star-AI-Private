@@ -440,8 +440,10 @@ Invoke-Step 'files' "STAR source and folders under $Root" "Check that $Root is w
     }
     if ([IO.Path]::GetFullPath($Repo) -ne [IO.Path]::GetFullPath($App)) {
         Copy-Item (Join-Path $Repo 'requirements-home*.txt') $App -Force
-        if (Test-Path -LiteralPath (Join-Path $Repo 'STAR-FIRST-START.md')) {
-            Copy-Item -LiteralPath (Join-Path $Repo 'STAR-FIRST-START.md') -Destination $App -Force
+        foreach ($guide in @('STAR-FIRST-START.md', 'STAR-LIVE-TEST.md')) {
+            if (Test-Path -LiteralPath (Join-Path $Repo $guide)) {
+                Copy-Item -LiteralPath (Join-Path $Repo $guide) -Destination $App -Force
+            }
         }
     }
     $global:LASTEXITCODE = 0
