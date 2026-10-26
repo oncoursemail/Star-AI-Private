@@ -247,7 +247,7 @@ class Turbo:
     def start_blocker(self) -> str:
         if (self.home / "OFF").exists():
             return "off (the OFF file exists)"
-        switch = app_switch_blocker(self.config, self._hour())
+        switch = app_switch_blocker(self.config, self._hour()) if self.config.get("require_app_switch", True) else ""
         if switch:
             return switch
         if self._clock() < self.cool_until:
@@ -267,7 +267,7 @@ class Turbo:
     def stop_reason(self) -> str:
         if (self.home / "OFF").exists():
             return "off switch"
-        if app_switch_blocker(self.config, self._hour()):
+        if self.config.get("require_app_switch", True) and app_switch_blocker(self.config, self._hour()):
             return "the Use my PC switch was turned off"
         if self.probe.idle_seconds() < float(self.config["back_seconds"]):
             return "the owner is back"
@@ -625,10 +625,10 @@ def merge_now(config: dict, home: Path) -> str:
 
 
 # ---- commands ------------------------------------------------------------------------------------------------------
-def single_instance() -> bool:
+def single_instance(name: str = "Local\\STAR-gpu-night-turbo") -> bool:
     import ctypes
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.CreateMutexW(None, False, "Local\\STAR-gpu-night-turbo")     # held until this process ends
+    kernel.CreateMutexW(None, False, name)                                 # held until this process ends
     return ctypes.get_last_error() != 183                                  # ERROR_ALREADY_EXISTS
 
 

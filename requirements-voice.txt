@@ -7,6 +7,8 @@ pyttsx3>=2.99,<3
 # end-of-turn model and the Kokoro voice. These defaults run on the CPU.
 numpy>=2.4.6,<2.5
 sounddevice>=0.5.6,<1
+# Hearing the PC's sound (WASAPI loopback, star/senses/capture.py): BSD-3-Clause
+soundcard>=0.4.6,<1
 kokoro-onnx>=0.6.1,<0.7
 onnxruntime>=1.31.0,<2
 # NVIDIA GPU (optional, about 14x real time for the voice instead of 2.5x): install

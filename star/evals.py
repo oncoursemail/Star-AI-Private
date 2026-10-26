@@ -56,9 +56,12 @@ def summarize_verdicts(cases: list[Case], verdicts: dict[str, str]) -> dict:
 
 def main(argv=None) -> int:
     """`python -m star.evals run|selftest|list|gate|innovation|ledger ...` (star/eval_runner.py, star/eval_gate.py,
-    star/innovation_gate.py)."""
+    star/innovation_gate.py); `--suite human` goes to star/human_evals.py."""
     import sys
     args = list(sys.argv[1:] if argv is None else argv)
+    from .human_evals import main as human_main, wants_human
+    if wants_human(args):                          # --suite human: the human-likeness suite (star/human_evals.py)
+        return human_main(args)
     if args and args[0] == "pool":                 # python -m star.evals pool <grade|replay|inspect> ... (star/pool_replay.py)
         from .pool_replay import main as pool_main
         return pool_main(args[1:])
@@ -74,6 +77,9 @@ def main(argv=None) -> int:
     if args and args[0] == "innovation":
         from .innovation_gate import main as innovation_main
         return innovation_main(args[1:])
+    from .breadth_evals import main as breadth_main, wants_breadth
+    if wants_breadth(args):                        # GDScript and instruction-following suites (star/breadth_evals.py)
+        return breadth_main(args)
     from .eval_runner import main as run_main
     return run_main(args)
 

@@ -17,11 +17,13 @@ from .turn import TurnConfig
 TTS_ENGINES = ("kokoro",)
 TTS_LANGS = ("en-us", "en-gb")
 ASR_ENGINES = ("faster-whisper",)
-ASR_MODELS = ("auto", "tiny.en", "base.en", "small.en", "medium.en", "distil-large-v3", "large-v3-turbo",
+ASR_MODELS = ("auto", "tiny.en", "base.en", "small.en", "medium.en", "distil-small.en", "distil-large-v3", "large-v3-turbo",
               "tiny", "base", "small", "medium", "large-v3")
 VAD_ENGINES = ("silero", "energy")
 ENDPOINTERS = ("smart-turn", "silence")
 OUTPUT_MODES = ("headphones", "speakers")
+VOICE_ROUTES = ("default", "virtual-mic")           # virtual-mic: only into the virtual cable (star/senses/routes.py)
+FAST_PROFILES = ("off", "auto", "dedicated", "game", "game-tight")      # star/senses/fastpath.py
 CALL_MODES = ("push-to-talk", "hands-free")
 # The default "Star" persona voice: a warm, nurturing, mum-like blend of Kokoro stock voices (no real person),
 # chosen in the 2026-10-13 audition round (docs/STAR_VOICE_CALLS.md section 10, catalog id "star-mum").
@@ -59,9 +61,20 @@ class VoiceSettings:
     max_reply_tokens: int = 220
     partial_transcripts: bool = True
     acknowledgements: bool = True        # short pre-rendered "okay" clips in the chosen voice while Star thinks
+    speculative_reply: bool = False      # start answering at the first pause, release the sound when the turn ends
+    pause_ms: int = 256                  # silence that counts as a pause (starts the early transcript and reply)
+    first_clause_words: int = 4          # the opening sentence is spoken from this many words if it runs long
+    backchannels: bool = False           # say "mm-hm" in a long pause while you are clearly still thinking (not over speakers)
+    keep_warm: bool = False              # keep the voice, speech and brain models warm while idle (star/senses/instant.py)
+    voice_route: str = "default"         # virtual-mic = her voice only into the virtual cable ("STAR Microphone")
+    monitor_device: str = ""             # optional real device that also plays her voice (never on by default)
+    hear_pc_audio: bool = False          # loopback capture: she hears the PC's sound (star/senses/hearing.py)
+    fast_profile: str = "off"            # local GPU model for ordinary turns: off | auto | dedicated | game | game-tight
+    fast_model: str = ""                 # override the profile's model (star.senses.fastpath.FAST_MODELS key)
     input_device: str = ""               # sounddevice name or index; empty = system default
     output_device: str = ""
     system_extra: str = ""
+    emotion: bool = False                # star/emotion.py: mood-driven tone, small pitch/speed shifts, avatar events
 
     def validate(self) -> "VoiceSettings":
         checks = [(self.tts_engine in TTS_ENGINES, "Unknown text-to-speech engine"),
@@ -80,6 +93,11 @@ class VoiceSettings:
                   (self.endpointer in ENDPOINTERS, "Unknown end-of-turn setting"),
                   (self.output in OUTPUT_MODES, "Output must be headphones or speakers"),
                   (self.call_mode in CALL_MODES, "Call mode must be push-to-talk or hands-free"),
+                  (self.voice_route in VOICE_ROUTES, "Voice route must be default or virtual-mic"),
+                  (self.fast_profile in FAST_PROFILES, "Unknown fast-path profile"),
+                  (96 <= int(self.pause_ms) <= 640, "pause_ms must be 96-640"),
+                  (2 <= int(self.first_clause_words) <= 8, "first_clause_words must be 2-8"),
+                  (len(self.monitor_device) <= 120 and len(self.fast_model) <= 60, "Name is too long"),
                   (300 <= int(self.end_silence_ms) <= 3000, "end_silence_ms must be 300-3000"),
                   (256 <= int(self.min_end_silence_ms) <= 2000, "min_end_silence_ms must be 256-2000"),
                   (int(self.end_silence_ms) <= int(self.max_silence_ms) <= 6000, "max_silence_ms must be up to 6000"),
@@ -118,8 +136,11 @@ class VoiceSettings:
 
     def call_config(self) -> CallConfig:
         turn = TurnConfig(end_silence_ms=int(self.end_silence_ms), max_silence_ms=int(self.max_silence_ms),
+                          pause_ms=int(self.pause_ms),
                           min_end_silence_ms=min(int(self.min_end_silence_ms), int(self.max_silence_ms)),
                           barge_in_ms=int(self.barge_in_ms))
         return CallConfig(turn=turn, system_extra=self.system_extra, partial_transcripts=self.partial_transcripts,
                           use_echo_gate=self.output == "speakers", style=self.voice_style,
-                          push_to_talk=self.call_mode == "push-to-talk", acknowledgements=self.acknowledgements)
+                          push_to_talk=self.call_mode == "push-to-talk", acknowledgements=self.acknowledgements,
+                          speculative_reply=self.speculative_reply, first_clause_words=int(self.first_clause_words),
+                          backchannels=self.backchannels and self.output != "speakers", emotion=self.emotion)

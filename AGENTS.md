@@ -1,5 +1,7 @@
 # STAR repository working agreement
 
+> **Codex: start with `docs/HANDOFF-CODEX-20261026.md`** (STAR Home, human-like STAR, autonomy: what exists, rules, what to do next). Tracking issue #613.
+
 STAR is an experimental **local-first** AI-development application. This is not a trained frontier foundation model and does not already possess the ability to build arbitrary AAA games without human design review.
 
 ## Nonnegotiable project rules
