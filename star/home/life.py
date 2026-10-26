@@ -26,6 +26,8 @@ SEED_INTERESTS = {
     "practice": {"weight": 1.2, "about": "practice skills she failed at before (curiosity queue)"},
     "play_games": {"weight": 0.8, "about": "play games on her own accounts"},
     "chat_with_friends": {"weight": 0.6, "about": "talk with friends who opted in"},
+    "watch_videos": {"weight": 1.0, "about": "watch, react to and learn from videos she picks"},
+    "use_apps": {"weight": 0.5, "about": "use any app on her PC with her own mouse and keyboard"},
 }
 SEED_GOALS = [
     ("game_making", "Make a one-screen game with a win condition and play it until it works"),

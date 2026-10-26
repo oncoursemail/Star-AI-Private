@@ -70,7 +70,7 @@ foreach ($name in 'STAR_ROOT', 'STAR_VOICE_MODELS', 'HF_HOME', 'PIP_CACHE_DIR') 
 robocopy (Join-Path $Repo 'star') (Join-Path $App 'star') /MIR /XD __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "copying the STAR source failed (robocopy $LASTEXITCODE)." }
 if (-not (Test-Path "$Venv\Scripts\python.exe")) { & $Python -m venv $Venv }
-& "$Venv\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check pillow pyautogui
+& "$Venv\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check pillow pyautogui comtypes numpy
 if ($LASTEXITCODE -ne 0) { throw 'pip install failed.' }
 
 Step "Config -> $Data\config.json"
