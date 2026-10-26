@@ -61,12 +61,19 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the
             print('preview or STOP: no vision calibration request was sent')
             return 3
         from . import settings
-        grounder = settings.make_grounder(settings.load(home))
-        if grounder is None:
-            print("set grounder.kind=vlm, url and model in computer.json first")
+        try:
+            original = settings.calibration_snapshot(home)
+        except FileNotFoundError:
+            print('configure grounder.url and model in computer.json first; keep kind=none while calibrating')
             return 2
-        fmt, errors = grounder.calibrate()
-        print(json.dumps({"format": fmt, "mean_error_px": {k: round(v, 1) for k, v in errors.items()}}))
+        grounder = settings.make_grounder(settings.load(home), for_calibration=True)
+        if grounder is None:
+            print('configure grounder.url and model in computer.json first; kind=none is allowed for calibration')
+            return 2
+        fmt, errors = grounder.calibrate(cancelled=lambda: control.stopped(home))
+        settings.save_calibration(home, original, grounder.calibration, cancelled=lambda: control.stopped(home))
+        print(json.dumps({"format": fmt, "mean_error_px": {k: round(v, 1) for k, v in errors.items()},
+                          'saved': True, 'validation': grounder.calibration}))
         return 0
     if args.command != "see-app" and idle_seconds() < args.require_idle and not args.dry_run:
         print(f"the owner used the PC {idle_seconds():.0f} s ago (< {args.require_idle:.0f} s): not touching it")

@@ -18,7 +18,10 @@ import json
 import random
 import re
 import time
-from typing import Callable
+from dataclasses import dataclass
+from typing import Any, Callable, cast
+
+from ..play.capture import Frame
 
 from .eye import changed_fraction
 from .hands import Hands, Stopped
@@ -85,6 +88,35 @@ def parse_action(text: str) -> dict | str:
 ACTIONS = ("click", "type", "key", "scroll", "open", "wait", "ask_owner", "done")
 
 
+@dataclass(frozen=True)
+class _VisualTarget:
+    window: tuple
+    image: Any
+    eye: object
+    source: object
+    point: tuple[int, int]
+
+
+class _VisualClickSink:
+    """Preserve the real sink's guard and cleanup; validate again at button-down."""
+    def __init__(self, sink, valid: Callable[[], bool]) -> None:
+        self._sink, self._valid = sink, valid
+
+    def __getattr__(self, name):
+        return getattr(self._sink, name)
+
+    def button(self, name: str, down: bool) -> None:
+        if down and not self._valid():
+            raise _VisualTargetChanged('visual target changed before mouse-down')
+        self._sink.button(name, down)
+
+
+class _VisualTargetChanged(Stopped):
+    # Actuator must not release an owner-held button when this wrapper emitted
+    # no press at all. This rejection precedes the native sink call.
+    accepted = 0
+
+
 class Guard:
     """True while the window in front belongs to a program she is working in (None = any program). Asked before every
     mouse and key event by the sink, so input never lands in a window she did not mean to use."""
@@ -113,6 +145,7 @@ class Computer:
         self._stopped = stopped
         self._closed = False
         self._on_close: Callable[[bool], None] | None = None
+        self._visual_target: tuple[Element, _VisualTarget] | None = None
 
     def _vision_blocked(self) -> bool:
         try:
@@ -124,6 +157,7 @@ class Computer:
 
     def close(self, timeout: float = .2) -> bool:
         self._closed = True
+        self._visual_target = None
         notify = self._on_close
         if notify is not None:
             notify(False)
@@ -163,9 +197,86 @@ class Computer:
     def _shot(self):
         return self.eye.grab() if self.eye is not None and not self._vision_blocked() else None
 
+    def _window_identity(self) -> tuple | None:
+        try:
+            front = self.windows.foreground()
+            if front is None:
+                return None
+            return (front.hwnd, front.pid, str(front.exe).casefold(), tuple(front.rect), str(front.title))
+        except Exception:
+            return None
+
+    def _visual_snapshot(self, window: tuple):
+        """Read after the foreground check, never accept an earlier queued frame."""
+        from PIL import Image
+        if self._vision_blocked() or self._window_identity() != window or self.eye is None:
+            return None
+        eye = self.eye
+        try:
+            desktop_size = tuple(self.windows.screen_size())
+            full_region = (0, 0, *desktop_size)
+            if (getattr(eye, '_region', None) not in (None, full_region)
+                    or getattr(eye, 'region', None) not in (None, full_region)):
+                return None
+        except Exception:
+            return None
+        began = time.perf_counter()
+        grab_frame = getattr(eye, 'grab_frame', None)
+        if callable(grab_frame):
+            source = getattr(eye, '_capture', eye)
+            while True:
+                frame = cast(Frame | None, grab_frame())
+                current_source = getattr(eye, '_capture', eye)
+                if source is None:
+                    source = current_source
+                if current_source is not source:
+                    return None
+                if frame is None or self._vision_blocked() or self._window_identity() != window:
+                    return None
+                now = time.perf_counter()
+                if frame.t >= began and 0 <= now - frame.t <= float(self.cfg.get('frame_max_age_s', .5)):
+                    image = Image.fromarray(frame.image)
+                    break
+                if now - began >= 1:
+                    return None
+                time.sleep(.005)
+        else:
+            image = eye.grab()
+            source = eye
+        if image is None or image.size != desktop_size:
+            return None
+        image = image.convert('RGB').copy()
+        if (self.eye is not eye or self._vision_blocked() or self._window_identity() != window
+                or getattr(eye, '_capture', eye) is not source
+                or tuple(self.windows.screen_size()) != desktop_size):
+            return None
+        return image, source
+
+    def _visual_valid(self, proof: _VisualTarget) -> bool:
+        from PIL import ImageChops
+        try:
+            if self.eye is not proof.eye:
+                return False
+            left, top, right, bottom = proof.window[3]
+            if not (left <= proof.point[0] < right and top <= proof.point[1] < bottom):
+                return False
+            current = self._visual_snapshot(proof.window)
+            if current is None:
+                return False
+            image, source = current
+            unchanged = (source is proof.source and image.size == proof.image.size
+                         and ImageChops.difference(image, proof.image).getbbox() is None)
+            return (unchanged and not self._vision_blocked() and self.eye is proof.eye
+                    and self._window_identity() == proof.window
+                    and getattr(proof.eye, '_capture', proof.eye) is proof.source)
+        except Exception:
+            return False
+
     # ---- primitives (each returns (ok, detail)) -----------------------------------------------------------
     def aim_point(self, el: Element) -> tuple[int, int]:
         """A person does not hit the exact centre: a gaussian offset, always inside the control."""
+        if el.source == 'vision':
+            return el.center
         cx, cy = el.center
         x = cx + self.rng.gauss(0, el.width * 0.12)
         y = cy + self.rng.gauss(0, el.height * 0.12)
@@ -174,6 +285,7 @@ class Computer:
 
     def resolve(self, screen: Screen, action: dict) -> tuple[Element | None, str]:
         """The control an action means: by id, else by a name match, else by the vision model."""
+        self._visual_target = None
         if "id" in action:
             try:
                 el = screen.by_id(int(action["id"]))
@@ -190,17 +302,32 @@ class Computer:
             return None, f"{target!r} is not in the control list and no vision model is set up"
         if self._vision_blocked():
             return None, 'screen capture and vision are unavailable while previewed or stopped'
-        image = self._shot()
-        if image is None or self._vision_blocked():
+        window = self._window_identity()
+        if (window is None or window[0] != screen.hwnd or window[2] != screen.process.casefold()):
+            return None, 'foreground no longer matches the observed window'
+        snapshot = self._visual_snapshot(window)
+        if snapshot is None:
             return None, 'no current desktop image is available'
+        image, source = snapshot
+        observed_eye = self.eye
         found = self.grounder.locate(image, target)
         if self._vision_blocked():
             return None, 'vision result discarded after preview or STOP'
         if found is None:
             return None, f"the vision model could not find {target!r}"
-        size = 24
-        return Element(0, target, "custom", (found.x - size, found.y - size, found.x + size, found.y + size),
-                       "vision"), ""
+        if (type(found.x) is not int or type(found.y) is not int
+                or not 0 <= found.x < image.width or not 0 <= found.y < image.height):
+            return None, 'vision model returned coordinates outside the captured image'
+        left, top, right, bottom = window[3]
+        if not (left <= found.x < right and top <= found.y < bottom):
+            return None, 'vision point is outside the bound foreground window'
+        proof = _VisualTarget(window, image, observed_eye, source, (found.x, found.y))
+        if not self._visual_valid(proof):
+            return None, 'foreground or screen content changed during vision inference'
+        element = Element(0, target, "custom", (found.x, found.y, found.x + 1, found.y + 1),
+                          "vision")
+        self._visual_target = element, proof
+        return element, ""
 
     def do_click(self, screen: Screen, action: dict) -> tuple[bool, str, Element | None]:
         el, why = self.resolve(screen, action)
@@ -213,8 +340,20 @@ class Computer:
         if not el.enabled:
             return False, f"{el.name!r} is disabled", el
         x, y = self.aim_point(el)
-        button = action.get("button") if action.get("button") in ("left", "right", "middle") else "left"
-        self.hands.click(x, y, width=min(el.width, el.height) or 20, button=button, clicks=2 if action.get("double") else 1)
+        button = str(action.get("button")) if action.get("button") in ("left", "right", "middle") else "left"
+        original_sink = getattr(self.hands, 'sink', None)
+        visual = self._visual_target if el.source == 'vision' else None
+        try:
+            if el.source == 'vision':
+                if (visual is None or visual[0] is not el or original_sink is None
+                        or not self._visual_valid(visual[1])):
+                    return False, 'visual target is no longer current', el
+                self.hands.sink = _VisualClickSink(original_sink, lambda: self._visual_valid(visual[1]))
+            self.hands.click(x, y, width=min(el.width, el.height) or 20, button=button, clicks=2 if action.get("double") else 1)
+        finally:
+            if visual is not None:
+                self.hands.sink = original_sink
+                self._visual_target = None
         return True, f"clicked {el.name!r} ({el.role})", el
 
     def do_type(self, screen: Screen, action: dict) -> tuple[bool, str, Element | None]:
