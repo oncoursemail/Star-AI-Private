@@ -80,6 +80,23 @@ class DispatchReport:
     gameplay_success_verified: bool = False  # NEVER set from input dispatch
 
 
+@dataclass(frozen=True)
+class DeliveredAction:
+    """A delivered *input*, not a verified objective or gameplay outcome.
+
+    Available only from claim_delivery() with an exact in-process report.
+    This value object is not independently an authorization capability.
+    """
+    studio_id: str
+    scope: GameScope
+    action_id: str
+    frame_sequence: int
+    before_sha256: str
+    before_ms: float
+    released_ms: float
+    ticket: int
+
+
 class StudioPlaytestHost:
     """Serial, host-only dispatch for an explicitly opted-in private playtest.
 
@@ -102,8 +119,12 @@ class StudioPlaytestHost:
         self._bindings: dict[str, str] = {}
         self._held: tuple[int, str] | None = None
         self._unclaimed: ActionPermit | None = None
+        self._unclaimed_frame: GameFrame | None = None
+        self._last_report: DispatchReport | None = None
+        self._last_delivery: DeliveredAction | None = None
         self._counts = dict(sent=0, denied=0, input_failed=0,
-                            keyup_failed=0, recovered=0)
+                            keyup_failed=0, recovered=0, deliveries_claimed=0,
+                            deliveries_overwritten=0)
 
     def start(self, *, studio_id: str, scope: GameScope,
               bindings: Sequence[StudioBinding], owner_approved: bool = False) -> None:
@@ -126,6 +147,9 @@ class StudioPlaytestHost:
             self._scope = scope
             self._bindings = mapping
             self._unclaimed = None
+            self._unclaimed_frame = None
+            self._last_report = None
+            self._last_delivery = None
 
     def request(self, frame: GameFrame, hint: GameActionHint, *,
                 now_ms: float, host_verified: bool,
@@ -137,6 +161,7 @@ class StudioPlaytestHost:
                                         telemetry=telemetry)
             if permit.offered:
                 self._unclaimed = permit
+                self._unclaimed_frame = frame
             return permit
 
     def _valid_snapshot(self, snapshot: object) -> bool:
@@ -169,7 +194,9 @@ class StudioPlaytestHost:
                     permit, now_ms=now, host_focus_and_permission=True):
                 self._counts["denied"] += 1
                 return DispatchReport(False, "ticket_stale_or_not_host_issued", True)
+            before = self._unclaimed_frame
             self._unclaimed = None
+            self._unclaimed_frame = None
             ticket, key = permit.ticket, self._bindings[permit.action_id]
             self._held = (ticket, key)
             sent = False
@@ -206,7 +233,49 @@ class StudioPlaytestHost:
                 self._counts["input_failed"] += 1
                 return DispatchReport(False, problem, True)
             self._counts["sent"] += 1
-            return DispatchReport(True, "studio_key_pulse_dispatched_not_game_success", True)
+            report = DispatchReport(
+                True, "studio_key_pulse_dispatched_not_game_success", True)
+            # Nothing reaches the verifier until a REAL input was sent AND
+            # independently confirmed released. A later delivery supersedes an
+            # unclaimed one; at most one attempt can be linked at a time.
+            assert before is not None and self._studio_id is not None
+            if self._last_delivery is not None:
+                self._counts["deliveries_overwritten"] += 1
+            self._last_report = report
+            self._last_delivery = DeliveredAction(
+                self._studio_id, before.scope, permit.action_id,
+                before.sequence, before.evidence_sha256,
+                before.captured_ms, self._clock(), ticket)
+            return report
+
+    def inspect_delivery(self, report: DispatchReport) -> DeliveredAction | None:
+        """Trusted host preview to calculate the post-transition digest.
+
+        A mere preview NEVER registers success, consumes the claim or
+        authorizes an input; only exact original reports can be inspected.
+        """
+        with self._lock:
+            if (not isinstance(report, DispatchReport)
+                    or self._last_report is not report):
+                return None
+            return self._last_delivery
+
+    def claim_delivery(self, report: DispatchReport) -> DeliveredAction | None:
+        """Consume exact, currently unclaimed host-issued dispatch once.
+
+        Model-created or copied DispatchReport objects never work. This
+        DOES NOT authenticate a success/failure claim or publish to a stream.
+        """
+        with self._lock:
+            if (not isinstance(report, DispatchReport)
+                    or self._last_report is not report
+                    or self._last_delivery is None):
+                return None
+            result = self._last_delivery
+            self._last_report = None
+            self._last_delivery = None
+            self._counts["deliveries_claimed"] += 1
+            return result
 
     def recover_key_up(self, *, port: StudioInputPort) -> bool:
         """Operator/host attempts an unconditional cleanup after input failure."""
@@ -235,6 +304,9 @@ class StudioPlaytestHost:
                 self._gate.release(self._unclaimed.ticket, now_ms=self._clock(),
                                    host_confirmed_released=True)
             self._unclaimed = None
+            self._unclaimed_frame = None
+            self._last_report = None
+            self._last_delivery = None
             if self._held is not None and port is not None:
                 self.recover_key_up(port=port)
             if self._held is not None:
@@ -248,10 +320,11 @@ class StudioPlaytestHost:
         with self._lock:
             return {**self._counts, "enabled": self._studio_id is not None,
                     "key_release_pending": self._held is not None,
+                    "delivery_unclaimed": self._last_delivery is not None,
                     "gate": self._gate.metrics()}
 
 
 __all__ = [
     "StudioBinding", "StudioSnapshot", "StudioInputPort",
-    "DispatchReport", "StudioPlaytestHost",
+    "DispatchReport", "DeliveredAction", "StudioPlaytestHost",
 ]
