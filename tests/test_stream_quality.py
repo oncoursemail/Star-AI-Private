@@ -44,6 +44,43 @@ class StreamQualityTests(unittest.TestCase):
         self.assertIn("fewer_grounded_replies", report["reasons"])
         self.assertIn("insufficient_audible_samples", report["reasons"])
 
+    def test_speed_cannot_hide_low_absolute_answer_quality(self):
+        source = []
+        for idx in range(20):
+            case = f"trial_{idx}"
+            # 16 genuinely useful responses, four failed in both profiles.
+            supported = idx < 16
+            source.append(turn(case, outcome="spoken" if supported else "failed",
+                               grade="supported" if supported else "not_applicable"))
+            source.append(turn(case, route="candidate", first=200,
+                               outcome="spoken" if supported else "failed",
+                               grade="supported" if supported else "not_applicable"))
+        report = compare_stream_profiles(tuple(source))
+        self.assertEqual(report["baseline"]["useful_reply_ratio"], .8)
+        self.assertEqual(report["candidate"]["useful_reply_ratio"], .8)
+        self.assertEqual(report["decision"], "do_not_promote")
+        self.assertIn("useful_reply_coverage_below_target", report["reasons"])
+
+    def test_added_failed_opportunities_are_explicit_regression(self):
+        source = list(pairs())
+        for idx, record in enumerate(source):
+            if record.route == "candidate" and record.case_id == "trial_1":
+                source[idx] = turn(record.case_id, route="candidate",
+                                   outcome="failed", grade="not_applicable")
+        report = compare_stream_profiles(tuple(source), min_useful_reply_ratio=.8)
+        self.assertIn("increased_failed_reply_opportunities", report["reasons"])
+        self.assertEqual(report["candidate"]["failed_reply_opportunities"], 1)
+
+    def test_intentional_cancellation_is_reported_not_called_slow(self):
+        source = list(pairs())
+        for idx, record in enumerate(source):
+            if record.route == "candidate" and record.case_id == "trial_1":
+                source[idx] = turn(record.case_id, route="candidate",
+                                   outcome="cancelled", grade="not_applicable")
+        report = compare_stream_profiles(tuple(source), min_useful_reply_ratio=.8)
+        self.assertEqual(report["candidate"]["cancelled_reply_opportunities"], 1)
+        self.assertIn("increased_cancelled_reply_opportunities", report["reasons"])
+
     def test_ungrounded_claims_block_even_if_fast(self):
         source = list(pairs())
         for idx, record in enumerate(source):
@@ -140,7 +177,12 @@ class StreamQualityTests(unittest.TestCase):
     def test_invalid_config_types(self):
         for kw in ({"min_cases":1}, {"min_spoken":0},
                    {"min_relative_latency_gain":math.inf},
-                   {"min_relative_latency_gain":True}):
+                   {"min_relative_latency_gain":True},
+                   {"min_useful_reply_ratio":math.nan},
+                   {"min_useful_reply_ratio":math.inf},
+                   {"min_useful_reply_ratio":True},
+                   {"min_useful_reply_ratio":.49},
+                   {"min_useful_reply_ratio":1.1}):
             with self.subTest(kw=kw), self.assertRaises(ValueError):
                 compare_stream_profiles(pairs(), **kw)
         with self.assertRaises(TypeError):
