@@ -7,7 +7,7 @@
 #   setup.cmd -DryRun            print every step and change NOTHING (no admin rights, no download, no install)
 #   setup.cmd -Yes               take every default and ask nothing (steps that need the owner are SKIPPED)
 #   setup.cmd -Skip cable,camera skip those steps          setup.cmd -Only models,acceptance   run only those steps
-#   setup.cmd -Grounder none     ask|ui-tars-2b|ui-tars-1.5-7b|none: the optional screen-reading model (default: ask)
+#   setup.cmd -Grounder none     ask|ui-tars-2b|qwen3-vl-2b|ui-tars-1.5-7b|none (default: ask; Qwen is explicit opt-in)
 #   setup.cmd -MinecraftLauncher modrinth  remember that choice; skip the official launcher, keep Java and Mineflayer
 #   setup.cmd -DiscordAccessibility  optional shortcut setup for UI Automation; normal Discord is unchanged by default
 #   setup.cmd -Uninstall         remove the scheduled task and desktop files (keeps her data and workspace)
@@ -24,7 +24,7 @@ param(
     [switch]$Yes,
     [string[]]$Skip = @(),
     [string[]]$Only = @(),
-    [ValidateSet('ask', 'ui-tars-2b', 'ui-tars-1.5-7b', 'none')][string]$Grounder = 'ask',
+    [ValidateSet('ask', 'ui-tars-2b', 'qwen3-vl-2b', 'ui-tars-1.5-7b', 'none')][string]$Grounder = 'ask',
     [ValidateSet('official', 'modrinth')][string]$MinecraftLauncher,
     [switch]$DiscordAccessibility
 )
@@ -638,8 +638,8 @@ Invoke-Step 'camera' 'STAR Camera virtual webcam (Unity Capture, pinned hashes)'
     Mark-Ok "'STAR Camera' registered and sent frames in the self-test (Discord detection is not verified yet)"
 }
 
-Invoke-Step 'grounder' 'Optional screen-reading model for star.computer (UI-TARS, pinned)' 'Download the files listed in installer\star-home\pins.json by hand, or run setup.cmd -Only grounder -Grounder ui-tars-2b' {
-    if ($A.Grounder -eq 'none') { Mark-Skipped 'not selected (default is to skip when the disk is low or you answer no)' 'setup.cmd -Only grounder -Grounder ui-tars-2b   (2.3 GB; ui-tars-1.5-7b is 5.2 GB and needs the whole GPU)'; return }
+Invoke-Step 'grounder' 'Optional screen-reading model for star.computer (pinned)' 'Download the files listed in installer\star-home\pins.json by hand, or run setup.cmd -Only grounder -Grounder ui-tars-2b' {
+    if ($A.Grounder -eq 'none') { Mark-Skipped 'not selected (default is to skip when the disk is low or you answer no)' 'setup.cmd -Only grounder -Grounder ui-tars-2b (or explicit candidate qwen3-vl-2b); setup reports download size; measure GPU use before enabling'; return }
     $g = $Pins.grounder.($A.Grounder)
     $folder = "$Root\models\grounding\$($A.Grounder)"
     $bytes = ($g.files | Measure-Object -Property size -Sum).Sum
@@ -661,7 +661,7 @@ Invoke-Step 'grounder' 'Optional screen-reading model for star.computer (UI-TARS
     $model = "$folder\$($g.model_file)"
     $mmproj = "$folder\$($g.mmproj_file)"
     @('@echo off',
-      "rem Starts STAR's screen-reading model ($($A.Grounder)) on 127.0.0.1:8081. It needs about $($g.vram_gb) GB of GPU memory: close the local voice model first if the card is full.",
+      "rem Starts STAR's screen-reading model ($($A.Grounder)) on 127.0.0.1:8081. Measure GPU memory on this PC before running beside voice or a game; download size is not a VRAM budget.",
       "`"$FastServer`" -m `"$model`" --mmproj `"$mmproj`" --host 127.0.0.1 --port 8081 -ngl 99 -c 4096 --no-webui") |
         Set-Content -Path "$Root\tools\start-grounder.cmd" -Encoding ascii
     New-Item -ItemType Directory -Force -Path $Data | Out-Null
