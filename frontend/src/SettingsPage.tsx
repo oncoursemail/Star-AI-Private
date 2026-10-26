@@ -5,6 +5,7 @@ import {Panel,Tag} from './components'
 import {WEBSITE_RELEASES} from './constants'
 import type {AppSettings,BootData} from './types'
 import {ProviderPanel} from './IntegrationPanels'
+import {onBackendEvent} from './bridge'
 import {RobloxPanel} from './RobloxPanel'
 import {BlenderPanel} from './BlenderPanel'
 import {MediaPlaces} from './MediaPanel'
@@ -105,6 +106,61 @@ function Block({id,keywords='',children}:{id:string;keywords?:string;children:Re
 function Switch({label,hint,checked,onChange,disabled,experimental}:{label:string;hint:string;checked:boolean;onChange:(on:boolean)=>void;disabled?:boolean;experimental?:boolean}) {
  const hintId=useId()
  return <label className="setting-switch"><span><strong>{label}{experimental&&<span className="settings-badge">Experimental</span>}</strong><small id={hintId}>{hint}</small></span><input type="checkbox" aria-label={label} aria-describedby={hintId} checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)}/></label>
+}
+
+type StrataProbeResult={ok:boolean;model:string;sample:string;elapsed_ms:number}
+
+function StrataProbe({draft,invoke,disabled}:{draft:AppSettings;invoke:Invoke;disabled:boolean}) {
+ const [busy,setBusy]=useState(false)
+ const [result,setResult]=useState<StrataProbeResult|null>(null)
+ const [error,setError]=useState('')
+ const pending=useRef('')
+ useEffect(()=>onBackendEvent(event=>{
+   if(!pending.current||event.requestId!==pending.current||event.kind==='progress')return
+   pending.current='';setBusy(false)
+   if(event.kind==='error'){setResult(null);setError(String(event.data||'Strata test failed').slice(0,260));return}
+   const value=event.data as StrataProbeResult|null
+   if(value?.ok){setResult(value);setError('')}else{setResult(null);setError('Strata returned no usable test result.')}
+ }),[])
+ const run=async()=>{
+   if(disabled||busy)return
+   setBusy(true);setResult(null);setError('')
+   const reply=await invoke('testStrata',{endpoint:draft.strata_endpoint||'',model:draft.strata_model||''}) as
+     ({pending?:boolean;requestId?:string}&Partial<StrataProbeResult>)|null
+   if(reply?.pending&&reply.requestId){pending.current=reply.requestId;return}
+   setBusy(false)
+   if(reply?.ok){setResult(reply as StrataProbeResult);return}
+   if(reply!==null)setError('Strata returned no usable test result.')
+ }
+ return <div className="settings-actions">
+   <button type="button" className="secondary-button" disabled={disabled||busy||!draft.strata_model}
+     onClick={()=>void run()}>{busy?<LoaderCircle className="spin" size={14} aria-hidden="true"/>:<Zap size={14} aria-hidden="true"/>} Test Strata</button>
+   {result&&<span className="health-result" role="status"><Check size={14} aria-hidden="true"/> {result.sample} · {result.elapsed_ms} ms</span>}
+   {error&&<span className="integrated-error" role="alert">{error}</span>}
+ </div>
+}
+
+function StrataEngineRepair({invoke,disabled}:{invoke:Invoke;disabled:boolean}) {
+ const [busy,setBusy]=useState(false)
+ const [result,setResult]=useState('')
+ const apply=async()=>{
+   if(disabled||busy)return
+   setBusy(true);setResult('')
+   try {
+     // Native Qt file picker decides the path; no file path is accepted from React.
+     const reply=await invoke('repairStrataConfig') as
+       {configured?:boolean;changed?:boolean;restart_required?:boolean;cancelled?:boolean}|null
+     if(reply?.cancelled||!reply)return
+     if(reply.configured)setResult(reply.changed
+       ?'Recovery enabled in Strata config. Restart the Strata server to activate it; a local backup was kept.'
+       :'Recovery was already enabled in this Strata config.')
+   } finally {setBusy(false)}
+ }
+ return <div className="settings-actions">
+   <button type="button" className="secondary-button" onClick={()=>void apply()}
+     disabled={disabled||busy}>{busy?<LoaderCircle className="spin" size={14} aria-hidden="true"/>:<ShieldCheck size={14} aria-hidden="true"/>} Apply engine loop recovery…</button>
+   {result&&<small role="status">{result}</small>}
+ </div>
 }
 
 /** Brave or Tavily key for web search. The key goes to the OS credential vault through saveProviderKey and is never
@@ -222,6 +278,28 @@ export function SettingsPage(props:SettingsPageProps) {
        <div className="field-grid"><label>{serverDraft?'Server model ID':'Model ID'}<input list="star-model-ids" value={draft.model} onChange={e=>set({model:e.target.value})} placeholder={serverDraft?'Model on your STAR Server':'Installed model'}/></label>{!serverDraft&&<label>Local endpoint<input value={draft.endpoint} onChange={e=>set({endpoint:e.target.value})}/></label>}</div>
        <div className="settings-actions"><button className="secondary-button" type="button" onClick={()=>void act('listModels')}>List available models <RefreshCcw size={14} aria-hidden="true"/></button><button className="secondary-button" type="button" disabled={modelChecking||!draft.model} onClick={props.testActualModel}>{modelChecking?<LoaderCircle className="spin" size={14} aria-hidden="true"/>:<Zap size={14} aria-hidden="true"/>} Test actual response</button></div>
        {modelCheck&&<div className="health-result" role="status"><Check size={16} aria-hidden="true"/> <span>Live response: {modelCheck.sample}</span></div>}{modelList.length>0&&<small>Available: {modelList.join(', ')}</small>}
+     </Panel>
+   </Block>
+   <Block id="strata" keywords="strata qwen qwen3.8 flash next large model reasoning coding roblox local second engine">
+     <Panel className="settings-section"><div className="section-heading"><div><h3 className="settings-group-title">Strata + Qwen3.8 specialist</h3><p>Optional second local engine for harder code, Roblox, research and Agent tasks. Simple chat stays on your normal resident model.</p></div><Sparkles size={20} aria-hidden="true"/></div>
+       <Switch label="Use Strata for hard local work" hint="Off by default. When enabled with the Local provider, STAR routes complex tasks to the separate Strata endpoint and falls back to the resident model if Strata is unavailable before output starts." checked={draft.strata_enabled===true} disabled={inactive||draft.provider!=='local'} onChange={on=>set({strata_enabled:on})}/>
+       <div className="field-grid">
+         <label>Strata endpoint<input value={draft.strata_endpoint??'http://127.0.0.1:8082/v1'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_endpoint:e.target.value})} placeholder="http://127.0.0.1:8082/v1"/></label>
+         <label>Strata model ID<input value={draft.strata_model??'strata'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_model:e.target.value})} placeholder="strata"/></label>
+         <label>Reasoning
+           <select value={draft.strata_reasoning??'auto'} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_reasoning:e.target.value as AppSettings['strata_reasoning']})}>
+             <option value="auto">Automatic by task</option><option value="none">None</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+           </select>
+         </label>
+         <label>Context tokens<input type="number" min="4096" max="262144" step="1024" value={draft.strata_context_tokens??32768} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_context_tokens:Number(e.target.value)})}/></label>
+         <label>Request timeout (seconds)<input type="number" min="60" max="1800" step="30" value={draft.strata_timeout??900} disabled={inactive||draft.strata_enabled!==true} onChange={e=>set({strata_timeout:Number(e.target.value)})}/></label>
+       </div>
+       <Switch label="Let Strata inspect images" hint="Use Qwen3.8's image input for complex visual/Roblox debugging when the Strata model supports it." checked={draft.strata_vision_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_vision_enabled:on})}/>
+       <Switch label="Stop runaway Strata repetition" hint="On by default when Strata is enabled. Detects repeated reasoning or answer passages (issue #728) and stops the request without replaying project tools." checked={draft.strata_loop_guard_enabled!==false} disabled={inactive||draft.strata_enabled!==true} onChange={on=>set({strata_loop_guard_enabled:on})}/>
+       <StrataProbe draft={draft} invoke={act} disabled={inactive||draft.strata_enabled!==true}/>
+       <StrataEngineRepair invoke={act} disabled={inactive||draft.provider!=='local'}/>
+       <small>Engine recovery requires Strata 0.1.40 or newer. Choose its installed strata-*.json file to enable recovery with an exact local backup; restart Strata afterwards.</small>
+       <small>STAR never downloads or starts Strata automatically. Run Strata separately on this loopback endpoint; keeping it separate lets the small model stay fast for everyday chat.</small>
      </Panel>
    </Block>
    <Block id="provider" keywords="api key cloud groq openrouter gemini cerebras star server provider lan">
