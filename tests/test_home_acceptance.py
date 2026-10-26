@@ -418,7 +418,8 @@ def test_setup_script_takes_a_root_and_keeps_everything_under_it():
         assert name in text
     assert "ProgramData 'STAR" not in text and "C:\\STAR\\home" not in text
     assert "Join-Path $Root 'tools\\Autologon'" in text
-    assert "star.home acceptance" in text.strip().splitlines()[-1]
+    lines = text.strip().splitlines()
+    assert any("star.home acceptance" in line for line in lines[-4:])             # the command is printed at the very end
     assert "ProgramData 'ssh" in text                                   # Windows' own sshd folder stays where it is
 
 
