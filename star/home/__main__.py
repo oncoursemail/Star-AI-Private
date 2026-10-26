@@ -40,6 +40,10 @@ def _setup(dry: bool):
 
 
 def main(argv: list[str] | None = None) -> int:
+    args_list = sys.argv[1:] if argv is None else argv
+    if args_list[:1] == ["configure"]:
+        from .onboarding import cli
+        return cli(args_list[1:])
     if (sys.argv[1:] if argv is None else argv)[:1] == ["acceptance"]:
         from .acceptance import cli
         return cli((sys.argv[1:] if argv is None else argv)[1:])

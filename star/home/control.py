@@ -45,6 +45,7 @@ DEFAULTS = {
     "voice": {},                     # VoiceSettings overrides on top of star.senses.instant.PC_PRESET
     "art_studio": {"enabled": False, "mode": "paint", "allow_generation": False, "reference": ""},
     "stream_chat": {"enabled": False, "client_id": "", "broadcaster_id": "", "respond": False},
+    "social": None,                 # absent preserves legacy settings; an explicit empty object disables adapters
 }
 
 

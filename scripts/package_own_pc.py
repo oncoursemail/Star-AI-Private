@@ -14,16 +14,22 @@ INCLUDE = (
     "star", "installer/star-home", "installer/star-camera", "assets/vtuber",
     "frontend/public/assets/mascot/faces", "requirements-home.in", "requirements-home.txt",
     "requirements-home-torch.txt", "STAR-FIRST-START.md", "docs/design/STAR_VTUBER_DIRECTION_20261025.md",
-    "Set Up Star.cmd", "Preview Star Setup.cmd",
+    "Set Up Star.cmd", "Preview Star Setup.cmd", "STAR-LIVE-TEST.md",
     "docs/STAR_ALLOWANCE_CARD_OPTIONS_20261025.md", "docs/agents/codex-art-studio-20261026.md",
     "docs/agents/codex-stream-setup-20261026.md", "docs/agents/codex-pc-optimization-20261026.md",
     "docs/agents/codex-avatar-expressions-20261026.md", "docs/agents/codex-twitch-chat-20261026.md",
     "docs/agents/codex-own-pc-validation-20261026.md",
     "docs/agents/codex-twitch-chat-review-20261026.md",
+    "docs/agents/codex-autonomy-hardening-validation-20261026.md",
+    "docs/agents/codex-autonomy-recovery-20261026.md",
+    "docs/agents/codex-home-voice-lifecycle-20261026.md",
+    "docs/agents/codex-social-lifecycle-20261026.md",
+    "docs/agents/codex-minecraft-setup-20261026.md",
 )
 EXPECTED = ("star/home/__main__.py", "installer/star-home/setup.cmd", "installer/star-home/pins.json",
             "star/art_studio.py", "star/stream_setup.py", "star/twitch_chat.py", "STAR-FIRST-START.md",
-            "Set Up Star.cmd", "Preview Star Setup.cmd",
+            "Set Up Star.cmd", "Preview Star Setup.cmd", "STAR-LIVE-TEST.md",
+            "star/home/onboarding.py", "star/games/minecraft_setup.py",
             "assets/vtuber/modes/cat-concept.png", "assets/vtuber/modes/puppy-concept.png")
 
 

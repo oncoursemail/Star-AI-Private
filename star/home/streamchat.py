@@ -46,7 +46,9 @@ class StreamChat:
         return value if isinstance(value, dict) else {}
 
     def stopped(self) -> bool:
+        admission = getattr(self.runtime, "admission_blocked", None)
         return (self._shutdown.is_set() or control.stopped(self.runtime.home) or
+                (callable(admission) and bool(admission())) or
                 self.config.get("enabled") is not True or self.runtime.executor.dry_run)
 
     def _busy(self) -> bool:

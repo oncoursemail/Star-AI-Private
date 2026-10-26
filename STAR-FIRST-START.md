@@ -4,7 +4,7 @@ This is a source installation preview for her dedicated Windows PC with an RTX 4
 
 ## Install on her computer
 
-1. Copy and extract `Star-Own-PC-Preview.zip` onto **her computer**. Sign in as her Windows user. Leave at least 40 GB free for the selected downloads and models; the optional art model is not included.
+1. Copy and extract the newest numbered `Star-Own-PC-Preview` ZIP onto **her computer**. Sign in as her Windows user. Leave at least 40 GB free for the selected downloads and models; the optional art model is not included.
 2. Double-click **Preview Star Setup.cmd** to preview. To install, double-click **Set Up Star.cmd**. Choose the install folder, such as `D:\STAR`. The installer asks its questions before downloading; answers that need your account are not invented by `-Yes`.
 3. Enter the address of the existing Star brain server when asked. An empty address leaves her without a working brain. Keep the initial action dry run on while checking her logs. Sign in to the apps you own once and keep their sessions signed in. No account passwords belong in a chat, prompt or this repository.
 4. Let setup finish, restart if a driver needs it, then run setup again. Check each failed or skipped step and its printed fix. Preview mode does not install, remove shortcuts, start the loop or apply PC cleanup. Package verification failure stops that install step.
@@ -23,6 +23,8 @@ D:\STAR\venv\Scripts\python.exe -m star.home acceptance
 Read `D:\STAR\home\acceptance\latest.md`. Missing native devices, inaccessible apps, a disconnected brain or failed checks are setup problems to resolve, not successful installation. The desktop **STAR STOP.cmd** and **Ctrl+Alt+Shift+F12** stop her actions. Only the owner resumes her.
 
 Autologon, remote support and lock settings are separate installer choices; review the questions on her PC. The cleanup tool described below does not change Windows security.
+
+Follow **STAR-LIVE-TEST.md** for the first supervised session, game authorization and STOP rehearsal. The latest source adds separate voice/game cleanup, delayed-speech cancellation and recovery after failed activities. Those checks used synthetic devices and temporary state. They do not establish live reliability on her computer. Preview now also suppresses native game startup, Home voice and camera activation.
 
 ## What she can see and do
 

@@ -183,7 +183,8 @@ class SocialChat:
         """Her reply to `text` from `handle`, or None when she should not answer (blocked)."""
         now = self._clock()
         text = " ".join(str(text or "").split())[:1500]
-        person = self.memory.person(platform, handle, name, they_started=not public)
+        person = (self.memory.person(platform, handle, name) if public
+                  else self.memory.observe_incoming(platform, handle, name))
         if person.blocked:
             return None
         if REMEMBER_AGAIN.search(text) and not person.remembered:

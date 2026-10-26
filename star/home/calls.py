@@ -120,14 +120,29 @@ class DiscordCalls:
         return standing.relationship == "friend" and not standing.blocked and not standing.muted
 
     def _focus(self) -> bool:
-        return bool(self.host.focus_window(self.window_title))
+        return not self._cancelled() and bool(self.host.focus_window(self.window_title))
+
+    def _cancelled(self, ctx=None) -> bool:
+        interrupt = getattr(ctx, "interrupt", None)
+        if interrupt is not None and interrupt.is_set():
+            return True
+        stopped = getattr(self.voice, "stopped", None)
+        try:
+            return callable(stopped) and bool(stopped())
+        except Exception:
+            return True
 
     def _connect(self, name: str, state: dict | None = None) -> dict:
         """Connected on screen: start her voice. Returns the handler result."""
+        if self._cancelled():
+            return {"ok": False, "summary": "call handling stopped"}
         try:
             call = self.voice.start_call(self._friend_info(name))
         except Exception as why:
             return {"ok": False, "summary": f"in the call with {name} but the voice could not start: {why}"}
+        if self._cancelled():
+            self.stop()
+            return {"ok": False, "summary": "call handling stopped"}
         self.friend, self._hangup_asked = name, False
         self._history_seen, self._goodbye_felt = 0, False
         self.situation.in_call = True
@@ -198,9 +213,11 @@ class DiscordCalls:
             self._presence_absent = 0
 
     def _click(self, what: str) -> bool:
+        if self._cancelled():
+            return False
         png = self.host.screenshot()
         spot = self.locator(png, what)
-        if spot is None:
+        if spot is None or self._cancelled():
             return False
         self.host.click(spot[0], spot[1])
         return True
@@ -208,6 +225,8 @@ class DiscordCalls:
     # ---- the three handlers (registered as discord:call / discord:callout / discord:hangup) --------------------
     def answer(self, incoming, ctx=None) -> dict:
         name = incoming.sender
+        if self._cancelled(ctx):
+            return {"ok": False, "summary": "call handling stopped"}
         if not self._is_friend(name):
             return {"ok": False, "summary": f"{name} is not a friend: she does not pick up"}
         if self.voice.in_call():
@@ -220,18 +239,26 @@ class DiscordCalls:
         shown = str(state.get("caller") or "").strip().lower()
         if shown and shown != name.strip().lower():
             return {"ok": False, "summary": f"the ringing call is from {shown!r}, not {name!r}: not answered"}
+        if self._cancelled(ctx):
+            return {"ok": False, "summary": "call handling stopped"}
         self.host.key(self.accept_keys)
         self._sleep(2.0)
+        if self._cancelled(ctx):
+            return {"ok": False, "summary": "call handling stopped"}
         state = self._state()
         if not state.get("in_voice_call") and self._click("the green Accept button of the incoming call"):
             self._sleep(2.0)
             state = self._state()
+        if self._cancelled(ctx):
+            return {"ok": False, "summary": "call handling stopped"}
         if not state.get("in_voice_call"):
             return {"ok": False, "summary": f"tried to answer {name} but the screen does not show the call"}
         return self._connect(name, state)
 
     def callout(self, incoming, ctx=None) -> dict:
         name = incoming.sender
+        if self._cancelled(ctx):
+            return {"ok": False, "summary": "call handling stopped"}
         if not self._is_friend(name):
             return {"ok": False, "summary": f"{name} is not a friend: she does not call them"}
         if self.voice.in_call():
@@ -241,8 +268,12 @@ class DiscordCalls:
         self.host.key("ctrl+k")                              # quick switcher: open the DM
         self.host.type_text(name)
         self._sleep(0.8)
+        if self._cancelled(ctx):
+            return {"ok": False, "summary": "call handling stopped"}
         self.host.key("enter")
         self._sleep(1.0)
+        if self._cancelled(ctx):
+            return {"ok": False, "summary": "call handling stopped"}
         state = self._state()
         if str(state.get("dm_with") or "").strip().lower() not in (name.strip().lower(), ""):
             self.host.key("escape")
@@ -252,6 +283,8 @@ class DiscordCalls:
         deadline = self._clock() + self.pickup_wait_s
         while self._clock() < deadline:
             self._sleep(2.0)
+            if self._cancelled(ctx):
+                return {"ok": False, "summary": "call handling stopped"}
             state = self._state()
             if state.get("in_voice_call") and state.get("other_joined"):
                 return self._connect(name, state)
@@ -260,12 +293,21 @@ class DiscordCalls:
         return {"ok": False, "summary": f"{name} did not pick up; she cancelled the call"}
 
     def hangup(self, incoming=None, ctx=None) -> dict:
+        if self._cancelled(ctx):
+            self.stop()
+            return {"ok": True, "summary": "local voice stopped without an app action"}
         name = self.friend or "them"
         if self.voice.in_call():
             self._say(FRIEND_LEAVE_LINE)
             self._sleep(3.5)                                 # let the goodbye finish before the line closes
+        if self._cancelled(ctx):
+            self.stop()
+            return {"ok": True, "summary": "local voice stopped without an app action"}
         self.voice.end_call()
         self.situation.in_call = False
+        if self._cancelled(ctx):
+            self.stop()
+            return {"ok": True, "summary": "local voice stopped without an app action"}
         left = False
         if self._focus():
             left = self._click("the red Disconnect / Hang up button of the call")
@@ -278,15 +320,36 @@ class DiscordCalls:
         """The friend asked her to play something and she said yes: the loop takes that activity next."""
         return {"ok": True, "summary": f"starts {incoming.text} with {incoming.sender}", "activity": incoming.text}
 
+    def stop(self) -> None:
+        """Owner STOP resets local call state without an app action or social event."""
+        self.friend = ""
+        self._hangup_asked = False
+        self._history_seen, self._goodbye_felt = 0, False
+        self._presence_next = 0.0
+        self._presence, self._presence_absent = None, 0
+        self._departed.clear()
+        self.situation.in_call = False
+        stop = getattr(self.voice, "stop", None)
+        if callable(stop):
+            stop()
+        else:
+            self.voice.end_call()
+
     # ---- the watcher's call timer -----------------------------------------------------------------------------
     def tick(self, inbox) -> None:
         """Called every second or two: when the friend went quiet or the call got long, she leaves."""
+        if self._cancelled():
+            self.stop()
+            return
         call = self.voice.call
         if call is None:
             return
         if not call.alive():
-            self.voice.call = None                          # the voice stack stopped on its own
-            self.situation.in_call = False
+            if isinstance(self.voice, HomeVoice):
+                self.voice.end_call(expected=call)          # never detach a newer call started during this tick
+            else:
+                self.voice.call = None                     # legacy injected test/host implementation
+            self.situation.in_call = self.voice.in_call()
             return
         self._watch_goodbye(call)
         self._check_presence()
