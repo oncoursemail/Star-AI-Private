@@ -1,5 +1,7 @@
 # PR 664 independent review — 2026-10-26
 
+Update: after this review, the integration branch merged PR 664 at `bf7246db`. The own-PC branch reconciles its two voice conflicts while preserving the current adult-peer, transcript, emotion and history safeguards. It replaces the rejected opener, keeps the experiment disabled by default and excludes adult-peer calls from its hints. The desktop guard now holds unfinished sentences, requires confirmed separators during streaming, checks final fragments, and fails closed above 4096 non-whitespace unfinished prose characters or 65536 held raw characters. Ten existing guard tests and the retained split-trigger/buffer verification pass; the original three-chunk leak now displays only `Hello.`. This historical exact-head review below describes the pre-correction source, not the final integrated behavior. Native voice quality measurements remain pending.
+
 Reviewed [PR 664](https://github.com/oncoursemail/Star-AI-Private/pull/664), head `990b18c919fc2736d088f55b58ac886d80b44037`, targeting `star/next`. No integration, checkout change, public comment or review submission was performed.
 
 ## Observed merge and CI state

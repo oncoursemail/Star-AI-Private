@@ -19,7 +19,7 @@ The local bundle is a source installation preview for the dedicated PC, not a pu
 
 Independent agents reviewed installer safety, OBS protocol/privacy/failure paths, painting integration, facial event timing and the chat speech boundary. OBS browser sources now allow same-origin local art and explicitly enable custom 30 FPS. Cleanup attempts cannot skip microphone/camera deactivation after one stale scene-item error. The SDK's own connection logging is suppressed before it can print a password. The chat bridge requires a dedicated cancellable speech hook rather than using shared private-call audio.
 
-The newer voice PR 664 remains unintegrated after independent synthetic reproductions found a partial reasoning-display leak and a suggested opener rejected by existing speech filters. Its conflicts and exact reviewed head are recorded in `codex-pr664-review-20261026.md`.
+Upstream later merged PR 664 and advanced the integration branch to `bf7246db`. Its voice conflicts were reconciled while preserving the current adult-peer, transcript, emotion and history safeguards. The rejected opener was replaced; varied openers remain off and do not affect adult-peer calls. The desktop partial-sentence leak was corrected with confirmed sentence boundaries, final-tail checks and bounded held buffers. Ten existing guard tests and the retained synthetic split-trigger/buffer verifier pass. The broader voice suite had 238 passes plus 34 subtests and one environment-dependent status failure; the status check passed with isolated settings. This is not reported as an unqualified full-suite pass. The earlier exact-head review and correction note are in `codex-pr664-review-20261026.md`.
 
 ## Outstanding acceptance
 
