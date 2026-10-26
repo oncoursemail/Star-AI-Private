@@ -8,6 +8,8 @@
   weight NAME VALUE        set a weight (she does this herself through the brain; this is for the owner too)
   log [--last N]           the last N action-log lines
   check                    dry-run self-test on the PC: executor, stop, log, brain reachability (no actions run)
+  acceptance [--quick|--dry-run] [--scenario dm-call] [checks...]
+                           prove every ability on this PC and write a report (see star/home/acceptance.py)
 
 --dry-run (or "dry_run": true in config.json): actions are logged and not executed; the brain is still asked.
 """
@@ -38,6 +40,9 @@ def _setup(dry: bool):
 
 
 def main(argv: list[str] | None = None) -> int:
+    if (sys.argv[1:] if argv is None else argv)[:1] == ["acceptance"]:
+        from .acceptance import cli
+        return cli((sys.argv[1:] if argv is None else argv)[1:])
     parser = argparse.ArgumentParser(prog="python -m star.home")
     parser.add_argument("command", choices=["run", "once", "status", "stop", "resume", "interests", "weight", "log",
                                             "check"])
