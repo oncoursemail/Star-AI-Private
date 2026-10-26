@@ -264,23 +264,39 @@ REVISE_SYSTEM = (
 
 
 # -- the persona text for the day ---------------------------------------------------------------------------------------
-def render(model: dict) -> str:
-    """The self-model as persona text: trait words and facts, no example sentences, no numbers. FIXED_BOUNDARIES last."""
+_ROMANCE_WORDS = re.compile(r"flirt|romanc|romantic|sexy|sexual|crush|lover|dating|girlfriend|boyfriend|kiss", re.I)
+FRIENDS_ONLY_LINE = "With this person she is a friend only: warm and playful, never romantic or flirty."
+
+
+def _friends_only(text: str) -> str:
+    """`text` without the clauses that talk about flirting or romance (for people she may not be romantic with)."""
+    kept = [c for c in re.split(r"(?<=[;,.])\s*", text) if c and not _ROMANCE_WORDS.search(c)]
+    return " ".join(kept).strip(" ;,.")
+
+
+def render(model: dict, romance: bool = False) -> str:
+    """The self-model as persona text: trait words and facts, no example sentences, no numbers. FIXED_BOUNDARIES last.
+    `romance` is True only when star.social.rules.romance_mode(...).romance == "allowed" for the person she talks to;
+    otherwise every flirting or romance wording is left out and the text says friends only."""
+    keep = (lambda t: t) if romance else _friends_only
     traits = model["traits"]
     words = [n for n, v in sorted(traits.items(), key=lambda kv: -kv[1]) if v >= 0.65 and n != "flirtiness"][:5]
-    low = [n for n, v in traits.items() if v <= 0.35]
-    parts = [f"Who she is: {model['identity']}.", "Her strongest traits: " + ", ".join(words) + "." if words else ""]
-    if traits["flirtiness"] >= 0.4:
+    low = [n for n, v in traits.items() if v <= 0.35 and (romance or n != "flirtiness")]
+    parts = [f"Who she is: {keep(model['identity'])}.", "Her strongest traits: " + ", ".join(words) + "." if words else ""]
+    if romance and traits["flirtiness"] >= 0.4:
         parts.append("She can be flirty, only with adults who welcome it.")
+    if not romance:
+        parts.append(FRIENDS_ONLY_LINE)
     if low:
         parts.append("Not much: " + ", ".join(low) + ".")
     for label, field in (("Humour", "humour"), ("With people", "about_people")):
-        parts.append(f"{label}: {model[field]}.")
+        parts.append(f"{label}: {keep(model[field])}.")
     for label, field in (("She values", "values"), ("She likes", "likes"), ("She dislikes", "dislikes"),
                          ("Her quirks", "quirks"), ("She cares about", "cares_about"),
                          ("She wants to get better at", "wants_to_improve")):
-        if model[field]:
-            parts.append(f"{label}: " + ", ".join(model[field]) + ".")
+        items = [i for i in model[field] if romance or not _ROMANCE_WORDS.search(i)]
+        if items:
+            parts.append(f"{label}: " + ", ".join(items) + ".")
     return " ".join(p for p in parts if p) + "\n" + FIXED_BOUNDARIES
 
 
@@ -289,14 +305,15 @@ def persona_day(ts: float) -> str:
     return time.strftime("%Y-%m-%d", time.localtime(ts - NIGHT_END * 3600))
 
 
-def persona_for_day(store: InnerStore, now: float | None = None) -> str:
-    """The persona text for today, rendered once (the first call of the day) and byte-identical after that."""
+def persona_for_day(store: InnerStore, now: float | None = None, *, romance: bool = False) -> str:
+    """The persona text for today, rendered once per romance mode (the first call of the day) and byte-identical after
+    that. Pass `romance=True` only for a verified adult off Roblox (rules.romance_mode(...).romance == "allowed")."""
     now = time.time() if now is None else now
-    key = f"persona:{persona_day(now)}"
+    key = f"persona:{persona_day(now)}" + (":romance" if romance else "")
     cached = store.meta(key)
     if cached:
         return cached
-    text = render(current(store))
+    text = render(current(store), romance)
     store.set_meta(key, text)
     return text
 

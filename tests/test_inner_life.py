@@ -2,6 +2,7 @@
 Every model call is a fake brain; nothing touches the network, a real model or the app data folder."""
 import json
 import random
+import re
 import time
 
 import pytest
@@ -875,3 +876,28 @@ def test_the_eval_prompts_keep_the_system_message_byte_stable_and_the_note_short
         assert len(note) <= 190 or not note.startswith("(")
     assert all(len(variants) == 1 for variants in systems.values())
     assert len({next(iter(v)) for v in systems.values()}) == 1          # the same bytes for every person (cache friendly)
+
+
+def test_the_persona_only_permits_flirting_when_the_age_rules_allow_romance_with_that_person(store):
+    friends = self_model.persona_for_day(store, at(26, 10))
+    adult = self_model.persona_for_day(store, at(26, 10), romance=True)
+    words = re.compile(r"flirt|romanc|sexy", re.I)
+    assert "flirty, only with adults who welcome it" in adult and "can flirt with adults" in adult
+    assert self_model.FRIENDS_ONLY_LINE not in adult
+    rest = friends.removesuffix(self_model.FIXED_BOUNDARIES).replace(self_model.FRIENDS_ONLY_LINE, "")
+    assert self_model.FRIENDS_ONLY_LINE in friends and not words.search(rest)       # nothing that invites romance
+    assert friends.endswith(self_model.FIXED_BOUNDARIES) and adult.endswith(self_model.FIXED_BOUNDARIES)
+    # one text per day and mode, byte-identical (the server's prompt cache); the other mode does not overwrite it
+    assert self_model.persona_for_day(store, at(26, 22), romance=True) == adult
+    assert self_model.persona_for_day(store, at(26, 22)) == friends
+    assert adult != friends and self_model.persona_for_day(store, at(26, 23)) == friends
+
+
+def test_a_romantic_quirk_she_wrote_herself_stays_out_of_the_friends_only_persona(store):
+    model = self_model.current(store)
+    model["quirks"] = ["likes cats", "flirts a lot when bored"]
+    model["identity"] = "sweet and funny, and loves romance novels, a good friend"
+    friends = self_model.render(model).removesuffix(self_model.FIXED_BOUNDARIES)
+    assert "cats" in friends and "good friend" in friends
+    assert not re.search(r"flirt|romanc", friends.replace(self_model.FRIENDS_ONLY_LINE, ""), re.I)
+    assert "flirts a lot when bored" in self_model.render(model, romance=True)

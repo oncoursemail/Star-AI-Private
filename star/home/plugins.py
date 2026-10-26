@@ -252,6 +252,19 @@ class _Idle:
 
 
 # ---- star.watch -------------------------------------------------------------------------------------------------
+def hearing_hub(rt):
+    """The star.senses hearing hub (the PC's sound with her own voice excluded), started the first time a video needs
+    it; None when hearing cannot start on this PC, and then star.watch keeps to captions and the picture."""
+    try:
+        hook = rt.hooks.get("hearing_hub")
+        if hook is not None:
+            return hook()
+        from . import voicestack
+        return voicestack.hearing_hub(rt.config)
+    except Exception:
+        return None
+
+
 def wire_watch(registry) -> None:
     """Connect star.watch (video watching, PR #643) to her voice and to the scheduler. Skipped when it is not installed."""
     rt = registry.runtime
@@ -291,7 +304,7 @@ def wire_watch(registry) -> None:
                     raise Interrupted("a friend needs her")
                 real_sleep(min(0.5, max(0.0, end - time.monotonic())))
 
-        watch.configure(sleep=sleep)
+        watch.configure(hub=hearing_hub(rt), sleep=sleep)
         try:
             out = inner(ctx)
         finally:

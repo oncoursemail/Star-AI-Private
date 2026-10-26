@@ -1124,3 +1124,233 @@ def test_a_camera_that_fails_never_ends_the_call(tmp_path):
     c._on_connected = lambda name: (_ for _ in ()).throw(RuntimeError("no virtual camera"))
     assert c.answer(Incoming("call", "discord", "Alex", at=NOW, ring_s=45))["ok"] and voice.in_call()
     voice.end_call()
+
+
+# ---- 14. home gaps: adult persona text, left_out / friend_left / reunion, the watch hearing hub -----------------------------
+ROMANCE_MARK = "You may flirt"          # the only wording in the system text that permits romance
+
+
+def _system_after(memory, platform, handle, *lines):
+    model = Model()
+    chat = SocialChat(memory, complete=model, emotion=None, clock=Clock())
+    for line in lines:
+        chat.handle(platform, handle, line)
+    return model.calls[-1][0]
+
+
+def test_only_a_verified_adult_off_roblox_gets_the_romance_permitting_system_text(memory):
+    adult = _system_after(memory, "discord", "noor", "hi", "I'm 27 years old", "hey again")
+    assert ROMANCE_MARK in adult
+    assert adult == _system_after(memory, "discord", "noor", "still here")                 # byte-identical for the same mode
+    assert ROMANCE_MARK in _system_after(memory, "minecraft", "mc", "I'm 31 years old", "hello")   # allowed there too
+    for platform, handle, lines in (("discord", "unknown", ("hi", "what's up")),
+                                    ("discord", "kid", ("hi", "I'm 15", "hey")),
+                                    ("discord", "doubt", ("I'm 19", "my mom says I have to do my homework", "hey")),
+                                    ("roblox", "rbx", ("hi", "I'm 30 years old", "hey"))):
+        assert ROMANCE_MARK not in _system_after(memory, platform, handle, *lines), handle
+    assert "Never romantic or sexual" in _system_after(memory, "discord", "kid", "ok")
+
+
+def test_a_casual_goodbye_from_a_friend_is_a_mild_friend_left_but_not_from_a_stranger(memory):
+    emotion = FakeEmotion()
+    chat = SocialChat(memory, complete=Model(), emotion=emotion, clock=Clock())
+    chat.handle("discord", "Mira", "hello")
+    memory.update(memory.person("discord", "Mira"), relationship="friend")
+    chat.handle("discord", "Mira", "ok gtg, bye!")
+    left = [kw for kind, kw in emotion.events if kind == "friend_left"]
+    assert len(left) == 1 and left[0]["strength"] == 0.35 and left[0]["person"].startswith("friend-")
+    emotion.events.clear()
+    chat.handle("discord", "Stranger", "gtg bye")                                           # a person she just met
+    chat.handle("discord", "Mira", "what game next?")
+    assert [k for k, _ in emotion.events if k == "friend_left"] == []
+
+
+def test_a_friend_who_messages_after_days_is_a_reunion_once(tmp_path):
+    clock = Clock()
+    mem = FriendMemory(tmp_path / "reunion.sqlite3", clock=clock)
+    emotion = FakeEmotion()
+    chat = SocialChat(mem, complete=Model(), emotion=emotion, clock=clock)
+    try:
+        chat.handle("discord", "Mira", "hello")                                             # first ever message
+        mem.update(mem.person("discord", "Mira"), relationship="friend")
+        chat.handle("discord", "Mira", "hello again")                                       # same hour: no reunion
+        chat.handle("discord", "Stranger", "hi")
+        clock.advance(5 * 86400)
+        chat.handle("discord", "Stranger", "hi, it is me again")                            # met, not a friend
+        assert [k for k, _ in emotion.events if k == "reunion"] == []
+        chat.handle("discord", "Mira", "I am back!")
+        chat.handle("discord", "Mira", "did you miss me")
+        reunions = [kw for kind, kw in emotion.events if kind == "reunion"]
+        assert len(reunions) == 1 and reunions[0]["person"].startswith("friend-") and 0.5 < reunions[0]["strength"] <= 1.0
+        assert "Mira" not in reunions[0]["detail"] and "5 days" in reunions[0]["detail"]
+    finally:
+        mem.close()
+
+
+def test_a_broken_emotion_engine_never_breaks_a_reply_that_has_a_reunion_or_goodbye(tmp_path):
+    clock = Clock()
+    mem = FriendMemory(tmp_path / "broken.sqlite3", clock=clock)
+
+    class Broken(FakeEmotion):
+        def on_event(self, kind, **kw):
+            raise RuntimeError("engine down")
+
+    try:
+        chat = SocialChat(mem, complete=Model("hi!"), emotion=Broken(), clock=clock)
+        chat.handle("discord", "Mira", "hello")
+        mem.update(mem.person("discord", "Mira"), relationship="friend")
+        clock.advance(4 * 86400)
+        assert chat.handle("discord", "Mira", "back, but gtg bye").text == "hi!"
+    finally:
+        mem.close()
+
+
+def test_left_out_watch_needs_several_unaddressed_messages_from_two_people_and_then_rests():
+    clock = Clock()
+    watch = attention.LeftOutWatch(clock=clock)
+    assert not watch.note("#general", ["a", "b", "a"])
+    assert not watch.note("#general", ["a", "a"])                    # five messages
+    assert watch.note("#general", ["b"]) is True                     # six, two voices
+    assert not watch.note("#general", ["a", "b"] * 5)                # rests for the cooldown
+    clock.advance(3601)
+    assert watch.note("#general", ["a", "b"] * 3) is True
+    solo = attention.LeftOutWatch(clock=clock)
+    assert not solo.note("#solo", ["a"] * 9)                         # one voice talking is not people leaving her out
+    assert not watch.note("#other", ["a", "b", "a", "b", "a"]) and watch.note("#other", ["b"])
+    watch.note("#other", ["a", "b", "a", "b"])
+    watch.note("#other", [], addressed=True)                        # someone talked to her: the pile is gone
+    assert not watch.note("#other", ["a", "b"])
+    clock.advance(3 * 3600)                                          # a new conversation hours later
+    assert not watch.note("#other", ["a", "b"]) and not watch.note("#other", ["a", "b"])
+
+
+def _channel_view(authors, start=0, mention=False):
+    messages = [{"author": a, "text": f"line {start + i} about the game"} for i, a in enumerate(authors)]
+    if mention:
+        messages.append({"author": authors[0], "text": "hey @Star come look", "mentions_me": True})
+    return {"channel": "#general", "is_dm": False, "messages": messages}
+
+
+def test_friends_chatting_in_a_server_channel_without_her_make_her_feel_left_out(home, memory):
+    from star.social.discord_desktop import DiscordDesktop
+    for name in ("Ann", "Bo"):
+        memory.update(memory.person("discord", name, name), relationship="friend")
+    emotion = FakeEmotion()
+    chat = SocialChat(memory, complete=Model(), emotion=emotion, clock=Clock())
+    view = {}
+    host = HostAdapter(Executor(home, FakeBackend()))
+    desk = DiscordDesktop(host, chat, reader=lambda png: view, left_out=attention.LeftOutWatch(clock=Clock()))
+    view.update(_channel_view(["Ann", "Bo", "Ann"]))
+    assert not desk.step().acted and emotion.events == []
+    view.update(_channel_view(["Bo", "Ann", "Bo", "Ann", "Bo"], start=10))
+    desk.step()
+    assert [(k, kw["person"].startswith("friend-")) for k, kw in emotion.events] == [("left_out", True)]
+    desk.step()                                                      # the same messages again: nothing new
+    assert len(emotion.events) == 1
+    view.update(_channel_view(["Ann", "Bo"], start=20, mention=True))
+    desk.step()                                                      # she was spoken to: no new feeling from that read
+    assert len(emotion.events) == 1
+
+
+def test_strangers_chatting_do_not_hurt_and_leave_no_record(home, memory):
+    from star.social.discord_desktop import DiscordDesktop
+    emotion = FakeEmotion()
+    chat = SocialChat(memory, complete=Model(), emotion=emotion, clock=Clock())
+    view = _channel_view(["Zed", "Yan"] * 4)
+    desk = DiscordDesktop(HostAdapter(Executor(home, FakeBackend())), chat, reader=lambda png: view,
+                          left_out=attention.LeftOutWatch(clock=Clock()))
+    desk.step()
+    assert emotion.events == [] and memory.known("discord", "Zed") is None and memory.known("discord", "Yan") is None
+    bare = DiscordDesktop(HostAdapter(Executor(home, FakeBackend())), chat, reader=lambda png: view)
+    assert not bare.step().acted and emotion.events == []            # no watch plugged in: the old behaviour
+
+
+def test_a_friend_saying_goodbye_in_the_call_is_felt_once_and_the_call_goes_on(tmp_path):
+    backend = FakeBackend()
+    c, voice, spots, _ = make_calls(tmp_path, backend, Screen({"incoming_call": True, "caller": "Alex"}, {"in_voice_call": True}))
+    felt = []
+    c._feel = lambda kind, name, **payload: felt.append((kind, name, payload.get("strength")))
+    inbox = types.SimpleNamespace(add=lambda incoming: None)
+    assert c.answer(Incoming("call", "discord", "Alex", at=NOW, ring_s=45))["ok"]
+    session = voice.call.session
+    c.tick(inbox)                                                     # a session with no history: nothing happens
+    session.history = [{"role": "user", "content": "this game is fun"}, {"role": "assistant", "content": "yes!"}]
+    c.tick(inbox)
+    assert felt == []
+    session.history += [{"role": "assistant", "content": "bye bye bye"},                  # her own words do not count
+                        {"role": "user", "content": "ok I gotta go now, bye!"}]
+    c.tick(inbox)
+    c.tick(inbox)
+    session.history.append({"role": "user", "content": "bye again"})
+    c.tick(inbox)
+    assert felt == [("friend_left", "Alex", 0.35)] and voice.in_call()
+    voice.end_call()
+
+
+def test_a_session_that_trimmed_its_history_does_not_crash_the_goodbye_watch(tmp_path):
+    c, voice, spots, _ = make_calls(tmp_path, FakeBackend(), Screen({"incoming_call": True, "caller": "Alex"}, {"in_voice_call": True}))
+    c._feel = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("engine down"))
+    inbox = types.SimpleNamespace(add=lambda incoming: None)
+    c.answer(Incoming("call", "discord", "Alex", at=NOW, ring_s=45))
+    session = voice.call.session
+    session.history = [{"role": "user", "content": "hello"}] * 6
+    c.tick(inbox)
+    session.history = [{"role": "user", "content": "see you later"}]                        # shorter than before
+    c.tick(inbox)                                                                          # engine failure is swallowed
+    assert voice.in_call()
+    voice.end_call()
+
+
+def test_the_runtime_gives_the_discord_app_a_left_out_watch_and_calls_pass_a_strength(home, memory):
+    rt = runtime.Runtime(home, {}, Executor(home, FakeBackend()), Life(home), memory=memory, emotion=None,
+                         social_settings={"discord": {"enabled": True}, "roblox": {}, "minecraft": {}})
+    assert isinstance(rt.discord.left_out, attention.LeftOutWatch)
+    seen = []
+    rt.feel = lambda kind, platform, sender, **payload: seen.append((kind, platform, sender, payload))
+    rt.calls._feel("friend_left", "Alex", strength=0.35)
+    assert seen == [("friend_left", "discord", "Alex", {"strength": 0.35})]
+
+
+def _watch_module(monkeypatch):
+    parts = types.SimpleNamespace(sleep=lambda s: None, speak=None, chat=None, hub=None)
+
+    def configure(**kw):
+        for key, value in kw.items():
+            setattr(parts, key, value)
+        return parts
+
+    browser = types.ModuleType("star.watch.browser")
+    browser.BrowserError = type("BrowserError", (Exception,), {})
+    watch = types.ModuleType("star.watch")
+    watch.configure = configure
+    watch.ensure_interest = lambda life: life.set_interest("watch_videos", 1.0, "watch videos")
+    seen = []
+    watch.register_home_activities = lambda registry: registry.register(
+        "watch_videos", "watch_videos",
+        lambda ctx: seen.append(parts.hub) or {"ok": True, "verified": True, "summary": "w", "evidence": ["x"]}, "watch")
+    monkeypatch.setitem(sys.modules, "star.watch", watch)
+    monkeypatch.setitem(sys.modules, "star.watch.browser", browser)
+    return parts, seen
+
+
+def _watch_run(home, hooks):
+    life = Life(home)
+    registry, rt = runtime.build(home, {}, Executor(home, FakeBackend()), life, None, plugins=("star.watch",), memory=None,
+                                 emotion=None, hooks=hooks,
+                                 social_settings={"discord": {"enabled": False}, "roblox": {}, "minecraft": {}})
+    ctx = activities.Context(home=home, config={}, executor=rt.executor, life=life, chat=None, interest="watch_videos",
+                             goal=None, interrupt=rt.interrupt, situation=rt.situation)
+    return registry.items["watch_videos"].run(ctx)
+
+
+def test_star_watch_gets_the_hearing_hub_when_it_can_start_and_keeps_going_without_it(home, monkeypatch):
+    parts, seen = _watch_module(monkeypatch)
+    hub = object()
+    assert _watch_run(home, {"hearing_hub": lambda: hub})["ok"] and seen == [hub]       # hearing it is, while she watches
+
+    def cannot_start():
+        raise RuntimeError("no sound card")
+    seen[:] = []
+    assert _watch_run(home, {"hearing_hub": cannot_start})["ok"] and seen == [None]     # captions and picture, no crash
+    seen[:] = []
+    assert _watch_run(home, {"hearing_hub": lambda: None})["ok"] and seen == [None]
