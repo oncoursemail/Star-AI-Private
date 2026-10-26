@@ -19,6 +19,7 @@ const bot = mineflayer.createBot({
   onMsaCode: (data) => emit({ type: 'auth_code', uri: data.verification_uri, code: data.user_code })
 })
 bot.loadPlugin(pathfinder)
+const playHandle = require('../../play/minecraft/skill_runner.js').install(bot, emit) // run_skill / stop_skill + 10 Hz state
 
 const playerCount = () => Object.keys(bot.players).filter((name) => name !== bot.username).length
 
@@ -72,6 +73,7 @@ async function buildPillar (height) {
 }
 
 async function run (cmd) {
+  if (await playHandle(cmd)) return
   switch (cmd.cmd) {
     case 'chat': bot.chat(String(cmd.text || '').slice(0, 250)); break
     case 'whisper': bot.whisper(String(cmd.username), String(cmd.text || '').slice(0, 200)); break

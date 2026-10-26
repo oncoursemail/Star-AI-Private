@@ -79,22 +79,25 @@ def _default_emotion():
         return None
 
 
-def mood_line(emotion) -> str:
-    """'Your mood right now: ...' from star.emotion.current(), whatever shape it returns; '' when unavailable."""
-    if emotion is None or not hasattr(emotion, "current"):
+def _person_id(person: Person) -> str | None:
+    """The opaque id the emotion engine keeps a bond under (never a name or a handle)."""
+    return f"friend-{person.id}" if person.id is not None else None
+
+
+def mood_line(emotion, person: Person | None = None, mode: rules.Mode | None = None) -> str:
+    """"(mood: a bit frustrated, plain and clipped)" from star.emotion.directive(), or "" when nothing stands out, the
+    engine is switched off or unavailable. No raw numbers ever reach the prompt. Romantic wording needs an adult."""
+    if emotion is None or not hasattr(emotion, "directive"):
+        return ""
+    if hasattr(emotion, "enabled") and not emotion.enabled():
         return ""
     try:
-        state = emotion.current()
+        text = emotion.directive(person=_person_id(person) if person else None,
+                                 partner_adult=True if mode is not None and mode.romance == "allowed" else None)
     except Exception:
         return ""
-    for attr in ("describe", "summary"):
-        if callable(getattr(state, attr, None)):
-            state = getattr(state, attr)()
-            break
-    if isinstance(state, dict):
-        state = ", ".join(f"{k} {v}" for k, v in list(state.items())[:6])
-    text = " ".join(str(state or "").split())[:200]
-    return f"Your mood right now: {text}. Let it colour how you talk, without announcing it." if text else ""
+    note_line = getattr(emotion, "note_line", None)
+    return (note_line(text) if callable(note_line) else f"(mood: {text})") if text else ""
 
 
 class SocialChat:
@@ -106,11 +109,17 @@ class SocialChat:
         self._clock = clock
         self._roleplay: dict[tuple[str, str], float] = {}
 
-    def _emit(self, kind: str, **details) -> None:
-        if self._emotion is None or not hasattr(self._emotion, "on_event"):
+    def _feel(self, text: str, person: Person | None, *, rejected: bool = False) -> None:
+        """Her feelings about this exchange (only when the emotion engine is on); never breaks a reply."""
+        emotion = self._emotion
+        if emotion is None or (hasattr(emotion, "enabled") and not emotion.enabled()):
             return
         try:
-            self._emotion.on_event(kind, **details)
+            pid = _person_id(person) if person is not None else None
+            if rejected:
+                emotion.on_event("owner_criticism", person=pid, strength=0.6, detail="a friend asked her to stop")
+            else:
+                emotion.on_message(text, person=pid)
         except Exception:
             pass
 
@@ -126,7 +135,8 @@ class SocialChat:
         return False
 
     def handle(self, platform: str, handle: str, text: str, *, name: str = "", public: bool = False,
-               kids_place: bool = False, history: list[tuple[str, str]] | None = None) -> Reply | None:
+               kids_place: bool = False, history: list[tuple[str, str]] | None = None,
+               intent: str = "") -> Reply | None:
         """Her reply to `text` from `handle`, or None when she should not answer (blocked)."""
         now = self._clock()
         text = " ".join(str(text or "").split())[:1500]
@@ -147,7 +157,7 @@ class SocialChat:
             return self._fixed("Forgotten.", person, platform)
         if LEAVE_ME.search(text):
             self.memory.update(person, muted=True)
-            self._emit("social_rejected", platform=platform)
+            self._feel(text, person, rejected=True)
             return self._fixed("Got it, I'll leave you be.", person, platform)
         if person.muted and not public:
             self.memory.update(person, muted=False)   # they came back and talked to her first
@@ -158,14 +168,20 @@ class SocialChat:
         rules.observe(self.memory, person, text, kids_place=kids_place, now=now)
         mode = rules.romance_mode(platform, person)
         roleplay = self._in_roleplay((platform, handle.lower()), text, now)
+        # The system message stays the same from turn to turn (so the server's prompt cache holds); what changes with
+        # the person and the moment (friend memory, mood, what she decided) rides in the new user message.
         system = "\n".join(part for part in (
             SOCIAL_CORE, _PLATFORM.get(platform, ""), _ROMANCE[mode.romance],
-            "You are in a role-play with them right now: stay in character." if roleplay else "",
-            mood_line(self._emotion), self.memory.context(person)) if part)
+            "You are in a role-play with them right now: stay in character." if roleplay else "") if part)
         lines = [f"[{who}] {said}" for who, said in (history or [])[-8:]]
         if not lines:
             lines = [f"[{p}] {line}" for p, line in self.memory.moments(person, 6)]
-        user = ("Recent chat:\n" + "\n".join(lines) + "\n\n" if lines else "") + f"{person.name} says: {text}"
+        user = "\n\n".join(part for part in (
+            self.memory.context(person),
+            "Recent chat:\n" + "\n".join(lines) if lines else "",
+            f"{person.name} says: {text}",
+            f"({intent})" if intent else "",
+            mood_line(self._emotion, person, mode)) if part)
         raw = _SPEAKER.sub("", strip_reasoning(self._complete(system, user) or ""))
         reply = rules.check_outgoing(raw, incoming=text, mode=mode, platform=platform, roleplay=roleplay)
         romantic_in = bool(rules.ROMANTIC.search(text))
@@ -183,8 +199,7 @@ class SocialChat:
         self.memory.note_moment(person, platform, f"me: {reply}")
         if person.relationship == "met" and len(self.memory.moments(person, FRIEND_AFTER)) >= FRIEND_AFTER:
             self.memory.update(person, relationship="friend")
-        self._emit("social_message", platform=platform, friend=person.relationship == "friend",
-                   romantic=romantic_in and mode.romance == "allowed")
+        self._feel(text, person)
         return Reply(reply, person, mode, roleplay, person.remembered)
 
     def _fixed(self, text: str, person: Person, platform: str) -> Reply:

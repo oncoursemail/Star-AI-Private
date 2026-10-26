@@ -170,7 +170,8 @@ class Life:
         row = {"ts": self.clock().strftime(_STAMP), "interest": interest, "activity": activity,
                "goal": goal["id"] if goal else "", "claimed": bool(outcome.get("ok")),
                "verified": bool(outcome.get("verified")), "evidence": outcome.get("evidence", [])[:10],
-               "summary": str(outcome.get("summary", ""))[:600], "steps": int(outcome.get("steps", 0))}
+               "summary": str(outcome.get("summary", ""))[:600], "steps": int(outcome.get("steps", 0)),
+               "minutes": round(float(outcome.get("minutes") or 0.0), 1)}
         with (self.dir / "history.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
         entry = self.interests().get(interest)

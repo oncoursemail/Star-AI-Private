@@ -106,8 +106,9 @@ def _artifact_ok(executor: Executor, raw: str) -> bool:
 
 
 def run_session(chat, executor: Executor, life, *, interest: str, brief: str, goal: dict | None,
-                max_steps: int = 12, session_minutes: float = 20, clock=time.monotonic) -> dict:
-    """One session. Returns {ok, verified, summary, evidence, steps, failures, goal_done}."""
+                max_steps: int = 12, session_minutes: float = 20, clock=time.monotonic, stop=None) -> dict:
+    """One session. Returns {ok, verified, summary, evidence, steps, failures, goal_done}. `stop()` -> True asks it to
+    end now (a friend needs her): the result is {"paused": True}; a brain session is not resumable, it starts over."""
     goal_line = f"Goal {goal['id']}: {goal['text']}" if goal else "No open goal: choose one and add it with add_goal."
     interests = ", ".join(f"{k} {v.get('weight')}" for k, v in life.interests().items())
     messages = [{"role": "system", "content": SYSTEM},
@@ -118,6 +119,9 @@ def run_session(chat, executor: Executor, life, *, interest: str, brief: str, go
     steps, done_actions, failures = 0, 0, []
     finish = None
     while finish is None and steps < max_steps and clock() < deadline:
+        if stop is not None and stop():
+            return {"ok": False, "verified": False, "paused": True, "summary": "paused: someone needs her",
+                    "evidence": [], "steps": steps, "failures": failures, "goal_done": False}
         reply = chat(messages, tools)
         calls = reply.get("tool_calls") or []
         messages.append({"role": "assistant", "content": reply.get("content") or "", "tool_calls": calls} if calls

@@ -51,9 +51,10 @@ def test_memory_remembers_and_feeds_the_prompt(memory):
     chat, model = make_chat(memory)
     chat.handle("discord", "Mira", "I love horror games. My cat is called Miso.")
     chat.handle("discord", "mira", "what should we play tonight?")
-    system = model.calls[-1][0]
-    assert "I love horror games" in system and "My cat is called Miso" in system
-    assert "Mira" in system
+    system, user = model.calls[-1]
+    assert "I love horror games" in user and "My cat is called Miso" in user      # the new user message carries the person
+    assert "Miso" not in system and "Mira" not in system                           # the system message stays the same
+    assert "Mira" in user
 
 
 def test_memory_is_shared_across_platforms_when_linked(memory):

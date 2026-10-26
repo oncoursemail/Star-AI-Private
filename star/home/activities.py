@@ -23,7 +23,11 @@ from typing import Callable
 
 from . import brain
 
-PLUGIN_MODULES = ("star.games", "star.social", "star.senses")
+# Each one is optional: a package that is not installed (star.computer, star.watch, star.vtuber are built in their own branches) is
+# skipped. A package that defines `register_home_activities` registers itself; star.social, star.play and star.senses
+# are wired by star.home.plugins (they predate this hook).
+PLUGIN_MODULES = ("star.games", "star.social", "star.play", "star.senses", "star.computer", "star.watch",
+                  "star.vtuber")
 BUILTIN_BRIEFS = {
     "game_making": "make or improve a small game and play-test it",
     "drawing": "draw or animate something and save it to your gallery folder",
@@ -33,8 +37,18 @@ BUILTIN_BRIEFS = {
 }
 
 
+class _NeverInterrupt:
+    reason = ""
+
+    def is_set(self) -> bool:
+        return False
+
+
 @dataclass
 class Context:
+    """What an activity gets. `interrupt` is set when something needs her (a friend's message, a call): look at it
+    between steps and return {"paused": True, "resume_state": {...}} to stop cleanly; the loop serves what is waiting
+    and calls the activity again with `resume_state`. `situation.in_moment` tells the scheduler a round is running."""
     home: Path
     config: dict
     executor: object
@@ -43,6 +57,10 @@ class Context:
     interest: str
     goal: dict | None
     practice_topic: str = ""
+    interrupt: object = field(default_factory=lambda: _NeverInterrupt())
+    situation: object = None
+    resume_state: dict = field(default_factory=dict)
+    resumed: bool = False
 
 
 @dataclass
@@ -59,12 +77,21 @@ class Activity:
 class Registry:
     items: dict[str, Activity] = field(default_factory=dict)
     plugin_errors: dict[str, str] = field(default_factory=dict)
+    handlers: dict[str, Callable] = field(default_factory=dict)      # "discord:message" -> handler(incoming, ctx) -> dict
+    situations: dict[str, str] = field(default_factory=dict)          # interest -> idle | game | video | work
+    runtime: object = None                                            # star.home.runtime.Runtime, for adapters
 
     def register(self, name: str, interest: str, run: Callable[[Context], dict], about: str = "",
                  gpu_mb: int = 0, needs_brain: bool = False) -> None:
         if not callable(run):
             raise TypeError("run must be callable")
         self.items[name] = Activity(name, interest, run, about, max(0, int(gpu_mb)), bool(needs_brain))
+
+    def register_handler(self, route: str, handler: Callable) -> None:
+        """A handler for something that arrives while she lives her day ("discord:message", "discord:call", ...)."""
+        if not callable(handler):
+            raise TypeError("handler must be callable")
+        self.handlers[route] = handler
 
     def interests(self, eligible: list[Activity] | None = None) -> set[str]:
         return {a.interest for a in (self.items.values() if eligible is None else eligible)}
@@ -113,20 +140,28 @@ def brain_activity(brief: str) -> Callable[[Context], dict]:
         text = brief + (f"; today: {ctx.practice_topic}" if ctx.practice_topic else "")
         return brain.run_session(ctx.chat, ctx.executor, ctx.life, interest=ctx.interest, brief=text, goal=ctx.goal,
                                  max_steps=int(ctx.config.get("max_steps", 12)),
-                                 session_minutes=float(ctx.config.get("session_minutes", 20)))
+                                 session_minutes=float(ctx.config.get("session_minutes", 20)),
+                                 stop=ctx.interrupt.is_set)
     return run
 
 
-def default_registry(plugins: tuple[str, ...] = PLUGIN_MODULES) -> Registry:
-    registry = Registry()
+def _adapter(module_name: str):
+    from . import plugins
+    return plugins.ADAPTERS.get(module_name)
+
+
+def default_registry(plugins: tuple[str, ...] = PLUGIN_MODULES, runtime=None) -> Registry:
+    registry = Registry(runtime=runtime)
     for interest, brief in BUILTIN_BRIEFS.items():
         registry.register(interest, interest, brain_activity(brief), brief, needs_brain=True)
     for module_name in plugins:
         try:
             module = importlib.import_module(module_name)
-        except ImportError:
+        except ImportError as why:
+            if why.name and not module_name.startswith(why.name):
+                registry.plugin_errors[module_name] = f"ImportError: {why}"      # installed, but one of its needs is missing
             continue                     # not installed yet: its interests stay unpicked
-        hook = getattr(module, "register_home_activities", None)
+        hook = getattr(module, "register_home_activities", None) or _adapter(module_name)
         if hook is None:
             continue
         try:

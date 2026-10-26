@@ -31,7 +31,7 @@ _REMOTE = re.compile(
     r"Invoke-Command\b[^\n]*-ComputerName|net\s+use|New-PSDrive\b[^\n]*\\\\)(?![\w-])",
     re.IGNORECASE)
 _PACKAGE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]{1,99}$")
-_KEY = re.compile(r"^[a-z0-9]+(?:\+[a-z0-9]+){0,3}$")
+_KEY = re.compile(r"^(?:[a-z0-9]+(?:\+[a-z0-9]+){0,3}|/)$")
 BUTTONS = ("left", "right", "middle")
 
 
@@ -78,6 +78,46 @@ class RealBackend:  # pragma: no cover - acts on the real desktop; exercised on 
     def key(self, keys: list[str]) -> None:
         import pyautogui
         pyautogui.hotkey(*keys)
+
+    def hold(self, key: str, seconds: float) -> None:
+        import pyautogui
+        pyautogui.keyDown(key)
+        try:
+            time.sleep(seconds)
+        finally:
+            pyautogui.keyUp(key)
+
+    def foreground_title(self) -> str:
+        from ..play.winput import foreground_title
+        return foreground_title()
+
+    def focus_window(self, title: str) -> bool:
+        """Bring the first visible window whose title contains `title` to the front (restores it if minimised)."""
+        import ctypes
+        user32 = ctypes.windll.user32
+        found: list[int] = []
+        part = title.lower()
+        proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def visit(hwnd, _):
+            if user32.IsWindowVisible(hwnd):
+                buf = ctypes.create_unicode_buffer(512)
+                user32.GetWindowTextW(hwnd, buf, 512)
+                if part in buf.value.lower():
+                    found.append(hwnd)
+                    return False
+            return True
+
+        user32.EnumWindows(proc(visit), 0)
+        if not found:
+            return False
+        if user32.IsIconic(found[0]):
+            user32.ShowWindow(found[0], 9)             # SW_RESTORE
+        user32.keybd_event(0x12, 0, 0, 0)               # a tap of Alt lets this process take the foreground
+        user32.keybd_event(0x12, 0, 2, 0)
+        user32.SetForegroundWindow(found[0])
+        time.sleep(0.15)
+        return part in self.foreground_title().lower()
 
 
 class Executor:
@@ -231,6 +271,32 @@ class Executor:
             return dry
         self.backend.key(combo.split("+"))
         return Result(True, f"pressed {combo}")
+
+    def _a_hold(self, key: str, seconds: float = 0.3) -> Result:
+        name = str(key).strip().lower()
+        if not re.match(r"^[a-z0-9]$|^(?:space|shift|ctrl|alt|up|down|left|right|enter|esc|tab)$", name):
+            raise Refused("key must be one letter or digit, or space/shift/ctrl/alt/arrows/enter/esc/tab")
+        seconds = max(0.02, min(float(seconds), 10.0))
+        dry = self._dry(f"hold {name} for {seconds:.2f} s")
+        if dry:
+            return dry
+        self.backend.hold(name, seconds)
+        return Result(True, f"held {name} for {seconds:.2f} s")
+
+    def _a_focus_window(self, title: str) -> Result:
+        if not isinstance(title, str) or not title.strip() or len(title) > 100:
+            raise Refused("title must be 1-100 characters")
+        dry = self._dry(f"bring the window {title!r} to the front")
+        if dry:
+            return dry
+        ok = self.backend.focus_window(title.strip())
+        return Result(ok, f"window {title!r} is in front" if ok else f"no window {title!r} could be brought to the front")
+
+    def _a_foreground_title(self) -> Result:
+        dry = self._dry("read the front window's title")
+        if dry:
+            return dry
+        return Result(True, self.backend.foreground_title())
 
     def _a_launch(self, target: str, args: list | None = None) -> Result:
         if not isinstance(target, str) or not target.strip():
