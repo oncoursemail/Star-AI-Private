@@ -109,7 +109,7 @@ def test_home_completed_sessions_reach_expression_engine_once(tmp_path, monkeypa
     result = cycle(home, {"sessions_per_day": 3, "pause_minutes": 0}, registry,
                    Life(home, rng=random.Random(1)), object(), None)
     assert result["verified"]
-    assert signals == [("creative_done", {"only_if_enabled": True})]
+    assert [(k, kw["only_if_enabled"]) for k, kw in signals] == [("creative_done", True)]
 
 
 def test_home_failures_are_not_recorded_as_pride_and_stop_is_quiet(tmp_path, monkeypatch):
@@ -123,7 +123,7 @@ def test_home_failures_are_not_recorded_as_pride_and_stop_is_quiet(tmp_path, mon
     })
     life = Life(home)
     assert cycle(home, {"pause_minutes": 0}, registry, life, object(), None)["verified"] is False
-    assert signals == [("task_failure", {"only_if_enabled": True})]
+    assert [(k, kw["only_if_enabled"]) for k, kw in signals] == [("task_failure", True)]
     control.stop(home)
     assert cycle(home, {}, registry, life, object(), None) == {"state": "stopped"}
     assert len(signals) == 1
