@@ -225,6 +225,39 @@ class FriendMemory:
         return Person(row[0], row[1], row[2], row[3], row[4], row[5], row[6], bool(row[7]), bool(row[8]), bool(row[9]))
 
     @_locked
+    def people(self) -> list[Person]:
+        """Current remembered profiles, copied under the same lock as writes."""
+        return [self.get(row[0]) for row in self._db.execute("SELECT id FROM people ORDER BY id").fetchall()]
+
+    @_locked
+    def person_created(self, person: Person) -> float | None:
+        if person.id is None:
+            return None
+        row = self._db.execute("SELECT created FROM people WHERE id = ?", (person.id,)).fetchone()
+        return float(row[0]) if row is not None else None
+
+    @_locked
+    def fact_records(self, person: Person, *, after_id: int = 0,
+                     interests_only: bool = False) -> list[tuple[int, str, float]]:
+        """Retained source rows in ID order; reading never creates a profile or grants reciprocity."""
+        if type(after_id) is not int or after_id < 0:
+            raise ValueError("fact cursor must be a nonnegative integer")
+        if person.id is None:
+            return []
+        rows = self._db.execute("SELECT id, text, ts FROM facts WHERE person_id = ? AND id > ? ORDER BY id",
+                                (person.id, after_id)).fetchall()
+        return [row for row in rows if not interests_only or _INTEREST.match(row[1])]
+
+    @_locked
+    def moment_records(self, person: Person, *, after_id: int = 0) -> list[tuple[int, str, str, float]]:
+        if type(after_id) is not int or after_id < 0:
+            raise ValueError("moment cursor must be a nonnegative integer")
+        if person.id is None:
+            return []
+        return self._db.execute("SELECT id, platform, line, ts FROM moments WHERE person_id = ? AND id > ? ORDER BY id",
+                                (person.id, after_id)).fetchall()
+
+    @_locked
     def link(self, person: Person, platform: str, handle: str) -> None:
         """Link a confirmed alias, never reassign another person's age or contact state."""
         if person.id is None:
@@ -299,9 +332,12 @@ class FriendMemory:
         return cur.rowcount > 0
 
     @_locked
-    def facts(self, person: Person, limit: int = 12) -> list[str]:
+    def facts(self, person: Person, limit: int = 12, *, interests_only: bool = False) -> list[str]:
         if person.id is None:
             return []
+        if interests_only:
+            rows = self.fact_records(person, interests_only=True)
+            return [row[1] for row in rows[-limit:]] if limit > 0 else []
         rows = self._db.execute("SELECT text FROM facts WHERE person_id = ? ORDER BY id DESC LIMIT ?",
                                 (person.id, limit)).fetchall()
         return [r[0] for r in reversed(rows)]

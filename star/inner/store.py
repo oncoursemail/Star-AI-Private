@@ -110,16 +110,17 @@ def person_key(memory, person) -> str:
     """'<id>.<first met>' for a remembered person, '' for the owner / her own life / someone who was forgotten."""
     if person is None or getattr(person, "id", None) is None:
         return ""
-    row = memory._db.execute("SELECT created FROM people WHERE id = ?", (person.id,)).fetchone()
-    return f"{person.id}.{int(row[0])}" if row else ""
+    created = memory.person_created(person)
+    return f"{person.id}.{int(created)}" if created is not None else ""
 
 
 def resolve(memory, pkey: str):
     """The Person behind a key, or None when friend memory no longer holds them (forgotten)."""
     try:
         pid, created = pkey.split(".", 1)
-        row = memory._db.execute("SELECT created FROM people WHERE id = ?", (int(pid),)).fetchone()
-        return memory.get(int(pid)) if row and int(row[0]) == int(created) else None
+        person = memory.get(int(pid))
+        current_created = memory.person_created(person)
+        return person if current_created is not None and int(current_created) == int(created) else None
     except (ValueError, KeyError):
         return None
 

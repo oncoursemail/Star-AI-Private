@@ -14,8 +14,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
+from ..social import rules
 from . import dreams, opinions, recall
-from .reflect import CARD_CHARS, _clip, rule_card
+from .reflect import CARD_CHARS, rule_card, valid_card
 from .store import InnerStore, default_store, flag, person_key
 
 __all__ = ["TurnContext", "turn_context", "card_for", "CARD_CHARS"]
@@ -41,18 +42,21 @@ class TurnContext:
 
 
 def card_for(store: InnerStore, memory, person, now: float | None = None) -> str:
-    """The night-written card, plus the one or two newest facts told since it was written (verbatim, until tonight's rewrite)."""
-    now = time.time() if now is None else now
+    """Use only a current source-backed card; old unsupported rows stay for audit."""
+    if person is None or person.id is None:
+        return ""
+    try:
+        person = memory.get(person.id)
+    except KeyError:
+        return ""
     pkey = person_key(memory, person)
     if not pkey:
         return ""
-    text, written = store.card(pkey)
-    if not text:
-        return rule_card(memory, person)
-    fresh = [f for f, ts in memory._db.execute("SELECT text, ts FROM facts WHERE person_id = ? AND ts > ? ORDER BY id DESC LIMIT 2",
-                                               (person.id, written)).fetchall()][::-1]
-    extra = " Newer: " + "; ".join(_clip(f, 60) for f in fresh) + "." if fresh else ""
-    return (text + extra)[: CARD_CHARS + 110]
+    canonical = rule_card(memory, person)
+    text, _ = store.card(pkey)
+    if person_key(memory, person) != pkey:
+        return ""
+    return valid_card(text, canonical, memory, person) or valid_card(canonical, canonical, memory, person)
 
 
 def turn_context(memory, person, text: str, *, store: InnerStore | None = None, home=None, now: float | None = None,
@@ -63,6 +67,16 @@ def turn_context(memory, person, text: str, *, store: InnerStore | None = None, 
             return TurnContext()
         if person is not None and person.id is None:
             return TurnContext()                         # asked to be forgotten: she keeps nothing
+        if person is not None:
+            try:
+                person = memory.get(person.id)
+            except KeyError:
+                return TurnContext()
+            if not person_key(memory, person):
+                return TurnContext()                     # never reinterpret a forgotten identity as the owner
+            if rules.age_status(person) in ("minor", "doubt"):
+                canonical = rule_card(memory, person)
+                return TurnContext(card=valid_card(canonical, canonical, memory, person))
         now = time.time() if now is None else now
         store = store or default_store(home)
         if not store.meta("backstory_seeded"):
@@ -72,6 +86,8 @@ def turn_context(memory, person, text: str, *, store: InnerStore | None = None, 
         if person is not None:
             recall.sync_person(store, memory, person)
             pkey = person_key(memory, person)
+            if not pkey:
+                return TurnContext()
         found = recall.recall(store, pkey, text, now=now, first_turn=first_turn)
         lines: list[str] = []
         dream = dreams.dream_line(store, memory, person, pkey, text, now, first_turn=first_turn) if memory else ""

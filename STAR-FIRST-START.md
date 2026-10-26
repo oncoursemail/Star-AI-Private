@@ -26,6 +26,8 @@ Autologon, remote support and lock settings are separate installer choices; revi
 
 Follow **STAR-LIVE-TEST.md** for the first supervised session, game authorization and STOP rehearsal. The latest source adds separate voice/game cleanup, delayed-speech cancellation and recovery after failed activities. Those checks used synthetic devices and temporary state. They do not establish live reliability on her computer. Preview now also suppresses native game startup, Home voice and camera activation.
 
+The memory follow-up rejects unsupported generated biographies, reconciles deleted source facts and labels activity reports by their verification status. It also rechecks age status and forgetting before using stored context. See the [memory validation notes](docs/agents/codex-memory-validation-20261026.md) for tests and limits. This does not enable the experimental recall hook or establish improved conversation quality without its measured gate.
+
 ## What she can see and do
 
 Home already contains screenshot, Windows accessibility, mouse/keyboard and application adapters. A screenshot observes the current visible desktop; it does not reveal covered windows, off-screen tabs or private server state. Some games and custom interfaces need the optional calibrated vision grounder. Downloading it alone does not enable or validate it. The installer prints its separate start and calibration instructions. Use the smaller option as a candidate for an 8 GB card and measure it alongside the game and voice.
