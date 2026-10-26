@@ -158,9 +158,12 @@ class TwitchRealtimeHost:
     validate_token: TokenValidator | None = field(default=None, repr=False)
     subscribe_chat: Subscriber | None = field(default=None, repr=False)
     moderator_timeout_s: float = 0.75
+    max_pending_moderations: int = 8
     _counters: dict[str, int] = field(default_factory=lambda: {
         "subscriptions": 0, "sessions": 0, "handoffs": 0, "restarts": 0,
-        "delivered": 0, "rejected": 0, "revocations": 0}, init=False, repr=False)
+        "delivered": 0, "rejected": 0, "revocations": 0,
+        "backpressure_drops": 0, "moderations_cancelled": 0,
+        "moderation_faults": 0}, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.config, TwitchChatConfig) or not isinstance(self.director, StreamDirector):
@@ -169,9 +172,12 @@ class TwitchRealtimeHost:
             raise TypeError("missing token/moderation/connect callbacks")
         if not 0.1 <= self.moderator_timeout_s <= 3.0:
             raise ValueError("moderator_timeout_s must be 0.1..3 seconds")
+        if type(self.max_pending_moderations) is not int or not 1 <= self.max_pending_moderations <= 32:
+            raise ValueError("max_pending_moderations must be 1..32")
         self._running = False
         self._salt = secrets.token_bytes(32)
         self._seen: OrderedDict[str, float] = OrderedDict()
+        self._pending: set[asyncio.Task[None]] = set()
 
     async def _token(self) -> str:
         token = self.token_provider()
@@ -302,6 +308,59 @@ class TwitchRealtimeHost:
         else:
             self._counters["rejected"] += 1
 
+    async def _moderate_task(
+        self, raw: str, bridge: TwitchEventSubBridge, session_id: str,
+    ) -> None:
+        """Isolate errors so one malformed chat never kills EventSub's heartbeat."""
+        try:
+            await self._message(raw, bridge, session_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Never log chat text, OAuth material, user IDs or exception bodies.
+            self._counters["moderation_faults"] += 1
+            self._counters["rejected"] += 1
+
+    def _submit_message(
+        self, raw: str, bridge: TwitchEventSubBridge, session_id: str,
+    ) -> None:
+        """Nonblocking chat ingress with a fixed cap on in-memory chat tasks.
+
+        No unbounded queue, logging, or starvation of keepalive/revocation
+        messages. When busy, dropping chat is safer than delaying game/voice.
+        """
+        if len(self._pending) >= self.max_pending_moderations:
+            self._counters["backpressure_drops"] += 1
+            self._counters["rejected"] += 1
+            return
+        task = asyncio.create_task(self._moderate_task(raw, bridge, session_id))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+    async def _settle_moderations(self, *, graceful: bool) -> None:
+        """Drain on owner stop; cancel on reconnect, revocation, or failure.
+
+        A Twitch session change invalidates pending moderation: even an
+        eventual approval must not re-enter the old session. A graceful owner
+        stop gives already accepted frames one bounded chance to finish.
+        """
+        tasks = set(self._pending)
+        if not tasks:
+            return
+        leftovers = tasks
+        if graceful:
+            _, leftovers = await asyncio.wait(
+                tasks, timeout=self.moderator_timeout_s + 0.1
+            )
+        for task in leftovers:
+            if not task.done():
+                task.cancel()
+                self._counters["moderations_cancelled"] += 1
+        if leftovers:
+            await asyncio.gather(*leftovers, return_exceptions=True)
+        # Explicit cleanup even if add_done_callback hasn't fired yet.
+        self._pending.difference_update(tasks)
+
     async def _receive(self, ws: Socket, stop: asyncio.Event, timeout: float) -> str | None:
         receiver = asyncio.create_task(ws.recv())
         stopper = asyncio.create_task(stop.wait())
@@ -349,6 +408,7 @@ class TwitchRealtimeHost:
             while not stop.is_set():
                 ws: Socket | None = None
                 bridge: TwitchEventSubBridge | None = None
+                revoked = False
                 try:
                     ws = await self.connect(_URL)
                     session, heartbeat = await self._welcome(ws)
@@ -381,6 +441,7 @@ class TwitchRealtimeHost:
                             old = ws
                             ws = new_ws
                             bridge.disable()
+                            await self._settle_moderations(graceful=False)
                             bridge = TwitchEventSubBridge(
                                 broadcaster_user_id=self.config.broadcaster_user_id,
                                 session_id=new_session, session_salt=self._salt)
@@ -390,10 +451,11 @@ class TwitchRealtimeHost:
                             self._counters["handoffs"] += 1
                             await old.close()
                         elif kind == "revocation":
+                            revoked = True
                             self._counters["revocations"] += 1
                             raise TwitchAuthorizationError("EventSub permission revoked")
                         elif kind == "notification":
-                            await self._message(raw, bridge, session)
+                            self._submit_message(raw, bridge, session)
                         elif kind in ("session_keepalive", "session_welcome"):
                             pass
                         else:
@@ -402,6 +464,10 @@ class TwitchRealtimeHost:
                     raise
                 except (TimeoutError, OSError, ConnectionError, TwitchProtocolError,
                         asyncio.TimeoutError):
+                    # Drop old-session chat before any reconnect backoff.
+                    if bridge is not None:
+                        bridge.disable()
+                    await self._settle_moderations(graceful=False)
                     failures += 1
                     self._counters["restarts"] += 1
                     if failures >= max_failures:
@@ -413,6 +479,9 @@ class TwitchRealtimeHost:
                         except asyncio.TimeoutError:
                             pass
                 finally:
+                    await self._settle_moderations(
+                        graceful=(stop.is_set() and not revoked)
+                    )
                     if bridge is not None:
                         bridge.disable()
                     if ws is not None:
@@ -428,7 +497,7 @@ class TwitchRealtimeHost:
 
     def metrics(self) -> dict[str, int]:
         """No raw viewer IDs, chat text, tokens or endpoints are exposed."""
-        return dict(self._counters)
+        return {**self._counters, "moderations_inflight": len(self._pending)}
 
 
 __all__ = ["TwitchRealtimeHost", "TwitchChatConfig", "TwitchAuthorizationError",
