@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import math
 import re
 from threading import RLock
-from typing import Any
+from typing import Any, cast
 
 from .stream_motion import MotionFrame, neutral_frame
 from .stream_stage import StagePlan, StarStage
@@ -45,7 +45,7 @@ def _number(value: object, name: str, low: float, high: float) -> float:
     if type(value) not in (float, int):
         raise ValueError(f"{name} must be a finite number")
     try:
-        value = float(value)
+        value = float(cast(float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{name} must be a finite number") from exc
     if not math.isfinite(value) or not low <= value <= high:

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import re
 from threading import RLock
 import time
-from typing import Callable, Protocol, Sequence
+from typing import Callable, Protocol, Sequence, cast
 
 from .game_action_gate import (
     ActionPermit, GameActionGate, GameActionHint, GameFrame, GameScope,
@@ -301,7 +301,7 @@ class StudioPlaytestHost:
             # An unclaimed advisory never issued physical input in this host.
             # Confirm that no key was pressed before clearing its gate slot.
             if self._held is None and self._unclaimed is not None:
-                self._gate.release(self._unclaimed.ticket, now_ms=self._clock(),
+                self._gate.release(cast(int, self._unclaimed.ticket), now_ms=self._clock(),
                                    host_confirmed_released=True)
             self._unclaimed = None
             self._unclaimed_frame = None

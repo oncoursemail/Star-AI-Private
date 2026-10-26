@@ -13,7 +13,7 @@ import math
 from pathlib import Path
 import random
 import re
-from typing import Iterable
+from typing import Iterable, cast
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 _RUN_FIELDS = frozenset({
@@ -26,7 +26,7 @@ def _bounded(value: object, name: str, lower: float, upper: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite number")
     try:
-        val = float(value)
+        val = float(cast(float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} must be finite") from exc
     if not math.isfinite(val) or not lower <= val <= upper:
@@ -166,7 +166,7 @@ def compare_realtime(
     valid = [pair for pair in completed if (
         pair["baseline"].audio_finished and pair["candidate"].audio_finished
     )]
-    scope_id = f"{scope[0]}:{scope[1]}"
+    scope_id = ":".join(cast("tuple[str, str]", scope))
     if not valid:
         return RealtimeComparison(
             scope_id, len(completed), incomplete, failures, None, None, None,

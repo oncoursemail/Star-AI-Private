@@ -15,6 +15,7 @@ import json
 import math
 import re
 from threading import RLock
+from typing import cast
 
 from .stream_director import StreamSignal
 
@@ -29,7 +30,7 @@ _FUTURE_TOLERANCE_SECONDS = 2.0
 def _clock(value: object, name: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be finite and numeric")
-    result = float(value)
+    result = float(cast(float, value))
     if not math.isfinite(result) or not 0 <= result <= 1e12:
         raise ValueError(f"{name} outside valid range")
     return result

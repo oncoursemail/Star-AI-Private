@@ -281,7 +281,7 @@ class StreamInterruptionHost:
                 raise ValueError("VAD frame is ahead of the host clock")
             self._turns.observe(frame)
             active = self._active is not None
-            plan = self._active[0] if active else None
+            plan = self._active[0] if self._active is not None else None
             speaking = bool(plan is not None and self._stage.current(plan))
             advice = self._turns.advise(now_ms=now, star_speaking=speaking)
             if active and not speaking:

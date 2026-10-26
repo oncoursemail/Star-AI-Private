@@ -20,7 +20,7 @@ import hmac
 import json
 import secrets
 import time
-from typing import Awaitable, Callable, Protocol
+from typing import Awaitable, Callable, Protocol, TypeGuard
 from urllib import parse, request
 
 from .stream_director import StreamDirector
@@ -65,7 +65,7 @@ async def _connect(url: str) -> Socket:
         raise ConnectionError("Twitch WebSocket connection failed") from None
 
 
-def _url(value: str) -> str:
+def _url(value: object) -> str:
     """Reconnect URL is supplied by Twitch, not chat; nevertheless pin the host."""
     if type(value) is not str or len(value) > 2048:
         raise TwitchProtocolError("invalid reconnect URL")
@@ -103,7 +103,7 @@ def _packet(raw: str) -> dict:
     return data
 
 
-def _bounded_id(value: object) -> bool:
+def _bounded_id(value: object) -> TypeGuard[str]:
     return (type(value) is str and 8 <= len(value) <= 128
             and all(char.isascii() and (char.isalnum() or char in "_-") for char in value))
 

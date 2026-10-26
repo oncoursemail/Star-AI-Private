@@ -18,7 +18,7 @@ from hashlib import sha256
 import math
 import re
 from threading import RLock, get_ident
-from typing import Mapping
+from typing import Mapping, cast
 
 from .gameplay_skill_bank import GameTrial
 from .stream_director import StreamSignal
@@ -35,7 +35,7 @@ def _clock_s(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("monotonic time must be a finite positive number")
     try:
-        number = float(value)
+        number = float(cast(float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError("monotonic time unavailable") from exc
     if not math.isfinite(number) or not 0 <= number <= _MAX_CLOCK_S:

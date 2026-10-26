@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 from threading import RLock
+from typing import cast
 
 from .game_action_gate import GameFrame
 from .gameplay_skill_bank import GameTrial, GameplaySkillBank
@@ -32,7 +33,7 @@ _MAX_MONOTONIC_MS = 1e13
 def _ms(value: object, label: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{label}: finite monotonic milliseconds required")
-    num = float(value)
+    num = float(cast(float, value))
     if not math.isfinite(num) or not 0 <= num <= _MAX_MONOTONIC_MS:
         raise ValueError(f"{label}: finite monotonic milliseconds required")
     return num

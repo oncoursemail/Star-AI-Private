@@ -549,6 +549,9 @@ def test_duplicate_chat_flood_is_deduplicated_before_expensive_moderation():
             nonlocal calls
             calls += 1
             await asyncio.sleep(0.02)
+            while not socket.events.empty():   # stop only after every duplicate was read, whatever the machine load
+                await asyncio.sleep(0.005)
+            await asyncio.sleep(0.02)
             stop.set()
             return text
 

@@ -20,7 +20,7 @@ import json
 import math
 import re
 import time
-from typing import Awaitable, Callable, Protocol
+from typing import Awaitable, Callable, Protocol, cast
 
 from .game_action_gate import GameFrame, GameScope
 from .studio import parse_studios
@@ -86,8 +86,9 @@ def _now(clock: Clock) -> float:
 
 
 def _result(reply: object) -> dict:
-    if hasattr(reply, "model_dump"):
-        reply = reply.model_dump(by_alias=True, exclude_none=True)
+    dump = getattr(reply, "model_dump", None)
+    if callable(dump):
+        reply = dump(by_alias=True, exclude_none=True)
     if type(reply) is not dict or reply.get("isError") is not False:
         raise ObservationRejected("studio_tool_failed")
     return reply
@@ -265,7 +266,7 @@ class StudioVisualObserver:
                           and self._last_assessment is not None
                           and 0 <= captured - self._last_assessed_ms <= 500)
                 if cached:
-                    assessment = self._last_assessment
+                    assessment = cast(VisualAssessment, self._last_assessment)
                     self._counts["cache_hits"] += 1
                 else:
                     try:

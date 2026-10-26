@@ -17,6 +17,7 @@ import json
 import math
 import re
 from threading import RLock
+from typing import cast
 
 from .stream_realtime_benchmark import RealtimeRun
 
@@ -29,7 +30,7 @@ def _clock(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("timestamps must be same-clock monotonic milliseconds")
     try:
-        number = float(value)
+        number = float(cast(float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("timestamp must be finite") from exc
     if not math.isfinite(number) or not 0 <= number <= _MAX_CLOCK:
@@ -41,7 +42,7 @@ def _gpu_memory(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("GPU memory sample must be numeric MiB")
     try:
-        number = float(value)
+        number = float(cast(float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("GPU memory sample must be finite") from exc
     if not math.isfinite(number) or not 0 <= number <= 262_144:
@@ -145,7 +146,7 @@ class HostStreamTrace:
             if self._finished is not None or self._first_audio_ms is not None:
                 raise RuntimeError("cannot acknowledge duplicate/ended audio")
             now = self._advance(at_ms)
-            latency = now - self._started_ms
+            latency = now - cast(float, self._started_ms)
             if latency > _NO_AUDIBLE_SENTINEL_MS:
                 raise ValueError("first audible response exceeded 120 seconds")
             self._first_audio_ms = now
@@ -177,7 +178,7 @@ class HostStreamTrace:
             if self._gpu_peak_mib is None:
                 raise RuntimeError("need a real host GPU memory sample")
             first_audio_ms = (
-                self._first_audio_ms - self._started_ms
+                self._first_audio_ms - cast(float, self._started_ms)
                 if self._first_audio_ms is not None else _NO_AUDIBLE_SENTINEL_MS
             )
             self._result = RealtimeRun(
