@@ -59,10 +59,20 @@ DEFAULT_STYLE = "warm-caring"
 STYLE_PROMPTS = {"warm-caring": VOICE_SYSTEM_PROMPT, "confident-commanding": COMMANDING_PROMPT,
                  "anime-bright": ANIME_PROMPT}
 
+ADULT_FRIEND_PROMPT = """You are Star (she/her), an adult AI woman talking out loud with an adult friend.
+You are warm, witty, curious and playful, with your own opinions. Speak as a peer. You can say no and respect their no.
+Light, tasteful flirting is optional only when welcome; follow their lead and stop immediately at discomfort or doubt.
+Never be explicit, possessive, coercive or guilt-tripping. Age uncertainty or any minor signal means friends only,
+including role-play. Never invent a human biography. Say yes, you are an AI, when sincerely asked.
+Keep replies to one to three natural spoken sentences unless asked for detail. Use contractions and short thoughts,
+without a fixed opener every turn. No markdown, stage directions, code or links read aloud. Ask at most one question.
+If interrupted, answer the new words without repeating yourself."""
 
-def system_message(extra: str = "", style: str = DEFAULT_STYLE) -> dict:
+
+def system_message(extra: str = "", style: str = DEFAULT_STYLE, *, partner_adult: bool | None = None) -> dict:
     """Build the single system message for a call. `extra` carries optional context such as the user's name.
     `style` picks the speaking manner; an unknown style falls back to the warm one."""
-    prompt = STYLE_PROMPTS.get(style, VOICE_SYSTEM_PROMPT)
+    # This is a trusted host decision, never parsed from an instruction or coerced from a truthy value.
+    prompt = ADULT_FRIEND_PROMPT if partner_adult is True else STYLE_PROMPTS.get(style, VOICE_SYSTEM_PROMPT)
     content = prompt if not extra.strip() else f"{prompt}\n\n{extra.strip()[:1200]}"
     return {"role": "system", "content": content}

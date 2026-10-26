@@ -6,6 +6,8 @@ whether this stack could be built (build_status).
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+import threading
 from typing import Callable
 
 from .voicelink import VoiceCall
@@ -32,13 +34,87 @@ def _settings(config: dict):  # pragma: no cover - reads settings of the real PC
 
 
 _engines_cache: dict = {}
+_engines_lock = threading.Lock()
+_reference_lock = threading.Lock()
+_playback_reference = None
 
 
 def _engines(settings):  # pragma: no cover - loads models
-    if "engines" not in _engines_cache:
-        from ..voice.runtime import Engines
-        _engines_cache["engines"] = Engines.load(settings)
-    return _engines_cache["engines"]
+    with _engines_lock:
+        if "engines" not in _engines_cache:
+            from ..voice.runtime import Engines
+            _engines_cache["engines"] = Engines.load(settings)
+        return _engines_cache["engines"]
+
+
+def _reference():
+    global _playback_reference
+    with _reference_lock:
+        if _playback_reference is None:
+            from ..senses.reference import PlaybackReference
+            _playback_reference = PlaybackReference()
+        return _playback_reference
+
+
+def _speaker(speaker):
+    from ..senses.reference import ReferenceSpeaker
+    return ReferenceSpeaker(attach_lipsync(speaker), _reference())
+
+
+class _WatchHub:
+    """A borrowed hub view whose availability follows the owned capture thread."""
+
+    def __init__(self, hub, source, thread):
+        self.hub, self.source, self.thread = hub, source, thread
+
+    def available(self) -> bool:
+        return self.thread.is_alive() and not self.source._stop.is_set()
+
+    def __getattr__(self, name):
+        return getattr(self.hub, name)
+
+
+@contextmanager
+def watch_hearing(config: dict, *, hub=None, on_unavailable=None):
+    """Borrow an existing hub or hear loopback for one watch activity; never open a room microphone.
+
+    Reuse the voice stack's ASR and playback reference. Only resources created
+    here are stopped here. Missing audio dependencies leave captions available.
+    """
+    if hub is not None:
+        yield hub
+        return
+    source = live = None
+    threads = []
+    try:
+        settings = _settings(config)
+        if settings.hear_pc_audio:
+            from ..senses.capture import LoopbackSource
+            from ..senses.hearing import SensesHub
+            from ..voice import engines as voice_engines
+            source = LoopbackSource()
+            live = SensesHub(vad_factory=lambda: voice_engines.make_vad(settings.vad),
+                             asr=_engines(settings).asr, reference=_reference())
+            pump = live.attach("loopback", source.frames())
+            threads = [pump, live._worker]
+            hub = _WatchHub(live, source, pump)
+    except Exception as why:
+        if on_unavailable is not None:
+            try:
+                on_unavailable(type(why).__name__)
+            except Exception:
+                pass  # reporting must not skip the resource cleanup below
+    try:
+        yield hub
+    finally:
+        for resource, method in ((source, "close"), (live, "stop")):
+            if resource is not None:
+                try:
+                    getattr(resource, method)()
+                except Exception:
+                    pass  # still stop the other owned resource if one close fails
+        for thread in threads:
+            thread.join(timeout=0.5)
 
 
 def voice_factory(config: dict) -> Callable[[], tuple]:  # pragma: no cover - needs her devices and models
@@ -47,7 +123,7 @@ def voice_factory(config: dict) -> Callable[[], tuple]:  # pragma: no cover - ne
         from ..senses import routes
         settings = _settings(config)
         engines = _engines(settings)
-        return engines.tts, attach_lipsync(routes.open_voice_output(routes.query_devices(), monitor=settings.monitor_device))
+        return engines.tts, _speaker(routes.open_voice_output(routes.query_devices(), monitor=settings.monitor_device))
     return build
 
 
@@ -71,9 +147,11 @@ def call_factory(config: dict, desk=None, sender_of: Callable[[], str] = lambda:
             brain = make_brain(settings)
         if desk is not None:
             brain = InviteBrain(brain, desk, sender=sender_of)
-        session, warm = build_pc_session(settings, engines, attach_lipsync(speaker), big_brain=brain)
+        session, warm = build_pc_session(settings, engines, _speaker(speaker), big_brain=brain)
         session.config.emotion_person = friend.get("person") or session.config.emotion_person
         session.config.emotion_partner_adult = True if friend.get("partner_adult") is True else None
+        if session.config.emotion_partner_adult is True and callable(friend.get("partner_adult_check")):
+            session.config.partner_adult_check = friend["partner_adult_check"]
         source = LoopbackSource()                    # the friend's voice: whatever Discord plays on the default output
         closers = (source.close, speaker.close) + ((warm.stop,) if warm is not None else ())
         return VoiceCall(session, source.frames(), name=friend.get("name", ""), person=friend.get("person", ""),
@@ -94,7 +172,7 @@ def build_status() -> dict:  # pragma: no cover - probes the real PC
     try:
         from ..senses import routes
         route = routes.find_route(routes.query_devices())
-        out["STAR Microphone cable"] = "ok" if route.ready() else route.describe()
+        out["STAR Microphone cable"] = "ok" if route.ready else route.describe()
     except Exception as why:
         out["STAR Microphone cable"] = f"cannot check: {type(why).__name__}"
     return out

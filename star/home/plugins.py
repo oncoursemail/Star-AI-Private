@@ -282,7 +282,9 @@ def wire_watch(registry) -> None:
         class Interrupted(browser_error):
             pass
 
-        real_sleep = watch.configure().sleep
+        parts = watch.configure()
+        real_sleep = parts.sleep
+        previous_hub = getattr(parts, "hub", None)
 
         def sleep(seconds: float) -> None:
             end = time.monotonic() + seconds
@@ -293,9 +295,23 @@ def wire_watch(registry) -> None:
 
         watch.configure(sleep=sleep)
         try:
-            out = inner(ctx)
+            from . import voicestack
+            hearing = rt.hooks.get("watch_hearing", voicestack.watch_hearing)
+            if control.stopped(rt.home):
+                return {"ok": True, "verified": False, "stopped": True,
+                        "summary": "watching stopped by the owner", "evidence": []}
+            if ctx.interrupt.is_set():
+                # Leave browser pausing and the usual paused outcome below in
+                # charge; do not load models or open audio while stopped.
+                out = {"ok": False, "verified": False, "summary": "a friend needs her", "evidence": []}
+            else:
+                with hearing(rt.config, hub=previous_hub,
+                             on_unavailable=lambda kind: control.log_action(
+                                 rt.home, "watch", "hearing_unavailable", error=kind)) as hub:
+                    watch.configure(hub=hub)
+                    out = inner(ctx)
         finally:
-            watch.configure(sleep=real_sleep)
+            watch.configure(sleep=real_sleep, hub=previous_hub)
         if ctx.interrupt.is_set():
             ctx.executor.do("key", {"keys": "k"})            # pause the video before she looks away
             if not out.get("ok"):

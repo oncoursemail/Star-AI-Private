@@ -22,7 +22,7 @@ from . import captions as caps
 from .browser import BrowserError, HostBrowser, VisionScreenReader
 from .choose import WatchHistory, pick, rank
 from .frames import LiveFrameSampler
-from .hearing import HubHearing
+from .hearing import FallbackHearing
 from .learn import finish
 from .llm import ChatBrain, chat_vision
 from .model import Candidate, WatchResult
@@ -146,14 +146,19 @@ class Chooser:
         return None
 
 
-def _hearing(parts: Parts, settings: WatchSettings, url: str, workdir: Path):
+def _hearing(parts: Parts, settings: WatchSettings, url: str, workdir: Path, *, since: float | None = None):
+    def captions():
+        if settings.use_captions and url:
+            cues = caps.fetch_captions(url, workdir, run=parts.run or caps.default_run)
+            if cues:
+                return caps.CaptionHearing(cues)
+        return None
+
     if parts.hub is not None:
-        return HubHearing(parts.hub), "audio"
-    if settings.use_captions and url:
-        cues = caps.fetch_captions(url, workdir, run=parts.run or caps.default_run)
-        if cues:
-            return caps.CaptionHearing(cues), "captions"
-    return None, "picture only"
+        hearing = FallbackHearing(parts.hub, captions, since=parts.hub.clock() if since is None else since)
+        return hearing, hearing.mode
+    hearing = captions()
+    return hearing, "captions" if hearing is not None else "picture only"
 
 
 def watch_one(ctx, parts: Parts, settings: WatchSettings, browser, candidate: Candidate, brain, vision,
@@ -162,9 +167,10 @@ def watch_one(ctx, parts: Parts, settings: WatchSettings, browser, candidate: Ca
     workdir = Path(ctx.home) / "watch" / "work"
     clk = parts.clock
     browser.open_candidate(candidate)
+    audio_since = parts.hub.clock() if parts.hub is not None else None
     url = candidate.url or (browser.ensure_url() if hasattr(browser, "ensure_url") else "")
     meta = caps.fetch_metadata(url, run=parts.run or caps.default_run) if (url and settings.use_captions) else {}
-    hearing, how = _hearing(parts, settings, url, workdir)
+    hearing, how = _hearing(parts, settings, url, workdir, since=audio_since)
     sampler = LiveFrameSampler(workdir / "frames", keep=settings.keep_frames)
     watcher = WatchSession(
         browser=browser, hearing=hearing, brain=brain, vision=vision, speak=parts.speak, chat=parts.chat,
@@ -177,6 +183,7 @@ def watch_one(ctx, parts: Parts, settings: WatchSettings, browser, candidate: Ca
                            description=meta.get("description", "") or candidate.description, chapters=meta.get("chapters"),
                            max_seconds=max(60.0, deadline - clk()))
     result.url = result.url or url
+    how = getattr(hearing, "mode", how)
     sampler.clear()
     learned = finish(result, brain, home=Path(ctx.home), life=ctx.life, history=history)
     return result, learned, how, watcher

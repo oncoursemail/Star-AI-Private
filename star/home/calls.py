@@ -79,6 +79,12 @@ class DiscordCalls:
         self.pickup_wait_s = float(self.cfg.get("call_pickup_wait_s", 40))
         self.idle_leave_s = float(self.cfg.get("call_idle_leave_minutes", 3)) * 60
         self.max_minutes = float(self.cfg.get("call_max_minutes", 60))
+        # Observe an already-visible named DM call, without stealing focus from a
+        # game. Unknown/missing fields and silence are not evidence of rejection.
+        self._presence_next = 0.0
+        self._presence: bool | None = None
+        self._presence_absent = 0
+        self._departed: set[str] = set()
 
     # ---- helpers --------------------------------------------------------------------------------------------
     def _state(self) -> dict:
@@ -91,8 +97,20 @@ class DiscordCalls:
         person = self.memory.person("discord", name, name)
         from ..social import rules
         mode = rules.romance_mode("discord", person)
+
+        def adult_check(text: str) -> bool:
+            # Called only for committed voice transcripts, never a discarded ASR hypothesis.
+            current = self.memory.person("discord", name, name)
+            person_id = current.id
+            if person_id is None or current.blocked or current.muted:
+                return False
+            rules.observe(self.memory, current, text)
+            current = self.memory.get(person_id)
+            return rules.romance_mode("discord", current).romance == "allowed"
+
         return {"name": person.name or name, "person": f"friend-{person.id}" if person.id is not None else "",
                 "partner_adult": True if mode.romance == "allowed" else None,
+                "partner_adult_check": adult_check,
                 "context": self.memory.context(person)}
 
     def _is_friend(self, name: str) -> bool:
@@ -102,7 +120,7 @@ class DiscordCalls:
     def _focus(self) -> bool:
         return bool(self.host.focus_window(self.window_title))
 
-    def _connect(self, name: str) -> dict:
+    def _connect(self, name: str, state: dict | None = None) -> dict:
         """Connected on screen: start her voice. Returns the handler result."""
         try:
             call = self.voice.start_call(self._friend_info(name))
@@ -110,11 +128,65 @@ class DiscordCalls:
             return {"ok": False, "summary": f"in the call with {name} but the voice could not start: {why}"}
         self.friend, self._hangup_asked = name, False
         self.situation.in_call = True
+        self._presence, self._presence_absent = None, 0
+        self._presence_next = self._clock() + 15.0
+        self._observe_presence(state or {})
         try:
             self._on_connected(name)
         except Exception:
             pass                                            # the camera is never required: the call goes on without it
         return {"ok": True, "summary": f"in a voice call with {name}", "call": True, "idle": call.idle_s()}
+
+    def _observe_presence(self, state: dict) -> None:
+        """Apparent participant transitions from two matching visible DM checks.
+
+        This is still screen-reader evidence, not a Discord presence API. A
+        missing panel, failed read, muted mic or late reply never means a friend
+        left or excluded her. Reconnection means a previously observed departure,
+        not merely that she happened to start a call with someone.
+        """
+        name = self.friend.strip().casefold()
+        if (not name or not isinstance(state, dict) or state.get("in_voice_call") is not True
+                or str(state.get("dm_with") or "").strip().casefold() != name
+                or type(state.get("other_joined")) is not bool):
+            self._presence_absent = 0
+            return
+        event = ""
+        if state["other_joined"]:
+            self._presence_absent = 0
+            self._presence = True
+            if name in self._departed:
+                self._departed.remove(name)
+                event = "reunion"
+        elif self._presence is True:
+            self._presence_absent += 1
+            if self._presence_absent >= 2:
+                self._presence = False
+                self._presence_absent = 0
+                # Keep only a bounded process-local set; no names are persisted.
+                if len(self._departed) >= 100:
+                    self._departed.clear()
+                self._departed.add(name)
+                event = "friend_left"
+        if event:
+            try:
+                self._feel(event, self.friend)
+            except Exception:
+                pass                                      # emotion presentation never breaks the call
+
+    def _check_presence(self) -> None:
+        """Read only when Discord is already in front, no more than every 15 s."""
+        if not self.friend or self._clock() < self._presence_next:
+            return
+        self._presence_next = self._clock() + 15.0
+        try:
+            title = self.host.foreground_title()
+            if not isinstance(title, str) or self.window_title.casefold() not in title.casefold():
+                self._presence_absent = 0
+                return
+            self._observe_presence(self._state())
+        except Exception:
+            self._presence_absent = 0
 
     def _click(self, what: str) -> bool:
         png = self.host.screenshot()
@@ -147,7 +219,7 @@ class DiscordCalls:
             state = self._state()
         if not state.get("in_voice_call"):
             return {"ok": False, "summary": f"tried to answer {name} but the screen does not show the call"}
-        return self._connect(name)
+        return self._connect(name, state)
 
     def callout(self, incoming, ctx=None) -> dict:
         name = incoming.sender
@@ -173,7 +245,7 @@ class DiscordCalls:
             self._sleep(2.0)
             state = self._state()
             if state.get("in_voice_call") and state.get("other_joined"):
-                return self._connect(name)
+                return self._connect(name, state)
         self._click("the red Disconnect / Hang up button of the call")      # not picked up: cancel it
         self._feel("friend_ignored", name)
         return {"ok": False, "summary": f"{name} did not pick up; she cancelled the call"}
@@ -207,6 +279,7 @@ class DiscordCalls:
             self.voice.call = None                          # the voice stack stopped on its own
             self.situation.in_call = False
             return
+        self._check_presence()
         if not self._hangup_asked and (call.idle_s() >= self.idle_leave_s or call.minutes() >= self.max_minutes):
             self._hangup_asked = True
             inbox.add(attention.Incoming("hangup", "discord", self.friend, at=self._clock()))
