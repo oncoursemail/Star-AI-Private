@@ -29,6 +29,11 @@ ownership. Existing upstream tests were retained without edits.
   storage and inert devices, not live accounts or model inference.
 - The focused stream-episode regression selection passed **9 tests**.
 - Python compilation, repository correctness lint and whitespace checks passed.
+- Pinned Pyright 1.1.414 with the same package-free Python 3.12 interpreter:
+  clean upstream `8155f4c9` had 579 errors; this branch has 577. No file/rule
+  count increased. The two reductions are the microphone `ready` property and
+  stream-episode action IDs. The repository's stored type baseline still fails
+  against the existing upstream backlog; no baseline was expanded.
 - Twelve emote exports passed square dimensions, RGBA and file-size checks;
   a contact sheet was inspected on light and dark backgrounds.
 

@@ -116,3 +116,21 @@ wallet/credential APIs. It found no further blocking issue in those APIs after t
 read-only inspection fix. The hearing setup now catches reporting-callback errors
 so they cannot skip owned capture cleanup. The model, devices, live account flows
 and production provider connections still require separate acceptance checks.
+
+## Type comparison after integrating upstream 8155f4c9
+
+The watch adapter now declares the hearing hub's clock through a small protocol,
+which removes two new diagnostics without casts, ignores or baseline edits.
+The watch-hearing verifier passed all 22 checks after this change.
+
+Pinned Pyright 1.1.414 analyzed both a clean archive of `8155f4c9` and the final
+source using the same Python 3.12 interpreter with no third-party packages:
+
+- Clean upstream: 579 errors, one warning.
+- Final source: 577 errors, one warning.
+- No repository-relative file/rule error count increased. The decreases were the
+  microphone readiness call and the stream episode action-ID type, one each.
+
+This comparison establishes no added error counts from the combined changes; it
+does not make the repository's existing type gate green. Reports and the exact
+file/rule comparison remain under the ignored `build/` directory.

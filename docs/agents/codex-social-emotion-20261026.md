@@ -30,10 +30,16 @@ required before claiming real behavior. If Discord is behind a game, presence
 events wait for Discord to become visible. Capture/model inference time is not
 measured here, and this patch does not move it off the existing watcher thread.
 
-`left_out` remains unwired: there is no reliable structured exclusion event.
-Silence, an unanswered invitation or an unread message cannot establish it. The
-older missed-call `friend_ignored` behavior is unchanged by this patch; its name
-should not be interpreted as evidence of a person's motive.
+This call-presence extension does not emit `left_out`: silence, an unanswered
+invitation or an unread message cannot establish exclusion. During integration,
+Claude's `8155f4c9` added a separate text-channel `LeftOutWatch` heuristic. That
+source was preserved; it is an expression cue, not proof of a friend's motive.
+The older missed-call `friend_ignored` behavior is also unchanged.
+
+The merge preserves Claude's spoken-goodbye source and uses a shared latch to
+avoid counting the spoken and visible departure twice. A confirmed reunion
+resets the latch without replaying an old goodbye from session history. The
+integrated Home/emotion/social selection passed 235 tests unchanged.
 
 ## Validation
 

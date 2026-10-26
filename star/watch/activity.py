@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import random
 import time
-from typing import Callable
+from typing import Callable, Protocol
 
 from .. import curiosity
 from . import captions as caps
@@ -33,9 +33,14 @@ from .understand import clock
 INTEREST = {"watch_videos": {"weight": 1.0, "about": "watch videos on YouTube, react out loud, and learn from them"}}
 
 
+class ClockedHub(Protocol):
+    """Use the hearing source's clock to exclude audio captured before this video."""
+    clock: Callable[[], float]
+
+
 @dataclass
 class Parts:
-    hub: object | None = None
+    hub: ClockedHub | None = None
     speak: Callable[..., bool] | None = None
     chat: Callable[[str], None] | None = None
     brain: object | None = None
