@@ -383,6 +383,8 @@ def test_invalid_session_is_not_forwarded_to_mod_untrusted_scope():
                             envelope("notification", session="wrongSession1234"))
         host, director, _ = make_host([socket], stop, moderate=mod)
         async def end_after_rejection():
+            while not socket.events.empty():
+                await asyncio.sleep(0.005)
             await asyncio.sleep(0.05)
             stop.set()
         stopper = asyncio.create_task(end_after_rejection())
@@ -443,6 +445,8 @@ def test_chat_backpressure_is_bounded_and_never_queues_all_messages():
         host.max_pending_moderations = 2
         host.moderator_timeout_s = 0.12
         async def stop_soon():
+            while not socket.events.empty():   # stop after every notification was read, whatever the machine load
+                await asyncio.sleep(0.005)
             await asyncio.sleep(0.04)
             stop.set()
         stopper = asyncio.create_task(stop_soon())
