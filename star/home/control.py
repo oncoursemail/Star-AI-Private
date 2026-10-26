@@ -37,6 +37,12 @@ DEFAULTS = {
     "vision": False,                 # attach screenshots to the model (only if the brain model reads images)
     "game_reserve_mb": 5000,         # video memory kept free for her game while one runs (8 GB card)
     "game_processes": ["RobloxPlayerBeta.exe", "javaw.exe", "Minecraft.Windows.exe", "RobloxStudioBeta.exe"],
+    "availability": {},              # star.home.attention.DEFAULTS overrides: quiet_hours, delays, call chances
+    "notifications": {"enabled": True, "apps": ["discord", "roblox"], "poll_s": 2.0},
+    "close_friends": {},             # {"discord": ["her owner's display name"]}: always treated as close friends
+    "calls": {},                     # call_accept_keys, call_idle_leave_minutes, call_max_minutes, call_pickup_wait_s
+    "play": {"obby_places": [], "session_minutes": 12, "step_s": 3.0, "voice_in_games": True},
+    "voice": {},                     # VoiceSettings overrides on top of star.senses.instant.PC_PRESET
 }
 
 

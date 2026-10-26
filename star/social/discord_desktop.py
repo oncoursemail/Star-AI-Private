@@ -34,8 +34,9 @@ class DiscordDesktop:
 
     def __init__(self, host: HostAgent, chat: SocialChat, *, my_names: list[str] | None = None,
                  window_title: str = "Discord", reader: Callable | None = None, pace: HumanPace | None = None,
-                 pacer: rules.Pacer | None = None) -> None:
+                 pacer: rules.Pacer | None = None, on_invite: Callable[[str, str], object] | None = None) -> None:
         self.host, self.chat = host, chat
+        self.on_invite = on_invite      # (author, text) -> a plan with .intent and .after (star.home.invites), or None
         self.my_names = [n.lower() for n in (my_names or ["Star"])]
         self.window_title = window_title
         self.reader = reader or vision_reader(READ_QUESTION)
@@ -86,7 +87,9 @@ class DiscordDesktop:
         author = str(targets[-1]["author"])
         said = " ".join(str(m["text"]) for m in targets if str(m["author"]) == author)
         history = [(str(m["author"]), str(m["text"])) for m in messages[:-1]][-8:]
-        reply = self.chat.handle("discord", author, said, name=author, public=not is_dm, history=history)
+        plan = self.on_invite(author, said) if self.on_invite is not None and is_dm else None
+        reply = self.chat.handle("discord", author, said, name=author, public=not is_dm, history=history,
+                                 intent=getattr(plan, "intent", "") if plan is not None else "")
         if reply is None or not self.pacer.allow(channel, reply.text):
             self.host.key("escape")
             return StepResult(True, "chose not to reply")
@@ -96,6 +99,8 @@ class DiscordDesktop:
         self.pace.type(self.host, reply.text)
         self.host.key("enter")
         self.pacer.sent(channel, reply.text)
+        if plan is not None and getattr(plan, "after", None) is not None:
+            plan.after()                                        # what she decided to do next (call, game)
         return StepResult(True, f"replied in {'DM' if is_dm else channel}", acted=True,
                           details={"channel": channel, "to": author})
 

@@ -20,7 +20,7 @@ import json
 import sys
 
 from . import control
-from .activities import default_registry
+from . import runtime as home_runtime
 from .host import Executor
 from .life import Life
 from .loop import cycle, run_forever
@@ -77,12 +77,14 @@ def main(argv: list[str] | None = None) -> int:
                           "last_sessions": life.history(5)}, indent=1, ensure_ascii=False))
         return 0
     home, config, executor, life, chat = _setup(args.dry_run or args.command == "check")
-    registry = default_registry()
+    registry, rt = home_runtime.build(home, config, executor, life, chat)
     if args.command == "check":
         result = executor.do("shell", {"command": "Get-Date"})
         print(f"executor (dry run): {result.text}")
-        print(f"stopped: {control.stopped(home)}; activities: {sorted(registry.items)}; plug-in errors: "
-              f"{registry.plugin_errors or 'none'}")
+        print(f"stopped: {control.stopped(home)}; activities: {sorted(registry.items)}; handlers: "
+              f"{sorted(registry.handlers)}; plug-in errors: {registry.plugin_errors or 'none'}")
+        from . import voicestack
+        print(f"voice stack: {voicestack.build_status()}")
         if chat is None:
             print("brain: brain_url not set in config.json")
             return 1
@@ -94,9 +96,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return 0
     if args.command == "once":
-        print(json.dumps(cycle(home, config, registry, life, executor, chat), ensure_ascii=False))
+        print(json.dumps(cycle(home, config, registry, life, executor, chat, attention=rt.attention), ensure_ascii=False))
         return 0
-    run_forever(home, config, registry, life, executor, chat)
+    run_forever(home, config, registry, life, executor, chat, attention=rt.attention, background=rt.background())
     return 0
 
 
