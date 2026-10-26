@@ -34,7 +34,8 @@ class DiscordDesktop:
 
     def __init__(self, host: HostAgent, chat: SocialChat, *, my_names: list[str] | None = None,
                  window_title: str = "Discord", reader: Callable | None = None, pace: HumanPace | None = None,
-                 pacer: rules.Pacer | None = None, on_invite: Callable[[str, str], object] | None = None) -> None:
+                 pacer: rules.Pacer | None = None, on_invite: Callable[[str, str], object] | None = None,
+                 left_out=None) -> None:
         self.host, self.chat = host, chat
         self.on_invite = on_invite      # (author, text) -> a plan with .intent and .after (star.home.invites), or None
         self.my_names = [n.lower() for n in (my_names or ["Star"])]
@@ -43,6 +44,7 @@ class DiscordDesktop:
         self.pace = pace or HumanPace()
         self.pacer = pacer or rules.Pacer(min_gap_s=3.0, per_minute=8)
         self._seen: deque[str] = deque(maxlen=2000)
+        self.left_out = left_out        # star.home.attention.LeftOutWatch, or None (then she never feels left out)
 
     def ready(self) -> tuple[bool, str]:
         if not self.host.focus_window(self.window_title):
@@ -58,6 +60,20 @@ class DiscordDesktop:
     def _addressed(self, msg: dict) -> bool:
         text = str(msg.get("text", "")).lower()
         return bool(msg.get("mentions_me")) or any(name in text for name in self.my_names)
+
+    def _watch_left_out(self, channel: str, fresh: list[dict], *, addressed: bool) -> None:
+        """Friends talk in a server channel and nobody includes her for a while: left_out (guarded, never breaks a step)."""
+        if self.left_out is None:
+            return
+        try:
+            others = [str(m["author"]) for m in fresh if not self._mine(str(m["author"]))]
+            if self.left_out.note(channel, others, addressed):
+                friends = [p for p in (self.chat.memory.known("discord", a) for a in dict.fromkeys(others))
+                           if p is not None and p.relationship == "friend" and not p.blocked and not p.muted]
+                if friends:
+                    self.chat.event("left_out", friends[0], strength=0.5, detail="friends talked in a channel without her")
+        except Exception:
+            pass
 
     def step(self) -> StepResult:
         ok, why = self.ready()
@@ -81,6 +97,8 @@ class DiscordDesktop:
         for m in fresh:
             self._seen.append(_key(channel, str(m["author"]), str(m["text"])))
         targets = fresh if is_dm else [m for m in fresh if self._addressed(m)]
+        if not is_dm:
+            self._watch_left_out(channel, fresh, addressed=bool(targets))
         if not targets:
             self.host.key("escape")
             return StepResult(True, "nothing addressed to her")

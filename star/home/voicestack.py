@@ -41,13 +41,52 @@ def _engines(settings):  # pragma: no cover - loads models
     return _engines_cache["engines"]
 
 
+_hearing: dict = {}
+HEARING_RETRY_S = 300.0
+
+
+def shared_reference():  # pragma: no cover - needs numpy (installed with the senses stack)
+    """One record of everything she plays, shared by her speakers and the hearing hub, so her own voice is not heard."""
+    if "reference" not in _hearing:
+        from ..senses.reference import PlaybackReference
+        _hearing["reference"] = PlaybackReference()
+    return _hearing["reference"]
+
+
+def _recorded(speaker):  # pragma: no cover
+    """`speaker` that also writes what it plays into the shared reference (never fails a voice line)."""
+    try:
+        from ..senses.reference import ReferenceSpeaker
+        return ReferenceSpeaker(speaker, shared_reference())
+    except Exception:
+        return speaker
+
+
+def hearing_hub(config: dict):  # pragma: no cover - needs her devices and models
+    """The hearing hub for star.watch: the PC's sound and the microphone, transcribed on her GPU, started once. None when
+    it cannot start (no soundcard, no model); a failure is retried after a few minutes, never raised."""
+    import time
+    if _hearing.get("hub") is not None:
+        return _hearing["hub"]
+    if time.monotonic() < _hearing.get("retry_at", 0.0):
+        return None
+    try:
+        from ..senses.instant import start_hearing
+        settings = _settings(config)
+        _hearing["hub"] = start_hearing(_engines(settings), settings, shared_reference())
+    except Exception:
+        _hearing["retry_at"] = time.monotonic() + HEARING_RETRY_S
+        return None
+    return _hearing["hub"]
+
+
 def voice_factory(config: dict) -> Callable[[], tuple]:  # pragma: no cover - needs her devices and models
     """() -> (tts, speaker): her voice into STAR Microphone, for game remarks outside a call."""
     def build():
         from ..senses import routes
         settings = _settings(config)
         engines = _engines(settings)
-        return engines.tts, attach_lipsync(routes.open_voice_output(routes.query_devices(), monitor=settings.monitor_device))
+        return engines.tts, _recorded(attach_lipsync(routes.open_voice_output(routes.query_devices(), monitor=settings.monitor_device)))
     return build
 
 
@@ -71,7 +110,7 @@ def call_factory(config: dict, desk=None, sender_of: Callable[[], str] = lambda:
             brain = make_brain(settings)
         if desk is not None:
             brain = InviteBrain(brain, desk, sender=sender_of)
-        session, warm = build_pc_session(settings, engines, attach_lipsync(speaker), big_brain=brain)
+        session, warm = build_pc_session(settings, engines, _recorded(attach_lipsync(speaker)), big_brain=brain)
         session.config.emotion_person = friend.get("person") or session.config.emotion_person
         session.config.emotion_partner_adult = True if friend.get("partner_adult") is True else None
         source = LoopbackSource()                    # the friend's voice: whatever Discord plays on the default output

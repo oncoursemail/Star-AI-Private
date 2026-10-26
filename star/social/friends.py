@@ -131,6 +131,15 @@ class FriendMemory:
             return self.get(cur.lastrowid)
         return self.get(row[0])
 
+    def known(self, platform: str, handle: str) -> Person | None:
+        """The profile behind `platform:handle` if she has one; unlike person() it never creates one."""
+        handle = str(handle).strip()[:100]
+        if platform not in PLATFORMS or not handle or self.is_forgotten(platform, handle):
+            return None
+        row = self._db.execute("SELECT person_id FROM handles WHERE platform = ? AND handle = ?",
+                               (platform, handle.lower())).fetchone()
+        return self.get(row[0]) if row else None
+
     def get(self, person_id: int) -> Person:
         row = self._db.execute(
             "SELECT id, name, style, stated_age, age_asked, minor_signals, relationship, they_started, blocked, muted "
@@ -217,6 +226,13 @@ class FriendMemory:
         rows = self._db.execute("SELECT platform, line FROM moments WHERE person_id = ? ORDER BY id DESC LIMIT ?",
                                 (person.id, limit)).fetchall()
         return list(reversed(rows))
+
+    def silent_for(self, person: Person) -> float | None:
+        """Seconds since the last remembered exchange with this person (this memory's clock), None if there is none."""
+        if person.id is None:
+            return None
+        row = self._db.execute("SELECT MAX(ts) FROM moments WHERE person_id = ?", (person.id,)).fetchone()
+        return max(0.0, self._clock() - row[0]) if row and row[0] is not None else None
 
     def context(self, person: Person) -> str:
         """The block added to her prompt when she talks to this person."""
