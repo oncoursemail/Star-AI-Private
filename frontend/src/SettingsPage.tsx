@@ -23,6 +23,8 @@ export type SettingsSectionId='general'|'model'|'roblox'|'creative'|'knowledge'|
 /** Everything the page needs from the desktop shell. The shell keeps the state; this page only lays it out. */
 export type SettingsPageProps={
  appearance?:ReactNode
+ /** Companion controls when the Studio layout's Appearance drawer is off. */
+ companions?:ReactNode
  data:BootData
  draft:AppSettings
  setDraft:(update:AppSettings|((d:AppSettings)=>AppSettings))=>void
@@ -267,6 +269,7 @@ export function SettingsPage(props:SettingsPageProps) {
        {props.setClipsOn&&<Switch label="STAR Clips and Game Lab" hint="Off by default. Shows the OBS replay, clip folder, SteelSeries Moments and Game Lab panels on the Tools page. Needs your own OBS Studio. Saved on this device." checked={!!props.clipsOn} onChange={props.setClipsOn}/>}
        <Switch label="Reduced motion" hint="Turns off animation everywhere in STAR. Applied and saved immediately." checked={draft.reduced_motion} onChange={props.setReducedMotion}/>
      </Panel>
+     {props.companions&&<Panel className="settings-section"><h3 className="settings-group-title">Companions</h3>{props.companions}</Panel>}
    </Block>
    <Block id="answers" keywords="chat image picture web internet search fast instant speed typing warm prefill">
      <Panel className="settings-section"><h3 className="settings-group-title">Answers</h3>

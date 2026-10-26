@@ -4,7 +4,7 @@ import type {PetState} from './StarPet'
 import {useStarReducedMotion} from './MotionPolicy'
 import {usePageVisible} from './usePageVisible'
 import {COMPANIONS, companionCharacter, companionImage, companionWorkLabel} from './companion-catalog'
-import type {CompanionPreferences} from './companion-catalog'
+import type {CompanionForm, CompanionPreferences} from './companion-catalog'
 import './companion-shelf.css'
 
 export type CompanionShelfProps = {
@@ -52,7 +52,59 @@ export function CompanionControls({preferences, onPreferencesChange, reducedMoti
       </select>
     </label>
     {(reducedMotion || policyReduced) && <p id={id + '-note'} className="companion-controls__note">Your reduced-motion preference keeps companions still.</p>}
+    <label className="companion-controls__visibility">
+      <span>Companions walk in the chat</span>
+      <input type="checkbox" checked={preferences.stage} onChange={event => onPreferencesChange({...preferences, stage: event.target.checked})}/>
+    </label>
+    {preferences.stage && <StageControls preferences={preferences} onPreferencesChange={onPreferencesChange} id={id}/>}
   </div>
+}
+
+const FORM_LABEL: Record<CompanionForm, string> = {normal: 'Normal', cat: 'Cat', dog: 'Dog'}
+
+/** Who walks along the chat, their animal form, and the optional affection and study looks. */
+function StageControls({preferences, onPreferencesChange, id}: Pick<CompanionControlProps, 'preferences' | 'onPreferencesChange'> & {id: string}) {
+  const forms = Object.values(preferences.forms)
+  const everyone = forms.every(form => form === forms[0]) ? forms[0] : 'mixed'
+  return <>
+    <fieldset className="companion-cast">
+      <legend className="companion-controls__label">Who is out, and in which form</legend>
+      {COMPANIONS.map(item => <div key={item.id} className="companion-cast__row">
+        <label className="companion-cast__who">
+          <input type="checkbox" checked={preferences.cast.includes(item.id)} onChange={event => onPreferencesChange({
+            ...preferences, cast: event.target.checked ? [...preferences.cast, item.id] : preferences.cast.filter(other => other !== item.id),
+          })}/>
+          <span>{item.name}</span>
+        </label>
+        <select aria-label={item.name + ' form'} value={preferences.forms[item.id]} disabled={!preferences.cast.includes(item.id)}
+          onChange={event => onPreferencesChange({...preferences, forms: {...preferences.forms, [item.id]: event.target.value as CompanionForm}})}>
+          {(Object.keys(FORM_LABEL) as CompanionForm[]).map(form => <option key={form} value={form}>{FORM_LABEL[form]}</option>)}
+        </select>
+      </div>)}
+    </fieldset>
+    <label className="companion-controls__motion" htmlFor={id + '-everyone'}>
+      <span>Form for everyone</span>
+      <select id={id + '-everyone'} value={everyone} onChange={event => {
+        const form = event.target.value as CompanionForm
+        onPreferencesChange({...preferences, forms: {star: form, ember: form, astra: form, gemini: form}})
+      }}>
+        {everyone === 'mixed' && <option value="mixed" disabled>Mixed</option>}
+        {(Object.keys(FORM_LABEL) as CompanionForm[]).map(form => <option key={form} value={form}>{FORM_LABEL[form]}</option>)}
+      </select>
+    </label>
+    <label className="companion-controls__motion" htmlFor={id + '-study'}>
+      <span>Study looks</span>
+      <select id={id + '-study'} value={preferences.study} onChange={event => onPreferencesChange({...preferences, study: event.target.value === 'on' ? 'on' : event.target.value === 'off' ? 'off' : 'auto'})}>
+        <option value="auto">While STAR learns on this PC</option>
+        <option value="on">Always</option>
+        <option value="off">Off</option>
+      </select>
+    </label>
+    <label className="companion-controls__visibility">
+      <span>Hugs and cheek kisses</span>
+      <input type="checkbox" checked={preferences.affection} onChange={event => onPreferencesChange({...preferences, affection: event.target.checked})}/>
+    </label>
+  </>
 }
 
 export function CompanionShelf({state, reducedMotion, preferences, onPreferencesChange, compact = false, className = ''}: CompanionShelfProps) {

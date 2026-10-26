@@ -54,6 +54,7 @@ import {AppearanceControls,AppearancePanel} from './AppearancePanel'
 import {useAppearance} from './useAppearance'
 import {CompanionControls,CompanionShelf} from './CompanionShelf'
 import {useCompanionPreferences} from './companion-catalog'
+import {CompanionStage} from './companions/CompanionStage'
 
 type Tab='chat'|'projects'|'business'|'brain'|'brain-overview'|'analytics'|'tools'|'library'|'settings'
 const sections:[Tab,string,typeof MessageCircleMore][]=[['chat','Chat',MessageCircleMore],['projects','Projects',Boxes],['business','Business',Store],['library','Library',BookOpen],['tools','Tools',Workflow],['analytics','Analytics',Activity],['brain-overview','Brain',BrainCircuit],['brain','Model & connection',Gauge],['settings','Settings',Settings2]]
@@ -106,6 +107,8 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  const {preferences:appearance,updateAppearance,resetAppearance,persisted:appearancePersisted}=useAppearance(studioLayout)
  const [companionPreferences,setCompanionPreferences]=useCompanionPreferences()
  const compactStudio=useCompactStudio()
+ // Study looks follow STAR's own learning on this PC (night school); asked once a minute while companions show.
+ const [learningNow,setLearningNow]=useState(false)
  const [tab,setTab]=useState<Tab>(()=>initialPreviewTab(preview))
  const [data,setData]=useState<BootData>(initial??{version:'2.0.0',project:'STAR',projects:[],messages:[],active_chat:'',chats:[],settings:defaultSettings,brain_installed:false,brain_running:false,analytics:emptyAnalytics,release_url:WEBSITE_RELEASES,credentials:{}})
  const [messages,setMessages]=useState<ChatMessage[]>(initial?.messages??[])
@@ -196,6 +199,15 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  useEffect(()=>{writePreference('star.pet.visible',showStar?'on':'off')},[showStar])
  useEffect(()=>{writePreference('star.home.workbench',newHome?'on':'off')},[newHome])
  useEffect(()=>{writePreference('star.studio.layout',studioLayout?'on':'off')},[studioLayout])
+ useEffect(()=>{
+  const wanted=tab==='chat'&&companionPreferences.visible&&companionPreferences.stage&&companionPreferences.study==='auto'
+  if(!wanted||inactive){setLearningNow(false);return}
+  let live=true
+  const look=()=>void request<{active:boolean}>('learningActivity').then(reply=>{if(live)setLearningNow(reply.ok&&reply.data?.active===true)})
+  look()
+  const timer=window.setInterval(look,60000)
+  return ()=>{live=false;window.clearInterval(timer)}
+ },[tab,companionPreferences.visible,companionPreferences.stage,companionPreferences.study,inactive])
  useEffect(()=>{writePreference('star.clips.panels',clipsOn?'on':'off')},[clipsOn])
  useEffect(()=>{if(!petTerminal)return;const timer=setTimeout(()=>setPetTerminal(null),petTerminal.kind==='finished'?2000:4000);return ()=>clearTimeout(timer)},[petTerminal])
  // The collapsed sidebar is a view preference: it survives restarts.
@@ -724,6 +736,8 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  // The live answer is the last entry of the same keyed list, so finishing it never remounts the text.
  const turns:ChatMessage[]=viewingAnswer&&streamingText&&!query?[...matchingMessages,{id:'stream-live',role:'assistant',text:streamingText}]:matchingMessages
  const empty=!messages.length&&!viewingAnswer
+ // Living companions walk along the bottom of the chat (Settings > Interface > Companions).
+ const companionStage=tab==='chat'&&companionPreferences.visible&&companionPreferences.stage&&companionPreferences.cast.length>0
  // The workbench home is opt-in (Settings > Interface); preview review can force either with ?home=classic|workbench.
  const homeParam=preview?new URLSearchParams(window.location.search).get('home'):null
  const classicHome=homeParam==='classic'||(homeParam!=='workbench'&&!newHome)
@@ -817,7 +831,8 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
        <MotionSurface as="main" id="star-main" tabIndex={-1} key={tab} className="page-stage" variants={pageFade}>
          {tab==='chat'&&<StudioFrame enabled={studioLayout} compact={compactStudio} companionVisible={companionPreferences.visible}
            companion={<CompanionShelf state={petState} reducedMotion={reducedMotion} preferences={companionPreferences} onPreferencesChange={setCompanionPreferences} compact={compactStudio}/>}>
-           <div className={'thread'+(empty?' is-empty':'')+(empty&&!classicHome?' is-crafted-home':'')}>
+           <div className={'thread'+(empty?' is-empty':'')+(empty&&!classicHome?' is-crafted-home':'')+(companionStage&&!empty?' has-companion-lane':'')}>
+           {companionStage&&<CompanionStage app={petState} preferences={companionPreferences} reducedMotion={reducedMotion} learning={learningNow} empty={empty} preview={preview}/>}
            <div className="thread-scroll" ref={chatScroll} onScroll={onChatScroll}>
              <div className="thread-column">
                {empty?(classicHome?(studioLayout?<StudioWelcome mood={faceMood}/>:<div className="thread-hello"><StarFace mood={faceMood} size={104} follow className="thread-hello-star" label="Star, STAR's mascot"/><h2>What are we making?</h2></div>):<StartCanvas project={data.project} mood={faceMood} onStart={fillComposer}/>)
@@ -934,6 +949,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
            imageMode={imageMode} chooseWorkflow={()=>void chooseWorkflow()} showStar={showStar} setShowStar={setShowStar} newHome={newHome} setNewHome={setNewHome} clipsOn={clipsOn} setClipsOn={setClipsOn} setReducedMotion={setReducedMotion}
            studioLayout={studioLayout} setStudioLayout={setStudioLayout}
            appearance={studioLayout&&<AppearanceControls preferences={appearance} onChange={updateAppearance} onReset={resetAppearance} companionSettings={companionSettings} persisted={appearancePersisted}/>}
+           companions={studioLayout?null:companionSettings}
            update={update} updateBusy={updateBusy} updateProgress={updateProgress} checkForUpdates={()=>void checkForUpdates()} installVerifiedUpdate={()=>void installVerifiedUpdate()} saveSettings={()=>void saveSettings()}
            initialSection={preview?new URLSearchParams(window.location.search).get('section')||undefined:undefined}/></div></div>}
        </MotionSurface>
