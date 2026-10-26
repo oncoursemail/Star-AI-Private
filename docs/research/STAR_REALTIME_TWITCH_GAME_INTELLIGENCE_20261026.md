@@ -66,7 +66,7 @@ Observations on 2026-10-26:
 - `starai` Linux machine: AMD EPYC 7451 24-core model, 125 GiB RAM (with
   approximately 36 GiB available according to `free -h`), 77 GiB available on
   the inspected partition. The command did not reveal an NVIDIA GPU.
-- `alexbuz1`: Intel Core i7-9700 and approximately 15 GiB RAM. No NVIDIA GPU
+- the second server: Intel Core i7-9700 and approximately 15 GiB RAM. No NVIDIA GPU
   was demonstrated by the read-only inspection.
 
 Optimization consequence: the gaming PC was already VRAM-constrained during

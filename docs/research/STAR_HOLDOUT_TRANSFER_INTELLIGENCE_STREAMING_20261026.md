@@ -57,7 +57,7 @@ Further build candidates: bounded hypothesis-driven mechanic discovery, spatial 
 
 The new evaluator passed **10 isolated Python stdlib unit tests** against a test-local minimal duplicate of the actual GameTrial signing contract. These are synthetic simulations, not a full-tree CI pass, real game practice, inference benchmark, speech audition or proof of transfer.
 
-Connected Desktop Commander devices starai, alexbuz1 and Main were **offline when checked on October 26, 2026**. The actual VTube Studio Live2D rig, Windows PCM callbacks, Roblox Studio MCP controls and GPUs were not accessible. Before activation, run this new test plus existing gameplay skill bank, active practice, Studio outcome, avatar and stream regression suites on the full repository. No setting automatically changes and no test scorer/key is added as a model tool.
+The connected Desktop Commander devices were **offline when checked on October 26, 2026**. The actual VTube Studio Live2D rig, Windows PCM callbacks, Roblox Studio MCP controls and GPUs were not accessible. Before activation, run this new test plus existing gameplay skill bank, active practice, Studio outcome, avatar and stream regression suites on the full repository. No setting automatically changes and no test scorer/key is added as a model tool.
 
 GitHub currently reports repository Star-AI-Private as **public**, despite its name. Never commit player identities, audio, stream keys, full recordings, game secrets, private evaluator seeds/keys or private knowledge to it. Publish only vetted code/research and keep owner-managed merge/deployment gates.
 

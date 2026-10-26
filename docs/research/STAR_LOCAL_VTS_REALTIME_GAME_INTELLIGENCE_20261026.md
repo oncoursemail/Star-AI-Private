@@ -75,7 +75,7 @@ Do not equate "more parallel agents" with faster results when they contend for V
 | Independent verification agents | Higher game-build/code correctness | Cost, contention, evaluator leakage | Held-out task pass@1 / success per compute unit |
 | Bounded action & speech workers | Stable gameplay latency | Backlog and obsolete reactions | Queued-item age, deadline miss count, game frame p99 |
 
-llama.cpp provides speculative-decoding variants and an official speed-bench client; speculation is **not** automatically faster. Compare a no-speculation baseline. 
+llama.cpp provides speculative-decoding variants and an official speed-bench client; speculation is **not** automatically faster. Compare a no-speculation baseline.
 https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md
 
 ## 6. Acceptance plan — before anyone claims Star is smarter or streaming naturally

@@ -17,7 +17,7 @@ The PR leaves varied openers disabled by default and describes live model measur
    Reproducer: feed guarded `read_stream` these three synthetic content chunks, in order:
 
    ```text
-   Hello. 
+   Hello.
    In preparing this answer with all of the details from this discussion, I sho
    uld check the status first.
    ```
