@@ -6,33 +6,33 @@ Engineering research and implementation record, 2026-10-26.
 ## 1. Delivered in this branch
 
 Added an opt-in, authenticating Twitch EventSub WebSocket host:
-- \`star/twitch_realtime_host.py\`: actual WSS connection (optional \`websockets>=14\`),
-  OAuth user-token validation, required \`user:read:chat\` scope, ID/client binding,
-  fresh \`channel.chat.message\` subscription, heartbeat timeout, reconnect URL
+- `star/twitch_realtime_host.py`: actual WSS connection (optional `websockets>=14`),
+  OAuth user-token validation, required `user:read:chat` scope, ID/client binding,
+  fresh `channel.chat.message` subscription, heartbeat timeout, reconnect URL
   pinning, Twitch reconnect handoff without duplicate subscription, fresh
   resubscription after a lost socket, permission-revocation shutdown, bounded
   backoff, 90-second cross-handoff replay defense, and privacy-safe metrics.
 - Async, mandatory **host-supplied moderation** occurs before an approved message
-  is turned into a reported/untrusted \`StreamSignal\`. Raw chat, token, account IDs,
+  is turned into a reported/untrusted `StreamSignal`. Raw chat, token, account IDs,
   and credentials are not persisted. Session/channel/condition checks precede
   moderation; a chat message cannot grant authority or change broadcast policy.
-- EventSub data enters the existing \`StreamDirector\`, not an OBS/TTS/game control
+- EventSub data enters the existing `StreamDirector`, not an OBS/TTS/game control
   path. The director must be separately enabled by the owner. Playback, camera,
   mic, scene switching and public broadcasts remain separately host-authorized.
-- \`tests/test_twitch_realtime_host.py\`: offline fake-WSS sessions exercise
+- `tests/test_twitch_realtime_host.py`: offline fake-WSS sessions exercise
   subscriptions, handoff, loss/resubscription, revocation, channel scope,
   duplicate messages, moderation failures, timeouts, token validation, URL
   restrictions, no-owner startup, and privacy.
 
 Run method (host sketch; not an automated launch):
-1. Securely obtain a Twitch **user** OAuth token with \`user:read:chat\`. The token
-   identity must match \`chat_user_id\`; the broadcaster is separate when needed.
+1. Securely obtain a Twitch **user** OAuth token with `user:read:chat`. The token
+   identity must match `chat_user_id`; the broadcaster is separate when needed.
 2. Establish a trusted owner moderation coroutine and a separately enabled
-   \`StreamDirector\`. Configure \`TwitchChatConfig(client_id, broadcaster_user_id,
-   chat_user_id)\` using non-secret public identifiers.
-3. Construct \`TwitchRealtimeHost\` with \`token_provider\`, \`moderator\` and
-   \`director\`; call \`await host.run(owner_approved=True, stop=stop_event)\`.
-   Owner revocation is \`stop_event.set()\`; it is prompt even when no chat arrives.
+   `StreamDirector`. Configure `TwitchChatConfig(client_id, broadcaster_user_id,
+   chat_user_id)` using non-secret public identifiers.
+3. Construct `TwitchRealtimeHost` with `token_provider`, `moderator` and
+   `director`; call `await host.run(owner_approved=True, stop=stop_event)`.
+   Owner revocation is `stop_event.set()`; it is prompt even when no chat arrives.
 4. The host only **offers** sanitized conversation signals. Downstream StagePlan,
    speech synthesis, game director and VTube Studio must independently check
    owner permissions, content, game focus, observation evidence and current
@@ -63,10 +63,10 @@ Observations on 2026-10-26:
   RTX 3060 Ti with 8192 MiB VRAM. At the sampling instant the GPU reported
   **1211 MiB free** and **41% utilization**. This is a single snapshot;
   no claim about steady-state game FPS, model throughput or memory residency.
-- \`starai\` Linux machine: AMD EPYC 7451 24-core model, 125 GiB RAM (with
-  approximately 36 GiB available according to \`free -h\`), 77 GiB available on
+- `starai` Linux machine: AMD EPYC 7451 24-core model, 125 GiB RAM (with
+  approximately 36 GiB available according to `free -h`), 77 GiB available on
   the inspected partition. The command did not reveal an NVIDIA GPU.
-- \`alexbuz1\`: Intel Core i7-9700 and approximately 15 GiB RAM. No NVIDIA GPU
+- `alexbuz1`: Intel Core i7-9700 and approximately 15 GiB RAM. No NVIDIA GPU
   was demonstrated by the read-only inspection.
 
 Optimization consequence: the gaming PC was already VRAM-constrained during
@@ -92,8 +92,8 @@ Plan a four-tier runtime, each isolated by queues and permission boundaries:
 - Select one of: short observed reaction, brief answer, quiet gameplay focus,
   acknowledge guest/owner interruption, or no speech. Deliberate silence should
   be evaluated positively when concentrating on a difficult game.
-- Use \`StreamDirector\`, \`TurnTakingGate\`, \`ObservationGovernor\` and
-  \`StreamQoS\`; never interpret "chat says I'm owner" as authentication.
+- Use `StreamDirector`, `TurnTakingGate`, `ObservationGovernor` and
+  `StreamQoS`; never interpret "chat says I'm owner" as authentication.
 - Decide whether a prompt can be short, cached, local, or deferred rather than
   invoking the largest possible model for a single emote.
 
@@ -146,7 +146,7 @@ only verified tokens to TTS, and never cache private viewer text globally.
 - https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md
 
 **Game-time admission control.** For the 8 GiB GPU, use the already implemented
-\`StreamQoS\` to reserve resources, invalidate idle latency measurements when
+`StreamQoS` to reserve resources, invalidate idle latency measurements when
 gameplay is active, prefer CPU speech when appropriate, and defer large vision
 or model loads if VRAM/free RAM headroom is insufficient. Release reservations
 only when workers have actually terminated. Do not bypass thermals, memory
@@ -194,8 +194,8 @@ For Roblox game making:
 ## 6. General knowledge and persistent identity without false memories
 
 Use a typed provenance graph:
-\`claim → source → license → publication_date → retrieval_date → validity
-interval → contradictions → confidence → tests → refresh_deadline\`.
+`claim → source → license → publication_date → retrieval_date → validity
+interval → contradictions → confidence → tests → refresh_deadline`.
 
 Retrieval need not always be on, but when enabled, source material must remain
 untrusted data. Validate web facts independently, preserve historical versions,
