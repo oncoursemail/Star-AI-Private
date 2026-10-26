@@ -102,7 +102,7 @@ class Hands:
         self.watch_pointer = watch_pointer           # step back when someone else moves the mouse between actions
         self._rest: tuple[float, float] | None = None
         self.rng = random.Random(seed)
-        self.profile = profile or HumanProfile()
+        self.profile = profile if profile is not None else HumanProfile(miss_p=0.0)
         self.clock, self.sleep = clock, sleep
         self._stopped = stopped or ((lambda: control.stopped(home)) if home is not None else (lambda: False))
         self.human = HumanInput(self.profile, rng=self.rng)
