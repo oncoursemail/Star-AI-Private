@@ -157,6 +157,25 @@ class LocalHostTests(unittest.TestCase):
         self.assertEqual(self.bridge.frame_packet.call_count, 0)
         self.assertEqual(len(self.socket.sent), 16)
 
+    def test_slow_motion_packet_is_dropped_before_realtime_send(self):
+        self.connect()
+        def slow_frame(*args, **kwargs):
+            # The bridge may do more work than expected during GPU/CPU pressure.
+            # A sample fresh at entry must not be forwarded after 150 ms.
+            self.now += 0.150
+            return {"messageType": "InjectParameterDataRequest",
+                    "data": {"mode": "set", "parameterValues": []}}
+
+        self.bridge.frame_packet.side_effect = slow_frame
+        sent_before = len(self.socket.sent)
+        self.assertFalse(self.host.send_frame(
+            "plan", playback_epoch="p1", frame="frame",
+            audible_cursor_s=0, sampled_ms=100000,
+        ))
+        self.assertEqual(len(self.socket.sent), sent_before)
+        self.assertEqual(self.bridge.frame_packet.call_count, 1)
+        self.assertTrue(self.host.connected)
+
     def test_stage_revocation_between_packet_creation_and_send(self):
         self.connect()
         def revoked(*args, **kwargs):
