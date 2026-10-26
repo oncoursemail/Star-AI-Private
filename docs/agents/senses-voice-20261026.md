@@ -290,3 +290,13 @@ tests (call, acks, turn, human voice, settings, catalog, bridge, setup, brain, c
 - "Cute" was never listened to. Fresh Star-voice WAVs need the voice stack.
 - Merge note: `call.py` overlaps `worktrees/voice-natural` at `_run_reply`; this branch extracts the same helper
   `_turn_messages(reply)`: take theirs (it adds the opener hint) and keep the rest. `star-home` should call `build_pc_session`.
+
+## Live brain-1 voice latency, measured 2026-10-26 (Claude lead's measure lane; brain half only): no default changes
+`python -m star.senses.bench` has no live mode (fake engines only), and this PC has no ASR/TTS models, so only the model half was measured with the production class
+(`star.voice.brain.ServerBrain`, voice system prompt, `star-voice`, thinking off, prefix primed, fresh tail, 12 caller lines, streaming), from the dev PC over the LAN,
+under `star lock run --server 1` (the night-school job paused only at lock time, so a request already running may have overlapped). Script: `~/.star/measure/voice_live.py` (not committed).
+- first streamed piece: p50 **1.20 s**, p95 1.24 s (min 1.12, max 1.57); first sentence end: p50 **1.83 s**, p95 2.28 s; stream rate p50 8.7 pieces/s (7.3-13.3).
+- Add the estimates from section 2 (ASR 0.17 s + TTS 0.33 s for the first clause) and first audio on this brain path is about 2.3 s p50, not the 0.8 s target. The
+  speculative reply and shorter pause cannot hide a 1.2 s first token; the local fast model on her 4060 (opt-in, not measured on that card) remains the route to 800 ms.
+- Compared with the 0.9 s / 4.6 tok/s used by the `server-scripted` bench row: first token is slower here (1.2 s, includes LAN + uncached tail), the stream is faster (about 8.7 pieces/s).
+- Not measured: real ASR/TTS, STAR Microphone path, local-GPU model, anything on her PC. Needs her PC.

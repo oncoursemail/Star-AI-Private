@@ -34,5 +34,5 @@ with tempfile.TemporaryDirectory() as d:
                 reply = post(build.messages(sc, tone))['choices'][0]['message'].get('content') or ''
                 rows.append({'i': i, 'name': sc['name'], 'rep': rep, 'arm': arm, 'tone': bool(tone), 'reply': reply,
                              'secs': round(time.perf_counter() - t, 2), 'state_ms': round(local_ms, 1)})
-                json.dump(rows, open(OUT, 'w'), indent=1, ensure_ascii=False)
+                json.dump(rows, open(OUT, 'w', encoding='utf-8'), indent=1, ensure_ascii=False)
 print('done', len(rows), 'replies ->', OUT)
