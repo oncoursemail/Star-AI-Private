@@ -184,6 +184,9 @@ class TwitchEventSubBridge:
                 oldest = min(self._seen, key=self._seen.__getitem__)
                 del self._seen[oldest]
             self._seen[key] = now_mono
+            if viewer not in self._viewer_last and len(self._viewer_last) >= self._max_seen:
+                oldest_viewer = min(self._viewer_last, key=self._viewer_last.__getitem__)
+                del self._viewer_last[oldest_viewer]
             self._viewer_last[viewer] = now_mono
             self._counts["accepted"] += 1
             # Twitch's timestamp uses UTC; StreamDirector's expiry uses mono.
@@ -200,7 +203,8 @@ class TwitchEventSubBridge:
         """Aggregate counts only: no message contents or platform IDs."""
         with self._lock:
             return {**self._counts, "enabled": self._enabled,
-                    "cached_messages": len(self._seen)}
+                    "cached_messages": len(self._seen),
+                    "cached_viewers": len(self._viewer_last)}
 
 
 __all__ = ["TwitchEventSubBridge"]
