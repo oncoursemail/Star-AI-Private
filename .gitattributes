@@ -1,5 +1,5 @@
 # Windows batch files must keep CRLF line endings: cmd.exe mis-resolves labels in LF-only files.
-*.cmd -text
+*.cmd -text whitespace=cr-at-eol
 
 # Node scripts imported by the vitest suite carry a shebang; with CRLF the shebang line fails to parse there.
 *.mjs text eol=lf
