@@ -17,8 +17,8 @@ from typing import Any, Callable
 
 from .vtube_live2d_bridge import VTubeLive2DBridge
 
-_LOCAL_ENDPOINT = re.compile(r"ws://(?:127\\.0\\.0\\.1|\\[::1\\]):([0-9]{1,5})\\Z")
-_TOKEN = re.compile(r"[\\x21-\\x7e]{1,64}\\Z")
+_LOCAL_ENDPOINT = re.compile(r"ws://(?:127\.0\.0\.1|\[::1\]):([0-9]{1,5})\Z")
+_TOKEN = re.compile(r"[\x21-\x7e]{1,64}\Z")
 
 
 class VTSHostError(RuntimeError):
