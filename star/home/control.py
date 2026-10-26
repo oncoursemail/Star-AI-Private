@@ -43,6 +43,8 @@ DEFAULTS = {
     "calls": {},                     # call_accept_keys, call_idle_leave_minutes, call_max_minutes, call_pickup_wait_s
     "play": {"obby_places": [], "session_minutes": 12, "step_s": 3.0, "voice_in_games": True},
     "voice": {},                     # VoiceSettings overrides on top of star.senses.instant.PC_PRESET
+    "art_studio": {"enabled": False, "mode": "paint", "allow_generation": False, "reference": ""},
+    "stream_chat": {"enabled": False, "client_id": "", "broadcaster_id": "", "respond": False},
 }
 
 

@@ -9,7 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 import random
 import time
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from .streamchat import StreamChat
 
 from . import control
 from .activities import Registry, default_registry
@@ -67,6 +70,7 @@ class Runtime:
                                log=lambda phase, **fields: control.log_action(self.home, "attention", phase, **fields))
         self.watcher = None
         self.registry: Registry | None = None
+        self.stream_chat: StreamChat | None = None
 
     # ---- shared parts ---------------------------------------------------------------------------------------
     @property
@@ -240,6 +244,8 @@ class Runtime:
         note = self.notification_job()
         if note is not None:
             jobs.append(note)
+        if self.stream_chat is not None:
+            jobs.append(self.stream_chat.background)
         return jobs
 
 
