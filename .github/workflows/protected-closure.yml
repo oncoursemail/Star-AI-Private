@@ -32,26 +32,139 @@ jobs:
         if: github.event_name == 'pull_request_target'
         env:
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # pull_request_target checks out the TRUSTED base. Since the repository is
-          # private, fetch only the PR ref with the job's read-only GitHub token.
-          # A command-local helper avoids persisting credentials in .git/config.
-          git -c credential.helper='!gh auth git-credential' fetch --no-tags origin "pull/${PR_NUMBER}/head:pr-head"
+          set -euo pipefail
+          # Diff the exact commit from this event. A virtual pull/N/head ref can be
+          # unavailable even after the private repository checkout succeeds, and
+          # a branch may move between the event and this step. Never substitute its
+          # newer tip or run any code from the pull request.
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            # The full checkout normally already has same-repository PR commits.
+            # A command-local helper keeps the read-only token out of .git/config.
+            git -c credential.helper='!gh auth git-credential' fetch --no-tags origin "$HEAD_SHA"
+          fi
+          test "$(git rev-parse "${HEAD_SHA}^{commit}")" = "$HEAD_SHA"
           cp star/protected_paths.py "$RUNNER_TEMP/guard.py"
-          git diff --name-only --no-renames "${BASE_SHA}...pr-head" > "$RUNNER_TEMP/changed.txt"
-          xargs -a "$RUNNER_TEMP/changed.txt" -d '\n' python "$RUNNER_TEMP/guard.py" --branch "$HEAD_BRANCH" --labels "$LABELS" --files
-      - name: Check a pushed generator branch against star/next
+          # Keep Git paths NUL-delimited until they are separate shell arguments.
+          # Prefix each path so a filename cannot be parsed as a policy option.
+          export GIT_NO_REPLACE_OBJECTS=1
+          test -s "$RUNNER_TEMP/guard.py"
+          git --no-replace-objects diff --name-only --no-renames -z "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/changed.nul"
+          mapfile -d '' -t changed < "$RUNNER_TEMP/changed.nul"
+          files=()
+          for path in "${changed[@]}"; do files+=("./$path"); done
+          python "$RUNNER_TEMP/guard.py" --branch="$HEAD_BRANCH" --labels="$LABELS" --files "${files[@]}"
+      - name: Check a pushed generator branch against trusted integration ancestry
         if: github.event_name == 'push'
         env:
           HEAD_BRANCH: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          git -c credential.helper='!gh auth git-credential' fetch --no-tags origin star/next
-          cp star/protected_paths.py "$RUNNER_TEMP/guard.py"
-          git show origin/star/next:star/protected_paths.py > "$RUNNER_TEMP/guard.py" 2>/dev/null || true
-          git diff --name-only --no-renames "origin/star/next...${GITHUB_SHA}" > "$RUNNER_TEMP/changed.txt"
-          xargs -a "$RUNNER_TEMP/changed.txt" -d '\n' python "$RUNNER_TEMP/guard.py" --branch "$HEAD_BRANCH" --files
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/$HEAD_BRANCH" ]]
+          # These are fixed owner-controlled integration refs. Pin both tips in
+          # private local refs; do not infer trust from a generator's parent,
+          # push.before, PR-selected branch, commit date, or distance from HEAD.
+          git -c credential.helper='!gh auth git-credential' fetch --no-tags origin \
+            refs/heads/main:refs/protected-closure/main \
+            refs/heads/star/next:refs/protected-closure/next
+          python -I - <<'PUSH_GUARD'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import runpy
+          import subprocess
+          import sys
+          import tempfile
+
+          # Replacement objects must not rewrite the ancestry being checked.
+          os.environ['GIT_NO_REPLACE_OBJECTS'] = '1'
+
+          def git(*args, allowed=(0,), binary=False):
+              result = subprocess.run(['git', '--no-replace-objects', *args],
+                                      capture_output=True, text=not binary, timeout=30)
+              if result.returncode not in allowed:
+                  detail = result.stderr.decode('utf-8', 'replace') if binary else result.stderr
+                  raise RuntimeError('git ' + args[0] + ' failed: ' + detail.strip()[:300])
+              return result
+
+          def commit(ref):
+              value = git('rev-parse', '--verify', ref + '^{commit}').stdout.strip()
+              if not re.fullmatch('[0-9a-f]{40}', value):
+                  raise RuntimeError('Expected one complete commit identity for ' + ref)
+              return value
+
+          def ancestor(first, second):
+              return git('merge-base', '--is-ancestor', first, second,
+                         allowed=(0, 1)).returncode == 0
+
+          def main():
+              head = os.environ['GITHUB_SHA']
+              branch = os.environ['HEAD_BRANCH']
+              if not re.fullmatch('[0-9a-f]{40}', head) or commit('HEAD') != head:
+                  raise RuntimeError('Checkout differs from the exact pushed commit')
+              if git('rev-parse', '--is-shallow-repository').stdout.strip() != 'false':
+                  raise RuntimeError('Complete history is required for the push guard')
+              trusted = {'main': commit('refs/protected-closure/main'),
+                         'star/next': commit('refs/protected-closure/next')}
+              bases = set()
+              for name, tip in trusted.items():
+                  result = git('merge-base', '--all', head, tip, allowed=(0, 1))
+                  found = result.stdout.split()
+                  if result.returncode != 0 or not found:
+                      raise RuntimeError('No common ancestry with trusted ' + name)
+                  if any(not re.fullmatch('[0-9a-f]{40}', value) for value in found):
+                      raise RuntimeError('Invalid merge-base identity from git')
+                  bases.update(found)
+              # A candidate is removed only when another trusted common ancestor
+              # descends from it. Incomparable maxima and criss-cross history need
+              # explicit integration review; there is no tie-break or fallback.
+              maximal = sorted(base for base in bases
+                               if not any(base != other and ancestor(base, other)
+                                          for other in bases))
+              if len(maximal) != 1:
+                  raise RuntimeError('Ambiguous trusted integration ancestry: ' + ', '.join(maximal))
+              base = maximal[0]
+              # Policy always comes from authenticated, pinned main, including
+              # when star/next supplied the comparison base. Never execute the
+              # generator's guard or fall back after an extraction failure.
+              source = trusted['main'] + ':star/protected_paths.py'
+              if git('cat-file', '-t', source).stdout.strip() != 'blob':
+                  raise RuntimeError('Trusted main guard is not a blob')
+              guard = git('show', source, binary=True).stdout
+              if not guard.strip():
+                  raise RuntimeError('Trusted main guard is empty')
+              print(json.dumps({'push_head': head, 'trusted_tips': trusted,
+                                'common_bases': sorted(bases), 'comparison_base': base,
+                                'policy_commit': trusted['main'],
+                                'policy_sha256': hashlib.sha256(guard).hexdigest()}), flush=True)
+              with tempfile.TemporaryDirectory(prefix='trusted-push-guard-',
+                                               dir=os.environ['RUNNER_TEMP']) as directory:
+                  path = Path(directory) / 'guard.py'
+                  path.write_bytes(guard)
+                  policy = runpy.run_path(str(path))
+                  if not callable(policy.get('main')) or not callable(policy.get('is_generator_branch')):
+                      raise RuntimeError('Trusted main guard has no supported entry points')
+                  if not policy['is_generator_branch'](branch):
+                      raise RuntimeError('Push guard expects a generator branch; integration pushes need a separate baseline')
+                  # The trusted guard uses a NUL-delimited --no-renames diff.
+                  # A push has no owner-label override. Compare the entire branch
+                  # since its trusted base, including forbidden edits in an earlier push.
+                  return policy['main'](['--branch', branch, '--base', base])
+
+          try:
+              result = main()
+          except Exception as error:
+              print('protected closure: cannot establish trusted push diff: ' + str(error),
+                    file=sys.stderr)
+              result = 2
+          raise SystemExit(result)
+          PUSH_GUARD
