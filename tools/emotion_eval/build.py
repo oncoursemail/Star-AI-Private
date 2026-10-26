@@ -17,9 +17,8 @@ def state_for(sc, directory):
     engine = EmotionEngine(os.path.join(directory, sc['name'] + '.sqlite3'), clock=clock)
     person = sc.get('person')
     engine.on_event('owner_message', person=person)
-    for _ in range(sc.get('bond', 0)):
-        clock.now += 120
-        engine.on_message('thanks, great job', person=person)
+    if sc.get('bond'):      # an established friend, set directly (not 40 scripted chats that would leave pride and joy behind)
+        engine._transaction(lambda state, now: state['bonds'].update({person: [sc['bond'], now]}))
     clock.now += 600
     for step in sc['events']:
         if step[0] == 'wait':

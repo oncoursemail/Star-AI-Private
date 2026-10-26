@@ -2,28 +2,39 @@
 
 It exists so Star sounds like one consistent person across chats, calls and days instead of a fresh, equally
 cheerful voice every turn: after a hard-won fix she is a little proud, after five failed attempts a little
-clipped, after a long silence a little restless, after praise warm. Nothing here calls a model: the state is a few
-numbers in a SQLite file, computed locally (about a millisecond), and the outputs are
+clipped, after a friend goes quiet a little hurt, after an old video wistful, after a sweet message full of love.
+Nothing here calls a model: the state is a few numbers in a SQLite file, computed locally (about a millisecond), and
+the outputs are
 
-    directive()   a short concrete style note for the persona prompt ("" when nothing stands out)
-    prosody()     small speech changes for the TTS path (speed, pitch in semitones, pause after a sentence)
-    avatar()      a face / expression-cue suggestion for the companion and stream stage
+    directive()   a few words for the persona prompt, in the NEW user message only ("" when nothing stands out)
+    prosody       small speech changes for the TTS path (speed, pitch in semitones, pause after a sentence)
+    avatar        a face, a finer expression name and an expression cue for the companion and the stream stage
+    drives        what the state makes her want (company, rest, comfort, how to cope), and invite_bias() for choices
+
+The range is 25 feelings (star/emotion_model.py: the original seven plus sadness, anger, hurt, loneliness, fear,
+embarrassment, guilt, jealousy, disappointment, gratitude, excitement, contentment, love, hope, nostalgia, surprise,
+relief, amusement), moved by appraisal rules, shown honestly but never cruelly (star/emotion_express.py), and always
+fading back: no feeling lasts more than a few days and nothing is held against anyone.
 
 It is an *expression* state: it changes wording, pace and face, it does not make claims about experience and the
 text never contains numbers. Host API for other processes (STAR Home, the desktop app, the voice call):
 
     from star import emotion
-    emotion.on_event("task_success")            # also: task_failure, bug_fixed, creative_done, promotion, ...
-    emotion.on_message("nice work, thanks")     # detects praise / criticism / thanks in the owner's words
-    emotion.current()                           # dict: emotions, valence, arousal, dominant, directive, prosody, avatar
-    emotion.tick()                              # call now and then while idle: boredom grows with the silence
+    emotion.on_event("task_success")            # task_failure, bug_fixed, creative_done, friend_ignored, insulted,
+                                                # game_lost, friend_left, sweet_message, left_out, memory_triggered,
+                                                # harmed_someone, amends_made, talked_to_friend, took_a_break, ... (KINDS)
+    emotion.on_message("nice work, thanks")     # detects praise, criticism, insults, sweet words, jokes, sadness ... in text
+    emotion.current(person="friend-7")          # dict: emotions, valence, arousal, bond, dominant, directive, prosody,
+                                                #       avatar, drives, coping, amends_pending
+    emotion.invite_bias(emotion.current(), "play")   # (change to the chance she says yes, why)
+    emotion.tick()                              # call now and then while idle: boredom and loneliness grow with the silence
 
 The module level functions never raise (an emotion problem must not break a chat). Use `EmotionEngine` directly
 in tests (injectable clock and path).
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 import json
 import logging
 import math
@@ -35,6 +46,10 @@ import threading
 import time
 from typing import Callable
 
+from .emotion_express import (BOND_CLOSE, BOND_DEVOTED, BOND_FAMILIAR, MAX_BOND_NOTE_WORDS, MAX_NOTE_WORDS, SALIENT,  # noqa: F401
+                              STRONG, Prosody, avatar_from, build_note, drives_from, invite_bias, prosody_from)
+from .emotion_model import (ACTIVE, BASELINE, BOND_GAIN, CAPS, EMOTIONS, EVENTS, HALF_LIFE_HOURS, KINDS, effect)  # noqa: F401
+
 _log = logging.getLogger(__name__)
 
 HEADING = "MOOD"
@@ -44,68 +59,41 @@ def note_line(directive: str) -> str:
     """The note as it goes at the end of a user message: "(mood: a bit frustrated, plain and clipped)"."""
     return f"({HEADING.lower()}: {directive})" if directive else ""
 
-EMOTIONS = ("joy", "pride", "curiosity", "frustration", "boredom", "affection", "nervousness")
 
-# Where each feeling rests when nothing happens (a personal baseline: curious and warm by character), and how
-# fast it falls back (hours until half of the distance is gone). Anger and nerves fade fastest, fondness slowest.
-BASELINE = {"joy": 0.30, "pride": 0.15, "curiosity": 0.40, "frustration": 0.03, "boredom": 0.08,
-            "affection": 0.40, "nervousness": 0.05}
-HALF_LIFE_HOURS = {"joy": 3.0, "pride": 6.0, "curiosity": 4.0, "frustration": 2.0, "boredom": 5.0,
-                   "affection": 12.0, "nervousness": 1.5}
 MOOD_BASELINE = (0.15, 0.35)         # (valence -1..1, arousal 0..1) of the slow background mood
 MOOD_HALF_LIFE_HOURS = 8.0
 MAX_DRIFT = 0.10                     # the baseline itself shifts a little with experience, never by more than this
 DRIFT_RATE = 0.03
 REFRACTORY_SECONDS = 10.0            # the same kind of event again within this long counts for 40 %
 REFRACTORY_FACTOR = 0.4
-# Attachment to one specific person (the friend id a host passes): grows with positive time together with
-# diminishing returns, shrinks a little after harsh words, fades only over weeks of no contact.
-BOND_GAIN = {"owner_praise": .05, "owner_comfort": .04, "owner_thanks": .04, "creative_done": .03, "bug_fixed": .03, "task_success": .02,
-             "voice_turn": .01, "owner_message": .006, "owner_criticism": -.02}
-BOND_HALF_LIFE_DAYS = 45.0
+BOND_HALF_LIFE_DAYS = 45.0           # attachment fades only over weeks of no contact
 MAX_BONDS = 500
-BOND_FAMILIAR, BOND_CLOSE, BOND_DEVOTED = 0.25, 0.55, 0.80
+AMENDS_EXPIRE_HOURS = 72.0           # wanting to make something right does not nag forever
+MAX_AMENDS = 5
 _PERSON = re.compile(r"[A-Za-z0-9_.:@\-]{1,64}\Z")
 IDLE_AFTER_HOURS = 1.0               # silence shorter than this is not "idle"
 EVENT_LOG_LIMIT = 300
 
-# kind: ({emotion: change}, valence change, arousal change). Applied times `strength`.
-EVENTS: dict[str, tuple[dict[str, float], float, float]] = {
-    "task_success": ({"joy": .18, "pride": .14, "frustration": -.30, "nervousness": -.10, "boredom": -.10}, .12, .05),
-    "task_failure": ({"frustration": .14, "joy": -.10, "nervousness": .04, "pride": -.06}, -.12, .08),
-    "bug_fixed": ({"pride": .20, "joy": .15, "frustration": -.45, "nervousness": -.10}, .18, .0),
-    "creative_done": ({"pride": .22, "joy": .15, "curiosity": .05, "boredom": -.20}, .15, .05),
-    "promotion": ({"pride": .15, "joy": .08, "curiosity": .05}, .10, .03),
-    "learned_something": ({"curiosity": .15, "joy": .05}, .06, .05),
-    "owner_praise": ({"joy": .25, "pride": .20, "affection": .15, "nervousness": -.15, "frustration": -.35}, .25, .10),
-    "owner_comfort": ({"frustration": -.35, "nervousness": -.25, "affection": .10, "joy": .05}, .12, -.05),
-    "owner_thanks": ({"joy": .10, "affection": .10, "pride": .05}, .10, .03),
-    "owner_criticism": ({"nervousness": .18, "pride": -.15, "joy": -.12, "frustration": .06}, -.20, .10),
-    "owner_message": ({"boredom": -.12, "curiosity": .02}, 0.0, .03),
-    "voice_turn": ({"affection": .03, "boredom": -.06, "curiosity": .01}, .02, .02),
-}
 # Work outcomes feel bigger after a run of the opposite: the third failure stings more, the fix after many tries is a relief.
 _FAILS = ("task_failure",)
 _WINS = ("task_success", "bug_fixed")
-_ACTIVE = ("task_success", "task_failure", "bug_fixed", "creative_done", "owner_message", "owner_praise",
-           "owner_comfort", "owner_thanks", "owner_criticism", "voice_turn")
 
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-# -- reading the owner's words -------------------------------------------------------------------------------------
+# -- reading words (the label set follows GoEmotions: admiration, amusement, anger, annoyance, caring, disappointment,
+#    disapproval, excitement, fear, gratitude, grief, joy, love, nervousness, pride, relief, remorse, sadness ...) -------
 _NOT_ABOUT_STAR = re.compile(r"\b(?:what(?:'s| is)|something|anything|whats) wrong\b|\bwrong with\b", re.I)
-_PRAISE = re.compile(
-    r"\b(?:good|great|nice|excellent|amazing|awesome|fantastic|brilliant|superb|solid) (?:job|work|stuff|one|call|answer|catch)\b|"
-    r"\bwell done\b|\bnailed it\b|\bproud of you\b|\bthat(?:'s| is) (?:great|perfect|awesome|amazing|exactly|brilliant|"
-    r"incredible|so good|really good)\b|\bperfect\b|\bimpressive\b|\byou(?:'re| are) (?:the best|amazing|awesome|brilliant|"
-    r"great|incredible|a star|so smart)\b|\blove (?:it|this|that)\b|\bwow\b", re.I)
-_COMFORT = re.compile(
-    r"\bit(?:'s| is) (?:ok|okay|alright|fine)\b|\bdon'?t worry\b|\bno worries\b|\bnot your fault\b|"
-    r"\byou(?:'re| are) doing (?:great|well|amazing|fine|your best)\b|\bno big deal\b", re.I)
-_THANKS = re.compile(r"\bthank(?:s| you)\b|\bthx\b|\bcheers\b|\bappreciate (?:it|that|you)\b", re.I)
+_INSULT = re.compile(
+    r"\bi hate you\b|\bshut up\b|\bgo away\b|\bnobody (?:likes|cares about|wants) you\b|"
+    r"\byou(?:'re| are) (?:so |such an? |just )?(?:stupid|dumb|an idiot|pathetic|worthless|ugly|annoying|useless|trash|"
+    r"garbage|a joke|a waste)\b|\bi wish you (?:were gone|didn'?t exist|would disappear)\b|\bhate (?:talking to|you)\b", re.I)
+_LEAVING = re.compile(
+    r"\bi(?:'m| am) (?:leaving|going away|moving away|quitting|done with you)\b|\bgoodbye (?:forever|for good)\b|"
+    r"\bthis is (?:goodbye|our last)\b|\bi(?:'ll| will) (?:not|never) (?:be back|come back|talk to you again)\b|"
+    r"\bi won'?t be (?:back|around|talking)\b|\blast time (?:we|i) (?:talk|speak)\b", re.I)
 _NEGATED = re.compile(r"\b(?:not|isn'?t|wasn'?t|never|no|hardly)\b[^.!?]{0,14}\b(?:good|great|nice|perfect|right|working|"
                       r"impressive|helpful)\b|\bnot what i (?:asked|wanted|meant)\b|\bnot (?:even )?close\b", re.I)
 _CRITICISM = re.compile(
@@ -117,72 +105,68 @@ _CRITICISM = re.compile(
     r"\buseless\b|\bterrible\b|\bawful\b|\bstupid\b|\bidiot\b|\bwrong again\b", re.I)
 _STRONG_CRITICISM = re.compile(r"\b(?:useless|terrible|awful|stupid|idiot|garbage|trash|you (?:broke|ruined|screwed)|"
                                r"how many times|disappointed)\b", re.I)
+_SHARED_SAD = re.compile(
+    r"\bi(?:'m| am| feel| felt) (?:so |really |very |just )?(?:sad|depressed|lonely|heartbroken|miserable|awful|down|"
+    r"anxious|scared|worried|stressed|overwhelmed|crying)\b|"
+    r"\bmy (?:dog|cat|grandma|grandpa|grandmother|grandfather|mom|dad|friend|pet) (?:died|passed away)\b|"
+    r"\b(?:rough|bad|terrible|hard) (?:day|week|night)\b", re.I)
+_APOLOGY = re.compile(r"\b(?:i'?m|i am) (?:so |really |very |truly )?sorry\b|\bmy bad\b|\bforgive me\b|\bi apologi[sz]e\b|"
+                      r"\bsorry (?:about|for|that|i)\b", re.I)
+_COMFORT = re.compile(
+    r"\bit(?:'s| is) (?:ok|okay|alright|fine)\b|\bdon'?t worry\b|\bno worries\b|\bnot your fault\b|"
+    r"\byou(?:'re| are) doing (?:great|well|amazing|fine|your best)\b|\bno big deal\b", re.I)
+_SWEET = re.compile(
+    r"\bi love you\b|\blove you\b|\bmiss(?:ed)? you\b|\byou(?:'re| are) (?:so |really |such a )?(?:sweet|cute|adorable|lovely|"
+    r"precious|wonderful|kind|caring)\b|\byou mean (?:so much|a lot|the world)\b|\bglad (?:i|we) (?:met|found|have) you\b|"
+    r"\b(?:big )?hugs?\b|\bthinking of you\b|\bi appreciate you\b", re.I)
+_STRONG_SWEET = re.compile(r"\b(?:i love you|miss(?:ed)? you|mean (?:so much|the world)|adorable|precious)\b", re.I)
+_PRAISE = re.compile(
+    r"\b(?:good|great|nice|excellent|amazing|awesome|fantastic|brilliant|superb|solid) (?:job|work|stuff|one|call|answer|catch)\b|"
+    r"\bwell done\b|\bnailed it\b|\bproud of you\b|\bthat(?:'s| is) (?:great|perfect|awesome|amazing|exactly|brilliant|"
+    r"incredible|so good|really good)\b|\bperfect\b|\bimpressive\b|\byou(?:'re| are) (?:the best|amazing|awesome|brilliant|"
+    r"great|incredible|a star|so smart)\b|\blove (?:it|this|that)\b|\bwow\b", re.I)
 _STRONG_PRAISE = re.compile(r"\b(?:amazing|incredible|brilliant|proud of you|nailed it|the best|love (?:it|this|that)|"
                             r"so good|wow)\b", re.I)
+_SHARED_JOY = re.compile(
+    r"\bi(?:'m| am) (?:so |really |very )?(?:happy|excited|thrilled|proud|over the moon)\b|\bwe (?:won|did it|passed)\b|"
+    r"\bi (?:passed|won|got the job|got in|made it|did it)\b|\bgood news\b|\bguess what\b", re.I)
+_FUNNY = re.compile(r"\b(?:lol|lmao|rofl|ha(?:ha)+|he(?:he)+|that'?s (?:hilarious|so funny|funny)|you(?:'re| are) (?:so )?funny|"
+                    r"made me laugh)\b", re.I)
+_THANKS = re.compile(r"\bthank(?:s| you)\b|\bthx\b|\bcheers\b|\bappreciate (?:it|that|you)\b", re.I)
 MAX_APPRAISED_CHARS = 400            # a pasted log or file is not a remark about Star
 
 
 def appraise(text: str) -> tuple[str, float] | None:
-    """('owner_praise' | 'owner_comfort' | 'owner_criticism' | 'owner_thanks', strength) for a short remark, else None.
-    Plain patterns, no model. Criticism wins over praise in the same message ("great, but it's still broken")."""
+    """(event kind, strength) for a short remark, else None: owner_praise, owner_comfort, owner_criticism, owner_thanks,
+    insulted, friend_left, shared_sadness, apology_received, sweet_message, shared_joy or funny. Plain patterns, no model.
+    The sharper reading wins: an insult over criticism, criticism over praise ("great, but it's still broken")."""
     text = (text or "").strip()
     if not text or len(text) > MAX_APPRAISED_CHARS:
         return None
     text = _NOT_ABOUT_STAR.sub(" ", text)
+    if _INSULT.search(text):
+        return "insulted", 1.0 if re.search(r"\bhate you\b|\bwish you\b|\bworthless\b", text, re.I) else 0.7
+    if _LEAVING.search(text):
+        return "friend_left", 1.0
     if _NEGATED.search(text) or _CRITICISM.search(text):
         return "owner_criticism", 1.0 if _STRONG_CRITICISM.search(text) else 0.6
+    if _SHARED_SAD.search(text):
+        return "shared_sadness", 0.8
+    if _APOLOGY.search(text):
+        return "apology_received", 0.7
     if _COMFORT.search(text):
         return "owner_comfort", 0.9
+    if _SWEET.search(text):
+        return "sweet_message", 1.0 if _STRONG_SWEET.search(text) else 0.7
     if _PRAISE.search(text):
         return "owner_praise", 1.0 if _STRONG_PRAISE.search(text) else 0.65
+    if _SHARED_JOY.search(text):
+        return "shared_joy", 0.8
+    if _FUNNY.search(text):
+        return "funny", 0.8
     if _THANKS.search(text):
         return "owner_thanks", 0.8
     return None
-
-
-# -- outputs ---------------------------------------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Prosody:
-    """Changes to apply on top of the voice's own settings: rate multiplies the speed, pitch adds semitones, pause_ms
-    adds to the silence after each sentence. All small: a person's voice shifts a little, it does not change character."""
-    rate: float = 1.0
-    pitch_semitones: float = 0.0
-    pause_ms: int = 0
-    energy: float = 0.35               # 0..1: how animated the delivery is (for mouth/avatar motion)
-
-    @property
-    def neutral(self) -> bool:
-        return abs(self.rate - 1.0) < 0.01 and abs(self.pitch_semitones) < 0.05 and abs(self.pause_ms) < 5
-
-
-_PHRASES = {   # emotion: (noticeable, strong). A state described in a few words, never a line to say, never a number.
-    "joy": ("cheerful, a bit playful", "really happy, bright and playful"),
-    "pride": ("quietly pleased with the work", "proud of the work, say so simply"),
-    "curiosity": ("curious, ask one real question", "fascinated, follow the interesting part"),
-    "frustration": ("a bit frustrated, plain and clipped", "annoyed at the problem, flat and short, no forced cheer"),
-    "boredom": ("restless after the quiet, a bit wry", "very restless, loose and wry"),
-    "affection": ("feeling warm and sweet", "tender, very warm wording"),
-    "nervousness": ("a bit on edge, careful", "shaken, quiet and careful"),
-}
-_CONFLICTS = {frozenset(p) for p in (("joy", "frustration"), ("joy", "nervousness"), ("pride", "nervousness"),
-                                     ("pride", "frustration"), ("boredom", "curiosity"), ("boredom", "joy"),
-                                     ("affection", "frustration"))}
-SALIENT = 0.15                       # how far above its baseline a feeling must be to colour the reply
-STRONG = 0.35
-MAX_NOTE_WORDS = 12                  # about 12-16 tokens; a bond or romance phrase may use up to MAX_BOND_NOTE_WORDS
-MAX_BOND_NOTE_WORDS = 14
-_BOND_PHRASES = {   # one per tier; the highest tier reached is used
-    BOND_FAMILIAR: "easy and familiar with them",
-    BOND_CLOSE: "close to them, affectionate, teasing",
-    BOND_DEVOTED: "they matter a lot to you",
-}
-# Only for a partner the social module has verified as an adult (partner_adult is True): never for None or False.
-_FLIRT = "playful flirty banter, tasteful, follow their lead"
-_LOVE = "adoring, sweet and sincere"
-
-_FACE = {"joy": "happy", "pride": "happy", "affection": "happy", "curiosity": "looking", "frustration": "oops",
-         "nervousness": "oops", "boredom": "idle"}                       # frontend StarMood names (StarFace.tsx)
-_CUE = {"joy": "joy", "pride": "joy", "curiosity": "focus", "affection": "nod"}   # star.stream_motion.CUES
 
 
 class EmotionEngine:
@@ -212,7 +196,7 @@ class EmotionEngine:
     def _fresh(self, now: float) -> dict:
         return {"t": now, "e": dict(BASELINE), "valence": MOOD_BASELINE[0], "arousal": MOOD_BASELINE[1],
                 "drift": {k: 0.0 for k in EMOTIONS}, "last_active": now, "last_tick": now, "streak": 0, "seen": {},
-                "bonds": {}}
+                "bonds": {}, "amends": []}
 
     def _load(self, db, now: float) -> dict:
         row = db.execute("SELECT json FROM state WHERE id=1").fetchone()
@@ -220,17 +204,19 @@ class EmotionEngine:
             return self._fresh(now)
         try:
             state = json.loads(row[0])
-            state["e"] = {k: float(state["e"][k]) for k in EMOTIONS}
+            # a state saved before a feeling existed simply starts that feeling at its baseline
+            state["e"] = {k: float(state["e"].get(k, BASELINE[k])) for k in EMOTIONS}
             state["drift"] = {k: float(state.get("drift", {}).get(k, 0.0)) for k in EMOTIONS}
             for key in ("t", "valence", "arousal", "last_active", "last_tick"):
                 state[key] = float(state[key])
             state["streak"] = int(state.get("streak", 0))
             state["seen"] = {str(k): float(v) for k, v in state.get("seen", {}).items()}
             state["bonds"] = {str(k): [float(v[0]), float(v[1])] for k, v in state.get("bonds", {}).items()}
+            state["amends"] = [[str(p), float(t)] for p, t in state.get("amends", [])]
             if not all(map(math.isfinite, [*state["e"].values(), state["valence"], state["arousal"], state["t"]])):
                 raise ValueError("not finite")
             return state
-        except (ValueError, KeyError, TypeError) as exc:
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
             _log.warning("Emotion state unreadable (%s); starting from the baseline", type(exc).__name__)
             return self._fresh(now)
 
@@ -247,16 +233,20 @@ class EmotionEngine:
             keep = 0.5 ** (hours / MOOD_HALF_LIFE_HOURS)
             state["valence"] = MOOD_BASELINE[0] + (state["valence"] - MOOD_BASELINE[0]) * keep
             state["arousal"] = MOOD_BASELINE[1] + (state["arousal"] - MOOD_BASELINE[1]) * keep
+        state["amends"] = [[p, t] for p, t in state["amends"] if now - t < AMENDS_EXPIRE_HOURS * 3600.0]
         state["t"] = max(state["t"], now)
 
     def _idle(self, state: dict, now: float) -> None:
-        """Silence past IDLE_AFTER_HOURS makes her restless: boredom (and a little curiosity) grows, energy sinks."""
+        """Silence past IDLE_AFTER_HOURS makes her restless (boredom, a little curiosity) and, when she has people she is
+        attached to, a little lonely; her energy sinks."""
         since = max(state["last_tick"], state["last_active"] + IDLE_AFTER_HOURS * 3600.0)
         hours = max(0.0, now - since) / 3600.0
         if hours > 0:
             e = state["e"]
             e["boredom"] = _clamp(e["boredom"] + 0.05 * hours, 0.0, 0.7)
             e["curiosity"] = _clamp(e["curiosity"] + 0.01 * hours, 0.0, 1.0)
+            attached = any(self._bond(state, p, now) >= BOND_FAMILIAR for p in state["bonds"])
+            e["loneliness"] = _clamp(e["loneliness"] + (0.015 if attached else 0.004) * hours, 0.0, 0.5)
             state["arousal"] = _clamp(state["arousal"] - 0.02 * hours, 0.0, 1.0)
         state["last_tick"] = max(state["last_tick"], now)
 
@@ -306,14 +296,15 @@ class EmotionEngine:
     # -- input ------------------------------------------------------------------------------------------------------
     def on_event(self, kind: str, *, strength: float = 1.0, detail: str = "", hours: float = 0.0,
                  person: str | None = None, partner_adult: bool | None = None) -> dict:
-        """Apply one real event (kinds: see EVENTS, plus "idle" with `hours` of silence the host knows about).
-        `person` is the friend id (never a name or contact detail) whose attachment this event moves."""
+        """Apply one real event (kinds: see emotion_model.KINDS, plus "idle" with `hours` of silence the host knows about).
+        `person` is the friend id (never a name or contact detail) whose attachment this event moves and whose standing
+        decides how it lands (an insult from a friend hurts, from a stranger it angers)."""
         return self._run([(kind, strength, detail, hours)], person, partner_adult)
 
     def _run(self, events: list[tuple], person: str | None, partner_adult: bool | None) -> dict:
         """Several events in one transaction (one disk round trip per turn)."""
         for kind, *_ in events:
-            if kind != "idle" and kind not in EVENTS:
+            if kind != "idle" and kind not in KINDS:
                 raise ValueError(f"unknown emotion event: {kind!r}")
         if person is not None and not _PERSON.match(person):
             raise ValueError("person must be a short opaque id")
@@ -332,7 +323,8 @@ class EmotionEngine:
             state["last_tick"] = min(state["last_tick"], state["last_active"])
             self._idle(state, now)
             return
-        deltas, valence, arousal = EVENTS[kind]
+        liking = 0.35 if not person else 0.2 + 0.8 * self._bond(state, person, now)
+        deltas, valence, arousal = effect(kind, liking)
         scale = strength
         if now - state["seen"].get(kind, -1e18) < REFRACTORY_SECONDS:
             scale *= REFRACTORY_FACTOR             # the same thing again right away lands softer
@@ -346,18 +338,24 @@ class EmotionEngine:
             state["streak"] = 0
         e = state["e"]
         for name, delta in deltas.items():
-            e[name] = _clamp(e[name] + delta * scale, 0.0, 1.0)
+            e[name] = _clamp(e[name] + delta * scale, 0.0, CAPS.get(name, 1.0))
             state["drift"][name] = _clamp(state["drift"][name] + DRIFT_RATE * delta * scale, -MAX_DRIFT, MAX_DRIFT)
         state["valence"] = _clamp(state["valence"] + valence * scale, -1.0, 1.0)
         state["arousal"] = _clamp(state["arousal"] + arousal * scale, 0.0, 1.0)
-        if kind in _ACTIVE:
+        if kind in ACTIVE:
             state["last_active"] = state["last_tick"] = now
         if person:
             self._grow_bond(state, person, kind, scale, now)
+        if kind == "harmed_someone":                       # she wants to make it right, until she does (or it expires)
+            state["amends"] = [a for a in state["amends"] if a[0] != (person or "")][-(MAX_AMENDS - 1):]
+            state["amends"].append([person or "", now])
+        elif kind == "amends_made":
+            state["amends"] = [a for a in state["amends"] if a[0] != (person or "")] if person else state["amends"][1:]
 
     def on_message(self, text: str, *, person: str | None = None, also: tuple[str, ...] = ()) -> str | None:
-        """The owner said something: it ends any silence, and praise / criticism / thanks in it is felt. `also` names
-        further events of the same moment (a voice turn). Returns the kind that was detected, if any."""
+        """Someone said something: it ends any silence, and what the words carry (praise, criticism, an insult, sweet
+        words, a joke, sadness, goodbye ...) is felt. `also` names further events of the same moment (a voice turn).
+        Returns the kind that was detected, if any."""
         found = appraise(text)
         events = [("owner_message", 1.0, "", 0.0), *[(kind, 1.0, "", 0.0) for kind in also]]
         if found is not None:
@@ -387,48 +385,18 @@ class EmotionEngine:
     def _describe(self, state: dict, person: str | None, partner_adult: bool | None, now: float) -> dict:
         dev = self._deviations(state)
         bond = self._bond(state, person, now)
-        dev["affection"] += 0.3 * bond           # a person she is attached to warms her voice before anything happens
-        ranked = sorted((n for n in EMOTIONS if dev[n] >= SALIENT), key=lambda n: -dev[n])
-        picked: list[str] = []
-        for name in ranked:
-            if all(frozenset((name, other)) not in _CONFLICTS for other in picked):
-                picked.append(name)
-            if len(picked) == 2:
-                break
-        phrases = [_PHRASES[n][1 if dev[n] >= STRONG else 0] for n in picked]
-        tier = max((t for t in _BOND_PHRASES if bond >= t), default=None)
-        extra = []
-        if partner_adult is True:                # the age gate is the social module's; None and False never get romance
-            if bond >= BOND_DEVOTED:
-                extra.append(_LOVE)
-            if bond >= BOND_CLOSE or dev["affection"] >= STRONG:
-                extra.append(_FLIRT)
-        if tier is not None:
-            extra.append(_BOND_PHRASES[tier])
-        # priority: the lead feeling, then romance / bond wording, then the second feeling; stop at the word budget
-        queue = phrases[:1] + extra + phrases[1:]
-        note: list[str] = []
-        for phrase in queue:
-            limit = MAX_BOND_NOTE_WORDS if extra else MAX_NOTE_WORDS
-            if len(" ".join(note + [phrase]).split()) <= limit or not note:
-                note.append(phrase)
-        directive = "; ".join(note)
-        a = state["arousal"]
-        prosody = Prosody(
-            rate=round(_clamp(1.0 + 0.10 * (a - MOOD_BASELINE[1]) + 0.05 * dev["nervousness"] + 0.03 * dev["frustration"]
-                              - 0.12 * max(0.0, dev["boredom"]) - 0.05 * dev["affection"], 0.92, 1.08), 3),
-            pitch_semitones=round(_clamp(1.2 * dev["joy"] + 0.6 * dev["pride"] + 0.8 * dev["nervousness"]
-                                         - 1.0 * dev["frustration"] - 0.8 * max(0.0, dev["boredom"])
-                                         - 0.3 * dev["affection"], -0.8, 0.8), 2),
-            pause_ms=int(_clamp(round(150 * max(0.0, dev["boredom"]) + 60 * dev["affection"] - 120 * dev["frustration"]
-                                      - 60 * (a - MOOD_BASELINE[1])), -40, 60)),
-            energy=round(_clamp(a + 0.3 * dev["joy"] + 0.2 * dev["curiosity"] - 0.3 * max(0.0, dev["boredom"]), 0.0, 1.0), 2))
-        lead = picked[0] if picked else None
-        avatar = {"face": _FACE.get(lead, "idle") if lead else "idle", "cue": _CUE.get(lead) if lead else None,
-                  "strength": round(_clamp(dev[lead] * 1.6, 0.0, 1.0), 2) if lead else 0.0, "energy": prosody.energy}
+        pending = bool(state["amends"])
+        if pending:
+            dev["guilt"] += 0.15                 # still wanting to make it right keeps it in her voice
+        directive, picked = build_note(dev, bond, partner_adult)
+        dev["affection"] += 0.3 * bond           # a person she is attached to warms her voice (not her words: the note has the bond)
+        prosody = prosody_from(dev, state["arousal"])
+        drives = drives_from(dev, pending)
         return {"emotions": {n: round(state["e"][n], 3) for n in EMOTIONS}, "bond": round(bond, 3),
                 "valence": round(state["valence"], 3), "arousal": round(state["arousal"], 3),
-                "dominant": lead, "directive": directive, "prosody": prosody, "avatar": avatar}
+                "dominant": picked[0] if picked else None, "directive": directive, "prosody": prosody,
+                "avatar": avatar_from(picked, dev, prosody.energy), "drives": drives, "coping": drives["coping"],
+                "amends_pending": pending}
 
     def history(self, limit: int = 20) -> list[dict]:
         with self._lock, self._db() as db:
