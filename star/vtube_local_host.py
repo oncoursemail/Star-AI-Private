@@ -234,7 +234,13 @@ class VTubeLocalHost:
                 audible_cursor_s=audible_cursor_s,
                 sampled_ms=sampled_ms,
             )
-            if packet is None or not self._stage.current(plan):
+            if packet is None:
+                return False
+            # Frame generation itself can take >100 ms under CPU/game pressure.
+            # Reject it *again* at dispatch so late mouth/face motion is not
+            # emitted as though it were synchronized to audible speech.
+            dispatch_age_ms = self._monotonic() * 1000.0 - sampled_ms
+            if not 0 <= dispatch_age_ms <= 100 or not self._stage.current(plan):
                 return False
             self._exchange(packet["messageType"], packet["data"])
             return True
