@@ -100,6 +100,15 @@ def mood_line(emotion, person: Person | None = None, mode: rules.Mode | None = N
     return (note_line(text) if callable(note_line) else f"(mood: {text})") if text else ""
 
 
+def _inner_context(memory, person, text: str, *, first_turn: bool):
+    """star.inner's relationship card and recall note (off unless `inner_chat_enabled`); None when unavailable."""
+    try:
+        from ..inner import turn_context
+    except Exception:
+        return None
+    return turn_context(memory, person, text, first_turn=first_turn)
+
+
 class SocialChat:
     def __init__(self, memory: FriendMemory, *, complete: Callable[[str, str], str] | None = None,
                  emotion=..., clock: Callable[[], float] = time.time) -> None:
@@ -176,12 +185,14 @@ class SocialChat:
         lines = [f"[{who}] {said}" for who, said in (history or [])[-8:]]
         if not lines:
             lines = [f"[{p}] {line}" for p, line in self.memory.moments(person, 6)]
+        inner = _inner_context(self.memory, person, text, first_turn=not history)
         user = "\n\n".join(part for part in (
-            self.memory.context(person),
+            (inner.card if inner is not None else "") or self.memory.context(person),
             "Recent chat:\n" + "\n".join(lines) if lines else "",
             f"{person.name} says: {text}",
             f"({intent})" if intent else "",
-            mood_line(self._emotion, person, mode)) if part)
+            mood_line(self._emotion, person, mode),
+            inner.note if inner is not None else "") if part)
         raw = _SPEAKER.sub("", strip_reasoning(self._complete(system, user) or ""))
         reply = rules.check_outgoing(raw, incoming=text, mode=mode, platform=platform, roleplay=roleplay)
         romantic_in = bool(rules.ROMANTIC.search(text))
@@ -200,6 +211,11 @@ class SocialChat:
         if person.relationship == "met" and len(self.memory.moments(person, FRIEND_AFTER)) >= FRIEND_AFTER:
             self.memory.update(person, relationship="friend")
         self._feel(text, person)
+        if inner is not None:
+            try:
+                inner.done()
+            except Exception:
+                pass
         return Reply(reply, person, mode, roleplay, person.remembered)
 
     def _fixed(self, text: str, person: Person, platform: str) -> Reply:

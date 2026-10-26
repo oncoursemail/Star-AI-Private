@@ -42,12 +42,23 @@ def _feel_outcome(interest: str, verified: bool, summary: str) -> None:
         _emotion("task_failure", strength=0.5, detail=detail)
 
 
+def _inner_tick(home: Path, chat) -> None:
+    """Her night (reflection, dream, self-review) and morning wake; idempotent, does nothing outside those windows."""
+    try:
+        from ..inner import night
+        complete = night.complete_from_chat(chat) if chat is not None else None
+        night.tick(life_home=home, **({"complete": complete} if complete else {}))
+    except Exception as exc:
+        control.log_action(home, "inner", "error", detail=str(exc)[:200])
+
+
 def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, probe=None, attention=None) -> dict:
     """One step of her day. With `attention` (star.home.attention): first answer what is waiting (a friend's message or
     call that is due), then do what she asked herself to start, else resume what was paused, else pick something."""
     if control.stopped(home):
         return {"state": "stopped"}
-    shared = {"interrupt": attention.interrupt, "situation": attention.situation} if attention is not None else {}
+    _inner_tick(home, chat)
+    shared ={"interrupt": attention.interrupt, "situation": attention.situation} if attention is not None else {}
 
     def context_for(platform: str) -> Context:
         return Context(home=Path(home), config=config, executor=executor, life=life, chat=chat,
