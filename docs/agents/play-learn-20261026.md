@@ -37,7 +37,14 @@ Research: `docs/research/play-learn-20261026.md`. Code: `star/play/learn/`. Test
 
 ## GPU synthetic run
 Allowed only when `python -m star.play.learn heavy-ok` exits 0 (owner idle >= 5 min, or 05:00-13:00Z). Result:
-PENDING (filled in below when run).
+Run 02:17Z, owner idle 357 s:
+`synth --out <scratch>/synth-gpu1 --frame 128x72 --episodes 600 --self-episodes 400 --steps 3000 --eval-n 200 --device cuda`
+- Base: 1.28 M params, 10,138 train samples, 3,000 steps in 101.7 s (fp16 AMP), 214 MB peak VRAM; val key accuracy
+  0.78, mouse bin accuracy 0.72. Inference p50 4.5 ms / p95 8.0 ms.
+- Eval with 200 paired attempts each: demonstrator 200/200; base at T=1.0 37/200; after one filtered-BC round
+  187/200 (promoted). Ablations (scratch `ablate.py`): the same fine-tune without the filter 156/200; base at T=0.5
+  196/200. Filtering helps beyond extra training, and on noisy demos the temperature is the biggest lever. Next: the
+  gate should also pick the temperature.
 
 ## Not done / limits
 - No real game learned and no real play recorded (not allowed on this PC). Data needed per game: 2-5 h of the

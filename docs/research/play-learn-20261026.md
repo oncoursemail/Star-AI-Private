@@ -92,7 +92,9 @@ runs only when she is not playing.
 - The cloned timing is human, reaction delays included, so no extra reaction delay is added on top. Adding one would
   make her slower than the people she learned from.
 - Actions are **sampled** from the predicted probabilities, as VPT does, so she varies the way people do. Temperature
-  can be set; it defaults to 1.0.
+  can be set; it defaults to 1.0. [measured, synthetic] At 1.0 a policy cloned from noisy play also copies the noise
+  (18.5% vs 98% at 0.5 on DotGame). Choose the temperature by the eval (0.5-1.0) for each game. Filtered BC also
+  removes noise, while keeping human-like variety.
 - **Mouse speed is capped** at the 99th percentile per-step movement of the recorded human play, stored in the
   checkpoint. A key or button holds its state for at least 60 ms, the lower end of human tap lengths
   (humanlike.py `tap_s`).
@@ -114,7 +116,8 @@ All on the dev PC (RTX 3060 Ti 8 GB, Windows 11). Synthetic DotGame only: no rea
 | CPU smoke (32x18 frames, 150 noisy demo episodes, 400 steps) | Pipeline end to end in ~60 s at below-normal priority. Base policy 27/40 successes (67.5%). After one filtered-BC round on her own recorded successes, 31/40 (77.5%), promoted by the gate. The 95% intervals overlap (52-80% vs 63-88%), so that is not yet evidence of improvement. The scripted demonstrator itself scored 40/40. |
 | Inference latency, roblox_obby net (128x72, stack 3, 1.29 M params), batch 1 | CUDA fp16: p50 3.9 ms, p95 6.5 ms, 12.5 MB peak VRAM (`python -m star.play.learn bench`, n=500). CPU: p50 10.5 ms, p95 25.8 ms. That fits a 20 Hz tick (50 ms) easily. |
 | Raw Input (owner recording) | Registered on a message-only window, saw both injected 1-px mouse moves (+1, -1) and stopped cleanly. The keyboard path was not exercised (no keys were injected into the owner's window). |
-| GPU run at 128x72 | See the notes file `docs/agents/play-learn-20261026.md` (run only when `heavy-ok` allows). |
+| GPU synthetic run, 128x72, 02:17Z with the owner idle 357 s (`synth --episodes 600 --self-episodes 400 --steps 3000 --eval-n 200 --device cuda`) | Recorded 600 noisy demo episodes (scripted player, eps 0.5) = 13,355 steps in 5.0 s, 904 KB on disk (synthetic frames compress far better than real ones). Base training: 1.28 M params, 10,138 train / 1,908 val samples, 3,000 steps in 101.7 s with fp16 AMP. Val: key accuracy 0.78, key F1 0.62, mouse bin accuracy 0.72 (0.79 within one bin). Inference p50 4.5 ms, p95 8.0 ms; 214 MB peak VRAM during training. |
+| Self-improvement on the same run (200 paired attempts each, same seeds) | Scripted demonstrator 200/200. Base policy at temperature 1.0: **37/200** (18.5%, CI 14-24%); it copies the demonstrator's 50% random actions. After **one filtered-BC round** (13,618 success steps, 1,000 fine-tune steps): **187/200** (93.5%, CI 89-96%), promoted by the gate. Ablation, same 1,000 steps on ALL steps (no filter): 156/200 (78%, CI 72-83%). So filtering beats plain extra training. Ablation, base at temperature 0.5: 196/200 (98%). On noisy demos, the sampling temperature matters as much as the fine-tune. |
 
 ## 7. Honest limits
 
@@ -141,6 +144,7 @@ All on the dev PC (RTX 3060 Ti 8 GB, Windows 11). Synthetic DotGame only: no rea
    `session_attempt(reflex_session(...))`, success = checkpoint reached.
 3. Then nightly `improve()`: she plays and records herself, runs filtered BC and the eval gate, and the result is
    promoted or rolled back automatically (#562).
-4. Add the human-likeness distribution report (section 5), then action chunking if long runs drift.
+4. Let the eval gate also pick the sampling temperature (try 0.5, 0.75, 1.0 per game). Add the human-likeness
+   distribution report (section 5), then action chunking if long runs drift.
 5. Later: a small IDM trained on her own labelled recordings, to label YouTube runs of the same game (the VPT recipe
    at small scale).
