@@ -26,6 +26,8 @@ INCLUDE = (
     "docs/agents/codex-social-lifecycle-20261026.md",
     "docs/agents/codex-minecraft-setup-20261026.md",
     "docs/research/star-emotion-evidence-20261026.md",
+    "docs/agents/emotion-20261026.md", "docs/agents/human-evals-20261026.md",
+    "docs/agents/inner-life-20261026.md",
     "docs/agents/codex-emotion-recovery-20261026.md",
     "docs/agents/codex-emotion-timing-20261026.md",
     "docs/agents/codex-memory-validation-20261026.md",
@@ -35,6 +37,10 @@ INCLUDE = (
     "docs/agents/codex-home-instance-20261026.md",
     "docs/agents/codex-home-audio-startup-20261026.md",
     "docs/agents/codex-release-prep-validation-20261026.md",
+    "docs/agents/codex-native-input-receipts-20261026.md",
+    "docs/agents/codex-native-pc-validation-20261026.md",
+    "docs/research/star-local-vision-20261026.md",
+    "docs/agents/codex-visual-grounding-validation-20261026.md",
 )
 EXPECTED = ("star/home/__main__.py", "installer/star-home/setup.cmd", "installer/star-home/pins.json",
             "star/art_studio.py", "star/stream_setup.py", "star/twitch_chat.py", "STAR-FIRST-START.md",
@@ -69,7 +75,7 @@ def verify(path: Path) -> dict:
 
 def build(output: Path) -> dict:
     commit = git("rev-parse", "HEAD").decode().strip()
-    raw = git("archive", "--format=zip", "HEAD", "--", *INCLUDE)
+    raw = git("archive", "--format=zip", commit, "--", *INCLUDE)
     files = {}
     payloads = {}
     with ZipFile(BytesIO(raw)) as source:

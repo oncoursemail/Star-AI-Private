@@ -1,7 +1,8 @@
 """The real Windows InputSink: SendInput with hardware scan codes (games that read raw/DirectInput see them too).
 
-Every call first checks that the game window is in front (`window_guard`), so nothing STAR plays ever lands in
-another program; if it is not in front the event is dropped and counted. Ordinary input only: no driver, no
+Ordinary input first checks that the game window is in front (`window_guard`); a refused event raises and is
+counted. Cleanup-only UP methods let trusted callers release their own held inputs after focus changes.
+Ordinary input only: no driver, no
 injection into the game process, nothing that hides from or works around anti-cheat.
 """
 from __future__ import annotations
@@ -18,6 +19,14 @@ _VK = {"space": 0x20, "enter": 0x0D, "escape": 0x1B, "esc": 0x1B, "tab": 0x09, "
        "alt": 0x12, "backspace": 0x08, "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27, "slash": 0xBF,
        "/": 0xBF}
 _EXTENDED = {0x25, 0x26, 0x27, 0x28}
+
+
+class InputDeliveryError(OSError):
+    """Windows did not confirm input delivery. Failed actions are never replayed automatically."""
+
+    def __init__(self, message: str, *, accepted: int | None = None):
+        super().__init__(message)
+        self.accepted = accepted  # None means unknown; zero means the owned press was not inserted.
 
 
 class MOUSEINPUT(ctypes.Structure):
@@ -64,19 +73,37 @@ class SendInputSink:  # pragma: no cover - sends real input on a Windows desktop
     def __init__(self, guard: Callable[[], bool]) -> None:
         self.guard = guard
         self.dropped = 0
+        self.accepted_events = 0
+        self.failed_events = 0
+        self.confirmed_moves = 0
         self._user32 = ctypes.windll.user32
 
-    def _send(self, inp: INPUT) -> None:
-        if not self.guard():
+    def _send(self, inp: INPUT, *, release: bool = False) -> None:
+        if not release and not self.guard():
             self.dropped += 1
-            return
-        self._user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+            raise InputDeliveryError("foreground guard refused input", accepted=0)
+        try:
+            accepted = self._user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+        except OSError:
+            self.dropped += 1
+            self.failed_events += 1
+            raise InputDeliveryError("Windows input delivery was not confirmed") from None
+        if type(accepted) is not int or accepted != 1:
+            self.dropped += 1
+            self.failed_events += 1
+            raise InputDeliveryError("Windows did not accept the requested input event", accepted=0 if type(accepted) is int and accepted == 0 else None)
+        self.accepted_events += 1
 
     def move_to(self, x: int, y: int) -> None:
         if self.guard():
-            self._user32.SetCursorPos(int(x), int(y))
+            if not self._user32.SetCursorPos(int(x), int(y)):
+                self.dropped += 1
+                self.failed_events += 1
+                raise InputDeliveryError("Windows did not confirm cursor placement", accepted=0)
+            self.confirmed_moves += 1
         else:
             self.dropped += 1
+            raise InputDeliveryError("foreground guard refused cursor placement", accepted=0)
 
     def move_rel(self, dx: int, dy: int) -> None:
         self._send(INPUT(INPUT_MOUSE, _U(mi=MOUSEINPUT(int(dx), int(dy), 0, MOUSEEVENTF_MOVE, 0, None))))
@@ -85,8 +112,17 @@ class SendInputSink:  # pragma: no cover - sends real input on a Windows desktop
         flag = _BUTTON_FLAGS[name][0 if down else 1]
         self._send(INPUT(INPUT_MOUSE, _U(mi=MOUSEINPUT(0, 0, 0, flag, 0, None))))
 
+    def release_button(self, name: str) -> None:
+        """Cleanup of a button owned by the caller; never presses or moves across a changed foreground."""
+        self._send(INPUT(INPUT_MOUSE, _U(mi=MOUSEINPUT(0, 0, 0, _BUTTON_FLAGS[name][1], 0, None))), release=True)
+
     def key(self, name: str, down: bool) -> None:
         vk = vk_of(name)
         scan = self._user32.MapVirtualKeyW(vk, 0)
         flags = KEYEVENTF_SCANCODE | (0 if down else KEYEVENTF_KEYUP) | (KEYEVENTF_EXTENDEDKEY if vk in _EXTENDED else 0)
         self._send(INPUT(INPUT_KEYBOARD, _U(ki=KEYBDINPUT(0, scan, flags, 0, None))))
+
+    def release_key(self, name: str) -> None:
+        scan = self._user32.MapVirtualKeyW(vk_of(name), 0)
+        flags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP | (KEYEVENTF_EXTENDEDKEY if vk_of(name) in _EXTENDED else 0)
+        self._send(INPUT(INPUT_KEYBOARD, _U(ki=KEYBDINPUT(0, scan, flags, 0, None))), release=True)

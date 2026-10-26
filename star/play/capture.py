@@ -11,12 +11,17 @@ Each frame carries its capture time, so the loop can measure capture -> input la
 from __future__ import annotations
 
 import ctypes
+import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Protocol
 
 if TYPE_CHECKING:
     import numpy as np
+
+# DXcam 0.3.0 returns one camera per output/backend. Independent STAR sources
+# must not borrow that singleton and then release each other's live resources.
+_DXCAM_OWNER = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -151,8 +156,18 @@ class MssCapture:  # pragma: no cover - reads the real screen
         import mss
         import numpy
         self._np, self._mss = numpy, mss.mss()
-        left, top, right, bottom = region or (0, 0, 1920, 1080)
-        self._box = {"left": left, "top": top, "width": right - left, "height": bottom - top}
+        try:
+            if region is None:
+                monitor = self._mss.monitors[1]
+                region = (monitor['left'], monitor['top'], monitor['left'] + monitor['width'],
+                          monitor['top'] + monitor['height'])
+            left, top, right, bottom = region
+            if right <= left or bottom <= top:
+                raise ValueError('invalid capture region')
+            self._box = {"left": left, "top": top, "width": right - left, "height": bottom - top}
+        except BaseException:
+            self._mss.close()
+            raise
         self.index = 0
 
     def grab(self) -> Frame | None:
@@ -168,31 +183,52 @@ class MssCapture:  # pragma: no cover - reads the real screen
 class DxcamCapture:  # pragma: no cover - reads the real screen through the GPU
     name = "dxcam"
 
-    def __init__(self, region: tuple[int, int, int, int] | None = None) -> None:
+    def __init__(self, region: tuple[int, int, int, int] | None = None, *, fresh_snapshot: bool = False) -> None:
         import dxcam
-        self._cam = dxcam.create(output_color="RGB")
-        self.region, self.index, self._last = region, 0, None
+        if not _DXCAM_OWNER.acquire(blocking=False):
+            raise RuntimeError('DXcam output already owned by another STAR capture')
+        try:
+            self._cam = dxcam.create(output_color="RGB")
+        except BaseException:
+            _DXCAM_OWNER.release()
+            raise
+        self._owns_camera = True
+        self.region, self.index = region, 0
+        self._fresh_snapshot = fresh_snapshot
+        self.timestamp_kind = 'sample_confirmation_started' if fresh_snapshot else 'new_frame_poll_started'
 
     def grab(self) -> Frame | None:
         t = time.perf_counter()
-        image = self._cam.grab(region=self.region)            # None when the screen did not change
-        if image is None:
-            image = self._last
+        # A fresh snapshot explicitly asks DXcam to confirm the current state even
+        # when pixels have not changed. Never re-date a locally cached old image.
+        camera = self._cam
+        if camera is None:
+            return None
+        kwargs = {'new_frame_only': False} if getattr(self, '_fresh_snapshot', False) else {}
+        image = camera.grab(region=self.region, **kwargs)
         if image is None:
             return None
-        self._last = image
         self.index += 1
         return Frame(self.index, t, image)
 
     def close(self) -> None:
-        del self._cam
+        camera = self._cam
+        if camera is not None:
+            camera.release()
+            self._cam = None
+            if getattr(self, '_owns_camera', False):
+                self._owns_camera = False
+                _DXCAM_OWNER.release()
 
 
-def open_capture(region: tuple[int, int, int, int] | None = None, prefer: tuple[str, ...] = ("dxcam", "mss", "gdi")
+def open_capture(region: tuple[int, int, int, int] | None = None, prefer: tuple[str, ...] = ("dxcam", "mss", "gdi"),
+                 *, fresh_snapshot: bool = False
                  ) -> FrameSource:  # pragma: no cover - picks a real backend
     errors = []
     for name in prefer:
         try:
+            if name == 'dxcam':
+                return DxcamCapture(region, fresh_snapshot=fresh_snapshot)
             return {"dxcam": DxcamCapture, "mss": MssCapture, "gdi": GdiCapture}[name](region)
         except Exception as exc:                               # missing package or no desktop: try the next one
             errors.append(f"{name}: {type(exc).__name__}")

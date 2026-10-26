@@ -7,7 +7,9 @@
 #   setup.cmd -DryRun            print every step and change NOTHING (no admin rights, no download, no install)
 #   setup.cmd -Yes               take every default and ask nothing (steps that need the owner are SKIPPED)
 #   setup.cmd -Skip cable,camera skip those steps          setup.cmd -Only models,acceptance   run only those steps
-#   setup.cmd -Grounder none     ask|ui-tars-2b|ui-tars-1.5-7b|none: the optional screen-reading model (default: ask)
+#   setup.cmd -Grounder none     ask|ui-tars-2b|qwen3-vl-2b|ui-tars-1.5-7b|none (default: ask; Qwen is explicit opt-in)
+#   setup.cmd -MinecraftLauncher modrinth  remember that choice; skip the official launcher, keep Java and Mineflayer
+#   setup.cmd -DiscordAccessibility  optional shortcut setup for UI Automation; normal Discord is unchanged by default
 #   setup.cmd -Uninstall         remove the scheduled task and desktop files (keeps her data and workspace)
 # Steps (ids for -Skip / -Only): preflight python files venv pip torch node apps models cable camera grounder discord
 #   config task controls ssh autologon nolock check optimize acceptance.
@@ -22,7 +24,9 @@ param(
     [switch]$Yes,
     [string[]]$Skip = @(),
     [string[]]$Only = @(),
-    [ValidateSet('ask', 'ui-tars-2b', 'ui-tars-1.5-7b', 'none')][string]$Grounder = 'ask'
+    [ValidateSet('ask', 'ui-tars-2b', 'qwen3-vl-2b', 'ui-tars-1.5-7b', 'none')][string]$Grounder = 'ask',
+    [ValidateSet('official', 'modrinth')][string]$MinecraftLauncher,
+    [switch]$DiscordAccessibility
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with the progress bar
@@ -69,6 +73,100 @@ function Mark-Skipped($detail, $fix = '') { Mark 'SKIPPED' $detail $fix }
 function Mark-Failed($detail, $fix = '') { Mark 'FAILED' $detail $fix }
 function Mark-DryRun($detail) { Mark 'DRY-RUN' $detail }
 function Selected($id) { ((-not $Only.Count) -or ($Only -contains $id)) -and ($Skip -notcontains $id) }
+function Read-SetupPreferences([string]$Path) {
+    $saved = [ordered]@{}
+    if (Test-Path -LiteralPath $Path) {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($raw -isnot [pscustomobject]) { throw 'setup-preferences.json must contain an object.' }
+        foreach ($property in $raw.PSObject.Properties) { $saved[$property.Name] = $property.Value }
+    }
+    return $saved
+}
+function Get-SetupLauncher([string]$Path, [string]$Requested) {
+    if ($Requested) { return $Requested.ToLowerInvariant() }
+    $saved = Read-SetupPreferences $Path
+    if (-not $saved.Contains('minecraft_launcher')) { return 'official' }
+    if ($saved.minecraft_launcher -isnot [string] -or $saved.minecraft_launcher -cnotin @('official', 'modrinth')) {
+        throw 'Invalid minecraft_launcher in setup-preferences.json; choose -MinecraftLauncher official or modrinth.'
+    }
+    return $saved.minecraft_launcher
+}
+function Assert-SetupPreferenceDepth($Value, [int]$Depth = 0) {
+    if ($Depth -gt 32) { throw 'Setup preferences are too deeply nested; existing file was kept.' }
+    if ($Value -is [System.Collections.IDictionary]) {
+        foreach ($item in $Value.Values) { Assert-SetupPreferenceDepth $item ($Depth + 1) }
+    } elseif ($Value -is [pscustomobject]) {
+        foreach ($property in $Value.PSObject.Properties) { Assert-SetupPreferenceDepth $property.Value ($Depth + 1) }
+    } elseif ($Value -is [array]) {
+        foreach ($item in $Value) { Assert-SetupPreferenceDepth $item ($Depth + 1) }
+    }
+}
+function Save-SetupLauncher([string]$Path, [string]$Choice) {
+    $saved = Read-SetupPreferences $Path
+    if ($saved.Contains('minecraft_launcher') -and $saved.minecraft_launcher -is [string] -and
+        $saved.minecraft_launcher -ceq $Choice) { return }
+    $saved['minecraft_launcher'] = $Choice
+    Assert-SetupPreferenceDepth $saved
+    New-Item -ItemType Directory -Path (Split-Path $Path) -Force | Out-Null
+    $temporary = $Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        [IO.File]::WriteAllText($temporary, ($saved | ConvertTo-Json -Depth 100), [Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $temporary -Destination $Path -Force
+    } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary } }
+}
+function Test-DiscordShortcut($Link, [string]$DiscordDir, [switch]$GeneratedOnly) {
+    $target = [string]$Link.TargetPath
+    $shortcutArgs = [string]$Link.Arguments
+    $generated = ($target -ieq (Join-Path $DiscordDir 'Update.exe')) -and
+        ($shortcutArgs -ceq '--processStart Discord.exe --process-start-args "--force-renderer-accessibility"')
+    if ($GeneratedOnly) { return $generated }
+    return $generated -or (($target -ieq (Join-Path $DiscordDir 'Update.exe')) -and $shortcutArgs -ceq '--processStart Discord.exe') -or
+        (($target -ieq (Join-Path $DiscordDir 'Discord.exe')) -and $shortcutArgs -cin @('', '--processStart Discord.exe'))
+}
+function Backup-DiscordShortcut([string]$Path, [string]$BackupDir, [string]$Kind, [switch]$Preview) {
+    Write-Warning "Custom Discord $Kind shortcut kept unchanged."
+    if ($Preview) { Would "back up the custom $Kind shortcut under $BackupDir"; return }
+    $digest = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.Substring(0, 12)
+    $backup = Join-Path $BackupDir ("Discord-$Kind-$digest.lnk")
+    if (-not (Test-Path -LiteralPath $backup)) {
+        New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+        Copy-Item -LiteralPath $Path -Destination $backup
+    }
+}
+function Set-DiscordShortcuts($Shell, [string]$DesktopDir, [string]$StartupDir, [string]$DiscordDir,
+                              [string]$BackupDir, [switch]$Preview) {
+    $desktopPath = Join-Path $DesktopDir 'Discord.lnk'
+    $startupPath = Join-Path $StartupDir 'Discord (STAR).lnk'
+    $legacyPath = Join-Path $DesktopDir 'Discord (STAR).lnk'
+    $desktopReady = $false
+    foreach ($entry in @(@{ Path = $desktopPath; Kind = 'desktop' }, @{ Path = $startupPath; Kind = 'startup' })) {
+        $link = $Shell.CreateShortcut($entry.Path)
+        $known = if ($entry.Kind -eq 'desktop') { Test-DiscordShortcut $link $DiscordDir }
+                 else { Test-DiscordShortcut $link $DiscordDir -GeneratedOnly }
+        if ((Test-Path -LiteralPath $entry.Path) -and -not $known) {
+            Backup-DiscordShortcut $entry.Path $BackupDir $entry.Kind -Preview:$Preview
+            continue
+        }
+        if ($Preview) { Would "set '$($entry.Path)' to launch Discord with accessibility" }
+        else {
+            $link.TargetPath = Join-Path $DiscordDir 'Update.exe'
+            $link.Arguments = '--processStart Discord.exe --process-start-args "--force-renderer-accessibility"'
+            $link.WorkingDirectory = $DiscordDir
+            $link.Description = 'Discord with accessibility for STAR'
+            $link.Save()
+        }
+        if ($entry.Kind -eq 'desktop') { $desktopReady = $true }
+    }
+    if (Test-Path -LiteralPath $legacyPath) {
+        $legacy = $Shell.CreateShortcut($legacyPath)
+        if (Test-DiscordShortcut $legacy $DiscordDir -GeneratedOnly) {
+            if ($desktopReady) {
+                if ($Preview) { Would "remove the old generated desktop alias '$legacyPath'" }
+                else { Remove-Item -LiteralPath $legacyPath }
+            }
+        } else { Backup-DiscordShortcut $legacyPath $BackupDir 'legacy' -Preview:$Preview }
+    }
+}
 function Format-Size([double]$bytes) {
     if ($bytes -ge 1GB) { return ('{0:N1} GB' -f ($bytes / 1GB)) }
     if ($bytes -ge 1MB) { return ('{0:N0} MB' -f ($bytes / 1MB)) }
@@ -203,6 +301,12 @@ if ($Uninstall) {
 }
 Write-Host "STAR install root: $Root"
 if (-not (Test-Path (Join-Path $Repo 'star\home\__main__.py'))) { throw "STAR source not found next to this script ($Repo\star)." }
+$PreferencesFile = Join-Path $Root 'setup-preferences.json'
+$LauncherChoice = Get-SetupLauncher $PreferencesFile $MinecraftLauncher
+if ($MinecraftLauncher) {
+    if ($DryRun) { Would "remember Minecraft launcher preference '$LauncherChoice' in $PreferencesFile" }
+    else { Save-SetupLauncher $PreferencesFile $LauncherChoice }
+}
 $env:STAR_ROOT = $Root
 $env:STAR_VOICE_MODELS = "$Root\models\voice"
 $env:HF_HOME = "$Root\models\hf"
@@ -338,8 +442,10 @@ Invoke-Step 'files' "STAR source and folders under $Root" "Check that $Root is w
     }
     if ([IO.Path]::GetFullPath($Repo) -ne [IO.Path]::GetFullPath($App)) {
         Copy-Item (Join-Path $Repo 'requirements-home*.txt') $App -Force
-        if (Test-Path -LiteralPath (Join-Path $Repo 'STAR-FIRST-START.md')) {
-            Copy-Item -LiteralPath (Join-Path $Repo 'STAR-FIRST-START.md') -Destination $App -Force
+        foreach ($guide in @('STAR-FIRST-START.md', 'STAR-LIVE-TEST.md')) {
+            if (Test-Path -LiteralPath (Join-Path $Repo $guide)) {
+                Copy-Item -LiteralPath (Join-Path $Repo $guide) -Destination $App -Force
+            }
         }
     }
     $global:LASTEXITCODE = 0
@@ -426,15 +532,19 @@ Invoke-Step 'node' 'Node.js LTS and the Minecraft bot (mineflayer, npm install)'
     Mark-Ok "Node $(& $node --version), mineflayer $mf, pathfinder $pf"
 }
 
-Invoke-Step 'apps' 'Discord, Minecraft Launcher and Java (the apps she signs in to; Roblox installs itself when she first joins a game)' 'Install the missing app by hand (discord.com, minecraft.net, adoptium.net), then run setup.cmd again.' {
+Invoke-Step 'apps' 'Discord, the chosen Minecraft launcher and Java' 'Install the missing app by hand, then run setup.cmd again.' {
     $missing = @()
     foreach ($app in $Pins.apps) {
+        if ($app.id -eq 'Mojang.MinecraftLauncher' -and $LauncherChoice -eq 'modrinth') {
+            Say 'Modrinth preference: keeping the owner-selected launcher; official Minecraft Launcher skipped'
+            continue
+        }
         $found = $false
         foreach ($pattern in $app.present) { if (Test-Path ([Environment]::ExpandEnvironmentVariables($pattern))) { $found = $true; break } }
         if (-not $found -and (Test-Winget)) { $found = Test-WingetHas $app.id }
         if ($found) { Say "$($app.name): already installed" } else { $missing += $app }
     }
-    if (-not $missing.Count) { Mark-Ok 'all three are installed'; return }
+    if (-not $missing.Count) { Mark-Ok 'all selected apps are installed'; return }
     if ($DryRun) { foreach ($app in $missing) { Would "winget install $($app.id) ($($app.name), about $($app.mb) MB)" }; Mark-DryRun "would install $($missing.Count) app(s)"; return }
     if (-not (Test-Winget)) { Mark-Failed 'winget is missing' 'Update "App Installer" in the Microsoft Store, or install the apps by hand, then run setup.cmd again.'; return }
     $failed = @()
@@ -524,12 +634,12 @@ Invoke-Step 'camera' 'STAR Camera virtual webcam (Unity Capture, pinned hashes)'
     if (-not (Test-Path $VenvPy)) { Mark-Skipped 'needs the venv and packages' 'Fix the pip step first.'; return }
     $r = Run-Native 'powershell' $arguments
     if ($r.Code -ne 0) { Mark-Failed "install-camera.ps1 exit $($r.Code)" ; return }
-    if ($r.Output -match 'WARNING') { Mark-Failed 'registered, but the camera did not start in the self-test' "Read $env:ProgramData\STAR\vtuber\camera.log." ; return }
+    if ($r.Output -match 'WARNING') { Mark-Failed 'registered, but the camera did not start in the self-test' 'Read camera.log in the configured VTuber data folder (normally <root>\home\vtuber).' ; return }
     Mark-Ok "'STAR Camera' registered and sent frames in the self-test (Discord detection is not verified yet)"
 }
 
-Invoke-Step 'grounder' 'Optional screen-reading model for star.computer (UI-TARS, pinned)' 'Download the files listed in installer\star-home\pins.json by hand, or run setup.cmd -Only grounder -Grounder ui-tars-2b' {
-    if ($A.Grounder -eq 'none') { Mark-Skipped 'not selected (default is to skip when the disk is low or you answer no)' 'setup.cmd -Only grounder -Grounder ui-tars-2b   (2.3 GB; ui-tars-1.5-7b is 5.2 GB and needs the whole GPU)'; return }
+Invoke-Step 'grounder' 'Optional screen-reading model for star.computer (pinned)' 'Download the files listed in installer\star-home\pins.json by hand, or run setup.cmd -Only grounder -Grounder ui-tars-2b' {
+    if ($A.Grounder -eq 'none') { Mark-Skipped 'not selected (default is to skip when the disk is low or you answer no)' 'setup.cmd -Only grounder -Grounder ui-tars-2b (or explicit candidate qwen3-vl-2b); setup reports download size; measure GPU use before enabling'; return }
     $g = $Pins.grounder.($A.Grounder)
     $folder = "$Root\models\grounding\$($A.Grounder)"
     $bytes = ($g.files | Measure-Object -Property size -Sum).Sum
@@ -551,7 +661,7 @@ Invoke-Step 'grounder' 'Optional screen-reading model for star.computer (UI-TARS
     $model = "$folder\$($g.model_file)"
     $mmproj = "$folder\$($g.mmproj_file)"
     @('@echo off',
-      "rem Starts STAR's screen-reading model ($($A.Grounder)) on 127.0.0.1:8081. It needs about $($g.vram_gb) GB of GPU memory: close the local voice model first if the card is full.",
+      "rem Starts STAR's screen-reading model ($($A.Grounder)) on 127.0.0.1:8081. Measure GPU memory on this PC before running beside voice or a game; download size is not a VRAM budget.",
       "`"$FastServer`" -m `"$model`" --mmproj `"$mmproj`" --host 127.0.0.1 --port 8081 -ngl 99 -c 4096 --no-webui") |
         Set-Content -Path "$Root\tools\start-grounder.cmd" -Encoding ascii
     New-Item -ItemType Directory -Force -Path $Data | Out-Null
@@ -560,28 +670,24 @@ Invoke-Step 'grounder' 'Optional screen-reading model for star.computer (UI-TARS
     Mark-Ok "files verified in $folder. To switch it on: run tools\start-grounder.cmd, copy home\computer.vlm.json over home\computer.json, then python -m star.computer calibrate"
 }
 
-Invoke-Step 'discord' 'Discord shortcut with accessibility on (--force-renderer-accessibility)' 'Install Discord, sign in, then run setup.cmd -Only discord.' {
+Invoke-Step 'discord' 'Optional Discord accessibility shortcuts' $(if ($DiscordAccessibility) { 'Install Discord, sign in, then run setup.cmd -Only discord -DiscordAccessibility.' } else { '' }) {
+    if (-not $DiscordAccessibility) {
+        Mark-Skipped 'not selected: normal Discord shortcuts and settings kept'
+        return
+    }
     $discordDir = Join-Path $env:LOCALAPPDATA 'Discord'
     $update = Join-Path $discordDir 'Update.exe'
     if (-not (Test-Path $update)) {
-        if ($DryRun) { Would 'after Discord is installed: create "Discord (STAR).lnk" on the desktop and in the Startup folder (Update.exe --processStart Discord.exe --process-start-args "--force-renderer-accessibility")'; Mark-DryRun 'Discord is not installed yet'; return }
-        Mark-Skipped 'Discord is not installed' 'Install Discord (the apps step does it), then run setup.cmd -Only discord.'; return
+        if ($DryRun) { Would 'after Discord is installed: create one Discord.lnk on the desktop and the accessibility alias in Startup'; Mark-DryRun 'Discord is not installed yet'; return }
+        Mark-Skipped 'Discord is not installed' 'Install Discord (the apps step does it), then run setup.cmd -Only discord -DiscordAccessibility.'; return
     }
-    $arguments = '--processStart Discord.exe --process-start-args "--force-renderer-accessibility"'
-    if ($DryRun) { Would "create '$Desktop\Discord (STAR).lnk' and '$Startup\Discord (STAR).lnk' ($arguments)"; Mark-DryRun 'would create the shortcuts'; return }
     $shell = New-Object -ComObject WScript.Shell
-    foreach ($folder in $Desktop, $Startup) {
-        $link = $shell.CreateShortcut((Join-Path $folder 'Discord (STAR).lnk'))
-        $link.TargetPath = $update
-        $link.Arguments = $arguments
-        $link.WorkingDirectory = $discordDir
-        $link.Description = 'Discord started with accessibility on, so STAR can read it with UI Automation'
-        $link.Save()
-    }
+    Set-DiscordShortcuts $shell $Desktop $Startup $discordDir (Join-Path $Root 'tools\shortcut-backups') -Preview:$DryRun
+    if ($DryRun) { Mark-DryRun 'would update known Discord shortcuts; custom links kept'; return }
     $notes = @()
     $running = @(Get-CimInstance Win32_Process -Filter "Name='Discord.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -notmatch '--type=' })
     if ($running | Where-Object { $_.CommandLine -notmatch 'force-renderer-accessibility' }) {
-        $notes += 'Discord is running WITHOUT the flag now: quit it (tray icon > Quit Discord) and start "Discord (STAR)" from the desktop'
+        $notes += 'Discord is running WITHOUT the flag now: quit it (tray icon > Quit Discord) and start "Discord" from the desktop'
     }
     if (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name Discord -ErrorAction SilentlyContinue) {
         $notes += 'Discord also starts itself without the flag: in Discord > Settings > Windows Settings turn off "Open Discord"'

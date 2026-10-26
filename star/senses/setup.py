@@ -63,6 +63,19 @@ def asr_ready(model: AsrModel) -> bool:
     return weights.is_file() and weights.stat().st_size == model.size and setup_models.sha256_of(weights) == model.sha256
 
 
+def installed_asr_path(name: str) -> str | None:
+    """Resolve an installer's pinned speech snapshot without asking the Hub for main."""
+    model = ASR_MODELS.get(name)
+    if model is None:
+        return None
+    path = _asr_path(model, local_only=True)
+    weights = Path(path) / 'model.bin' if path else None
+    if (weights is None or not weights.is_file() or weights.stat().st_size != model.size
+            or setup_models.sha256_of(weights) != model.sha256):
+        raise RuntimeError('Installed speech files are missing or invalid. Run setup.cmd -Only models to repair them.')
+    return path
+
+
 def fetch_asr(model: AsrModel, report=print) -> bool:
     """Fetch one speech model at its pinned commit and verify model.bin. False when it was already complete."""
     if asr_ready(model):
