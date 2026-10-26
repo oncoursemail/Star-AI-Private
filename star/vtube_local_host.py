@@ -193,7 +193,10 @@ class VTubeLocalHost:
             if self._registered:
                 return
             for packet in self._bridge.registration_requests():
-                self._exchange(packet["messageType"], packet["data"])
+                reply = self._exchange(packet["messageType"], packet["data"])
+                if reply.get("parameterName") != packet["data"]["parameterName"]:
+                    self._close_locked()
+                    raise VTSHostError("VTS registered the wrong parameter")
             try:
                 self._socket.settimeout(0.10)  # no multi-second latency in gameplay
             except Exception:
