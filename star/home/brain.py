@@ -111,9 +111,11 @@ def run_session(chat, executor: Executor, life, *, interest: str, brief: str, go
     end now (a friend needs her): the result is {"paused": True}; a brain session is not resumable, it starts over."""
     goal_line = f"Goal {goal['id']}: {goal['text']}" if goal else "No open goal: choose one and add it with add_goal."
     interests = ", ".join(f"{k} {v.get('weight')}" for k, v in life.interests().items())
+    context = getattr(life, "session_context", None)        # star.inner.mind.MindLife: who she is + relevant lessons
+    context = context(interest, goal) if callable(context) else ""
     messages = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": f"Session: {interest} ({brief}).\n{goal_line}\nWorkspace: "
-                 f"{executor.workspace}\nYour interest weights: {interests}"}]
+                 f"{executor.workspace}\nYour interest weights: {interests}" + (f"\n{context}" if context else "")}]
     tools = tool_defs()
     deadline = clock() + session_minutes * 60
     steps, done_actions, failures = 0, 0, []

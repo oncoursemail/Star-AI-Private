@@ -117,6 +117,23 @@ def _inner_context(memory, person, text: str, *, first_turn: bool):
     return turn_context(memory, person, text, first_turn=first_turn)
 
 
+def _mind_observe(memory, person, platform: str, text: str, reply: str) -> None:
+    """One inbox line for her memory stream (star/inner/mind.py; nothing when off; never raises, never calls a model)."""
+    try:
+        from ..inner.mind import observe_conversation
+        observe_conversation(memory, person, platform, text, reply)
+    except Exception:
+        pass
+
+
+def _mind_forget(memory, person) -> None:
+    try:
+        from ..inner.mind import forget_person
+        forget_person(memory, person)
+    except Exception:
+        pass
+
+
 class SocialChat:
     def __init__(self, memory: FriendMemory, *, complete: Callable[[str, str], str] | None = None,
                  emotion=..., clock: Callable[[], float] = time.time) -> None:
@@ -191,6 +208,7 @@ class SocialChat:
             person = self.memory.person(platform, handle, name)
             return self._fixed("Okay, I'll remember you from now on.", person, platform)
         if FORGET_ME.search(text):
+            _mind_forget(self.memory, person)
             self.memory.forget(platform, handle)
             self._roleplay.pop((platform, handle.lower()), None)
             return self._fixed("Done, I've forgotten everything about you. If you ever want me to remember you "
@@ -246,6 +264,7 @@ class SocialChat:
         if person.relationship == "met" and len(self.memory.moments(person, FRIEND_AFTER)) >= FRIEND_AFTER:
             self.memory.update(person, relationship="friend")
         self._feel(text, person)
+        _mind_observe(self.memory, person, platform, text, reply)
         if inner is not None:
             try:
                 inner.done()

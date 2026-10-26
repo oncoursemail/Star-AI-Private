@@ -31,7 +31,8 @@ def _setup(dry: bool):
     config = control.load_config(home)
     dry = dry or bool(config.get("dry_run"))
     executor = Executor(home, dry_run=dry)
-    life = Life(home)
+    from ..inner.mind import wrap_life
+    life = wrap_life(Life(home), home)      # her day planner + memory stream (star/inner/mind.py; off = plain Life)
     chat = None
     if config.get("brain_url"):
         from .brain import http_chat

@@ -30,7 +30,7 @@ import time
 
 from ..persona import leaked_reasoning, strip_reasoning
 from ..social import rules
-from ..social.activity import parse_json
+from . import structured
 from .store import NIGHT_END, InnerStore, overlap, tokens
 
 MAX_CHANGES = 3
@@ -220,11 +220,11 @@ def revise(store: InnerStore, complete, evidence: str, *, now: float | None = No
     if not evidence.strip():
         return report
     try:
-        raw = complete(REVISE_SYSTEM, f"Her self-description now:\n{json.dumps(model, ensure_ascii=False)}\n\n"
-                                      f"What happened to her today:\n{evidence[:1800]}")
+        raw = structured.call(complete, REVISE_SYSTEM, f"Her self-description now:\n{json.dumps(model, ensure_ascii=False)}"
+                              f"\n\nWhat happened to her today:\n{evidence[:1800]}", structured.REVISE_SCHEMA, "changes")
     except Exception:
         return report
-    proposals = parse_json(strip_reasoning(raw or "")).get("changes")
+    proposals = structured.parse(strip_reasoning(raw or "")).get("changes")
     touched: set[str] = set()
     for change in (proposals if isinstance(proposals, list) else [])[: MAX_CHANGES * 2]:
         if not isinstance(change, dict):
