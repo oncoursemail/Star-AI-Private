@@ -106,14 +106,23 @@ def _artifact_ok(executor: Executor, raw: str) -> bool:
 
 
 def run_session(chat, executor: Executor, life, *, interest: str, brief: str, goal: dict | None,
-                max_steps: int = 12, session_minutes: float = 20, clock=time.monotonic, stop=None) -> dict:
+                max_steps: int = 12, session_minutes: float = 20, clock=time.monotonic, stop=None,
+                recall_history: bool = False) -> dict:
     """One session. Returns {ok, verified, summary, evidence, steps, failures, goal_done}. `stop()` -> True asks it to
     end now (a friend needs her): the result is {"paused": True}; a brain session is not resumable, it starts over."""
     goal_line = f"Goal {goal['id']}: {goal['text']}" if goal else "No open goal: choose one and add it with add_goal."
     interests = ", ".join(f"{k} {v.get('weight')}" for k, v in life.interests().items())
+    # Unlike everyday chat, STAR Home can explicitly opt in to a small same-
+    # interest *metadata* reminder per session. The prior desktop A/B found
+    # that unsolicited, long autobiographical text harmed response quality.
+    recall = ""
+    if recall_history is True:
+        from ..living_continuity import home_session_context
+        recall = home_session_context(life, interest)
     messages = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": f"Session: {interest} ({brief}).\n{goal_line}\nWorkspace: "
-                 f"{executor.workspace}\nYour interest weights: {interests}"}]
+                 f"{executor.workspace}\nYour interest weights: {interests}"
+                 + (f"\n{recall}" if recall else "")}]
     tools = tool_defs()
     deadline = clock() + session_minutes * 60
     steps, done_actions, failures = 0, 0, []
