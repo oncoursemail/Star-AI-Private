@@ -24,7 +24,7 @@ Read `D:\STAR\home\acceptance\latest.md`. Missing native devices, inaccessible a
 
 Autologon, remote support and lock settings are separate installer choices; review the questions on her PC. The cleanup tool described below does not change Windows security.
 
-If you use Modrinth, run `Set Up Star.cmd -MinecraftLauncher modrinth`. Setup remembers that choice in `D:\STAR\setup-preferences.json` and skips the official Minecraft Launcher on later runs; Java and the separate game client remain available. The Discord desktop shortcut opens the existing app with accessibility enabled. Setup consolidates its own older duplicate shortcut while preserving custom shortcuts.
+If you use Modrinth, run `Set Up Star.cmd -MinecraftLauncher modrinth`. Setup remembers that choice in `D:\STAR\setup-preferences.json` and skips the official Minecraft Launcher on later runs; Java and the separate game client remain available. Setup leaves normal Discord shortcuts and accessibility settings unchanged. Optional UI Automation shortcut setup requires the explicit `-DiscordAccessibility` switch.
 
 Keep **STAR Microphone** as the Windows recording and communications input. Keep Windows playback on the intended speakers or headphones; the voice bridge hears that playback and sends Star's voice into the virtual microphone. Camera configuration, status and logs now use `D:\STAR\home\vtuber`, or the explicit `STAR_VTUBER_DIR` override. Camera registration waits for the actual registration result, and installation preserves existing camera configuration.
 

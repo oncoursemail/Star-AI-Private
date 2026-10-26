@@ -146,6 +146,47 @@ foreach ($name in @('New-Item','Set-Content','Copy-Item','Move-Item','Remove-Ite
         self.assertIn("remember Minecraft launcher preference 'modrinth'", output)
         self.assertNotIn("would: winget install Mojang.MinecraftLauncher", output)
 
+    def test_default_full_discord_preview_never_creates_com_or_mutates(self):
+        output = self.powershell(r"""
+function New-Object {
+    param([Parameter(Position=0)][string]$TypeName,[string]$ComObject)
+    if ($ComObject) { throw 'DEFAULT CREATED COM' }
+    Microsoft.PowerShell.Utility\New-Object -TypeName $TypeName
+}
+function Get-NetIPAddress { }
+function Get-NetIPConfiguration { }
+foreach ($name in @('New-Item','Set-Content','Copy-Item','Move-Item','Remove-Item','Start-Process',
+                    'Invoke-WebRequest','Register-ScheduledTask','Start-ScheduledTask')) {
+    Set-Item -Path "function:$name" -Value { throw 'MUTATION IN DEFAULT DISCORD PREVIEW' }
+}
+& $env:STAR_TEST_SETUP -Root (Join-Path $base 'uncreated') -Yes -Only discord -DryRun
+""", full=True)
+        self.assertIn("normal Discord shortcuts and settings kept", output)
+        self.assertNotIn("fix:", output)
+        self.assertFalse((self.root / "uncreated").exists())
+
+    def test_default_nondry_discord_step_never_reads_or_changes_shortcuts(self):
+        self.powershell(r"""
+$DiscordAccessibility=$false; $DryRun=$false
+$global:Skipped=$false
+function Invoke-Step($Id,$Title,$Fix,$Body) {
+    if ($Fix) { throw 'Default opt-out advertised a fix' }
+    & $Body
+}
+function Mark-Skipped($detail,$fix='') {
+    if ($fix) { throw 'Opt-out has a fix' }
+    $global:Skipped=$true
+}
+foreach ($name in @('New-Object','Test-Path','Copy-Item','Remove-Item','Set-Content','Start-Process','Get-ItemProperty')) {
+    Set-Item -Path "function:$name" -Value { throw 'DEFAULT DISCORD ACCESS OR MUTATION' }
+}
+$step=$tree.Find({param($node) $node -is [Management.Automation.Language.CommandAst] -and
+    $node.GetCommandName() -eq 'Invoke-Step' -and $node.CommandElements[1].Extent.Text -eq "'discord'"},$true)
+if (-not $step) { throw 'Discord step missing' }
+. ([scriptblock]::Create($step.Extent.Text))
+if (-not $global:Skipped) { throw 'Default did not skip' }
+""")
+
     def shortcuts(self, body):
         return self.powershell(r"""
 $desktop=Join-Path $base 'desktop'; $startup=Join-Path $base 'startup'; $client=Join-Path $base 'Discord'
@@ -186,6 +227,35 @@ if ($global:Links[$normal].TargetPath -cne $update -or $global:Links[$normal].Ar
 if (-not (Test-Path -LiteralPath $startupLink)) { throw 'Startup alias missing' }
 if ($global:Links[$startupLink].Arguments -cne $accessible) { throw 'Startup accessibility lost' }
 if (Test-Path -LiteralPath $backups) { throw 'Known links did not need backup' }
+""")
+
+    def test_explicit_discord_accessibility_step_preserves_optin_behavior(self):
+        self.shortcuts(r"""
+$DiscordAccessibility=$true; $DryRun=$false; $Root=$base
+$env:LOCALAPPDATA=$base
+[IO.File]::WriteAllText($update,'fixture, never executed')
+Add-FixtureLink $normal (Join-Path $client 'Discord.exe') '--processStart Discord.exe'
+Add-FixtureLink $legacy $update $accessible
+$global:FixtureShell=$shell; $global:Marked=$false
+function New-Object { param([Parameter(Position=0)][string]$TypeName,[string]$ComObject)
+    if ($ComObject) {
+        if ($ComObject -cne 'WScript.Shell') { throw 'Unexpected COM request' }
+        return $global:FixtureShell
+    }
+    Microsoft.PowerShell.Utility\New-Object -TypeName $TypeName
+}
+function Get-CimInstance { }
+function Get-ItemProperty { }
+function Invoke-Step($Id,$Title,$Fix,$Body) { & $Body }
+function Mark-Ok($detail) { $global:Marked=$true }
+$step=$tree.Find({param($node) $node -is [Management.Automation.Language.CommandAst] -and
+    $node.GetCommandName() -eq 'Invoke-Step' -and $node.CommandElements[1].Extent.Text -eq "'discord'"},$true)
+. ([scriptblock]::Create($step.Extent.Text))
+if (-not $global:Marked -or $global:Saves.Count -ne 2) { throw 'Explicit shortcut setup did not run' }
+if (Test-Path -LiteralPath $legacy) { throw 'Opt-in left generated duplicate' }
+if ($global:Links[$normal].Arguments -cne $accessible -or $global:Links[$startupLink].Arguments -cne $accessible) {
+    throw 'Explicit accessibility arguments changed'
+}
 """)
 
     def test_custom_links_are_backed_up_preserved_and_warned(self):

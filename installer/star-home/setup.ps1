@@ -9,6 +9,7 @@
 #   setup.cmd -Skip cable,camera skip those steps          setup.cmd -Only models,acceptance   run only those steps
 #   setup.cmd -Grounder none     ask|ui-tars-2b|ui-tars-1.5-7b|none: the optional screen-reading model (default: ask)
 #   setup.cmd -MinecraftLauncher modrinth  remember that choice; skip the official launcher, keep Java and Mineflayer
+#   setup.cmd -DiscordAccessibility  optional shortcut setup for UI Automation; normal Discord is unchanged by default
 #   setup.cmd -Uninstall         remove the scheduled task and desktop files (keeps her data and workspace)
 # Steps (ids for -Skip / -Only): preflight python files venv pip torch node apps models cable camera grounder discord
 #   config task controls ssh autologon nolock check optimize acceptance.
@@ -24,7 +25,8 @@ param(
     [string[]]$Skip = @(),
     [string[]]$Only = @(),
     [ValidateSet('ask', 'ui-tars-2b', 'ui-tars-1.5-7b', 'none')][string]$Grounder = 'ask',
-    [ValidateSet('official', 'modrinth')][string]$MinecraftLauncher
+    [ValidateSet('official', 'modrinth')][string]$MinecraftLauncher,
+    [switch]$DiscordAccessibility
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with the progress bar
@@ -668,12 +670,16 @@ Invoke-Step 'grounder' 'Optional screen-reading model for star.computer (UI-TARS
     Mark-Ok "files verified in $folder. To switch it on: run tools\start-grounder.cmd, copy home\computer.vlm.json over home\computer.json, then python -m star.computer calibrate"
 }
 
-Invoke-Step 'discord' 'Discord shortcut with accessibility on (--force-renderer-accessibility)' 'Install Discord, sign in, then run setup.cmd -Only discord.' {
+Invoke-Step 'discord' 'Optional Discord accessibility shortcuts' $(if ($DiscordAccessibility) { 'Install Discord, sign in, then run setup.cmd -Only discord -DiscordAccessibility.' } else { '' }) {
+    if (-not $DiscordAccessibility) {
+        Mark-Skipped 'not selected: normal Discord shortcuts and settings kept'
+        return
+    }
     $discordDir = Join-Path $env:LOCALAPPDATA 'Discord'
     $update = Join-Path $discordDir 'Update.exe'
     if (-not (Test-Path $update)) {
         if ($DryRun) { Would 'after Discord is installed: create one Discord.lnk on the desktop and the accessibility alias in Startup'; Mark-DryRun 'Discord is not installed yet'; return }
-        Mark-Skipped 'Discord is not installed' 'Install Discord (the apps step does it), then run setup.cmd -Only discord.'; return
+        Mark-Skipped 'Discord is not installed' 'Install Discord (the apps step does it), then run setup.cmd -Only discord -DiscordAccessibility.'; return
     }
     $shell = New-Object -ComObject WScript.Shell
     Set-DiscordShortcuts $shell $Desktop $Startup $discordDir (Join-Path $Root 'tools\shortcut-backups') -Preview:$DryRun
