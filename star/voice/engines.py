@@ -28,6 +28,10 @@ def models_dir() -> Path:
     configured = os.environ.get("STAR_VOICE_MODELS", "").strip()
     if configured:
         return Path(configured)
+    from ..home import paths                      # her PC: <install root>\models\voice (star/home/paths.py)
+    rooted = paths.models_dir()
+    if rooted:
+        return rooted / "voice"
     return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "STAR" / "voice-models"
 
 
