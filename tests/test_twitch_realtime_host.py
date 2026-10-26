@@ -374,3 +374,149 @@ def test_invalid_session_is_not_forwarded_to_mod_untrusted_scope():
         assert director.metrics()["queued"] == 0
         assert host.metrics()["rejected"] == 1
     asyncio.run(run())
+
+
+
+def test_parallel_moderation_keeps_chat_usable_while_first_question_waits():
+    async def run():
+        stop = asyncio.Event()
+        second_started = asyncio.Event()
+        async def moderate(text):
+            if text == "slow question?":
+                # This would timeout if the WebSocket reader awaited the first
+                # moderator before receiving the next notification.
+                await asyncio.wait_for(second_started.wait(), timeout=0.35)
+                return text
+            second_started.set()
+            stop.set()
+            return text
+        slow = envelope("notification", text="slow question?", mid="chat-slow-12345")
+        packet = json.loads(envelope("notification", text="second question?", mid="chat-fast-12345"))
+        packet["payload"]["event"]["chatter_user_id"] = "1234567"
+        fast = json.dumps(packet)
+        socket = FakeSocket(envelope("session_welcome"), slow,
+                            envelope("session_keepalive"), fast)
+        host, director, _ = make_host([socket], stop, moderate=moderate)
+        host.moderator_timeout_s = 0.5
+        await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        assert second_started.is_set()
+        assert host.metrics()["delivered"] == 2
+        assert host.metrics()["moderation_faults"] == 0
+        assert host.metrics()["moderations_inflight"] == 0
+        assert director.metrics()["queued"] == 2
+    asyncio.run(run())
+
+
+def test_chat_backpressure_is_bounded_and_never_queues_all_messages():
+    async def run():
+        stop = asyncio.Event()
+        entered = 0
+        async def moderate(_text):
+            nonlocal entered
+            entered += 1
+            await asyncio.sleep(60)
+            return "late"
+        notifications = [
+            envelope("notification", mid=f"message-{i:08d}", text=f"question {i}?")
+            for i in range(20)
+        ]
+        socket = FakeSocket(envelope("session_welcome"), *notifications)
+        host, director, _ = make_host([socket], stop, moderate=moderate)
+        host.max_pending_moderations = 2
+        host.moderator_timeout_s = 0.12
+        async def stop_soon():
+            await asyncio.sleep(0.04)
+            stop.set()
+        stopper = asyncio.create_task(stop_soon())
+        await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        await stopper
+        assert entered <= 2
+        assert host.metrics()["backpressure_drops"] >= 18
+        assert host.metrics()["moderations_inflight"] == 0
+        assert director.metrics()["queued"] == 0
+    asyncio.run(run())
+
+
+def test_revocation_cancels_waiting_moderation_without_delivering_chat():
+    async def run():
+        stop = asyncio.Event()
+        cancelled = asyncio.Event()
+        async def moderate(_text):
+            try:
+                await asyncio.sleep(60)
+                return "never"
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+        socket = FakeSocket(envelope("session_welcome"),
+                            envelope("notification", mid="chat-pending-revoked"),
+                            envelope("revocation"))
+        host, director, _ = make_host([socket], stop, moderate=moderate)
+        with pytest.raises(TwitchAuthorizationError, match="revoked"):
+            await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        assert host.metrics()["delivered"] == 0
+        assert host.metrics()["moderations_inflight"] == 0
+        assert host.metrics()["moderations_cancelled"] >= 1
+        assert director.metrics()["queued"] == 0
+    asyncio.run(run())
+
+
+def test_reconnect_cancels_old_pending_chat_but_delivers_new_session_chat():
+    async def run():
+        stop = asyncio.Event()
+        async def moderate(text):
+            if text == "old question?":
+                await asyncio.sleep(60)
+            else:
+                stop.set()
+            return text
+        old = FakeSocket(
+            envelope("session_welcome", session="oldSession1234"),
+            envelope("notification", session="oldSession1234",
+                     text="old question?", mid="chat-old-waiting"),
+            envelope("session_reconnect",
+                     reconnect="wss://eventsub.wss.twitch.tv/ws?reconnect=abc"))
+        new = FakeSocket(
+            envelope("session_welcome", session="newSession1234"),
+            envelope("notification", session="newSession1234",
+                     text="new question?", mid="chat-new-success"))
+        host, director, _ = make_host([old, new], stop, moderate=moderate)
+        await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        assert host.metrics()["delivered"] == 1
+        assert host.metrics()["handoffs"] == 1
+        assert host.metrics()["moderations_inflight"] == 0
+        assert director._events[0].detail == "new question?"
+        assert old.closed and new.closed
+    asyncio.run(run())
+
+
+def test_unexpected_chat_task_fault_does_not_kill_eventsub_session():
+    async def run():
+        stop = asyncio.Event()
+        first = envelope("notification", mid="chat-malformed-fault", text="first?")
+        second = envelope("notification", mid="chat-follows-fault", text="second?")
+        socket = FakeSocket(envelope("session_welcome"), first, second)
+        host, director, _ = make_host([socket], stop)
+        original = host._message
+        async def injected_failure(raw, bridge, session):
+            if "chat-malformed-fault" in raw:
+                raise RuntimeError("untrusted private content should never be logged")
+            return await original(raw, bridge, session)
+        host._message = injected_failure
+        await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        assert host.metrics()["moderation_faults"] == 1
+        assert host.metrics()["delivered"] == 1
+        assert host.metrics()["moderations_inflight"] == 0
+        assert director.metrics()["queued"] == 1
+    asyncio.run(run())
+
+
+def test_pending_cap_validation_rejects_zero_and_bool():
+    async def dummy(_):
+        return ""
+    for value in (0, 33, True, 4.5):
+        with pytest.raises(ValueError, match="max_pending"):
+            TwitchRealtimeHost(
+                config=TwitchChatConfig("client12345", "12345", "99999"),
+                director=StreamDirector(), token_provider=lambda: "1234567890",
+                moderator=dummy, max_pending_moderations=value)
