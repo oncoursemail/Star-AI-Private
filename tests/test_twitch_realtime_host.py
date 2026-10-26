@@ -310,20 +310,38 @@ def test_duplicate_chat_across_handoff_stays_one_signal():
     async def run():
         stop = asyncio.Event()
         count = 0
+
         async def moderated(text):
             nonlocal count
             count += 1
-            if count == 2:
-                stop.set()
             return text
+
         url = "wss://eventsub.wss.twitch.tv/ws?reconnect=test"
-        first = FakeSocket(envelope("session_welcome", session="oldSession1234"),
-                           envelope("notification", session="oldSession1234"),
-                           envelope("session_reconnect", reconnect=url))
-        second = FakeSocket(envelope("session_welcome", session="newSession1234"),
-                            envelope("notification", session="newSession1234"))
+        first = FakeSocket(
+            envelope("session_welcome", session="oldSession1234"),
+            envelope("notification", session="oldSession1234"),
+        )
+        second = FakeSocket(
+            envelope("session_welcome", session="newSession1234"),
+            envelope("notification", session="newSession1234"),
+        )
         host, director, _ = make_host([first, second], stop, moderate=moderated)
+
+        async def trigger_handoff_and_stop():
+            # Verify *confirmed* old delivery before starting the handoff.
+            while host.metrics()["delivered"] < 1:
+                await asyncio.sleep(0.001)
+            first.events.put_nowait(envelope("session_reconnect", reconnect=url))
+            while host.metrics()["duplicate_drops"] < 1:
+                await asyncio.sleep(0.001)
+            stop.set()
+
+        watcher = asyncio.create_task(trigger_handoff_and_stop())
         await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        await watcher
+        assert count == 1
+        assert host.metrics()["handoffs"] == 1
+        assert host.metrics()["duplicate_drops"] == 1
         assert host.metrics()["delivered"] == 1
         assert director.metrics()["queued"] == 1
     asyncio.run(run())
@@ -520,3 +538,117 @@ def test_pending_cap_validation_rejects_zero_and_bool():
                 config=TwitchChatConfig("client12345", "12345", "99999"),
                 director=StreamDirector(), token_provider=lambda: "1234567890",
                 moderator=dummy, max_pending_moderations=value)
+
+
+def test_duplicate_chat_flood_is_deduplicated_before_expensive_moderation():
+    async def run():
+        stop = asyncio.Event()
+        calls = 0
+
+        async def moderate(text):
+            nonlocal calls
+            calls += 1
+            await asyncio.sleep(0.02)
+            stop.set()
+            return text
+
+        event = envelope("notification", mid="identical-message-12345")
+        socket = FakeSocket(envelope("session_welcome"), *([event] * 24))
+        host, director, _ = make_host([socket], stop, moderate=moderate)
+        host.max_pending_moderations = 2
+        await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        metrics = host.metrics()
+        assert calls == 1
+        assert metrics["duplicate_drops"] == 23
+        assert metrics["backpressure_drops"] == 0
+        assert metrics["delivered"] == 1
+        assert metrics["moderations_inflight"] == 0
+        assert director.metrics()["queued"] == 1
+    asyncio.run(run())
+
+
+def test_stale_eventsub_notification_is_rejected_before_moderation():
+    async def run():
+        stop = asyncio.Event()
+        calls = []
+
+        async def moderate(text):
+            calls.append(text)
+            stop.set()
+            return text
+
+        stale = json.loads(envelope("notification", mid="old-event-msg-12345"))
+        stale["metadata"]["message_timestamp"] = datetime.fromtimestamp(
+            time.time() - 300, timezone.utc
+        ).isoformat()
+        socket = FakeSocket(
+            envelope("session_welcome"), json.dumps(stale),
+            envelope("notification", mid="fresh-event-msg-12345"),
+        )
+        host, director, _ = make_host([socket], stop, moderate=moderate)
+        await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        assert calls == ["Hello Star?"]
+        assert host.metrics()["premoderation_rejected"] == 1
+        assert host.metrics()["delivered"] == 1
+        assert director.metrics()["queued"] == 1
+    asyncio.run(run())
+
+
+def test_duplicate_flood_does_not_occupy_capacity_for_new_viewer():
+    async def run():
+        stop = asyncio.Event()
+        moderator_started = []
+
+        async def moderate(text):
+            moderator_started.append(text)
+            await asyncio.sleep(0.03)
+            if len(moderator_started) == 2:
+                stop.set()
+            return text
+
+        duplicate = envelope("notification", mid="chat-same-episode-123")
+        different = json.loads(envelope(
+            "notification", mid="chat-new-viewer-1234", text="Second viewer?"
+        ))
+        different["payload"]["event"]["chatter_user_id"] = "567890"
+        socket = FakeSocket(
+            envelope("session_welcome"), *([duplicate] * 12),
+            json.dumps(different),
+        )
+        host, director, _ = make_host([socket], stop, moderate=moderate)
+        host.max_pending_moderations = 2
+        await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        assert sorted(moderator_started) == ["Hello Star?", "Second viewer?"]
+        assert host.metrics()["duplicate_drops"] == 11
+        assert host.metrics()["delivered"] == 2
+        assert host.metrics()["backpressure_drops"] == 0
+        assert director.metrics()["queued"] == 2
+    asyncio.run(run())
+
+
+def test_rejected_moderation_releases_id_for_legitimate_twitch_retry():
+    async def run():
+        stop = asyncio.Event()
+        calls = 0
+        same = envelope("notification", mid="retry-chat-after-reject")
+        socket = FakeSocket(envelope("session_welcome"), same)
+
+        async def moderate(text):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                async def retry():
+                    await asyncio.sleep(0.05)
+                    socket.events.put_nowait(same)
+                asyncio.create_task(retry())
+                return None
+            stop.set()
+            return text
+
+        host, director, _ = make_host([socket], stop, moderate=moderate)
+        await asyncio.wait_for(host.run(owner_approved=True, stop=stop), timeout=2)
+        assert calls == 2
+        assert host.metrics()["delivered"] == 1
+        assert host.metrics()["duplicate_drops"] == 0
+        assert director.metrics()["queued"] == 1
+    asyncio.run(run())
