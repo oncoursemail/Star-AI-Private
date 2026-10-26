@@ -74,6 +74,9 @@ def main(argv=None) -> int:
     if args and args[0] == "innovation":
         from .innovation_gate import main as innovation_main
         return innovation_main(args[1:])
+    from .breadth_evals import main as breadth_main, wants_breadth
+    if wants_breadth(args):                        # GDScript and instruction-following suites (star/breadth_evals.py)
+        return breadth_main(args)
     from .eval_runner import main as run_main
     return run_main(args)
 

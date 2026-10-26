@@ -1,0 +1,37 @@
+# gdscript holdout-v1 freeze record: frozen 2026-10-25.
+# Any later edit makes earlier results incomparable; never use these files for training data, prompts or tuning.
+# SHA-256 of each file with CRLF turned into LF (the same normalisation the harness uses).
+# Check with tests/test_breadth_evals.py::test_frozen_holdout_files_still_have_the_recorded_hashes.
+# Dependency, not part of the freeze (shared with the dev suite): harness.gd c7078c43ecfa8d084053ccc62dc7a627c311096a755d1e950edb96695bafb3ad
+
+c3a215d22b337334106bebf3b7f0c7abc0271b94652ae5104b21d2259bdc8f2b  holdout-v1.json
+cf042364b0d6d57fdf29abd185c01acc443fd146812ac7cb272b5d17fdf51176  tests/HO-GD-STR-01.gd
+7e6297132f6cc21d77bd6701401be06c01c6807dc749fb3fab0fc2948f159f98  reference/HO-GD-STR-01.bad.md
+29b58cfc08a0342815388161bdafb5996f6b474a3f02308e0efb9d328891a624  reference/HO-GD-STR-01.md
+b82aa9f23250c5a9efe67fe47499f792e18f19b55c42bb79725cf1f2cc1f3ce8  tests/HO-GD-SIG-01.gd
+acc0ada2aa4ccbba03b9eb001d2c59e34338372f78f499fddf82ff7bfcff61d6  reference/HO-GD-SIG-01.bad.md
+05583bf052e629f2cffca749c26548cb93a163d76db7b92c6115bfd9565d95af  reference/HO-GD-SIG-01.md
+1642e7df45d537f15167e7a8e1df3dc7cc39c0261a843ff7ad6ebae8af4dd7b2  tests/HO-GD-SIG-02.gd
+5954b2adec756db55a6454d4390c9f9407027e2b571ffe9739fbf1427740c422  reference/HO-GD-SIG-02.alt.md
+24311b213f11644ae565b0b73c743c283692e77a5a438ecfb16465904825baee  reference/HO-GD-SIG-02.bad.md
+35f9752c2f5945c5959b47e41b9265b280b058d1173fd2ba2114c4d890d1ca1c  reference/HO-GD-SIG-02.md
+510ca44a5e6deceac3b85cfd490cfce1f70dd002c9478d8552903efd9b35d903  tests/HO-GD-NODE-01.gd
+f3cdb51b02543222c3adcb9aeb6c7333eaa4a430eabc559d07081c238cc180ae  reference/HO-GD-NODE-01.bad.md
+56729fa2d300e7f51416766e0ec493499d334514f6154444111420ddf3ddcd7a  reference/HO-GD-NODE-01.md
+5dd267c7b776b67c346faa1d7308355a1eea40229b8b86751d6592577e00db77  tests/HO-GD-STATE-01.gd
+f0837c524037c4b2ca75f15e8a4b4e684d842c37cd229312d8a33dbc8462e759  reference/HO-GD-STATE-01.bad.md
+0476eb67de2c2ddf61196ad7ea1eaf8a03770987f3665618d60f6a32c0750891  reference/HO-GD-STATE-01.md
+529fb09d6d4474dff6e8b851afec0d05293cdacac7e757fa09ef573d6d4c9f4d  tests/HO-GD-STATE-02.gd
+56569b4d275a40b579fef3d2f475e0162786f88db6fd695751a795a2b9c34181  reference/HO-GD-STATE-02.alt.md
+b794f34c92cc680f56cbd18cb43b4805237eefdb498f08c7b79dde48efb10568  reference/HO-GD-STATE-02.bad.md
+6efe14204cdbe72e4c0c707c66c3180382d86cbd98989aa947b03379e442603c  reference/HO-GD-STATE-02.md
+d2bede44c3fc30851b2d64de2e4ef41a58a444e31fa69f25086b94127b638093  tests/HO-GD-DATA-01.gd
+523d9dae8823f00f8908cbc24f70ec600010825a1b4dce24b6a6d9d4442dd7c9  reference/HO-GD-DATA-01.bad.md
+ede74912d6cc7442194fdcf774583c2a0fb3d2c04d90dac4cab19b69cfa67b71  reference/HO-GD-DATA-01.md
+7cc75a9eb13b9666bc4a90bc682147ffc5db40fe725e754ae104f9635d334266  tests/HO-GD-MATH-01.gd
+fd68574e88ecbf864673b7be15d842794755acc0f827f6b48a4a99b129bcce3e  reference/HO-GD-MATH-01.alt.md
+d7609d3057c5702f0c1150bd510ce89708afc65aee94048cc408f7e4ff50c540  reference/HO-GD-MATH-01.bad.md
+20d97fbc47c8a9c0439f4736826ed102fe56d7ca3291c38249a4e4e7ec13cd60  reference/HO-GD-MATH-01.md
+1b6a51ca45a913e7dd388119869ac1668da68add227ecca31cc4332610b28b9a  tests/HO-GD-EXPORT-01.gd
+7b7893f5e65587b72472cc0d2ccfc151f25c43cbce505137d1777d6071c466fe  reference/HO-GD-EXPORT-01.bad.md
+4f4f155f230623d6b62a023efa24ae0355a57309b9045ab3a7090da7850a49f0  reference/HO-GD-EXPORT-01.md
