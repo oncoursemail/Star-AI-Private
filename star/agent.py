@@ -239,7 +239,7 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
     pending = ''
     last_flush = monotonic()
     responding = False
-    raw, emitted = '', 0
+    raw, visible, emitted, stop = '', '', 0, False
     async for chunk in stream:
         if seen is not None:
             if isinstance(getattr(chunk, 'model', None), str) and chunk.model:
@@ -305,9 +305,21 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
                 already = len(whole) - len(pending)
                 pending = kept[already:] if len(kept) > already else ''
                 break
-            text = visible[emitted:]
-            emitted = len(visible)
+            # Show whole sentences only (an unfinished one is held back for a few words), so a sentence in which the
+            # model plans its reply (persona.leaked_reasoning) is never shown: nothing shown before it sends the turn
+            # to the main model, otherwise the reply ends at the sentence before it.
+            prose = reasoning_guard.prose_only(visible)
+            plan = None if calls else reasoning_guard.plan_start(prose)
+            if plan is not None and not chunks and not visible[:plan].strip():
+                raise reasoning_guard.ReasoningLoop(visible[:200])
+            end = max(emitted, len(visible) if calls else len(visible[:plan].rstrip()) if plan is not None else reasoning_guard.safe_end(prose))
+            text = visible[emitted:end]
+            emitted = end
+            if plan is not None:
+                stop = True
             if not text:
+                if stop:
+                    break
                 continue
         if not chunks and lead:
             pending += lead
@@ -325,6 +337,19 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
             event({'event': 'assistant_delta', 'text': pending})
             pending = ''
             last_flush = monotonic()
+        if stop:
+            break
+    else:
+        if guard and emitted < len(visible):   # the unfinished last sentence (no plan in it: checked above)
+            tail = visible[emitted:]
+            if not chunks and lead:
+                pending += lead
+            chunks.append(tail)
+            pending += tail
+            if seen is not None:
+                seen.setdefault('first_text_at', monotonic())
+                seen['last_text_at'] = monotonic()
+                seen['text_chars'] = seen.get('text_chars', 0) + len(tail)
     if pending:
         event({'event': 'assistant_delta', 'text': pending})
     tool_calls = [SimpleNamespace(id=entry['id'] or f'{call_prefix}{number}',

@@ -34,7 +34,7 @@ from .metrics import TurnMetrics
 from .pcm import FRAME_MS, rms
 from .. import emotion as emotion_state
 from ..persona import leaked_reasoning
-from .persona import system_message
+from .persona import opener_hint, system_message
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
 
 
@@ -84,6 +84,7 @@ class CallConfig:
     push_to_talk: bool = False            # True: turns are opened and closed by push_to_talk(), not by the VAD
     ptt_tail_ms: int = 160                # keep recording this long after the key is released (trailing words)
     ptt_voice_barge_in: bool = True       # push-to-talk: talking over Star (without the key) still silences her
+    varied_openers: bool = False          # no example phrase in the prompt, a different few openers each turn (persona.opener_hint)
     acknowledgements: bool = False        # play a short pre-rendered "okay" in Star's voice once the turn is understood
     game_context_for_voice: bool = False  # opt-in ephemeral, typed game telemetry; never enables game control
     speculative_reply: bool = False       # start answering at the first pause, hold the sound until the turn really ends
@@ -490,11 +491,13 @@ class CallSession:
             self._finish_reply(reply)
 
     def _turn_messages(self, reply: _Reply) -> list[dict]:
-        """This turn's request: system prompt, history, then the user's words plus the optional emotion note and
-        game context.
+        """This turn's request: system prompt, history, then the user's words plus the optional emotion note, opener note
+        and game context.
         Only reply.user_text enters the history."""
         messages = self._context() + [{"role": "user", "content": reply.user_text}]
         extras = [self._feel(reply)]
+        if self.config.varied_openers:
+            extras.append(opener_hint(reply.metrics.turn, self.config.style).strip())
         if self.config.game_context_for_voice and self.game_events is not None:
             extras.append(self.game_events.render(now=self.clock()))
         extras = [x for x in extras if x]
@@ -626,7 +629,7 @@ class CallSession:
             if len(self.history) > limit:
                 keep = (limit // 2) // 2 * 2
                 del self.history[: len(self.history) - keep]
-            return [system_message(self.config.system_extra, self.config.style)] + list(self.history)
+            return [system_message(self.config.system_extra, self.config.style, self.config.varied_openers)] + list(self.history)
 
     def _generate_and_speak(self, reply: _Reply, messages: list[dict]) -> None:
         metrics = reply.metrics
