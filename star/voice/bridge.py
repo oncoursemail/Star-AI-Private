@@ -75,6 +75,23 @@ class _Factories:
         from .devices import list_devices
         return list_devices()
 
+    @staticmethod
+    def route_speaker(settings: VoiceSettings):
+        """voice_route "virtual-mic": her voice only into the virtual cable (never the real speakers); else None."""
+        if settings.voice_route != "virtual-mic":
+            return None
+        from ..senses.routes import open_voice_output, query_devices
+        return open_voice_output(query_devices(), monitor=settings.monitor_device)
+
+    @staticmethod
+    def route_microphone(settings: VoiceSettings):
+        """With the virtual cable as the PC's default recording device, her own ears must be the physical microphone."""
+        if settings.voice_route != "virtual-mic" or settings.input_device:
+            return settings.input_device
+        from ..senses.routes import physical_microphone, query_devices
+        mic = physical_microphone(query_devices())
+        return str(mic["index"]) if mic else ""
+
 
 class _Call:
     def __init__(self, call_id: str, settings: VoiceSettings) -> None:
@@ -309,9 +326,12 @@ class VoiceBridge:
             if call.stop.is_set():
                 return
             brain = self._factories.brain(call.settings)
-            speaker = self._factories.speaker(int(getattr(engines.tts, "sample_rate", 24000)),
-                                              call.settings.output_device)
-            call.microphone = self._factories.microphone(call.settings.input_device)
+            route_speaker = getattr(self._factories, "route_speaker", None)
+            speaker = (route_speaker(call.settings) if route_speaker else None) or self._factories.speaker(
+                int(getattr(engines.tts, "sample_rate", 24000)), call.settings.output_device)
+            route_mic = getattr(self._factories, "route_microphone", None)
+            call.microphone = self._factories.microphone(route_mic(call.settings) if route_mic
+                                                         else call.settings.input_device)
 
             def forward(event: dict) -> None:
                 self._emit(call.id, event)

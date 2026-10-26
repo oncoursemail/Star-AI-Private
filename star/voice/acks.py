@@ -20,6 +20,8 @@ LINES: dict[str, tuple[str, ...]] = {
     "feeling": ("Aw.", "I'm here.", "Mm, I'm listening."),
     "other": ("Mm-hm.", "Hmm.", "Right."),
 }
+# Small sounds of listening while the user is still talking (CallSession._maybe_backchannel). Rendered only when asked for.
+BACKCHANNELS = ("Mm-hm.", "Yeah.", "I see.", "Right.", "Mm.")
 # The voice persona often opens with "Oh, ..." or "Okay, ...": the clips avoid those words so the reply does not
 # repeat them; a reply sentence that is exactly the clip's words is not spoken again (CallSession._speak).
 MIN_WORDS = 4
@@ -56,9 +58,12 @@ class Clip:
 class AckClips:
     """Renders every line once (render(), usually on a background thread) and hands out clips by transcript."""
 
-    def __init__(self, tts, lines: dict[str, tuple[str, ...]] | None = None) -> None:
+    def __init__(self, tts, lines: dict[str, tuple[str, ...]] | None = None, backchannels: tuple[str, ...] = ()) -> None:
         self.tts = tts
         self.lines = lines or LINES
+        self.backchannels = backchannels
+        self._back: list[Clip] = []
+        self._back_next = 0
         self._clips: dict[str, list[Clip]] = {}
         self._next: dict[str, int] = {}
         self._lock = threading.Lock()
@@ -66,16 +71,31 @@ class AckClips:
 
     def render(self) -> None:
         clips: dict[str, list[Clip]] = {}
+        back: list[Clip] = []
         try:
             for group, texts in self.lines.items():
                 for text in texts:
                     chunks = tuple((pcm, rate) for pcm, rate in self.tts.synthesize(text) if pcm)
                     if chunks:
                         clips.setdefault(group, []).append(Clip(text, chunks))
+            for text in self.backchannels:
+                chunks = tuple((pcm, rate) for pcm, rate in self.tts.synthesize(text) if pcm)
+                if chunks:
+                    back.append(Clip(text, chunks))
         finally:
             with self._lock:
                 self._clips = clips
+                self._back = back
             self.ready.set()
+
+    def backchannel(self) -> Clip | None:
+        """The next listening sound ("Mm-hm."), rotating, or None when none were rendered or not ready yet."""
+        with self._lock:
+            if not self._back or not self.ready.is_set():
+                return None
+            clip = self._back[self._back_next % len(self._back)]
+            self._back_next += 1
+            return clip
 
     def pick(self, transcript: str) -> Clip | None:
         group = kind(transcript)
