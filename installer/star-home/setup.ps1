@@ -10,7 +10,7 @@
 #   setup.cmd -Grounder none     ask|ui-tars-2b|ui-tars-1.5-7b|none: the optional screen-reading model (default: ask)
 #   setup.cmd -Uninstall         remove the scheduled task and desktop files (keeps her data and workspace)
 # Steps (ids for -Skip / -Only): preflight python files venv pip torch node apps models cable camera grounder discord
-#   config task controls ssh autologon nolock check acceptance.
+#   config task controls ssh autologon nolock check optimize acceptance.
 # Every step is idempotent (run setup.cmd again and finished steps do nothing), is reported as OK / SKIPPED / FAILED with the
 # fix, and a failed step never stops the others. Python packages come from requirements-home.txt (exact versions with
 # hashes; regenerate with installer\star-home\pin_requirements.py); other downloads are pinned in pins.json, star.senses.setup
@@ -30,7 +30,7 @@ $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Pins = Get-Content (Join-Path $PSScriptRoot 'pins.json') -Raw | ConvertFrom-Json
 $StepIds = @('preflight', 'python', 'files', 'venv', 'pip', 'torch', 'node', 'apps', 'models', 'cable', 'camera', 'grounder',
-    'discord', 'config', 'task', 'controls', 'ssh', 'autologon', 'nolock', 'check', 'acceptance')
+    'discord', 'config', 'task', 'controls', 'ssh', 'autologon', 'nolock', 'check', 'optimize', 'acceptance')
 $Skip = @($Skip | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
 $Only = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
 foreach ($id in $Skip + $Only) { if ($StepIds -notcontains $id) { throw "Unknown step '$id'. Steps: $($StepIds -join ' ')" } }
@@ -163,27 +163,38 @@ function Get-Nvidia {
     if ($smi) { $driver = ((& $smi.Source --query-gpu=driver_version --format=csv,noheader 2>$null) | Select-Object -First 1) }
     [pscustomobject]@{ Card = $(if ($card) { $card.Name } else { '' }); Driver = "$driver".Trim(); Smi = [bool]$smi }
 }
-# Wrap pip installs from the lock files: hashes enforced; if pip refuses the hash file, say so and install the same pinned versions without them.
+# Hash failures stop this step. Never retry an unverified package installation.
 function Install-Pinned([string]$File, [string]$Label) {
     $base = @('-m', 'pip', 'install', '--disable-pip-version-check', '--no-cache-dir', '--progress-bar', 'off', '--no-deps')
     $r = Run-Native $VenvPy ($base + @('--require-hashes', '-r', $File))
     if ($r.Code -eq 0) { return 'hashes verified' }
-    Write-Warning "pip rejected the hash-checked install of $Label (exit $($r.Code)); trying the same pinned versions without hash checking."
-    $plain = "$Root\cache\tmp" + '\unhashed-' + (Split-Path $File -Leaf)
-    New-Item -ItemType Directory -Force -Path (Split-Path $plain) | Out-Null
-    [regex]::Replace((Get-Content $File -Raw), '\s*\\\r?\n\s*--hash=sha256:[0-9a-f]{64}', '') | Set-Content $plain -Encoding ascii
-    $r = Run-Native $VenvPy ($base + @('-r', $plain))
-    if ($r.Code -ne 0) { throw "pip could not install $Label (exit $($r.Code)); the output above has the reason." }
-    return 'WARNING: versions pinned but hashes NOT checked (pip rejected the hash file)'
+    throw "The verified install of $Label failed (exit $($r.Code)). No unverified retry was attempted. Check the output, connection and lock file, then rerun this step."
 }
 
 # ---- uninstall ----------------------------------------------------------------------------------------------------------
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($DryRun) { Write-Host "DRY RUN: nothing on this PC will be changed, downloaded or installed." -ForegroundColor DarkYellow }
-elseif (-not $admin) { throw 'Run setup.cmd (it asks for administrator rights).' }
+elseif (-not $admin) {
+    # Encode data separately from code: apostrophes/spaces in paths and arguments cannot become PowerShell source.
+    $parameters = @{}
+    foreach ($key in $PSBoundParameters.Keys) {
+        $value = $PSBoundParameters[$key]
+        if ($value -is [System.Management.Automation.SwitchParameter]) { $value = [bool]$value }
+        $parameters[$key] = $value
+    }
+    $payload = @{ path = $PSCommandPath; parameters = $parameters } | ConvertTo-Json -Depth 8 -Compress
+    $encodedPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+    $launch = '$p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("' + $encodedPayload + '")) | ConvertFrom-Json; ' +
+        '$a = @{}; foreach ($v in $p.parameters.PSObject.Properties) { $a[$v.Name] = $v.Value }; & $p.path @a; exit $LASTEXITCODE'
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($launch))
+    $child = Start-Process -FilePath "$PSHOME\powershell.exe" -Verb RunAs -Wait -PassThru -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCommand)
+    exit $child.ExitCode
+}
 
 if ($Uninstall) {
+    if ($DryRun) { Would 'remove the STAR scheduled task and STAR desktop/startup shortcuts; keep all data'; exit 0 }
     Unregister-ScheduledTask -TaskName $Task -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $Desktop 'STAR STOP.cmd'), (Join-Path $Desktop 'STAR RESUME.cmd'), (Join-Path $Desktop 'Discord (STAR).lnk'),
         (Join-Path $Startup 'Discord (STAR).lnk') -ErrorAction SilentlyContinue
@@ -304,7 +315,7 @@ Invoke-Step 'files' "STAR source and folders under $Root" "Check that $Root is w
     if ($DryRun) {
         Would "create $App, models\voice, models\hf, tools, logs, cache\pip under $Root"
         Would 'set the machine variables STAR_ROOT, STAR_VOICE_MODELS, HF_HOME, PIP_CACHE_DIR'
-        Would "copy $Repo\star to $App\star (robocopy /MIR, keeps node_modules)"
+        Would "copy $Repo\star to $App\star (robocopy /MIR, keeps node_modules), plus bundled avatar art, setup tools and owner guide"
         Mark-DryRun 'would copy the source'; return
     }
     New-Item -ItemType Directory -Force -Path $App, "$Root\models\voice", "$Root\models\hf",
@@ -313,9 +324,24 @@ Invoke-Step 'files' "STAR source and folders under $Root" "Check that $Root is w
     foreach ($name in 'STAR_ROOT', 'STAR_VOICE_MODELS', 'HF_HOME', 'PIP_CACHE_DIR') {
         [Environment]::SetEnvironmentVariable($name, (Get-Item "env:$name").Value, 'Machine')
     }
-    robocopy (Join-Path $Repo 'star') "$App\star" /MIR /XD __pycache__ node_modules /NFL /NDL /NJH /NJS /NP | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "copying the STAR source failed (robocopy $LASTEXITCODE)." }
-    Copy-Item (Join-Path $Repo 'requirements-home*.txt') $App -Force
+    if ([IO.Path]::GetFullPath($Repo) -ne [IO.Path]::GetFullPath($App)) {
+        robocopy (Join-Path $Repo 'star') "$App\star" /MIR /XD __pycache__ node_modules /NFL /NDL /NJH /NJS /NP | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "copying the STAR source failed (robocopy $LASTEXITCODE)." }
+    }
+    foreach ($relative in @('assets\vtuber', 'frontend\public\assets\mascot\faces', 'installer\star-home', 'installer\star-camera')) {
+        $source = Join-Path $Repo $relative
+        $target = Join-Path $App $relative
+        if ((Test-Path -LiteralPath $source) -and ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($target))) {
+            robocopy $source $target /E /XD __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "copying bundled files failed: $relative (robocopy $LASTEXITCODE)." }
+        }
+    }
+    if ([IO.Path]::GetFullPath($Repo) -ne [IO.Path]::GetFullPath($App)) {
+        Copy-Item (Join-Path $Repo 'requirements-home*.txt') $App -Force
+        if (Test-Path -LiteralPath (Join-Path $Repo 'STAR-FIRST-START.md')) {
+            Copy-Item -LiteralPath (Join-Path $Repo 'STAR-FIRST-START.md') -Destination $App -Force
+        }
+    }
     $global:LASTEXITCODE = 0
     Mark-Ok "source in $App, variables STAR_ROOT / STAR_VOICE_MODELS / HF_HOME / PIP_CACHE_DIR set for the machine"
 }
@@ -670,6 +696,15 @@ Invoke-Step 'check' 'Self-test (dry run: nothing is executed)' "Run: cd /d $App 
     Mark-Ok 'star.home check passed'
 }
 
+Invoke-Step 'optimize' 'PC cleanup and performance audit (read only)' 'Run installer\star-home\optimize-star-pc.ps1 to review optional startup cleanup.' {
+    if ($DryRun) { Would 'read startup, optional-app, GPU and power readiness; never apply cleanup'; Mark-DryRun 'would audit the PC'; return }
+    $audit = Join-Path $App 'installer\star-home\optimize-star-pc.ps1'
+    if (-not (Test-Path -LiteralPath $audit)) { Mark-Skipped 'audit tool not copied yet' 'Run setup.cmd -Only files,optimize'; return }
+    $r = Run-Native "$PSHOME\powershell.exe" @('-NoProfile', '-NonInteractive', '-File', $audit, '-Root', $Root)
+    if ($r.Code -ne 0) { Mark-Failed 'PC audit could not finish; no cleanup applied'; return }
+    Mark-Ok 'read-only audit complete; cleanup was not applied'
+}
+
 Invoke-Step 'acceptance' 'Acceptance, quick (no audio, no model loads, no desktop input)' "Read $Data\acceptance\latest.md: every failed check lists its exact fix." {
     if ($DryRun) { Would "python -m star.home acceptance --quick (report in $Data\acceptance)"; Mark-DryRun 'would run the quick acceptance'; return }
     if (-not (Test-Path $VenvPy)) { Mark-Skipped 'needs the venv' 'Fix the venv step first.'; return }
@@ -694,7 +729,10 @@ if ($script:NeedReboot) { Write-Host "`nRESTART WINDOWS now, then run setup.cmd 
 if (-not $DryRun) {
     Write-Host "`nStill by hand (the owner): sign in to Discord, Roblox and Minecraft once with 'remember me'; Sound settings > Recording >" -ForegroundColor Cyan
     Write-Host "  STAR Microphone > Properties > Advanced > 2 channel, 24 bit, 48000 Hz; BIOS: Restore on AC power loss = On." -ForegroundColor Cyan
-    if (Get-ScheduledTask -TaskName $Task -ErrorAction SilentlyContinue) { Start-ScheduledTask -TaskName $Task }
+    Write-Host "PC cleanup preview: powershell -NoProfile -File `"$App\installer\star-home\optimize-star-pc.ps1`" -Root `"$Root`"" -ForegroundColor Cyan
+    Write-Host "Streaming scene preview: cd /d `"$App`" then `"$VenvPy`" -m star.stream_setup --help" -ForegroundColor Cyan
+    if ((Selected 'task') -and -not @($script:Results | Where-Object { $_.Status -eq 'FAILED' }).Count -and
+        (Get-ScheduledTask -TaskName $Task -ErrorAction SilentlyContinue)) { Start-ScheduledTask -TaskName $Task }
     try { Stop-Transcript | Out-Null } catch { }
 }
 $failed = @($script:Results | Where-Object { $_.Status -eq 'FAILED' }).Count
@@ -710,7 +748,11 @@ Write-Host "Computer: $env:COMPUTERNAME   User: $env:USERNAME"
 Write-Host "Address(es): $($ips -join ', ')   (local network: $mainIp)"
 Write-Host "Tell the lead: ssh $env:USERNAME@$mainIp"
 if ($DryRun) { Write-Host "Dry run: nothing was changed, downloaded or installed. Run setup.cmd without -DryRun to install." -ForegroundColor DarkYellow }
-elseif (Get-ScheduledTask -TaskName $Task -ErrorAction SilentlyContinue) { Write-Host "Her loop is running (task '$Task'). Stop: 'STAR STOP.cmd' on the desktop or Ctrl+Alt+Shift+F12." }
+else {
+    $installedTask = Get-ScheduledTask -TaskName $Task -ErrorAction SilentlyContinue
+    if ($installedTask -and $installedTask.State -eq 'Running') { Write-Host "Her loop is running (task '$Task'). Stop: 'STAR STOP.cmd' on the desktop or Ctrl+Alt+Shift+F12." }
+    elseif ($installedTask) { Write-Host "Her task is installed but is not running. Review failed steps and the acceptance report before starting it." }
+}
 Write-Host "$(if ($DryRun) { 'Dry run' } else { 'Setup' }) finished with $failed failed step(s). Full check of every ability on this PC (plays sound, moves the mouse; --quick = no audio/GPU loads; report in $Data\acceptance):"
 Write-Host "  cd /d $App ; $Venv\Scripts\python.exe -m star.home acceptance"
 exit $(if ($failed) { 1 } else { 0 })

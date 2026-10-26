@@ -38,3 +38,8 @@ nvidia-cublas-cu12>=12,<13         # cuBLAS 12 for faster-whisper's CTranslate2 
 
 # star.vtuber: the "STAR Camera" virtual webcam
 pyvirtualcam>=0.15,<1
+
+# Owner-run OBS scene setup and host-only Windows credential storage; neither is a model tool.
+obsws-python==1.8.0
+keyring==25.7.0
+websocket-client==1.9.2             # official read-only Twitch EventSub socket adapter

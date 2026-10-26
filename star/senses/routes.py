@@ -105,15 +105,25 @@ def open_voice_output(devices: list[dict], *, monitor: str = "", prefill_ms: int
     route = find_route(devices)
     if route.playback is None:
         raise RouteMissing(route.describe())
+    heard = None
+    if monitor:
+        heard = next((d for d in devices if d["kind"] == "output" and monitor.lower() in d["name"].lower()), None)
+        if heard is None:
+            raise RouteMissing(f'The monitor device "{monitor}" was not found.')
     from .output import SoundOutput
     cable = SoundOutput(route.playback["index"], rate=route.playback["rate"],
                         channels=min(2, route.playback["channels"]), prefill_ms=prefill_ms)
-    if not monitor:
-        return cable
-    heard = next((d for d in devices if d["kind"] == "output" and monitor.lower() in d["name"].lower()), None)
     if heard is None:
-        raise RouteMissing(f'The monitor device "{monitor}" was not found.')
-    return _Tee(cable, SoundOutput(heard["index"], rate=heard["rate"], channels=min(2, heard["channels"])))
+        return cable
+    try:
+        monitored = SoundOutput(heard["index"], rate=heard["rate"], channels=min(2, heard["channels"]))
+    except BaseException:
+        try:
+            cable.close()
+        except Exception:
+            pass
+        raise
+    return _Tee(cable, monitored)
 
 
 class _Tee:

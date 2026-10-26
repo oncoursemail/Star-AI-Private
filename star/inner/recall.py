@@ -71,35 +71,48 @@ def rate_importance(text: str) -> tuple[float, float]:
 
 
 def sync_person(store: InnerStore, memory, person) -> int:
-    """Copy what friend memory holds about this person into her episodes (new rows only). A person who may be a minor,
-    and anyone on Roblox, contributes only the interests friend memory already kept: no chat lines."""
+    """Reconcile retained source records, including deletion and changed age restrictions."""
+    try:
+        person = memory.get(person.id)
+    except KeyError:
+        return 0
     pkey = person_key(memory, person)
     if not pkey:
         return 0
-    added = 0
-    last_fact = int(store.meta(f"sync:{pkey}:f", "0"))
-    rows = memory._db.execute("SELECT id, text, ts FROM facts WHERE person_id = ? AND id > ? ORDER BY id",
-                              (person.id, last_fact)).fetchall()
+    wanted = {}
+    rows = memory.fact_records(person,
+                               interests_only=rules.age_status(person) in ("minor", "doubt"))
     for fid, text, ts in rows:
         importance, emotion = rate_importance(text)
-        added += store.add_episode(pkey, text, kind="fact", ts=ts, importance=max(0.6, importance), emotion=emotion,
-                                   src=f"f:{pkey}:{fid}") is not None
-    if rows:
-        store.set_meta(f"sync:{pkey}:f", str(rows[-1][0]))
+        wanted[f"f:{pkey}:{fid}"] = ("fact", text, ts, max(0.6, importance), emotion)
     if rules.age_status(person) in ("adult", "unknown"):
-        last_moment = int(store.meta(f"sync:{pkey}:m", "0"))
-        rows = memory._db.execute("SELECT id, platform, line, ts FROM moments WHERE person_id = ? AND id > ? ORDER BY id",
-                                  (person.id, last_moment)).fetchall()
+        rows = memory.moment_records(person)
         for mid, platform, line, ts in rows:
             if platform == "roblox" or not line.startswith("they: "):
                 continue
             body = line[6:].strip()
             if len(body) >= 24:
                 importance, emotion = rate_importance(body)
-                added += store.add_episode(pkey, body, kind="moment", ts=ts, importance=importance, emotion=emotion,
-                                           src=f"m:{pkey}:{mid}") is not None
-        if rows:
-            store.set_meta(f"sync:{pkey}:m", str(rows[-1][0]))
+                wanted[f"m:{pkey}:{mid}"] = ("moment", body, ts, importance, emotion)
+    added = 0
+    with store._lock:
+        existing = store.db.execute("SELECT id,src,kind,text,ts FROM episodes WHERE pkey = ?", (pkey,)).fetchall()
+        stale = []
+        for eid, src, kind, text, ts in existing:
+            if not isinstance(src, str) or not src.startswith((f"f:{pkey}:", f"m:{pkey}:")):
+                continue
+            record = wanted.get(src)
+            if (record is None or kind != record[0] or ts != record[2]
+                    or text != " ".join(str(record[1]).split())[:300]):
+                stale.append(eid)
+        if stale:
+            store.delete_episodes(stale)
+        for src, (kind, text, ts, importance, emotion) in wanted.items():
+            added += store.add_episode(pkey, text, kind=kind, ts=ts, importance=importance,
+                                       emotion=emotion, src=src) is not None
+    if person_key(memory, person) != pkey:
+        store.delete_person(pkey)
+        return 0
     return added
 
 
@@ -119,9 +132,12 @@ def ago(ts: float, now: float) -> str:
 
 
 def line_for(episode: Episode, now: float) -> str:
-    text = episode.text if len(episode.text) <= MAX_LINE - 22 else episode.text[: MAX_LINE - 23].rstrip() + "…"
-    who = "you" if episode.kind == "home" else "they said"
-    return f"{ago(episode.ts, now)} {who}: {text}"
+    who = {"home_verified": "activity reported success", "home_unverified": "unverified activity report",
+           "home": "legacy unverified report"}.get(episode.kind, "they said")
+    prefix = f"{ago(episode.ts, now)} {who}: "
+    room = MAX_LINE - len(prefix)
+    text = episode.text if len(episode.text) <= room else episode.text[:room - 1].rstrip() + "…"
+    return prefix + text
 
 
 def _ranked(store: InnerStore, query: list[str], pkey: str, now: float, *, asked: bool) -> list[tuple[float, Episode]]:

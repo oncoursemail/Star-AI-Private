@@ -34,35 +34,72 @@ def _prosody() -> object | None:
 
 
 class VoiceLine:
-    def __init__(self, target: Callable[[], tuple | None], *, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, target: Callable[[], tuple | None], *, clock: Callable[[], float] = time.monotonic,
+                 allowed: Callable[[], bool] = lambda: True) -> None:
         """`target()` -> (tts, speaker, session or None), or None while no voice is available."""
         self._target, self._clock = target, clock
         self._thread: threading.Thread | None = None
         self.spoken: list[str] = []
+        self._allowed = allowed
+        self._lock = threading.RLock()
+        self._play_lock = threading.Lock()
+        self._generation = 0
+        self._pending = False
+        self._cancel = threading.Event()
+        self._speaker = None
 
     def busy(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        with self._lock:
+            return self._pending or (self._thread is not None and self._thread.is_alive())
 
     def say(self, text: str) -> bool:
         line = speakable(str(text or ""))[:MAX_LINE_CHARS].strip()
-        if not line or self.busy():
-            return False
-        target = self._target()
-        if target is None:
-            return False
-        tts, speaker, session = target
-        if session is not None and (session.busy() or session.state in ("user_speaking", "thinking")):
-            return False                                    # she is talking with someone: no remark over them
+        with self._lock:
+            if not line or self.busy() or not self._allowed():
+                return False
+            self._pending = True
+            generation = self._generation
         try:
+            target = self._target()
+            if target is None:
+                return False
+            tts, speaker, session = target
+            if session is not None and (session.busy() or session.state in ("user_speaking", "thinking")):
+                return False
             if speaker.pending_seconds() > 0.05:
                 return False
+            with self._lock:
+                if generation != self._generation or not self._allowed():
+                    return False
+                cancel = self._cancel = threading.Event()
+                self._speaker = speaker
+                self._thread = threading.Thread(target=self._speak, args=(tts, speaker, line, cancel, session),
+                                                name="star-home-line", daemon=True)
+                self._thread.start()
+                return True
         except Exception:
-            pass
-        self._thread = threading.Thread(target=self._speak, args=(tts, speaker, line), name="star-home-line", daemon=True)
-        self._thread.start()
-        return True
+            return False
+        finally:
+            with self._lock:
+                if generation == self._generation:
+                    self._pending = False
 
-    def _speak(self, tts, speaker, line: str) -> None:
+    def cancel(self) -> None:
+        """Invalidate pending work, then flush its old speaker before any handoff."""
+        with self._lock:
+            self._generation += 1
+            self._pending = False
+            self._cancel.set()
+            speaker, self._speaker = self._speaker, None
+            with self._play_lock:
+                if speaker is not None:
+                    try:
+                        speaker.stop()
+                    except Exception:
+                        pass
+
+    def _speak(self, tts, speaker, line: str, cancel: threading.Event, session) -> None:
+        stream = None
         try:
             kwargs = {}
             try:
@@ -70,11 +107,24 @@ class VoiceLine:
                     kwargs["prosody"] = _prosody()
             except (TypeError, ValueError):
                 pass
-            for pcm, rate in tts.synthesize(line, **kwargs):
-                speaker.play(pcm, rate)
-            self.spoken.append(line)
+            stream = iter(tts.synthesize(line, **kwargs))
+            for pcm, rate in stream:
+                with self._play_lock:
+                    if (cancel.is_set() or not self._allowed() or
+                            (session is not None and (session.busy() or session.state in ("user_speaking", "thinking")))):
+                        return
+                    speaker.play(pcm, rate)
+            if not cancel.is_set() and self._allowed():
+                self.spoken.append(line)
         except Exception:
             pass                                            # a voice problem must not stop the game
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
 
 
 class VoiceCall:
@@ -88,14 +138,22 @@ class VoiceCall:
         self.started = clock()
         self._last_active = clock()
         self._turns_seen = 0
+        self._close_lock = threading.Lock()
+        self._session_lock = threading.Lock()
+        self._closed = self._session_closed = False
 
     def start(self) -> "VoiceCall":
+        if self._stop.is_set():
+            raise RuntimeError("voice call was stopped before startup")
         self._thread.start()
         return self
 
     def _run(self) -> None:
         try:
-            self.session.start()
+            with self._session_lock:
+                if self._stop.is_set():
+                    return
+                self.session.start()
             for frame in self.frames:
                 if self._stop.is_set():
                     break
@@ -103,14 +161,32 @@ class VoiceCall:
         except Exception:
             pass
         finally:
-            try:
-                self.session.stop()
-            finally:
-                for close in self._closers:
+            self._cleanup()
+
+    def _cleanup(self) -> None:
+        with self._close_lock:
+            closers = () if self._closed else self._closers
+            self._closed = True
+        with self._session_lock:
+            if not self._session_closed:
+                self._session_closed = True
+                stop_speaker = getattr(getattr(self.session, "speaker", None), "stop", None)
+                if callable(stop_speaker):
                     try:
-                        close()
+                        stop_speaker()
                     except Exception:
                         pass
+                try:
+                    self.session.stop()
+                except Exception:
+                    pass
+        # Cancel session speech before any native capture/output close can block.
+        # Closing capture then wakes a generator waiting for the next frame.
+        for close in closers:
+            try:
+                close()
+            except Exception:
+                pass
 
     def alive(self) -> bool:
         return self._thread.is_alive() and not self._stop.is_set()
@@ -134,7 +210,9 @@ class VoiceCall:
 
     def stop(self) -> None:
         self._stop.set()
-        self._thread.join(5.0)
+        self._cleanup()
+        if self._thread.is_alive() and self._thread is not threading.current_thread():
+            self._thread.join(0.5)
 
 
 class HomeVoice:
@@ -144,19 +222,53 @@ class HomeVoice:
         self.call: VoiceCall | None = None
         self.window: GameMomentWindow | None = None
         self._standalone: tuple | None = None
-        self._line = VoiceLine(self._target)
+        self._lock = threading.RLock()
+        self._epoch = 0
+        self._starting = False
+        self._stop_check: Callable[[], bool] = lambda: False
+        self._line = VoiceLine(self._target, allowed=self._allowed)
+
+    def set_stop_check(self, check: Callable[[], bool]) -> None:
+        if not callable(check):
+            raise TypeError("voice stop check must be callable")
+        self._stop_check = check
+
+    def _allowed(self) -> bool:
+        try:
+            return self._stop_check() is False
+        except Exception:
+            return False
+
+    def stopped(self) -> bool:
+        return not self._allowed()
 
     # ---- speaking -------------------------------------------------------------------------------------------
     def _target(self) -> tuple | None:
-        call = self.call
-        if call is not None and call.alive():
-            return call.session.tts, call.session.speaker, call.session
-        if self._standalone is None and self._voice_factory is not None:
+        with self._lock:
+            if self._starting or not self._allowed():
+                return None
+            call, epoch = self.call, self._epoch
+            if call is not None and call.alive():
+                return call.session.tts, call.session.speaker, call.session
+            if self._standalone is not None:
+                return self._standalone
+            factory = self._voice_factory
+        if factory is not None:
             try:
-                self._standalone = (*self._voice_factory(), None)
+                made = (*factory(), None)
             except Exception:
-                self._voice_factory = None                  # no voice stack on this PC: stay silent, keep playing
-        return self._standalone
+                return None
+            with self._lock:
+                if self._epoch == epoch and not self._starting and self._allowed():
+                    self._standalone = made
+                    return made
+            try:
+                close = getattr(made[1], "close", None)
+                if callable(close):
+                    close()
+            except Exception:
+                pass
+        return None
 
     def speak(self, text: str, prosody=None) -> bool:
         """The say-queue the play loop and the video watcher call: False when she is busy talking with someone."""
@@ -165,25 +277,67 @@ class HomeVoice:
     def window_for(self, game_id: str) -> GameMomentWindow:
         """A fresh moment window for one game session; when a call is live the call reads it."""
         window = GameMomentWindow(f"{game_id}-{next(_ids)}"[:60].replace(" ", "-"))
-        self.window = window
-        if self.call is not None and self.call.alive():
-            self.call.attach_window(window)
+        with self._lock:
+            self.window = window
+            if self.call is not None and self.call.alive():
+                self.call.attach_window(window)
         return window
 
     # ---- calls ----------------------------------------------------------------------------------------------
     def in_call(self) -> bool:
-        return self.call is not None and self.call.alive()
+        with self._lock:
+            return self._starting or (self.call is not None and self.call.alive())
 
     def start_call(self, friend: dict) -> VoiceCall:
         if self._call_factory is None:
             raise RuntimeError("no voice stack is set up on this PC (python -m star.senses.setup)")
-        self.end_call()
-        self.call = self._call_factory(friend).start()
-        if self.window is not None:                         # she is already playing: the call knows about it
-            self.call.attach_window(self.window)
-        return self.call
+        with self._lock:
+            if not self._allowed() or self._starting:
+                raise RuntimeError("voice call startup is stopped or already active")
+            self._epoch += 1
+            epoch = self._epoch
+            old, self.call = self.call, None
+            self._starting = True
+            self._line.cancel()                            # flush before a new private-call speaker can be published
+        candidate = None
+        try:
+            if old is not None:
+                old.stop()
+            with self._lock:
+                if epoch != self._epoch or not self._allowed():
+                    raise RuntimeError("voice call startup was cancelled")
+            candidate = self._call_factory(friend)
+            with self._lock:
+                if epoch != self._epoch or not self._allowed():
+                    raise RuntimeError("voice call startup was cancelled")
+                if self.window is not None:
+                    candidate.attach_window(self.window)
+                candidate.start()
+                self.call = candidate
+                self._starting = False
+                return candidate
+        except Exception:
+            if candidate is not None:
+                try:
+                    candidate.stop()
+                except Exception:
+                    pass
+            with self._lock:
+                if epoch == self._epoch:
+                    self._starting = False
+            raise
 
-    def end_call(self) -> None:
-        call, self.call = self.call, None
+    def end_call(self, *, expected=None) -> None:
+        with self._lock:
+            if expected is not None and self.call is not expected:
+                return
+            self._epoch += 1
+            call, self.call = self.call, None
+            self._starting = False
+            self._line.cancel()
         if call is not None:
             call.stop()
+
+    def stop(self) -> None:
+        """Host STOP: cancel game speech and calls without social/UI actions."""
+        self.end_call()

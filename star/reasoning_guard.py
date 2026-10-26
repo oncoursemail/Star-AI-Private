@@ -17,9 +17,11 @@ _OPENER = re.compile(
 _HEDGES = re.compile(r"\b(?:alternatively|could be|but maybe|maybe they|perhaps they|wait,|let'?s assume|or maybe)\b", re.I)
 _FENCE = re.compile(r"```.*?(?:```|\Z)", re.S)
 _SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?:\s+|$)|\n+")
+_STREAM_END = re.compile(r"[.!?][\"')\]]*\s+|\n+")
 START_CHECK_CHARS = 24          # enough to see an opener; the first words of a normal answer are not held back
 HEDGE_LIMIT = 3
-HOLD_CHARS = 60                 # an unfinished sentence is held back at most this long, so a plan sentence is cut whole
+MAX_UNFINISHED_CHARS = 4096     # non-whitespace prose; fenced code is masked before this check
+MAX_BUFFERED_CHARS = 65536      # also bound whitespace, think blocks and an unfinished code block
 
 
 class ReasoningLoop(Exception):
@@ -71,8 +73,10 @@ def plan_start(prose: str) -> int | None:
 
 
 def safe_end(prose: str) -> int:
-    """How much of the text may be shown: up to the last sentence end, or everything once the unfinished sentence is
-    longer than HOLD_CHARS (the plan phrases come in its first words)."""
-    ends = [m.start() + len(m.group().rstrip()) for m in _SENTENCE_END.finditer(prose)]   # the space after it waits
-    done = ends[-1] if ends else 0
-    return len(prose) if len(prose) - done > HOLD_CHARS else done
+    """Only complete sentences may stream: later chunks can complete a rejected phrase."""
+    ends = [m.start() + len(m.group().rstrip()) for m in _STREAM_END.finditer(prose)]   # require a following separator
+    return ends[-1] if ends else 0
+
+
+def unfinished_too_long(prose: str) -> bool:
+    return sum(not char.isspace() for char in prose[safe_end(prose):]) > MAX_UNFINISHED_CHARS

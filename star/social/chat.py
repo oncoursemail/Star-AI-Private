@@ -183,7 +183,8 @@ class SocialChat:
         """Her reply to `text` from `handle`, or None when she should not answer (blocked)."""
         now = self._clock()
         text = " ".join(str(text or "").split())[:1500]
-        person = self.memory.person(platform, handle, name, they_started=not public)
+        person = (self.memory.person(platform, handle, name) if public
+                  else self.memory.observe_incoming(platform, handle, name))
         if person.blocked:
             return None
         if REMEMBER_AGAIN.search(text) and not person.remembered:
@@ -210,6 +211,7 @@ class SocialChat:
 
         rules.observe(self.memory, person, text, kids_place=kids_place, now=now)
         self._reunion(person)                    # before the mood note is built, so she greets them gladly
+        self._feel(text, person)
         mode = rules.romance_mode(platform, person)
         roleplay = self._in_roleplay((platform, handle.lower()), text, now)
         # The system message stays the same from turn to turn (so the server's prompt cache holds); what changes with
@@ -245,7 +247,6 @@ class SocialChat:
         self.memory.note_moment(person, platform, f"me: {reply}")
         if person.relationship == "met" and len(self.memory.moments(person, FRIEND_AFTER)) >= FRIEND_AFTER:
             self.memory.update(person, relationship="friend")
-        self._feel(text, person)
         if inner is not None:
             try:
                 inner.done()

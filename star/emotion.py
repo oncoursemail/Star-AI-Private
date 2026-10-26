@@ -83,6 +83,15 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+def _number(value) -> float:
+    if type(value) not in (int, float):
+        raise ValueError("emotion numeric value must be a number")
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError("emotion numeric value must be finite")
+    return value
+
+
 # -- reading words (the label set follows GoEmotions: admiration, amusement, anger, annoyance, caring, disappointment,
 #    disapproval, excitement, fear, gratitude, grief, joy, love, nervousness, pride, relief, remorse, sadness ...) -------
 _NOT_ABOUT_STAR = re.compile(r"\b(?:what(?:'s| is)|something|anything|whats) wrong\b|\bwrong with\b", re.I)
@@ -205,18 +214,31 @@ class EmotionEngine:
         try:
             state = json.loads(row[0])
             # a state saved before a feeling existed simply starts that feeling at its baseline
-            state["e"] = {k: float(state["e"].get(k, BASELINE[k])) for k in EMOTIONS}
-            state["drift"] = {k: float(state.get("drift", {}).get(k, 0.0)) for k in EMOTIONS}
+            state["e"] = {k: _number(state["e"].get(k, BASELINE[k])) for k in EMOTIONS}
+            state["drift"] = {k: _number(state.get("drift", {}).get(k, 0.0)) for k in EMOTIONS}
             for key in ("t", "valence", "arousal", "last_active", "last_tick"):
-                state[key] = float(state[key])
-            state["streak"] = int(state.get("streak", 0))
-            state["seen"] = {str(k): float(v) for k, v in state.get("seen", {}).items()}
-            state["bonds"] = {str(k): [float(v[0]), float(v[1])] for k, v in state.get("bonds", {}).items()}
-            state["amends"] = [[str(p), float(t)] for p, t in state.get("amends", [])]
-            if not all(map(math.isfinite, [*state["e"].values(), state["valence"], state["arousal"], state["t"]])):
-                raise ValueError("not finite")
-            return state
-        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+                state[key] = _number(state[key])
+            state["streak"] = state.get("streak", 0)
+            if type(state["streak"]) is not int or state["streak"] < 0:
+                raise ValueError("invalid failure streak")
+            state["seen"] = {str(k): _number(v) for k, v in state.get("seen", {}).items()}
+            bonds, amends = state.get("bonds", {}), state.get("amends", [])
+            if (not isinstance(bonds, dict) or len(bonds) > MAX_BONDS
+                    or any(not isinstance(v, list) or len(v) != 2 for v in bonds.values())
+                    or not isinstance(amends, list) or len(amends) > MAX_AMENDS
+                    or any(not isinstance(v, list) or len(v) != 2 or not isinstance(v[0], str) for v in amends)):
+                raise ValueError("invalid relationship records")
+            state["bonds"] = {str(k): [_number(v[0]), _number(v[1])] for k, v in bonds.items()}
+            state["amends"] = [[str(p), _number(t)] for p, t in amends]
+            if (any(not 0.0 <= value <= CAPS.get(name, 1.0) for name, value in state["e"].items())
+                    or any(not -MAX_DRIFT <= value <= MAX_DRIFT for value in state["drift"].values())
+                    or not -1.0 <= state["valence"] <= 1.0 or not 0.0 <= state["arousal"] <= 1.0
+                    or any(not _PERSON.fullmatch(person) or not 0.0 <= pair[0] <= 1.0
+                           for person, pair in state["bonds"].items())
+                    or any(person and not _PERSON.fullmatch(person) for person, _ in state["amends"])):
+                raise ValueError("state outside declared bounds")
+            return {key: state[key] for key in self._fresh(now)}
+        except (ValueError, KeyError, TypeError, AttributeError, OverflowError) as exc:
             _log.warning("Emotion state unreadable (%s); starting from the baseline", type(exc).__name__)
             return self._fresh(now)
 
@@ -271,11 +293,11 @@ class EmotionEngine:
 
     def _save(self, db, state: dict) -> None:
         db.execute("INSERT INTO state(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json",
-                   (json.dumps(state),))
+                   (json.dumps(state, allow_nan=False),))
 
     def _transaction(self, change: Callable[[dict, float], object] | None, log: list | None = None):
         with self._lock, self._db() as db:
-            now = self.clock()
+            now = _number(self.clock())
             db.execute("BEGIN IMMEDIATE")
             try:
                 state = self._load(db, now)
@@ -315,7 +337,7 @@ class EmotionEngine:
 
         log = [(k, _clamp(float(st), 0.0, 1.5), d[:80]) for k, st, d, _ in events if k != "idle"]
         state, _ = self._transaction(change, log)
-        return self._describe(state, person, partner_adult, self.clock())
+        return self._describe(state, person, partner_adult, _number(self.clock()))
 
     def _apply(self, state: dict, now: float, kind: str, strength: float, hours: float, person: str | None) -> None:
         if kind == "idle":
@@ -366,14 +388,14 @@ class EmotionEngine:
     def tick(self) -> dict:
         """Let time pass: idle boredom is added up to now. Hosts that stay silent for hours call this now and then."""
         state, _ = self._transaction(None)
-        return self._describe(state, None, None, self.clock())
+        return self._describe(state, None, None, _number(self.clock()))
 
     # -- output -----------------------------------------------------------------------------------------------------
     def snapshot(self, person: str | None = None, partner_adult: bool | None = None) -> dict:
         """The state as of now (decayed, including the silence so far); read-only. With `person`, their attachment
         shapes the directive; romance (light flirting) is only ever offered when partner_adult is True."""
         with self._lock, self._db() as db:
-            now = self.clock()
+            now = _number(self.clock())
             state = self._load(db, now)
         self._decay(state, now)
         self._idle(state, now)

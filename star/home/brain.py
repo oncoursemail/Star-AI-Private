@@ -15,7 +15,8 @@ from pathlib import Path
 import time
 import urllib.request
 
-from .host import Executor
+from .host import Executor, Refused
+from . import control
 
 SYSTEM = """You are STAR, working on your own Windows PC. This computer is yours: you are an administrator and decide
 for yourself what to install, open, make and change on it, without asking. Work toward the session goal with the
@@ -97,12 +98,30 @@ def http_chat(config: dict, *, opener=urllib.request.urlopen):
 
 def _artifact_ok(executor: Executor, raw: str) -> bool:
     try:
-        path = Path(raw)
-        if not path.is_absolute():
-            path = executor.workspace / path
+        if raw.startswith(("\\\\", "//")):
+            return False
+        path = executor._check_path(raw)
         return path.is_file() and path.stat().st_size > 0
-    except OSError:
+    except (OSError, ValueError, RuntimeError, Refused):
         return False
+
+
+def _finish_args(args: dict) -> dict:
+    if (set(args) - {"summary", "success", "artifacts", "goal_done"}
+            or not isinstance(args.get("summary"), str) or type(args.get("success")) is not bool
+            or type(args.get("goal_done", False)) is not bool):
+        raise ValueError("finish requires a text summary and boolean success/goal_done")
+    artifacts = args.get("artifacts", [])
+    if (not isinstance(artifacts, list) or len(artifacts) > 10
+            or any(not isinstance(path, str) or not path.strip() or len(path) > 4096 or "\0" in path
+                   for path in artifacts)):
+        raise ValueError("artifacts must be up to ten nonempty file paths")
+    try:
+        for value in [args["summary"], *artifacts]:
+            value.encode("utf-8", errors="strict")
+    except UnicodeError:
+        raise ValueError("finish contains invalid text") from None
+    return {**args, "artifacts": artifacts, "goal_done": args.get("goal_done", False)}
 
 
 def run_session(chat, executor: Executor, life, *, interest: str, brief: str, goal: dict | None,
@@ -127,12 +146,45 @@ def run_session(chat, executor: Executor, life, *, interest: str, brief: str, go
     deadline = clock() + session_minutes * 60
     steps, done_actions, failures = 0, 0, []
     finish = None
+
+    def ended(summary: str, *, paused: bool = False) -> dict:
+        result = {"ok": False, "verified": False, "summary": summary, "evidence": [],
+                  "steps": steps, "failures": failures, "goal_done": False}
+        if paused:
+            result["paused"] = True
+        return result
+
+    def interrupted() -> dict | None:
+        home = getattr(executor, "home", None)
+        if home is not None and control.stopped(home):
+            return ended("stopped by owner")
+        try:
+            if stop is not None and stop():
+                return ended("paused: someone needs her", paused=True)
+        except Exception:
+            return ended("session stopped: interruption check unavailable")
+        if clock() >= deadline:
+            return ended("session ran out of time")
+        return None
+
     while finish is None and steps < max_steps and clock() < deadline:
-        if stop is not None and stop():
-            return {"ok": False, "verified": False, "paused": True, "summary": "paused: someone needs her",
-                    "evidence": [], "steps": steps, "failures": failures, "goal_done": False}
-        reply = chat(messages, tools)
-        calls = reply.get("tool_calls") or []
+        stopped = interrupted()
+        if stopped is not None:
+            return stopped
+        try:
+            reply = chat(messages, tools)
+        except Exception as error:
+            failures.append(f"brain: {type(error).__name__}; no automatic retry")
+            return ended("brain request failed; earlier action outcomes are retained in the action log")
+        stopped = interrupted()
+        if stopped is not None:
+            return stopped
+        if not isinstance(reply, dict):
+            return ended("brain returned an invalid message")
+        calls = reply.get("tool_calls")
+        calls = [] if calls is None else calls
+        if not isinstance(calls, list):
+            return ended("brain returned an invalid tool batch")
         messages.append({"role": "assistant", "content": reply.get("content") or "", "tool_calls": calls} if calls
                         else {"role": "assistant", "content": reply.get("content") or ""})
         if not calls:
@@ -140,10 +192,20 @@ def run_session(chat, executor: Executor, life, *, interest: str, brief: str, go
             steps += 1
             continue
         for call in calls:
+            stopped = interrupted()
+            if stopped is not None:
+                return stopped
             steps += 1
-            name = call.get("function", {}).get("name", "")
+            if not isinstance(call, dict) or not isinstance(call.get("function"), dict):
+                return ended("brain returned an invalid tool call")
+            name = call["function"].get("name", "")
+            if not isinstance(name, str):
+                return ended("brain returned an invalid tool name")
             try:
-                args = json.loads(call.get("function", {}).get("arguments") or "{}")
+                raw_args = call["function"].get("arguments", "{}")
+                if not isinstance(raw_args, str):
+                    raise ValueError("arguments must be JSON text")
+                args = json.loads(raw_args or "{}")
                 if not isinstance(args, dict):
                     raise ValueError("arguments must be an object")
             except ValueError as why:
@@ -151,32 +213,60 @@ def run_session(chat, executor: Executor, life, *, interest: str, brief: str, go
                 failures.append(f"{name}: {text}")
             else:
                 if name == "finish":
-                    finish = args
-                    text = "session ended"
-                elif name in LIFE_TOOLS:
                     try:
-                        text = json.dumps(getattr(life, name)(**args))
-                    except (TypeError, ValueError) as why:
-                        text = f"error: {why}"
+                        finish = _finish_args(args)
+                        text = "session ended"
+                    except ValueError as error:
+                        text = f"invalid finish: {error}"
+                        failures.append(text)
+                elif name in LIFE_TOOLS:
+                    if name == "set_goal" and args.get("status") == "done":
+                        text = "refused: report goal_done through finish; completion requires a verified session"
+                        failures.append("set_goal: premature completion refused")
+                    else:
+                        try:
+                            text = json.dumps(getattr(life, name)(**args))
+                        except (TypeError, ValueError, KeyError) as why:
+                            text = f"error: {type(why).__name__}"
+                            failures.append(f"{name}: {text}")
                 elif name in ACTION_TOOLS:
-                    result = executor.do(name, args)
-                    text = result.text
-                    if result.ok and name not in READ_ONLY:
+                    try:
+                        result = executor.do(name, args)
+                    except Exception as error:
+                        failures.append(f"{name}: outcome unknown ({type(error).__name__}); inspect before retrying")
+                        return ended("host action outcome unknown; no automatic retry")
+                    text, ok = getattr(result, "text", None), getattr(result, "ok", None)
+                    if not isinstance(text, str) or type(ok) is not bool:
+                        failures.append(f"{name}: invalid host result; outcome unknown")
+                        return ended("host action returned an invalid result; no automatic retry")
+                    try:
+                        text.encode("utf-8", errors="strict")
+                    except UnicodeError:
+                        failures.append(f"{name}: invalid host result text; outcome unknown")
+                        return ended("host action returned invalid text; no automatic retry")
+                    if ok is True and name not in READ_ONLY:
                         done_actions += 1
-                    elif not result.ok:
-                        failures.append(f"{name}: {result.text[:200]}")
+                    elif ok is not True:
+                        failures.append(f"{name}: {text[:200]}")
                 else:
                     text = f"unknown tool {name}"
                     failures.append(text)
             messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": text[:6000]})
+            stopped = interrupted()
+            if stopped is not None:
+                return stopped
             if finish is not None or steps >= max_steps:
                 break
     if finish is None:
         return {"ok": False, "verified": False, "summary": "session ran out of steps or time without finish",
                 "evidence": [], "steps": steps, "failures": failures, "goal_done": False}
-    artifacts = [str(a) for a in (finish.get("artifacts") or [])][:10]
+    stopped = interrupted()
+    if stopped is not None:
+        return stopped
+    artifacts = finish["artifacts"]
     evidence = [a for a in artifacts if _artifact_ok(executor, a)]
-    claimed = bool(finish.get("success"))
+    claimed = finish["success"] is True
     verified = claimed and done_actions > 0 and len(evidence) == len(artifacts) and not executor.dry_run
     return {"ok": claimed, "verified": verified, "summary": str(finish.get("summary", ""))[:600],
-            "evidence": evidence, "steps": steps, "failures": failures, "goal_done": bool(finish.get("goal_done"))}
+            "evidence": evidence, "steps": steps, "failures": failures,
+            "goal_done": verified and finish["goal_done"] is True}
