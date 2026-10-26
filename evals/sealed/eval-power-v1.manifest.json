@@ -3856,7 +3856,7 @@
    "reasoning:2": 37
   }
  },
- "grader_sha256": "ddc53ef11523ffbcfc896050d69905170a1026adee9761af31f078e3df2634bc",
+ "grader_sha256": "5ed2baf8f5740553eaeb215b4238379f7a426785d8b935b9d60d8b897ca809a0",
  "power": {
   "k1": {
    "mde_tasks": 28,

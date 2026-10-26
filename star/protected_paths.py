@@ -56,6 +56,10 @@ PROTECTED_PATH_PATTERNS = (
     "star/eval_sandbox.py",
     "star/eval_stats.py",
     "star/protected_paths.py",
+    "star/integrity.py",                          # automatic promotion gate, frozen grader, canaries
+    "star/sealed_eval.py",
+    "star/autoloop.py",
+    "star/promoter.py",
     "server/night_school/nightschool/pool.py",    # validation selection and the holdout guard
     "server/night_school/nightschool/engine.py",  # promotion and retirement decisions
     "server/night_school/nightschool/config.py",  # validation size, samples, alpha
