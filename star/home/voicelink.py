@@ -141,6 +141,7 @@ class VoiceCall:
         self._close_lock = threading.Lock()
         self._session_lock = threading.Lock()
         self._closed = self._session_closed = False
+        self.error_type = ''
 
     def start(self) -> "VoiceCall":
         if self._stop.is_set():
@@ -158,8 +159,8 @@ class VoiceCall:
                 if self._stop.is_set():
                     break
                 self.session.feed(frame)
-        except Exception:
-            pass
+        except Exception as error:
+            self.error_type = type(error).__name__
         finally:
             self._cleanup()
 
