@@ -135,3 +135,14 @@ labelled optional ("maybe useful, only if it fits"); no example sentences; no nu
   is not removed by "forget me". Revisit if the owner wants a hard guarantee.
 - Dream seeds use `reachout.add_seed`, so they need the person to be a close friend at night and again when `due()` runs.
 - `emotion.py` has no dream event kinds (nudge uses `learned_something` / `task_failure` at low strength).
+
+## Measured 2026-10-26 (brain 1, `star-voice`, Claude lead's measure lane): chat hook stays OFF
+**Blind A/B** (`tools/inner_life_eval/run.py gen 2 / blind / score`; 21 fixture messages x 2 reps = 42 pairs; judge = Claude, one judge, scores typed before the key was opened; consistency and naturalness 1-5; `timing` not run because the quality rule already fails):
+- consistency off 2.57, on 2.71; naturalness off 2.17, on 2.36; pairs on 16, off 16, ties 10; sign test p = 1.0. Rule (39-of-60 style win) **not met** -> `inner_chat_enabled` stays OFF.
+- Reading: the on-arm does not hurt memory answers and sometimes helps ("not stored" hint worked on band / colour / sister in several pairs), but the star-voice model in this social-chat harness is poor in both arms: it echoes the question,
+  speaks as the friend, dumps remembered facts on small talk, or invents events (a park, a bakery, a danish), so the card/note effect is buried. The eval needs a model/prompt that holds the persona before it can resolve +/- 1 point effects; more reps will not fix that.
+**Dream samples** (3, real brain, `run.py dreams 3`; fragments are the fixture ones, vividness 0.74 / 0.82 / 0.76):
+1. "I drove my creation into a forest where Sam's face was on the steering wheel, yelling about Friday's test. The lava shader bloomed into towering trees ... I sat inside it, nervous, while the world compiled itself into a cake." (parsed: gist "grandma in lava sprite", valence -0.2)
+2. Model returned a JSON object whose text contains `Sam\'s` (an invalid JSON escape): **the parser dropped it (gist/valence None)**. Same dream text: "I was Sam's grandmother in a hospital made of pixels, driving a lava sprite ... shader error message".
+3. "I drove my haunted lighthouse sprite into the hospital where my grandmother lay ... The test daughtest appeared as a giant, looping drawing ... I exported the failing code as a tide ..." (gist "sprite grandma hospital", valence -0.3)
+Reading: surreal and built from the day's fragments as designed, unsettling mood (-0.2..-0.4) fits the worried fragments; faults: two dreams mix up whose grandmother it is ("my grandmother"), one typo-word ("daughtest"), and **dream 2 shows a parse bug (tolerate `\'` in `dreams` JSON parsing; not fixed here, small follow-up)**. Not checked: a night job end to end.
