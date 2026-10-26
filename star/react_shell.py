@@ -23,6 +23,7 @@ import uuid
 from .desktop_core import Settings, Conversations, app_data, run_task, query_models, check_studio
 from .analytics import get_dashboard
 from .brain_overview import brain_snapshot, planner_snapshot
+from .bulk_tasks import BULK_ACTIONS, BulkTaskService
 from .brain_setup import BrainInstall, install_brain
 from .local_runtime import Runtime
 from .version import __version__
@@ -111,13 +112,15 @@ CLIP_INTEROP_ACTIONS = frozenset({
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_INTEROP_ACTIONS
 # A static read-only source index; no arbitrary fetch/install/execute capability.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | {'gameLabCatalog'}
+# Owner-selected bulk work has its own durable ledger and cancellation, outside chat.
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | BULK_ACTIONS
 
 # A background warm-up (server check + prompt-cache priming) gives way at once to
 # anything that talks to the model server or changes what it would talk to.
 WARM_UP_STOPPERS = frozenset({
     'sendMessage','runTeam','generateImage','testServer','testModel','testModelTeam','listModels',
     'startModelRouter','stopBrain','startBrain','installBrain','saveSettings','switchProject',
-    'saveProviderKey','clearProviderKey','newChat','switchChat','testBlender','deleteChat',
+    'saveProviderKey','clearProviderKey','newChat','switchChat','testBlender','deleteChat','bulkTaskSend',
 })
 
 # Settings the React interface may change. Never a credential: provider and
@@ -730,6 +733,9 @@ def launch():
             self.active_update = False
             self.pending_update = None
             self._closing = False
+            self.bulk_tasks = None  # Lazy local service; no batch resumes automatically.
+            self.bulk_lock = threading.RLock()
+            self.bulk_config_lock = threading.RLock()
             self.warmer = Warmer()
             self.draft_warmer = DraftWarmer()
             self.digester = Digester()
@@ -749,6 +755,17 @@ def launch():
             presolve.start_nightly(self.settings_file, app_data())
             self.voice = VoiceBridge(lambda call_id, data: self._emit(call_id, 'voice', data),
                                      settings_path=app_data() / 'voice.json', save_turn=self._save_voice_turn)
+
+        def _bulk_action(self, action, body):
+            with self.bulk_lock:
+                if self._closing:
+                    raise PermissionError('STAR is closing')
+                if self.bulk_tasks is None:
+                    self.bulk_tasks = BulkTaskService(
+                        app_data(), lambda: Settings.load(self.settings_file),
+                        configuration_lock=self.bulk_config_lock)
+                service = self.bulk_tasks
+            return service.handle(action, body)
 
         def _discord_autostart(self):
             if self._closing:
@@ -1125,6 +1142,9 @@ def launch():
                 rid=str(body.get('requestId',''))[:80]
                 if action in WARM_UP_STOPPERS:self.warmer.cancel();self.draft_warmer.cancel()
                 if action in WARM_UP_STOPPERS or action in VOICE_ACTIONS:self.digester.cancel()
+                if action in BULK_ACTIONS:
+                    self._run(rid, action, lambda: self._bulk_action(action, body))
+                    return json.dumps({'ok':True,'pending':True,'requestId':rid})
                 if action=='warmDraft':return json.dumps({'ok':True,'data':self._warm_draft(body)})
                 if action=='warmUp':
                     if self.active_task:
@@ -1309,8 +1329,9 @@ def launch():
                 if action=='saveSettings':
                     if self.active_task:
                         raise RuntimeError('Wait for the current task before changing connections or permissions')
-                    old=apply_setting_changes(Settings.load(self.settings_file),body.get('settings'))
-                    old.save(self.settings_file)
+                    with self.bulk_config_lock:
+                        old=apply_setting_changes(Settings.load(self.settings_file),body.get('settings'))
+                        old.save(self.settings_file)
                     gpu_helper.HELPER.configure(old,app_data())
                     if old.research_auto_check:
                         QTimer.singleShot(200, self._research_tick)
@@ -1327,17 +1348,20 @@ def launch():
                 if action=='saveProviderKey':
                     name=str(body.get('provider',''))
                     token=body.get('key','')
-                    save_api_key(name,token)
+                    with self.bulk_config_lock:
+                        save_api_key(name,token)
                     return json.dumps({'ok':True,'data':{'connected':True}})
                 if action=='serverKeyFileStatus':
                     from .server_key_file import key_file_status
                     return json.dumps({'ok':True,'data':key_file_status()})
                 if action=='importServerKeyFile':
                     from .server_key_file import import_key_file
-                    return json.dumps({'ok':True,'data':import_key_file()})
+                    with self.bulk_config_lock:
+                        return json.dumps({'ok':True,'data':import_key_file()})
                 if action=='clearProviderKey':
                     name=str(body.get('provider',''))
-                    clear_api_key(name)
+                    with self.bulk_config_lock:
+                        clear_api_key(name)
                     return json.dumps({'ok':True,'data':{'connected':False}})
                 if action=='selectFolder':
                     selected=QFileDialog.getExistingDirectory(self.host, 'Choose a local notes or project folder')
@@ -1617,6 +1641,9 @@ def launch():
             self._closing = True
             self.research_timer.stop()
             self.cancel_chat.set()
+            with self.bulk_lock:
+                if self.bulk_tasks is not None:
+                    self.bulk_tasks.shutdown()
             if self.turn is not None:
                 _, detail = failure_outcome('sendMessage', RuntimeError('cancelled by user'), cancelled=True)
                 record_turn_failure(app_data(), self.turn, 'cancelled', detail)
@@ -1694,3 +1721,4 @@ def launch():
 
     # Closes the window and releases the instance lock, then runs a staged update Setup.
     return run_desktop(app, make_shell, instance, adopt)
+

@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react'
 import {request} from './bridge'
 import './BrainOverview.css'
 import {MachineLoad} from './MachineLoad'
+import {BulkTasksPanel} from './BulkTasksPanel'
 
 export type BrainSnapshot = {
  provider: string
@@ -33,7 +34,7 @@ export function BrainOverview({snapshot,load=true}:{snapshot?:BrainSnapshot;load
  const roles=data.roles.filter(x=>x.model)
  const configured=data.configured_models||[]
  const skillCount=data.skills.enabled?data.skills.count:0
- return <section className="brain-overview" aria-label="STAR Brain overview">
+ return <><section className="brain-overview" aria-label="STAR Brain overview">
   <header><h2>Inside STAR</h2><p>Current configuration and local records · read only</p></header>
   {error&&<p role="alert">{error}</p>}
   <div className="brain-overview-grid">
@@ -46,5 +47,6 @@ export function BrainOverview({snapshot,load=true}:{snapshot?:BrainSnapshot;load
    <Card title="Senses" count={data.evaluation?Object.keys(data.evaluation).length:null} facts={data.evaluation?Object.entries(data.evaluation).slice(0,3).map(([k,v])=>`${k}: ${v}`):[]}/>
   </div>
   <MachineLoad load={load}/>
- </section>
+ </section><BulkTasksPanel disabled={!load}/></>
 }
+
