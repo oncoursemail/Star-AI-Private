@@ -24,7 +24,9 @@ from typing import Awaitable, Callable, Protocol
 from urllib import parse, request
 
 from .stream_director import StreamDirector
-from .twitch_eventsub_bridge import TwitchEventSubBridge
+from .twitch_eventsub_bridge import (
+    TwitchEventSubBridge, _timestamp, _MAX_AGE_SECONDS, _FUTURE_TOLERANCE_SECONDS,
+)
 
 
 class TwitchAuthorizationError(RuntimeError):
@@ -163,7 +165,8 @@ class TwitchRealtimeHost:
         "subscriptions": 0, "sessions": 0, "handoffs": 0, "restarts": 0,
         "delivered": 0, "rejected": 0, "revocations": 0,
         "backpressure_drops": 0, "moderations_cancelled": 0,
-        "moderation_faults": 0}, init=False, repr=False)
+        "moderation_faults": 0, "premoderation_rejected": 0,
+        "duplicate_drops": 0}, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.config, TwitchChatConfig) or not isinstance(self.director, StreamDirector):
@@ -178,6 +181,7 @@ class TwitchRealtimeHost:
         self._salt = secrets.token_bytes(32)
         self._seen: OrderedDict[str, float] = OrderedDict()
         self._pending: set[asyncio.Task[None]] = set()
+        self._pending_keys: set[str] = set()
 
     async def _token(self) -> str:
         token = self.token_provider()
@@ -245,6 +249,60 @@ class TwitchRealtimeHost:
             raise TwitchProtocolError("invalid Twitch session welcome")
         return session["id"], float(session["keepalive_timeout_seconds"])
 
+    def _prune_seen(self, now: float) -> None:
+        while self._seen and (
+            now - next(iter(self._seen.values())) > 90 or len(self._seen) >= 1024
+        ):
+            self._seen.popitem(last=False)
+
+    def _admission_key(self, packet: dict, session_id: str, now_unix: float) -> str | None:
+        """Cheap strict gate *before* allocating scarce moderation capacity.
+
+        Twitch delivers at least once. A duplicate notification must not run
+        the (potentially expensive) independent moderation callback again.
+        This verifies identifiers, session, channel and age; _message and
+        TwitchEventSubBridge still perform full post-moderation validation.
+        No chat text, source account IDs or raw identifiers are retained.
+        """
+        meta = packet["metadata"]
+        payload = packet["payload"]
+        sub = payload.get("subscription")
+        event = payload.get("event")
+        condition = sub.get("condition") if type(sub) is dict else None
+        transport = sub.get("transport") if type(sub) is dict else None
+        msg = event.get("message") if type(event) is dict else None
+        if (
+            meta.get("message_type") != "notification"
+            or meta.get("subscription_type") != "channel.chat.message"
+            or meta.get("subscription_version") != "1"
+            or type(sub) is not dict or sub.get("type") != "channel.chat.message"
+            or sub.get("version") != "1" or sub.get("status") != "enabled"
+            or type(condition) is not dict
+            or condition.get("broadcaster_user_id") != self.config.broadcaster_user_id
+            or condition.get("user_id") != self.config.chat_user_id
+            or type(transport) is not dict or transport.get("method") != "websocket"
+            or transport.get("session_id") != session_id
+            or type(event) is not dict
+            or event.get("broadcaster_user_id") != self.config.broadcaster_user_id
+            or type(msg) is not dict or type(msg.get("text")) is not str
+            or not 1 <= len(msg["text"].strip()) <= 1000
+            or not _bounded_id(meta.get("message_id"))
+        ):
+            return None
+        chat_id = event.get("message_id")
+        viewer = event.get("chatter_user_id")
+        if (
+            not _bounded_id(chat_id)
+            or "_" in chat_id  # Match the downstream bridge's ID grammar.
+            or type(viewer) is not str or not 1 <= len(viewer) <= 32
+            or not viewer.isascii() or not viewer.isdigit()
+        ):
+            return None
+        sent = _timestamp(meta.get("message_timestamp"))
+        if sent is None or not -_FUTURE_TOLERANCE_SECONDS <= now_unix - sent <= _MAX_AGE_SECONDS:
+            return None
+        return hmac.new(self._salt, chat_id.encode("ascii"), hashlib.sha256).hexdigest()[:32]
+
     def _remember_id(self, raw: str, now: float) -> bool:
         """Host-level dedupe persists across Twitch reconnect handoffs."""
         packet = _packet(raw)
@@ -253,8 +311,7 @@ class TwitchRealtimeHost:
         if not _bounded_id(msg_id):
             return False
         digest = hmac.new(self._salt, msg_id.encode("ascii"), hashlib.sha256).hexdigest()[:32]
-        while self._seen and (now - next(iter(self._seen.values())) > 90 or len(self._seen) >= 1024):
-            self._seen.popitem(last=False)
+        self._prune_seen(now)
         if digest in self._seen:
             return False
         self._seen[digest] = now
@@ -323,19 +380,36 @@ class TwitchRealtimeHost:
 
     def _submit_message(
         self, raw: str, bridge: TwitchEventSubBridge, session_id: str,
+        packet: dict,
     ) -> None:
-        """Nonblocking chat ingress with a fixed cap on in-memory chat tasks.
+        """Bounded nonblocking ingress; dedupe before expensive moderation.
 
-        No unbounded queue, logging, or starvation of keepalive/revocation
-        messages. When busy, dropping chat is safer than delaying game/voice.
+        A message ID is only reserved while its moderator task is live. A
+        rejected/failed moderation releases it for a legitimate EventSub retry.
+        Successfully delivered IDs remain protected by the 90-second cache.
         """
+        key = self._admission_key(packet, session_id, time.time())
+        if key is None:
+            self._counters["premoderation_rejected"] += 1
+            self._counters["rejected"] += 1
+            return
+        self._prune_seen(time.monotonic())
+        if key in self._seen or key in self._pending_keys:
+            self._counters["duplicate_drops"] += 1
+            self._counters["rejected"] += 1
+            return
         if len(self._pending) >= self.max_pending_moderations:
             self._counters["backpressure_drops"] += 1
             self._counters["rejected"] += 1
             return
+        self._pending_keys.add(key)
         task = asyncio.create_task(self._moderate_task(raw, bridge, session_id))
         self._pending.add(task)
-        task.add_done_callback(self._pending.discard)
+
+        def release(done: asyncio.Task[None]) -> None:
+            self._pending.discard(done)
+            self._pending_keys.discard(key)
+        task.add_done_callback(release)
 
     async def _settle_moderations(self, *, graceful: bool) -> None:
         """Drain on owner stop; cancel on reconnect, revocation, or failure.
@@ -360,6 +434,7 @@ class TwitchRealtimeHost:
             await asyncio.gather(*leftovers, return_exceptions=True)
         # Explicit cleanup even if add_done_callback hasn't fired yet.
         self._pending.difference_update(tasks)
+        self._pending_keys.clear()
 
     async def _receive(self, ws: Socket, stop: asyncio.Event, timeout: float) -> str | None:
         receiver = asyncio.create_task(ws.recv())
@@ -455,7 +530,7 @@ class TwitchRealtimeHost:
                             self._counters["revocations"] += 1
                             raise TwitchAuthorizationError("EventSub permission revoked")
                         elif kind == "notification":
-                            self._submit_message(raw, bridge, session)
+                            self._submit_message(raw, bridge, session, packet)
                         elif kind in ("session_keepalive", "session_welcome"):
                             pass
                         else:
