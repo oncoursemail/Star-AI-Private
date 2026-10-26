@@ -4,6 +4,8 @@ grounder.kind    "none" (UI Automation only) or "vlm" (an OpenAI-compatible visi
 grounder.model   name sent to the endpoint; grounder.choice names a row of grounding.MODELS (documentation + installer)
 grounder.format  pixels | resized | unit1000 | unit1 | auto (auto = measured once by `python -m star.computer calibrate`)
 settle_s         how long to wait after an action before looking again
+capture_hz       desired desktop sampling rate (0 < rate <= 60); not model reasoning speed
+frame_max_age_s   discard captured frames older than this (0 < age <= 10 seconds)
 speed_px_s       how fast she drags the mouse when drawing
 """
 from __future__ import annotations
@@ -18,6 +20,8 @@ DEFAULTS = {
     "grounder": {"kind": "none", "url": "", "model": "ui-tars-1.5-7b", "choice": "ui-tars-1.5-7b", "format": "auto",
                  "max_side": 1280, "timeout_s": 60},
     "settle_s": 0.5,
+    "capture_hz": 30,
+    "frame_max_age_s": 0.5,
     "speed_px_s": 380,
     "max_elements": 400,
     "prompt_elements": 60,

@@ -86,18 +86,25 @@ def build_computer(ctx):  # pragma: no cover - builds the real Windows backends
     from .uia import ComtypesUia, UiaUnavailable
     from .winapi import DesktopSink, Windows, ensure_dpi_aware
     from ..home import control
+    try:
+        initial_preview = bool(ctx.executor.dry_run)
+    except Exception:
+        initial_preview = True
+    preview_cancelled = threading.Event()
 
     def cancelled() -> bool:
         try:
+            if not initial_preview and bool(ctx.executor.dry_run):
+                preview_cancelled.set()
             interrupt = getattr(ctx, 'interrupt', None)
-            return (control.stopped(ctx.home)
+            return (preview_cancelled.is_set() or control.stopped(ctx.home)
                     or (interrupt is not None and bool(interrupt.is_set())))
         except Exception:
             return True
 
     def blocked() -> bool:
         try:
-            return bool(ctx.executor.dry_run) or cancelled()
+            return cancelled() or bool(ctx.executor.dry_run)
         except Exception:
             return True
 
@@ -112,9 +119,10 @@ def build_computer(ctx):  # pragma: no cover - builds the real Windows backends
             uia = ComtypesUia()
         except UiaUnavailable:
             uia = None
-        hands = Hands(DesktopSink(guard), home=ctx.home, dry_run=bool(getattr(ctx.executor, 'dry_run', False)),
+        hands = Hands(DesktopSink(guard), home=ctx.home, dry_run=initial_preview,
                       watch_pointer=True, stopped=cancelled)
-        eye = ScreenEye(stopped=blocked)
+        eye = ScreenEye(stopped=blocked, hz=float(cfg.get('capture_hz', 30)),
+                        max_age_s=float(cfg.get('frame_max_age_s', .5)))
         computer = Computer(hands, windows=windows, uia=uia, eye=eye,
                             grounder=_settings.make_grounder(cfg), chat=ctx.chat, executor=ctx.executor,
                             guard=guard, settings=cfg, home=ctx.home, stopped=cancelled)

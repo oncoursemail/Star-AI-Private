@@ -112,7 +112,14 @@ class LatestFrameCapture:
                         self._frames += 1
                         self._frame = Frame(self._frames, frame.t, image)
                         self._condition.notify_all()
-                self._stop.wait(max(0, period - (time.perf_counter() - began)))
+                deadline = began + period
+                while not self._blocked():
+                    remaining = deadline - time.perf_counter()
+                    if remaining <= 0:
+                        break
+                    # Event.wait has coarse timer pacing on Windows; short sleeps
+                    # use Python's process-local timer and keep cancellation polled.
+                    time.sleep(min(remaining, .005))
         except Exception as exc:
             with self._condition:
                 self._error = type(exc).__name__

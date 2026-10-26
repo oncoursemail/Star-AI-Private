@@ -25,7 +25,7 @@ def check(ok, label):
     checks += 1
 
 
-def until(predicate, timeout=2):
+def until(predicate, timeout: float = 2):
     deadline = time.perf_counter() + timeout
     while not predicate():
         if time.perf_counter() >= deadline:
@@ -95,7 +95,8 @@ def integration_checks():
         return source
 
     def eye_factory(**kwargs):
-        return ScreenEye(source_factory, hz=60, **kwargs)
+        kwargs.setdefault('hz', 60)
+        return ScreenEye(source_factory, **kwargs)
 
     with TemporaryDirectory() as temporary, ExitStack() as stack:
         home = Path(temporary) / 'home'
@@ -138,6 +139,30 @@ def integration_checks():
         computer.close()
         ctx.executor.dry_run = False
 
+        with patch('star.computer.settings.load', return_value={'capture_hz': 60, 'frame_max_age_s': .25}):
+            computer = computer_module.build_computer(ctx)
+            assert computer.eye is not None
+            configured_capture = computer.eye.start()
+            check(configured_capture.hz == 60 and configured_capture.max_age_s == .25,
+                  'builder passes owner capture rate and age settings to real bounded worker')
+            computer.close()
+
+        count = len(native_sources)
+        with patch('star.computer.settings.load', return_value={'capture_hz': 61, 'frame_max_age_s': .5}):
+            try:
+                computer_module.build_computer(ctx)
+            except ValueError:
+                check(len(native_sources) == count and computer_module._ownership_key(home)
+                      not in computer_module._CAPTURE_OWNERS,
+                      'over-limit configured rate fails before native source and releases reservation')
+            else:
+                raise AssertionError('configured native rate cap bypassed')
+
+        with patch('star.computer.settings.Path.read_text', return_value='{"capture_hz": true, "frame_max_age_s": false}'):
+            defaults = computer_module._settings.load(home)
+        check(defaults['capture_hz'] == 30 and defaults['frame_max_age_s'] == .5,
+              'boolean config values preserve general capture defaults')
+
         ctx.executor.dry_run = True
         planned = []
         sink_events = []
@@ -153,8 +178,35 @@ def integration_checks():
                   'preview UIA action can be planned without native input')
             check(len(planned) == 2 and all(item[1]['dry_run'] for item in planned),
                   'preview Hands preserves start and done planning logs')
+            ctx.executor.dry_run = False
+            check(computer.do_click(uia_screen, {'id': 1})[0] and computer.hands.dry_run and not sink_events,
+                  'preview-built Hands stays nonnative after preview-to-live flip until rebuilt')
             computer.close()
         ctx.executor.dry_run = False
+
+        planned, sink_events = [], []
+        with patch('star.computer.hands.Hands', RealHands), patch('star.computer.winapi.DesktopSink',
+                                                                return_value=fake_sink), patch(
+                'star.home.control.log_action', side_effect=lambda *args, **kwargs: planned.append((args, kwargs))):
+            computer = computer_module.build_computer(ctx)
+            assert computer.eye is not None
+            computer.eye.grab_frame()
+            ctx.executor.dry_run = True
+            try:
+                computer.do_click(uia_screen, {'id': 1})
+            except Stopped:
+                check(not sink_events and not planned and not computer.hands.dry_run,
+                      'live-to-preview flip cancels already-native Hands before successful UIA click')
+            else:
+                raise AssertionError('live-to-preview input crossed admission')
+            ctx.executor.dry_run = False
+            try:
+                computer.do_click(uia_screen, {'id': 1})
+            except Stopped:
+                check(not sink_events, 'cancelled native session remains stopped until explicit rebuild')
+            else:
+                raise AssertionError('cancelled native session resumed without rebuild')
+            computer.close()
 
         computer = computer_module.build_computer(ctx)
         assert computer.eye is not None
@@ -310,6 +362,46 @@ def main():
             check(True, 'invalid freshness rejected')
         else:
             raise AssertionError('invalid age accepted')
+
+    real_sleep = time.sleep
+    pace_sleeps = []
+    pacing_entered = threading.Event()
+
+    def observed_sleep(seconds):
+        if threading.current_thread().name == 'desktop-capture':
+            pace_sleeps.append(seconds)
+            pacing_entered.set()
+        real_sleep(seconds)
+
+    with patch('time.sleep', observed_sleep):
+        long_sources = []
+
+        def long_factory():
+            item = Source()
+            long_sources.append(item)
+            return item
+
+        capture = LatestFrameCapture(long_factory, hz=.25)
+        capture.start()
+        check(capture.grab(timeout=1) is not None and pacing_entered.wait(1), 'long-period capture reaches pacing')
+        began = time.perf_counter()
+        check(capture.close(.1), 'explicit close cancels four-second capture period promptly')
+        check(time.perf_counter() - began < .3 and long_sources[0].closed.is_set(),
+              'long-period close finishes native cleanup within caller bound')
+        check(bool(pace_sleeps) and all(0 < value <= .005 for value in pace_sleeps),
+              'pacer yields in bounded positive sleeps rather than spinning')
+
+        pacing_entered.clear()
+        owner_stop = threading.Event()
+        capture = LatestFrameCapture(long_factory, hz=.25, stopped=owner_stop.is_set)
+        capture.start()
+        check(capture.grab(timeout=1) is not None and pacing_entered.wait(1), 'owner STOP case reaches long pacing')
+        began = time.perf_counter()
+        owner_stop.set()
+        until(lambda: capture.status()['closed'], timeout=.5)
+        check(time.perf_counter() - began < .5 and capture.close(0),
+              'trusted owner STOP ends long-period capture without waiting for next frame')
+        check(capture.status()['new_frames'] == 1, 'long-period cancellation cannot produce a burst backlog')
 
     capture, sources = make_capture()
     try:
