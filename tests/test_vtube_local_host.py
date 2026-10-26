@@ -10,7 +10,7 @@ from star.vtube_local_host import VTSHostError, VTubeLocalHost
 
 
 class FakeSocket:
-    def __init__(self, *, fail_type=None, error_type=None, response_type=None, bad_id=False):
+    def __init__(self, *, fail_type=None, error_type=None, response_type=None, bad_id=False, bad_param=False):
         self.sent = []
         self.closed = False
         self.timeout = None
@@ -18,6 +18,7 @@ class FakeSocket:
         self.error_type = error_type
         self.response_type = response_type
         self.bad_id = bad_id
+        self.bad_param = bad_param
 
     def send(self, raw):
         packet = json.loads(raw)
@@ -36,7 +37,7 @@ class FakeSocket:
         elif kind == "AuthenticationRequest":
             data = {"authenticated": True}
         elif kind == "ParameterCreationRequest":
-            data = {"parameterName": request["data"]["parameterName"]}
+            data = {"parameterName": "wrong" if self.bad_param else request["data"]["parameterName"]}
         response = {
             "apiName": "VTubeStudioPublicAPI",
             "apiVersion": "1.0",
@@ -199,6 +200,14 @@ class LocalHostTests(unittest.TestCase):
         self.socket = FakeSocket()
         self.connect()
         self.assertTrue(self.host.connected)
+
+    def test_registration_rejects_mismatched_parameter_response(self):
+        self.socket.bad_param = True
+        self.connect(register=False)
+        with self.assertRaises(VTSHostError):
+            self.host.register_parameters()
+        self.assertFalse(self.host.connected)
+        self.assertTrue(self.socket.closed)
 
     def test_serialized_concurrent_registration(self):
         self.connect(register=False)
