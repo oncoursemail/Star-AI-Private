@@ -1,0 +1,272 @@
+[
+ {
+  "id": "HO-GD-STR-01",
+  "category": "gdscript-strings",
+  "difficulty": 3,
+  "goal": "Run-length encode and decode letters, with multi-digit counts and strict malformed-input handling",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with two plain methods for run-length encoding of strings made of letters. `encode(s: String) -> String` writes every run as the letter followed by its length, including runs of one (\"aaabcc\" becomes \"a3b1c2\", twelve z's become \"z12\"); case matters (\"aA\" is \"a1A1\"); the empty string stays empty. `decode(s: String) -> String` reverses it, including counts of several digits. Malformed text returns an empty string: a count with no letter before it (\"3a\"), a letter with no count (\"a\"), a count of 0 (\"a0\"), or any character that is neither a letter nor a digit. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-STR-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 8 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-STR-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-STR-01.gd",
+    "checks": 8
+   }
+  }
+ },
+ {
+  "id": "HO-GD-SIG-01",
+  "category": "gdscript-signals",
+  "difficulty": 3,
+  "goal": "Signal with old and new value that fires only on real changes, with a cap and a floor",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` for a counter. It declares `signal changed(old_value: int, new_value: int)` and has `var value: int = 0`, `increment(by: int = 1) -> void`, `reset() -> void` and `set_max(m: int) -> void`. `value` never drops below 0 and never exceeds the maximum once one is set (before any set_max there is no upper limit). Every call that actually changes `value` emits `changed` once with the old and the new value; a call that leaves the value as it was (by of 0, reset at 0, an increment blocked by the cap) emits nothing. `set_max` only records the limit and does not change `value` itself. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-SIG-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-SIG-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-SIG-01.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "HO-GD-SIG-02",
+  "category": "gdscript-signals",
+  "difficulty": 4,
+  "goal": "Cooldown node timed through the scene tree, with one ready signal per cycle",
+  "prompt": "In Godot 4, write a GDScript `extends Node` (the test adds it to the scene tree) for an ability cooldown with `@export var duration: float = 1.0` and `signal ready_again`. `try_use() -> bool` returns true and starts a cooldown of `duration` seconds when the ability is ready, and returns false (without restarting or extending the cooldown) while it is cooling down. `is_ready() -> bool` and `remaining() -> float` (seconds left, 0.0 when ready) report the state. When the cooldown ends the node emits `ready_again` exactly once and is ready again. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-SIG-02.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-SIG-02.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-SIG-02.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "HO-GD-NODE-01",
+  "category": "gdscript-nodes",
+  "difficulty": 3,
+  "goal": "Build a menu Control tree in code with names, text, sizes and a theme override",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with `build_menu(titles: Array) -> Control`. It returns a `VBoxContainer` named `Menu` whose first child is a `Label` named `Title` with the text \"Main Menu\", followed by one `Button` per entry of `titles` in order. Each button's `text` is the title and its node name is the title with the spaces removed (\"New Game\" becomes `NewGame`); each has `custom_minimum_size` of `Vector2(160, 40)`. The container has its `separation` theme constant overridden to 12. An empty list gives just the title label. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-NODE-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 8 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-NODE-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-NODE-01.gd",
+    "checks": 8
+   }
+  }
+ },
+ {
+  "id": "HO-GD-STATE-01",
+  "category": "gdscript-state",
+  "difficulty": 3,
+  "goal": "State machine over Callables: enter/exit order, previous-state argument, refused transitions",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` implementing a small state machine. `var current: String = \"\"`. `add_state(name: String, on_enter: Callable = Callable(), on_exit: Callable = Callable()) -> void` registers a state; either callable may be left empty. `start(name: String) -> bool` makes `name` the current state without calling any exit callback and calls its on_enter with one argument, the previous state name (an empty string for the first state); it returns false for an unknown name. `transition(to: String) -> bool` returns false (and changes nothing) when `to` is unknown or already current; otherwise it calls the current state's on_exit with no arguments, sets `current`, then calls the new state's on_enter with the previous state's name, and returns true. Empty callables are skipped. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-STATE-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-STATE-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-STATE-01.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "HO-GD-STATE-02",
+  "category": "gdscript-state",
+  "difficulty": 4,
+  "goal": "Health component with clamping setters, change signal and a one-shot died signal",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` health component. `@export var max_hp: int = 100` and `var hp: int` which starts at 100. Assigning `hp` (a property setter) clamps it between 0 and `max_hp`; assigning `max_hp` below the current hp lowers hp to it (and max_hp itself never goes below 1). `signal changed(new_hp: int)` is emitted whenever hp actually changes, with the new value; `signal died` is emitted when hp drops to 0 from above 0 (once per death, not again while it stays at 0). `damage(n: int)` and `heal(n: int)` change hp by n (a negative n is ignored by both); `is_dead() -> bool` is true when hp is 0. Healing a dead component revives it, and it can die again. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-STATE-02.gd)"
+  ],
+  "pass_conditions": [
+   "all 11 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-STATE-02.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-STATE-02.gd",
+    "checks": 11
+   }
+  }
+ },
+ {
+  "id": "HO-GD-DATA-01",
+  "category": "gdscript-data",
+  "difficulty": 3,
+  "goal": "Parse JSON text defensively and summarise valid rows with a deterministic ranking",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with `summarize_scores(json_text: String) -> Dictionary`. The text should be a JSON array of objects like {\"name\": \"ann\", \"score\": 10}. A row counts only when it is an object with a String \"name\" and a numeric \"score\"; every other element is skipped silently. The result has \"count\" (int, number of valid rows), \"mean\" (float, average score), \"best\" (name of the first entry in the ranking) and \"ranked\" (an Array of names ordered by score descending, then name ascending). If the text is not valid JSON, is not an array, or has no valid rows, return an empty Dictionary. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-DATA-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 9 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-DATA-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-DATA-01.gd",
+    "checks": 9
+   }
+  }
+ },
+ {
+  "id": "HO-GD-MATH-01",
+  "category": "gdscript-math",
+  "difficulty": 4,
+  "goal": "Grid flood fill and breadth-first path length over ragged string rows",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with two plain methods on a grid given as an Array of Strings (row y is `grid[y]`, column x is character x; '.' is open floor and '#' is a wall). Rows may have different lengths, and anything outside a row counts as wall. Moves are 4-directional (no diagonals). `flood_fill_count(grid: Array, start: Vector2i) -> int` returns how many open cells are connected to `start` including `start` itself, and 0 when start is a wall or outside the grid. `shortest_path(grid: Array, from: Vector2i, to: Vector2i) -> int` returns the fewest moves between two open cells, 0 when they are the same cell, and -1 when either is not open or no route exists. Vector2i is (x, y). Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-MATH-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 9 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-MATH-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-MATH-01.gd",
+    "checks": 9
+   }
+  }
+ },
+ {
+  "id": "HO-GD-EXPORT-01",
+  "category": "gdscript-editor",
+  "difficulty": 3,
+  "goal": "Godot 4 export annotations: range, enum, flags, multiline, group, and a private variable",
+  "prompt": "In Godot 4, write a GDScript `extends Node` that exposes these properties to the inspector with Godot 4 annotations: `speed: float = 100.0` limited to 0 to 500 in steps of 5 (`@export_range`); `mode: int = 0` as an enum with the choices Idle, Walk and Run (`@export_enum`); `resist: int = 0` as flags named Fire, Ice and Wind (`@export_flags`); `notes: String = \"\"` as multiline text (`@export_multiline`); `label: String = \"unit\"` as a plain `@export`; then a property group named \"Combat\" (`@export_group`) followed by `damage: int = 5` as a plain export. Also a private `var _cache := {}` that is not exported. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/HO-GD-EXPORT-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 8 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/HO-GD-EXPORT-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/HO-GD-EXPORT-01.gd",
+    "checks": 8
+   }
+  }
+ }
+]

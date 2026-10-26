@@ -18,7 +18,6 @@ The driver is VB-CABLE (docs/agents/senses-voice-20261026.md, section "Driver ch
 """
 from __future__ import annotations
 
-import re
 import sys
 import time
 from dataclasses import dataclass

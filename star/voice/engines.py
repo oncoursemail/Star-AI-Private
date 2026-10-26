@@ -339,17 +339,25 @@ class KokoroTTS:
             for _ in self.synthesize(text):
                 pass
 
-    def synthesize(self, text: str) -> Iterable[tuple[bytes, int]]:
-        ratio = pitch_ratio(self.pitch_semitones)
+    def synthesize(self, text: str, prosody=None) -> Iterable[tuple[bytes, int]]:
+        """`prosody` (star.emotion.Prosody) shifts this one sentence a little: speed times rate, semitones added to the
+        voice's pitch, milliseconds added to the pause after it. None leaves the voice exactly as configured."""
+        speed, pitch, gap_ms = self.speed, self.pitch_semitones, self.gap_ms
+        if prosody is not None:
+            speed = speed * prosody.rate
+            pitch = min(12.0, max(-12.0, pitch + prosody.pitch_semitones))
+            gap_ms = max(0, gap_ms + int(prosody.pause_ms))
+        ratio = pitch_ratio(pitch)
         with self._lock:
             # A pitch change is a resample (playing the clip back faster or slower), which also changes its length;
             # asking Kokoro for a speed divided by the same ratio makes the final pace the speed that was asked for.
-            samples, rate = self._kokoro.create(text, voice=self._style, speed=self.speed / ratio, lang=self.lang)
+            samples, rate = self._kokoro.create(text, voice=self._style, speed=min(2.0, max(0.5, speed / ratio)),
+                                                lang=self.lang)
         if ratio != 1.0:
             samples = resample(samples, int(rate), int(round(rate / ratio)))
         yield float_to_pcm16(samples), int(rate)
-        if self.gap_ms > 0:
-            yield b"\x00\x00" * int(int(rate) * self.gap_ms / 1000), int(rate)
+        if gap_ms > 0:
+            yield b"\x00\x00" * int(int(rate) * gap_ms / 1000), int(rate)
 
 
 # -- registries -------------------------------------------------------------------------------

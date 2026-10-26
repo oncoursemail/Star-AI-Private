@@ -42,6 +42,7 @@ from . import edit_format
 from . import studio_loop, studio_tool_examples, thinking_budget, verify_ladder
 from . import project_rules
 from . import curiosity
+from . import emotion
 from . import gpu_helper
 from .studio_connections import default_target, validate_target
 
@@ -160,6 +161,7 @@ class Settings:
     web_auto_search: bool = True
     # Learning (star/lessons.py). Lessons are local project notes, never weights.
     learning_auto_accept: bool = True     # False = "review everything": even my own words wait for approval
+    emotion_enabled: bool = False  # star/emotion.py: persistent mood that colours tone and voice; default per docs/agents/emotion-20261026.md
     autobiographical_self_enabled: bool = False  # opt-in: measured 2026-10-25 worse (blind A/B 10 vs 21 wins) and +1.4 s per turn, so off (docs/agents/human-voice-20261025.md)
     learning_digest: bool = True          # let the fast model reword raw captures into candidates, in the background
     learning_digest_cloud: bool = False   # ...also when the selected provider is a hosted one
@@ -285,7 +287,7 @@ class Settings:
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
-                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'studio_inspect', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
+                            'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'emotion_enabled', 'studio_inspect', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
                             'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
@@ -1350,6 +1352,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
     first_visible_token = False
     token_timing: dict[str, float | None] = {'requested': None, 'first': None, 'last': None}
     metrics.record(settings.project, 'run_started')
+    ladder_ran = {'yes': False}
     def audited_event(event):
         nonlocal first_visible_token
         now = time.monotonic()
@@ -1379,6 +1382,10 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
             # Never store repeated generated text or model/tool arguments.
             metrics.record(settings.project, 'strata_loop_stopped',
                            detail=str(event.get('section', ''))[:24])
+        if event.get('event') == 'verify_finished':
+            ladder_ran['yes'] = True
+        if settings.emotion_enabled is True:
+            emotion.on_run_event(event, home=home)      # the verify ladder's pass / fail / fixed-after-many-tries
         if on_event:
             on_event(event)
     memory = Memory(home / 'checkpoints.sqlite3')
@@ -1511,6 +1518,13 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                       selfhood.context(limit=500)))
             except Exception as exc:
                 _log.warning('Selfhood reference unavailable (%s)', type(exc).__name__)
+        if settings.emotion_enabled is True:
+            # Praise or criticism in the owner's own words is felt first; then the tone note (empty when nothing
+            # stands out) joins the other per-turn sections. Local SQLite only, no model call.
+            emotion.on_message(owner_text if owner_text is not None else prompt, home=home, person='owner')
+            tone = emotion.directive(home, person='owner')
+            if tone:
+                turn_sections.append((emotion.HEADING, tone))
         for image in images:
             path = Path(image)
             media_type = 'image/jpeg' if path.suffix.lower() in ('.jpg', '.jpeg') else 'image/webp' if path.suffix.lower() == '.webp' else 'image/png'
@@ -2004,6 +2018,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                         origin='host', evidence=stamp)
             except Exception as exc:
                 _log.warning('Selfhood event not saved (%s)', type(exc).__name__)
+        if settings.emotion_enabled is True and use_tools and not ladder_ran['yes']:
+            emotion.on_event('task_success', home=home, strength=0.6, person='owner')
         metrics.record(settings.project, 'run_succeeded',elapsed_ms=int((time.monotonic()-started)*1000))
         # An answer that says STAR did not know is queued for night school (star/curiosity.py; a local file append).
         curiosity.note_answer(owner_text or prompt, answer)
@@ -2018,6 +2034,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
     except Exception as exc:
         metrics.record(settings.project, 'run_failed', elapsed_ms=int((time.monotonic()-started)*1000),
                        detail=type(exc).__name__)
+        if settings.emotion_enabled is True and not (cancel_event is not None and cancel_event.is_set()):
+            emotion.on_event('task_failure', home=home, strength=0.8)      # a stop the owner asked for is not a failure
         # A stated preference is still the owner's even when this turn failed or was stopped.
         learn_from_turn()
         raise

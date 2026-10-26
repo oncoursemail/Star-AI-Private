@@ -35,3 +35,6 @@ EBOOT.BIN
 EBOOT.ELF
 PS3_GAME/
 PS3_UPDATE/
+
+# Mineflayer (STAR Home Minecraft) dependencies, installed on her PC with npm install
+star/games/mineflayer/node_modules/

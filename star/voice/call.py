@@ -20,6 +20,7 @@ actually played stay in the conversation history, so Star knows what the user di
 """
 from __future__ import annotations
 
+import inspect
 import queue
 import re
 import threading
@@ -31,6 +32,7 @@ from .chunker import SentenceChunker, speakable
 from .game_context import GameMomentWindow
 from .metrics import TurnMetrics
 from .pcm import FRAME_MS, rms
+from .. import emotion as emotion_state
 from ..persona import leaked_reasoning
 from .persona import system_message
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
@@ -88,6 +90,9 @@ class CallConfig:
     backchannels: bool = False            # say "mm-hm" in a long pause while the user is clearly not finished (no loudspeaker echo)
     backchannel_after: float = 3.0        # only once the user has spoken this many seconds
     backchannel_gap: float = 8.0          # and never twice within this many seconds
+    emotion: bool = False                 # star/emotion.py: tone note in the prompt, small prosody shifts, avatar event
+    emotion_person: str = "owner"         # attachment is kept per person; the social module passes a friend id here
+    emotion_partner_adult: bool | None = None   # romance only when the social module says True
 
 
 # Said when the model twice wrote its plan instead of an answer, and when asking again: see _generate_and_speak.
@@ -126,6 +131,7 @@ class _Reply:
         self.raw_text = ""
         self.sentences: list[_Sentence] = []
         self.audio_seconds = 0.0
+        self.prosody = None
         self.heard_seconds: float | None = None
         self.error: Exception | None = None
 
@@ -137,7 +143,7 @@ class CallSession:
                  speaker: Speaker, endpointer: Endpointer | None = None, config: CallConfig | None = None,
                  on_event: Callable[[dict], None] | None = None,
                  clock: Callable[[], float] = time.monotonic,
-                 game_events: GameMomentWindow | None = None) -> None:
+                 game_events: GameMomentWindow | None = None, emotion_engine=None) -> None:
         self.config = config or CallConfig()
         self.game_events = game_events
         self.vad, self.asr, self.brain, self.tts, self.speaker = vad, asr, brain, tts, speaker
@@ -145,6 +151,12 @@ class CallSession:
         self.echo_gate = EchoGate(self.config.echo_margin_db) if self.config.use_echo_gate else None
         self.on_event = on_event or (lambda event: None)
         self.clock = clock
+        self.emotion = emotion_engine if emotion_engine is not None else (
+            emotion_state.default_engine() if self.config.emotion else None)
+        try:
+            self._tts_prosody = "prosody" in inspect.signature(tts.synthesize).parameters
+        except (AttributeError, TypeError, ValueError):
+            self._tts_prosody = False
         self.history: list[dict] = []
         self.turns: list[TurnMetrics] = []
         self.state = "idle"
@@ -478,13 +490,16 @@ class CallSession:
             self._finish_reply(reply)
 
     def _turn_messages(self, reply: _Reply) -> list[dict]:
-        """This turn's request: system prompt, history, then the user's words plus the optional game context.
+        """This turn's request: system prompt, history, then the user's words plus the optional emotion note and
+        game context.
         Only reply.user_text enters the history."""
         messages = self._context() + [{"role": "user", "content": reply.user_text}]
+        extras = [self._feel(reply)]
         if self.config.game_context_for_voice and self.game_events is not None:
-            context = self.game_events.render(now=self.clock())
-            if context:
-                messages[-1] = {"role": "user", "content": reply.user_text + "\n\n" + context}
+            extras.append(self.game_events.render(now=self.clock()))
+        extras = [x for x in extras if x]
+        if extras:
+            messages[-1] = {"role": "user", "content": "\n\n".join([reply.user_text, *extras])}
         return messages
 
     # -- speculative reply --------------------------------------------------------------------
@@ -564,6 +579,24 @@ class CallSession:
                     self.speaker.play(pcm, sample_rate)
             reply.held_audio = []
         reply.settled.set()
+
+    def _feel(self, reply: _Reply) -> str:
+        """Emotion for this turn: what the user said is felt, then the tone note (appended after the user's words, like
+        the game context, so the cached prompt prefix is untouched) and the speech shifts for this reply are taken from
+        the state. Local only; a failure here never touches the call. Returns the note, usually empty."""
+        engine = self.emotion
+        if engine is None:
+            return ""
+        try:
+            person, adult = self.config.emotion_person, self.config.emotion_partner_adult
+            engine.on_message(reply.user_text, person=person, also=("voice_turn",))
+            state = engine.snapshot(person, adult)
+            reply.prosody = state["prosody"] if not state["prosody"].neutral else None
+            self._emit({"type": "emotion", "turn": reply.metrics.turn, "dominant": state["dominant"],
+                        "avatar": state["avatar"], "valence": state["valence"], "arousal": state["arousal"]})
+            return emotion_state.note_line(state["directive"])
+        except Exception:
+            return ""
 
     def _acknowledge(self, reply: _Reply) -> None:
         """Play the acknowledgement clip for this turn, if any. Its length is counted as reply audio, so the
@@ -673,7 +706,9 @@ class CallSession:
             started = self.clock()
             begin = reply.audio_seconds
             try:
-                for pcm, sample_rate in self.tts.synthesize(sentence):
+                pieces = (self.tts.synthesize(sentence, prosody=reply.prosody)
+                          if reply.prosody is not None and self._tts_prosody else self.tts.synthesize(sentence))
+                for pcm, sample_rate in pieces:
                     with reply.play_lock:        # stop() takes the same lock, so nothing plays after a barge-in
                         if reply.cancel.is_set():
                             break

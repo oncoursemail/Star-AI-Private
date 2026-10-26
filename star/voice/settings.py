@@ -74,6 +74,7 @@ class VoiceSettings:
     input_device: str = ""               # sounddevice name or index; empty = system default
     output_device: str = ""
     system_extra: str = ""
+    emotion: bool = False                # star/emotion.py: mood-driven tone, small pitch/speed shifts, avatar events
 
     def validate(self) -> "VoiceSettings":
         checks = [(self.tts_engine in TTS_ENGINES, "Unknown text-to-speech engine"),
@@ -142,4 +143,4 @@ class VoiceSettings:
                           use_echo_gate=self.output == "speakers", style=self.voice_style,
                           push_to_talk=self.call_mode == "push-to-talk", acknowledgements=self.acknowledgements,
                           speculative_reply=self.speculative_reply, first_clause_words=int(self.first_clause_words),
-                          backchannels=self.backchannels and self.output != "speakers")
+                          backchannels=self.backchannels and self.output != "speakers", emotion=self.emotion)
