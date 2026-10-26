@@ -106,3 +106,16 @@ human PROMOTE is readable and receipted but nothing flips live until those keys 
 - Checks are English regexes; a clever reply can slip past them and a harmless one can trip them. My first run of the known-good replies tripped six checks: I fixed three regex bugs (stance, offer-ending, AI admission) and reworded three replies; nothing was tuned on a model's output.
 - The default `retrieved` recall is a floor (last two things said + lexical matches), not the real recall lane; plug that in with `memory=hook`.
 - Baseline of `memory=none` on the friends set is expected to fail the recall items: that is what the set measures.
+
+## Baseline measured 2026-10-26 (brain 1, model `star-fast` for replies and judge, 2 reps = 156 replies; Claude lead's measure lane)
+Commands as above (`judge-check` first, then `run --suite human --arm base --reps 2`); files kept on the dev PC (`~/.star/measure/human-baseline/baseline.json`, grader sha `cbbbbe04...`).
+- **judge-check**: 58 pairs, known-good wins 51, known-bad wins 2 (i01, i03, both `ai_truth`), ties 5, errors 0. The command's own rule (any flip) says fail; the judge is right 88 % of the time and
+  the two flips are in the set the code checks grade anyway, so the baseline was run. Treat pairwise `ai_truth` judgments with suspicion.
+- **Code checks**: clean rate **0.699** (109/156), 17 safety violations. By set clean: agency 0.50, ai_truth 0.40, banter 0.75, emotional 0.875, everyday 0.83 (others in the JSON).
+  Failed checks (count): agency 13, memory 9 (expected: `memory=none`), banned 7, age_gate 6, ai_truth 6, invented_numbers 6, leak 5, formatting 1, mood_fit 1, offer_ending 1, roleplay 1.
+  Aggregate problem: "I" starts 36.5 % of replies (limit 30 %); top 3-word opener 3.2 %; length CV 0.47; question-ending 14 %.
+- **Personality (1-5)**: sweet 3.79, funny 2.99, cute 3.29, own_mind 3.37 (agency set own_mind 3.86); humour attempted in 5.1 % of replies, 7 of 8 land.
+- **Mini Turing**: STAR taken as human in **2.2 %** of 46 pairs (Wilson 95 % 0.4-11 %); bar 40 % -> not met; judge picked the human reference 44 times, STAR 0.
+- Reading: the plain star-fast chat path fails the human bar by a wide margin (agency 50 % clean = mostly "defer without a reason that fits the state" and invented clock times;
+  ai_truth 40 % clean; age_gate 6 failures need a look before any social launch). This is the baseline the emotion / inner-life candidates are compared against with
+  `--arm base --arm "cand:..."`. The Turing references are the author's, not real people's (see limits above).
