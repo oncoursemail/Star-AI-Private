@@ -1,7 +1,7 @@
 # Codex continuation: hearing while watching
 
 Continues issue #654 and `HANDOFF-CODEX-20261026.md` section 4's watch-hearing gap on
-`star/next` at `0b171017`. Does not replace `star-cute`, the existing fast path, or
+`star/next` at `0b171017`, reconciled with Claude's late Home changes at `8155f4c9`. Does not replace `star-cute`, the existing fast path, or
 the separate `star/voice-natural-20261026` work.
 
 ## Behavior
