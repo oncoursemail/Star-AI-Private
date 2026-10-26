@@ -55,6 +55,7 @@ OTHER_FILE_ANCHORS = {
     "star/self_audit.py": "weekly self-audit reads eval results and the API dump from a source checkout; a missing source is reported, not guessed",
     "star/architecture_pipeline.py": "opt-in Blender export runs scripts/blender_building.py from a source checkout",
     "star/human_evals.py": "developer-only human-likeness eval suite (evals/human)",
+    "star/vtuber/model.py": "mascot faces from frontend/dist (bundled) or the source checkout; STAR_FACES_DIR overrides",
     "star/breadth_evals.py": "developer-only breadth eval suites (evals/gdscript, evals/instruction-following)",
     "star/best_of_n.py": "developer-only evaluation prelude ('' in the packaged app)",
     "star/cli.py": "source-only CLI",
