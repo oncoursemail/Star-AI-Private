@@ -162,6 +162,9 @@ class GameActionGate:
         self._last_sequence = 0
         self._serial = 0
         self._pending: _Pending | None = None
+        # Exact object identity is reserved for trusted-host dispatch adapters.
+        # A model-supplied copied ticket/permit must never authorize input.
+        self._offered_permit: ActionPermit | None = None
         self._offered_at: deque[float] = deque(maxlen=120)
         self._counts = dict(offered=0, denied=0, claimed=0, released=0,
                             expired=0, host_rechecks_failed=0)
@@ -186,6 +189,7 @@ class GameActionGate:
             self._clock_ms = None
             self._last_sequence = 0
             self._offered_at.clear()
+            self._offered_permit = None
             self._enabled = True
 
     def revoke(self) -> None:
@@ -194,6 +198,7 @@ class GameActionGate:
             self._enabled = False
             self._scope = None
             self._allowlist = frozenset()
+            self._offered_permit = None
 
     def _advance(self, now_ms: float) -> float:
         now = _ms(now_ms, "now_ms")
@@ -268,9 +273,11 @@ class GameActionGate:
             self._last_sequence = frame.sequence
             self._offered_at.append(now)
             self._counts["offered"] += 1
-            return ActionPermit(True, "host_must_recheck_before_dispatch",
-                                self._serial, hint.action_id, hint.hold_ms,
-                                expiry)
+            permit = ActionPermit(True, "host_must_recheck_before_dispatch",
+                                  self._serial, hint.action_id, hint.hold_ms,
+                                  expiry)
+            self._offered_permit = permit
+            return permit
 
     def claim(self, ticket: int, *, now_ms: float,
               host_focus_and_permission: bool = False) -> bool:
@@ -293,6 +300,22 @@ class GameActionGate:
             self._counts["claimed"] += 1
             return True
 
+    def claim_offered(self, permit: ActionPermit, *, now_ms: float,
+                      host_focus_and_permission: bool = False) -> bool:
+        """Host adapter claim: require the actual, unmodified issued object.
+
+        Ordinary claim(ticket) remains advisory/backward compatible, but it
+        MUST NOT be used as authorization by any input-producing adapter.
+        """
+        with self._lock:
+            if not isinstance(permit, ActionPermit) or self._offered_permit is not permit:
+                return False
+            accepted = self.claim(permit.ticket, now_ms=now_ms,
+                                  host_focus_and_permission=host_focus_and_permission)
+            if accepted:
+                self._offered_permit = None
+            return accepted
+
     def release(self, ticket: int, *, now_ms: float,
                 host_confirmed_released: bool = False) -> bool:
         """Host confirms all input/key-up. Never trust a model's assertion."""
@@ -306,6 +329,7 @@ class GameActionGate:
                     or not host_confirmed_released):
                 return False
             self._pending = None
+            self._offered_permit = None
             self._counts["released"] += 1
             return True
 
