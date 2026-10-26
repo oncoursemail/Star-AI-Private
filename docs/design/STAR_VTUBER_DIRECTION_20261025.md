@@ -10,7 +10,7 @@ These are visual observations from the official character images, not claims abo
 
 | Reference | What I observed | Application to Star | What stays distinct |
 |---|---|---|---|
-| [Fuwawa Abyssgard](https://hololive.hololivepro.com/en/talents/fuwawa-abyssgard/) | Soft light hair surrounds the face; large dark sleeves contrast with a light torso; small accessories sit within larger shapes. | Give the face a clear light frame and use broad clothing shapes. | Star keeps her own hair color, celestial motif and streetwear; no dog identity, matching costume or copied facial design. |
+| [Fuwawa Abyssgard](https://hololive.hololivepro.com/en/talents/fuwawa-abyssgard/) | Soft light hair surrounds the face; large dark sleeves contrast with a light torso; small accessories sit within larger shapes. | Give the face a clear light frame and use broad clothing shapes. | Star keeps her own hair color, celestial motif and streetwear; her requested animal modes use her own outfit and ear/tail designs, without a matching costume or copied face. |
 | [Raora Panthera](https://hololive.hololivepro.com/en/talents/raora-panthera/) | A roomy jacket frames a fitted central outfit; saturated hair and coat dominate the silhouette; the pose feels active. | Balance an adult figure with a relaxed outer layer and expressive posture. | Star uses cream, charcoal and gold; no copied palette, tail, insignia or costume. |
 | [Nerissa Ravencroft](https://hololive.hololivepro.com/en/talents/nerissa-ravencroft/) | Long dark shapes, blue accents, feathers and a staff produce a sharper, more elaborate silhouette. | Useful contrast: this visual density is farther from the owner's chosen cozy, playful direction. | Star's hoodie and softer face remain the focus. |
 

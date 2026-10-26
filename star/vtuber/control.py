@@ -1,6 +1,6 @@
 """Config, the camera process (start / stop / status) and its heartbeat file.
 
-Data folder: STAR_VTUBER_DIR, else %ProgramData%\\STAR\\vtuber (next to STAR Home's own folder; never %APPDATA%\\STAR).
+Data folder: STAR_VTUBER_DIR, else <STAR_ROOT>/home/vtuber, else %ProgramData%\\STAR\\vtuber.
   config.json   the settings below (all optional)
   status.json   written once a second by the camera process: pid, beat, frames, fps, dropped, quality, device, model
   stop.flag     "turn the camera off": the process polls it, exits and removes it
@@ -27,6 +27,10 @@ def data_dir() -> Path:
     override = os.environ.get("STAR_VTUBER_DIR")
     if override:
         return Path(override)
+    from ..home.paths import home_dir
+    home = home_dir()
+    if home is not None:
+        return home / "vtuber"
     return Path(os.environ.get("ProgramData") or r"C:\ProgramData") / "STAR" / "vtuber"
 
 
@@ -68,7 +72,25 @@ def load_config(folder: Path | None = None) -> Config:
     cfg.width = min(3840, max(64, cfg.width))
     cfg.height = min(2160, max(64, cfg.height))
     cfg.fps = min(60.0, max(5.0, cfg.fps))
+    if cfg.mode not in ("normal", "cat", "puppy"):
+        cfg.mode = "normal"
     return cfg
+
+
+def set_mode(mode: str, folder: Path | None = None) -> dict:
+    """Save a motion mode without starting a camera or replacing the avatar art."""
+    mode = "puppy" if mode == "dog" else mode
+    if mode not in ("normal", "cat", "puppy"):
+        raise ValueError("mode must be normal, cat, puppy or dog")
+    folder = folder or data_dir()
+    path = folder / "config.json"
+    raw = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if not isinstance(raw, dict):
+        raise ValueError("camera config must be a JSON object")
+    raw["mode"] = mode
+    _write(path, raw)
+    return {"requested_mode": mode, "camera_started": False,
+            "note": "Ears and tail are visible only in a model with matching painted layers and bindings."}
 
 
 def _write(path: Path, data: dict) -> None:
