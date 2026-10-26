@@ -4,7 +4,8 @@
 #   setup.cmd -Uninstall   remove the scheduled task and desktop files (keeps her data and workspace)
 # What it does: Python 3.12 (if missing) -> C:\STAR\home\app + venv -> config in C:\ProgramData\STAR\home ->
 # scheduled task "STAR Home" (at her logon, highest privileges, in her desktop session) -> STOP/RESUME files on the
-# desktop -> OpenSSH server (local network only) with a slot for the lead's PUBLIC key -> prints this PC's address.
+# desktop -> OpenSSH server (local network only) with a slot for the lead's PUBLIC key -> optional automatic sign-in
+# after restarts (Microsoft Autologon; the owner types the password into its window) -> prints this PC's address.
 # It never creates, asks for or stores a password or a private key.
 param([switch]$Uninstall)
 $ErrorActionPreference = 'Stop'
@@ -111,6 +112,29 @@ if (Test-Path (Join-Path $App 'star\senses\setup.py')) {
     Pop-Location
     if ($senses -ne 0) { Write-Warning "star.senses.setup exited $senses; STAR Home works without it. Run setup.cmd again later." }
 } else { Write-Host 'skipped: star/senses is not in this copy yet' }
+
+Step "Sign in as $env:USERNAME automatically after a restart"
+# Microsoft Sysinternals Autologon: the owner types her password into Autologon's own window; Windows keeps it
+# encrypted as an LSA secret. This script never sees, asks for or stores the password.
+$auto = Read-Host 'Set up automatic sign-in after restarts (opens Microsoft Autologon)? [Y/n]'
+if ($auto -notmatch '^[nN]') {
+    $tool = Join-Path $env:ProgramData 'STAR\tools\Autologon'
+    New-Item -ItemType Directory -Force -Path $tool | Out-Null
+    $zip = Join-Path $tool 'AutoLogon.zip'
+    Invoke-WebRequest -UseBasicParsing 'https://download.sysinternals.com/files/AutoLogon.zip' -OutFile $zip
+    Expand-Archive -Force $zip $tool
+    $exe = Join-Path $tool 'Autologon64.exe'
+    $sig = Get-AuthenticodeSignature $exe
+    if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        throw "Autologon64.exe is not signed by Microsoft ($($sig.Status)); not running it."
+    }
+    Write-Host "In the Autologon window: Username $env:USERNAME, Domain $env:USERDOMAIN, type her password, press Enable."
+    Start-Process -FilePath $exe -ArgumentList '/accepteula' -Wait
+    # Stay awake so she is reachable; the screen may still turn off.
+    powercfg /change standby-timeout-ac 0
+    powercfg /change hibernate-timeout-ac 0
+    Write-Host 'done (also set "Restore on AC power loss" = On in the BIOS so the PC starts after a power cut)'
+} else { Write-Host 'skipped: run setup.cmd again to set it up later' }
 
 Step 'Self-test (dry run: nothing is executed)'
 Push-Location $App
