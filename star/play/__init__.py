@@ -8,5 +8,6 @@ planner.py     the slow layer's model call: situation -> goal + optional spoken 
 loop.py        FastLoop (10-30 Hz), SlowLoop (~1 Hz, wakes on game moments), GameSession, latency stats
 roblox.py      obby controller (screen + keys);  minecraft/: skill library, Voyager-style learner, reflexes
 session.py     builds a GameSession for each game;  bench.py: latency on fake frames (python -m star.play.bench)
+learn/         per-game policies cloned from recorded play + filtered self-improvement + per-game eval
 Research, design and limits: docs/research/game-play-20261026.md.
 """
