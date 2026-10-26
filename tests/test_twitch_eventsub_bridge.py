@@ -128,6 +128,7 @@ class TestTwitchBridge(unittest.TestCase):
             p = event(message_id=f"twitchmsg{i:08d}", viewer_id=str(1000000 + i))
             self.assertIsNotNone(self.run_frame(packet=p, mono=100 + i * 0.1))
         self.assertLessEqual(self.bridge.metrics()["cached_messages"], 32)
+        self.assertLessEqual(self.bridge.metrics()["cached_viewers"], 32)
 
     def test_bad_inputs_and_disable(self):
         with self.assertRaises(ValueError):
