@@ -57,6 +57,7 @@ class Runtime:
         self._cleanup_inflight: dict[tuple, str] = {}
         self._cleanup_failed: dict[tuple, tuple[str, Callable[[], None], str]] = {}
         self._owner_stopped = False
+        self._closing = False
         bind_stop = getattr(self.voice, "set_stop_check", None)
         if callable(bind_stop):
             bind_stop(lambda: self.admission_blocked() or bool(getattr(self.executor, "dry_run", False)))
@@ -307,11 +308,19 @@ class Runtime:
             return {"pending": list(self._cleanup_inflight.values()),
                     "errors": {name: error for name, _, error in self._cleanup_failed.values()}}
 
+    def shutdown(self) -> None:
+        """Permanently close admission for this instance before stopping active resources."""
+        with self._activity_lock:
+            self._closing = True
+        self.stop()
+
     def admission_blocked(self) -> bool:
         with self._activity_lock:
-            return bool(control.stopped(self.home) or self._owner_stopped or self._cleanup_inflight or self._cleanup_failed)
+            return bool(self._closing or control.stopped(self.home) or self._owner_stopped or self._cleanup_inflight or self._cleanup_failed)
 
     def watch_tick(self) -> None:
+        if self._closing:
+            return
         if control.stopped(self.home):
             self.stop()
             return

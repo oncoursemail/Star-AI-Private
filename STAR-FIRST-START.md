@@ -28,6 +28,8 @@ Follow **STAR-LIVE-TEST.md** for the first supervised session, game authorizatio
 
 The memory follow-up rejects unsupported generated biographies, reconciles deleted source facts and labels activity reports by their verification status. It also rechecks age status and forgetting before using stored context. See the [memory validation notes](docs/agents/codex-memory-validation-20261026.md) for tests and limits. This does not enable the experimental recall hook or establish improved conversation quality without its measured gate.
 
+The latest [release-preparation fixes](docs/agents/codex-release-prep-validation-20261026.md) start the owned speech output correctly, prevent duplicate Home starts for the same data folder and validate completion reports. They were checked offline; actual sound and calls remain unverified. When using SSH for setup, keep her Windows account logged on at the desktop and start the installed interactive **STAR Home** task rather than a second Home loop in the SSH session.
+
 ## What she can see and do
 
 Home already contains screenshot, Windows accessibility, mouse/keyboard and application adapters. A screenshot observes the current visible desktop; it does not reveal covered windows, off-screen tabs or private server state. Some games and custom interfaces need the optional calibrated vision grounder. Downloading it alone does not enable or validate it. The installer prints its separate start and calibration instructions. Use the smaller option as a candidate for an 8 GB card and measure it alongside the game and voice.

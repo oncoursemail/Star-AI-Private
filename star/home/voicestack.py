@@ -1,12 +1,12 @@
 """The real voice stack for STAR Home on her PC (needs the senses-voice setup: models, VB-CABLE, soundcard).
 
-Nothing here is covered by an automated test: it assembles star.senses and star.voice from their documented entry
-points. star.home.voicelink takes these as factories, and its tests use fakes. `python -m star.home check` reports
+Hardware-free checks cover lifecycle contracts; actual devices/models still need native acceptance.
+star.home.voicelink takes these as factories. `python -m star.home check` reports
 whether this stack could be built (build_status).
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import threading
 from typing import Callable
 
@@ -154,20 +154,38 @@ def hearing_hub(config: dict, *, start: bool = True):  # pragma: no cover - need
     return _hearing["hub"]
 
 
+def _started_output(settings):
+    """Acquire and start the owned output before publishing it to any voice path."""
+    from ..senses import routes
+    speaker = routes.open_voice_output(routes.query_devices(), monitor=settings.monitor_device)
+    try:
+        speaker.__enter__()                    # SoundOutput construction alone does not start PortAudio
+    except BaseException:
+        try:
+            speaker.close()
+        except Exception:
+            pass
+        raise
+    return speaker
+
+
 def voice_factory(config: dict) -> Callable[[], tuple]:  # pragma: no cover - needs her devices and models
     """() -> (tts, speaker): her voice into STAR Microphone, for game remarks outside a call."""
     def build():
-        from ..senses import routes
         settings = _settings(config)
         engines = _engines(settings)
-        return engines.tts, _speaker(routes.open_voice_output(routes.query_devices(), monitor=settings.monitor_device))
+        with ExitStack() as cleanup:
+            speaker = _started_output(settings)
+            cleanup.callback(speaker.close)
+            wrapped = _speaker(speaker)
+            cleanup.pop_all()                   # the returned wrapper owns this output's close lifecycle
+            return engines.tts, wrapped
     return build
 
 
 def call_factory(config: dict, desk=None, sender_of: Callable[[], str] = lambda: "") -> Callable[[dict], VoiceCall]:  # pragma: no cover
     """friend dict (name, person id, partner_adult, context) -> a VoiceCall (not started)."""
     def build(friend: dict) -> VoiceCall:
-        from ..senses import routes
         from ..senses.capture import LoopbackSource
         from ..senses.instant import build_pc_session
         from ..voice.runtime import make_brain
@@ -176,23 +194,39 @@ def call_factory(config: dict, desk=None, sender_of: Callable[[], str] = lambda:
         if friend.get("context"):
             settings.system_extra = (settings.system_extra + "\n" + friend["context"]).strip()
         engines = _engines(settings)
-        speaker = routes.open_voice_output(routes.query_devices(), monitor=settings.monitor_device)
-        if config.get("brain_url"):                  # her own brain address and key file, like the rest of STAR Home
-            from .runtime import home_brain
-            brain = home_brain(config, max_tokens=int(settings.max_reply_tokens))
-        else:
-            brain = make_brain(settings)
-        if desk is not None:
-            brain = InviteBrain(brain, desk, sender=sender_of)
-        session, warm = build_pc_session(settings, engines, _speaker(speaker), big_brain=brain)
-        session.config.emotion_person = friend.get("person") or session.config.emotion_person
-        session.config.emotion_partner_adult = True if friend.get("partner_adult") is True else None
-        if session.config.emotion_partner_adult is True and callable(friend.get("partner_adult_check")):
-            session.config.partner_adult_check = friend["partner_adult_check"]
-        source = LoopbackSource()                    # the friend's voice: whatever Discord plays on the default output
-        closers = (source.close, speaker.close) + ((warm.stop,) if warm is not None else ())
-        return VoiceCall(session, source.frames(), name=friend.get("name", ""), person=friend.get("person", ""),
-                         closers=closers)
+        with ExitStack() as cleanup:
+            speaker = _started_output(settings)
+            cleanup.callback(speaker.close)
+            if config.get("brain_url"):              # address/key stay on the trusted host
+                from .runtime import home_brain
+                brain = home_brain(config, max_tokens=int(settings.max_reply_tokens))
+            else:
+                brain = make_brain(settings)
+            close_brain = getattr(brain, "close", None)
+            brain_closers: tuple[Callable[[], None], ...] = ()
+            if callable(close_brain):
+                def release_brain() -> None:
+                    close_brain()
+                cleanup.callback(release_brain)
+                brain_closers = (release_brain,)
+            if desk is not None:
+                brain = InviteBrain(brain, desk, sender=sender_of)
+            session, warm = build_pc_session(settings, engines, _speaker(speaker), big_brain=brain)
+            cleanup.callback(session.stop)
+            if warm is not None:
+                cleanup.callback(warm.stop)
+            session.config.emotion_person = friend.get("person") or session.config.emotion_person
+            session.config.emotion_partner_adult = True if friend.get("partner_adult") is True else None
+            if session.config.emotion_partner_adult is True and callable(friend.get("partner_adult_check")):
+                session.config.partner_adult_check = friend["partner_adult_check"]
+            source = LoopbackSource()                # hear the default output, including the friend's voice
+            cleanup.callback(source.close)
+            closers = (source.close, speaker.close) + ((warm.stop,) if warm is not None else ())
+            closers += brain_closers
+            call = VoiceCall(session, source.frames(), name=friend.get("name", ""), person=friend.get("person", ""),
+                             closers=closers)
+            cleanup.pop_all()                       # VoiceCall now owns session, source, warm job and output
+            return call
     return build
 
 

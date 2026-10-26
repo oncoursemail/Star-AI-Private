@@ -31,6 +31,10 @@ INCLUDE = (
     "docs/agents/codex-memory-validation-20261026.md",
     "docs/agents/codex-memory-cards-20261026.md",
     "docs/agents/codex-memory-provenance-20261026.md",
+    "docs/agents/codex-home-brain-boundaries-20261026.md",
+    "docs/agents/codex-home-instance-20261026.md",
+    "docs/agents/codex-home-audio-startup-20261026.md",
+    "docs/agents/codex-release-prep-validation-20261026.md",
 )
 EXPECTED = ("star/home/__main__.py", "installer/star-home/setup.cmd", "installer/star-home/pins.json",
             "star/art_studio.py", "star/stream_setup.py", "star/twitch_chat.py", "STAR-FIRST-START.md",

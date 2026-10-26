@@ -14,11 +14,15 @@ $env:STAR_HOME_DIR = 'D:\STAR\home'
 
 Review `home\acceptance\latest.md`. Fix missing devices, failed imports and brain connectivity first. Keep `"dry_run": true` in `home\config.json` during preview. It permits planning and logs proposed actions while suppressing execution; it does not make model requests offline. Do not run two Home loops at once. Do not restart the separate brain evaluation server.
 
-When you are present and ready to test real input, stop Home, preserve the other settings in `home\config.json`, change `"dry_run"` to `false`, and restart Home through its installed shortcut. That change enables actual actions. Use the full acceptance check while present:
+Run the full acceptance check from a Terminal on Star's visible Windows desktop while Home remains in preview, or while its loop is fully stopped. The acceptance check itself performs real input/audio/model checks. Avoid running it alongside a live autonomous loop:
 
 ```powershell
 & D:\STAR\venv\Scripts\python.exe -m star.home acceptance
 ```
+
+When those checks pass and you are ready for actual autonomous input, stop the preview loop, preserve the other settings in `home\config.json`, change `"dry_run"` to `false`, and restart Home through its installed shortcut or interactive **STAR Home** scheduled task. That change enables real actions. Keep STOP available.
+
+SSH is suitable for installation, transfers and logs. It does not establish the logged-on desktop required by the interactive task, capture and Discord. Keep Star's intended Windows account signed in at her PC. Do not start a second `star.home run` in SSH; duplicate `run`/`once` now exits with code 2 for the same data folder. `stop`, `resume`, `status` and diagnostic commands remain available. Graceful shutdown may wait for native cleanup; background jobs and process-held ownership finally end when that process exits.
 
 ## Prove sight, sound and STOP
 
