@@ -25,6 +25,9 @@ INCLUDE = (
     "docs/agents/codex-home-voice-lifecycle-20261026.md",
     "docs/agents/codex-social-lifecycle-20261026.md",
     "docs/agents/codex-minecraft-setup-20261026.md",
+    "docs/research/star-emotion-evidence-20261026.md",
+    "docs/agents/codex-emotion-recovery-20261026.md",
+    "docs/agents/codex-emotion-timing-20261026.md",
 )
 EXPECTED = ("star/home/__main__.py", "installer/star-home/setup.cmd", "installer/star-home/pins.json",
             "star/art_studio.py", "star/stream_setup.py", "star/twitch_chat.py", "STAR-FIRST-START.md",

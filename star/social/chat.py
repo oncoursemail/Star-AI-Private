@@ -211,6 +211,7 @@ class SocialChat:
 
         rules.observe(self.memory, person, text, kids_place=kids_place, now=now)
         self._reunion(person)                    # before the mood note is built, so she greets them gladly
+        self._feel(text, person)
         mode = rules.romance_mode(platform, person)
         roleplay = self._in_roleplay((platform, handle.lower()), text, now)
         # The system message stays the same from turn to turn (so the server's prompt cache holds); what changes with
@@ -246,7 +247,6 @@ class SocialChat:
         self.memory.note_moment(person, platform, f"me: {reply}")
         if person.relationship == "met" and len(self.memory.moments(person, FRIEND_AFTER)) >= FRIEND_AFTER:
             self.memory.update(person, relationship="friend")
-        self._feel(text, person)
         if inner is not None:
             try:
                 inner.done()
