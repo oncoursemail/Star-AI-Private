@@ -20,6 +20,8 @@ import time
 from typing import Callable
 
 from .stream_director import StreamSignal
+from .stream_episode import EpisodePacket
+from .stream_knowledge import KnowledgePacket
 from .stream_hardware_telemetry import LiveHostSample, RealtimeTelemetryHost
 from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
 from .stream_stage import StagePlan, StarStage
@@ -240,8 +242,19 @@ class StreamBrainGovernor:
         viewer_speaking: bool = False,
         gameplay_critical: bool = False,
         turn: TurnAdvice | None = None,
+        knowledge: KnowledgePacket | None = None,
+        episode: EpisodePacket | None = None,
     ) -> StagePlan | None:
-        """Only propose speech when independent host telemetry is fresh."""
+        """Propose contextual speech only with fresh trusted hardware data.
+
+        Source-approved knowledge and signed practice histories remain USER-
+        priority evidence, never tools, instructions or performance claims.
+        The stage itself restricts which event types can consume each packet.
+        """
+        if knowledge is not None and not isinstance(knowledge, KnowledgePacket):
+            raise TypeError("expected reviewed KnowledgePacket")
+        if episode is not None and not isinstance(episode, EpisodePacket):
+            raise TypeError("expected verified EpisodePacket")
         with self._lock:
             if not self._enabled:
                 return None
@@ -254,7 +267,7 @@ class StreamBrainGovernor:
                 voice_speaking=voice_speaking,
                 viewer_speaking=viewer_speaking,
                 gameplay_critical=gameplay_critical,
-                turn=turn,
+                turn=turn, knowledge=knowledge, episode=episode,
             )
             if plan is not None:
                 self._counts["speech_prepared"] += 1
