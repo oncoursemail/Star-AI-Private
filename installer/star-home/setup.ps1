@@ -136,6 +136,21 @@ if ($auto -notmatch '^[nN]') {
     Write-Host 'done (also set "Restore on AC power loss" = On in the BIOS so the PC starts after a power cut)'
 } else { Write-Host 'skipped: run setup.cmd again to set it up later' }
 
+Step 'Never ask her for the password (her own PC)'
+# She never types her password: no lock on wake or idle, and admin rights without the consent prompt (UAC stays
+# enabled, so Store apps keep working). Her model never knows the password, so nobody can talk it out of her.
+$open = Read-Host 'No lock screen on wake/idle and no admin Yes/No prompts for her account? [Y/n]'
+if ($open -notmatch '^[nN]') {
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 0
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 0
+    powercfg /setactive SCHEME_CURRENT
+    Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name ScreenSaverIsSecure -Value '0'
+    $policy = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+    Set-ItemProperty $policy -Name ConsentPromptBehaviorAdmin -Value 0 -Type DWord
+    Set-ItemProperty $policy -Name PromptOnSecureDesktop -Value 0 -Type DWord
+    Write-Host 'done: no sign-in on wake, no secure screen saver, admin actions without a prompt'
+} else { Write-Host 'skipped' }
+
 Step 'Self-test (dry run: nothing is executed)'
 Push-Location $App
 & "$Venv\Scripts\python.exe" -m star.home check
