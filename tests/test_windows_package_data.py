@@ -63,6 +63,7 @@ OTHER_FILE_ANCHORS = {
     "star/eval_runner.py": "developer-only evaluation fixtures",
     "star/failure_ledger.py": "developer-only evaluation prelude",
     "star/general_knowledge_benchmark.py": "source-only benchmark",
+    "star/games/minecraft.py": "Mineflayer client star/games/mineflayer/bot.js runs from a source checkout after npm install",
     "star/gold_bank_verify.py": "developer-only gold bank build tool (needs STAR Server)",
     "star/github_app.py": "source-root check blocks credential files",
     "star/media_actions.py": "owner-installed external ComfyUI",
