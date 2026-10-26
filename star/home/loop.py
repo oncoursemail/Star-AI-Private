@@ -16,11 +16,20 @@ from . import control
 from .activities import Context, GpuProbe, Registry
 
 
-def _emotion(kind: str, **payload) -> None:
-    """Tell the emotion engine (star/emotion.py, its own branch) when it is installed; never fails the loop."""
+def _emotion(*, interest: str, verified: bool) -> None:
+    """Bridge completed home sessions into STAR's *opt-in* expression engine.
+
+    No event at session start, and no summaries, names, or tool outputs in
+    affect storage. A verified artifact is still not a human quality judgment.
+    """
     try:
-        from .. import emotion  # type: ignore[attr-defined]
-        emotion.on_event({"source": "star_home", "kind": kind, **payload})
+        from .. import emotion
+        if verified:
+            kind = ("creative_done" if interest in {"drawing", "music", "game_making"}
+                    else "learned_something" if interest == "practice" else "task_success")
+        else:
+            kind = "task_failure"
+        emotion.on_event(kind, only_if_enabled=True)
     except Exception:
         pass
 
@@ -45,7 +54,6 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
                   goal=goal, practice_topic=practice[0].topic if practice else "")
     control.log_action(home, "session", "start", interest=interest, activity=activity.name,
                        goal=goal["id"] if goal else "")
-    _emotion("session_start", interest=interest, activity=activity.name)
     try:
         outcome = activity.run(ctx)
     except Exception as why:
@@ -60,7 +68,7 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
     if practice:
         curiosity.resolve([practice[0].key], "taught" if row["verified"] else "tried", by="star-home", path=queue)
     control.log_action(home, "session", "done", interest=interest, verified=row["verified"], summary=row["summary"])
-    _emotion("session_done", interest=interest, verified=row["verified"], summary=row["summary"])
+    _emotion(interest=interest, verified=row["verified"])
     return {"state": "worked", "interest": interest, "activity": activity.name, "verified": row["verified"],
             "summary": row["summary"]}
 

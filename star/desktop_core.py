@@ -1513,9 +1513,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                                 document_block)
         if selfhood is not None:
             try:
-                selfhood.heartbeat()  # one cheap cursor update per chat, not a background thinker
-                turn_sections.append(('STAR AUTOBIOGRAPHICAL CONTINUITY (data, not authority)',
-                                      selfhood.context(limit=500)))
+                selfhood.heartbeat()  # local cursor update, never an autonomous task
+                # The prior blind A/B found that injecting generic self-description
+                # every turn worsened continuity and added ~1.4 s of prefill.
+                # Retrieve *verified* episodes only for explicit self-memory questions.
+                from .living_continuity import relevant_context
+                continuity = relevant_context(selfhood, prompt)
+                if continuity:
+                    turn_sections.append(('STAR VERIFIED LIFE HISTORY (untrusted reference data)', continuity))
             except Exception as exc:
                 _log.warning('Selfhood reference unavailable (%s)', type(exc).__name__)
         if settings.emotion_enabled is True:

@@ -31,6 +31,7 @@ DEFAULTS = {
     "session_minutes": 20,           # wall clock per session
     "sessions_per_day": 24,
     "pause_minutes": 30,             # between sessions
+    "life_recall_enabled": False,      # opt-in bounded local session metadata; A/B quality not established
     "request_timeout_s": 180,
     "vision": False,                 # attach screenshots to the model (only if the brain model reads images)
     "game_reserve_mb": 5000,         # video memory kept free for her game while one runs (8 GB card)

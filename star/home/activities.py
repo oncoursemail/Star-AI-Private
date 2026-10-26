@@ -113,7 +113,8 @@ def brain_activity(brief: str) -> Callable[[Context], dict]:
         text = brief + (f"; today: {ctx.practice_topic}" if ctx.practice_topic else "")
         return brain.run_session(ctx.chat, ctx.executor, ctx.life, interest=ctx.interest, brief=text, goal=ctx.goal,
                                  max_steps=int(ctx.config.get("max_steps", 12)),
-                                 session_minutes=float(ctx.config.get("session_minutes", 20)))
+                                 session_minutes=float(ctx.config.get("session_minutes", 20)),
+                                 recall_history=ctx.config.get("life_recall_enabled") is True)
     return run
 
 
