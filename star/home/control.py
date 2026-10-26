@@ -1,6 +1,7 @@
 """The owner's controls on STAR's PC: the data folder, the global stop and the action log.
 
-Everything lives in one folder (default C:\\ProgramData\\STAR\\home, override STAR_HOME_DIR):
+Everything lives in one folder (<install root>\\home, see paths.py; with no root C:\\ProgramData\\STAR\\home;
+STAR_HOME_DIR overrides both):
 
   STOP          present = STAR stops: the loop sleeps, the executor refuses every action. The owner creates it with
                 "STAR STOP.cmd" on the desktop, `python -m star.home stop`, or the hotkey Ctrl+Alt+Shift+F12.
@@ -17,6 +18,7 @@ from pathlib import Path
 import time
 
 from ..redact import redact_text
+from . import paths
 
 STOP_NAME = "STOP"
 LOG_NAME = "actions.jsonl"
@@ -42,6 +44,9 @@ def home_dir() -> Path:
     override = os.environ.get("STAR_HOME_DIR")
     if override:
         return Path(override)
+    rooted = paths.home_dir()
+    if rooted:
+        return rooted
     base = os.environ.get("ProgramData") or r"C:\ProgramData"
     return Path(base) / "STAR" / "home"
 

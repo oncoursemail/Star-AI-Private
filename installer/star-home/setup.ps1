@@ -1,19 +1,30 @@
 # STAR Home setup: run ONCE on STAR's own PC, signed in as STAR's Windows account (an administrator).
 # Start it with setup.cmd (it asks for administrator rights and bypasses the script block for this one file).
 #   setup.cmd              install or update
+#   setup.cmd -Root D:\STAR  install into that folder (default: the first fixed drive that is not the Windows drive,
+#                          else C:\STAR). All of STAR lives under the root: app, venv, home (config, STOP, action
+#                          log, acceptance reports), models, tools, workspace, logs.
 #   setup.cmd -Uninstall   remove the scheduled task and desktop files (keeps her data and workspace)
-# What it does: Python 3.12 (if missing) -> C:\STAR\home\app + venv -> config in C:\ProgramData\STAR\home ->
+# What it does: Python 3.12 (if missing) -> <root>\app + <root>\venv -> config in <root>\home ->
 # scheduled task "STAR Home" (at her logon, highest privileges, in her desktop session) -> STOP/RESUME files on the
 # desktop -> OpenSSH server (local network only) with a slot for the lead's PUBLIC key -> optional automatic sign-in
 # after restarts (Microsoft Autologon; the owner types the password into its window) -> prints this PC's address.
 # It never creates, asks for or stores a password or a private key.
-param([switch]$Uninstall)
+param([switch]$Uninstall, [string]$Root = '')
 $ErrorActionPreference = 'Stop'
 
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$App = 'C:\STAR\home\app'
-$Venv = 'C:\STAR\home\venv'
-$Data = Join-Path $env:ProgramData 'STAR\home'
+if (-not $Root) { $Root = [Environment]::GetEnvironmentVariable('STAR_ROOT', 'Machine') }
+if (-not $Root) {
+    $second = Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Where-Object { $_.DeviceID -ne $env:SystemDrive } |
+        Sort-Object DeviceID | Select-Object -First 1
+    $Root = if ($second) { "$($second.DeviceID)\STAR" } else { 'C:\STAR' }
+}
+$Root = $Root.TrimEnd('\')
+$App = Join-Path $Root 'app'
+$Venv = Join-Path $Root 'venv'
+$Data = Join-Path $Root 'home'
+$Workspace = Join-Path $Root 'workspace'
 $Task = 'STAR Home'
 $Desktop = [Environment]::GetFolderPath('Desktop')
 
@@ -26,9 +37,10 @@ if (-not $admin) { throw 'Run setup.cmd (it asks for administrator rights).' }
 if ($Uninstall) {
     Unregister-ScheduledTask -TaskName $Task -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $Desktop 'STAR STOP.cmd'), (Join-Path $Desktop 'STAR RESUME.cmd') -ErrorAction SilentlyContinue
-    Write-Host "Removed the task and desktop files. Data kept in $Data and C:\ProgramData\STAR\workspace."
+    Write-Host "Removed the task and desktop files. Data kept in $Data and $Workspace."
     exit 0
 }
+Write-Host "STAR install root: $Root"
 if (-not (Test-Path (Join-Path $Repo 'star\home\__main__.py'))) { throw "STAR source not found next to this script ($Repo\star)." }
 
 Step 'Python 3.12'
@@ -45,7 +57,16 @@ if (-not $Python) {
 & $Python --version
 
 Step "STAR Home files -> $App"
-New-Item -ItemType Directory -Force -Path $App | Out-Null
+New-Item -ItemType Directory -Force -Path $App, (Join-Path $Root 'models\voice'), (Join-Path $Root 'models\hf'),
+    (Join-Path $Root 'tools'), (Join-Path $Root 'logs'), (Join-Path $Root 'cache\pip') | Out-Null
+# One folder for everything: the root, and the model and cache folders other packages read (star/home/paths.py).
+$env:STAR_ROOT = $Root
+$env:STAR_VOICE_MODELS = Join-Path $Root 'models\voice'
+$env:HF_HOME = Join-Path $Root 'models\hf'
+$env:PIP_CACHE_DIR = Join-Path $Root 'cache\pip'
+foreach ($name in 'STAR_ROOT', 'STAR_VOICE_MODELS', 'HF_HOME', 'PIP_CACHE_DIR') {
+    [Environment]::SetEnvironmentVariable($name, (Get-Item "env:$name").Value, 'Machine')
+}
 robocopy (Join-Path $Repo 'star') (Join-Path $App 'star') /MIR /XD __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "copying the STAR source failed (robocopy $LASTEXITCODE)." }
 if (-not (Test-Path "$Venv\Scripts\python.exe")) { & $Python -m venv $Venv }
@@ -53,7 +74,7 @@ if (-not (Test-Path "$Venv\Scripts\python.exe")) { & $Python -m venv $Venv }
 if ($LASTEXITCODE -ne 0) { throw 'pip install failed.' }
 
 Step "Config -> $Data\config.json"
-New-Item -ItemType Directory -Force -Path $Data, (Join-Path $env:ProgramData 'STAR\workspace') | Out-Null
+New-Item -ItemType Directory -Force -Path $Data, $Workspace | Out-Null
 $ConfigFile = Join-Path $Data 'config.json'
 if (-not (Test-Path $ConfigFile)) {
     $brain = Read-Host 'Brain address, e.g. http://<server-1-address>:8080 (Enter = the lead sets it later)'
@@ -72,9 +93,9 @@ Register-ScheduledTask -TaskName $Task -Description 'STAR Home: her own loop and
     -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 
 Step 'Owner controls on the desktop'
-"@echo off`r`n`"$Venv\Scripts\python.exe`" -m star.home stop`r`npause" |
+"@echo off`r`ncd /d `"$App`"`r`n`"$Venv\Scripts\python.exe`" -m star.home stop`r`npause" |
     Set-Content -Path (Join-Path $Desktop 'STAR STOP.cmd') -Encoding ascii
-"@echo off`r`n`"$Venv\Scripts\python.exe`" -m star.home resume`r`npause" |
+"@echo off`r`ncd /d `"$App`"`r`n`"$Venv\Scripts\python.exe`" -m star.home resume`r`npause" |
     Set-Content -Path (Join-Path $Desktop 'STAR RESUME.cmd') -Encoding ascii
 Write-Host 'STAR STOP.cmd / STAR RESUME.cmd created; the hotkey Ctrl+Alt+Shift+F12 also stops her.'
 
@@ -118,7 +139,7 @@ Step "Sign in as $env:USERNAME automatically after a restart"
 # encrypted as an LSA secret. This script never sees, asks for or stores the password.
 $auto = Read-Host 'Set up automatic sign-in after restarts (opens Microsoft Autologon)? [Y/n]'
 if ($auto -notmatch '^[nN]') {
-    $tool = Join-Path $env:ProgramData 'STAR\tools\Autologon'
+    $tool = Join-Path $Root 'tools\Autologon'
     New-Item -ItemType Directory -Force -Path $tool | Out-Null
     $zip = Join-Path $tool 'AutoLogon.zip'
     Invoke-WebRequest -UseBasicParsing 'https://download.sysinternals.com/files/AutoLogon.zip' -OutFile $zip
@@ -141,8 +162,11 @@ Step 'Never ask her for the password (her own PC)'
 # enabled, so Store apps keep working). Her model never knows the password, so nobody can talk it out of her.
 $open = Read-Host 'No lock screen on wake/idle and no admin Yes/No prompts for her account? [Y/n]'
 if ($open -notmatch '^[nN]') {
-    powercfg /setacvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 0
-    powercfg /setdcvalueindex SCHEME_CURRENT SUB_NONE CONSOLELOCK 0
+    # The GUID form works on every build; the CONSOLELOCK alias is missing on some, and the setting can be hidden.
+    $consoleLock = '0e796bdb-100d-47d6-a2d5-f7d2daa51f51'
+    powercfg -attributes SUB_NONE $consoleLock -ATTRIB_HIDE
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_NONE $consoleLock 0
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_NONE $consoleLock 0
     powercfg /setactive SCHEME_CURRENT
     Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name ScreenSaverIsSecure -Value '0'
     $policy = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
@@ -164,3 +188,4 @@ Write-Host "Computer: $env:COMPUTERNAME   User: $env:USERNAME"
 Write-Host "Address(es): $($ips -join ', ')"
 Write-Host "Tell the lead: ssh $env:USERNAME@$($ips | Select-Object -First 1)"
 Write-Host "Her loop is running (task '$Task'). Stop: 'STAR STOP.cmd' on the desktop or Ctrl+Alt+Shift+F12."
+Write-Host "Check every ability on this PC:  cd /d $App ; $Venv\Scripts\python.exe -m star.home acceptance   (--quick = no audio/GPU loads; report in $Data\acceptance)"

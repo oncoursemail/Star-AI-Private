@@ -218,8 +218,8 @@ def emotion_listener() -> Callable[[str, float], None]:
         from .. import emotion                       # type: ignore[attr-defined]
     except ImportError:
         return lambda kind, now: None
-    feel = {"death": ("task_failure", 0.5), "round_lost": ("task_failure", 0.5), "checkpoint": ("task_success", 0.4),
-            "objective": ("task_success", 0.7), "round_won": ("task_success", 0.8),
+    feel = {"death": ("task_failure", 0.5), "round_lost": ("game_lost", 0.6), "checkpoint": ("task_success", 0.4),
+            "objective": ("task_success", 0.7), "round_won": ("game_won", 0.8),
             "elimination": ("task_success", 0.3)}
 
     def listen(kind: str, now: float) -> None:
