@@ -84,6 +84,10 @@ class CallConfig:
     ptt_voice_barge_in: bool = True       # push-to-talk: talking over Star (without the key) still silences her
     acknowledgements: bool = False        # play a short pre-rendered "okay" in Star's voice once the turn is understood
     game_context_for_voice: bool = False  # opt-in ephemeral, typed game telemetry; never enables game control
+    speculative_reply: bool = False       # start answering at the first pause, hold the sound until the turn really ends
+    backchannels: bool = False            # say "mm-hm" in a long pause while the user is clearly not finished (no loudspeaker echo)
+    backchannel_after: float = 3.0        # only once the user has spoken this many seconds
+    backchannel_gap: float = 8.0          # and never twice within this many seconds
 
 
 # Said when the model twice wrote its plan instead of an answer, and when asking again: see _generate_and_speak.
@@ -103,8 +107,17 @@ class _Sentence:
 
 
 class _Reply:
-    def __init__(self, turn: int) -> None:
+    def __init__(self, turn: int, committed: bool = True) -> None:
         self.metrics = TurnMetrics(turn=turn)
+        # A speculative reply (CallSession._start_spec_reply) is generated and spoken into these buffers while the
+        # user may still be talking: nothing is played or emitted until committed is set, or all of it is dropped.
+        self.committed = threading.Event()
+        if committed:
+            self.committed.set()
+        self.settled = threading.Event()         # set once the speculative reply is committed or discarded
+        self.discarded = False
+        self.held_audio: list[tuple[bytes, int]] = []
+        self.held_events: list[dict] = []
         self.cancel = threading.Event()
         self.done = threading.Event()
         self.play_lock = threading.Lock()
@@ -155,9 +168,10 @@ class CallSession:
         self._ptt_tail_frames = 0               # frames recorded since the key was released
         self._ptt_barge_ms = 0
         self.acks = None
-        if self.config.acknowledgements:
-            from .acks import AckClips
-            self.acks = AckClips(tts)
+        self._last_backchannel = float("-inf")
+        if self.config.acknowledgements or self.config.backchannels:
+            from .acks import BACKCHANNELS, AckClips
+            self.acks = AckClips(tts, backchannels=BACKCHANNELS if self.config.backchannels else ())
             threading.Thread(target=self.acks.render, name="star-voice-acks", daemon=True).start()
 
     # -- lifecycle --------------------------------------------------------------------------
@@ -168,6 +182,7 @@ class CallSession:
     def stop(self) -> None:
         """End the call: cancel any reply and go quiet."""
         self._stopped = True
+        self._drop_speculative()
         self._cancel_reply("call_ended")
         reply = self._reply
         if reply is not None:
@@ -182,6 +197,7 @@ class CallSession:
     def set_muted(self, muted: bool) -> None:
         self.muted = bool(muted)
         if self.muted:
+            self._drop_speculative()
             self.detector.reset()
         self._emit({"type": "muted", "muted": self.muted})
 
@@ -332,26 +348,53 @@ class CallSession:
             self._set_state("user_speaking")
         elif event.kind == "pause":
             if self.config.speculative_asr:
-                self._start_speculative(event.audio)
+                self._start_speculative(event.audio, event.speech_end)
+            self._maybe_backchannel(event)
         elif event.kind == "resume":
-            self._speculative = None
+            self._drop_speculative()
         elif event.kind == "discard":
-            self._speculative = None
+            self._drop_speculative()
             if not self.busy():
                 self._set_state("listening")
         elif event.kind == "turn_end":
             self._begin_reply(event)
 
+    def _maybe_backchannel(self, event: TurnEvent) -> None:
+        """A quiet "mm-hm" when the user pauses in the middle of a long thought (the end-of-turn model says they are not
+        finished). Never over loudspeakers (the microphone would hear it), never while she is speaking, at most once
+        per backchannel_gap seconds, and it never starts or ends a turn."""
+        cfg = self.config
+        if (not cfg.backchannels or self.acks is None or self.echo_gate is not None or self.busy()
+                or event.complete_probability is None or event.complete_probability >= 0.3):
+            return
+        now = self.clock()
+        if len(event.audio) / 2 / 16000 < cfg.backchannel_after or now - self._last_backchannel < cfg.backchannel_gap:
+            return
+        clip = self.acks.backchannel()
+        if clip is None:
+            return
+        self._last_backchannel = now
+        for pcm, sample_rate in clip.chunks:
+            self.speaker.play(pcm, sample_rate)
+        self._emit({"type": "backchannel", "text": clip.text})
+
     def _begin_reply(self, event: TurnEvent) -> None:
         with self._lock:
             previous = self._reply
-            self._turn_count += 1
-            reply = _Reply(self._turn_count)
-            reply.metrics.speech_end = event.speech_end
-            reply.metrics.turn_end = event.at
-            reply.metrics.end_reason = event.reason
-            self._reply = reply
             speculative, self._speculative = self._speculative, None
+            early = speculative.get("reply") if speculative else None
+            if speculative is not None:
+                speculative["committed"] = True      # too late for the speculative thread to start one now
+            if early is None:
+                self._turn_count += 1
+                reply = _Reply(self._turn_count)
+                reply.metrics.speech_end = event.speech_end
+                reply.metrics.turn_end = event.at
+                reply.metrics.end_reason = event.reason
+                self._reply = reply
+        if early is not None:
+            self._adopt_spec_reply(early, event)
+            return
         self._set_state("thinking")
         threading.Thread(target=self._run_reply, args=(reply, event.audio, speculative, previous),
                          name=f"star-voice-reply-{reply.metrics.turn}", daemon=True).start()
@@ -363,8 +406,10 @@ class CallSession:
             text = self.asr.transcribe(pcm, 16000)
             return (text or "").strip(), self.clock() - started
 
-    def _start_speculative(self, audio: bytes) -> None:
-        job = {"done": threading.Event(), "text": "", "seconds": 0.0, "error": None}
+    def _start_speculative(self, audio: bytes, speech_end: float | None = None) -> None:
+        self._drop_speculative()
+        job = {"done": threading.Event(), "text": "", "seconds": 0.0, "error": None, "committed": False,
+               "reply": None, "speech_end": speech_end}
         self._speculative = job
 
         def work() -> None:
@@ -374,6 +419,8 @@ class CallSession:
                 job["error"] = exc
             finally:
                 job["done"].set()
+            if self.config.speculative_reply and any(ch.isalnum() for ch in job["text"]):
+                self._start_spec_reply(job)
             if self._speculative is job and job["text"]:
                 self._emit({"type": "partial_transcript", "text": job["text"]})
 
@@ -424,21 +471,104 @@ class CallSession:
             self._emit({"type": "final_transcript", "turn": metrics.turn, "text": reply.user_text})
             self.speaker.reset()
             self._acknowledge(reply)
-            messages = self._context() + [{"role": "user", "content": reply.user_text}]
-            if self.config.game_context_for_voice and self.game_events is not None:
-                context = self.game_events.render(now=self.clock())
-                if context:
-                    messages[-1] = {"role": "user", "content": reply.user_text + "\n\n" + context}
-            self._generate_and_speak(reply, messages)
+            self._generate_and_speak(reply, self._turn_messages(reply))
         except Exception as exc:
             reply.error = exc
         finally:
             self._finish_reply(reply)
 
+    def _turn_messages(self, reply: _Reply) -> list[dict]:
+        """This turn's request: system prompt, history, then the user's words plus the optional game context.
+        Only reply.user_text enters the history."""
+        messages = self._context() + [{"role": "user", "content": reply.user_text}]
+        if self.config.game_context_for_voice and self.game_events is not None:
+            context = self.game_events.render(now=self.clock())
+            if context:
+                messages[-1] = {"role": "user", "content": reply.user_text + "\n\n" + context}
+        return messages
+
+    # -- speculative reply --------------------------------------------------------------------
+    # At the first pause (256 ms of silence) the words so far are transcribed; with speculative_reply on, the brain
+    # starts answering them and the first sentences are synthesised at once, but kept in reply.held_audio. If the
+    # user goes on talking the whole reply is dropped without a trace (no sound, no event, no history); if the
+    # turn ends, the held sound is released in the same instant, so the model and voice time is already spent.
+    def _start_spec_reply(self, job: dict) -> None:
+        with self._lock:
+            if self._speculative is not job or job["committed"] or self._stopped or job["reply"] is not None:
+                return
+            previous = self._reply
+            reply = _Reply(self._turn_count + 1, committed=False)
+            reply.metrics.transcript_at = self.clock()
+            reply.metrics.asr_seconds, reply.metrics.asr_speculative = job["seconds"], True
+            reply.metrics.speech_end = job["speech_end"]
+            reply.user_text = f"{self._carry} {job['text']}".strip() if self._carry else job["text"]
+            reply.metrics.user_text = reply.user_text
+            job["reply"] = reply
+        threading.Thread(target=self._run_spec_reply, args=(reply, previous),
+                         name="star-voice-reply-early", daemon=True).start()
+
+    def _run_spec_reply(self, reply: _Reply, previous: _Reply | None) -> None:
+        try:
+            if previous is not None:
+                previous.done.wait(5.0)          # its history must be settled before this request is built
+            if not reply.cancel.is_set():
+                self._generate_and_speak(reply, self._turn_messages(reply))
+                while not (reply.settled.is_set() or reply.cancel.is_set()):
+                    time.sleep(0.005)            # a short answer can be ready before the turn has ended
+                while not reply.cancel.is_set() and self.speaker.pending_seconds() > 0:
+                    time.sleep(0.01)
+        except Exception as exc:
+            reply.error = exc
+        finally:
+            if reply.discarded:
+                reply.done.set()
+            else:
+                self._finish_reply(reply)
+
+    def _drop_speculative(self) -> None:
+        """Forget the speculative transcript and throw away any reply started from it (the user went on talking)."""
+        with self._lock:
+            job, self._speculative = self._speculative, None
+        reply = job.get("reply") if job else None
+        if reply is not None and not reply.committed.is_set():
+            reply.discarded = True
+            reply.cancel.set()
+            self._close_stream(reply)
+            reply.settled.set()
+
+    def _adopt_spec_reply(self, reply: _Reply, event: TurnEvent) -> None:
+        """The turn really ended: make the speculative reply this turn's reply and release what it has ready."""
+        metrics = reply.metrics
+        with self._lock:
+            self._turn_count += 1
+            metrics.turn, metrics.turn_end, metrics.end_reason = self._turn_count, event.at, event.reason
+            metrics.speech_end = event.speech_end
+            self._carry = ""                     # reply.user_text already carries those words
+            self._reply = reply
+        self._set_state("thinking")
+        self._emit({"type": "final_transcript", "turn": metrics.turn, "text": reply.user_text})
+        self.speaker.reset()
+        with reply.play_lock:
+            ready = bool(reply.held_audio)
+        if not ready:
+            self._acknowledge(reply)             # the answer is not ready yet: bridge the gap as usual
+        with reply.play_lock:
+            reply.committed.set()
+            for held in reply.held_events:
+                self._emit({**held, "turn": metrics.turn} if "turn" in held else held)
+            reply.held_events = []
+            if reply.held_audio and not reply.cancel.is_set():
+                metrics.first_audio_at = metrics.first_audio_at or self.clock()
+                self._set_state("speaking")
+                for pcm, sample_rate in reply.held_audio:
+                    self.speaker.play(pcm, sample_rate)
+            reply.held_audio = []
+        reply.settled.set()
+
     def _acknowledge(self, reply: _Reply) -> None:
         """Play the acknowledgement clip for this turn, if any. Its length is counted as reply audio, so the
         sentence offsets used for "what the user heard" after a barge-in stay right; it never enters the history."""
-        clip = self.acks.pick(reply.user_text) if self.acks is not None else None
+        clip = self.acks.pick(reply.user_text) if self.acks is not None and self.config.acknowledgements else None
         if clip is None:
             return
         with reply.play_lock:
@@ -476,11 +606,11 @@ class CallSession:
             if released is False and not reply.cancel.is_set():
                 # The model wrote its plan instead of an answer (star/persona.leaked_reasoning); none of it was
                 # spoken. Ask once more for the spoken words only, then fall back to one honest line.
-                self._emit({"type": "reasoning_dropped", "turn": metrics.turn, "retry": True})
+                self._reply_emit(reply, {"type": "reasoning_dropped", "turn": metrics.turn, "retry": True})
                 reply.raw_text = ""
                 retry = messages[:-1] + [{"role": "user", "content": messages[-1]["content"] + RETRY_NOTE}]
                 if self._stream_sentences(reply, retry, sentences) is False and not reply.cancel.is_set():
-                    self._emit({"type": "reasoning_dropped", "turn": metrics.turn, "retry": False})
+                    self._reply_emit(reply, {"type": "reasoning_dropped", "turn": metrics.turn, "retry": False})
                     reply.raw_text = ""
                     sentences.put(FALLBACK_LINE)
         finally:
@@ -521,7 +651,7 @@ class CallSession:
             metrics.tokens += 1
             metrics.last_token_at = self.clock()
             reply.raw_text += delta
-            self._emit({"type": "assistant_delta", "turn": metrics.turn, "text": delta})
+            self._reply_emit(reply, {"type": "assistant_delta", "turn": metrics.turn, "text": delta})
             release(chunker.feed(delta))
             if leaked:
                 self._close_stream(reply)       # stop generating the plan
@@ -547,10 +677,13 @@ class CallSession:
                     with reply.play_lock:        # stop() takes the same lock, so nothing plays after a barge-in
                         if reply.cancel.is_set():
                             break
-                        if metrics.first_audio_at is None:
-                            metrics.first_audio_at = self.clock()
-                            self._set_state("speaking")
-                        self.speaker.play(pcm, sample_rate)
+                        if not reply.committed.is_set():
+                            reply.held_audio.append((pcm, sample_rate))     # speculative: see _adopt_spec_reply
+                        else:
+                            if metrics.first_audio_at is None:
+                                metrics.first_audio_at = self.clock()
+                                self._set_state("speaking")
+                            self.speaker.play(pcm, sample_rate)
                     reply.audio_seconds += len(pcm) / 2 / sample_rate
             except Exception as exc:
                 reply.error = exc
@@ -559,7 +692,16 @@ class CallSession:
             metrics.tts_seconds += self.clock() - started
             if reply.audio_seconds > begin:
                 reply.sentences.append(_Sentence(sentence, begin, reply.audio_seconds))
-                self._emit({"type": "assistant_sentence", "turn": metrics.turn, "text": sentence})
+                self._reply_emit(reply, {"type": "assistant_sentence", "turn": metrics.turn, "text": sentence})
+
+    def _reply_emit(self, reply: _Reply, event: dict) -> None:
+        """Emit a reply event now, or keep it until a speculative reply is committed (its turn number is then fixed)."""
+        if not reply.committed.is_set():
+            with reply.play_lock:
+                if not reply.committed.is_set():
+                    reply.held_events.append(event)
+                    return
+        self._emit(event)
 
     @staticmethod
     def _close_stream(reply: _Reply) -> None:
