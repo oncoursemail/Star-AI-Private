@@ -56,9 +56,12 @@ def summarize_verdicts(cases: list[Case], verdicts: dict[str, str]) -> dict:
 
 def main(argv=None) -> int:
     """`python -m star.evals run|selftest|list|gate|innovation|ledger ...` (star/eval_runner.py, star/eval_gate.py,
-    star/innovation_gate.py)."""
+    star/innovation_gate.py); `--suite human` goes to star/human_evals.py."""
     import sys
     args = list(sys.argv[1:] if argv is None else argv)
+    from .human_evals import main as human_main, wants_human
+    if wants_human(args):                          # --suite human: the human-likeness suite (star/human_evals.py)
+        return human_main(args)
     if args and args[0] == "pool":                 # python -m star.evals pool <grade|replay|inspect> ... (star/pool_replay.py)
         from .pool_replay import main as pool_main
         return pool_main(args[1:])
