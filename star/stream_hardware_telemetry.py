@@ -224,12 +224,14 @@ class RealtimeTelemetryHost:
             with self._lock:
                 self._polling = False
 
-    def presented_frame(self, at_ms: float) -> bool:
-        """Host-verified actual frame-present event, NOT model-estimated FPS."""
+    def presented_frame(self, at_ms: float, *,
+                        expected_epoch: int | None = None) -> bool:
+        """Host-verified actual present, optionally fenced to source lifecycle."""
         at = _ms(at_ms, "presented frame")
         with self._lock:
             now = self._now()
             if (not self._enabled or not self._game_active
+                    or (expected_epoch is not None and expected_epoch != self._generation)
                     or at > now + 15 or now - at > 100):
                 return False
             if self._last_frame_ms is not None:
@@ -243,6 +245,23 @@ class RealtimeTelemetryHost:
             self._last_frame_ms = at
             self._counts["frames"] += 1
             return True
+
+    def context_epoch(self) -> int:
+        """Host lifecycle token to fence stale collector callbacks."""
+        with self._lock:
+            return self._generation
+
+    def invalidate_game_frames(self, *, expected_epoch: int | None = None) -> None:
+        """Drop FPS evidence on collector failure, game switch or ambiguity.
+
+        Never leave formerly valid frame intervals available to streaming QoS
+        after an ETW feed closes or detects mixed presentation sources.
+        """
+        with self._lock:
+            if expected_epoch is not None and expected_epoch != self._generation:
+                return
+            self._last_frame_ms = None
+            self._frame_intervals.clear()
 
     def report_audio_backlog(self, *, backlog_ms: float,
                              at_ms: float) -> bool:
