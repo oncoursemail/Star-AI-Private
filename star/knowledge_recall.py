@@ -199,6 +199,19 @@ class KnowledgeRecallPlanner:
     def _source_is_current(self, card: RecallCard) -> bool:
         return bool(self._current_cards((card,)))
 
+    def pinned_source_for(self, question_id: str) -> str | None:
+        """Host-only pinned digest, without exposing the reviewed note body.
+
+        A trusted execution bridge compares this against its owner-approved
+        question manifest before sending any prompt to a local model. This
+        method does not authorize inference or attest source freshness; reserve
+        performs the reviewed-source check independently.
+        """
+        self._thread()
+        _id(question_id, "question_id")
+        card = self._by_id.get(question_id)
+        return None if card is None else card.source_sha256
+
     def enable(self, *, owner_approved: bool = False) -> None:
         self._thread()
         if owner_approved is not True:
