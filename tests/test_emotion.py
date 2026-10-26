@@ -13,7 +13,7 @@ from star import emotion
 from star.emotion import BASELINE, EmotionEngine, Prosody, appraise
 from star.voice.call import CallConfig, CallSession
 from star.voice.turn import TurnConfig
-from voice_fakes import Events, FakeASR, FakeBrain, FakeSpeaker, FakeTTS, FakeVAD, quiet, speech, wait_for
+from voice_fakes import Events, FakeASR, FakeBrain, FakeSpeaker, FakeTTS, FakeVAD, quiet, speech
 
 HOUR = 3600.0
 
