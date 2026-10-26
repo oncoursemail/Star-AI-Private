@@ -103,13 +103,38 @@ class Computer:
     def __init__(self, hands: Hands, *, windows, uia=None, eye=None, grounder=None, chat: Callable | None = None,
                  executor=None, guard: Guard | None = None, settings: dict | None = None, home=None,
                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep,
-                 seed: int | None = None) -> None:
+                 seed: int | None = None, stopped: Callable[[], bool] | None = None) -> None:
         from . import settings as _settings
         self.hands, self.windows, self.uia, self.eye, self.grounder = hands, windows, uia, eye, grounder
         self.chat, self.executor, self.guard, self.home = chat, executor, guard, home
         self.cfg = settings or _settings.load(home)
         self.clock, self.sleep = clock, sleep
         self.rng = random.Random(seed)
+        self._stopped = stopped
+        self._closed = False
+        self._on_close: Callable[[bool], None] | None = None
+
+    def _vision_blocked(self) -> bool:
+        try:
+            return (self._closed or bool(getattr(self.executor, 'dry_run', False))
+                    or bool(getattr(self.hands, 'dry_run', False))
+                    or (self._stopped is not None and bool(self._stopped())))
+        except Exception:
+            return True
+
+    def close(self, timeout: float = .2) -> bool:
+        self._closed = True
+        notify = self._on_close
+        if notify is not None:
+            notify(False)
+        try:
+            closer = getattr(self.eye, 'close', None)
+            complete = closer(timeout=timeout) is True if callable(closer) else True
+        except Exception:
+            complete = False
+        if complete and notify is not None:
+            notify(True)
+        return complete
 
     # ---- seeing -------------------------------------------------------------------------------------------
     def see(self) -> Screen:
@@ -136,7 +161,7 @@ class Computer:
         return screen
 
     def _shot(self):
-        return self.eye.grab() if self.eye is not None else None
+        return self.eye.grab() if self.eye is not None and not self._vision_blocked() else None
 
     # ---- primitives (each returns (ok, detail)) -----------------------------------------------------------
     def aim_point(self, el: Element) -> tuple[int, int]:
@@ -163,8 +188,14 @@ class Computer:
             return best[0][1], ""
         if self.grounder is None or self.eye is None:
             return None, f"{target!r} is not in the control list and no vision model is set up"
-        image = self.eye.grab()
+        if self._vision_blocked():
+            return None, 'screen capture and vision are unavailable while previewed or stopped'
+        image = self._shot()
+        if image is None or self._vision_blocked():
+            return None, 'no current desktop image is available'
         found = self.grounder.locate(image, target)
+        if self._vision_blocked():
+            return None, 'vision result discarded after preview or STOP'
         if found is None:
             return None, f"the vision model could not find {target!r}"
         size = 24
@@ -249,7 +280,8 @@ class Computer:
         self.sleep(float(self.cfg.get("settle_s", 0.5)))
         after = self.see()
         diff = before.difference(after)
-        pixels = changed_fraction(before_img, self._shot()) if before_img is not None else 0.0
+        after_img = self._shot() if before_img is not None else None
+        pixels = changed_fraction(before_img, after_img) if before_img is not None and after_img is not None else 0.0
         if expect and after.has_text(expect):
             return after, True, f"expected text {expect!r} is on screen"
         if diff >= 0.02 or pixels >= 0.002:
@@ -260,6 +292,8 @@ class Computer:
 
     def act(self, goal: str, *, max_steps: int = 12, minutes: float = 5.0, app_exes: set[str] | None = None) -> dict:
         """Work toward `goal`. Returns {ok, verified, summary, evidence, steps, failures, trace, goal_done}."""
+        if self._closed:
+            return self._result(False, False, 'computer session is closed', [], [], 0)
         if self.chat is None:
             return self._result(False, False, "no brain connection", [], [], 0)
         deadline = self.clock() + minutes * 60

@@ -57,6 +57,9 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the
     args = parser.parse_args(argv)
     home = args.home or control.home_dir()
     if args.command == "calibrate":
+        if args.dry_run or control.stopped(home):
+            print('preview or STOP: no vision calibration request was sent')
+            return 3
         from . import settings
         grounder = settings.make_grounder(settings.load(home))
         if grounder is None:
@@ -68,9 +71,20 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the
     if args.command != "see-app" and idle_seconds() < args.require_idle and not args.dry_run:
         print(f"the owner used the PC {idle_seconds():.0f} s ago (< {args.require_idle:.0f} s): not touching it")
         return 3
-    from . import build_computer, draw
+    from . import build_computer
     ctx = _context(home, args.dry_run)
     computer = build_computer(ctx)
+    try:
+        result = _run_desktop_command(args, ctx, computer)
+    finally:
+        complete = computer.close(timeout=.2) is True
+        if not complete:
+            print(json.dumps({'verified': False, 'capture_cleanup_complete': False}))
+    return result if complete else 1
+
+
+def _run_desktop_command(args, ctx, computer) -> int:
+    from . import draw
     if args.command == "see-app":
         info, message = computer.open_app(args.arg or "mspaint.exe")
         print(message)
