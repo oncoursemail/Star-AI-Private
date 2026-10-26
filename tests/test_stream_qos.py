@@ -359,3 +359,67 @@ def test_bad_results_do_not_calibrate_active_game_profile():
             break
         assert q.finish(attempt.ticket, now_ms=at + 100, succeeded=False)
     assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+
+
+
+def test_disable_with_active_worker_never_forgets_resource_reservation():
+    q = ready()
+    ongoing = q.admit(
+        job("gpu-old", 1000, device="gpu", ttl=9000),
+        snap(1000, gpu_slots=1), now_ms=1000,
+    )
+    assert ongoing.admitted
+    q.disable()
+    assert not q.status()["enabled"]
+    assert q.status()["disabled_workers_awaiting_host_stop"] == 1
+    with pytest.raises(RuntimeError, match="acknowledge all stopped workers"):
+        q.enable(owner_approved=True)
+    assert q.admit(
+        job("gpu-new", 1100, device="gpu"), snap(1100), now_ms=1100,
+    ).reason == "owner_opt_in_missing"
+    # A host-confirmed stop releases the resource, but cannot train latency.
+    assert not q.finish(ongoing.ticket, now_ms=1200, succeeded=True)
+    assert q.status()["inflight"] == 0
+    assert q.status()["completed"] == 0
+    q.enable(owner_approved=True)
+    again = q.admit(
+        job("gpu-new", 1300, device="gpu"), snap(1300), now_ms=1300,
+    )
+    assert again.admitted and again.ticket != ongoing.ticket
+    assert not q.finish(ongoing.ticket, now_ms=1400, succeeded=True)
+
+
+def test_disable_preserves_multiple_leases_until_each_host_acknowledgement():
+    q = ready()
+    first = q.admit(job("one", 100, device="cpu"), snap(100), now_ms=100)
+    second = q.admit(job("two", 101, device="gpu"), snap(101), now_ms=101)
+    assert first.admitted and second.admitted
+    q.disable()
+    assert q.status()["disabled_workers_awaiting_host_stop"] == 2
+    assert not q.finish(first.ticket, now_ms=150, succeeded=True)
+    assert q.status()["disabled_workers_awaiting_host_stop"] == 1
+    with pytest.raises(RuntimeError):
+        q.enable(owner_approved=True)
+    assert not q.finish(second.ticket, now_ms=180, succeeded=False)
+    q.enable(owner_approved=True)
+    assert q.status()["completed"] == 0
+    assert q.status()["unhealthy_routes"] == 0
+
+
+def test_disabled_expired_reservation_requires_host_stop():
+    q = ready()
+    row = q.admit(
+        job("slow", 100, device="cpu", ttl=400), snap(100), now_ms=100,
+    )
+    assert row.admitted
+    q.disable()
+    refused = q.admit(
+        job("extra", 1000, device="cpu"), snap(1000), now_ms=1000,
+    )
+    assert refused.reason == "owner_opt_in_missing"
+    assert q.status()["expired_awaiting_host_stop"] == 1
+    with pytest.raises(RuntimeError):
+        q.enable(owner_approved=True)
+    assert not q.finish(row.ticket, now_ms=1010, succeeded=True)
+    q.enable(owner_approved=True)
+    assert q.status()["inflight"] == 0

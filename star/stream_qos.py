@@ -158,6 +158,13 @@ class AdaptiveQoS:
             raise PermissionError("an authenticated owner must enable QoS")
         with self._lock:
             if not self._enabled:
+                # Disabling admission does not stop an already running worker.
+                # Never reset reservations while a trusted host may still be
+                # using GPU/CPU capacity from the old session.
+                if self._inflight:
+                    raise RuntimeError(
+                        "host must acknowledge all stopped workers before re-enabling QoS"
+                    )
                 self._reset()
             self._enabled = True
 
@@ -172,9 +179,15 @@ class AdaptiveQoS:
         self._counts = dict(admitted=0, deferred=0, completed=0, failed=0, expired=0)
 
     def disable(self) -> None:
+        """Stop new admissions without erasing possibly running workers.
+
+        Existing tickets remain reserved until finish() acknowledges the host
+        stopped each worker. Revoked completions never train latency estimates.
+        """
         with self._lock:
             self._enabled = False
-            self._reset()
+            if not self._inflight:
+                self._reset()
 
     def _advance(self, now_ms: float) -> float:
         now = _number(now_ms, "now_ms", _CLOCK_CEILING)
@@ -306,7 +319,15 @@ class AdaptiveQoS:
             pending = self._inflight.pop(ticket, None)
             was_expired = ticket in self._expired
             self._expired.discard(ticket)
-            if pending is None or not self._enabled or was_expired:
+            if pending is None:
+                return False
+            if not self._enabled:
+                # A revoked ticket is solely an acknowledgement that the host
+                # actually stopped a worker. It must not count as successful.
+                if not self._inflight:
+                    self._reset()
+                return False
+            if was_expired:
                 return False
             elapsed = now - pending.started_ms
             key = (pending.job.kind, pending.device)
@@ -330,6 +351,9 @@ class AdaptiveQoS:
                 "enabled": self._enabled,
                 "inflight": len(self._inflight),
                 "expired_awaiting_host_stop": len(self._expired),
+                "disabled_workers_awaiting_host_stop": (
+                    len(self._inflight) if not self._enabled else 0
+                ),
                 "route_p95_ms": {
                     f"{kind}:{device}:{regime}": round(value, 2)
                     for (kind, device, regime), samples in sorted(self._samples.items())
