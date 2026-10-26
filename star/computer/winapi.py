@@ -10,6 +10,7 @@ import os
 
 from ..play.winput import INPUT, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, MOUSEINPUT, _BUTTON_FLAGS, _U
 from ..play.winput import KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE
+from ..play.winput import InputDeliveryError
 from ..play.winput import vk_of as _basic_vk
 
 KEYEVENTF_UNICODE = 0x0004
@@ -136,12 +137,16 @@ class Windows:  # pragma: no cover - needs a Windows desktop
 
 
 class DesktopSink:  # pragma: no cover - sends real input on a Windows desktop
-    """InputSink for star.play.humanlike.Actuator plus wheel() and type_char(). `guard()` is asked before every
-    event; a False answer drops the event and counts it (nothing lands in a window she was not working in)."""
+    """Guarded desktop input plus cleanup-only UP methods for presses owned by the trusted caller.
+
+    Ordinary events ask guard() first; refusal raises and counts the dropped event.
+    """
 
     def __init__(self, guard=None) -> None:
         self.guard = guard or (lambda: True)
         self.dropped = 0
+        self.accepted_events = 0
+        self.failed_events = 0
         self.u = ctypes.WinDLL("user32")
 
     def _ok(self) -> bool:
@@ -150,9 +155,20 @@ class DesktopSink:  # pragma: no cover - sends real input on a Windows desktop
         self.dropped += 1
         return False
 
-    def _send(self, inp: INPUT) -> None:
-        if self._ok():
-            self.u.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    def _send(self, inp: INPUT, *, release: bool = False) -> None:
+        if not release and not self._ok():
+            raise InputDeliveryError("foreground guard refused input", accepted=0)
+        try:
+            accepted = self.u.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+        except OSError:
+            self.dropped += 1
+            self.failed_events += 1
+            raise InputDeliveryError("Windows input delivery was not confirmed") from None
+        if type(accepted) is not int or accepted != 1:
+            self.dropped += 1
+            self.failed_events += 1
+            raise InputDeliveryError("Windows did not accept the requested input event", accepted=0 if type(accepted) is int and accepted == 0 else None)
+        self.accepted_events += 1
 
     def position(self) -> tuple[int, int]:
         pt = wt.POINT()
@@ -176,6 +192,10 @@ class DesktopSink:  # pragma: no cover - sends real input on a Windows desktop
         flag = _BUTTON_FLAGS[name][0 if down else 1]
         self._send(INPUT(INPUT_MOUSE, _U(mi=MOUSEINPUT(0, 0, 0, flag, 0, None))))
 
+    def release_button(self, name: str) -> None:
+        """Only caller-owned cleanup releases bypass a changed foreground; ordinary actions remain guarded."""
+        self._send(INPUT(INPUT_MOUSE, _U(mi=MOUSEINPUT(0, 0, 0, _BUTTON_FLAGS[name][1], 0, None))), release=True)
+
     def wheel(self, notches: int) -> None:
         """Positive = away from the user (scroll up)."""
         data = (int(notches) * WHEEL_DELTA) & 0xFFFFFFFF
@@ -187,10 +207,24 @@ class DesktopSink:  # pragma: no cover - sends real input on a Windows desktop
         flags = KEYEVENTF_SCANCODE | (0 if down else KEYEVENTF_KEYUP) | (KEYEVENTF_EXTENDEDKEY if vk in _EXTENDED else 0)
         self._send(INPUT(INPUT_KEYBOARD, _U(ki=KEYBDINPUT(0, scan, flags, 0, None))))
 
+    def release_key(self, name: str) -> None:
+        vk = vk_of(name)
+        scan = self.u.MapVirtualKeyW(vk, 0)
+        flags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP | (KEYEVENTF_EXTENDEDKEY if vk in _EXTENDED else 0)
+        self._send(INPUT(INPUT_KEYBOARD, _U(ki=KEYBDINPUT(0, scan, flags, 0, None))), release=True)
+
     def type_char(self, ch: str) -> None:
         """Any Unicode character, the way an input method sends it (works in text boxes of every app)."""
         raw = ch.encode("utf-16-le")
         for i in range(0, len(raw), 2):
             unit = int.from_bytes(raw[i:i + 2], "little")
-            for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP):
-                self._send(INPUT(INPUT_KEYBOARD, _U(ki=KEYBDINPUT(0, unit, flags, 0, None))))
+            pressed = True
+            try:
+                self._send(INPUT(INPUT_KEYBOARD, _U(ki=KEYBDINPUT(0, unit, KEYEVENTF_UNICODE, 0, None))))
+            except InputDeliveryError as error:
+                pressed = error.accepted is None
+                raise
+            finally:
+                if pressed:
+                    self._send(INPUT(INPUT_KEYBOARD, _U(ki=KEYBDINPUT(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, 0, None))),
+                               release=True)

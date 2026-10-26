@@ -245,16 +245,27 @@ class GameSession:
                              ("slow", self.slow and self.slow.run)):
             if target:
                 thread = threading.Thread(target=target, name=f"play-{name}", daemon=True)
-                thread.start()
                 self._threads.append(thread)
+                thread.start()  # Retain ownership even if startup is interrupted after the OS launches it.
 
     def stop(self, timeout: float = 3.0) -> None:
         for part in (self.slow, self.fast, self.actuator):
             if part is not None:
                 part.stop()
+        pending = []
         for thread in self._threads:
-            thread.join(timeout)
-        self._threads.clear()
+            try:
+                thread.join(timeout)
+            except RuntimeError:
+                pending.append(thread)  # Unstarted/current-thread join is not proof that native work ended.
+            else:
+                if thread.is_alive():
+                    pending.append(thread)
+        self._threads = pending
+        if self._threads:
+            raise RuntimeError("gameplay worker shutdown is incomplete")
+        if self.actuator is not None:
+            self.actuator.release_all()
 
     def report(self) -> dict:
         out = {"ticks": self.fast.ticks, "overruns": self.fast.overruns, "goal": self.fast.goal.name,
@@ -264,4 +275,11 @@ class GameSession:
                               "said": list(self.slow.said[-5:])}
         if self.actuator is not None:
             out["events_fired"] = self.actuator.fired
+            out["input_delivery"] = {"attempted": self.actuator.attempted,
+                                     "sink_calls_completed": self.actuator.fired,
+                                     "failures": self.actuator.failures, "last_failure": self.actuator.failure,
+                                     "held_keys": len(self.actuator.held()), "held_buttons": len(self.actuator._buttons),
+                                     "native_accepted_events": getattr(self.actuator.sink, "accepted_events", None),
+                                     "native_failed_events": getattr(self.actuator.sink, "failed_events", None),
+                                     "cursor_moves_confirmed": getattr(self.actuator.sink, "confirmed_moves", None)}
         return out

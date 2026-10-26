@@ -71,6 +71,33 @@ def _cleanup(rt, name, stopper) -> bool:
         return False
 
 
+def _session_step(session, step):
+    actuator = getattr(session, "actuator", None)
+    if getattr(actuator, "failure", ""):
+        return _InputFailure()
+    result = step()
+    if getattr(actuator, "failure", ""):
+        return _InputFailure()
+    return result
+
+
+def _record_input_delivery(out, session) -> None:
+    if out is None or session is None:
+        return
+    try:
+        receipt = session.report().get("input_delivery")
+        if receipt is None:
+            return
+        out["input_delivery"] = receipt
+        failed = (not isinstance(receipt, dict) or receipt.get("failures") or receipt.get("native_failed_events")
+                  or receipt.get("held_keys") or receipt.get("held_buttons"))
+    except Exception:
+        failed = True
+    if failed:
+        out.update(ok=False, verified=False, paused=False, summary="native input delivery or release was not confirmed")
+        out["failures"] = [*(out.get("failures") or []), "native input: delivery or release was not confirmed"]
+
+
 # ---- the shared step loop -------------------------------------------------------------------------------------
 def run_steps(step: Callable, ctx, *, minutes: float, step_s: float, until_idle: int = 0,
               sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
@@ -276,7 +303,7 @@ def register_play(registry) -> None:
                     session.fast.on_moment.append(_moment_listener(ctx.situation))
                     session.start()
                     _check_stop(ctx.home)
-                    steps = lambda: _Idle()  # noqa: E731
+                    steps = lambda: _session_step(session, _Idle)  # noqa: E731
                 else:
                     steps = roblox.step
                 out = run_steps(steps, ctx, minutes=minutes, step_s=step_s, sleep=sleep,
@@ -294,6 +321,7 @@ def register_play(registry) -> None:
                         clean = _cleanup(rt, "roblox.session", session_stop)
                     finally:
                         rt.untrack_activity("roblox.session", session_stop)
+                _record_input_delivery(out, session)
                 if not clean or out is None or not out.get("paused") or control.stopped(ctx.home):
                     clean = _cleanup(rt, "roblox.controller", roblox_stop) and clean
                 if out is not None and control.stopped(ctx.home):
@@ -342,6 +370,7 @@ def register_play(registry) -> None:
             if getattr(getattr(ctx, "executor", getattr(rt, "executor", None)), "dry_run", False):
                 return {"ok": True, "verified": False, "summary": "dry run: no Minecraft connection, commands or voice started", "evidence": []}
             session_stop = None
+            session = None
             out = None
             try:
                 _check_stop(ctx.home)
@@ -365,7 +394,7 @@ def register_play(registry) -> None:
                 minecraft.busy_until = float("inf")
                 session.start()
                 _check_stop(ctx.home)
-                out = run_steps(minecraft.step, ctx, minutes=minutes, step_s=step_s, sleep=sleep,
+                out = run_steps(lambda: _session_step(session, minecraft.step), ctx, minutes=minutes, step_s=step_s, sleep=sleep,
                                 clock=rt.hooks.get("clock", time.monotonic))
                 return out
             except _OwnerStopped:
@@ -378,6 +407,7 @@ def register_play(registry) -> None:
                         clean = _cleanup(rt, "minecraft.session", session_stop)
                     finally:
                         rt.untrack_activity("minecraft.session", session_stop)
+                _record_input_delivery(out, session)
                 if not clean or out is None or not out.get("paused") or control.stopped(ctx.home):
                     clean = _cleanup(rt, "minecraft.controller", minecraft_stop) and clean
                 else:
@@ -394,6 +424,10 @@ def register_play(registry) -> None:
 
 class _Idle:
     ok, acted, note = True, False, ""
+
+
+class _InputFailure:
+    ok, acted, note = False, False, "native input delivery failed; the action was not replayed"
 
 
 # ---- star.watch -------------------------------------------------------------------------------------------------

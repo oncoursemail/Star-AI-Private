@@ -154,15 +154,17 @@ class Hands:
         player.submit(events)
         end = max(e.t for e in events)
         last_check = self.clock()
-        while self.clock() <= end:
+        try:
+            while self.clock() <= end:
+                player.pump()
+                self.sleep(0.002)
+                if self.clock() - last_check > 0.05:
+                    last_check = self.clock()
+                    if self._stopped():
+                        raise Stopped("the owner's stop is on")
             player.pump()
-            self.sleep(0.002)
-            if self.clock() - last_check > 0.05:
-                last_check = self.clock()
-                if self._stopped():
-                    player.release_all()
-                    raise Stopped("the owner's stop is on")
-        player.pump()
+        finally:
+            player.release_all()
 
     # ---- actions ------------------------------------------------------------------------------------------
     def move(self, x: float, y: float, width: float = 20.0) -> None:
@@ -221,9 +223,20 @@ class Hands:
         self._run("type", {"chars": len(text), "text": text[:30], "speed": speed}, body)
 
     def _tap(self, key: str) -> None:
-        self.sink.key(key, True)
-        self.sleep(self.rng.uniform(0.04, 0.1))
-        self.sink.key(key, False)
+        pressed = True
+        try:
+            self.sink.key(key, True)
+            self.sleep(self.rng.uniform(0.04, 0.1))
+        except BaseException as error:
+            pressed = getattr(error, "accepted", None) != 0
+            raise
+        finally:
+            if pressed:
+                self._release_key(key)
+
+    def _release_key(self, key: str) -> None:
+        release = getattr(self.sink, "release_key", None)
+        release(key) if callable(release) else self.sink.key(key, False)
 
     def key(self, combo: str) -> None:
         parts = [p for p in str(combo).lower().replace(" ", "").split("+") if p]
@@ -233,13 +246,31 @@ class Hands:
 
         def body() -> None:
             self.sleep(max(0.1, self.rng.gauss(0.2, 0.05)))
-            for m in mods:
-                self.sink.key(m, True)
-                self.sleep(self.rng.uniform(0.03, 0.07))
-            self._tap(main)
-            for m in reversed(mods):
-                self.sleep(self.rng.uniform(0.03, 0.07))
-                self.sink.key(m, False)
+            pressed = []
+            try:
+                for m in mods:
+                    try:
+                        self.sink.key(m, True)
+                    except BaseException as error:
+                        if getattr(error, "accepted", None) != 0:
+                            pressed.append(m)
+                        raise
+                    pressed.append(m)
+                    self.sleep(self.rng.uniform(0.03, 0.07))
+                self._tap(main)
+            finally:
+                failed = None
+                for m in reversed(pressed):
+                    try:
+                        self.sleep(self.rng.uniform(0.03, 0.07))
+                    except BaseException as error:
+                        failed = failed or error
+                    try:
+                        self._release_key(m)
+                    except BaseException as error:
+                        failed = failed or error
+                if failed is not None:
+                    raise failed
         self._run("key", {"keys": "+".join(parts)}, body)
 
     def scroll(self, notches: int, at: tuple[float, float] | None = None) -> None:
