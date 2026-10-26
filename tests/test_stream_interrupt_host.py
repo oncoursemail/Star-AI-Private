@@ -273,10 +273,74 @@ class Rig(unittest.TestCase):
         next_plan = self.stage.prepare(now=100)
         self.assertTrue(self.stage.queue_audio(next_plan, now=100))
         self.assertTrue(self.stage.acknowledge_audible(next_plan, now=100))
-        self.assertEqual(self.voice(100030, owner=1).status, "stale")
+        result = self.voice(100030, owner=1)
+        self.assertEqual(result.status, "stale")
+        self.assertTrue(result.audio_stopped)
+        self.assertTrue(result.animation_flushed)
+        self.assertFalse(result.avatar_reset)  # never override the new face
         self.assertTrue(self.stage.current(next_plan))
-        self.assertEqual(self.stop_calls, [])
+        self.assertEqual(self.stop_calls, ["test-epoch-A"])
+        self.assertEqual(self.flush_calls, ["test-epoch-A"])
+        self.assertEqual(self.avatar.calls, [])
+        self.assertEqual(self.host.metrics()["stale_stops"], 1)
         self.assertIsNone(self.stage.interrupt_if_current(self.plan, now=100.03))
+
+    def test_unconfirmed_orphaned_audio_stop_latches_fault(self):
+        self.arm()
+        assert self.stage.finish(self.plan, now=100, played_to_end=True)
+        self.stop_ok = False
+        result = self.voice(100030, owner=1)
+        self.assertEqual(result.status, "fault")
+        self.assertFalse(result.audio_stopped)
+        self.assertTrue(result.animation_flushed)
+        self.assertEqual(self.stop_calls, ["test-epoch-A"])
+        self.assertEqual(self.flush_calls, ["test-epoch-A"])
+        self.assertTrue(self.host.metrics()["fault"])
+        self.assertTrue(self.avatar.closed)
+
+    def test_old_orphaned_epoch_has_no_permission_to_reset_new_rig(self):
+        self.arm()
+        assert self.stage.finish(self.plan, now=100, played_to_end=True)
+        self.stage.offer(StreamSignal(
+            "evt2", "game_danger", 100, "Obstacle", evidence="observed"), now=100)
+        newer = self.stage.prepare(now=100)
+        assert self.stage.queue_audio(newer, now=100)
+        assert self.stage.acknowledge_audible(newer, now=100)
+        self.flush_ok = False
+        report = self.voice(100030, owner=1)
+        self.assertEqual(report.status, "fault")
+        self.assertTrue(report.audio_stopped)
+        self.assertFalse(report.animation_flushed)
+        self.assertTrue(self.stage.current(newer))
+        self.assertEqual(self.avatar.calls, [])
+
+    def test_racing_stage_supersession_still_stops_only_the_old_audio(self):
+        self.arm()
+        newer = []
+
+        def supersede_old_plan(plan, *, now):
+            self.assertIs(plan, self.plan)
+            self.assertTrue(self.stage.finish(plan, now=now, played_to_end=True))
+            assert self.stage.offer(StreamSignal(
+                "evt2", "game_danger", 100, "New obstacle", evidence="observed"
+            ), now=now)
+            replacement = self.stage.prepare(now=now)
+            assert replacement is not None
+            assert self.stage.queue_audio(replacement, now=now)
+            assert self.stage.acknowledge_audible(replacement, now=now)
+            newer.append(replacement)
+            return None
+
+        self.stage.interrupt_if_current = supersede_old_plan
+        result = self.host.emergency_stop()
+        self.assertEqual(result.status, "stale")
+        self.assertTrue(result.audio_stopped)
+        self.assertTrue(result.animation_flushed)
+        self.assertFalse(result.avatar_reset)
+        self.assertEqual(self.stop_calls, ["test-epoch-A"])
+        self.assertEqual(self.flush_calls, ["test-epoch-A"])
+        self.assertEqual(self.avatar.calls, [])
+        self.assertTrue(self.stage.current(newer[0]))
 
     def test_manual_stop_is_epoch_scoped_and_idempotent(self):
         self.arm()
@@ -321,7 +385,7 @@ class Rig(unittest.TestCase):
         self.barge()
         self.assertEqual(set(self.host.metrics()), {
             "armed", "held", "interruptions", "stop_failures", "reset_failures",
-            "latency_faults", "stale", "faults", "enabled", "fault", "active",
+            "latency_faults", "stale", "stale_stops", "faults", "enabled", "fault", "active",
         })
         self.assertNotIn("Verified round completed", str(self.host.metrics()))
 

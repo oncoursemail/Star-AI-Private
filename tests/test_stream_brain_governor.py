@@ -459,3 +459,114 @@ def test_one_audio_lease_cannot_bind_two_turns_and_acked_audio_cannot_replay():
     assert g.finish_audio(p, device_playback_finished=True)
     assert not g.acknowledge_audible(p, sound_device_confirmed=True)
     assert not g.finish_audio(p, device_playback_finished=True)
+
+def test_interrupted_speech_requires_real_device_and_rig_cleanup_to_reopen_gate():
+    g, s, t, q, st = setup()
+    warm(s, t)
+    assert g.offer(signal(s))
+    first = g.prepare()
+    assert first is not None
+    speech = g.admit(job(s, "speech-before-barge"))
+    assert speech.admitted
+    assert g.queue_audio(first, speech_lease=speech.lease)
+    assert g.acknowledge_audible(first, sound_device_confirmed=True)
+
+    # The VAD host atomically invalidates the same audible StagePlan.
+    assert st.interrupt_if_current(first, now=s.now / 1000) is not None
+    assert st.metrics()["director"]["completed"] == 0  # partial != spoken
+    assert g.status()["pending_audio_stop"]
+    assert not g.finish_audio(first, device_playback_finished=False)
+    with pytest.raises(RuntimeError, match="physical sound"):
+        g.disable()
+
+    # Neither a mere stop request nor an unflushed rig releases playback.
+    assert not g.reconcile_interrupted_audio(
+        first, sound_device_stopped=False, animation_queue_flushed=True)
+    assert not g.reconcile_interrupted_audio(
+        first, sound_device_stopped=True, animation_queue_flushed=False)
+    assert g.status()["pending_audio_stop"]
+    assert g.reconcile_interrupted_audio(
+        first, sound_device_stopped=True, animation_queue_flushed=True)
+    assert not g.reconcile_interrupted_audio(
+        first, sound_device_stopped=True, animation_queue_flushed=True)
+    assert not g.status()["pending_audio_stop"]
+    assert g.status()["audio_interrupted"] == 1
+    assert g.status()["reserved_workers"] == 1  # not a worker-stop ACK
+
+    assert not g.acknowledge_worker_stopped(
+        speech.lease, worker_stopped=True, succeeded=False)
+    assert q.status()["inflight"] == 0
+    s.tick(12_000)
+    warm(s, t)
+    assert g.offer(signal(s, ident="evt2", kind="game_danger"))
+    second = g.prepare()
+    assert second is not None and second is not first
+    next_speech = g.admit(job(s, "speech-after-barge"))
+    assert next_speech.admitted
+    assert g.queue_audio(second, speech_lease=next_speech.lease)
+    assert g.acknowledge_audible(second, sound_device_confirmed=True)
+    assert not g.reconcile_interrupted_audio(
+        first, sound_device_stopped=True, animation_queue_flushed=True)
+    assert st.current(second)
+    assert g.finish_audio(second, device_playback_finished=True)
+
+
+def test_recovery_attestations_must_be_explicit_and_fail_closed():
+    g, s, t, q, st = setup()
+    warm(s, t)
+    g.offer(signal(s))
+    plan = g.prepare()
+    lease = g.admit(job(s, "speech"))
+    assert g.queue_audio(plan, speech_lease=lease.lease)
+    for ack in (None, 1, "yes"):
+        with pytest.raises(TypeError, match="acknowledgements"):
+            g.reconcile_interrupted_audio(
+                plan, sound_device_stopped=ack, animation_queue_flushed=True)
+    assert g.status()["pending_audio_stop"]
+    # A host may force-stop a queued (not-yet-audible) utterance.
+    assert g.reconcile_interrupted_audio(
+        plan, sound_device_stopped=True, animation_queue_flushed=True)
+    assert st.metrics()["phase"] == "idle"
+    assert st.metrics()["director"]["completed"] == 0
+    assert not g.finish_audio(plan, device_playback_finished=True)
+
+def test_actual_vad_host_bargein_reconciles_the_brain_without_ghost_speech():
+    from star.stream_interrupt_host import StreamInterruptionHost
+    from star.stream_turntaking import TurnTakingGate, VoiceFrame
+
+    g, s, t, q, st = setup()
+    warm(s, t)
+    assert g.offer(signal(s))
+    plan = g.prepare()
+    lease = g.admit(job(s, "speech-live"))
+    assert lease.admitted
+    assert g.queue_audio(plan, speech_lease=lease.lease)
+    assert g.acknowledge_audible(plan, sound_device_confirmed=True)
+
+    stopped, flushed = [], []
+    interrupt = StreamInterruptionHost(
+        stage=st, turns=TurnTakingGate(),
+        stop_epoch=lambda epoch: stopped.append(epoch) is None,
+        flush_animation=lambda epoch: flushed.append(epoch) is None,
+        clock_ms=lambda: s.now, owner_approved=True,
+    )
+    interrupt.enable(owner_approved=True)
+    assert interrupt.observe(VoiceFrame(s.now, 30, 0, 0, True)).status == "speak"
+    assert interrupt.arm(plan, playback_epoch="audible-epoch-1")
+    report = None
+    for _ in range(4):
+        s.tick(30)
+        report = interrupt.observe(VoiceFrame(s.now, 30, 1, 0, True))
+    assert report.status == "interrupted"
+    assert (stopped, flushed) == (["audible-epoch-1"], ["audible-epoch-1"])
+    assert report.audio_stopped and report.animation_flushed
+    assert st.metrics()["director"]["completed"] == 0
+    assert g.reconcile_interrupted_audio(
+        plan, sound_device_stopped=report.audio_stopped,
+        animation_queue_flushed=report.animation_flushed)
+    assert not g.status()["pending_audio_stop"]
+    assert g.status()["reserved_workers"] == 1
+    assert not g.acknowledge_worker_stopped(
+        lease.lease, worker_stopped=True, succeeded=False)
+    g.disable()  # would have failed without confirmed physical cleanup
+    assert not g.status()["enabled"]

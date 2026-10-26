@@ -94,6 +94,7 @@ class StreamBrainGovernor:
             "admitted": 0, "deferred": 0, "stopped": 0,
             "successful": 0, "stale_lease": 0, "missing_sensor": 0,
             "speech_prepared": 0, "audio_abandoned": 0,
+            "audio_interrupted": 0,
         }
 
     def enable(
@@ -107,8 +108,8 @@ class StreamBrainGovernor:
         if type(live) is not bool or type(game_active) is not bool:
             raise ValueError("session flags must be booleans")
         with self._lock:
-            if self._enabled or self._leases:
-                raise RuntimeError("stop the previous session and workers first")
+            if self._enabled or self._leases or self._speech_binding is not None:
+                raise RuntimeError("stop the previous session, audio and workers first")
             if self._qos.status()["inflight"] or self._stage.metrics()["phase"] != "idle":
                 raise RuntimeError("existing model or audio reservations are active")
             _now(self._clock)
@@ -138,7 +139,7 @@ class StreamBrainGovernor:
             raise TypeError("physical audio stop acknowledgement must be a boolean")
         with self._lock:
             phase = self._stage.metrics()["phase"]
-            if phase in {"queued", "audible"} and not audio_stopped_and_flushed:
+            if (phase in {"queued", "audible"} or self._speech_binding is not None) and not audio_stopped_and_flushed:
                 raise RuntimeError("physical sound device and rig queue not stopped")
             if self._enabled:
                 self._enabled = False
@@ -325,6 +326,41 @@ class StreamBrainGovernor:
                 self._speech_binding = None
             return finished
 
+    def reconcile_interrupted_audio(
+        self, plan: StagePlan, *, sound_device_stopped: bool,
+        animation_queue_flushed: bool,
+    ) -> bool:
+        """Release one speech binding only AFTER a trusted physical stop.
+
+        StreamInterruptionHost may already have invalidated the stage on an
+        owner barge-in. In that case finish_audio() cannot match the old plan;
+        without reconciliation all later turns remain blocked. This host-only
+        acknowledgement requires both epoch-scoped device stop and animation
+        flush. Never expose it to a language model, a viewer or event text.
+
+        Only the *same plan object* may be retired; a delayed callback from a
+        previous sentence cannot cancel or clear a newer audio binding.
+        The speech worker's QoS lease is independent and remains reserved
+        until acknowledge_worker_stopped() confirms termination.
+        """
+        if not isinstance(plan, StagePlan):
+            raise TypeError("expected StagePlan")
+        if (type(sound_device_stopped) is not bool
+                or type(animation_queue_flushed) is not bool):
+            raise TypeError("physical host acknowledgements must be booleans")
+        with self._lock:
+            if self._speech_binding is None or self._speech_binding[0] is not plan:
+                return False
+            if not (sound_device_stopped and animation_queue_flushed):
+                return False
+            # Once the device is stopped, abandon an un-revoked plan. If a
+            # different stage plan replaced it, finish() is a safe no-op.
+            self._stage.finish(plan, now=_now(self._clock) / 1000,
+                               played_to_end=False)
+            self._speech_binding = None
+            self._counts["audio_interrupted"] += 1
+            return True
+
     def status(self) -> dict[str, object]:
         """Anonymous health counters only, never audience or prompt contents."""
         with self._lock:
@@ -334,6 +370,7 @@ class StreamBrainGovernor:
                 "pending_hardware_stop": (
                     len(self._leases) if not self._enabled else 0
                 ),
+                "pending_audio_stop": self._speech_binding is not None,
                 "stage_phase": self._stage.metrics()["phase"],
                 "qos_expired_reservations":
                     self._qos.status()["expired_awaiting_host_stop"],

@@ -45,6 +45,7 @@ class InterruptionResult:
     reason: str
     audio_stopped: bool = False
     avatar_reset: bool = False
+    animation_flushed: bool = False
     stop_latency_ms: float | None = None
 
 
@@ -114,7 +115,7 @@ class StreamInterruptionHost:
         self._counts = {
             "armed": 0, "held": 0, "interruptions": 0,
             "stop_failures": 0, "reset_failures": 0, "latency_faults": 0,
-            "stale": 0, "faults": 0,
+            "stale": 0, "stale_stops": 0, "faults": 0,
         }
 
     def enable(self, *, owner_approved: bool = False) -> None:
@@ -157,6 +158,53 @@ class StreamInterruptionHost:
             except Exception:
                 pass
 
+    def _retire_stale_epoch(self, epoch: str) -> InterruptionResult:
+        """Stop orphaned playback without ever resetting a replacement turn.
+
+        The stage may already be idle or may have advanced to a newer audible
+        plan. A stale *plan* is not evidence the old sound device stopped.
+        Calling a neutral pose here could overwrite the new speaker's face;
+        instead stop and flush only the old, host-bound playback epoch.
+        """
+        self._busy = True
+        try:
+            start = _clock_ms(self._clock)
+            try:
+                stopped = self._stop_epoch(epoch) is True
+            except Exception:
+                stopped = False
+            try:
+                elapsed = _clock_ms(self._clock) - start
+            except ValueError:
+                elapsed = -1.0
+            if elapsed < 0 or elapsed > self._maximum_stop:
+                self._counts["latency_faults"] += 1
+            try:
+                flushed = self._flush(epoch) is True
+            except Exception:
+                flushed = False
+            if not stopped:
+                self._counts["stop_failures"] += 1
+            if not flushed:
+                self._counts["reset_failures"] += 1
+            if not stopped or not flushed or elapsed < 0 or elapsed > self._maximum_stop:
+                self._fault = True
+                self._counts["faults"] += 1
+                self._avatar_close()
+                return InterruptionResult(
+                    "fault", "stale_epoch_physical_stop_unconfirmed",
+                    audio_stopped=stopped, animation_flushed=flushed,
+                    stop_latency_ms=elapsed if elapsed >= 0 else None,
+                )
+            self._counts["stale_stops"] += 1
+            return InterruptionResult(
+                "stale", "superseded_epoch_physically_stopped",
+                audio_stopped=True, animation_flushed=True,
+                stop_latency_ms=elapsed,
+            )
+        finally:
+            self._busy = False
+
     def _interrupt(self, *, reason: str, now_ms: float) -> InterruptionResult:
         """The caller owns _lock; no blocking external callback can rearm us."""
         assert self._active is not None
@@ -168,7 +216,7 @@ class StreamInterruptionHost:
             # stage.finish/new turns; do NOT cancel a different StagePlan.
             if self._stage.interrupt_if_current(plan, now=now_ms / 1000) is None:
                 self._counts["stale"] += 1
-                return InterruptionResult("stale", "playback_plan_already_changed")
+                return self._retire_stale_epoch(epoch)
             start_ms = _clock_ms(self._clock)
             try:
                 stopped = self._stop_epoch(epoch) is True
@@ -206,12 +254,13 @@ class StreamInterruptionHost:
                 return InterruptionResult(
                     "fault", "hardware_stop_or_avatar_reset_unconfirmed",
                     audio_stopped=stopped, avatar_reset=reset,
+                    animation_flushed=flushed,
                     stop_latency_ms=elapsed if elapsed >= 0 else None,
                 )
             self._counts["interruptions"] += 1
             return InterruptionResult(
                 "interrupted", reason, audio_stopped=True, avatar_reset=True,
-                stop_latency_ms=elapsed,
+                animation_flushed=True, stop_latency_ms=elapsed,
             )
         finally:
             self._busy = False
@@ -236,9 +285,11 @@ class StreamInterruptionHost:
             speaking = bool(plan is not None and self._stage.current(plan))
             advice = self._turns.advise(now_ms=now, star_speaking=speaking)
             if active and not speaking:
+                assert self._active is not None
+                old_epoch = self._active[1]
                 self._active = None
                 self._counts["stale"] += 1
-                return InterruptionResult("stale", "audible_plan_already_finished")
+                return self._retire_stale_epoch(old_epoch)
             if speaking and advice.should_interrupt:
                 return self._interrupt(reason="authenticated_owner_barge_in", now_ms=now)
             self._counts["held"] += int(advice.hold)
