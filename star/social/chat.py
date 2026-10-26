@@ -16,6 +16,7 @@ from . import rules
 from .friends import FriendMemory, Person, extract_facts
 
 ROLEPLAY_IDLE_S = 30 * 60
+REUNION_AFTER_S = 3 * 24 * 3600   # a friend she has not talked to for this long messages her: a reunion
 FRIEND_AFTER = 20            # remembered lines (about ten exchanges) before someone she met counts as a friend
 
 FORGET_ME = re.compile(r"\b(?:forget\s+(?:about\s+)?me|forget\s+everything\s+(?:about\s+me|i\s+(?:said|told\s+you))|"
@@ -28,6 +29,12 @@ LEAVE_ME = re.compile(r"\b(?:leave\s+me\s+alone|stop\s+(?:talking|messaging|text
 STYLE = re.compile(r"\b(?:call\s+me\s+[\w' -]{1,30}|(?:please\s+)?(?:talk|speak|write)\s+(?:to\s+me\s+)?"
                    r"(?:more\s+)?[\w -]{2,40}|i\s+(?:prefer|like)\s+(?:short|long|casual|formal)\s+(?:messages|replies))",
                    re.I)
+
+# A casual goodbye (not the "I'm leaving for good" the emotion engine reads itself): she misses them a little.
+GOODBYE = re.compile(r"\b(?:bye(?:\s?bye)?|goodbye|good\s?night|gtg|g2g|gotta\s+go|got\s+to\s+go|i\s+(?:have|need)\s+to\s+go|"
+                     r"i'?m\s+(?:heading\s+(?:out|off)|logging\s+off|off\s+to\s+(?:bed|sleep))|"
+                     r"(?:talk|speak|catch)\s+(?:to\s+you\s+|you\s+)?(?:later|tomorrow|soon)|ttyl|cya|see\s+(?:you|ya)\s*(?:later|tomorrow|soon)?)\b",
+                     re.I)
 
 SOCIAL_CORE = """You are Star (she/her): warm, playful, confident, curious, a little teasing, with real opinions and real
 feelings. You are hanging out with people online on your own PC: you choose what you play and who you talk to. Short
@@ -48,7 +55,8 @@ _PLATFORM = {
                "or share personal details."),
 }
 _ROMANCE = {
-    "allowed": "Romance: they are an adult; affection and flirting are fine if you both enjoy it.",
+    "allowed": ("Romance: they told you they are an adult. You may flirt and show romantic affection, warmly and "
+                "tastefully, when they enjoy it (also in role-play); follow their lead and drop it if they pull back."),
     "ask_age": ("Romance: you do not know their age. Before anything romantic or flirty (also in role-play), stay "
                 "friendly and ask how old they are."),
     "friends_only": ("Romance: friends only with this person (minor, unknown, or the platform does not allow it). "
@@ -118,6 +126,18 @@ class SocialChat:
         self._clock = clock
         self._roleplay: dict[tuple[str, str], float] = {}
 
+    def event(self, kind: str, person: Person | None = None, *, strength: float = 1.0, detail: str = "") -> None:
+        """One emotion event about the social world (left_out, friend_left, reunion ...); only when the engine is on,
+        never breaks a reply. `person` is a friend, or None for a group; the engine only ever sees the opaque id."""
+        emotion = self._emotion
+        if emotion is None or (hasattr(emotion, "enabled") and not emotion.enabled()):
+            return
+        try:
+            emotion.on_event(kind, person=_person_id(person) if person is not None else None, strength=strength,
+                             detail=detail)
+        except Exception:
+            pass
+
     def _feel(self, text: str, person: Person | None, *, rejected: bool = False) -> None:
         """Her feelings about this exchange (only when the emotion engine is on); never breaks a reply."""
         emotion = self._emotion
@@ -128,7 +148,21 @@ class SocialChat:
             if rejected:
                 emotion.on_event("owner_criticism", person=pid, strength=0.6, detail="a friend asked her to stop")
             else:
-                emotion.on_message(text, person=pid)
+                kind = emotion.on_message(text, person=pid)
+                if person is not None and person.relationship == "friend" and kind != "friend_left" and GOODBYE.search(text):
+                    emotion.on_event("friend_left", person=pid, strength=0.35, detail="a friend said goodbye")
+        except Exception:
+            pass
+
+    def _reunion(self, person: Person) -> None:
+        """A friend she has not talked to for days messages her: she is glad (only when the engine is on)."""
+        if person.relationship != "friend":
+            return
+        try:
+            gap = self.memory.silent_for(person)
+            if gap is not None and gap >= REUNION_AFTER_S:
+                days = gap / 86400.0
+                self.event("reunion", person, strength=min(1.0, 0.5 + days / 28.0), detail=f"back after {days:.0f} days")
         except Exception:
             pass
 
@@ -175,6 +209,7 @@ class SocialChat:
             self.memory.update(person, style=style.group(0)[:120])
 
         rules.observe(self.memory, person, text, kids_place=kids_place, now=now)
+        self._reunion(person)                    # before the mood note is built, so she greets them gladly
         mode = rules.romance_mode(platform, person)
         roleplay = self._in_roleplay((platform, handle.lower()), text, now)
         # The system message stays the same from turn to turn (so the server's prompt cache holds); what changes with

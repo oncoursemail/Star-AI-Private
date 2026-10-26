@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..social.activity import vision_reader
+from ..social.chat import GOODBYE
 from ..social.friends import FriendMemory
 from . import attention
 from .voicelink import HomeVoice
@@ -61,7 +62,7 @@ class DiscordCalls:
                  window_title: str = "Discord", sleep: Callable[[float], None] = time.sleep,
                  clock: Callable[[], float] = time.time, say_goodbye: Callable[[str], bool] | None = None,
                  situation: attention.Situation | None = None,
-                 feel: Callable[[str, str], None] | None = None,
+                 feel: Callable[..., None] | None = None,
                  on_connected: Callable[[str], object] | None = None) -> None:
         self.host, self.memory, self.voice, self.standing_of = host, memory, voice, standing_of
         self.reader = reader or vision_reader(STATE_QUESTION, max_tokens=200)
@@ -71,9 +72,10 @@ class DiscordCalls:
         self._sleep, self._clock = sleep, clock
         self.friend = ""
         self.situation = situation or attention.Situation()
-        self._feel = feel or (lambda kind, name: None)           # (emotion event, friend's name)
+        self._feel = feel or (lambda kind, name, **payload: None)   # (emotion event, friend's name, strength=, detail=)
         self._on_connected = on_connected or (lambda name: None)   # e.g. turn the camera on if she feels like it
         self._hangup_asked = False
+        self._history_seen, self._goodbye_felt = 0, False
         self._say = say_goodbye or voice.speak
         self.accept_keys = str(self.cfg.get("call_accept_keys", "ctrl+enter"))
         self.pickup_wait_s = float(self.cfg.get("call_pickup_wait_s", 40))
@@ -127,6 +129,7 @@ class DiscordCalls:
         except Exception as why:
             return {"ok": False, "summary": f"in the call with {name} but the voice could not start: {why}"}
         self.friend, self._hangup_asked = name, False
+        self._history_seen, self._goodbye_felt = 0, False
         self.situation.in_call = True
         self._presence, self._presence_absent = None, 0
         self._presence_next = self._clock() + 15.0
@@ -157,6 +160,10 @@ class DiscordCalls:
             self._presence = True
             if name in self._departed:
                 self._departed.remove(name)
+                self._goodbye_felt = False
+                call = getattr(self.voice, "call", None)
+                history = getattr(getattr(call, "session", None), "history", None)
+                self._history_seen = len(history) if isinstance(history, list) else 0
                 event = "reunion"
         elif self._presence is True:
             self._presence_absent += 1
@@ -167,7 +174,9 @@ class DiscordCalls:
                 if len(self._departed) >= 100:
                     self._departed.clear()
                 self._departed.add(name)
-                event = "friend_left"
+                if not self._goodbye_felt:
+                    self._goodbye_felt = True
+                    event = "friend_left"
         if event:
             try:
                 self._feel(event, self.friend)
@@ -279,7 +288,24 @@ class DiscordCalls:
             self.voice.call = None                          # the voice stack stopped on its own
             self.situation.in_call = False
             return
+        self._watch_goodbye(call)
         self._check_presence()
         if not self._hangup_asked and (call.idle_s() >= self.idle_leave_s or call.minutes() >= self.max_minutes):
             self._hangup_asked = True
             inbox.add(attention.Incoming("hangup", "discord", self.friend, at=self._clock()))
+
+    def _watch_goodbye(self, call) -> None:
+        """The friend says goodbye in the call (their words are in the voice session's history): she misses them a little,
+        once per call. Guarded: a session without history, or a failing engine, changes nothing."""
+        try:
+            history = getattr(call.session, "history", None)
+            if not isinstance(history, list) or self._goodbye_felt or not self.friend:
+                return
+            if self._history_seen > len(history):               # the session trimmed its history
+                self._history_seen = 0
+            fresh, self._history_seen = history[self._history_seen:], len(history)
+            if any(m.get("role") == "user" and GOODBYE.search(str(m.get("content") or "")) for m in fresh):
+                self._goodbye_felt = True
+                self._feel("friend_left", self.friend, strength=0.35, detail="a friend said goodbye in the call")
+        except Exception:
+            pass

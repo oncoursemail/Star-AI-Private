@@ -13,7 +13,7 @@ from typing import Callable
 
 from . import control
 from .activities import Registry, default_registry
-from .attention import Attention, AvailabilityModel, Inbox, Incoming, Interrupt, Situation, Standing
+from .attention import Attention, AvailabilityModel, Inbox, Incoming, Interrupt, LeftOutWatch, Situation, Standing
 from .hostagent import HostAdapter
 from .invites import InviteDesk, parse_invite
 from .voicelink import HomeVoice
@@ -113,7 +113,7 @@ class Runtime:
             cfg = self.social_settings()["discord"]
             self._discord = DiscordDesktop(self.host, self.social, my_names=self.my_names(),
                                            window_title=cfg.get("window_title", "Discord"), on_invite=self.on_invite,
-                                           **self.discord_kwargs)
+                                           **{"left_out": LeftOutWatch(clock=self.clock), **self.discord_kwargs})
         return self._discord
 
     @property
@@ -122,7 +122,7 @@ class Runtime:
             from .calls import DiscordCalls
             self._calls = DiscordCalls(self.host, self.memory, self.voice, self.standing,
                                        config=self.config.get("calls"), situation=self.situation,
-                                       feel=lambda kind, name: self.feel(kind, "discord", name),
+                                       feel=lambda kind, name, **payload: self.feel(kind, "discord", name, **payload),
                                        on_connected=self.call_connected, **self.call_kwargs)
         return self._calls
 

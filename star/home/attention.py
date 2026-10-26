@@ -281,6 +281,34 @@ class Inbox:
             return list(self._items)
 
 
+class LeftOutWatch:
+    """Friends chatting in a server channel for a while without including her (no message mentions her). Feed it what
+    she sees each time she reads a channel; it says True once when enough of it piled up, then stays quiet for the
+    cooldown. Any message that does address her clears the channel; a long gap starts a fresh conversation."""
+
+    def __init__(self, *, min_messages: int = 6, min_authors: int = 2, cooldown_s: float = 3600.0,
+                 gap_s: float = 7200.0, clock: Callable[[], float] = time.time) -> None:
+        self.min_messages, self.min_authors, self.cooldown_s, self.gap_s, self._clock = (
+            min_messages, min_authors, cooldown_s, gap_s, clock)
+        self._channels: dict[str, dict] = {}
+
+    def note(self, channel: str, authors: list[str], addressed: bool = False) -> bool:
+        now = self._clock()
+        state = self._channels.setdefault(channel, {"count": 0, "authors": set(), "seen": now, "fired": -1e18})
+        if addressed or now - state["seen"] > self.gap_s:
+            state.update(count=0, authors=set())
+        state["seen"] = now
+        if addressed or not authors:
+            return False
+        state["count"] += len(authors)
+        state["authors"].update(a.lower() for a in authors)
+        if (state["count"] >= self.min_messages and len(state["authors"]) >= self.min_authors
+                and now - state["fired"] >= self.cooldown_s):
+            state.update(count=0, authors=set(), fired=now)
+            return True
+        return False
+
+
 @dataclass
 class Parked:
     activity: object

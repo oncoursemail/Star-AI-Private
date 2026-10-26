@@ -252,6 +252,19 @@ class _Idle:
 
 
 # ---- star.watch -------------------------------------------------------------------------------------------------
+def hearing_hub(rt):
+    """The star.senses hearing hub (the PC's sound with her own voice excluded), started the first time a video needs
+    it; None when hearing cannot start on this PC, and then star.watch keeps to captions and the picture."""
+    try:
+        hook = rt.hooks.get("hearing_hub")
+        if "hearing_hub" in rt.hooks:
+            return hook() if callable(hook) else None
+        from . import voicestack
+        return voicestack.hearing_hub(rt.config)
+    except Exception:
+        return None
+
+
 def wire_watch(registry) -> None:
     """Connect star.watch (video watching, PR #643) to her voice and to the scheduler. Skipped when it is not installed."""
     rt = registry.runtime
@@ -305,9 +318,17 @@ def wire_watch(registry) -> None:
                 # charge; do not load models or open audio while stopped.
                 out = {"ok": False, "verified": False, "summary": "a friend needs her", "evidence": []}
             else:
-                with hearing(rt.config, hub=previous_hub,
-                             on_unavailable=lambda kind: control.log_action(
-                                 rt.home, "watch", "hearing_unavailable", error=kind)) as hub:
+                if "hearing_hub" in rt.hooks:
+                    from contextlib import nullcontext
+                    # An injected provider owns its hub and its unavailable
+                    # result. Never replace it with real device initialization.
+                    hearing_context = nullcontext(hearing_hub(rt))
+                else:
+                    borrowed = previous_hub if previous_hub is not None else voicestack.hearing_hub(rt.config, start=False)
+                    hearing_context = hearing(rt.config, hub=borrowed,
+                                              on_unavailable=lambda kind: control.log_action(
+                                                  rt.home, "watch", "hearing_unavailable", error=kind))
+                with hearing_context as hub:
                     watch.configure(hub=hub)
                     out = inner(ctx)
         finally:

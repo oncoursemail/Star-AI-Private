@@ -36,7 +36,6 @@ def _settings(config: dict):  # pragma: no cover - reads settings of the real PC
 _engines_cache: dict = {}
 _engines_lock = threading.Lock()
 _reference_lock = threading.Lock()
-_playback_reference = None
 
 
 def _engines(settings):  # pragma: no cover - loads models
@@ -48,17 +47,11 @@ def _engines(settings):  # pragma: no cover - loads models
 
 
 def _reference():
-    global _playback_reference
-    with _reference_lock:
-        if _playback_reference is None:
-            from ..senses.reference import PlaybackReference
-            _playback_reference = PlaybackReference()
-        return _playback_reference
+    return shared_reference()
 
 
 def _speaker(speaker):
-    from ..senses.reference import ReferenceSpeaker
-    return ReferenceSpeaker(attach_lipsync(speaker), _reference())
+    return _recorded(attach_lipsync(speaker))
 
 
 class _WatchHub:
@@ -115,6 +108,50 @@ def watch_hearing(config: dict, *, hub=None, on_unavailable=None):
                     pass  # still stop the other owned resource if one close fails
         for thread in threads:
             thread.join(timeout=0.5)
+
+
+_hearing: dict = {}
+HEARING_RETRY_S = 300.0
+
+
+def shared_reference():  # pragma: no cover - needs numpy (installed with the senses stack)
+    """One record of everything she plays, shared by her speakers and the hearing hub, so her own voice is not heard."""
+    with _reference_lock:
+        if "reference" not in _hearing:
+            from ..senses.reference import PlaybackReference
+            _hearing["reference"] = PlaybackReference()
+        return _hearing["reference"]
+
+
+def _recorded(speaker):  # pragma: no cover
+    """`speaker` that also writes what it plays into the shared reference (never fails a voice line)."""
+    try:
+        from ..senses.reference import ReferenceSpeaker
+        return ReferenceSpeaker(speaker, shared_reference())
+    except Exception:
+        return speaker
+
+
+def hearing_hub(config: dict, *, start: bool = True):  # pragma: no cover - needs her devices and models
+    """The hearing hub for star.watch: the PC's sound and the microphone, transcribed on her GPU, started once. None when
+    it cannot start (no soundcard, no model); a failure is retried after a few minutes, never raised.
+    `start=False` only borrows an existing hub; watch activities use their own
+    loopback-only lifecycle when no background hub is already running."""
+    import time
+    if _hearing.get("hub") is not None:
+        return _hearing["hub"]
+    if not start:
+        return None
+    if time.monotonic() < _hearing.get("retry_at", 0.0):
+        return None
+    try:
+        from ..senses.instant import start_hearing
+        settings = _settings(config)
+        _hearing["hub"] = start_hearing(_engines(settings), settings, shared_reference())
+    except Exception:
+        _hearing["retry_at"] = time.monotonic() + HEARING_RETRY_S
+        return None
+    return _hearing["hub"]
 
 
 def voice_factory(config: dict) -> Callable[[], tuple]:  # pragma: no cover - needs her devices and models
