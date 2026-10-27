@@ -25,6 +25,8 @@ _MAX_TIME = 10**11
 _MAX_PENDING = 64
 _MAX_ROWS = 20000
 _MAX_OUTCOME_DELAY_S = 180
+_CONTEXT_ADVICE_FRESHNESS_S = 14 * 86400
+_CONTEXT_MAX_ROWS = 1024  # finite host-side practice evidence, never holdouts
 
 
 def _symbol(value: object, field: str) -> str:
@@ -83,6 +85,21 @@ class ForecastAdvice:
     calibrated_success_bps: int | None
     bucket_trials: int
     reason: str
+    authorized_to_play: bool = False
+
+
+@dataclass(frozen=True)
+class PracticeFocus:
+    """Diagnostic candidate for independently curated OFFLINE rehearsal only."""
+
+    objective_id: str
+    situation_id: str
+    action_id: str
+    trials: int
+    mean_prediction_bps: int
+    observed_success_bps: int
+    brier_score: float
+    finding: str
     authorized_to_play: bool = False
 
 
@@ -292,8 +309,10 @@ class GamePredictionLab:
         """Suggest an evidence-shrunk calibration for FUTURE offline forecasts.
 
         No advice before 20 prospective trials AND eight in the probability
-        bucket. Never use retrospective corrected probabilities as evidence
-        that the underlying model became smarter or mastered the game.
+        bucket. This legacy game-wide diagnostic POOLS objectives and actions;
+        do not use it to guide a particular input. Use contextual_advice()
+        for exact-context, recent, change-aware review. Never treat practice
+        calibration as model mastery, action permission or holdout evidence.
         """
         if type(proposed_bps) is not int or not 1 <= proposed_bps <= 9999:
             raise ValueError("proposed_bps must be 1..9999")
@@ -313,6 +332,158 @@ class GamePredictionLab:
             return ForecastAdvice("reviewable_calibration", max(1, min(9999, adjusted)),
                                   len(selected), "practice_only_no_holdout_claim")
 
+    def _fresh_context_rows(
+        self, model_id: str, game_id: str, game_version: str,
+        now_unix_s: int, *,
+        objective_id: str | None = None,
+        situation_id: str | None = None,
+        action_id: str | None = None,
+    ) -> list[tuple[str, str, str, int, int, int]]:
+        """Bounded, SIGNED-PRACTICE-ONLY rows already resolved by the lab.
+
+        Call while holding _lock. The trusted host owns the clock. Require a
+        complete action scope or none; an accidental partial scope must not
+        silently calibrate an unrelated action.
+        """
+        for name, value in (
+            ("model_id", model_id), ("game_id", game_id),
+            ("game_version", game_version),
+        ):
+            _symbol(value, name)
+        _time(now_unix_s)
+        selected = (objective_id, situation_id, action_id)
+        if any(v is not None for v in selected):
+            if not all(v is not None for v in selected):
+                raise ValueError("complete objective/situation/action scope required")
+            for name, value in zip(
+                ("objective_id", "situation_id", "action_id"), selected,
+            ):
+                _symbol(value, name)
+        query = (
+            "SELECT objective_id, situation_id, action_id, success_bps, outcome, "
+            "verified_unix_s FROM forecast_runs WHERE status='verified' "
+            "AND model_id=? AND game_id=? AND game_version=? "
+            "AND verified_unix_s BETWEEN ? AND ?"
+        )
+        args: list[str | int] = [
+            model_id, game_id, game_version,
+            max(1, now_unix_s - _CONTEXT_ADVICE_FRESHNESS_S), now_unix_s,
+        ]
+        if all(v is not None for v in selected):
+            query += " AND objective_id=? AND situation_id=? AND action_id=?"
+            args.extend(selected)
+        query += " ORDER BY verified_unix_s DESC, run_id DESC LIMIT ?"
+        args.append(_CONTEXT_MAX_ROWS)
+        return list(self._db.execute(query, args))
+
+    def contextual_advice(
+        self, model_id: str, *, game_id: str, game_version: str,
+        objective_id: str, situation_id: str, action_id: str,
+        proposed_bps: int, now_unix_s: int,
+    ) -> ForecastAdvice:
+        """Conservative review of a *specific* action, NEVER a play permit.
+
+        Do not mix jumping with crouching, old game versions, other objectives
+        or different model builds. Recent evidence and a probability-bin sample
+        gate avoid turning broad practice averages into false confidence.
+        Abrupt shifts block reuse of yesterday's calibrator.
+        """
+        if type(proposed_bps) is not int or not 1 <= proposed_bps <= 9999:
+            raise ValueError("proposed_bps must be an integer from 1..9999")
+        with self._lock:
+            rows = self._fresh_context_rows(
+                model_id, game_id, game_version, now_unix_s,
+                objective_id=objective_id, situation_id=situation_id,
+                action_id=action_id,
+            )
+            if len(rows) < 20:
+                return ForecastAdvice(
+                    "insufficient_context_evidence", None, len(rows),
+                    "requires_20_recent_exact_context_verified_trials",
+                )
+            probability_bin = min(4, proposed_bps // 2000)
+            # Rows are newest first; do not study neighboring probability
+            # buckets even if they share the same exact game action.
+            bucket = [row for row in rows
+                      if min(4, row[3] // 2000) == probability_bin]
+            if len(bucket) < 8:
+                return ForecastAdvice(
+                    "uncertain_context_probability_bucket", None, len(bucket),
+                    "requires_8_recent_context_probability_matches",
+                )
+            if len(bucket) >= 24:
+                new_success = sum(row[4] for row in bucket[:12])
+                old_success = sum(row[4] for row in bucket[12:24])
+                if abs(new_success - old_success) >= 6:
+                    return ForecastAdvice(
+                        "practice_distribution_shift", None, len(bucket),
+                        "recent_and_previous_outcome_windows_disagree",
+                    )
+            successes = sum(row[4] for row in bucket)
+            # Beta(2,2) posterior mean is explicitly practice-only advice;
+            # not a skill score, causal gain or validated success probability.
+            corrected = round(10000 * (successes + 2) / (len(bucket) + 4))
+            return ForecastAdvice(
+                "reviewable_context_calibration",
+                max(1, min(9999, corrected)),
+                len(bucket), "practice_only_context_matched_no_holdout_claim",
+            )
+
+    def focus_suggestions(
+        self, model_id: str, *, game_id: str, game_version: str,
+        now_unix_s: int, minimum_trials: int = 8, limit: int = 5,
+    ) -> tuple[PracticeFocus, ...]:
+        """Surface signed evidence of specific prediction mistakes to review.
+
+        This can suggest which *owner-curated* offline challenges deserve a
+        closer look; it cannot invent curriculum scenarios, train weights,
+        inspect validation cases, issue physical input or start a stream.
+        Error severity is diagnostic and not proof of causal learning progress.
+        """
+        if type(minimum_trials) is not int or not 8 <= minimum_trials <= 64:
+            raise ValueError("minimum_trials must be 8..64")
+        if type(limit) is not int or not 1 <= limit <= 10:
+            raise ValueError("limit must be 1..10")
+        with self._lock:
+            rows = self._fresh_context_rows(
+                model_id, game_id, game_version, now_unix_s,
+            )
+        grouped: dict[tuple[str, str, str], list[tuple[int, int]]] = {}
+        for objective, situation, action, basis_points, outcome, _verified in rows:
+            grouped.setdefault((objective, situation, action), []).append(
+                (basis_points, outcome),
+            )
+        prioritized: list[tuple[float, PracticeFocus]] = []
+        for (objective, situation, action), sample in grouped.items():
+            count = len(sample)
+            if count < minimum_trials:
+                continue
+            mean_p = sum(row[0] for row in sample) / (10000 * count)
+            success = sum(row[1] for row in sample) / count
+            brier = sum((p / 10000 - y) ** 2 for p, y in sample) / count
+            if mean_p >= .7 and success <= .35:
+                finding = "overconfident_failures"
+            elif mean_p <= .35 and success >= .65:
+                finding = "underestimated_successes"
+            elif brier >= .25:
+                finding = "unreliable_predictions"
+            else:
+                continue
+            card = PracticeFocus(
+                objective, situation, action, count,
+                round(mean_p * 10000), round(success * 10000),
+                round(brier, 6), finding,
+            )
+            # More observations reduce small-sample dominance; no hidden
+            # evaluation data can contribute to the ranking.
+            priority = brier * min(1.0, count / 24)
+            prioritized.append((priority, card))
+        prioritized.sort(key=lambda item: (
+            -item[0], -item[1].trials,
+            item[1].objective_id, item[1].situation_id, item[1].action_id,
+        ))
+        return tuple(card for _, card in prioritized[:limit])
+
     def metrics(self) -> dict[str, int | bool]:
         with self._lock:
             pending, resolved = self._db.execute("""SELECT
@@ -321,4 +492,4 @@ class GamePredictionLab:
                     "pending": pending or 0, "persisted_verified": resolved or 0}
 
 
-__all__ = ["GameForecast", "CalibrationReport", "ForecastAdvice", "GamePredictionLab"]
+__all__ = ["GameForecast", "CalibrationReport", "ForecastAdvice", "PracticeFocus", "GamePredictionLab"]
