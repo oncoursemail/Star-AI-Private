@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metallic PX progress</title>
+<style>
+  @font-face { font-family: "Hanken Grotesk"; src: url(../fonts/hanken-grotesk-var.woff2) format("woff2"); font-weight: 400 700; font-display: swap; }
+  @font-face { font-family: "Archivo"; src: url(../fonts/archivo-var.woff2) format("woff2"); font-weight: 500 800; font-stretch: 75% 100%; font-display: swap; }
+  :root { color-scheme: dark; --ink: #efeef4; --ink2: rgba(239, 238, 244, .74); --ink3: rgba(239, 238, 244, .56); --solid: #141419; --line: rgba(255, 255, 255, .09); --hover: rgba(255, 255, 255, .06); --acc: #9d8fff; }
+  [data-theme="light"] { color-scheme: light; --ink: #17171d; --ink2: rgba(23, 23, 29, .74); --ink3: rgba(23, 23, 29, .62); --solid: #f4f4f7; --line: rgba(20, 20, 30, .1); --hover: rgba(20, 20, 30, .05); --acc: #5b47e0; }
+  html, body { margin: 0; background: var(--solid); }
+  body { padding: 28px 20px; font-family: "Hanken Grotesk", "Segoe UI", system-ui, sans-serif; }
+</style>
+<link rel="stylesheet" href="px.css">
+</head>
+<body>
+<main id="px"></main>
+<script src="qrc:///qtwebchannel/qwebchannel.js" onerror="void 0"></script>
+<script src="px.js"></script>
+<script>
+  (function () {
+    var q = matchMedia("(prefers-color-scheme: light)");
+    var set = function () { document.documentElement.dataset.theme = q.matches ? "light" : "dark"; };
+    set(); q.addEventListener("change", set);
+    var root = document.getElementById("px");
+    // Inside the launcher the bridge answers; on the site or from a folder px.json sits next to this page.
+    if (window.qt && window.QWebChannel) {
+      new QWebChannel(qt.webChannelTransport, function (ch) {
+        MetallicPX.mount(root, function (refresh) { return new Promise(function (ok) { ch.objects.bridge.pxData(!!refresh, function (text) { ok(JSON.parse(text)); }); }); });
+      });
+    } else {
+      MetallicPX.mount(root, function () { return fetch("px.json", { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("px.json not found"); return r.json(); }); });
+    }
+  })();
+</script>
+</body>
+</html>
