@@ -1089,6 +1089,18 @@ def test_star_vtuber_is_a_plugin_and_her_speaker_is_wrapped_for_lip_sync(monkeyp
     assert voicestack.attach_lipsync("speaker") == "speaker"
 
 
+def test_the_check_reports_a_ready_cable_as_ok_instead_of_a_type_error(monkeypatch):
+    from star.home import voicestack
+    from star.senses import routes
+    device = {"name": "STAR Microphone", "kind": "input"}
+    ready = routes.VirtualMicRoute({"name": "CABLE Input", "kind": "output"}, device, True)
+    monkeypatch.setattr(routes, "query_devices", lambda sd=None: [])
+    monkeypatch.setattr(routes, "find_route", lambda devices: ready)
+    assert voicestack.build_status()["STAR Microphone cable"] == "ok"
+    monkeypatch.setattr(routes, "find_route", lambda devices: routes.VirtualMicRoute(None, None))
+    assert "Virtual cable not found" in voicestack.build_status()["STAR Microphone cable"]
+
+
 def _camera_runtime(home, memory, config, registry_items=True):
     ran = []
     registry = activities.Registry()

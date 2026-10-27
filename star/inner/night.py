@@ -21,6 +21,7 @@ import random
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from . import dreams, reachout, reflect, self_model
 from .store import InnerStore, default_store, flag, in_night_window, night_of
@@ -204,7 +205,8 @@ def register_home_activities(registry) -> None:
     """star-home plug-in hook (called by star.home.activities.default_registry for modules in PLUGIN_MODULES)."""
     def run(ctx) -> dict:
         complete = complete_from_chat(ctx.chat) if ctx.chat is not None else None
-        done = tick(life_home=ctx.home, **({"complete": complete} if complete else {}))
+        extra: dict[str, Any] = {"complete": complete} if complete else {}
+        done = tick(life_home=ctx.home, **extra)
         ran = "night" in done
         return {"ok": True, "verified": ran, "evidence": [], "steps": 1,
                 "summary": "reflected, dreamed and reviewed herself" if ran else "nothing due (not night, or already done)"}

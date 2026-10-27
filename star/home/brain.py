@@ -140,7 +140,7 @@ def run_session(chat, executor: Executor, life, *, interest: str, brief: str, go
         recall = home_session_context(life, interest)
     context = getattr(life, "session_context", None)        # star.inner.mind.MindLife: who she is + relevant lessons
     context = context(interest, goal) if callable(context) else ""
-    messages = [{"role": "system", "content": SYSTEM},
+    messages: list[dict] = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": f"Session: {interest} ({brief}).\n{goal_line}\nWorkspace: "
                  f"{executor.workspace}\nYour interest weights: {interests}"
                  + (f"\n{recall}" if recall else "") + (f"\n{context}" if context else "")}]

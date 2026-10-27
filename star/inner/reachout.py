@@ -142,7 +142,8 @@ def expire(store: InnerStore, now: float) -> int:
 
 
 def sent_since(store: InnerStore, since: float, pkey: str | None = None) -> list[tuple[str, float]]:
-    sql, args = "SELECT pkey, sent_at FROM seeds WHERE state = 'sent' AND sent_at >= ?", [since]
+    sql = "SELECT pkey, sent_at FROM seeds WHERE state = 'sent' AND sent_at >= ?"
+    args: list = [since]
     if pkey is not None:
         sql += " AND pkey = ?"
         args.append(pkey)

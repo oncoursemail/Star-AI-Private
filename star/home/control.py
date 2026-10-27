@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import time
+from typing import Any
 
 from ..redact import redact_text
 from . import paths
@@ -110,7 +111,7 @@ def log_action(home: Path | None, action: str, phase: str, **fields) -> None:
     """Append one line. Text is redacted and cut; the log is never rewritten."""
     path = (home or home_dir()) / LOG_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
-    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "action": action, "phase": phase}
+    row: dict[str, Any] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "action": action, "phase": phase}
     row.update({k: _short(v) for k, v in fields.items()})
     with path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -135,7 +136,7 @@ def hotkey_watch(home: Path | None = None) -> None:  # pragma: no cover - needs 
     """Block on the global hotkey Ctrl+Alt+Shift+F12; each press creates STOP. Run in a daemon thread."""
     import ctypes
     import ctypes.wintypes as wt
-    user32 = ctypes.WinDLL("user32")
+    user32 = ctypes.WinDLL("user32")  # pyright: ignore[reportAttributeAccessIssue]
     MOD_ALT, MOD_CONTROL, MOD_SHIFT, VK_F12, WM_HOTKEY = 0x1, 0x2, 0x4, 0x7B, 0x312
     if not user32.RegisterHotKey(None, 1, MOD_ALT | MOD_CONTROL | MOD_SHIFT, VK_F12):
         log_action(home, "hotkey", "error", detail="RegisterHotKey failed (another program holds it)")

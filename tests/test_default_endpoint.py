@@ -60,6 +60,6 @@ def test_react_default_endpoint_literals_match_python_default():
             continue
         for match in pattern.findall(source.read_text(encoding="utf-8")):
             found[f"{source.name}"] = match
-    if not found:
-        pytest.skip("The UI no longer hard-codes a default endpoint; Python is the only source")
-    assert set(found.values()) == {Settings().endpoint}, found
+    # The UI hard-codes no default endpoint today (Python is the only source), so this is vacuous; if one is
+    # added again it must equal Python's.
+    assert set(found.values()) <= {Settings().endpoint}, found

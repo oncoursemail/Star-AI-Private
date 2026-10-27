@@ -93,9 +93,9 @@ class _Speaker:
         self.end = 0.0
         self.lock = threading.Lock()
 
-    def play(self, pcm: bytes, rate: int) -> None:
+    def play(self, pcm: bytes, sample_rate: int) -> None:
         with self.lock:
-            self.end = max(time.monotonic(), self.end) + len(pcm) / 2 / rate
+            self.end = max(time.monotonic(), self.end) + len(pcm) / 2 / sample_rate
 
     def stop(self) -> None:
         with self.lock:

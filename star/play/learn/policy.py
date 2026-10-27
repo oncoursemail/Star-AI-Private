@@ -185,6 +185,7 @@ def train(corpus: Corpus, out_dir: Path, cfg: TrainConfig | None = None, *, init
         train_idx = tr if train_idx is None else train_idx
         val_idx = va if val_idx is None else val_idx
         train_idx = corpus.thin_idle(train_idx, cfg.keep_idle, rng)
+    assert train_idx is not None and val_idx is not None      # both were filled in above
     if len(train_idx) == 0:
         raise ValueError("no training samples (record more play)")
     spec = corpus.spec

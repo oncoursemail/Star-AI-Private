@@ -230,7 +230,7 @@ def call_factory(config: dict, desk=None, sender_of: Callable[[], str] = lambda:
     return build
 
 
-def build_status() -> dict:  # pragma: no cover - probes the real PC
+def build_status() -> dict:
     """What is missing for calls and spoken game lines (used by `python -m star.home check`)."""
     out = {}
     for label, module in (("soundcard (hearing the PC)", "soundcard"), ("sounddevice (her voice output)", "sounddevice"),

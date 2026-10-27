@@ -40,6 +40,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import Any, cast
 import urllib.error
 
 from ..redact import redact_text
@@ -88,7 +89,7 @@ class Ctx:
     mode: str                       # "full" | "quick" | "dry"
     home: Path                      # her real data folder
     config: dict
-    probes: object
+    probes: Any
     sandbox: Path                   # throw-away folder for the STOP and log checks in dry mode
     shared: dict = field(default_factory=dict)
 
@@ -101,7 +102,7 @@ class Ctx:
 class Spec:
     id: str
     title: str
-    run: object
+    run: Any
     level: str = "read"             # read: runs in every mode | net: not in --dry-run | heavy: full runs only
     after: tuple = ()
     would: str = ""                 # what a skipped heavy/net check would have done
@@ -863,7 +864,7 @@ def run_dm_call(probes, *, home: Path, out_dir: Path, opts: ScenarioOpts | None 
         steps.log(step, status, detail, **data)
         return status == PASS
 
-    def wait_for(step: str, seconds: float, probe) -> tuple[object, list[str]]:
+    def wait_for(step: str, seconds: float, probe) -> tuple[Any, list[str]]:
         """Poll probe(names) every poll_s until it returns something or `seconds` passed. Aborts on STOP."""
         deadline = clock() + seconds
         names: list[str] = []
@@ -1067,7 +1068,7 @@ class ScenarioProbes:  # pragma: no cover - reads Discord's window and the audio
         from ..senses.routes import find_route, query_devices
         from ..voice.devices import _sounddevice
         sd = _sounddevice()
-        recording = find_route(query_devices(sd)).recording
+        recording = cast(dict, find_route(query_devices(sd)).recording)
         buf = sd.rec(int(seconds * recording["rate"]), samplerate=recording["rate"],
                      channels=min(2, recording["channels"]), device=recording["index"], dtype="float32")
         source = LoopbackSource()
@@ -1138,7 +1139,8 @@ def cli(argv: list[str] | None = None, *, probes=None, scenario_probes=None, out
 # ---- the real PC ----------------------------------------------------------------------------------------------
 class VoiceStack:  # pragma: no cover - loads the real models on her GPU
     def __init__(self, engines, gpu: bool) -> None:
-        self.engines, self.gpu, self.timings = engines, gpu, dict(engines.load_seconds)
+        self.engines: Any = engines
+        self.gpu, self.timings = gpu, dict(engines.load_seconds)
 
     def speak(self, text: str) -> tuple[bytes, int]:
         chunks = list(self.engines.tts.synthesize(text))
@@ -1172,7 +1174,7 @@ class SystemProbes:  # pragma: no cover - every method touches the real PC; exer
 
     def is_admin(self) -> bool:
         import ctypes
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())  # pyright: ignore[reportAttributeAccessIssue]
 
     def install_info(self) -> dict:
         root = paths.root()
@@ -1245,7 +1247,7 @@ class SystemProbes:  # pragma: no cover - every method touches the real PC; exer
         from ..voice.devices import _sounddevice
         sd = _sounddevice()
         devices = query_devices(sd)
-        recording = find_route(devices).recording
+        recording = cast(dict, find_route(devices).recording)
         channels = min(2, recording["channels"])
         with open_voice_output(devices) as speaker:
             buf = sd.rec(int(seconds * recording["rate"]), samplerate=recording["rate"], channels=channels,
@@ -1408,7 +1410,7 @@ class SystemProbes:  # pragma: no cover - every method touches the real PC; exer
             have_pyautogui = True
         except ImportError:
             have_pyautogui = False
-        user32 = ctypes.windll.user32
+        user32 = ctypes.windll.user32  # pyright: ignore[reportAttributeAccessIssue]
         folder = Path(tempfile.mkdtemp(prefix="star-acceptance-"))
         target = folder / "star-acceptance.txt"
         target.write_text("", encoding="utf-8")
@@ -1421,7 +1423,7 @@ class SystemProbes:  # pragma: no cover - every method touches the real PC; exer
             if "star-acceptance" in buf.value.lower() and user32.IsWindowVisible(h):
                 windows.append(h)
             return True
-        callback = ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)(enum)
+        callback = ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)(enum)  # pyright: ignore[reportAttributeAccessIssue]
         deadline = time.time() + 15
         while time.time() < deadline and not windows:
             user32.EnumWindows(callback, 0)
@@ -1477,10 +1479,10 @@ class SystemProbes:  # pragma: no cover - every method touches the real PC; exer
 
     def reg_value(self, hive: str, path: str, name: str):
         import winreg
-        root = {"HKLM": winreg.HKEY_LOCAL_MACHINE, "HKCU": winreg.HKEY_CURRENT_USER}[hive]
+        root = {"HKLM": winreg.HKEY_LOCAL_MACHINE, "HKCU": winreg.HKEY_CURRENT_USER}[hive]  # pyright: ignore[reportAttributeAccessIssue]
         try:
-            with winreg.OpenKey(root, path) as key:
-                return winreg.QueryValueEx(key, name)[0]
+            with winreg.OpenKey(root, path) as key:  # pyright: ignore[reportAttributeAccessIssue]
+                return winreg.QueryValueEx(key, name)[0]  # pyright: ignore[reportAttributeAccessIssue]
         except OSError:
             return None
 

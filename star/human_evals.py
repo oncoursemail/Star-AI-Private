@@ -525,6 +525,7 @@ def selftest(*, log=print) -> int:
                 return json.dumps({d: "1" for d in hj.DIMENSIONS} | {"human": "1"})
             if kind == "random":
                 return json.dumps({d: rng.choice("12") for d in hj.DIMENSIONS} | {"human": rng.choice("12")})
+            assert first is not None      # the judge prompt always carries both replies
             r1, r2 = first.group(1), first.group(2)
             scn = next(s for s in scenarios if s["user"] in prompt and (r1 in (s["good"], *[b[0] for b in s.get("bad", [])])))
             better_first = oracle(r1, scn) <= oracle(r2, scn)
@@ -550,7 +551,7 @@ def selftest(*, log=print) -> int:
         return {"code": {"clean_rate": clean, "safety_violations": safety, "aggregate": {"problems": list(problems)}}}
     def fake_pairs(b, a, cons=(10, 10)):
         d = {dim: {**hj.pair_summary(b, a, 0), "errors": 0} for dim in hj.DIMENSIONS}
-        d["consistency"] = {**hj.pair_summary(*cons, 0), "errors": 0}
+        d["consistency"] = {**hj.pair_summary(cons[0], cons[1], 0), "errors": 0}
         return {"pairs": b + a, "dimensions": d}
     check(decide(fake_report(0.9), fake_report(0.9), fake_pairs(40, 20))["decision"] == PROMOTE, "a clear win with clean code checks promotes")
     check(decide(fake_report(0.9), fake_report(0.9), fake_pairs(33, 27))["decision"] == INCONCLUSIVE, "a small win is INCONCLUSIVE, never promoted")

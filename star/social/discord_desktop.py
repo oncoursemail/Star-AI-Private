@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import deque
-from typing import Callable
+from typing import Any, Callable
 
 from . import rules
 from .activity import HostAgent, HumanPace, StepResult, vision_reader
@@ -34,7 +34,7 @@ class DiscordDesktop:
 
     def __init__(self, host: HostAgent, chat: SocialChat, *, my_names: list[str] | None = None,
                  window_title: str = "Discord", reader: Callable | None = None, pace: HumanPace | None = None,
-                 pacer: rules.Pacer | None = None, on_invite: Callable[[str, str], object] | None = None,
+                 pacer: rules.Pacer | None = None, on_invite: Callable[[str, str], Any] | None = None,
                  left_out=None) -> None:
         self.host, self.chat = host, chat
         self.on_invite = on_invite      # (author, text) -> a plan with .intent and .after (star.home.invites), or None

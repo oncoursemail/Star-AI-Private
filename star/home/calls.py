@@ -13,7 +13,7 @@ from __future__ import annotations
 import importlib
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from ..social.activity import vision_reader
 from ..social.chat import GOODBYE
@@ -39,7 +39,7 @@ def vision_locator(png: Path, what: str) -> tuple[int, int] | None:  # pragma: n
     try:
         locate = getattr(importlib.import_module("star.computer"), "locate", None)
         if callable(locate):
-            found = locate(png, what)
+            found: Any = locate(png, what)
             if found:
                 return int(found[0]), int(found[1])
     except Exception:

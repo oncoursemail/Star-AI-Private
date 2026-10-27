@@ -94,10 +94,10 @@ class RealBackend:  # pragma: no cover - acts on the real desktop; exercised on 
     def focus_window(self, title: str) -> bool:
         """Bring the first visible window whose title contains `title` to the front (restores it if minimised)."""
         import ctypes
-        user32 = ctypes.windll.user32
+        user32 = ctypes.windll.user32  # pyright: ignore[reportAttributeAccessIssue]
         found: list[int] = []
         part = title.lower()
-        proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)  # pyright: ignore[reportAttributeAccessIssue]
 
         def visit(hwnd, _):
             if user32.IsWindowVisible(hwnd):

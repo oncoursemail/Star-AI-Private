@@ -762,7 +762,7 @@ class CallSession:
             started = self.clock()
             begin = reply.audio_seconds
             try:
-                pieces = (self.tts.synthesize(sentence, prosody=reply.prosody)
+                pieces = (self.tts.synthesize(sentence, prosody=reply.prosody)  # pyright: ignore[reportCallIssue]
                           if reply.prosody is not None and self._tts_prosody else self.tts.synthesize(sentence))
                 for pcm, sample_rate in pieces:
                     with reply.play_lock:        # stop() takes the same lock, so nothing plays after a barge-in
