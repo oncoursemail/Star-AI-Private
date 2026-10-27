@@ -39,6 +39,10 @@ class UpdateError(Exception):
     """An update could not be completed. The installed version is unchanged unless `rolled_back` says otherwise."""
 
 
+class UpdateBusy(UpdateError):
+    """An existing lock prevents exclusive ownership; its age does not prove the owner exited."""
+
+
 class IntegrityError(UpdateError):
     """Downloaded or staged bytes do not match the signed manifest."""
 
@@ -99,7 +103,11 @@ class Updater:
         self.launcher_version = launcher_version
         self._now, self._sleep, self.retries = now or now_utc, sleep, retries
         self.root.mkdir(parents=True, exist_ok=True)
-        self._cleanup_staging()
+        try:
+            with self._locked():
+                self._cleanup_staging()
+        except UpdateBusy:
+            pass  # Opening another client for status must not disturb the active owner's staging.
         self._manifest: dict | None = None
         self._signed_by = ""
 
@@ -126,11 +134,9 @@ class Updater:
     def _locked(self):
         lock = self.root / ".lock"
         try:
-            if lock.exists() and time.time() - lock.stat().st_mtime > 3600:
-                lock.unlink()
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError as exc:
-            raise UpdateError("another update is already running") from exc
+            raise UpdateBusy("another update is already running; an abandoned lock needs owner recovery") from exc
         os.close(fd)
         try:
             yield

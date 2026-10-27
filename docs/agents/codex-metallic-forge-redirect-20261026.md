@@ -1,0 +1,11 @@
+# Authenticated Forge requests refuse redirects
+
+The updater's optional Forge publisher sent its token in an `Authorization` header through the default urllib opener. An offline reproduction using the actual redirect handler showed that a 302 response forwarded that header to a different origin for both GET and POST requests.
+
+`launcher/updates/forge.py::_call` now uses a request-local opener that refuses every redirect. This includes same-origin redirects and HTTPS-to-HTTP downgrades: the owner must configure the canonical Forge address. The method, token header, caller headers, body and timeout remain unchanged. Existing response and error behavior is preserved. No global urllib opener is installed or changed. Anonymous `HttpSource` manifest/blob downloads retain their existing redirect behavior.
+
+`python scripts/verify_update_forge_redirect.py` exercises the actual urllib redirect/error processors with fake HTTP and HTTPS transports. It covers authenticated GET/POST/DELETE across 301/302/303/307/308 and foreign, same-origin and downgrade destinations; normal JSON/empty/error replies; header/body/timeout preservation; response closure; a mocked create/skip/replace publishing roundtrip; and anonymous blob redirection without authorization. The publishing fixture uses synthetic files and intercepts token-file reads. No actual token file, credential, network, signing, upload, download, installation or updater application is used. Existing tests and fixtures remain unchanged.
+
+All **5 retained test groups** passed, including **45 redirect combinations**. Independent review reran them and passed another 46 offline dispatch/global-opener checks. Scoped Ruff and the diff check passed. Pinned Pyright 1.1.414 reports no errors in the new verifier. It still reports the same three pre-existing nullable release-response errors in `forge.py`, confirmed against the exact previous source; this redirect-only patch does not fix or hide them.
+
+This fixes redirect credential forwarding in the optional publisher. It does not validate an initial owner-configured URL, deploy an account service, configure release trust, authorize publication or establish a runnable packaged release. Independent review and integrator-controlled commits remain required.
