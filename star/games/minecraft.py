@@ -25,6 +25,7 @@ from typing import Callable, Protocol
 from ..social import rules
 from ..social.activity import StepResult
 from ..social.chat import SocialChat
+from ..social.requests import WHITELIST_ASK
 
 BOT_JS = Path(__file__).with_name("mineflayer") / "bot.js"
 IDLE_GOAL_S = 90.0
@@ -34,6 +35,7 @@ GOALS = (("gather", {"block": "oak_log", "count": 4}, 3.0),
          ("build_pillar", {"height": 4}, 1.0),
          ("wander", {"distance": 16}, 2.0))
 
+_MC_NAME = re.compile(r"^[A-Za-z0-9_]{3,16}$")
 _FOLLOW = re.compile(r"\b(?:follow\s+me|come\s+(?:here|with\s+me)|come\s+to\s+me)\b", re.I)
 _STOP = re.compile(r"\b(?:stop|stay(?:\s+here)?|wait(?:\s+here)?)\b", re.I)
 _GATHER = re.compile(r"\b(?:get|gather|collect|chop|mine)\s+(?:some\s+)?(wood|logs?|stone|dirt|sand|coal)\b", re.I)
@@ -51,6 +53,7 @@ class MinecraftServer:
     auth: str = "offline"          # offline (her own world/LAN) | microsoft (device-code sign-in, token cache)
     version: str = ""              # '' = let Mineflayer detect
     allows_bots: bool = False      # set True only for her own server or one whose rules allow bots
+    whitelist: bool = False        # her own server and she is an operator: she may whitelist friends (/whitelist add)
 
 
 class Transport(Protocol):
@@ -124,10 +127,13 @@ class MinecraftPlay:
         self.busy_until = 0.0
         self.last_activity = 0.0
         self.following = ""
+        self._removed: set[str] = set()
         self.auth_code: dict | None = None
         self.log: deque[str] = deque(maxlen=50)
 
     def ready(self) -> tuple[bool, str]:
+        if self.chat.killed("minecraft"):
+            return False, "the owner's kill switch is on for minecraft"
         if not self.server.allows_bots:
             return False, f"{self.server.name} is not marked as allowing bots (allows_bots)"
         if self._factory is NodeTransport and not (BOT_JS.parent / "node_modules" / "mineflayer").is_dir():
@@ -169,6 +175,7 @@ class MinecraftPlay:
                 notes.append(note)
         if self.transport is None:
             return StepResult(False, "; ".join(notes) or "disconnected")
+        self.sync_blocks()
         now = self._clock()
         if not self.following and now >= self.busy_until and now - self.last_activity > IDLE_GOAL_S:
             cmd, args, _ = self._rng.choices(GOALS, weights=[g[2] for g in GOALS], k=1)[0]
@@ -204,17 +211,47 @@ class MinecraftPlay:
     def _on_chat(self, username: str, message: str, whisper: bool) -> str:
         if not username or username.lower() in self.my_names or not message:
             return ""
-        addressed = whisper or any(n in message.lower() for n in self.my_names) or self.players <= QUIET_SERVER
+        room = f"minecraft:whisper:{username.lower()}" if whisper else "minecraft:public"
+        self.chat.heard("minecraft", username, message, channel=room)
+        named = any(n in message.lower() for n in self.my_names)
+        addressed = whisper or named or self.players <= QUIET_SERVER or self.chat.for_her("minecraft", username, message, channel=room)[0]
+        if addressed and not whisper and not named and self.chat.flow.is_group(room) and not self.chat.flow.may_speak_in_group(room):
+            addressed = False                      # never dominate a group chat
         if not addressed:
             return ""
         person = self.chat.memory.person("minecraft", username, username)
         if person.blocked or person.muted and not whisper:
             return ""
         acted = self._command(username, message)
-        reply = self.chat.handle("minecraft", username, message, name=username, public=not whisper)
+        reply = self.chat.handle("minecraft", username, message, name=username, public=not whisper, channel=room,
+                                 game=self.server.name)
+        self._maybe_whitelist(username, message)
         if reply is not None:
             self.say(reply.text, to=username if whisper else "")
         return acted or (f"talked with {username}" if reply else "")
+
+    def _maybe_whitelist(self, username: str, message: str) -> None:
+        """Her own server's whitelist: a friend (or an acquaintance who asked) is added; decided in requests.py."""
+        if not self.server.whitelist or not _MC_NAME.match(username) or self.chat.killed("minecraft"):
+            return
+        person = self.chat.memory.known("minecraft", username)
+        if person is None or not WHITELIST_ASK.search(message):
+            return
+        decision = self.chat.requests.whitelist_decision(person, message)
+        if decision.action == "add":
+            self._send({"cmd": "chat", "text": f"/whitelist add {username}"})
+            self.chat.memory.log("whitelist_add", "minecraft", person, f"whitelisted {person.name}: {decision.reason}")
+
+    def sync_blocks(self) -> None:
+        """Anyone who blocked her is taken off her server's whitelist (once)."""
+        if not self.server.whitelist or self.transport is None:
+            return
+        rows = self.chat.memory._db.execute(
+            "SELECT h.handle FROM handles h JOIN people p ON p.id = h.person_id WHERE h.platform = 'minecraft' AND p.blocked = 1").fetchall()
+        for (handle,) in rows:
+            if handle not in self._removed and _MC_NAME.match(handle):
+                self._removed.add(handle)
+                self._send({"cmd": "chat", "text": f"/whitelist remove {handle}"})
 
     def _command(self, username: str, message: str) -> str:
         """Friendly requests she agrees to: follow, stop, gather, build."""

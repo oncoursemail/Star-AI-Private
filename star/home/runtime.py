@@ -175,8 +175,9 @@ class Runtime:
             return Standing(True, "friend", 1.0)
         closeness = 0.0
         if person.remembered:
-            closeness = min(1.0, (0.35 if person.relationship == "friend" else 0.0)
-                            + len(self.memory.moments(person, 200)) / 150.0)
+            from ..social.lifecycle import Bonds            # the friendship stage (met .. close friend), not just friend or not
+            stage_bonus = {"acquaintance": 0.1, "friend": 0.35, "close_friend": 0.6}.get(Bonds(self.memory, sink=None).stage(person), 0.0)
+            closeness = min(1.0, stage_bonus + len(self.memory.moments(person, 200)) / 150.0)
         return Standing(person.remembered, person.relationship, closeness, person.blocked, person.muted)
 
     def _standing_of_incoming(self, incoming: Incoming) -> Standing:

@@ -66,6 +66,25 @@ CREATE TABLE IF NOT EXISTS moments (id INTEGER PRIMARY KEY,
   person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE, platform TEXT NOT NULL,
   line TEXT NOT NULL, ts REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS forgotten (key TEXT PRIMARY KEY, ts REAL NOT NULL);
+-- social life (lifecycle.py, requests.py): everything below is deleted with the person (ON DELETE CASCADE)
+CREATE TABLE IF NOT EXISTS bond (
+  person_id INTEGER PRIMARY KEY REFERENCES people(id) ON DELETE CASCADE, stage TEXT NOT NULL DEFAULT 'met',
+  score REAL NOT NULL DEFAULT 0, convos INTEGER NOT NULL DEFAULT 0, shared_games INTEGER NOT NULL DEFAULT 0,
+  positives INTEGER NOT NULL DEFAULT 0, lines INTEGER NOT NULL DEFAULT 0, conv_pts REAL NOT NULL DEFAULT 0,
+  last_seen REAL NOT NULL DEFAULT 0, last_decay REAL NOT NULL DEFAULT 0, stage_changed REAL NOT NULL DEFAULT 0,
+  nickname TEXT NOT NULL DEFAULT '', nickname_locked INTEGER NOT NULL DEFAULT 0, last_topic TEXT NOT NULL DEFAULT '',
+  last_topic_ts REAL NOT NULL DEFAULT 0, day TEXT NOT NULL DEFAULT '', day_positives INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS bond_items (id INTEGER PRIMARY KEY,
+  person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE, kind TEXT NOT NULL, text TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '', ts REAL NOT NULL, state TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS offers (
+  person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE, platform TEXT NOT NULL,
+  state TEXT NOT NULL, ts REAL NOT NULL, PRIMARY KEY (person_id, platform));
+-- the owner-visible social log; `who` is "platform:handle" (lower case) and is scrubbed when that person is forgotten
+CREATE TABLE IF NOT EXISTS social_log (id INTEGER PRIMARY KEY, ts REAL NOT NULL, platform TEXT NOT NULL,
+  person_id INTEGER REFERENCES people(id) ON DELETE CASCADE, who TEXT NOT NULL DEFAULT '', event TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS social_log_ts ON social_log (ts);
 """
 
 # Never stored, whoever says it.
@@ -388,6 +407,27 @@ class FriendMemory:
             lines.append("Things they told you: " + "; ".join(facts) + ".")
         return "\n".join(lines)
 
+    # -- the owner-visible social log ---------------------------------------------------------------------------------
+    def log(self, event: str, platform: str, person: Person | None = None, detail: str = "", *, handle: str = "") -> None:
+        """One line in the social log (what she did socially and why). Rows about a person go when they are forgotten."""
+        who = f"{platform}:{handle.strip().lower()}" if handle else ""
+        pid = person.id if person is not None else None
+        if person is not None and pid is None:
+            who, detail = "", "someone who asked to be forgotten"      # a forgotten person leaves no trace in the log
+        self._db.execute("INSERT INTO social_log (ts, platform, person_id, who, event, detail) VALUES (?, ?, ?, ?, ?, ?)",
+                         (self._clock(), platform, pid, who, event, " ".join(str(detail).split())[:300]))
+        self._db.commit()
+
+    def recent_log(self, limit: int = 50, *, since: float = 0.0) -> list[dict]:
+        rows = self._db.execute(
+            "SELECT l.ts, l.platform, l.event, l.detail, COALESCE(p.name, NULLIF(l.who, ''), '') FROM social_log l "
+            "LEFT JOIN people p ON p.id = l.person_id WHERE l.ts >= ? ORDER BY l.id DESC LIMIT ?", (since, limit)).fetchall()
+        return [{"ts": r[0], "platform": r[1], "event": r[2], "detail": r[3], "who": r[4]} for r in reversed(rows)]
+
+    def count_log(self, event: str, platform: str, *, since: float) -> int:
+        return self._db.execute("SELECT COUNT(*) FROM social_log WHERE event = ? AND platform = ? AND ts >= ?",
+                                (event, platform, since)).fetchone()[0]
+
     # -- consent ----------------------------------------------------------------------------------------------------
     @_locked
     def forget(self, platform: str, handle: str) -> bool:
@@ -398,9 +438,11 @@ class FriendMemory:
                                (platform, key)).fetchone()
         keys = {self._tombstone(platform, key)}
         if row is not None:
-            for p, h in self._db.execute("SELECT platform, handle FROM handles WHERE person_id = ?", (row[0],)):
+            for p, h in self._db.execute("SELECT platform, handle FROM handles WHERE person_id = ?", (row[0],)).fetchall():
                 keys.add(self._tombstone(p, h))
+                self._db.execute("DELETE FROM social_log WHERE who = ?", (f"{p}:{h}",))
             self._db.execute("DELETE FROM people WHERE id = ?", (row[0],))
+        self._db.execute("DELETE FROM social_log WHERE who = ?", (f"{platform}:{handle.strip().lower()}",))
         self._db.executemany("INSERT OR REPLACE INTO forgotten VALUES (?, ?)", [(k, now) for k in keys])
         self._db.commit()
         return row is not None

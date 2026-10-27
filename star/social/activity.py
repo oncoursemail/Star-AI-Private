@@ -112,9 +112,11 @@ def settings_path() -> Path:
 
 DEFAULT_SETTINGS = {
     "my_names": ["Star"],
-    "discord": {"enabled": False, "window_title": "Discord"},
-    "roblox": {"enabled": False, "experiences": []},       # [{"place_id": 123, "name": "...", "weight": 1, "kids": false}]
+    "discord": {"enabled": False, "window_title": "Discord", "friend_requests": False},
+    "roblox": {"enabled": False, "experiences": [],        # [{"place_id": 123, "name": "...", "weight": 1, "kids": false}]
+               "friend_requests": False},                   # the friend-request desk (UI clicks); off until the owner checks it
     "minecraft": {"enabled": False, "servers": []},         # see star/games/minecraft.py MinecraftServer
+    "friends": {},                                          # daily caps, e.g. {"roblox": {"accept": 5, "send": 2, "ask": 2}}
 }
 
 
@@ -139,12 +141,17 @@ def available_activities(host: HostAgent, *, settings: dict | None = None, chat=
     if chat is None:
         from .chat import SocialChat
         from .friends import FriendMemory
-        chat = SocialChat(FriendMemory())
+        chat = SocialChat(FriendMemory(), my_names=[str(n) for n in cfg.get("my_names") or ["Star"]])
+        chat.requests.caps = {k: {**v, **((cfg.get("friends") or {}).get(k) or {})} for k, v in chat.requests.caps.items()}
     names = [str(n) for n in cfg.get("my_names") or ["Star"]]
     out: list[Activity] = []
     if cfg["discord"].get("enabled"):
         from .discord_desktop import DiscordDesktop
         out.append(DiscordDesktop(host, chat, my_names=names, window_title=cfg["discord"].get("window_title", "Discord")))
+    for platform in ("roblox", "discord"):
+        if cfg[platform].get("enabled") and cfg[platform].get("friend_requests"):
+            from .requests import FriendDesk
+            out.append(FriendDesk(host, chat.requests, platform, window_title=cfg[platform].get("window_title")))
     if cfg["roblox"].get("enabled") and cfg["roblox"].get("experiences"):
         from ..games.roblox import Experience, RobloxPlay
         out.append(RobloxPlay(host, chat, [Experience(**e) for e in cfg["roblox"]["experiences"]], my_names=names))

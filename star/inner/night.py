@@ -132,6 +132,11 @@ def run_night(home=None, *, complete=None, memory=None, store: InnerStore | None
     except Exception as why:
         report["reflect"] = {"error": f"{type(why).__name__}: {why}"}
     try:
+        from ..social.lifecycle import Bonds
+        report["bonds"] = Bonds(memory, sink=None).night(store, now)
+    except Exception as why:
+        report["bonds"] = {"error": f"{type(why).__name__}: {why}"}
+    try:
         report["dream"] = dreams.generate(store, memory, complete, now, rng, history=history, emotion_events=events,
                                           curiosity_items=_open_curiosity(curiosity_path, life_home))
     except Exception as why:

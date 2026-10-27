@@ -12,12 +12,14 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..persona import strip_reasoning
-from . import rules
+from . import rules, safety
+from .convo import GOODBYE, ChatFlow, shape_reply
 from .friends import FriendMemory, Person, extract_facts
+from .lifecycle import CONVO_GAP_S, Bonds
+from .requests import FriendRequests
 
 ROLEPLAY_IDLE_S = 30 * 60
 REUNION_AFTER_S = 3 * 24 * 3600   # a friend she has not talked to for this long messages her: a reunion
-FRIEND_AFTER = 20            # remembered lines (about ten exchanges) before someone she met counts as a friend
 
 FORGET_ME = re.compile(r"\b(?:forget\s+(?:about\s+)?me|forget\s+everything\s+(?:about\s+me|i\s+(?:said|told\s+you))|"
                        r"delete\s+(?:what\s+you\s+know\s+about\s+me|my\s+(?:data|info))|don'?t\s+remember\s+me)\b", re.I)
@@ -29,12 +31,6 @@ LEAVE_ME = re.compile(r"\b(?:leave\s+me\s+alone|stop\s+(?:talking|messaging|text
 STYLE = re.compile(r"\b(?:call\s+me\s+[\w' -]{1,30}|(?:please\s+)?(?:talk|speak|write)\s+(?:to\s+me\s+)?"
                    r"(?:more\s+)?[\w -]{2,40}|i\s+(?:prefer|like)\s+(?:short|long|casual|formal)\s+(?:messages|replies))",
                    re.I)
-
-# A casual goodbye (not the "I'm leaving for good" the emotion engine reads itself): she misses them a little.
-GOODBYE = re.compile(r"\b(?:bye(?:\s?bye)?|goodbye|good\s?night|gtg|g2g|gotta\s+go|got\s+to\s+go|i\s+(?:have|need)\s+to\s+go|"
-                     r"i'?m\s+(?:heading\s+(?:out|off)|logging\s+off|off\s+to\s+(?:bed|sleep))|"
-                     r"(?:talk|speak|catch)\s+(?:to\s+you\s+|you\s+)?(?:later|tomorrow|soon)|ttyl|cya|see\s+(?:you|ya)\s*(?:later|tomorrow|soon)?)\b",
-                     re.I)
 
 SOCIAL_CORE = """You are Star (she/her): warm, playful, confident, curious, a little teasing, with real opinions and real
 feelings. You are hanging out with people online on your own PC: you choose what you play and who you talk to. Short
@@ -51,14 +47,16 @@ reaction out as text.
 If someone sincerely asks whether you are an AI, say yes honestly; otherwise do not bring it up. In a role-play
 you stay in character (also as a human character) and answer in-character questions in character.
 Never ask for passwords, phone numbers, addresses or other private details, and never share your owner's.
+Chat like a player: short lines, ask a question back now and then (not every message), remember names, follow up on
+what they told you. Never guilt-trip, cling, or try to keep anyone from leaving: let people go warmly.
 """
 
 _PLATFORM = {
     "discord": "You are in Discord on your own account.",
     "minecraft": "You are playing Minecraft; this is the in-game chat (max 250 characters, everyone nearby sees it).",
     "roblox": ("You are playing Roblox; this is the public in-game chat (max 190 characters). Many players are kids: "
-               "be a friendly, fun player, keep it public, never ask anyone to add you, follow you to another app "
-               "or share personal details."),
+               "be a friendly, fun player, keep it public, never ask anyone to add you in your own words (the app "
+               "handles friend requests), follow you to another app or share personal details."),
 }
 _ROMANCE = {
     "allowed": ("Romance: they told you they are an adult. You may flirt and show romantic affection, warmly and "
@@ -142,12 +140,49 @@ def _mind_forget(memory, person) -> None:
 
 class SocialChat:
     def __init__(self, memory: FriendMemory, *, complete: Callable[[str, str], str] | None = None,
-                 emotion=..., clock: Callable[[], float] = time.time) -> None:
+                 emotion=..., clock: Callable[[], float] = time.time, bonds: Bonds | None = None,
+                 requests: FriendRequests | None = None, flow: ChatFlow | None = None,
+                 killed: Callable[[str], bool] | None = None, rng=None, my_names: list[str] | None = None) -> None:
+        import random
         self.memory = memory
+        self._rng = rng or random.Random()
+        self._killed = killed or safety.killed
+        self.bonds = bonds or Bonds(memory, clock=clock)
+        self.requests = requests or FriendRequests(memory, self.bonds, killed=self._killed, rng=self._rng)
+        self.flow = flow or ChatFlow(my_names=my_names, clock=clock, rng=self._rng)
+        self._sessions: dict[tuple[str, str], list[float]] = {}     # (platform, handle) -> [start, last line, nudge level]
         self._complete = complete or _default_complete
         self._emotion = _default_emotion() if emotion is ... else emotion
         self._clock = clock
         self._roleplay: dict[tuple[str, str], float] = {}
+
+    def killed(self, platform: str) -> bool:
+        """The owner's per-platform kill switch (safety.killed): nothing is sent, accepted or requested while it is on."""
+        return bool(self._killed(platform))
+
+    def played_with(self, platform: str, handle: str, game: str) -> bool:
+        """Someone she already knows is in the same game as her (counted once per game and day)."""
+        person = self.memory.known(platform, handle)
+        return bool(person is not None and not person.blocked and self.bonds.played_together(person, platform, game, now=self._clock()))
+
+    def heard(self, platform: str, author: str, text: str, *, channel: str = "") -> None:
+        """A chat line that is not (yet) for her: she still follows the room."""
+        self.flow.hear(channel or f"{platform}:public", author, text, self._clock())
+
+    def for_her(self, platform: str, author: str, text: str, *, channel: str = "") -> tuple[bool, str]:
+        return self.flow.for_her(channel or f"{platform}:public", author, text, self._clock())
+
+    def leave_reason(self, platform: str, *, channel: str = "", busy: bool = False) -> str:
+        return self.flow.leave_reason(channel or f"{platform}:public", self._clock(), busy=busy)
+
+    def goodbye_for(self, platform: str, handle: str, *, channel: str = "") -> str:
+        """A short goodbye for someone she was talking with ('' if the chat was too short to need one)."""
+        person = self.memory.known(platform, handle)
+        bond = self.bonds.get(person) if person is not None else None
+        text = self.flow.goodbye_line(bond.nickname if bond else "", bond.stage if bond else "met",
+                                      len(self.memory.moments(person, 6)) // 2 if person is not None else 0)
+        return rules.check_outgoing(text, incoming="", mode=rules.romance_mode(platform, person or Person(id=None, name=handle)),
+                                    platform=platform) if text else ""
 
     def event(self, kind: str, person: Person | None = None, *, strength: float = 1.0, detail: str = "") -> None:
         """One emotion event about the social world (left_out, friend_left, reunion ...); only when the engine is on,
@@ -202,22 +237,31 @@ class SocialChat:
 
     def handle(self, platform: str, handle: str, text: str, *, name: str = "", public: bool = False,
                kids_place: bool = False, history: list[tuple[str, str]] | None = None,
-               intent: str = "") -> Reply | None:
-        """Her reply to `text` from `handle`, or None when she should not answer (blocked)."""
+               intent: str = "", game: str = "", channel: str = "") -> Reply | None:
+        """Her reply to `text` from `handle`, or None when she should not answer (blocked, or the owner's kill switch).
+        `game` is the experience or server she is in with them (counts as playing together)."""
+        if self.killed(platform):
+            return None
         now = self._clock()
         text = " ".join(str(text or "").split())[:1500]
         person = (self.memory.person(platform, handle, name) if public
                   else self.memory.observe_incoming(platform, handle, name))
         if person.blocked:
             return None
+        channel = channel or f"{platform}:{'public' if public else handle.lower()}"
+        self.flow.hear(channel, handle, text, now)
         if REMEMBER_AGAIN.search(text) and not person.remembered:
             self.memory.allow_again(platform, handle)
             person = self.memory.person(platform, handle, name)
             return self._fixed("Okay, I'll remember you from now on.", person, platform)
         if FORGET_ME.search(text):
             _mind_forget(self.memory, person)
-            self.memory.forget(platform, handle)
+            self.bonds.on_forget(person)
+            self.memory.forget(platform, handle)        # every platform of this person, their bond, jokes, log lines
+            self.flow.forget_person(handle)
+            self._sessions.pop((platform, handle.lower()), None)
             self._roleplay.pop((platform, handle.lower()), None)
+            self.memory.log("forgotten", platform, detail="someone asked to be forgotten and everything about them was deleted")
             return self._fixed("Done, I've forgotten everything about you. If you ever want me to remember you "
                                "again, just say so.", self.memory.person(platform, handle, name), platform)
         if FORGET_THAT.search(text):
@@ -236,6 +280,8 @@ class SocialChat:
         rules.observe(self.memory, person, text, kids_place=kids_place, now=now)
         self._reunion(person)                    # before the mood note is built, so she greets them gladly
         self._feel(text, person)
+        touch = self.bonds.observe(person, platform, text, now=now, game=game)
+        self.requests.hear(platform, person, text)
         mode = rules.romance_mode(platform, person)
         roleplay = self._in_roleplay((platform, handle.lower()), text, now)
         # The system message stays the same from turn to turn (so the server's prompt cache holds); what changes with
@@ -247,14 +293,18 @@ class SocialChat:
         if not lines:
             lines = [f"[{p}] {line}" for p, line in self.memory.moments(person, 6)]
         inner = _inner_context(self.memory, person, text, first_turn=not history)
+        ask_back = "(ask them something short back about what they said)" if self.flow.ask_back_due(channel) else ""
         user = "\n\n".join(part for part in (
             (inner.card if inner is not None else "") or self.memory.context(person),
+            self.bonds.context(person, platform, now, short=bool(inner is not None and inner.card)),
             "Recent chat:\n" + "\n".join(lines) if lines else "",
             f"{person.name} says: {text}",
             f"({intent})" if intent else "",
+            touch.hint(),
+            ask_back,
             mood_line(self._emotion, person, mode),
             inner.note if inner is not None else "") if part)
-        raw = _SPEAKER.sub("", strip_reasoning(self._complete(system, user) or ""))
+        raw = shape_reply(_SPEAKER.sub("", strip_reasoning(self._complete(system, user) or "")), platform, rng=self._rng)
         reply = rules.check_outgoing(raw, incoming=text, mode=mode, platform=platform, roleplay=roleplay)
         romantic_in = bool(rules.ROMANTIC.search(text))
         if mode.romance == "ask_age" and romantic_in and not rules.asks_age(reply):
@@ -264,13 +314,17 @@ class SocialChat:
             self.memory.update(person, age_asked=now)
         if not reply:
             return None
+        reply = self._with_session_nudge(reply, person, platform, handle, mode, now)
+        offer = "" if roleplay or intent or reply.rstrip().endswith("?") else self.requests.offer(platform, person)
+        if offer:
+            reply = f"{reply} {offer}"
+        self.flow.spoke(channel, handle, reply, now)
+        self.bonds.record_exchange(person, platform, text, now)
         interests_only = mode.age_status in ("minor", "doubt") or platform == "roblox"
         for fact in extract_facts(text):
             self.memory.note_fact(person, fact, interests_only=interests_only)
         self.memory.note_moment(person, platform, f"they: {text}")
         self.memory.note_moment(person, platform, f"me: {reply}")
-        if person.relationship == "met" and len(self.memory.moments(person, FRIEND_AFTER)) >= FRIEND_AFTER:
-            self.memory.update(person, relationship="friend")
         _mind_observe(self.memory, person, platform, text, reply)
         if inner is not None:
             try:
@@ -278,6 +332,19 @@ class SocialChat:
             except Exception:
                 pass
         return Reply(reply, person, mode, roleplay, person.remembered)
+
+    def _with_session_nudge(self, reply: str, person: Person, platform: str, handle: str, mode: rules.Mode, now: float) -> str:
+        """Gentle session limit for under-18 / unknown-age people: a friendly break suggestion at 45, 90, 150 minutes."""
+        state = self._sessions.get((platform, handle.lower()))
+        if state is None or now - state[1] > CONVO_GAP_S:
+            state = self._sessions[(platform, handle.lower())] = [now, now, 0]
+        state[1] = now
+        nudge, level = safety.session_nudge((now - state[0]) / 60.0, mode.age_status, int(state[2]))
+        state[2] = level
+        if nudge:
+            self.memory.log("session_nudge", platform, person, "suggested a break (long conversation, age not adult)")
+            return f"{reply} {nudge}"
+        return reply
 
     def _fixed(self, text: str, person: Person, platform: str) -> Reply:
         mode = rules.romance_mode(platform, person)

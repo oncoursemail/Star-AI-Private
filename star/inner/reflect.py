@@ -69,7 +69,15 @@ def rule_card(memory, person) -> str:
         person = memory.get(person.id)
     except KeyError:
         return ""
-    parts = [f"{person.name}, {'a friend' if person.relationship == 'friend' else 'someone she has met'}."]
+    label = {"friend": "a friend", "met": "someone she has met"}[person.relationship if person.relationship in ("friend", "met") else "met"]
+    try:
+        from ..social.lifecycle import Bonds
+        bond = Bonds(memory, sink=None).get(person)
+        label = bond.label.replace("someone she just met", "someone she has met")
+        label += f" (she calls them {bond.nickname})" if bond.nickname else ""
+    except Exception:
+        pass
+    parts = [f"{person.name}, {label}."]
     if person.style:
         parts.append(f"Likes: {_clip(person.style, 60)}.")
     facts = memory.facts(person, 3, interests_only=rules.age_status(person) in ("minor", "doubt"))
@@ -133,7 +141,12 @@ def reflect_person(store: InnerStore, memory, complete, person, now: float) -> d
     old_card, _ = store.card(pkey)
     canonical = rule_card(memory, person)
     current_card = valid_card(canonical, canonical, memory, person)
-    notes = (f"Name: {person.name}. Relationship: {person.relationship}. Talks like: {person.style or 'not known'}.\n"
+    try:
+        from ..social.lifecycle import Bonds
+        bond_notes = Bonds(memory, sink=None).card_notes(person)
+    except Exception:
+        bond_notes = ""
+    notes = (f"Name: {person.name}. Relationship: {person.relationship}. {bond_notes} Talks like: {person.style or 'not known'}.\n"
              f"Facts: {'; '.join(facts) or 'none'}\nCurrent card: {current_card}\nToday:\n" +
              "\n".join(f"{i}. {e.text[:120]}" for i, e in enumerate(today, 1)))
     data: dict = {}
