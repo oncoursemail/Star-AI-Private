@@ -31,6 +31,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Any, cast
 
 TOKEN_FILE = 'metallic_session.bin'
 ENV_URL = 'STAR_METALLIC_CONTROL_URL'
@@ -115,8 +116,8 @@ class DpapiVault:
 
     def __init__(self):
         from ctypes import wintypes
-        self._crypt = ctypes.WinDLL('crypt32', use_last_error=True)
-        self._kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        self._crypt = ctypes.WinDLL('crypt32', use_last_error=True)  # pyright: ignore[reportAttributeAccessIssue]
+        self._kernel = ctypes.WinDLL('kernel32', use_last_error=True)  # pyright: ignore[reportAttributeAccessIssue]
         blob = ctypes.POINTER(self._Blob)
         for name in ('CryptProtectData', 'CryptUnprotectData'):
             fn = getattr(self._crypt, name)
@@ -131,7 +132,8 @@ class DpapiVault:
         src = self._Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
         out = self._Blob()
         if not fn(ctypes.byref(src), describe, None, None, None, self.UI_FORBIDDEN, ctypes.byref(out)):
-            raise OSError(ctypes.get_last_error(), 'Windows could not protect or read the Metallic session')
+            raise OSError(ctypes.get_last_error(),  # pyright: ignore[reportAttributeAccessIssue]
+                          'Windows could not protect or read the Metallic session')
         try:
             return ctypes.string_at(out.pbData, out.cbData)
         finally:
@@ -175,12 +177,13 @@ def pinned_post(base: str, fingerprint: str, path: str, body: dict, token: str |
     headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'STAR-AI-Desktop'}
     if token:
         headers['Authorization'] = 'Bearer ' + token
-    conn = http.client.HTTPSConnection(parts.hostname, parts.port or 443, timeout=timeout, context=ctx)
+    conn = http.client.HTTPSConnection(parts.hostname or '', parts.port or 443, timeout=timeout, context=ctx)
     try:
         conn.connect()
-        if fingerprint and not hmac.compare_digest(
-                hashlib.sha256(conn.sock.getpeercert(binary_form=True)).hexdigest(), fingerprint):
-            raise _BadCertificate()
+        if fingerprint:
+            der = cast(ssl.SSLSocket, conn.sock).getpeercert(binary_form=True)
+            if not isinstance(der, bytes) or not hmac.compare_digest(hashlib.sha256(der).hexdigest(), fingerprint):
+                raise _BadCertificate()
         conn.request('POST', parts.path.rstrip('/') + path, json.dumps(body).encode('utf-8'), headers)
         reply = conn.getresponse()
         status, raw = reply.status, reply.read(MAX_REPLY)
@@ -200,7 +203,7 @@ def pinned_post(base: str, fingerprint: str, path: str, body: dict, token: str |
 class MetallicAccess:
     """One per app data folder (use `for_home`): the bootstrap and the bridge must see the same memory state."""
 
-    def __init__(self, home: Path, *, opener=None, vault='default', clock=time.time, timeout: float = TIMEOUT,
+    def __init__(self, home: Path, *, opener=None, vault: Any = 'default', clock=time.time, timeout: float = TIMEOUT,
                  account_post=None):
         self.file = Path(home) / TOKEN_FILE
         self.open = opener or urllib.request.urlopen
