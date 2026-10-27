@@ -52,12 +52,31 @@ def _inner_tick(home: Path, chat) -> None:
         control.log_action(home, "inner", "error", detail=str(exc)[:200])
 
 
+def _life_tick(home: Path, chat, life) -> None:
+    """Her own goals and her studio's pending commentary (star.life); never fails the loop."""
+    try:
+        from .. import life as life_extras
+        life_extras.tick(home, chat=chat, life=life)
+    except Exception as exc:
+        control.log_action(home, "life", "error", detail=str(exc)[:200])
+
+
+def _life_after(home: Path, interest: str, activity: str, outcome: dict, life) -> None:
+    """Scrapbook moment and goal practice from a finished session (star.life); never fails the loop."""
+    try:
+        from .. import life as life_extras
+        life_extras.after_session(home, interest, activity, outcome, life=life)
+    except Exception as exc:
+        control.log_action(home, "life", "error", detail=str(exc)[:200])
+
+
 def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, probe=None, attention=None) -> dict:
     """One step of her day. With `attention` (star.home.attention): first answer what is waiting (a friend's message or
     call that is due), then do what she asked herself to start, else resume what was paused, else pick something."""
     if control.stopped(home):
         return {"state": "stopped"}
     _inner_tick(home, chat)
+    _life_tick(home, chat, life)
     shared ={"interrupt": attention.interrupt, "situation": attention.situation} if attention is not None else {}
 
     def context_for(platform: str) -> Context:
@@ -135,6 +154,7 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
         curiosity.resolve([practice[0].key], "taught" if row["verified"] else "tried", by="star-home", path=queue)
     control.log_action(home, "session", "done", interest=interest, verified=row["verified"], summary=row["summary"])
     _feel_outcome(interest, row["verified"], row["summary"])
+    _life_after(home, interest, activity.name, outcome, life)
     if attention is not None:
         attention.last_state = "worked"
     return {"state": "worked", "interest": interest, "activity": activity.name, "verified": row["verified"],

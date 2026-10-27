@@ -98,6 +98,18 @@ def _friends(home):
     return FriendMemory(Path(home) / "social" / "friends.sqlite3") if home is not None else FriendMemory()
 
 
+def _life_evidence(life_home) -> str:
+    """Her own goals and skill confidence (star.life) as evidence for the nightly self review; "" when there is none."""
+    try:
+        if life_home is None:
+            return ""
+        from ..life import goals
+        from ..life.store import default_store as life_store, flag as life_flag
+        return goals.evidence_text(life_store(life_home)) if life_flag("life_goals_enabled", life_home) else ""
+    except Exception:
+        return ""
+
+
 def run_night(home=None, *, complete=None, memory=None, store: InnerStore | None = None, now: float | None = None,
               rng: random.Random | None = None, emotion=None, life_home=None, curiosity_path=None) -> dict:
     """Tonight's work. `home` is the app data folder (settings, friend memory, inner.sqlite3)."""
@@ -128,7 +140,7 @@ def run_night(home=None, *, complete=None, memory=None, store: InnerStore | None
         gist = (report.get("dream") or {}).get("gist")
         evidence = "\n".join(x for x in (
             f"Diary: {(report.get('reflect') or {}).get('diary', '')}", (report.get("reflect") or {}).get("notes", ""),
-            f"Her dream was about: {gist}" if gist else "") if x)
+            f"Her dream was about: {gist}" if gist else "", _life_evidence(life_home)) if x)
         report["self"] = self_model.revise(store, complete, evidence, now=now)
     except Exception as why:
         report["self"] = {"error": f"{type(why).__name__}: {why}"}
