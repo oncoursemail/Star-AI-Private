@@ -33,6 +33,12 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
 _EVIDENCE = frozenset({"observed", "reported", "unknown"})
 
 
+def _reaction_digest(detail: str) -> str:
+    # Store only a digest, never gameplay narration or spectator text.
+    normalized = " ".join(detail.casefold().split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def _clock(value: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("time must be a nonnegative finite number")
@@ -93,11 +99,13 @@ class StreamDirector:
     """
 
     def __init__(self, *, max_events: int = 48, gap_seconds: float = 2.2,
-                 viewer_cooldown: float = 25.0) -> None:
+                 viewer_cooldown: float = 25.0,
+                 success_repeat_gap_seconds: float = 18.0) -> None:
         if type(max_events) is not int or not 1 <= max_events <= 128:
             raise ValueError("max_events must be between 1 and 128")
         self.gap_seconds = _clock(gap_seconds)
         self.viewer_cooldown = _clock(viewer_cooldown)
+        self.success_repeat_gap_seconds = _clock(success_repeat_gap_seconds)
         self.max_events = max_events
         self.enabled = False
         self._session_epoch = 0
@@ -107,8 +115,10 @@ class StreamDirector:
         self._recent: dict[str, float] = {}
         self._last_speech_at = float("-inf")
         self._viewer_last_spoken: dict[str, float] = {}
+        self._game_reactions: dict[str, tuple[float, str]] = {}
         self._counters = {"accepted": 0, "rejected": 0, "expired": 0,
-                          "evicted": 0, "completed": 0, "abandoned": 0}
+                          "evicted": 0, "completed": 0, "abandoned": 0,
+                          "suppressed_reactions": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
@@ -125,6 +135,7 @@ class StreamDirector:
         self._event_serials.clear()
         self._recent.clear()
         self._viewer_last_spoken.clear()
+        self._game_reactions.clear()
         self._last_speech_at = float("-inf")
 
     @staticmethod
@@ -153,6 +164,27 @@ class StreamDirector:
             key: seq for key, seq in self._event_serials.items() if key in active_ids
         }
         self._counters["expired"] += before - len(self._events)
+        self._game_reactions = {
+            digest: receipt for digest, receipt in self._game_reactions.items()
+            if 0 <= now - receipt[0] < self.success_repeat_gap_seconds
+        }
+        # Several near-identical jump successes may arrive before an audio
+        # playback acknowledgement. Once one was *audibly* spoken, discard
+        # queued echoes but never silence danger or distinct achievements.
+        if self._game_reactions:
+            remaining = []
+            for event in self._events:
+                last = (self._game_reactions.get(_reaction_digest(event.detail))
+                        if event.kind == "game_success" else None)
+                if last is not None and event.signal_id != last[1] and 0 <= now - last[0] < self.success_repeat_gap_seconds:
+                    self._counters["suppressed_reactions"] += 1
+                else:
+                    remaining.append(event)
+            self._events = remaining
+        active_ids = {event.signal_id for event in self._events}
+        self._event_serials = {
+            key: seq for key, seq in self._event_serials.items() if key in active_ids
+        }
         self._recent = {key: at for key, at in self._recent.items() if now - at < 40.0}
         self._viewer_last_spoken = {
             key: at for key, at in self._viewer_last_spoken.items()
@@ -169,6 +201,12 @@ class StreamDirector:
         if not self.enabled or event.timestamp > now + 0.5 or now - event.timestamp > ttl:
             self._counters["rejected"] += 1
             return False
+        if event.kind == "game_success":
+            last = self._game_reactions.get(_reaction_digest(event.detail))
+            if last is not None and event.signal_id != last[1] and 0 <= now - last[0] < self.success_repeat_gap_seconds:
+                self._counters["suppressed_reactions"] += 1
+                self._counters["rejected"] += 1
+                return False
         if any(item.signal_id == event.signal_id for item in self._events):
             self._counters["rejected"] += 1
             return False
@@ -254,6 +292,8 @@ class StreamDirector:
                     self._last_speech_at = now
                     if event.kind.startswith("viewer") and event.speaker_id:
                         self._viewer_last_spoken[event.speaker_id] = now
+                    if event.kind == "game_success":
+                        self._game_reactions[_reaction_digest(event.detail)] = (now, event.signal_id)
                     self._counters["completed"] += 1
                 else:
                     self._counters["abandoned"] += 1
