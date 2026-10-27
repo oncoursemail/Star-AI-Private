@@ -166,5 +166,73 @@ class DirectorTests(unittest.TestCase):
                 StreamDirector(**kwargs)
 
 
+    def test_repeated_game_success_waits_after_audibly_spoken_reaction(self):
+        self.d.offer(signal("game_success", "jump1", now=10,
+                            detail="Jump   landed", evidence="observed"), now=10)
+        first = self.d.propose(now=10)
+        self.assertTrue(self.d.complete(first, now=10, spoken=True))
+        self.assertFalse(self.d.offer(signal(
+            "game_success", "jump2", now=12, detail="jump landed",
+            evidence="observed"), now=12))
+        self.assertEqual(self.d.metrics()["suppressed_reactions"], 1)
+        self.assertTrue(self.d.offer(signal(
+            "game_success", "boss", now=13, detail="Boss defeated",
+            evidence="observed"), now=13))
+        self.assertEqual(self.d.propose(now=13).signal_id, "boss")
+        self.assertTrue(self.d.offer(signal(
+            "game_danger", "fire", now=13, detail="Fire"), now=13))
+        self.assertEqual(self.d.propose(now=13).signal_id, "fire")
+        self.assertTrue(self.d.offer(signal(
+            "owner_interrupt", "stop", now=13, detail="Stop"), now=13))
+        self.assertEqual(self.d.propose(now=13).signal_id, "stop")
+
+    def test_queued_echo_is_pruned_after_first_confirmed_playback(self):
+        self.d.offer(signal("game_success", "one", now=10,
+                            detail="Perfect jump", evidence="observed"), now=10)
+        self.d.offer(signal("game_success", "two", now=10,
+                            detail="Perfect   Jump", evidence="observed"), now=10)
+        chosen = self.d.propose(now=10)
+        self.assertTrue(self.d.complete(chosen, now=10, spoken=True))
+        self.assertIsNone(self.d.propose(now=13))
+        self.assertEqual(self.d.metrics()["queued"], 0)
+        self.assertEqual(self.d.metrics()["suppressed_reactions"], 1)
+        self.assertEqual(len(self.d._event_serials), 0)
+
+    def test_failed_playback_never_suppresses_a_game_reaction(self):
+        self.d.offer(signal("game_success", "one", now=10,
+                            detail="New record", evidence="observed"), now=10)
+        self.assertTrue(self.d.complete(self.d.propose(now=10), now=10,
+                                        spoken=False))
+        self.assertTrue(self.d.offer(signal(
+            "game_success", "two", now=11, detail="NEW RECORD",
+            evidence="observed"), now=11))
+        self.assertEqual(self.d.propose(now=11).signal_id, "two")
+
+    def test_repeat_suppression_expires_and_reset_clears_it(self):
+        self.d.offer(signal("game_success", "one", now=10,
+                            detail="Checkpoint", evidence="observed"), now=10)
+        self.assertTrue(self.d.complete(self.d.propose(now=10), now=10,
+                                        spoken=True))
+        self.assertTrue(self.d.offer(signal(
+            "game_success", "after", now=28, detail="checkpoint",
+            evidence="observed"), now=28))
+        self.d.disable()
+        self.d.enable(owner_approved=True)
+        self.assertTrue(self.d.offer(signal(
+            "game_success", "restart", now=29, detail="checkpoint",
+            evidence="observed"), now=29))
+
+    def test_reaction_cache_does_not_expose_narration(self):
+        self.d.offer(signal("game_success", "one", now=10,
+                            detail="private victory text", evidence="observed"),
+                     now=10)
+        self.d.complete(self.d.propose(now=10), now=10, spoken=True)
+        self.assertNotIn("private victory text", repr(self.d.metrics()))
+        self.assertNotIn("private victory text", repr(self.d._game_reactions))
+        for invalid in (-1, float("nan"), True):
+            with self.assertRaises(ValueError):
+                StreamDirector(success_repeat_gap_seconds=invalid)
+
+
 if __name__ == "__main__":
     unittest.main()
