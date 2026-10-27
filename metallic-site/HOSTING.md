@@ -64,6 +64,24 @@ server {
 
 Both serve `Range` requests for files, which the launcher uses to resume interrupted downloads.
 
+**Optional: Metallic API on the same site.** The downloads page first asks `/api/v1/releases/<channel>` (the API has
+checked the signature) and falls back to the channel file when there is no `/api`. Proxying keeps `connect-src 'self'`
+as it is. Only the public read endpoints need to be reachable from the internet; keep the rest LAN-only until the
+developer portal (step 2) exists:
+
+```
+# Caddy, inside the site block
+@api path /api/v1/releases* /api/v1/games* /api/v1/news* /api/v1/progress* /api/v1/projects/status /api/v1/openapi.json
+handle @api {
+    uri strip_prefix /api
+    reverse_proxy https://<metallic-api LAN address>:8476 {
+        transport http {
+            tls_trusted_ca_certs /etc/caddy/metallic-api.pem   # the API's self-signed certificate
+        }
+    }
+}
+```
+
 ## 3. Cloudflare in front (hides the home IP)
 
 1. Add the domain to Cloudflare and switch the registrar's name servers to the ones Cloudflare gives you.
