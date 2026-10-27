@@ -570,3 +570,34 @@ def test_actual_vad_host_bargein_reconciles_the_brain_without_ghost_speech():
         lease.lease, worker_stopped=True, succeeded=False)
     g.disable()  # would have failed without confirmed physical cleanup
     assert not g.status()["enabled"]
+
+
+def test_live_game_guard_heartbeat_recovery_without_repeated_voice_jobs():
+    """Real host frame-present timestamps, not fabricated model FPS reports."""
+    g, s, t, q, st = setup(live=True, game=True)
+    assert not g.refresh_game_guard()  # no trustworthy hardware/audio yet
+    warm(s, t)
+    reads = s.gpu_reads
+    assert g.refresh_game_guard()
+    assert s.gpu_reads == reads  # no device polling on game/audio hot path
+    for _ in range(25):
+        s.tick(90)
+        assert t.presented_frame(s.now)
+    assert t.report_audio_backlog(backlog_ms=20, at_ms=s.now)
+    s.cpu_tick()
+    assert t.refresh_hardware()
+    assert t.snapshot().telemetry.game_fps < 50
+    assert g.refresh_game_guard()
+    assert q.status()["gpu_voice_fps_guarded"]
+    # Every heartbeat is from a refreshed host snapshot. No speech attempts
+    # needed to demonstrate >=2 seconds of sustained frame recovery.
+    for _ in range(22):
+        for _ in range(20):
+            s.tick(16)
+            assert t.presented_frame(s.now)
+        assert t.report_audio_backlog(backlog_ms=20, at_ms=s.now)
+        s.cpu_tick()
+        assert t.refresh_hardware()
+        assert g.refresh_game_guard()
+    assert t.snapshot().telemetry.game_fps > 58
+    assert not q.status()["gpu_voice_fps_guarded"]

@@ -161,12 +161,19 @@ def test_low_fps_live_game_refuses_explicit_gpu_speech_even_with_headroom():
     assert denied.reason == "protect_low_fps_game_from_gpu_voice"
     assert q.status()["inflight"] == 0
 
-    # When frame pacing recovers, an explicitly selected GPU model remains
-    # eligible for normal headroom and deadline checks.
+    # One high-FPS sample is not enough; verify sustained recovery without
+    # large telemetry gaps before the renderer may share its GPU with speech.
+    for at in (200, 700, 1200, 1700):
+        recovering = q.admit(
+            job(f"gpu-recover-{at}", at, kind="speech", device="gpu"),
+            snap(at, live=True, game=True, fps=60, vram=7500),
+            now_ms=at,
+        )
+        assert recovering.reason == "protect_low_fps_game_from_gpu_voice"
     healthy = q.admit(
-        job("gpu-ok", 200, kind="speech", device="gpu"),
-        snap(200, live=True, game=True, fps=60, vram=7500),
-        now_ms=200,
+        job("gpu-ok", 2200, kind="speech", device="gpu"),
+        snap(2200, live=True, game=True, fps=60, vram=7500),
+        now_ms=2200,
     )
     assert healthy.admitted and healthy.device == "gpu"
 
@@ -179,10 +186,17 @@ def test_low_fps_never_falls_back_to_gpu_when_cpu_slots_are_full():
     assert not denied.admitted
     assert denied.reason == "low_fps_cpu_voice_unavailable"
     assert q.status()["inflight"] == 0
+    for at in (200, 700, 1200, 1700):
+        recovering = q.admit(
+            job(f"auto-recover-{at}", at),
+            snap(at, live=True, game=True, fps=60, cpu_slots=0, vram=7500),
+            now_ms=at,
+        )
+        assert recovering.reason == "low_fps_cpu_voice_unavailable"
     healthy = q.admit(
-        job("auto-healthy", 200),
-        snap(200, live=True, game=True, fps=60, cpu_slots=0, vram=7500),
-        now_ms=200,
+        job("auto-healthy", 2200),
+        snap(2200, live=True, game=True, fps=60, cpu_slots=0, vram=7500),
+        now_ms=2200,
     )
     assert healthy.admitted and healthy.device == "gpu"
 
