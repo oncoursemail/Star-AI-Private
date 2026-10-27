@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import math
 
 from .stream_budget import StreamTelemetry, advise_workload
+from .frame_fingerprint import Region, difference_hash
 
 _CUES = frozenset({"none", "damage", "death", "win", "new_scene", "objective", "menu"})
 _MAX_CLOCK_MS = 1e13
@@ -40,13 +41,43 @@ class FrameCue:
     captured_ms: float
     perceptual_hash: int  # locally computed 64-bit pHash/dHash, not a crypto digest
     cue: str = "none"
+    hud_hash: int | None = None  # optional separately cropped UI fingerprint
 
     def __post_init__(self) -> None:
         _ms(self.captured_ms, "captured_ms")
         if type(self.perceptual_hash) is not int or not 0 <= self.perceptual_hash < (1 << 64):
             raise ValueError("perceptual_hash must be a 64-bit unsigned integer")
+        if type(self.hud_hash) is not int and self.hud_hash is not None:
+            raise ValueError("hud_hash must be an unsigned 64-bit integer or None")
+        if self.hud_hash is not None and not 0 <= self.hud_hash < (1 << 64):
+            raise ValueError("hud_hash must be an unsigned 64-bit integer or None")
         if type(self.cue) is not str or self.cue not in _CUES:
             raise ValueError("unknown host-observed cue")
+
+    @classmethod
+    def from_pixels(
+        cls, captured_ms: float, pixels: bytes | bytearray | memoryview, *,
+        width: int, height: int, pixel_format: str = "BGRA",
+        row_stride: int | None = None, cue: str = "none",
+        game_region: Region | None = None, hud_region: Region | None = None,
+    ) -> FrameCue:
+        """Fingerprint approved host pixels. No recording, inference or capture.
+
+        Crops are host-configured (not chosen by a viewer or AI); the HUD hash
+        helps preserve UI changes when the gameplay scene stays nearly static.
+        """
+        _ms(captured_ms, "captured_ms")
+        if type(cue) is not str or cue not in _CUES:
+            raise ValueError("unknown host-observed cue")
+        main = difference_hash(
+            pixels, width=width, height=height, pixel_format=pixel_format,
+            row_stride=row_stride, region=game_region,
+        )
+        hud = (difference_hash(
+            pixels, width=width, height=height, pixel_format=pixel_format,
+            row_stride=row_stride, region=hud_region,
+        ) if hud_region is not None else None)
+        return cls(captured_ms, main, cue, hud)
 
 
 @dataclass(frozen=True)
@@ -69,7 +100,8 @@ class ObservationGovernor:
     """
 
     def __init__(self, *, calls_per_minute: int = 24, burst: int = 2,
-                 novelty_bits: int = 8, refresh_ms: float = 6000.0,
+                 novelty_bits: int = 8, hud_novelty_bits: int = 4,
+                 refresh_ms: float = 6000.0,
                  ticket_timeout_ms: float = 5000.0,
                  frame_max_age_ms: float = 1500.0,
                  latency_safety_factor: float = 2.0) -> None:
@@ -79,6 +111,8 @@ class ObservationGovernor:
             raise ValueError("burst must be 1..8")
         if type(novelty_bits) is not int or not 1 <= novelty_bits <= 64:
             raise ValueError("novelty_bits must be 1..64")
+        if type(hud_novelty_bits) is not int or not 1 <= hud_novelty_bits <= 64:
+            raise ValueError("hud_novelty_bits must be 1..64")
         self.refresh_ms = _ms(refresh_ms, "refresh_ms")
         self.ticket_timeout_ms = _ms(ticket_timeout_ms, "ticket_timeout_ms")
         self.frame_max_age_ms = _ms(frame_max_age_ms, "frame_max_age_ms")
@@ -92,6 +126,7 @@ class ObservationGovernor:
         self.calls_per_minute = calls_per_minute
         self.burst = burst
         self.novelty_bits = novelty_bits
+        self.hud_novelty_bits = hud_novelty_bits
         self.enabled = False
         self._next_ticket = 0
         # Only the trusted worker host can clear this. Never reset it on
@@ -105,7 +140,7 @@ class ObservationGovernor:
         self._pending: tuple[int, float, FrameCue, float] | None = None
         self._durations_ms: deque[float] = deque(maxlen=16)
         self._last_request_at: float | None = None
-        self._last_success: tuple[float, int] | None = None
+        self._last_success: tuple[float, int, int | None] | None = None
         self._stats = {"admitted": 0, "completed": 0, "failed": 0,
                        "expired": 0, "deferred": 0, "stop_confirmed": 0}
 
@@ -206,9 +241,19 @@ class ObservationGovernor:
         if self._tokens < 1.0 - 1e-9:
             return defer("minute_budget_exhausted")
         if frame.cue == "none" and self._last_success is not None:
-            last_time, last_hash = self._last_success
+            last_time, last_hash, last_hud = self._last_success
             distance = (frame.perceptual_hash ^ last_hash).bit_count()
-            if distance < self.novelty_bits and now - last_time < self.refresh_ms:
+            if frame.hud_hash is None and last_hud is None:
+                hud_is_similar = True
+            elif frame.hud_hash is None or last_hud is None:
+                # Uncomparable HUD scopes must never suppress observations.
+                hud_is_similar = False
+            else:
+                hud_is_similar = (
+                    (frame.hud_hash ^ last_hud).bit_count() < self.hud_novelty_bits
+                )
+            if (distance < self.novelty_bits and hud_is_similar
+                    and now - last_time < self.refresh_ms):
                 return defer("low_visual_novelty")
         self._tokens = max(0.0, self._tokens - 1)
         self._next_ticket += 1
@@ -229,7 +274,7 @@ class ObservationGovernor:
         self._pending = None
         self._durations_ms.append(now - issued_ms)
         if succeeded:
-            self._last_success = (now, frame.perceptual_hash)
+            self._last_success = (now, frame.perceptual_hash, frame.hud_hash)
             self._stats["completed"] += 1
         else:
             self._stats["failed"] += 1
