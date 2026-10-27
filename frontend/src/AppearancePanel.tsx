@@ -13,6 +13,8 @@ export type AppearanceControlsProps = {
   companionSettings?: ReactNode
   /** False only when the shell has observed that local storage is unavailable. */
   persisted?: boolean
+  /** False while no palette is applied (the standard look): no theme shows as picked until the owner picks one. */
+  active?: boolean
 }
 
 const accents = [
@@ -44,7 +46,7 @@ function ThemeThumbnail({theme}: {theme: AppearanceTheme}) {
   </span>
 }
 
-export function AppearanceControls({preferences, onChange, onReset, companionSettings, persisted}: AppearanceControlsProps) {
+export function AppearanceControls({preferences, onChange, onReset, companionSettings, persisted, active = true}: AppearanceControlsProps) {
   const name = useId()
   const resolved = resolveAppearance(preferences)
   const [hexDraft, setHexDraft] = useState(resolved.requestedAccent)
@@ -57,17 +59,17 @@ export function AppearanceControls({preferences, onChange, onReset, companionSet
   }
   const resetAccent = () => {setHexDraft(resolved.theme.palette.accent); setInvalid(false); onChange({accent: null})}
   const resetAll = () => {setHexDraft(APPEARANCE_THEMES[0].palette.accent); setInvalid(false); onReset()}
-  const isDefault = preferences.theme === DEFAULT_APPEARANCE.theme && preferences.accent === null && preferences.density === 'comfortable'
+  const isDefault = !active || (preferences.theme === DEFAULT_APPEARANCE.theme && preferences.accent === null && preferences.density === 'comfortable')
   return <div className="appearance-controls">
     <fieldset className="appearance-section">
       <legend>Theme</legend>
-      <p className="appearance-description">Four palettes, each with its own character.</p>
+      <p className="appearance-description">{active ? 'Pick one and the whole app changes right away.' : 'You are on the standard look. Pick a theme to change the whole app right away.'}</p>
       <div className="appearance-themes">
         {APPEARANCE_THEMES.map(theme => <label className="appearance-theme-option" key={theme.id}>
-          <input type="radio" name={name + '-theme'} value={theme.id} checked={preferences.theme === theme.id}
+          <input type="radio" name={name + '-theme'} value={theme.id} checked={active && preferences.theme === theme.id}
             aria-label={theme.name} onChange={() => onChange({theme: theme.id, accent: null})}/>
           <ThemeThumbnail theme={theme}/>
-          <span className="appearance-theme-caption"><strong>{theme.name}</strong><span className="appearance-theme-check" aria-hidden="true">{preferences.theme === theme.id && <Check size={12} strokeWidth={2.7}/>}</span></span>
+          <span className="appearance-theme-caption"><strong>{theme.name}</strong><span className="appearance-theme-check" aria-hidden="true">{active && preferences.theme === theme.id && <Check size={12} strokeWidth={2.7}/>}</span></span>
           <span className="appearance-theme-detail">{theme.description}</span>
         </label>)}
       </div>
@@ -75,7 +77,7 @@ export function AppearanceControls({preferences, onChange, onReset, companionSet
 
     <fieldset className="appearance-section">
       <legend>Accent color</legend>
-      <p className="appearance-description">A little color, where it counts.</p>
+      <p className="appearance-description">Used for the selected item, the main button and focus rings.</p>
       <div className="appearance-accents" role="group" aria-label="Accent suggestions">
         {accents.map(accent => <button type="button" className="appearance-accent" key={accent.name}
           style={{'--accent-choice': accent.color} as CSSProperties} aria-label={accent.name + ' accent'}

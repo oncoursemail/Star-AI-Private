@@ -244,6 +244,9 @@ class Settings:
     # keys live in the OS keyring. fpcalc_path = Chromaprint's fpcalc for AcoustID ('' = look on PATH; never downloaded).
     music_recognition_enabled: bool = False
     fpcalc_path: str = ''
+    # Settings > Account & Metallic (star/metallic_access.py): the Metallic Control base URL, http(s); '' = not set up.
+    # STAR_METALLIC_CONTROL_URL overrides it. The sign-in token never goes here (DPAPI file under app data).
+    metallic_control_url: str = ''
 
     @classmethod
     def load(cls, file: Path):
@@ -390,6 +393,10 @@ class Settings:
             raise ValueError('Use my GPU: idle minutes must be 1 to 240')
         if not 1 <= self.max_calls <= 30 or not 6000 <= self.context_chars <= 80000:
             raise ValueError('Invalid model call or context budget')
+        from .metallic_access import normalize_url
+        if not isinstance(self.metallic_control_url, str) or (
+                self.metallic_control_url.strip() and not normalize_url(self.metallic_control_url)):
+            raise ValueError('Metallic Control address must be an http:// or https:// URL')
 
     def _validate_server(self):
         """STAR Server (LAN) settings. The loopback `endpoint` rule above is separate."""

@@ -74,6 +74,7 @@ describe('Studio layout preference', () => {
     expect(screen.queryByRole('button', {name: 'Choose workspace'})).toBeNull()
     expect(document.querySelector('.thread-hello')).toBeTruthy()
     await user.click(screen.getByRole('button', {name: /^settings/i}))
+    await user.click(await screen.findByRole('tab', {name: 'Appearance'}))
     await user.click(await screen.findByRole('checkbox', {name: 'Studio layout'}))
     expect(localStorage.getItem('star.studio.layout')).toBe('on')
     expect(document.querySelector('.shell')?.getAttribute('data-star-studio')).toBe('true')

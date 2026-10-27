@@ -233,6 +233,33 @@
   font-weight: 500;
   vertical-align: 1px;
 }
+/* Blocks from other components carry no bottom margin of their own; keep one gap between every card. */
+.shell .settings-block > * {
+  margin-bottom: 15px;
+}
+/* Two notes in a row read as two lines, not one run-on sentence. */
+.shell .settings-section > small + small {
+  display: block;
+  margin-top: var(--star-1);
+}
+/* Selects in a field grid match the text fields beside them (the shared skin only styles inputs). */
+.shell .settings-panel .field-grid select {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--star-stroke);
+  border-radius: var(--star-r-sm);
+  background: var(--star-bg);
+  color: var(--star-text);
+  font: inherit;
+  font-size: var(--star-fs-meta);
+}
+.shell .settings-panel .field-grid select:disabled {
+  color: var(--star-faint);
+}
+/* The switch row lays its own spans out as a column; the badge stays a small inline label. */
+.shell .setting-switch .settings-badge {
+  display: inline-block;
+}
 .settings-field-static {
   display: flex;
   flex-direction: column;
@@ -247,6 +274,94 @@
 .shell .settings-field-static .secondary-button {
   align-self: flex-start;
   margin-top: 0;
+}
+
+/* ---- Advanced: sub-headings and the jump row ---- */
+.settings-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--star-2);
+  margin-bottom: var(--star-6);
+}
+.shell .settings-jump-link {
+  min-height: 32px;
+  padding: 0 var(--star-3);
+  border: 1px solid var(--star-stroke);
+  border-radius: var(--star-r-sm);
+  background: transparent;
+  color: var(--star-body);
+  font: inherit;
+  font-size: var(--star-fs-meta);
+  cursor: pointer;
+  transition: background-color var(--star-dur-hover) var(--star-ease), border-color var(--star-dur-hover) var(--star-ease);
+}
+@media (hover: hover) {
+  .shell .settings-jump-link:hover {
+    border-color: var(--star-stroke-strong);
+    background: var(--star-surface-1);
+    color: var(--star-text);
+  }
+}
+.settings-subgroup {
+  scroll-margin-top: var(--star-4);
+}
+.settings-subgroup + .settings-subgroup {
+  margin-top: var(--star-8);
+}
+/* A search that leaves no block in a group hides its heading too. */
+.settings-subgroup:not(:has(> .settings-block:not([hidden]))) {
+  display: none;
+}
+.settings-subgroup-head {
+  margin-bottom: var(--star-4);
+}
+.shell .settings-subgroup-head h3 {
+  margin: 0;
+  color: var(--star-text);
+  font-family: var(--star-font-display);
+  font-size: var(--star-fs-prose);
+  font-weight: 650;
+}
+.shell .settings-subgroup-head p {
+  margin: 2px 0 0;
+  color: var(--star-muted);
+  font-size: var(--star-fs-meta);
+  line-height: 1.5;
+}
+.shell .settings-section .settings-panel-note {
+  margin: 0 0 var(--star-2);
+  color: var(--star-muted);
+}
+
+/* ---- Appearance page: the drawer controls laid out wide ---- */
+.settings-panel .appearance-controls {
+  margin-bottom: 15px;
+  padding: 26px;
+  border: 1px solid var(--star-stroke);
+  border-radius: var(--star-r-md);
+  background: var(--star-surface-1);
+}
+.settings-panel .appearance-themes {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.settings-panel .appearance-accents {
+  grid-template-columns: repeat(6, 44px);
+}
+.settings-panel .appearance-color-field,
+.settings-panel .appearance-density-options {
+  max-width: 420px;
+}
+/* Companion portraits keep their drawer size instead of stretching across the wide card. */
+.settings-panel .companion-choices {
+  grid-template-columns: repeat(3, 96px);
+}
+@media (max-width: 700px) {
+  .settings-panel .appearance-themes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-panel .appearance-controls {
+    padding: var(--star-4);
+  }
 }
 
 /* ---- web search keys ---- */

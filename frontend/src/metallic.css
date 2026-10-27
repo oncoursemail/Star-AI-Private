@@ -1,0 +1,637 @@
+/* Metallic: the sign-in screen, the Settings block and the Metallic section.
+ *
+ * Built on the shared --star-* tokens, so it follows every theme. Two local additions:
+ *   --metallic-violet   the brand accent, used once: the mark beside the section title (Metallic's own color).
+ *   --metallic-series-N the chart palette, six categorical slots validated with the dataviz validator
+ *                       (dark against #12161b/#1B1C1F/#241F2D, light against #FFFEFA: every check passes; in light,
+ *                       slots 3-5 sit under 3:1, so every chart carries a legend and a "Show the numbers" table).
+ * State colors stay the shared success/danger tokens and always come with a word and an icon.
+ */
+.shell,
+.star-layer {
+  --metallic-violet: #9085e9;
+  --metallic-series-1: #3987e5;
+  --metallic-series-2: #d95926;
+  --metallic-series-3: #199e70;
+  --metallic-series-4: #c98500;
+  --metallic-series-5: #d55181;
+  --metallic-series-6: #008300;
+}
+html[data-star-theme='pearl'] :is(.shell, .star-layer) {
+  --metallic-violet: #6250d6;
+  --metallic-series-1: #2a78d6;
+  --metallic-series-2: #eb6834;
+  --metallic-series-3: #1baf7a;
+  --metallic-series-4: #eda100;
+  --metallic-series-5: #e87ba4;
+  --metallic-series-6: #008300;
+}
+
+/* ---------- First-launch sign-in ---------- */
+.shell .metallic-signin {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--star-6) var(--star-4);
+  overflow-y: auto;
+  background: var(--star-bg);
+}
+.shell .metallic-signin-card {
+  width: min(460px, 100%);
+  padding: var(--star-8);
+  border: 1px solid var(--star-stroke-soft);
+  border-radius: var(--star-r-lg);
+  background: var(--star-surface-1);
+}
+.shell .metallic-signin-mark {
+  display: inline-grid;
+  color: var(--star-gold);
+}
+.shell .metallic-signin h1 {
+  margin: var(--star-4) 0 var(--star-2);
+  color: var(--star-text);
+  font-family: var(--star-font-display);
+  font-size: var(--star-fs-h1);
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+.shell .metallic-signin-lead {
+  margin: 0 0 var(--star-6);
+  color: var(--star-muted);
+  font-size: var(--star-fs-ui);
+  line-height: 1.6;
+}
+.shell .metallic-signin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--star-3);
+  margin-top: var(--star-6);
+  padding-top: var(--star-5);
+  border-top: 1px solid var(--star-stroke-soft);
+}
+.shell .metallic-signin-actions .primary-button {
+  min-height: 38px;
+  padding: 0 var(--star-6);
+  font-weight: 600;
+}
+.shell .metallic-signin-actions span {
+  color: var(--star-faint);
+  font-size: var(--star-fs-meta);
+}
+
+/* ---------- Code form (sign-in screen and Settings) ---------- */
+.shell .metallic-code-form {
+  display: grid;
+  gap: var(--star-2);
+}
+.shell .metallic-code-label,
+.shell .metallic-field > span {
+  color: var(--star-body);
+  font-size: var(--star-fs-nav);
+  font-weight: 600;
+}
+.shell .metallic-code-label span {
+  color: var(--star-faint);
+  font-weight: 400;
+}
+.shell .metallic-code-row {
+  display: flex;
+  gap: var(--star-2);
+}
+.shell :is(.metallic-code-row input, .metallic-field input) {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 var(--star-3);
+  border: 1px solid var(--star-stroke-control);
+  border-radius: var(--star-r-sm);
+  background: var(--star-bg);
+  color: var(--star-text);
+  font-size: var(--star-fs-ui);
+}
+.shell :is(.metallic-code-row input, .metallic-field input):focus-visible {
+  outline: 2px solid var(--star-stroke-focus);
+  outline-offset: 1px;
+}
+.shell .metallic-code-row .secondary-button,
+.shell .metallic-signout,
+.shell .metallic-page .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 var(--star-4);
+  white-space: nowrap;
+}
+.shell .metallic-code-note,
+.shell .metallic-hint {
+  margin: 0;
+  color: var(--star-faint);
+  font-size: var(--star-fs-meta);
+  line-height: 1.5;
+}
+.shell .metallic-refusal {
+  margin: 0;
+  padding: var(--star-2) var(--star-3);
+  border-radius: var(--star-r-sm);
+  background: var(--star-danger-wash);
+  color: var(--star-danger);
+  font-size: var(--star-fs-nav);
+  line-height: 1.5;
+}
+
+/* ---------- Settings > Account & Metallic ---------- */
+.shell .metallic-account {
+  display: grid;
+  gap: var(--star-3);
+  max-width: 560px;
+}
+.shell .metallic-field {
+  display: grid;
+  gap: var(--star-2);
+}
+.shell .metallic-status-line {
+  margin: 0;
+  color: var(--star-body);
+  font-size: var(--star-fs-nav);
+}
+.shell .metallic-signout {
+  justify-self: start;
+}
+
+/* ---------- Section ---------- */
+.shell .metallic-page {
+  max-width: 1120px;
+}
+.shell .metallic-head {
+  margin-bottom: var(--star-6);
+  padding-bottom: var(--star-5);
+  border-bottom: 1px solid var(--star-stroke-soft);
+}
+.shell .metallic-title {
+  display: flex;
+  align-items: center;
+  gap: var(--star-3);
+}
+.shell .metallic-mark {
+  flex: none;
+  color: var(--metallic-violet);
+}
+.shell .metallic-title h1 {
+  margin: 0;
+  color: var(--star-text);
+  font-family: var(--star-font-display);
+  font-size: clamp(23px, 2.4vw, 30px);
+  font-weight: 610;
+  letter-spacing: -0.025em;
+}
+.shell .metallic-head > p {
+  margin: var(--star-2) 0 0;
+  color: var(--star-muted);
+  font-size: var(--star-fs-ui);
+  overflow-wrap: anywhere;
+}
+.shell .metallic-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--star-stroke);
+  border-radius: 6px;
+  background: var(--star-surface-2);
+  color: var(--star-muted);
+  font-size: 11px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.shell .metallic-mono {
+  font-family: var(--star-mono);
+  font-size: 0.92em;
+  font-weight: var(--star-mono-weight);
+  overflow-wrap: anywhere;
+}
+.shell .metallic-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--star-3);
+  margin-bottom: var(--star-4);
+}
+.shell .metallic-switch {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--star-stroke);
+  border-radius: 10px;
+  background: var(--star-surface-1);
+}
+.shell .metallic-switch button {
+  min-height: 30px;
+  padding: 0 var(--star-3);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--star-muted);
+  font-size: var(--star-fs-nav);
+  font-weight: 550;
+}
+.shell .metallic-switch button:hover {
+  color: var(--star-text);
+}
+.shell .metallic-switch button.is-on {
+  background: var(--star-surface-3);
+  color: var(--star-text);
+}
+.shell .metallic-updated {
+  margin-left: auto;
+  color: var(--star-faint);
+  font-size: var(--star-fs-meta);
+}
+.shell .metallic-body {
+  display: grid;
+  gap: var(--star-4);
+  transition: opacity var(--star-dur-page) var(--star-ease);
+}
+.shell .metallic-body.is-refreshing {
+  opacity: 0.6;
+}
+.shell .metallic-refusal + .metallic-body {
+  margin-top: var(--star-3);
+}
+.shell .metallic-panel {
+  min-width: 0;
+  padding: var(--star-6);
+}
+.shell .metallic-panel > h2 {
+  margin: 0 0 var(--star-4);
+  color: var(--star-text);
+  font-size: var(--star-fs-h3);
+  font-weight: 600;
+}
+.shell .metallic-sub,
+.shell .metallic-note {
+  margin: var(--star-2) 0 0;
+  color: var(--star-faint);
+  font-size: var(--star-fs-meta);
+  line-height: 1.5;
+}
+.shell .metallic-offline {
+  display: flex;
+  gap: var(--star-4);
+  color: var(--star-muted);
+}
+.shell .metallic-offline > svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--star-faint);
+}
+.shell .metallic-offline h2 {
+  margin: 0 0 var(--star-2);
+  color: var(--star-text);
+  font-size: var(--star-fs-h3);
+}
+.shell .metallic-offline p {
+  margin: 0 0 var(--star-4);
+  line-height: 1.6;
+}
+.shell .metallic-offline p.metallic-sub {
+  margin-top: calc(-1 * var(--star-2));
+}
+
+.shell .metallic-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--star-body);
+}
+.shell .metallic-state > svg {
+  flex: none;
+}
+.shell .metallic-state.is-ok > svg {
+  color: var(--star-success);
+}
+.shell .metallic-state.is-bad > svg {
+  color: var(--star-danger);
+}
+.shell .metallic-state.is-busy > svg {
+  color: var(--star-info);
+}
+.shell .metallic-state.is-none > svg {
+  color: var(--star-faint);
+}
+
+/* Projects */
+.shell .metallic-projects {
+  display: grid;
+  gap: var(--star-3);
+}
+.shell .metallic-projects > .metallic-sub {
+  margin: 0 0 var(--star-1);
+}
+.shell .metallic-project {
+  min-width: 0;
+  padding: var(--star-5) var(--star-6);
+  border: 1px solid var(--star-stroke-soft);
+  border-radius: var(--star-r-md);
+  background: var(--star-surface-1);
+}
+.shell .metallic-project > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--star-2) var(--star-3);
+  margin-bottom: var(--star-4);
+}
+.shell .metallic-project h3 {
+  margin: 0;
+  color: var(--star-text);
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.shell .metallic-project > header .metallic-note {
+  margin: 0;
+}
+.shell .metallic-link {
+  margin-left: auto;
+  font-size: var(--star-fs-nav);
+}
+.shell .metallic-link a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--star-muted);
+}
+.shell .metallic-link a:hover {
+  color: var(--star-text);
+}
+.shell .metallic-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--star-3) var(--star-6);
+  margin: 0;
+}
+.shell .metallic-facts dt {
+  color: var(--star-faint);
+  font-size: var(--star-fs-meta);
+}
+.shell .metallic-facts dd {
+  margin: 2px 0 0;
+  color: var(--star-body);
+  font-size: var(--star-fs-nav);
+  overflow-wrap: anywhere;
+}
+.shell .metallic-prs {
+  display: grid;
+  gap: 6px;
+  margin: var(--star-4) 0 0;
+  padding: var(--star-3) 0 0;
+  border-top: 1px solid var(--star-stroke-soft);
+  list-style: none;
+  color: var(--star-body);
+  font-size: var(--star-fs-nav);
+}
+.shell .metallic-prs li {
+  overflow-wrap: anywhere;
+}
+.shell .metallic-prs .metallic-chip {
+  margin-left: 6px;
+}
+.shell .metallic-prs .metallic-note {
+  margin: 0;
+}
+
+/* Tables */
+.shell .metallic-table-wrap {
+  overflow-x: auto;
+}
+.shell .metallic-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--star-fs-nav);
+}
+.shell .metallic-table th,
+.shell .metallic-table td {
+  padding: var(--star-2) var(--star-3);
+  border-bottom: 1px solid var(--star-stroke-soft);
+  text-align: start;
+  vertical-align: top;
+}
+.shell .metallic-table thead th {
+  color: var(--star-faint);
+  font-size: var(--star-fs-meta);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.shell .metallic-table tbody th {
+  color: var(--star-text);
+  font-weight: 600;
+}
+.shell .metallic-table td {
+  color: var(--star-body);
+  font-variant-numeric: tabular-nums;
+}
+.shell .metallic-table small {
+  display: block;
+  margin-top: 2px;
+  color: var(--star-faint);
+  font-size: var(--star-fs-meta);
+  font-weight: 400;
+}
+.shell .metallic-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+/* Stat tiles */
+.shell .metallic-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--star-3);
+  margin-bottom: var(--star-5);
+}
+.shell .metallic-tile {
+  display: grid;
+  gap: var(--star-1);
+  padding: var(--star-4);
+  border-radius: var(--star-r-sm);
+  background: var(--star-surface-2);
+}
+.shell .metallic-tile > span {
+  color: var(--star-muted);
+  font-size: var(--star-fs-meta);
+}
+.shell .metallic-tile > strong {
+  color: var(--star-text);
+  font-size: 24px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+.shell .metallic-tile > small {
+  color: var(--star-faint);
+  font-size: var(--star-fs-meta);
+  line-height: 1.4;
+}
+
+/* Charts */
+.shell .metallic-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--star-6);
+  margin-top: var(--star-5);
+}
+.shell .metallic-chart {
+  min-width: 0;
+  margin: 0;
+}
+.shell .metallic-panel > .metallic-chart {
+  margin-top: var(--star-5);
+}
+.shell .metallic-chart figcaption {
+  display: grid;
+  gap: var(--star-2);
+  margin-bottom: var(--star-2);
+}
+.shell .metallic-chart figcaption > strong {
+  color: var(--star-text);
+  font-size: var(--star-fs-ui);
+  font-weight: 600;
+}
+.shell .metallic-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--star-1) var(--star-4);
+  color: var(--star-muted);
+  font-size: var(--star-fs-meta);
+}
+.shell .metallic-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.shell .metallic-swatch {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--metallic-series-1);
+}
+.shell .metallic-swatch.s2 { background: var(--metallic-series-2); }
+.shell .metallic-swatch.s3 { background: var(--metallic-series-3); }
+.shell .metallic-swatch.s4 { background: var(--metallic-series-4); }
+.shell .metallic-swatch.s5 { background: var(--metallic-series-5); }
+.shell .metallic-swatch.s6 { background: var(--metallic-series-6); }
+.shell .metallic-axis-y,
+.shell .metallic-axis-x {
+  display: block;
+  color: var(--star-faint);
+  font-size: 11px;
+}
+.shell .metallic-axis-x {
+  text-align: end;
+  padding-right: 14px;
+}
+.shell .metallic-plot {
+  width: 100%;
+  min-height: 196px;
+}
+/* CSS wins over the SVG attributes recharts writes, so these follow the theme everywhere. */
+.shell .metallic-plot .recharts-cartesian-grid line {
+  stroke: var(--star-stroke-soft);
+}
+.shell .metallic-plot .recharts-cartesian-axis-line {
+  stroke: var(--star-stroke);
+}
+.shell .metallic-plot .recharts-cartesian-axis-tick-value {
+  fill: var(--star-faint);
+}
+.shell .metallic-line.s1 .recharts-curve { stroke: var(--metallic-series-1); }
+.shell .metallic-line.s2 .recharts-curve { stroke: var(--metallic-series-2); }
+.shell .metallic-line.s3 .recharts-curve { stroke: var(--metallic-series-3); }
+.shell .metallic-line.s4 .recharts-curve { stroke: var(--metallic-series-4); }
+.shell .metallic-line.s5 .recharts-curve { stroke: var(--metallic-series-5); }
+.shell .metallic-line.s6 .recharts-curve { stroke: var(--metallic-series-6); }
+.shell .metallic-plot .recharts-curve {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.shell .metallic-tip {
+  display: grid;
+  gap: 3px;
+  padding: var(--star-2) var(--star-3);
+  border: 1px solid var(--star-stroke);
+  border-radius: var(--star-r-sm);
+  background: var(--star-surface-2);
+  box-shadow: var(--star-shadow-float);
+  color: var(--star-body);
+  font-size: var(--star-fs-meta);
+}
+.shell .metallic-tip strong {
+  color: var(--star-text);
+}
+.shell .metallic-tip span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.shell .metallic-chart-empty {
+  margin: var(--star-3) 0 0;
+  padding: var(--star-4);
+  border-radius: var(--star-r-sm);
+  background: var(--star-surface-2);
+  color: var(--star-muted);
+  font-size: var(--star-fs-nav);
+  line-height: 1.5;
+}
+.shell .metallic-numbers {
+  margin-top: var(--star-2);
+  color: var(--star-muted);
+  font-size: var(--star-fs-meta);
+}
+.shell .metallic-numbers summary {
+  width: max-content;
+  cursor: pointer;
+}
+.shell .metallic-numbers summary:hover {
+  color: var(--star-text);
+}
+.shell .metallic-numbers table {
+  width: 100%;
+  margin-top: var(--star-2);
+  border-collapse: collapse;
+}
+.shell .metallic-numbers :is(th, td) {
+  padding: 4px var(--star-2);
+  border-bottom: 1px solid var(--star-stroke-soft);
+  text-align: start;
+  font-variant-numeric: tabular-nums;
+}
+.shell .metallic-numbers thead th {
+  color: var(--star-faint);
+  font-weight: 600;
+}
+.shell .metallic-numbers tbody th {
+  color: var(--star-body);
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .shell .metallic-panel,
+  .shell .metallic-project {
+    padding: var(--star-4);
+  }
+  .shell .metallic-chart-grid {
+    grid-template-columns: 1fr;
+  }
+  .shell .metallic-updated {
+    margin-left: 0;
+  }
+  .shell .metallic-signin-card {
+    padding: var(--star-6) var(--star-5);
+  }
+  .shell .metallic-code-row {
+    flex-direction: column;
+  }
+}
