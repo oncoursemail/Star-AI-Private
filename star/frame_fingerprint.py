@@ -1,42 +1,59 @@
-"""Tiny CPU-only, read-only fingerprint of an already authorized game frame.
+"""Bounded CPU fingerprints of pixels already captured by an authorized host.
 
-The embedding Windows/OBS/Studio host owns capture and permission checks.
-This module accepts *raw pixels already held by that host*; it never touches a
-screen, network, file, GPU, player input, or speech stream. Only 64-bit hashes
-are returned. No frame bytes survive the call.
+Edge (dHash) detects structure. Seven coarse tone/color bins also detect
+uniform fades, HUD color changes, and similar-luminance color transitions that
+dHash alone cannot see. Neither is image understanding or event verification.
 
-The relative-luminance difference hash is a cheap visual-novelty heuristic,
-NOT an object detector, an objective verification, a privacy anonymizer, or
-a cryptographic hash. A uniform color shift or a small text/HUD change may
-remain undetected. Independent event/success verification remains required.
+No camera/screen access, model calls, persistence, network, or frame copies.
+All signals are *heuristics* and can miss tiny text or unsampled UI changes.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TypeAlias
 
 Region: TypeAlias = tuple[int, int, int, int]  # left, top, width, height
-_FORMATS = {"GRAY": (1, None), "RGB": (3, (0, 1, 2)),
-            "BGR": (3, (2, 1, 0)), "RGBA": (4, (0, 1, 2)),
-            "BGRA": (4, (2, 1, 0))}
+_FORMATS = {
+    "GRAY": (1, None), "RGB": (3, (0, 1, 2)),
+    "BGR": (3, (2, 1, 0)), "RGBA": (4, (0, 1, 2)),
+    "BGRA": (4, (2, 1, 0)),
+}
 _MAX_RAW_BYTES = 64 * 1024 * 1024
 _MAX_DIMENSION = 8192
+_TONE_BITS = 42  # seven unsigned six-bit coarse statistics
 
 
-def difference_hash(
+@dataclass(frozen=True)
+class VisualFingerprint:
+    """64-bit edge fingerprint plus seven quantized color/luminance bins."""
+
+    edge_hash: int
+    tone_signature: int
+
+
+def tone_distance(first: int, second: int) -> int:
+    """Largest difference of any six-bit RGB/quad-luminance bin, 0..63."""
+    if (type(first) is not int or type(second) is not int
+            or not 0 <= first < 1 << _TONE_BITS
+            or not 0 <= second < 1 << _TONE_BITS):
+        raise ValueError("invalid 42-bit tone signatures")
+    return max(
+        abs(((first >> shift) & 63) - ((second >> shift) & 63))
+        for shift in range(0, _TONE_BITS, 6)
+    )
+
+
+def visual_fingerprint(
     pixels: bytes | bytearray | memoryview, *, width: int, height: int,
     pixel_format: str = "BGRA", row_stride: int | None = None,
     region: Region | None = None,
-) -> int:
-    """Compute a 64-bit luminance difference hash without decoding or copying.
+) -> VisualFingerprint:
+    """Return edge and color-aware signatures in ONE bounded pixel sampling pass.
 
-    Nine columns by eight rows of tiny 2x2 luminance samples are compared
-    horizontally. A game-view ROI can ignore overlays; an additional HUD ROI
-    should be separately fingerprinted if small UI changes also matter.
-
-    Input is tightly packed or padded 8-bit GRAY/RGB/BGR/RGBA/BGRA, with
-    top-to-bottom positive row stride. Region bounds are half-open. The
-    caller must *not* pass untrusted dimensions or pixels from a model tool.
-    All work is bounded (at most 288 sampled pixels irrespective of 4K size).
+    Processes 9x8 evenly spread positions, sampling a 2x2 square per position
+    (<=288 pixels/ROI). Keeps only seven six-bit tone statistics and dHash.
+    Alpha is intentionally ignored. Frame memory belongs to the caller.
+    Small or unsampled changes may still be missed; never certify game events.
     """
     if type(width) is not int or type(height) is not int:
         raise ValueError("pixel dimensions must be integers")
@@ -72,39 +89,69 @@ def difference_hash(
                 or left + rw > width or top + rh > height):
             raise ValueError("region outside frame or too small")
 
-    # Pixel center selection samples the same normalized scene when the host
-    # changes capture resolution; the extra neighboring samples smooth
-    # isolated sensor noise. No full-frame transform or allocation occurs.
     xs = [left + min(rw - 1, ((2 * col + 1) * rw) // 18)
           for col in range(9)]
     ys = [top + min(rh - 1, ((2 * row + 1) * rh) // 16)
           for row in range(8)]
+    right, bottom = left + rw - 1, top + rh - 1
     luminances: list[int] = []
-    right = left + rw - 1
-    bottom = top + rh - 1
-    for y in ys:
-        for x in xs:
-            total = 0
+    rgb_total = [0, 0, 0]
+    quad_lum = [0, 0, 0, 0]
+    quad_count = [0, 0, 0, 0]
+    for row, y in enumerate(ys):
+        for col, x in enumerate(xs):
+            total_lum = 0
+            quad = 2 * (row >= 4) + (col >= 4)
             for yy in (y, min(y + 1, bottom)):
                 for xx in (x, min(x + 1, right)):
                     offset = yy * stride + xx * channels
                     if rgb_indices is None:
-                        total += view[offset] * 256
+                        r = g = b = view[offset]
                     else:
-                        red, green, blue = rgb_indices
-                        total += (77 * view[offset + red]
-                                  + 150 * view[offset + green]
-                                  + 29 * view[offset + blue])
-            luminances.append(total)
+                        ri, gi, bi = rgb_indices
+                        r, g, b = (view[offset + ri], view[offset + gi],
+                                   view[offset + bi])
+                    rgb_total[0] += r
+                    rgb_total[1] += g
+                    rgb_total[2] += b
+                    total_lum += 77 * r + 150 * g + 29 * b
+            luminances.append(total_lum)
+            quad_lum[quad] += total_lum
+            quad_count[quad] += 4
 
-    fingerprint = 0
+    edge_hash = 0
     for row in range(8):
         start = row * 9
         for col in range(8):
-            fingerprint = (fingerprint << 1) | int(
+            edge_hash = (edge_hash << 1) | int(
                 luminances[start + col] > luminances[start + col + 1]
             )
-    return fingerprint
+    # 72 sample positions x 4 pixels. Divide each eight-bit average by 4
+    # into robust, six-bit bins. Quads have 16/20 samples depending on column.
+    tone_bins = [min(63, total // (72 * 4 * 4)) for total in rgb_total]
+    tone_bins += [
+        min(63, total // (count * 256 * 4))
+        for total, count in zip(quad_lum, quad_count)
+    ]
+    tone_signature = 0
+    for bin_value in tone_bins:
+        tone_signature = (tone_signature << 6) | bin_value
+    return VisualFingerprint(edge_hash, tone_signature)
 
 
-__all__ = ["Region", "difference_hash"]
+def difference_hash(
+    pixels: bytes | bytearray | memoryview, *, width: int, height: int,
+    pixel_format: str = "BGRA", row_stride: int | None = None,
+    region: Region | None = None,
+) -> int:
+    """Backward-compatible 64-bit edge hash; ignores absolute tone/color."""
+    return visual_fingerprint(
+        pixels, width=width, height=height, pixel_format=pixel_format,
+        row_stride=row_stride, region=region,
+    ).edge_hash
+
+
+__all__ = [
+    "Region", "VisualFingerprint", "visual_fingerprint", "difference_hash",
+    "tone_distance",
+]

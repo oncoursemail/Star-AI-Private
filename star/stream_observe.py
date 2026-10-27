@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import math
 
 from .stream_budget import StreamTelemetry, advise_workload
-from .frame_fingerprint import Region, difference_hash
+from .frame_fingerprint import Region, tone_distance, visual_fingerprint
 
 _CUES = frozenset({"none", "damage", "death", "win", "new_scene", "objective", "menu"})
 _MAX_CLOCK_MS = 1e13
@@ -42,6 +42,8 @@ class FrameCue:
     perceptual_hash: int  # locally computed 64-bit pHash/dHash, not a crypto digest
     cue: str = "none"
     hud_hash: int | None = None  # optional separately cropped UI fingerprint
+    tone_signature: int | None = None  # seven color/luma bins; None for legacy host
+    hud_tone_signature: int | None = None  # same, but from host-selected HUD ROI
 
     def __post_init__(self) -> None:
         _ms(self.captured_ms, "captured_ms")
@@ -51,6 +53,11 @@ class FrameCue:
             raise ValueError("hud_hash must be an unsigned 64-bit integer or None")
         if self.hud_hash is not None and not 0 <= self.hud_hash < (1 << 64):
             raise ValueError("hud_hash must be an unsigned 64-bit integer or None")
+        for name, value in (("tone_signature", self.tone_signature),
+                            ("hud_tone_signature", self.hud_tone_signature)):
+            if value is not None and (type(value) is not int
+                                      or not 0 <= value < (1 << 42)):
+                raise ValueError(f"{name} must be a 42-bit signature or None")
         if type(self.cue) is not str or self.cue not in _CUES:
             raise ValueError("unknown host-observed cue")
 
@@ -69,15 +76,20 @@ class FrameCue:
         _ms(captured_ms, "captured_ms")
         if type(cue) is not str or cue not in _CUES:
             raise ValueError("unknown host-observed cue")
-        main = difference_hash(
+        main = visual_fingerprint(
             pixels, width=width, height=height, pixel_format=pixel_format,
             row_stride=row_stride, region=game_region,
         )
-        hud = (difference_hash(
+        hud = (visual_fingerprint(
             pixels, width=width, height=height, pixel_format=pixel_format,
             row_stride=row_stride, region=hud_region,
         ) if hud_region is not None else None)
-        return cls(captured_ms, main, cue, hud)
+        return cls(
+            captured_ms, main.edge_hash, cue,
+            hud.edge_hash if hud is not None else None,
+            main.tone_signature,
+            hud.tone_signature if hud is not None else None,
+        )
 
 
 @dataclass(frozen=True)
@@ -104,7 +116,9 @@ class ObservationGovernor:
                  refresh_ms: float = 6000.0,
                  ticket_timeout_ms: float = 5000.0,
                  frame_max_age_ms: float = 1500.0,
-                 latency_safety_factor: float = 2.0) -> None:
+                 latency_safety_factor: float = 2.0,
+                 tone_novelty_bins: int = 5,
+                 hud_tone_novelty_bins: int = 3) -> None:
         if type(calls_per_minute) is not int or not 1 <= calls_per_minute <= 120:
             raise ValueError("calls_per_minute must be 1..120")
         if type(burst) is not int or not 1 <= burst <= 8:
@@ -113,6 +127,13 @@ class ObservationGovernor:
             raise ValueError("novelty_bits must be 1..64")
         if type(hud_novelty_bits) is not int or not 1 <= hud_novelty_bits <= 64:
             raise ValueError("hud_novelty_bits must be 1..64")
+        if type(tone_novelty_bins) is not int or not 1 <= tone_novelty_bins <= 63:
+            raise ValueError("tone_novelty_bins must be 1..63")
+        if (type(hud_tone_novelty_bins) is not int
+                or not 1 <= hud_tone_novelty_bins <= 63):
+            raise ValueError("hud_tone_novelty_bins must be 1..63")
+        self.tone_novelty_bins = tone_novelty_bins
+        self.hud_tone_novelty_bins = hud_tone_novelty_bins
         self.refresh_ms = _ms(refresh_ms, "refresh_ms")
         self.ticket_timeout_ms = _ms(ticket_timeout_ms, "ticket_timeout_ms")
         self.frame_max_age_ms = _ms(frame_max_age_ms, "frame_max_age_ms")
@@ -140,7 +161,8 @@ class ObservationGovernor:
         self._pending: tuple[int, float, FrameCue, float] | None = None
         self._durations_ms: deque[float] = deque(maxlen=16)
         self._last_request_at: float | None = None
-        self._last_success: tuple[float, int, int | None] | None = None
+        self._last_success: tuple[float, FrameCue] | None = None
+        self._latest_capture_ms: float | None = None
         self._stats = {"admitted": 0, "completed": 0, "failed": 0,
                        "expired": 0, "deferred": 0, "stop_confirmed": 0}
 
@@ -231,6 +253,10 @@ class ObservationGovernor:
             return defer("insufficient_game_or_voice_headroom")
         if frame.captured_ms > now + 20 or now - frame.captured_ms > self.frame_max_age_ms:
             return defer("frame_stale_or_future_dated")
+        if (self._latest_capture_ms is not None
+                and frame.captured_ms < self._latest_capture_ms):
+            return defer("out_of_order_capture")
+        self._latest_capture_ms = frame.captured_ms
         if self._pending is not None:
             return defer("vision_request_already_in_flight")
         # The latest admitted query sets a min spacing, even if a model fails;
@@ -241,18 +267,32 @@ class ObservationGovernor:
         if self._tokens < 1.0 - 1e-9:
             return defer("minute_budget_exhausted")
         if frame.cue == "none" and self._last_success is not None:
-            last_time, last_hash, last_hud = self._last_success
-            distance = (frame.perceptual_hash ^ last_hash).bit_count()
-            if frame.hud_hash is None and last_hud is None:
+            last_time, previous = self._last_success
+            distance = (frame.perceptual_hash ^ previous.perceptual_hash).bit_count()
+            if frame.hud_hash is None and previous.hud_hash is None:
                 hud_is_similar = True
-            elif frame.hud_hash is None or last_hud is None:
+            elif frame.hud_hash is None or previous.hud_hash is None:
                 # Uncomparable HUD scopes must never suppress observations.
                 hud_is_similar = False
             else:
                 hud_is_similar = (
-                    (frame.hud_hash ^ last_hud).bit_count() < self.hud_novelty_bits
+                    (frame.hud_hash ^ previous.hud_hash).bit_count()
+                    < self.hud_novelty_bits
                 )
+            # Never let an absent ROI/signature silently match a prior
+            # present ROI. Legacy hash-only frames still compare normally.
+            def tone_similar(a: int | None, b: int | None, limit: int) -> bool:
+                if a is None or b is None:
+                    return a is None and b is None
+                return tone_distance(a, b) < limit
+
             if (distance < self.novelty_bits and hud_is_similar
+                    and tone_similar(frame.tone_signature,
+                                     previous.tone_signature,
+                                     self.tone_novelty_bins)
+                    and tone_similar(frame.hud_tone_signature,
+                                     previous.hud_tone_signature,
+                                     self.hud_tone_novelty_bins)
                     and now - last_time < self.refresh_ms):
                 return defer("low_visual_novelty")
         self._tokens = max(0.0, self._tokens - 1)
@@ -274,7 +314,7 @@ class ObservationGovernor:
         self._pending = None
         self._durations_ms.append(now - issued_ms)
         if succeeded:
-            self._last_success = (now, frame.perceptual_hash, frame.hud_hash)
+            self._last_success = (now, frame)
             self._stats["completed"] += 1
         else:
             self._stats["failed"] += 1
