@@ -18,11 +18,17 @@ class ForgeError(Exception):
     pass
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _call(method: str, url: str, token: str, body: bytes | None = None, headers: dict | None = None):
     req = urllib.request.Request(url, data=body, method=method,
                                  headers={"Authorization": f"token {token}", **(headers or {})})
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        # Authenticated publishing uses the configured address directly, never a redirect target.
+        with urllib.request.build_opener(_NoRedirect()).open(req, timeout=120) as resp:
             raw = resp.read()
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as exc:
