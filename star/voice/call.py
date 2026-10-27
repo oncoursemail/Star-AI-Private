@@ -94,6 +94,7 @@ class CallConfig:
     emotion: bool = False                 # star/emotion.py: tone note in the prompt, small prosody shifts, avatar event
     emotion_person: str = "owner"         # attachment is kept per person; the social module passes a friend id here
     emotion_partner_adult: bool | None = None   # romance only when the social module says True
+    partner_adult_check: Callable[[str], bool] | None = None  # trusted host rechecks the final transcript
 
 
 # Said when the model twice wrote its plan instead of an answer, and when asking again: see _generate_and_speak.
@@ -173,6 +174,8 @@ class CallSession:
         self._last_level = 0.0
         self._last_audible = float("-inf")
         self._stopped = False
+        self._partner_revoked = False
+        self._peer_guarded = False
         self._ptt_lock = threading.Lock()
         self._ptt_held = False
         self._ptt_frames: list[bytes] = []
@@ -494,9 +497,10 @@ class CallSession:
         """This turn's request: system prompt, history, then the user's words plus the optional emotion note, opener note
         and game context.
         Only reply.user_text enters the history."""
+        self._check_partner(reply)
         messages = self._context() + [{"role": "user", "content": reply.user_text}]
         extras = [self._feel(reply)]
-        if self.config.varied_openers:
+        if self.config.varied_openers and self.config.emotion_partner_adult is not True:
             extras.append(opener_hint(reply.metrics.turn, self.config.style).strip())
         if self.config.game_context_for_voice and self.game_events is not None:
             extras.append(self.game_events.render(now=self.clock()))
@@ -505,12 +509,57 @@ class CallSession:
             messages[-1] = {"role": "user", "content": "\n\n".join([reply.user_text, *extras])}
         return messages
 
+    def _check_partner(self, reply: _Reply) -> None:
+        """An allowed peer call can only become more cautious; an in-call age claim never opts it in.
+
+        Host observation may persist age evidence, so it runs only on a committed final transcript.
+        No transcript or callback result becomes a permission or a new friend identity.
+        """
+        if self.config.emotion_partner_adult is not True:
+            return
+        self._peer_guarded = True
+        from ..social import rules
+        age = rules.stated_age(reply.user_text)
+        declined = re.search(
+            r"\b(?:stop\s+(?:flirting|the\s+flirting|romance)|(?:do\s+not|don't|dont)\s+flirt|"
+            r"just\s+friends|friends\s+only|not\s+interested\s+(?:in\s+)?(?:you|romance|dating)|"
+            r"no\s+(?:more\s+)?(?:flirting|romance)|(?:do\s+not|don't|dont)\s+call\s+me\s+(?:babe|sweetheart|darling))\b",
+            reply.user_text, re.I,
+        )
+        uncertain = re.search(
+            r"\b(?:not\s+(?:an?\s+)?adult|under\s+(?:18|eighteen)|underage|i(?:'m|\s+am|m)\s+"
+            r"(?:a\s+minor|(?:five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen)\b))",
+            reply.user_text, re.I,
+        )
+        blocked = bool(rules.MINOR_SIGNAL.search(reply.user_text) or (age is not None and age < 18)
+                       or declined or uncertain)
+        check = self.config.partner_adult_check
+        if check is not None and reply.committed.is_set():
+            try:
+                blocked = check(reply.user_text) is not True or blocked
+            except Exception:
+                blocked = True
+        if blocked or self._partner_revoked:
+            self._partner_revoked = True
+            self.config.emotion_partner_adult = False
+
+    def _safe_peer_sentence(self, sentence: str) -> str:
+        if self._peer_guarded and (self._partner_revoked or self.config.emotion_partner_adult is not True):
+            from ..social import rules
+            if rules.ROMANTIC.search(sentence):
+                return rules.STEER_AWAY
+        return sentence
+
     # -- speculative reply --------------------------------------------------------------------
     # At the first pause (256 ms of silence) the words so far are transcribed; with speculative_reply on, the brain
     # starts answering them and the first sentences are synthesised at once, but kept in reply.held_audio. If the
     # user goes on talking the whole reply is dropped without a trace (no sound, no event, no history); if the
     # turn ends, the held sound is released in the same instant, so the model and voice time is already spent.
     def _start_spec_reply(self, job: dict) -> None:
+        # Social age observation can change persisted friend state. Keep speculative ASR, but defer the
+        # model reply in a peer call until the words are final and the trusted check has run.
+        if self.config.emotion_partner_adult is True or self.config.partner_adult_check is not None:
+            return
         with self._lock:
             if self._speculative is not job or job["committed"] or self._stopped or job["reply"] is not None:
                 return
@@ -629,7 +678,9 @@ class CallSession:
             if len(self.history) > limit:
                 keep = (limit // 2) // 2 * 2
                 del self.history[: len(self.history) - keep]
-            return [system_message(self.config.system_extra, self.config.style, self.config.varied_openers)] + list(self.history)
+            adult = self.config.emotion_partner_adult is True and not self._partner_revoked
+            return [system_message(self.config.system_extra, self.config.style, self.config.varied_openers,
+                                   partner_adult=adult)] + list(self.history)
 
     def _generate_and_speak(self, reply: _Reply, messages: list[dict]) -> None:
         metrics = reply.metrics
@@ -673,7 +724,7 @@ class CallSession:
                     return
                 if metrics.first_sentence_at is None:
                     metrics.first_sentence_at = self.clock()
-                sentences.put(sentence)
+                sentences.put(self._safe_peer_sentence(sentence))
                 queued += 1
 
         reply.stream = self.brain.stream(messages)
@@ -687,7 +738,8 @@ class CallSession:
             metrics.tokens += 1
             metrics.last_token_at = self.clock()
             reply.raw_text += delta
-            self._reply_emit(reply, {"type": "assistant_delta", "turn": metrics.turn, "text": delta})
+            if not self._peer_guarded or (self.config.emotion_partner_adult is True and not self._partner_revoked):
+                self._reply_emit(reply, {"type": "assistant_delta", "turn": metrics.turn, "text": delta})
             release(chunker.feed(delta))
             if leaked:
                 self._close_stream(reply)       # stop generating the plan
@@ -704,6 +756,7 @@ class CallSession:
                 return
             if reply.cancel.is_set() or reply.error is not None:
                 continue                         # keep draining so the producer never blocks
+            sentence = self._safe_peer_sentence(sentence)
             if not reply.sentences and metrics.ack_text and _same_words(sentence, metrics.ack_text):
                 continue                         # the reply opens with the words the clip just said
             started = self.clock()
@@ -792,7 +845,7 @@ class CallSession:
             metrics.heard_seconds = reply.heard_seconds or 0.0
             spoken, cut_mid_sentence = self._heard_text(reply)
         else:
-            spoken = " ".join(s.text for s in reply.sentences) or speakable(reply.raw_text)
+            spoken = self._safe_peer_sentence(" ".join(s.text for s in reply.sentences) or speakable(reply.raw_text))
         # History gets the heard words with no "..." marker: with a marker the brain copies the trailing-off
         # style into its next reply (seen against the live server). The marker is for captions only.
         metrics.reply_text = spoken

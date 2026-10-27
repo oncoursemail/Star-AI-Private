@@ -22,6 +22,7 @@ generator_branches = ["star/chatgpt-*", "star/autopilot-*", "star/night-school-o
                       "star/selfbuild-*", "star/genesis-*", "star/gen-*"]
 protected_paths = ["evals/**", "star/eval_gate.py", "star/eval_runner.py", "star/eval_checks.py",
                    "star/eval_sandbox.py", "star/eval_stats.py", "star/protected_paths.py",
+                   "star/integrity.py", "star/sealed_eval.py", "star/autoloop.py", "star/promoter.py",
                    "server/night_school/nightschool/pool.py", "server/night_school/nightschool/engine.py",
                    "server/night_school/nightschool/config.py", "tests/test_eval_*.py",
                    "tests/test_protected_closure.py", ".github/workflows/**"]

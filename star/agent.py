@@ -294,6 +294,10 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
             from . import reasoning_guard
             raw += text
             visible = reasoning_guard.strip_think(raw)
+            if not calls and len(raw) - emitted > reasoning_guard.MAX_BUFFERED_CHARS:
+                if not chunks:
+                    raise reasoning_guard.ReasoningLoop('guarded response buffer exceeded its limit')
+                break
             if not calls and not chunks and reasoning_guard.starts_as_reasoning(visible):
                 raise reasoning_guard.ReasoningLoop(visible[:200])
             if not calls and reasoning_guard.is_looping(visible):
@@ -305,13 +309,17 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
                 already = len(whole) - len(pending)
                 pending = kept[already:] if len(kept) > already else ''
                 break
-            # Show whole sentences only (an unfinished one is held back for a few words), so a sentence in which the
+            # Hold unfinished prose until its sentence is classifiable, so a sentence in which the
             # model plans its reply (persona.leaked_reasoning) is never shown: nothing shown before it sends the turn
             # to the main model, otherwise the reply ends at the sentence before it.
             prose = reasoning_guard.prose_only(visible)
             plan = None if calls else reasoning_guard.plan_start(prose)
             if plan is not None and not chunks and not visible[:plan].strip():
                 raise reasoning_guard.ReasoningLoop(visible[:200])
+            if not calls and reasoning_guard.unfinished_too_long(prose):
+                if not chunks:
+                    raise reasoning_guard.ReasoningLoop('unfinished prose exceeded the guarded buffer')
+                stop = True
             end = max(emitted, len(visible) if calls else len(visible[:plan].rstrip()) if plan is not None else reasoning_guard.safe_end(prose))
             text = visible[emitted:end]
             emitted = end
@@ -340,8 +348,14 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
         if stop:
             break
     else:
-        if guard and emitted < len(visible):   # the unfinished last sentence (no plan in it: checked above)
-            tail = visible[emitted:]
+        if guard and emitted < len(visible):
+            from . import reasoning_guard
+            prose = reasoning_guard.prose_only(visible)
+            plan = None if calls else reasoning_guard.plan_start(prose)
+            unsafe = not calls and (plan is not None or reasoning_guard.unfinished_too_long(prose))
+            if unsafe and not chunks:
+                raise reasoning_guard.ReasoningLoop('unfinished response did not pass the guarded final check')
+            tail = '' if unsafe else visible[emitted:]
             if not chunks and lead:
                 pending += lead
             chunks.append(tail)

@@ -354,6 +354,23 @@ class StarStage:
             self._drop(interrupted=True, now=current)
             return neutral_frame()
 
+    def interrupt_if_current(
+        self, plan: StagePlan, *, now: float | None = None
+    ) -> MotionFrame | None:
+        """Atomically revoke only this audible plan, never a replacement turn.
+
+        Realtime hosts must bind a specific playback epoch to a plan; racing
+        finish()/prepare() should never let an old audio stop revoke a newer
+        turn. This invalidates rig-frame authority, but the trusted host still
+        must actually stop sound and reset animation hardware.
+        """
+        current = _time(self._clock() if now is None else now)
+        with self._lock:
+            if not self._matches(plan, "audible"):
+                return None
+            self._drop(interrupted=True, now=current)
+            return neutral_frame()
+
     def metrics(self) -> dict[str, object]:
         """Only anonymous counts, not raw chat, names, audio, or private data."""
         with self._lock:

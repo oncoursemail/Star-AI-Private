@@ -46,3 +46,12 @@ def emit_event(kind: str, strength: float = 1.0, folder=None) -> None:
         feed.close()
     except Exception:
         pass
+
+
+def emit_expression(name: str, *, duration_s: float | None = None, strength: float = 1.0, folder=None) -> None:
+    """An explicit cosmetic expression; never changes emotion state or starts a camera."""
+    import math
+    from .expressions import encode_expression
+    if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not math.isfinite(strength) or not 0 <= strength <= 1:
+        raise ValueError("expression strength must be a finite number between zero and one")
+    emit_event(encode_expression(name, duration_s=duration_s), strength, folder)

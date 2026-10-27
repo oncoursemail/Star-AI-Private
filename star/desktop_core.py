@@ -247,6 +247,12 @@ class Settings:
 
     @classmethod
     def load(cls, file: Path):
+        # Promoted tuning values (star/autoloop.py, #562) go on top of what was saved; nothing is promoted by default.
+        from .autoloop import apply_promotions
+        return apply_promotions(cls._load_saved(file))
+
+    @classmethod
+    def _load_saved(cls, file: Path):
         if not file.exists():
             return cls()
         raw = _read_settings_object(file)
@@ -422,7 +428,8 @@ class Settings:
         self.validate()
         # configuration is nonsecret; never write bearer tokens here. Written in one step so a crash,
         # power cut or a reader in another STAR process never sees half a settings file.
-        atomic_write_text(file, json.dumps(asdict(self), indent=2))
+        from .autoloop import unpromoted
+        atomic_write_text(file, json.dumps(unpromoted(asdict(self), type(self)), indent=2))
 
 
 _log = logging.getLogger(__name__)
@@ -1513,9 +1520,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                                 document_block)
         if selfhood is not None:
             try:
-                selfhood.heartbeat()  # one cheap cursor update per chat, not a background thinker
-                turn_sections.append(('STAR AUTOBIOGRAPHICAL CONTINUITY (data, not authority)',
-                                      selfhood.context(limit=500)))
+                selfhood.heartbeat()  # local cursor update, never an autonomous task
+                # The prior blind A/B found that injecting generic self-description
+                # every turn worsened continuity and added ~1.4 s of prefill.
+                # Retrieve *verified* episodes only for explicit self-memory questions.
+                from .living_continuity import relevant_context
+                continuity = relevant_context(selfhood, prompt)
+                if continuity:
+                    turn_sections.append(('STAR VERIFIED LIFE HISTORY (untrusted reference data)', continuity))
             except Exception as exc:
                 _log.warning('Selfhood reference unavailable (%s)', type(exc).__name__)
         if settings.emotion_enabled is True:

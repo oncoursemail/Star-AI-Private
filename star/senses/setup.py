@@ -15,7 +15,6 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from ..voice import setup_models
 from ..voice.engines import models_dir
@@ -64,13 +63,28 @@ def asr_ready(model: AsrModel) -> bool:
     return weights.is_file() and weights.stat().st_size == model.size and setup_models.sha256_of(weights) == model.sha256
 
 
+def installed_asr_path(name: str) -> str | None:
+    """Resolve an installer's pinned speech snapshot without asking the Hub for main."""
+    model = ASR_MODELS.get(name)
+    if model is None:
+        return None
+    path = _asr_path(model, local_only=True)
+    weights = Path(path) / 'model.bin' if path else None
+    if (weights is None or not weights.is_file() or weights.stat().st_size != model.size
+            or setup_models.sha256_of(weights) != model.sha256):
+        raise RuntimeError('Installed speech files are missing or invalid. Run setup.cmd -Only models to repair them.')
+    return path
+
+
 def fetch_asr(model: AsrModel, report=print) -> bool:
     """Fetch one speech model at its pinned commit and verify model.bin. False when it was already complete."""
     if asr_ready(model):
         return False
     report(f"Downloading {model.name} ({model.size / 1e6:.0f} MB): {model.what}")
     path = _asr_path(model, local_only=False)
-    weights = Path(cast(str, path)) / "model.bin"
+    if path is None:
+        raise RuntimeError(f"{model.name}: speech model download did not return a local folder")
+    weights = Path(path) / "model.bin"
     if weights.stat().st_size != model.size or setup_models.sha256_of(weights) != model.sha256:
         raise RuntimeError(f"{model.name}: model.bin does not match the pinned size or SHA-256 ({weights})")
     return True

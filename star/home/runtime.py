@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from pathlib import Path
 import random
+import threading
 import time
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from .streamchat import StreamChat
 
 from . import control
 from .activities import Registry, default_registry
@@ -48,6 +52,15 @@ class Runtime:
         self._discord = None
         self._calls = None
         self.voice = voice or HomeVoice()
+        self._activity_stops: dict[str, Callable[[], None]] = {}
+        self._activity_lock = threading.RLock()
+        self._cleanup_inflight: dict[tuple, str] = {}
+        self._cleanup_failed: dict[tuple, tuple[str, Callable[[], None], str]] = {}
+        self._owner_stopped = False
+        self._closing = False
+        bind_stop = getattr(self.voice, "set_stop_check", None)
+        if callable(bind_stop):
+            bind_stop(lambda: self.admission_blocked() or bool(getattr(self.executor, "dry_run", False)))
         if emotion is ...:
             try:
                 from .. import emotion as emotion_module
@@ -67,6 +80,7 @@ class Runtime:
                                log=lambda phase, **fields: control.log_action(self.home, "attention", phase, **fields))
         self.watcher = None
         self.registry: Registry | None = None
+        self.stream_chat: StreamChat | None = None
 
     # ---- shared parts ---------------------------------------------------------------------------------------
     @property
@@ -100,7 +114,12 @@ class Runtime:
             import json
             from ..social.activity import DEFAULT_SETTINGS, load_settings
             try:
-                self._social_settings = load_settings()
+                inline = self.config.get("social")
+                if inline is not None:
+                    from .onboarding import social_config
+                    self._social_settings = social_config(inline)
+                else:
+                    self._social_settings = load_settings()
             except (OSError, ValueError):
                 self._social_settings = json.loads(json.dumps(DEFAULT_SETTINGS))
         return self._social_settings
@@ -144,7 +163,14 @@ class Runtime:
         if not name or platform not in SOCIAL_PLATFORMS:
             return Standing()
         close = [str(n).lower() for n in (self.config.get("close_friends") or {}).get(platform, [])]
-        person = self.memory.person(platform, name, name, they_started=True)
+        person = self.memory.known(platform, name)
+        if person is None:
+            try:
+                if self.memory.is_forgotten(platform, name):
+                    return Standing(blocked=True, muted=True)
+            except ValueError:
+                return Standing(blocked=True)
+            return Standing(True, "friend", 1.0) if name.lower() in close else Standing()
         if name.lower() in close and not person.blocked and not person.muted:
             return Standing(True, "friend", 1.0)
         closeness = 0.0
@@ -162,14 +188,18 @@ class Runtime:
 
     def person_id(self, platform: str, sender: str) -> str | None:
         """The opaque emotion id of a friend (never a name), or None for someone she does not keep a record of."""
-        person = self.memory.person(platform, str(sender), str(sender))
-        return f"friend-{person.id}" if person.id is not None else None
+        person = self.memory.known(platform, str(sender))
+        return f"friend-{person.id}" if person is not None and person.id is not None else None
 
     def feel(self, kind: str, platform: str, sender: str, **payload) -> None:
         """An emotion event about a friend (friend_ignored, talked_to_friend, ...). Only when the engine is on and knows
         the event; a missing or failing engine never reaches the caller."""
         try:
             from .. import emotion
+            # An observed event may establish a minimal profile; a standing/ID lookup never does.
+            # This grants no reciprocity, friendship or adult status and respects forget tombstones.
+            if platform in SOCIAL_PLATFORMS and sender and self.person_id(platform, sender) is None:
+                self.memory.person(platform, str(sender), str(sender))
             emotion.on_event(kind, person=self.person_id(platform, sender), only_if_enabled=True, **payload)
         except Exception:
             pass
@@ -177,6 +207,8 @@ class Runtime:
     def call_connected(self, name: str) -> dict | None:
         """She is in a call with `name`: the avatar knows a friend joined, and she may turn her camera on (never required).
         Deterministic: `calls.camera` is never / sometimes / always; "sometimes" is close friends when she has the energy."""
+        if control.stopped(self.home):
+            return None
         try:
             from .. import vtuber
             vtuber.emit_event("friend_joined")
@@ -211,13 +243,108 @@ class Runtime:
         return self.desk.plan(invite) if invite is not None else None
 
     # ---- background jobs --------------------------------------------------------------------------------------
+    def track_activity(self, name: str, stop: Callable[[], None]) -> None:
+        """Trusted built-in cleanup, available even while an activity's planner is blocked."""
+        if not isinstance(name, str) or not name or not callable(stop):
+            raise ValueError("activity cleanup requires a name and callable")
+        with self._activity_lock:
+            self._activity_stops[name] = stop
+
+    def untrack_activity(self, name: str, stop: Callable[[], None]) -> None:
+        with self._activity_lock:
+            if self._activity_stops.get(name) is stop:
+                self._activity_stops.pop(name)
+
+    def stop(self) -> None:
+        self.interrupt.set("owner STOP")
+        self._owner_stopped = True
+        callbacks = []
+        if callable(getattr(self.voice, "stop", None)):
+            callbacks.append(("voice", self.voice.stop))
+        call_stop = getattr(self._calls, "stop", None)
+        if callable(call_stop):
+            callbacks.append(("calls", call_stop))
+        if self.stream_chat is not None:
+            callbacks.append(("stream_chat", self.stream_chat.reader.queue.clear))
+        with self._activity_lock:
+            callbacks.extend(self._activity_stops.items())
+            callbacks.extend((name, callback) for name, callback, _ in self._cleanup_failed.values())
+        for name, callback in callbacks:
+            self._queue_cleanup(name, callback)
+
+    def _queue_cleanup(self, name: str, callback: Callable[[], None]) -> None:
+        # Bound methods are recreated by attribute access; identify their receiver and function.
+        key = (name, id(getattr(callback, "__self__", None)), id(getattr(callback, "__func__", callback)))
+        with self._activity_lock:
+            if key in self._cleanup_inflight:
+                return
+            self._cleanup_inflight[key] = name
+
+        def work() -> None:
+            try:
+                callback()
+                with self._activity_lock:
+                    self._cleanup_failed.pop(key, None)
+            except Exception as error:
+                with self._activity_lock:
+                    self._cleanup_failed[key] = (name, callback, type(error).__name__)
+                try:
+                    control.log_action(self.home, "stop", "cleanup_error", channel=name, error=type(error).__name__)
+                except Exception:
+                    pass
+            finally:
+                with self._activity_lock:
+                    self._cleanup_inflight.pop(key, None)
+
+        try:
+            threading.Thread(target=work, name="star-stop-cleanup", daemon=True).start()
+        except Exception as error:
+            with self._activity_lock:
+                self._cleanup_inflight.pop(key, None)
+                self._cleanup_failed[key] = (name, callback, type(error).__name__)
+
+    def stop_status(self) -> dict:
+        with self._activity_lock:
+            return {"pending": list(self._cleanup_inflight.values()),
+                    "errors": {name: error for name, _, error in self._cleanup_failed.values()}}
+
+    def shutdown(self) -> None:
+        """Permanently close admission for this instance before stopping active resources."""
+        with self._activity_lock:
+            self._closing = True
+        self.stop()
+
+    def admission_blocked(self) -> bool:
+        with self._activity_lock:
+            return bool(self._closing or control.stopped(self.home) or self._owner_stopped or self._cleanup_inflight or self._cleanup_failed)
+
+    def watch_tick(self) -> None:
+        if self._closing:
+            return
+        if control.stopped(self.home):
+            self.stop()
+            return
+        if self._owner_stopped:
+            with self._activity_lock:
+                if self._cleanup_inflight:
+                    return
+                failed = list(self._cleanup_failed.values())
+            if failed:
+                for name, callback, _ in failed:
+                    self._queue_cleanup(name, callback)
+                return
+            self._owner_stopped = False
+            if self.interrupt.reason == "owner STOP":
+                self.interrupt.clear()
+        if self._calls is not None:
+            self._calls.tick(self.inbox)
+        self.attention.watch_tick()
+
     def watcher_job(self, interval_s: float = 1.5) -> Callable[[], None]:  # pragma: no cover - the long-running thread
         def run() -> None:
             while True:
                 try:
-                    if self._calls is not None:
-                        self._calls.tick(self.inbox)
-                    self.attention.watch_tick()
+                    self.watch_tick()
                 except Exception as why:
                     control.log_action(self.home, "attention", "error", detail=f"{type(why).__name__}: {why}")
                 time.sleep(interval_s)
@@ -229,10 +356,11 @@ class Runtime:
             return None
         from .notifications import NotificationWatcher, best_source
         apps = tuple(cfg.get("apps") or ("discord", "roblox"))
-        watcher = self.watcher = NotificationWatcher(
+        watcher = NotificationWatcher(
             best_source(apps), self.inbox, apps=apps, ring_s=float(self.model.cfg["call_ring_s"]), clock=self.clock,
             on_toast=lambda toast, incoming: control.log_action(
                 self.home, "notification", "seen", app=toast.app, parsed=incoming.route if incoming else ""))
+        self.watcher = watcher
         return lambda: watcher.run(float(cfg.get("poll_s", 2.0)))
 
     def background(self) -> list[Callable[[], None]]:  # pragma: no cover
@@ -240,6 +368,8 @@ class Runtime:
         note = self.notification_job()
         if note is not None:
             jobs.append(note)
+        if self.stream_chat is not None:
+            jobs.append(self.stream_chat.background)
         return jobs
 
 

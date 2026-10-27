@@ -60,7 +60,7 @@ jobs:
           mapfile -d '' -t changed < "$RUNNER_TEMP/changed.nul"
           files=()
           for path in "${changed[@]}"; do files+=("./$path"); done
-          python "$RUNNER_TEMP/guard.py" --branch="$HEAD_BRANCH" --labels="$LABELS" --files "${files[@]}"
+          python "$RUNNER_TEMP/guard.py" --branch="$HEAD_BRANCH" --labels="$LABELS" --base-sha="$BASE_SHA" --head-sha="$HEAD_SHA" --files "${files[@]}"
       - name: Check a pushed generator branch against trusted integration ancestry
         if: github.event_name == 'push'
         env:

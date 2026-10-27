@@ -53,8 +53,7 @@ class Outgoing:
 
 
 def _moments(memory, person, since: float = 0.0) -> list[tuple[str, str, float]]:
-    return memory._db.execute("SELECT platform, line, ts FROM moments WHERE person_id = ? AND ts >= ? ORDER BY id",
-                              (person.id, since)).fetchall()
+    return [(platform, line, ts) for _, platform, line, ts in memory.moment_records(person) if ts >= since]
 
 
 def is_close(memory, person, now: float) -> bool:

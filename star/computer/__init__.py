@@ -14,9 +14,68 @@ Plug-in for STAR Home: `register_home_activities(registry)` adds "draw" (interes
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import dataclass
+import os
 import sys
+import threading
+from typing import Any
 
 from . import settings as _settings
+
+
+@dataclass
+class _CaptureOwner:
+    computer: Any = None
+    active: bool = True
+
+
+_CAPTURE_OWNERS: dict[str, _CaptureOwner] = {}
+_CAPTURE_OWNERS_LOCK = threading.Lock()
+
+
+def _ownership_key(home) -> str:
+    return os.path.normcase(str(Path(home).expanduser().resolve()))
+
+
+def _finish_capture(key: str, owner: _CaptureOwner, complete: bool) -> None:
+    with _CAPTURE_OWNERS_LOCK:
+        if _CAPTURE_OWNERS.get(key) is owner:
+            owner.active = False
+            if complete is True:
+                del _CAPTURE_OWNERS[key]
+
+
+def _claim_capture(home) -> tuple[str, _CaptureOwner]:
+    key = _ownership_key(home)
+    with _CAPTURE_OWNERS_LOCK:
+        previous = _CAPTURE_OWNERS.get(key)
+        if previous is not None and previous.active:
+            raise RuntimeError('another computer activity is active for this home')
+    if previous is not None:
+        try:
+            complete = previous.computer.close(timeout=0) is True
+        except Exception:
+            complete = False
+        if not complete:
+            raise RuntimeError('previous desktop capture is still closing')
+    with _CAPTURE_OWNERS_LOCK:
+        current = _CAPTURE_OWNERS.get(key)
+        if current is not None and current is not previous:
+            raise RuntimeError('another computer activity acquired this home')
+        owner = _CaptureOwner()
+        _CAPTURE_OWNERS[key] = owner
+        return key, owner
+
+
+def _close_result(computer, result: dict) -> None:
+    try:
+        complete = computer.close(timeout=.2) is True
+    except Exception:
+        complete = False
+    if not complete:
+        result['ok'] = result['verified'] = result['goal_done'] = False
+        result.setdefault('failures', []).append('desktop capture cleanup is still pending')
+        result['summary'] = str(result.get('summary', ''))[:520] + '; desktop capture cleanup is still pending'
 
 
 def build_computer(ctx):  # pragma: no cover - builds the real Windows backends
@@ -26,18 +85,58 @@ def build_computer(ctx):  # pragma: no cover - builds the real Windows backends
     from .hands import Hands
     from .uia import ComtypesUia, UiaUnavailable
     from .winapi import DesktopSink, Windows, ensure_dpi_aware
-    ensure_dpi_aware()
-    windows = Windows()
-    guard = Guard(windows, None)
-    cfg = _settings.load(ctx.home)
+    from ..home import control
     try:
-        uia = ComtypesUia()
-    except UiaUnavailable:
-        uia = None
-    hands = Hands(DesktopSink(guard), home=ctx.home, dry_run=bool(getattr(ctx.executor, "dry_run", False)),
-                  watch_pointer=True)
-    return Computer(hands, windows=windows, uia=uia, eye=ScreenEye(), grounder=_settings.make_grounder(cfg),
-                    chat=ctx.chat, executor=ctx.executor, guard=guard, settings=cfg, home=ctx.home)
+        initial_preview = bool(ctx.executor.dry_run)
+    except Exception:
+        initial_preview = True
+    preview_cancelled = threading.Event()
+
+    def cancelled() -> bool:
+        try:
+            if not initial_preview and bool(ctx.executor.dry_run):
+                preview_cancelled.set()
+            interrupt = getattr(ctx, 'interrupt', None)
+            return (preview_cancelled.is_set() or control.stopped(ctx.home)
+                    or (interrupt is not None and bool(interrupt.is_set())))
+        except Exception:
+            return True
+
+    def blocked() -> bool:
+        try:
+            return cancelled() or bool(ctx.executor.dry_run)
+        except Exception:
+            return True
+
+    key, owner = _claim_capture(ctx.home)
+    computer = None
+    try:
+        ensure_dpi_aware()
+        windows = Windows()
+        guard = Guard(windows, None)
+        cfg = _settings.load(ctx.home)
+        try:
+            uia = ComtypesUia()
+        except UiaUnavailable:
+            uia = None
+        hands = Hands(DesktopSink(guard), home=ctx.home, dry_run=initial_preview,
+                      watch_pointer=True, stopped=cancelled)
+        eye = ScreenEye(stopped=blocked, hz=float(cfg.get('capture_hz', 30)),
+                        max_age_s=float(cfg.get('frame_max_age_s', .5)))
+        computer = Computer(hands, windows=windows, uia=uia, eye=eye,
+                            grounder=_settings.make_grounder(cfg), chat=ctx.chat, executor=ctx.executor,
+                            guard=guard, settings=cfg, home=ctx.home, stopped=cancelled)
+        owner.computer = computer
+        computer._on_close = lambda complete: _finish_capture(key, owner, complete)
+        if not blocked():
+            eye.start()
+        return computer
+    except BaseException:
+        if computer is not None:
+            computer.close(timeout=0)
+        else:
+            _finish_capture(key, owner, True)
+        raise
 
 
 def _ask(chat, system: str, user: str, limit: int) -> str:
@@ -67,7 +166,13 @@ def draw_activity(ctx) -> dict:  # pragma: no cover - needs her desktop; the par
     if getattr(ctx.executor, "dry_run", False):
         return {"ok": False, "verified": False, "evidence": [], "failures": [],
                 "summary": f"dry run: planned {len(plan.strokes)} strokes for {subject!r}, painted nothing"}
-    return draw.draw_session(build_computer(ctx), plan, subject, gallery, settings=_settings.load(ctx.home))
+    computer = build_computer(ctx)
+    result = {}
+    try:
+        result = draw.draw_session(computer, plan, subject, gallery, settings=_settings.load(ctx.home))
+        return result
+    finally:
+        _close_result(computer, result)
 
 
 def use_app_activity(ctx) -> dict:  # pragma: no cover - needs her desktop
@@ -80,10 +185,14 @@ def use_app_activity(ctx) -> dict:  # pragma: no cover - needs her desktop
         "Pick something you have not done lately: a calculation, a note, a setting in one of your own apps, a music "
         "player, a browser search. Nothing that spends money, posts publicly or creates an account.", 200)
     computer = build_computer(ctx)
-    result = computer.act(goal, max_steps=int(ctx.config.get("max_steps", 12)),
-                          minutes=float(ctx.config.get("session_minutes", 20)))
-    result["summary"] = f"{goal[:120]}: {result['summary']}"[:600]
-    return result
+    result = {}
+    try:
+        result = computer.act(goal, max_steps=int(ctx.config.get('max_steps', 12)),
+                              minutes=float(ctx.config.get('session_minutes', 20)))
+        result['summary'] = f"{goal[:120]}: {result['summary']}"[:600]
+        return result
+    finally:
+        _close_result(computer, result)
 
 
 def register_home_activities(registry) -> None:

@@ -10,11 +10,11 @@ from __future__ import annotations
 from pathlib import Path
 import threading
 import time
-from typing import Any
 
 from .. import curiosity
 from . import control
 from .activities import Context, GpuProbe, Registry
+from .life import normalize_outcome
 
 
 DEFAULT_KINDS = {"play_games": "game", "watch": "video", "watch_videos": "video"}
@@ -48,8 +48,10 @@ def _inner_tick(home: Path, chat) -> None:
     try:
         from ..inner import night
         complete = night.complete_from_chat(chat) if chat is not None else None
-        extra: dict[str, Any] = {"complete": complete} if complete else {}
-        night.tick(life_home=home, **extra)
+        if complete:
+            night.tick(life_home=home, complete=complete)
+        else:
+            night.tick(life_home=home)
     except Exception as exc:
         control.log_action(home, "inner", "error", detail=str(exc)[:200])
 
@@ -57,7 +59,11 @@ def _inner_tick(home: Path, chat) -> None:
 def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, probe=None, attention=None) -> dict:
     """One step of her day. With `attention` (star.home.attention): first answer what is waiting (a friend's message or
     call that is due), then do what she asked herself to start, else resume what was paused, else pick something."""
-    if control.stopped(home):
+    def blocked() -> bool:
+        admission = getattr(registry.runtime, "admission_blocked", None)
+        return control.stopped(home) or (callable(admission) and bool(admission()))
+
+    if blocked():
         return {"state": "stopped"}
     _inner_tick(home, chat)
     shared ={"interrupt": attention.interrupt, "situation": attention.situation} if attention is not None else {}
@@ -68,6 +74,7 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
 
     parked = None
     activity = None
+    wanted = ""
     if attention is not None:
         served = attention.serve(context_for)
         if served:
@@ -75,12 +82,14 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
         wanted = attention.take_request()
         if wanted and wanted in registry.items:
             activity = registry.items[wanted]
-            attention.parked = None
         elif wanted:
             control.log_action(home, "session", "refused", detail=f"no activity named {wanted}")
         if activity is None:
             parked = attention.take_parked()
     resumed = parked is not None
+    resource_eligible, game_note = registry.eligible(probe or GpuProbe(), config)
+    # needs_brain filters automatic picks; invited adapters can own a separate brain or local fallback.
+    eligible = [a for a in resource_eligible if chat is not None or not a.needs_brain]
     if resumed:
         activity, interest, goal, state = parked.activity, parked.interest, parked.goal, parked.state
     else:
@@ -92,8 +101,6 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
             if attention is not None:
                 attention.last_state = "waiting"
             return {"state": "waiting", "why": why}
-        eligible, game_note = registry.eligible(probe or GpuProbe(), config)
-        eligible = [a for a in eligible if chat is not None or not a.needs_brain]
         if activity is None:
             interest = life.pick(registry.interests(eligible))
             if interest is None:
@@ -103,6 +110,24 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
         else:
             interest = activity.interest
         goal = life.goal_for(interest)
+    if not any(candidate is activity for candidate in resource_eligible):
+        # Preserve the original parked timestamp: waiting must not extend its resume deadline.
+        if attention is not None:
+            if resumed:
+                attention.parked = parked
+            elif wanted and not attention.requested:
+                attention.request(wanted)
+        why = game_note or "activity unavailable within the current resource budget"
+        return {"state": "waiting", "why": why, "activity": activity.name}
+    if blocked():
+        if attention is not None:
+            if resumed:
+                attention.parked = parked
+            elif wanted and not attention.requested:
+                attention.request(wanted)
+        return {"state": "stopped"}
+    if wanted and attention is not None:
+        attention.parked = None
     queue = Path(home) / "curiosity.jsonl"
     practice = curiosity.ranked(1, paths=(queue,)) if interest == "practice" and not resumed else []
     ctx = Context(home=Path(home), config=config, executor=executor, life=life, chat=chat, interest=interest,
@@ -121,8 +146,8 @@ def cycle(home: Path, config: dict, registry: Registry, life, executor, chat, pr
     finally:
         if attention is not None:
             attention.end()
-    outcome.setdefault("minutes", (time.monotonic() - started) / 60.0)
-    if outcome.get("paused") and attention is not None:
+    outcome = normalize_outcome(outcome, minutes=(time.monotonic() - started) / 60.0)
+    if outcome.get("paused") is True and attention is not None:
         attention.park(activity, interest, goal, outcome.get("resume_state"))
         control.log_action(home, "session", "paused", interest=interest, activity=activity.name,
                            summary=str(outcome.get("summary", ""))[:200])

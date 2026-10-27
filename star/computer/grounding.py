@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import io
 import json
 import math
@@ -43,9 +44,11 @@ MODELS = {m.name: m for m in (
     GroundingModel("ui-tars-2b", "ByteDance-Seed/UI-TARS-2B-SFT", 2.0, "unit1000", 1.5,
                    "Apache-2.0; ScreenSpot-Pro 27.7, ScreenSpot-v2 84.7 (model card); small enough for game mode"),
     GroundingModel("qwen3-vl-4b", "Qwen/Qwen3-VL-4B-Instruct", 4.0, "unit1000", 2.8,
-                   "Apache-2.0; general VLM with GUI grounding; GUI fine-tunes of it report ScreenSpot-Pro 60+"),
+                   "Apache-2.0; publisher Table 4 ScreenSpot-Pro Instruct 59.5 (arxiv.org/abs/2511.21631); "
+                   "not a STAR quantized/RTX 4060 measurement"),
     GroundingModel("qwen3-vl-2b", "Qwen/Qwen3-VL-2B-Instruct", 2.0, "unit1000", 1.5,
-                   "Apache-2.0; base ScreenSpot-Pro 43.3 as measured by a third party"),
+                   "Apache-2.0; publisher Table 4 ScreenSpot-Pro Instruct 48.5 (arxiv.org/abs/2511.21631); "
+                   "not a STAR quantized/RTX 4060 measurement"),
     GroundingModel("showui-2b", "showlab/ShowUI-2B", 2.0, "unit1", 1.5,
                    "ScreenSpot 75.1 (paper); weak on high-resolution screens"),
 )}
@@ -77,26 +80,78 @@ def smart_resize(height: int, width: int, factor: int = 28, min_pixels: int = 56
     return h, w
 
 
-_NUM = re.compile(r"-?\d+(?:\.\d+)?")
+_NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+
+
+def _numbers(values) -> list[float] | None:
+    if not isinstance(values, list) or len(values) not in (2, 4):
+        return None
+    try:
+        if any(type(value) not in (int, float) or not math.isfinite(value) for value in values):
+            return None
+        numbers = [float(value) for value in values]
+    except (OverflowError, ValueError, TypeError):
+        return None
+    if len(numbers) == 4 and (numbers[2] < numbers[0] or numbers[3] < numbers[1]):
+        return None
+    return numbers
+
+
+def _json_coordinates(data, depth: int = 0) -> list[float] | None:
+    if depth > 3:
+        return None
+    if isinstance(data, list):
+        return _numbers(data)
+    if not isinstance(data, dict) or ('found' in data and data['found'] is not True):
+        return None
+    keys = [key for key in ('coordinate', 'point', 'coordinates', 'box', 'bbox') if key in data]
+    if len(keys) == 1 and 'x' not in data and 'y' not in data:
+        return _numbers(data[keys[0]])
+    if not keys and 'x' in data and 'y' in data:
+        return _numbers([data['x'], data['y']])
+    if not keys and 'x' not in data and 'y' not in data and isinstance(data.get('arguments'), dict):
+        return _json_coordinates(data['arguments'], depth + 1)
+    return None
+
+
+def _coordinates(text: str) -> list[float] | None:
+    text = str(text or '').strip()
+    if len(text) > 12000:
+        return None
+    if text.startswith('<tool_call>') and text.endswith('</tool_call>'):
+        text = text[len('<tool_call>'):-len('</tool_call>')].strip()
+    if text.startswith('```'):
+        fenced = re.fullmatch(r'```(?:json)?\s*\n(.*?)\n```', text, re.S)
+        if fenced is None:
+            return None
+        text = fenced.group(1).strip()
+    try:
+        return _json_coordinates(json.loads(text))
+    except (ValueError, TypeError, RecursionError):
+        pass
+    action = re.fullmatch(r'''(?:Action:\s*)?click\(\s*start_box\s*=\s*(['"])(.*?)\1\s*\)''', text, re.S)
+    if action:
+        text = action.group(2)
+    if text.startswith('<|box_start|>') and text.endswith('<|box_end|>'):
+        text = text[len('<|box_start|>'):-len('<|box_end|>')].strip()
+    point = re.fullmatch(rf'<point>\s*({_NUMBER})\s+({_NUMBER})\s*</point>', text)
+    if point:
+        return _numbers([float(point.group(1)), float(point.group(2))])
+    if (text.startswith('(') and not text.endswith(')')) or (text.startswith('[') and not text.endswith(']')):
+        return None
+    bracket = re.fullmatch(r'[\[(]\s*(' + _NUMBER + r'(?:\s*,\s*' + _NUMBER + r'){1,3})\s*[\])]', text)
+    if bracket:
+        return _numbers([float(value.strip()) for value in bracket.group(1).split(',')])
+    return None
 
 
 def parse_point(text: str) -> tuple[float, float] | None:
-    """The first point in a model's answer: `<|box_start|>(x,y)<|box_end|>`, `(x, y)`, `[x, y]`, `<point>x y</point>`,
-    `{"coordinate": [x, y]}`, `start_box='(x,y)'`; a box of four numbers gives its centre."""
-    text = str(text or "")
-    for match in re.finditer(r"\{.*?\}", text, re.S):
-        try:
-            data = json.loads(match.group(0))
-        except ValueError:
-            continue
-        for key in ("coordinate", "point", "coordinates", "box", "bbox"):
-            if isinstance(data.get(key), list):
-                numbers = [float(v) for v in data[key] if isinstance(v, (int, float))]
-                return _from_numbers(numbers)
-        if isinstance(data.get("x"), (int, float)) and isinstance(data.get("y"), (int, float)):
-            return float(data["x"]), float(data["y"])
-    body = re.sub(r"<\|?[a-z_/]+\|?>", " ", text)                   # drop tags like <|box_start|>, keep the numbers
-    return _from_numbers([float(n) for n in _NUM.findall(body)])
+    """Parse one recognized, unambiguous coordinate response; a valid four-number box gives its centre.
+
+    Prose containing unrelated numbers is not a coordinate response.
+    """
+    numbers = _coordinates(text)
+    return _from_numbers(numbers) if numbers is not None else None
 
 
 def _from_numbers(numbers: list[float]) -> tuple[float, float] | None:
@@ -124,11 +179,35 @@ def to_pixels(point: tuple[float, float], size: tuple[int, int], fmt: str) -> tu
 def detect_format(raw_points: list[tuple[float, float]], truth: list[tuple[int, int]],
                   size: tuple[int, int]) -> tuple[str, dict[str, float]]:
     """The convention under which the model's raw points land closest to the known positions (mean pixel error)."""
-    errors = {}
+    if not raw_points or len(raw_points) != len(truth) or any(
+            not math.isfinite(value) for point in raw_points for value in point):
+        raise ValueError('calibration needs matching finite points')
+    errors: dict[str, float] = {}
     for fmt in FORMATS:
         pts = [to_pixels(p, size, fmt) for p in raw_points]
         errors[fmt] = sum(math.hypot(a[0] - b[0], a[1] - b[1]) for a, b in zip(pts, truth)) / max(1, len(truth))
-    return min(errors, key=lambda k: errors[k]), errors
+    return min(errors, key=lambda key: errors[key]), errors
+
+
+def _checked_pixels(values: list[float], size: tuple[int, int], fmt: str) -> tuple[int, int]:
+    w, h = size
+    if fmt == 'resized':
+        h, w = smart_resize(h, w)
+    elif fmt == 'unit1000':
+        w = h = 1000
+    elif fmt == 'unit1':
+        w = h = 1
+    elif fmt != 'pixels':
+        raise ValueError('unrecognized coordinate format')
+    inclusive = fmt in ('unit1', 'unit1000')
+    for x, y in zip(values[::2], values[1::2]):
+        if not (math.isfinite(x) and math.isfinite(y) and x >= 0 and y >= 0
+                and (x <= w if inclusive else x < w) and (y <= h if inclusive else y < h)):
+            raise ValueError('model coordinate is outside the image')
+    point = _from_numbers(values)
+    if point is None:
+        raise ValueError('model supplied no coordinate')
+    return to_pixels(point, size, fmt)
 
 
 def encode_png(image, max_side: int) -> tuple[str, tuple[int, int]]:
@@ -143,14 +222,20 @@ def encode_png(image, max_side: int) -> tuple[str, tuple[int, int]]:
 
 
 class VlmGrounder:
-    """locate() through an OpenAI-compatible vision chat endpoint. `fmt` is a coordinate convention or "auto"
-    (then call calibrate() once; until then "pixels" is assumed)."""
+    """Locate through an OpenAI-compatible vision endpoint.
+
+    An automatic coordinate convention must pass calibration before locate() can send a request.
+    """
 
     def __init__(self, url: str, model: str, *, fmt: str = "pixels", max_side: int = 1280, timeout_s: float = 60.0,
                  api_key: str = "", opener: Callable = urllib.request.urlopen, prompt: str = POINT_PROMPT) -> None:
         self.url = url.rstrip("/")
         self.endpoint = self.url + ("/chat/completions" if self.url.endswith("/v1") else "/v1/chat/completions")
         self.model, self.fmt, self.max_side, self.timeout_s = model, "pixels" if fmt == "auto" else fmt, max_side, timeout_s
+        if fmt not in (*FORMATS, 'auto'):
+            raise ValueError('unrecognized coordinate format')
+        self._requires_calibration = fmt == 'auto'
+        self.calibration: dict = {}
         self.api_key, self.opener, self.prompt = api_key, opener, prompt
 
     def ask(self, image, query: str) -> tuple[str, tuple[int, int], float]:
@@ -169,25 +254,60 @@ class VlmGrounder:
         return str(reply["choices"][0]["message"].get("content") or ""), sent, time.perf_counter() - started
 
     def locate(self, image, query: str) -> Grounded | None:
+        if self._requires_calibration:
+            raise RuntimeError('Calibrate this grounder and save its explicit coordinate format before using it')
         raw, sent, seconds = self.ask(image, query)
-        point = parse_point(raw)
-        if point is None:
+        values = _coordinates(raw)
+        if values is None:
             return None
-        x, y = to_pixels(point, sent, self.fmt)
+        try:
+            x, y = _checked_pixels(values, sent, self.fmt)
+        except ValueError:
+            return None
         return Grounded(round(x * image.size[0] / sent[0]), round(y * image.size[1] / sent[1]), raw[:120], seconds)
 
-    def calibrate(self, size: tuple[int, int] = (1280, 720)) -> tuple[str, dict[str, float]]:
+    def calibrate(self, size: tuple[int, int] = (1280, 720), *, cancelled: Callable[[], bool] | None = None
+                  ) -> tuple[str, dict[str, float]]:
         """Pick the coordinate convention by measurement on a synthetic screen with six labelled buttons. Returns the
         convention (also stored in self.fmt) and each convention's mean error in pixels."""
         image, truth = synthetic_screen(size)
+        self._requires_calibration = True
+        self.calibration = {}
         raws = []
+        coordinates = []
         for label, _ in truth:
+            if cancelled is not None and cancelled():
+                raise RuntimeError('calibration cancelled')
             raw, _sent, _seconds = self.ask(image, f"the button labelled {label}")
-            raws.append(parse_point(raw) or (0.0, 0.0))
+            values = _coordinates(raw)
+            point = _from_numbers(values) if values is not None else None
+            if point is None:
+                raise ValueError('calibration did not return six recognized points')
+            coordinates.append(values)
+            raws.append(point)
         sent_size = encode_png(image, self.max_side)[1]
-        scale = sent_size[0] / image.size[0]
-        fmt, errors = detect_format(raws, [(round(x * scale), round(y * scale)) for _, (x, y) in truth], sent_size)
+        sx, sy = sent_size[0] / image.size[0], sent_size[1] / image.size[1]
+        fmt, errors = detect_format(raws, [(round(x * sx), round(y * sy)) for _, (x, y) in truth], sent_size)
+        distances = []
+        for values, (_, (tx, ty)) in zip(coordinates, truth):
+            x, y = _checked_pixels(values, sent_size, fmt)
+            x, y = x / sx, y / sy
+            if abs(x - tx) > 60 or abs(y - ty) > 20:
+                raise ValueError('calibration point missed its labelled button')
+            distances.append(math.hypot(x - tx, y - ty))
+        mean_error, max_error = sum(distances) / len(distances), max(distances)
+        if len(distances) != 6 or mean_error > 12 or max_error > 20:
+            raise ValueError('calibration exceeded mean 12px or maximum 20px error')
+        if cancelled is not None and cancelled():
+            raise RuntimeError('calibration cancelled')
         self.fmt = fmt
+        self._requires_calibration = False
+        self.calibration = {'kind': 'synthetic-six-buttons', 'format': fmt, 'points': 6,
+                            'image_size': list(size), 'sent_size': list(sent_size),
+                            'mean_error_px': mean_error, 'max_error_px': max_error,
+                            'mean_limit_px': 12, 'point_limit_px': 20,
+                            'url': self.url, 'model': self.model, 'max_side': self.max_side,
+                            'measured_at': datetime.now(timezone.utc).isoformat()}
         return fmt, errors
 
 

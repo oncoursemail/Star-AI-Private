@@ -15,15 +15,15 @@ from dataclasses import dataclass
 from pathlib import Path
 import random
 import time
-from typing import Callable
+from typing import Callable, Protocol
 
 from .. import curiosity
 from . import captions as caps
 from .browser import BrowserError, HostBrowser, VisionScreenReader
 from .choose import WatchHistory, pick, rank
 from .frames import LiveFrameSampler
-from .hearing import HubHearing
-from .learn import Learned, finish
+from .hearing import FallbackHearing
+from .learn import finish
 from .llm import ChatBrain, chat_vision
 from .model import Candidate, WatchResult
 from .session import WatchSession
@@ -33,9 +33,14 @@ from .understand import clock
 INTEREST = {"watch_videos": {"weight": 1.0, "about": "watch videos on YouTube, react out loud, and learn from them"}}
 
 
+class ClockedHub(Protocol):
+    """Use the hearing source's clock to exclude audio captured before this video."""
+    clock: Callable[[], float]
+
+
 @dataclass
 class Parts:
-    hub: object | None = None
+    hub: ClockedHub | None = None
     speak: Callable[..., bool] | None = None
     chat: Callable[[str], None] | None = None
     brain: object | None = None
@@ -146,14 +151,19 @@ class Chooser:
         return None
 
 
-def _hearing(parts: Parts, settings: WatchSettings, url: str, workdir: Path):
+def _hearing(parts: Parts, settings: WatchSettings, url: str, workdir: Path, *, since: float | None = None):
+    def captions():
+        if settings.use_captions and url:
+            cues = caps.fetch_captions(url, workdir, run=parts.run or caps.default_run)
+            if cues:
+                return caps.CaptionHearing(cues)
+        return None
+
     if parts.hub is not None:
-        return HubHearing(parts.hub), "audio"
-    if settings.use_captions and url:
-        cues = caps.fetch_captions(url, workdir, run=parts.run or caps.default_run)
-        if cues:
-            return caps.CaptionHearing(cues), "captions"
-    return None, "picture only"
+        hearing = FallbackHearing(parts.hub, captions, since=parts.hub.clock() if since is None else since)
+        return hearing, hearing.mode
+    hearing = captions()
+    return hearing, "captions" if hearing is not None else "picture only"
 
 
 def watch_one(ctx, parts: Parts, settings: WatchSettings, browser, candidate: Candidate, brain, vision,
@@ -162,9 +172,10 @@ def watch_one(ctx, parts: Parts, settings: WatchSettings, browser, candidate: Ca
     workdir = Path(ctx.home) / "watch" / "work"
     clk = parts.clock
     browser.open_candidate(candidate)
+    audio_since = parts.hub.clock() if parts.hub is not None else None
     url = candidate.url or (browser.ensure_url() if hasattr(browser, "ensure_url") else "")
     meta = caps.fetch_metadata(url, run=parts.run or caps.default_run) if (url and settings.use_captions) else {}
-    hearing, how = _hearing(parts, settings, url, workdir)
+    hearing, how = _hearing(parts, settings, url, workdir, since=audio_since)
     sampler = LiveFrameSampler(workdir / "frames", keep=settings.keep_frames)
     watcher = WatchSession(
         browser=browser, hearing=hearing, brain=brain, vision=vision, speak=parts.speak, chat=parts.chat,
@@ -177,6 +188,7 @@ def watch_one(ctx, parts: Parts, settings: WatchSettings, browser, candidate: Ca
                            description=meta.get("description", "") or candidate.description, chapters=meta.get("chapters"),
                            max_seconds=max(60.0, deadline - clk()))
     result.url = result.url or url
+    how = getattr(hearing, "mode", how)
     sampler.clear()
     learned = finish(result, brain, home=Path(ctx.home), life=ctx.life, history=history)
     return result, learned, how, watcher
@@ -196,9 +208,9 @@ def idle_seconds() -> float:  # pragma: no cover - Windows only
     class LastInput(ctypes.Structure):
         _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
     info = LastInput(ctypes.sizeof(LastInput), 0)
-    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):  # pyright: ignore[reportAttributeAccessIssue]
+    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
         return 0.0
-    return (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000.0  # pyright: ignore[reportAttributeAccessIssue]
+    return (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000.0
 
 
 def run(ctx, parts: Parts | None = None) -> dict:
@@ -223,7 +235,7 @@ def run(ctx, parts: Parts | None = None) -> dict:
     interests = _interest_text(ctx.life.interests())
     started = parts.clock()
     deadline = started + settings.session_minutes * 60
-    done: list[tuple[WatchResult, Learned, str]] = []
+    done: list[tuple[WatchResult, object, str]] = []
     follow = False
     session = None
     try:
