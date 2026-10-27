@@ -21,6 +21,7 @@ import time
 from typing import Callable
 
 from .stream_hardware_telemetry import RealtimeTelemetryHost
+from .frame_fingerprint import Region
 from .stream_observe import FrameCue, ObservationDecision, ObservationGovernor
 
 
@@ -142,6 +143,31 @@ class StreamVisionHost:
             self._leases[lease.ticket] = lease
             self._counters["admitted"] += 1
             return VisionAdmission(True, decision.reason, decision.target_fps, lease)
+
+    def consider_pixels(
+        self, pixels: bytes | bytearray | memoryview, *, captured_ms: float,
+        width: int, height: int, pixel_format: str = "BGRA",
+        row_stride: int | None = None, cue: str = "none",
+        game_region: Region | None = None, hud_region: Region | None = None,
+    ) -> VisionAdmission:
+        """Use CPU fingerprints on an existing approved host-captured frame.
+
+        No capture or copy is performed. For raw frame pixels from Windows/OBS,
+        this provides the missing local CPU sensor between capture and the
+        ordinary measured hardware + novelty admission path. It does NOT
+        allow viewer/model-provided crops to override host capture scopes.
+        """
+        with self._lock:
+            if not self._enabled:
+                # Never inspect disabled-session image buffers.
+                self._counters["deferred"] += 1
+                return VisionAdmission(False, "owner_opt_in_missing", 0.0)
+            frame = FrameCue.from_pixels(
+                captured_ms, pixels, width=width, height=height,
+                pixel_format=pixel_format, row_stride=row_stride, cue=cue,
+                game_region=game_region, hud_region=hud_region,
+            )
+            return self.consider(frame)
 
     def acknowledge_worker_stopped(
         self, lease: VisionLease, *, worker_stopped: bool,
