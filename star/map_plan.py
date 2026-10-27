@@ -9,7 +9,7 @@ much smaller Python implementation; no ShiroKSH code is copied.
 What the dry run checks (all offline, deterministic, no Studio needed):
 - schema (jsonschema), unique names, managed root, object limit;
 - bounds: every object's axis-aligned box (rotation included) inside the declared bounds;
-- overlaps between solid objects (with a z-fighting hint when two faces share a plane);
+- oriented-box overlap checks for solid parts, conservative mesh proxy checks and bounded analysis;
 - spawns: at least one, inside the bounds, with head room above the pad;
 - route: each leg between waypoints is jumpable for a default character (gap and rise);
 - assets: only ids on the plan's allowlist; unanchored and floating parts are reported.
@@ -21,11 +21,14 @@ script that records a single undo step. Nothing here applies anything.
 """
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
+from collections import Counter
 from functools import lru_cache
 import math
 import re
 
 from ._lazy import lazy_attr
+from .scene_collision import from_pose, intersects
 Draft202012Validator = lazy_attr("jsonschema", "Draft202012Validator")  # loaded on first validation
 
 MANAGED_ROOT = "Workspace/MapDrafts"
@@ -39,6 +42,8 @@ BATCH_SIZE = 100
 OVERLAP_TOLERANCE = 0.05
 SUPPORT_TOLERANCE = 0.6
 MAX_REPORTED = 25
+MAX_COLLISION_CANDIDATES = 50_000  # Explicit budget, never silently approve unchecked geometry.
+MAX_BROAD_PAIRS = 250_000  # Bound even pathological single-plane/same-position scenes.
 CREDIT = "Plan format inspired by ShiroKSH/skills SceneSpec (MIT)."
 
 PART_CLASSES = ("Part", "WedgePart", "CornerWedgePart", "TrussPart")
@@ -116,28 +121,22 @@ def _validator():
 
 class _Box:
     __slots__ = ("name", "kind", "lo", "hi", "solid", "rotated", "allow_overlap", "floating", "truss", "role",
-                 "anchored")
+                 "anchored", "geometry", "shape_approximate")
 
     def __init__(self, name, kind, lo, hi, *, solid=True, rotated=False, allow_overlap=False, floating=False,
-                 truss=False, role="", anchored=True):
+                 truss=False, role="", anchored=True, geometry=None, shape_approximate=False):
         self.name, self.kind, self.lo, self.hi = name, kind, lo, hi
         self.solid, self.rotated, self.allow_overlap = solid, rotated, allow_overlap
         self.floating, self.truss, self.role, self.anchored = floating, truss, role, anchored
+        self.geometry = geometry or from_pose([(a + b) / 2 for a, b in zip(lo, hi)],
+                                              [b - a for a, b in zip(lo, hi)])
+        self.shape_approximate = shape_approximate
 
 
 def _aabb(position, size, rotation=(0, 0, 0)):
-    """Axis-aligned bounds of a box rotated by Roblox Orientation degrees (applied Y, X, Z)."""
-    half = [s / 2 for s in size]
-    if not any(rotation):
-        return ([p - h for p, h in zip(position, half)], [p + h for p, h in zip(position, half)])
-    rx, ry, rz = (math.radians(a) for a in rotation)
-    cx, sx, cy, sy, cz, sz = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry), math.cos(rz), math.sin(rz)
-    # R = Ry * Rx * Rz (Roblox applies Orientation as Y, then X, then Z)
-    m = [[cy * cz + sy * sx * sz, -cy * sz + sy * sx * cz, sy * cx],
-         [cx * sz, cx * cz, -sx],
-         [-sy * cz + cy * sx * sz, sy * sz + cy * sx * cz, cy * cx]]
-    extent = [sum(abs(m[row][col]) * half[col] for col in range(3)) for row in range(3)]
-    return ([p - e for p, e in zip(position, extent)], [p + e for p, e in zip(position, extent)])
+    """Conservative world-space bounds using Roblox's Y-X-Z Orientation order."""
+    box = from_pose(position, size, rotation)
+    return list(box.lo), list(box.hi)
 
 
 def _finite(plan) -> bool:
@@ -145,7 +144,7 @@ def _finite(plan) -> bool:
         return all(_finite(v) for v in plan.values())
     if isinstance(plan, list):
         return all(_finite(v) for v in plan)
-    return not isinstance(plan, float) or math.isfinite(plan)
+    return type(plan) not in (int, float) or (abs(plan) <= 1e9 and math.isfinite(plan))
 
 
 def _issue(code: str, message: str, objects=()) -> dict:
@@ -165,19 +164,21 @@ def _round(values, digits=3):
 def _boxes(plan: dict) -> list[_Box]:
     boxes = []
     for part in plan.get("parts", []):
-        lo, hi = _aabb(part["position"], part["size"], part.get("rotation", (0, 0, 0)))
-        boxes.append(_Box(part["name"], "part", lo, hi, solid=part.get("canCollide", True),
-                          rotated=any(part.get("rotation", (0, 0, 0))), allow_overlap=part.get("allowOverlap", False),
+        geom = from_pose(part["position"], part["size"], part.get("rotation", (0, 0, 0)))
+        boxes.append(_Box(part["name"], "part", geom.lo, geom.hi, solid=part.get("canCollide", True),
+                          rotated=geom.rotated, allow_overlap=part.get("allowOverlap", False),
                           floating=part.get("floating", False), truss=part.get("class") == "TrussPart",
-                          role=part.get("role", ""), anchored=part.get("anchored", True)))
+                          role=part.get("role", ""), anchored=part.get("anchored", True),
+                          geometry=geom, shape_approximate=part.get("class", "Part") != "Part"))
     for spawn in plan.get("spawns", []):
-        lo, hi = _aabb(spawn["position"], SPAWN_SIZE)
-        boxes.append(_Box(spawn["name"], "spawn", lo, hi))
+        geom = from_pose(spawn["position"], SPAWN_SIZE)
+        boxes.append(_Box(spawn["name"], "spawn", geom.lo, geom.hi, geometry=geom))
     for asset in plan.get("assets", []):
         if "approxSize" in asset:
-            lo, hi = _aabb(asset["position"], asset["approxSize"], asset.get("rotation", (0, 0, 0)))
-            boxes.append(_Box(asset["name"], "asset", lo, hi, rotated=any(asset.get("rotation", (0, 0, 0))),
-                              allow_overlap=asset.get("allowOverlap", False)))
+            geom = from_pose(asset["position"], asset["approxSize"], asset.get("rotation", (0, 0, 0)))
+            boxes.append(_Box(asset["name"], "asset", geom.lo, geom.hi, rotated=geom.rotated,
+                              allow_overlap=asset.get("allowOverlap", False),
+                              geometry=geom, shape_approximate=True))
     return boxes
 
 
@@ -185,32 +186,87 @@ def _penetration(a: _Box, b: _Box) -> list[float]:
     return [min(a.hi[i], b.hi[i]) - max(a.lo[i], b.lo[i]) for i in range(3)]
 
 
-def _overlaps(boxes: list[_Box]) -> tuple[list[dict], list[str]]:
-    """Solid pairs that interpenetrate (sweep and prune on X). Returns (pairs, z-fighting names)."""
-    solid = sorted((b for b in boxes if b.solid and not b.allow_overlap), key=lambda b: b.lo[0])
+def _overlaps(boxes: list[_Box]) -> tuple[list[dict], list[str], dict]:
+    """Adaptive-axis sweep + box SAT with bounded computation AND memory.
+
+    Wedges, trusses and asset meshes have approximate exterior bounds. The
+    reported depth is AABB depth, not a true minimum translation vector.
+    """
+    solid = [b for b in boxes if b.solid and not b.allow_overlap]
+    # Use the sparsest world axis; stable deterministic tie-break by axis.
+    if solid:
+        axis = min(range(3), key=lambda k: sum(b.hi[k] - b.lo[k] for b in solid)
+                   / max(0.001, max(b.hi[k] for b in solid) - min(b.lo[k] for b in solid)))
+        solid.sort(key=lambda b: b.lo[axis])
+    else:
+        axis = 0
     pairs, zfight = [], []
+    candidates = broad_pairs = overlaps_total = zfight_total = 0
+
+    def finish(reason: str | None) -> tuple[list[dict], list[str], dict]:
+        return pairs, zfight, {
+            "method": "obb-sat", "sweep_axis": "xyz"[axis],
+            "candidates_checked": candidates, "broad_pairs_checked": broad_pairs,
+            "candidate_budget": MAX_COLLISION_CANDIDATES,
+            "broad_pair_budget": MAX_BROAD_PAIRS,
+            "overlap_pairs_found": overlaps_total,
+            "zfight_pairs_found": zfight_total,
+            "exhaustive": reason is None, "truncated_reason": reason,
+        }
+
     for i, a in enumerate(solid):
-        for b in solid[i + 1:]:
-            if b.lo[0] >= a.hi[0] - OVERLAP_TOLERANCE:
+        for j in range(i + 1, len(solid)):
+            b = solid[j]
+            if b.lo[axis] >= a.hi[axis] - OVERLAP_TOLERANCE:
                 break
+            if broad_pairs >= MAX_BROAD_PAIRS:
+                return finish("broad_pair_budget")
+            broad_pairs += 1
             depth = _penetration(a, b)
             if min(depth) <= OVERLAP_TOLERANCE:
                 continue
-            entry = {"a": a.name, "b": b.name, "depth": _round(depth, 2)}
-            if a.rotated or b.rotated:
-                entry["approximate"] = True   # rotated boxes are compared by their bounding boxes
-            pairs.append(entry)
-            if any(abs(a.lo[k] - b.lo[k]) < 1e-3 or abs(a.hi[k] - b.hi[k]) < 1e-3 for k in range(3)):
-                zfight.append(f"{a.name} / {b.name}")
-    return pairs, zfight
+            if candidates >= MAX_COLLISION_CANDIDATES:
+                return finish("candidate_budget")
+            candidates += 1
+            if not intersects(a.geometry, b.geometry, tolerance=OVERLAP_TOLERANCE):
+                continue
+            overlaps_total += 1
+            if len(pairs) < MAX_REPORTED:
+                entry = {"a": a.name, "b": b.name, "depth": _round(depth, 2)}
+                if a.rotated or b.rotated or a.shape_approximate or b.shape_approximate:
+                    entry["approximate"] = True  # Previous public output field.
+                    entry["approximate_depth"] = True
+                if a.shape_approximate or b.shape_approximate:
+                    entry["approximate_shape"] = True
+                pairs.append(entry)
+            # AABB plane coincidence is only a meaningful z-fighting hint for
+            # two actual axis-aligned boxes, not rotated bounding envelopes.
+            if not (a.rotated or b.rotated or a.shape_approximate or b.shape_approximate):
+                if any(abs(a.lo[k] - b.lo[k]) < 1e-3 or abs(a.hi[k] - b.hi[k]) < 1e-3
+                       for k in range(3)):
+                    zfight_total += 1
+                    if len(zfight) < MAX_REPORTED:
+                        zfight.append(f"{a.name} / {b.name}")
+    return finish(None)
 
 
-def _supported(box: _Box, boxes: list[_Box]) -> bool:
-    for other in boxes:
-        if other is box or not other.solid:
+def _support_index(boxes: list[_Box]) -> tuple[list[float], list[_Box]]:
+    """Reusable index of top-face heights for hundreds of grounded props."""
+    rows = sorted((box.hi[1], i, box) for i, box in enumerate(boxes) if box.solid)
+    return [row[0] for row in rows], [row[2] for row in rows]
+
+
+def _supported(box: _Box, index: tuple[list[float], list[_Box]]) -> bool:
+    tops, ordered = index
+    start = bisect_left(tops, box.lo[1] - SUPPORT_TOLERANCE)
+    end = bisect_right(tops, box.lo[1] + SUPPORT_TOLERANCE)
+    for other in ordered[start:end]:
+        if other is box:
             continue
-        if (other.lo[0] < box.hi[0] and other.hi[0] > box.lo[0] and other.lo[2] < box.hi[2]
-                and other.hi[2] > box.lo[2] and box.lo[1] - SUPPORT_TOLERANCE <= other.hi[1] <= box.lo[1] + SUPPORT_TOLERANCE):
+        # Approximate support: bounding-box XZ intersection and matching
+        # height. A slope or imported asset needs actual Studio physics QA.
+        if (other.lo[0] < box.hi[0] and other.hi[0] > box.lo[0]
+                and other.lo[2] < box.hi[2] and other.hi[2] > box.lo[2]):
             return True
     return False
 
@@ -293,7 +349,7 @@ def dry_run(plan, *, include_operations: bool = True) -> dict:
     root = f"{root_path}/{map_name}"
 
     names = [item["name"] for key in ("parts", "spawns", "assets") for item in plan.get(key, [])]
-    duplicates = sorted({name for name in names if names.count(name) > 1})
+    duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
     if duplicates:
         blockers.append(_issue("duplicate-name", "Object names must be unique within a plan.", duplicates))
     groups = sorted({item["group"] for key in ("parts", "spawns", "assets") for item in plan.get(key, [])
@@ -327,15 +383,27 @@ def dry_run(plan, *, include_operations: bool = True) -> dict:
         used_hi = [max(box.hi[i] for box in boxes) for i in range(3)]
         used = {"min": _round(used_lo), "max": _round(used_hi), "size": _round([h - l for l, h in zip(used_lo, used_hi)])}
 
-    pairs, zfight = _overlaps(boxes)
+    pairs, zfight, collision_audit = _overlaps(boxes)
+    if not collision_audit["exhaustive"]:
+        blockers.append(_issue("collision-audit-incomplete",
+                               "Geometry check reached its bounded work budget; map apply is blocked "
+                               "until the scene is partitioned or overlaps are resolved."))
     if pairs:
-        warnings.append({"code": "overlap", "message": "Solid objects interpenetrate (set allowOverlap on intended "
-                                                      "unions, or move them).", "pairs": pairs[:MAX_REPORTED],
-                         **({"more": len(pairs) - MAX_REPORTED} if len(pairs) > MAX_REPORTED else {})})
+        warning = {"code": "overlap", "message": "Solid objects interpenetrate (set allowOverlap on intended "
+                                               "unions, or move them).", "pairs": pairs}
+        extra = collision_audit["overlap_pairs_found"] - len(pairs)
+        if extra:
+            warning["more"] = extra
+        warnings.append(warning)
     if zfight:
-        warnings.append(_issue("z-fighting", "Overlapping objects share a face plane; the shared face will flicker.",
-                               zfight))
+        warning = _issue("z-fighting", "Overlapping objects share a face plane; the shared face will flicker.",
+                         zfight)
+        extra = collision_audit["zfight_pairs_found"] - len(zfight)
+        if extra:
+            warning["more"] = extra
+        warnings.append(warning)
 
+    support_index = _support_index(boxes)
     spawns = [box for box in boxes if box.kind == "spawn"]
     if not spawns:
         blockers.append(_issue("no-spawn", "The plan has no spawn; players would spawn at the world origin."))
@@ -344,10 +412,10 @@ def dry_run(plan, *, include_operations: bool = True) -> dict:
         head = _Box(spawn.name + " headroom", "probe", [spawn.lo[0] + 1, spawn.hi[1] + 0.05, spawn.lo[2] + 1],
                     [spawn.hi[0] - 1, spawn.hi[1] + CHARACTER_HEADROOM, spawn.hi[2] - 1])
         for other in boxes:
-            if other is not spawn and other.solid and min(_penetration(head, other)) > 0:
+            if other is not spawn and other.solid and intersects(head.geometry, other.geometry, tolerance=0.0):
                 blocked.append(f"{spawn.name} (under {other.name})")
                 break
-        if spawn.lo[1] > ground + SUPPORT_TOLERANCE and not _supported(spawn, boxes):
+        if spawn.lo[1] > ground + SUPPORT_TOLERANCE and not _supported(spawn, support_index):
             floating_spawns.append(spawn.name)
     if blocked:
         blockers.append(_issue("spawn-blocked", f"Spawns need {CHARACTER_HEADROOM:g} studs of free space above "
@@ -373,7 +441,7 @@ def dry_run(plan, *, include_operations: bool = True) -> dict:
     floating = [box.name for box in boxes if box.kind == "part" and box.solid and not box.floating
                 and box.role not in ("decor", "roof", "hazard") and box.lo[1] > ground + SUPPORT_TOLERANCE
                 and box.name not in {n for n in (plan.get("route") or {}).get("waypoints", []) if isinstance(n, str)}
-                and not _supported(box, boxes)]
+                and not _supported(box, support_index)]
     if floating:
         info.append(_issue("floating", "Anchored parts with nothing under them (fine for platforms on the route; "
                                        "mark intentional ones with floating: true).", floating))
@@ -386,6 +454,7 @@ def dry_run(plan, *, include_operations: bool = True) -> dict:
         "counts": counts, "batches": math.ceil(total / BATCH_SIZE), "services": services,
         "bounds": {"declared": {"min": _round(lo_bound), "max": _round(hi_bound)}, "used": used},
         "route": route, "blockers": blockers, "warnings": warnings, "info": info, "credit": CREDIT,
+        "collision_audit": collision_audit,
         "note": "Dry run only: nothing was created. Apply in a throwaway place, inside the managed root.",
     }
     if include_operations and not blockers:
