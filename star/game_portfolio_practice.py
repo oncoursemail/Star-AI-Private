@@ -42,6 +42,7 @@ class _Pending:
     ticket: int
     game_index: int
     expires_at: int
+    offer: PortfolioAdvice
 
 
 class GamePortfolioPractice:
@@ -219,17 +220,36 @@ class GamePortfolioPractice:
                     or reservation.ticket is None
                     or reservation.expected_run_id is None):
                 return defer("practice_planner_" + reservation.reason)
-            self._pending = _Pending(
-                reservation.ticket, idx, now + self._reservation_s
-            )
-            self._offers[idx] += 1
-            self._stats["offered"] += 1
-            return PortfolioAdvice(
+            offer = PortfolioAdvice(
                 "practice_candidate", "fair_cross_game_signed_practice_only",
                 ladder.game_id, ladder.game_version, ladder.objective_id,
                 target.situation_id, target.action_id, target.difficulty,
                 reservation.ticket, reservation.expected_run_id,
             )
+            self._pending = _Pending(
+                reservation.ticket, idx, now + self._reservation_s, offer
+            )
+            self._offers[idx] += 1
+            self._stats["offered"] += 1
+            return offer
+
+    def matches_reservation(
+        self, offer: PortfolioAdvice, *, now_unix_s: int,
+    ) -> bool:
+        """Check a complete active game/run/action binding, never grant input.
+
+        The random run ID is an evidence correlation identifier, NOT a Studio
+        permission. This check must be repeated at the actual dispatch boundary;
+        caller must still use the separate private-Studio input authorization.
+        """
+        if not isinstance(offer, PortfolioAdvice):
+            raise TypeError("offer must be a PortfolioAdvice")
+        with self._lock:
+            now = self._advance(now_unix_s)
+            return bool(self._enabled and self._pending is not None
+                        and now <= self._pending.expires_at
+                        and offer == self._pending.offer
+                        and offer.authorized_to_play is False)
 
     def finish(
         self, ticket: int, *, now_unix_s: int,
