@@ -27,7 +27,7 @@ from . import brain
 # skipped. A package that defines `register_home_activities` registers itself; star.social, star.play and star.senses
 # are wired by star.home.plugins (they predate this hook).
 PLUGIN_MODULES = ("star.games", "star.social", "star.play", "star.senses", "star.computer", "star.watch", "star.art_studio",
-                  "star.vtuber", "star.vtuber.modes", "star.home.streamchat")
+                  "star.vtuber", "star.vtuber.modes", "star.home.streamchat", "star.life")
 BUILTIN_BRIEFS = {
     "game_making": "make or improve a small game and play-test it",
     "drawing": "draw or animate something and save it to your gallery folder",
