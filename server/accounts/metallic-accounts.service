@@ -1,0 +1,33 @@
+[Unit]
+Description=Metallic accounts + social (metallic/metallic/accounts, server/accounts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=maccounts
+Group=maccounts
+Environment=PYTHONPATH=/opt/metallic-accounts/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=/var/lib/metallic-accounts
+ExecStart=/usr/bin/python3 -m metallic accounts serve --config /etc/metallic-accounts/accounts.toml
+Restart=on-failure
+RestartSec=5
+# argon2id uses 64 MiB per hash, at most 2 at once; the container is capped too.
+MemoryMax=320M
+TasksMax=128
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/metallic-accounts
+
+[Install]
+WantedBy=multi-user.target

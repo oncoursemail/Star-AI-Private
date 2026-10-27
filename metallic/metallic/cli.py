@@ -8,6 +8,7 @@
     metallic control serve --config FILE         Metallic Control collector + API + UI (metallic/control)
     metallic control agent [--config FILE]       the Windows PC's reporter for Metallic Control
     metallic control token FILE                  write a new random token to an owner-only file
+    metallic accounts init|serve|owner-code|rotate-key   Metallic accounts + social service (metallic/accounts)
 
 Exit status: 0 green, 1 red (a blocking check failed), 2 usage or setup error, 3 queue busy.
 """
@@ -207,6 +208,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if args[:1] == ["accounts"]:
+        from .accounts import runtime
+        return runtime.main(args[1:])
     a = build_parser().parse_args(argv)
     if a.cmd == "control" and getattr(a, "config_opt", None):
         a.config = a.config_opt
