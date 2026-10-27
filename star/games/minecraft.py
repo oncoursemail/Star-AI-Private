@@ -128,6 +128,7 @@ class MinecraftPlay:
         self.last_activity = 0.0
         self.following = ""
         self._removed: set[str] = set()
+        self._outbox: deque[tuple[float, str, str]] = deque()
         self.auth_code: dict | None = None
         self.log: deque[str] = deque(maxlen=50)
 
@@ -165,9 +166,30 @@ class MinecraftPlay:
         self.pacer.sent(to or "public", text)
         return True
 
+    def say_lines(self, lines: list[str], *, to: str = "", incoming: str = "") -> bool:
+        """One thought as up to 3 short chat lines, each sent after a human typing delay (pacing.schedule): the pacer sees the
+        burst as one turn. The lines wait in an outbox that step() flushes."""
+        from ..social import pacing
+        lines = [l for l in lines if l][:3]
+        if not lines or not self.pacer.allow_burst(to or "public", lines):
+            return False
+        due = self._clock()
+        for line, delay in zip(lines, pacing.schedule(lines, incoming, rng=self._rng)):
+            due += delay
+            self._outbox.append((due, to, line))
+        return True
+
+    def _flush_outbox(self) -> None:
+        now = self._clock()
+        while self._outbox and self._outbox[0][0] <= now and self.transport is not None:
+            _, to, line = self._outbox.popleft()
+            self._send({"cmd": "whisper", "username": to, "text": line} if to else {"cmd": "chat", "text": line})
+            self.pacer.sent(to or "public", line)
+
     def step(self) -> StepResult:
         if self.transport is None:
             return self.start()
+        self._flush_outbox()
         notes: list[str] = []
         for event in self.transport.poll():
             note = self.on_event(event)
@@ -227,7 +249,7 @@ class MinecraftPlay:
                                  game=self.server.name)
         self._maybe_whitelist(username, message)
         if reply is not None:
-            self.say(reply.text, to=username if whisper else "")
+            self.say_lines(list(reply.to_send), to=username if whisper else "", incoming=message)
         return acted or (f"talked with {username}" if reply else "")
 
     def _maybe_whitelist(self, username: str, message: str) -> None:

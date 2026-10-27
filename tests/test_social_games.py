@@ -161,7 +161,7 @@ def test_flirting_blocked_for_stated_minor(memory):
     chat, _ = make_chat(memory, answer="you're cute too, babe")
     chat.handle("discord", "tim", "im 15")
     reply = chat.handle("discord", "tim", "you're cute, be my girlfriend")
-    assert reply.mode.romance == "friends_only" and reply.text == rules.STEER_AWAY
+    assert reply.mode.romance == "friends_only" and "keep it friends" in reply.text and "babe" not in reply.text
 
 
 def test_minor_signals_contradicting_a_claimed_adult_age_block_romance(memory):
@@ -364,6 +364,8 @@ def test_minecraft_follows_a_friend_and_chats(memory):
                               {"type": "chat", "username": "Mira", "message": "star follow me"}]
     clock.t = 10
     play.step()
+    clock.t = 40                      # her typing delay has passed (pacing.py): the line goes out on a later step
+    play.step()
     assert {"cmd": "follow", "username": "Mira"} in play.transport.sent
     assert {"cmd": "chat", "text": "coming!"} in play.transport.sent
 
@@ -378,6 +380,8 @@ def test_minecraft_whisper_reply_and_own_goals(memory):
                               {"type": "chat", "username": "X", "message": "anyone have iron"},
                               {"type": "whisper", "username": "Mira", "message": "hey you there?"}]
     clock.t = 5
+    play.step()
+    clock.t = 40
     play.step()
     assert {"cmd": "whisper", "username": "Mira", "text": "sure thing"} in play.transport.sent
     assert not any(c.get("text") and c["cmd"] == "chat" for c in play.transport.sent)   # busy server: X not for her

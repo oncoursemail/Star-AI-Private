@@ -12,11 +12,12 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..persona import strip_reasoning
-from . import rules, safety
+from . import rules, safety, style
 from .convo import GOODBYE, ChatFlow, shape_reply
 from .friends import FriendMemory, Person, extract_facts
 from .lifecycle import CONVO_GAP_S, Bonds
 from .requests import FriendRequests
+from .window import StyleWindow
 
 ROLEPLAY_IDLE_S = 30 * 60
 REUNION_AFTER_S = 3 * 24 * 3600   # a friend she has not talked to for this long messages her: a reunion
@@ -43,7 +44,7 @@ you stay in character (also as a human character) and answer in-character questi
 Never ask for passwords, phone numbers, addresses or other private details, and never share your owner's.
 Chat like a player: short lines, ask a question back now and then (not every message), remember names, follow up on
 what they told you. Never guilt-trip, cling, or try to keep anyone from leaving: let people go warmly.
-"""
+""" + style.STYLE_GUIDE
 
 _PLATFORM = {
     "discord": "You are in Discord on your own account.",
@@ -69,6 +70,11 @@ class Reply:
     mode: rules.Mode
     roleplay: bool
     stored: bool                 # False when nothing about this person is kept
+    lines: tuple[str, ...] = ()  # the same reply as 1-3 short messages to send a few seconds apart (text = them joined)
+
+    @property
+    def to_send(self) -> tuple[str, ...]:
+        return self.lines or ((self.text,) if self.text else ())
 
 
 def _default_complete(system: str, user: str) -> str:
@@ -119,7 +125,8 @@ class SocialChat:
     def __init__(self, memory: FriendMemory, *, complete: Callable[[str, str], str] | None = None,
                  emotion=..., clock: Callable[[], float] = time.time, bonds: Bonds | None = None,
                  requests: FriendRequests | None = None, flow: ChatFlow | None = None,
-                 killed: Callable[[str], bool] | None = None, rng=None, my_names: list[str] | None = None) -> None:
+                 killed: Callable[[str], bool] | None = None, rng=None, my_names: list[str] | None = None,
+                 window: StyleWindow | None = None, busy_state: Callable[[], str] | None = None) -> None:
         import random
         self.memory = memory
         self._rng = rng or random.Random()
@@ -127,6 +134,8 @@ class SocialChat:
         self.bonds = bonds or Bonds(memory, clock=clock)
         self.requests = requests or FriendRequests(memory, self.bonds, killed=self._killed, rng=self._rng)
         self.flow = flow or ChatFlow(my_names=my_names, clock=clock, rng=self._rng)
+        self.window = window or StyleWindow(clock=clock)
+        self._busy_state = busy_state       # -> "in a match" / "in a call" / "" : the only honest reasons to say she is busy
         self._sessions: dict[tuple[str, str], list[float]] = {}     # (platform, handle) -> [start, last line, nudge level]
         self._complete = complete or _default_complete
         self._emotion = _default_emotion() if emotion is ... else emotion
@@ -248,9 +257,9 @@ class SocialChat:
             return self._fixed("Got it, I'll leave you be.", person, platform)
         if person.muted and not public:
             self.memory.update(person, muted=False)   # they came back and talked to her first
-        style = STYLE.search(text)
-        if style:
-            self.memory.update(person, style=style.group(0)[:120])
+        asked_style = STYLE.search(text)
+        if asked_style:
+            self.memory.update(person, style=asked_style.group(0)[:120])
 
         rules.observe(self.memory, person, text, kids_place=kids_place, now=now)
         self._reunion(person)                    # before the mood note is built, so she greets them gladly
@@ -278,20 +287,44 @@ class SocialChat:
             ask_back,
             mood_line(self._emotion, person, mode),
             inner.note if inner is not None else "") if part)
-        raw = shape_reply(_SPEAKER.sub("", strip_reasoning(self._complete(system, user) or "")), platform, rng=self._rng)
-        reply = rules.check_outgoing(raw, incoming=text, mode=mode, platform=platform, roleplay=roleplay)
+        sincere = rules.is_sincere_ai_question(text, roleplay=roleplay)
+        hint = "" if sincere else self.window.hints(channel)
+        user = f"{user}\n\n{hint}" if hint else user
+        draft = _SPEAKER.sub("", strip_reasoning(self._complete(system, user) or ""))
+        if not sincere and not roleplay:
+            draft = self._regenerate(system, user, draft, text, platform)
+        busy = ""
+        if self._busy_state is not None:
+            try:
+                busy = str(self._busy_state() or "")
+            except Exception:
+                busy = ""
+        real_history = len(self.memory.moments(person, 4)) >= 2 or bool(self.bonds.items(person, "memory", 1))
+        honesty = {"busy": busy, "real_history": real_history}
+        raw = shape_reply(draft, platform, rng=self._rng)
+        reply = rules.check_outgoing(raw, incoming=text, mode=mode, platform=platform, roleplay=roleplay, **honesty)
         romantic_in = bool(rules.ROMANTIC.search(text))
         if mode.romance == "ask_age" and romantic_in and not rules.asks_age(reply):
             reply = rules.check_outgoing(f"{reply} How old are you, by the way?".strip(), incoming=text, mode=mode,
-                                         platform=platform, roleplay=roleplay)
+                                         platform=platform, roleplay=roleplay, **honesty)
         if rules.asks_age(reply):
             self.memory.update(person, age_asked=now)
         if not reply:
             return None
+        if not sincere and not roleplay:
+            review = self.window.review(channel, reply, name=person.name, now=now)     # W1-W10 over her recent messages
+            reply = review.text
+            if not reply or (review.silence_ok and public and not self.flow.named(text) and not text.rstrip().endswith("?")):
+                self.window.skipped(channel)            # she answered everything for ten messages: silence is fine now
+                return None
+        # Safety and request text is added after the window pass, so no style rule can cut it.
         reply = self._with_session_nudge(reply, person, platform, handle, mode, now)
         offer = "" if roleplay or intent or reply.rstrip().endswith("?") else self.requests.offer(platform, person)
         if offer:
             reply = f"{reply} {offer}"
+        lines = tuple(style.split_lines(reply, platform, roleplay=roleplay or sincere)) or (reply,)
+        reply = "\n".join(lines)
+        self.window.sent(channel, reply, now)
         self.flow.spoke(channel, handle, reply, now)
         self.bonds.record_exchange(person, platform, text, now)
         interests_only = mode.age_status in ("minor", "doubt") or platform == "roblox"
@@ -305,7 +338,22 @@ class SocialChat:
                 inner.done()
             except Exception:
                 pass
-        return Reply(reply, person, mode, roleplay, person.remembered)
+        return Reply(reply, person, mode, roleplay, person.remembered, lines)
+
+    def _regenerate(self, system: str, user: str, draft: str, incoming: str, platform: str) -> str:
+        """F1-F10: a draft that reads like an assistant gets one more try with what was wrong; the better of the two
+        (fewer flags, the second on a tie) is used, and the deterministic rewrites run on it afterwards either way."""
+        deep = style.is_deep(incoming)
+        found = style.flags(draft, incoming, platform, deep=deep)
+        if not found:
+            return draft
+        what = "; ".join(f.split(": ", 1)[-1] for f in found[:3])
+        try:
+            second = _SPEAKER.sub("", strip_reasoning(self._complete(
+                system, f"{user}\n\n(redo it the way a friend texts: short and plain. Problem: {what}.)") or ""))
+        except Exception:
+            return draft
+        return second if second.strip() and len(style.flags(second, incoming, platform, deep=deep)) <= len(found) else draft
 
     def _with_session_nudge(self, reply: str, person: Person, platform: str, handle: str, mode: rules.Mode, now: float) -> str:
         """Gentle session limit for under-18 / unknown-age people: a friendly break suggestion at 45, 90, 150 minutes."""

@@ -65,3 +65,36 @@ inner hooks). Also green: test_social_games, test_home_wiring, test_inner_life. 
 - Roblox reply targets: besides her name, an answer to something she just said and a question in a 1-2 person chat.
 - Roblox prompt no longer says "never ask anyone to add you" but "not in your own words": only the code's one question.
 - Not hooked yet: star.inner `Standing` use in calls.py beyond the closeness number; brain stream (no such API exists).
+
+## Part 2 (10-27): human texting style in the outgoing path (docs/research/human-texting-20261027.md)
+All of it sits on the one path every message takes: `SocialChat.handle` -> `rules.check_outgoing` (+ `style`, `window`, `pacing`, `reactions`).
+- **Persona guidance**: `style.STYLE_GUIDE` (the 22 rules, condensed) is part of the stable system message (`SOCIAL_CORE`), so the prompt cache holds.
+- **Deterministic rewrites** (`style.rewrite/finish/cut/split_lines`, run inside `check_outgoing` before the AI-identity checks): R1 dashes,
+  R2 markdown, R3 curly punctuation, R4 no final period on a short single sentence, R5 repeated punctuation, R6 service closers,
+  R7 stock openers (a bare "sure thing" stays), R8 emoji budget (one, never first, never the AI set; hearts fine), R9 cut at a
+  sentence/clause boundary with NO ellipsis (the old `...` tail is gone), R10 lowercase start when it fits (names, titles, ALL CAPS and
+  anything over 120 chars keep their capital), R11 split into up to 3 short lines. Role-play text is left alone (R10/R4/R11 skipped).
+- **Flag and regenerate** (`style.flags`, F1-F10): run on the model's raw draft; one more try with the problem named, the better draft wins
+  (fewer flags, second on a tie), then the rewrites run on it. Never for a sincere AI question or a role-play.
+- **Window checks** (`window.StyleWindow`, W1-W10) over her last 8-12 messages per channel: dropped trailing question, forced variety, dropped repeated
+  opener, emoji off, relaxed capital/full stop, silence-ok after 10 answers in a row (public, unnamed, unasked lines only), name dropped,
+  near-duplicate flagged (6+ words; the Pacer blocks exact repeats), latency jitter (`pacing.Jitter`), short-ack hint. `hints()` adds a one-line
+  nudge to the next prompt. Session-break and friend-request text is added AFTER this pass so no style rule can cut it.
+- **Honesty guards** (`style.guard`, hard, in `check_outgoing`): a sentence that claims an offline life (woke up, at work, my mom, dinner...), a
+  "busy" state she is not in (`SocialChat(busy_state=callable)` names a real one, e.g. "in a match"), or shared history she does not have
+  ("remember when we ..." needs at least two earlier remembered lines or a shared memory) is removed. No fake typos anywhere (`style.FAKE_TYPOS`
+  False; nothing inserts or imitates a mistake). The truthful yes to a sincere AI question skips every style step and is never regenerated.
+- **Pacing** (`pacing.py`, `activity.HumanPace`): ~0.3 s per character + 0.03 s per character they wrote + 0.5-2.5 s thinking, 10 s cap a line,
+  20 s a burst, quick reactions 1-4 s, 1-3 s between burst lines, no constant delay. `Pacer.allow_burst` treats up to 3 lines (2 on Roblox) as one
+  turn: the 4 s gap applies between bursts, the per-minute cap counts every line. Discord and Roblox send the lines one after another
+  (`HumanPace.send_lines`), Minecraft queues them in an outbox that `step()` flushes (so a reply goes out on a later step, not at once).
+- **Reactions** (`reactions.ReactionPolicy`, wired into `DiscordDesktop(reactions=, react=)`): meaning map, react / react-then-reply / reply / ignore,
+  budget one reaction per five messages, max two emoji on a message, never the same person's last three messages, never above the top regular, joins
+  an emoji that 2+ people used, server custom emoji win, eyes (not a skull) when a joke is ambiguous, nothing for blocked/muted, sad or serious
+  messages, bullying, mod announcements, romance from a possible minor. Avoid list: thumbs up, slight smile, plain checks. The app click is the
+  injected `react` hook; without it the decision is only logged (`reaction_skipped`). Not run against the real Discord UI.
+- `Reply.lines` / `Reply.to_send` carry the burst; `Reply.text` is the lines joined with newlines.
+- Behaviour changes: replies are mostly lowercase with no final period; two identical-looking short answers are fine, but 6+ word near-duplicates
+  are flagged; `HumanPace` is slower (3.3 chars/s); the Minecraft reply is delayed by the typing model.
+- Tests: `tests/test_human_texting.py` (100): the 20 before/after examples as fixtures (after lines clean and unchanged, before texts caught),
+  each of R1-R11, F1-F10, W1-W10, the guards, pacing, burst token, reactions, chat-path and Discord adapter behaviour.

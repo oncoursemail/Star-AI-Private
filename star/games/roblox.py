@@ -102,13 +102,14 @@ class RobloxPlay:
             history = [(str(c.get("author")), str(c.get("text"))) for c in view.get("chat") or [] if isinstance(c, dict)]
             reply = self.chat.handle("roblox", author, text, name=author, public=True,
                                      kids_place=self.current.kids, history=history, game=self.current.name)
-            if reply is not None and self.pacer.allow("roblox", reply.text) and self._front():
+            lines = list(reply.to_send)[:2] if reply is not None else []      # public kid-heavy chat: at most 2 short lines
+            if lines and self.pacer.allow_burst("roblox", lines, max_lines=2) and self._front():
                 self.pace.read(text)
-                self.host.key("/")
-                self.pace.type(self.host, reply.text)
-                self.host.key("enter")
-                self.pacer.sent("roblox", reply.text)
-                acted = True
+                sent = self.pace.send_lines(self.host, lines, before_each=lambda: self.host.key("/"),
+                                            after_each=lambda: self.host.key("enter"), still_ok=self._front)
+                for line in lines[:sent]:
+                    self.pacer.sent("roblox", line)
+                acted = acted or sent > 0
                 notes.append(f"chatted with {author}")
         move = str(view.get("move") or "none")
         if move in KEYS and self._front():
