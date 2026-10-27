@@ -211,8 +211,10 @@ def _simple_home(home, outcome, interest="research"):
 
 def test_emotion_hook_passes_a_kind_string_not_a_dict(home, monkeypatch):
     from star import emotion
+    import star.life
     seen = []
     monkeypatch.setattr(emotion, "on_event", lambda kind, **kw: seen.append((kind, kw)))
+    monkeypatch.setattr(star.life, "flag", lambda name, home=None: False)   # her goals feel on their own (random); not under test here
     for outcome, interest, expected in (
             ({"ok": True, "verified": True, "summary": "drew it", "evidence": ["x"]}, "drawing", "creative_done"),
             ({"ok": True, "verified": True, "summary": "read it", "evidence": ["x"]}, "research", "learned_something"),
