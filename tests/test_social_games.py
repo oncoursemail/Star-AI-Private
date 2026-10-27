@@ -257,14 +257,14 @@ def pace():
 
 
 def test_discord_desktop_replies_to_a_dm_at_human_pace(memory):
-    chat, _ = make_chat(memory, answer="omg yes, the new map is great")
+    chat, _ = make_chat(memory, answer="omg yes, the new map is cool")
     view = {"channel": "Mira", "is_dm": True, "messages": [
         {"author": "Star", "text": "hey!"}, {"author": "Mira", "text": "did you try the new map?"}]}
     host = Host()
     activity = DiscordDesktop(host, chat, reader=lambda png: view, pace=pace())
     assert isinstance(activity, Activity)
     result = activity.step()
-    assert result.acted and host.typed() == "omg yes, the new map is great"
+    assert result.acted and host.typed() == "omg yes, the new map is cool"
     assert ("key", "alt+shift+down") in host.actions and host.actions[-1] == ("key", "enter")
     assert sum(1 for a in host.actions if a[0] == "type") > 1          # typed in chunks, not pasted
     assert not activity.step().acted                                   # same message is not answered twice

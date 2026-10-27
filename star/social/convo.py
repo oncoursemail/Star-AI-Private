@@ -34,7 +34,7 @@ QUIET_LEAVE_S = 10 * 60          # nobody answered her for this long: the conver
 ASK_BACK_EVERY = 3               # she has not asked anything for this many replies: a question back is due
 
 
-def shape_reply(text: str, platform: str, *, rng: random.Random | None = None, emoji_chance: float = 0.2) -> str:
+def shape_reply(text: str, platform: str, *, rng: random.Random | None = None, emoji_chance: float = 0.05) -> str:
     """One reply the way a player types it."""
     rng = rng or random.Random()
     text = _LIST.sub("", str(text or ""))
