@@ -151,7 +151,7 @@ def test_star_vision_grounder_sends_a_png_and_maps_the_point_back():
 
     def ask(settings, question, images, max_tokens, timeout):
         asked["q"], asked["png"] = question, images[0].read_bytes()[:8]
-        return type("Seen", (), {"text": 'Here: {"x": 320, "y": 180}'})()
+        return type("Seen", (), {"text": '{"x": 320, "y": 180}'})()
 
     image, _ = synthetic_screen((2560, 1440))
     found = StarVisionGrounder(object(), ask=ask, max_side=1280).locate(image, "the Alpha button")
