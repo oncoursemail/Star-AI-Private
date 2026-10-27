@@ -274,6 +274,11 @@ class StarStage:
             self._counts["audible"] += 1
             return True
 
+    def prepared(self, plan: StagePlan) -> bool:
+        """Host-only preplay check: same live plan object in prepared phase."""
+        with self._lock:
+            return self._matches(plan, "prepared")
+
     def current(self, plan: StagePlan) -> bool:
         """Call immediately before sending rig frames to reject stale tokens."""
         with self._lock:
