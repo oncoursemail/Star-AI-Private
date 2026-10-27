@@ -172,7 +172,7 @@ export type MetallicSession = {
   markSignedOut: (expired: boolean) => void
 }
 
-const signedOutPreview: MetallicStatus = {signed_in: false, expires_at: null, configured: true, control_url: 'http://metallic-control.local:8470', locked_until: null, secure_store: true}
+const signedOutPreview: MetallicStatus = {signed_in: false, expires_at: null, configured: true, control_url: 'http://metallic-control.local:8470', locked_until: null, secure_store: true, accounts_configured: true}
 
 /** Metallic sign-in state for the whole desktop. `initial` is bootstrap's `metallic`; `inactive` is the unconnected
  *  preview, which never calls the host. Expiry hides Metallic at the reported time without waiting for a refresh. */
