@@ -65,9 +65,6 @@ class RcCli:
         _check_id(installation_id)
         return self._run(["plan", installation_id, *_launch_args(mode, target, approved_launcher)], timeout=300, ok=(0, 3))[1]
 
-    def probe_backend(self, url: str) -> dict:
-        return self._run(["probe-backend", url], timeout=30, ok=(0, 2), state=False)[1]
-
     # -- changes (each one is explicit and recorded by RC) ------------------------------------------------------
     def import_(self, folder: str, name: str, *, launcher: str | None = None, replace: bool = False, cancelled=None) -> dict:
         args = ["import", str(folder), "--name", name]

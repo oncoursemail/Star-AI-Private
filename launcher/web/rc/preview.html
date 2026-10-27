@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- Stand-alone preview of the RC page with a pretend module (rc/preview-fake.js). Not loaded by the launcher.
+     Serve launcher/web with any static server and open  rc/preview.html?scenario=typical&theme=dark
+     scenario: typical | fresh | changed | backend-off | offline-vr | partners-off      theme: dark | light -->
+<html lang="en" data-theme="dark" data-accent="violet">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RC page preview</title>
+<link rel="stylesheet" href="../css/app.css">
+<link rel="stylesheet" href="rc.css">
+<style>
+  html, body { height: auto; overflow: auto; }
+  body { background: #0d0d11 url("../art/metal.jpg") center / cover fixed; user-select: auto; }
+  [data-theme="light"] body { background-color: #e9e9ee; background-blend-mode: screen; }
+  main { max-width: 1240px; margin: 0 auto; padding: 24px; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px; background: #26262e; color: #eee; font: 14px system-ui; display: none; z-index: 5; }
+</style>
+</head>
+<body>
+<main id="host"></main>
+<div class="toast" id="toast" role="status"></div>
+<script type="module">
+import { mountRcPage } from "./rc-page.js";
+import { makeFakeRc } from "./preview-fake.js";
+const q = new URLSearchParams(location.search);
+document.documentElement.dataset.theme = q.get("theme") || "dark";
+if (q.get("accent")) document.documentElement.dataset.accent = q.get("accent");
+const toast = (m) => { const t = document.getElementById("toast"); t.textContent = m; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => (t.style.display = "none"), 3500); };
+window.page = mountRcPage(document.getElementById("host"), { rc: makeFakeRc(q.get("scenario") || "typical"), toast, art: "../art/rc.jpg" });
+</script>
+</body>
+</html>
