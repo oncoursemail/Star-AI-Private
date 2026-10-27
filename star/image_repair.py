@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import re
 from dataclasses import dataclass
+from typing import cast
 
 from .image_prompt import parse_json
 
@@ -59,9 +60,10 @@ def parse_flaws(reply: str) -> list[Flaw]:
     for item in regions if isinstance(regions, list) else []:
         if not isinstance(item, dict) or not isinstance(item.get('box'), list) or len(item['box']) != 4:
             continue
-        x0, y0, x1, y1 = (_fraction(v) for v in item['box'])
-        if None in (x0, y0, x1, y1):
+        edges = [_fraction(v) for v in item['box']]
+        if any(edge is None for edge in edges):
             continue
+        x0, y0, x1, y1 = (cast(float, edge) for edge in edges)
         x0, y0, x1, y1 = max(0.0, x0), max(0.0, y0), min(1.0, x1), min(1.0, y1)
         if x1 <= x0 or y1 <= y0:
             continue
