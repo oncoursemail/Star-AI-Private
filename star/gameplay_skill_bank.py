@@ -198,6 +198,59 @@ class GameplaySkillBank:
             raise ValueError("game, version, objective and situation must be bounded IDs")
         return parts
 
+    def _signed_audit_counts(
+        self, game_id: str, game_version: str, objective_id: str,
+        situation_id: str, action_id: str, *, split: str,
+        now_unix_s: int, after_unix_s: int = 0,
+        before_unix_s: int | None = None,
+        include_stale: bool = False,
+    ) -> tuple[int, int]:
+        """Trusted OWNER-side transfer audit only; never a planner or LLM API.
+
+        Validate EVERY row in the selected scope before counting outcomes.
+        Source PRACTICE is frozen before preregistration; target VALIDATION
+        must be genuinely later. No holdout evidence is exposed to practice.
+        """
+        scope = self._scope(game_id, game_version, objective_id, situation_id)
+        if type(action_id) is not str or (action_id != "*" and not _ID.fullmatch(action_id)):
+            raise ValueError("invalid action")
+        if split not in ("practice", "validation"):
+            raise ValueError("invalid split")
+        now = _seconds(now_unix_s)
+        if (type(after_unix_s) is not int or after_unix_s < 0
+                or before_unix_s is not None
+                and (type(before_unix_s) is not int or before_unix_s < 1)):
+            raise ValueError("invalid audit evidence window")
+        rows = self._db.execute(
+            "SELECT trial_id, run_id, payload_json, receipt FROM gameplay_trials "
+            "WHERE game_id=? AND game_version=? AND objective_id=? AND situation_id=?",
+            scope,
+        ).fetchall()
+        successes = attempts = 0
+        for trial_id, run_id, payload_json, receipt in rows:
+            try:
+                payload = json.loads(payload_json)
+                if type(payload) is not dict:
+                    raise ValueError("invalid signed trial")
+                trial = GameTrial(**payload)
+                if (trial.trial_id != trial_id or trial.run_id != run_id
+                        or self._scope(trial.game_id, trial.game_version,
+                                       trial.objective_id, trial.situation_id) != scope):
+                    raise ValueError("signed trial identity or scope mismatch")
+                self._check_receipt(trial, receipt)
+            except (TypeError, ValueError, PermissionError) as exc:
+                raise sqlite3.IntegrityError("gameplay audit ledger corrupted") from exc
+            age_limit = (_PRACTICE_MAX_AGE_S if split == "practice"
+                         else _VALIDATION_MAX_AGE_S)
+            if ((action_id == "*" or trial.action_id == action_id) and trial.split == split
+                    and after_unix_s < trial.observed_unix_s <= now
+                    and (before_unix_s is None
+                         or trial.observed_unix_s <= before_unix_s)
+                    and (include_stale or now - trial.observed_unix_s <= age_limit)):
+                attempts += 1
+                successes += int(trial.outcome == "success")
+        return successes, attempts
+
     def practice_evidence(self, game_id: str, game_version: str,
                           objective_id: str, situation_id: str, *,
                           now_unix_s: int) -> tuple[PracticeEvidence, ...]:
