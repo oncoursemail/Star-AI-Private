@@ -44,7 +44,7 @@ import re
 import sqlite3
 import threading
 import time
-from typing import Callable
+from typing import Any, Callable
 
 from .emotion_express import (BOND_CLOSE, BOND_DEVOTED, BOND_FAMILIAR, MAX_BOND_NOTE_WORDS, MAX_NOTE_WORDS, SALIENT,  # noqa: F401
                               STRONG, Prosody, avatar_from, build_note, drives_from, invite_bias, prosody_from)
@@ -451,7 +451,7 @@ def enabled(home: str | os.PathLike | None = None) -> bool:
         return False
 
 
-def _safe(name: str, call: Callable[[], object], default: object = None) -> object:
+def _safe(name: str, call: Callable[[], Any], default: Any = None) -> Any:
     try:
         return call()
     except Exception as exc:                   # a mood problem must never break a chat, a call or a task

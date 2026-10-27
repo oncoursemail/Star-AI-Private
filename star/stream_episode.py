@@ -205,7 +205,7 @@ class StreamEpisode:
             if len(record) > _MAX_PACKET:
                 return None
             self._counts["packets"] += 1
-            return EpisodePacket(tuple(f["action_id"] for f in facts), record)
+            return EpisodePacket(tuple(str(f["action_id"]) for f in facts), record)
 
     def metrics(self) -> dict[str, int | bool]:
         """No raw IDs, receipts, on-air text, players, screenshots or timestamps."""

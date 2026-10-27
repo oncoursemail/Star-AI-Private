@@ -23,7 +23,7 @@ from .browser import BrowserError, HostBrowser, VisionScreenReader
 from .choose import WatchHistory, pick, rank
 from .frames import LiveFrameSampler
 from .hearing import HubHearing
-from .learn import finish
+from .learn import Learned, finish
 from .llm import ChatBrain, chat_vision
 from .model import Candidate, WatchResult
 from .session import WatchSession
@@ -196,9 +196,9 @@ def idle_seconds() -> float:  # pragma: no cover - Windows only
     class LastInput(ctypes.Structure):
         _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
     info = LastInput(ctypes.sizeof(LastInput), 0)
-    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):  # pyright: ignore[reportAttributeAccessIssue]
         return 0.0
-    return (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000.0
+    return (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000.0  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def run(ctx, parts: Parts | None = None) -> dict:
@@ -223,7 +223,7 @@ def run(ctx, parts: Parts | None = None) -> dict:
     interests = _interest_text(ctx.life.interests())
     started = parts.clock()
     deadline = started + settings.session_minutes * 60
-    done: list[tuple[WatchResult, object, str]] = []
+    done: list[tuple[WatchResult, Learned, str]] = []
     follow = False
     session = None
     try:

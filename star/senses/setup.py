@@ -15,6 +15,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from ..voice import setup_models
 from ..voice.engines import models_dir
@@ -69,7 +70,7 @@ def fetch_asr(model: AsrModel, report=print) -> bool:
         return False
     report(f"Downloading {model.name} ({model.size / 1e6:.0f} MB): {model.what}")
     path = _asr_path(model, local_only=False)
-    weights = Path(path) / "model.bin"
+    weights = Path(cast(str, path)) / "model.bin"
     if weights.stat().st_size != model.size or setup_models.sha256_of(weights) != model.sha256:
         raise RuntimeError(f"{model.name}: model.bin does not match the pinned size or SHA-256 ({weights})")
     return True

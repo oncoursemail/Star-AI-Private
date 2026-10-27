@@ -111,7 +111,7 @@ def run_session(chat, executor: Executor, life, *, interest: str, brief: str, go
     end now (a friend needs her): the result is {"paused": True}; a brain session is not resumable, it starts over."""
     goal_line = f"Goal {goal['id']}: {goal['text']}" if goal else "No open goal: choose one and add it with add_goal."
     interests = ", ".join(f"{k} {v.get('weight')}" for k, v in life.interests().items())
-    messages = [{"role": "system", "content": SYSTEM},
+    messages: list[dict] = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": f"Session: {interest} ({brief}).\n{goal_line}\nWorkspace: "
                  f"{executor.workspace}\nYour interest weights: {interests}"}]
     tools = tool_defs()

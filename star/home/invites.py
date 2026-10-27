@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 import math
 import re
 import time
-from typing import Callable
+from typing import Any, Callable
 
 from .attention import Incoming, Situation, Standing, in_quiet_hours, quiet_end
 
@@ -109,9 +109,10 @@ def _mood_factors(mood: dict, kind: str) -> list[tuple[str, float]]:
     one; with the older seven-feeling engine the three plain factors below."""
     try:
         from .. import emotion
-        bias_of = getattr(emotion, "invite_bias", None)
+        bias_of: Any = getattr(emotion, "invite_bias", None)
         if callable(bias_of):
-            bias, why = bias_of(mood, kind)
+            pair: Any = bias_of(mood, kind)
+            bias, why = pair
             return [(f"her mood: {why}" if why else "her mood", float(bias))] if bias else []
     except Exception:
         pass
@@ -239,10 +240,12 @@ class InviteDesk:
             text = "call" if invite.kind == "call" else invite.what
             at = self.clock() + (4.0 if answer.say == "yes" else answer.delay_min * 60.0)
             bound = float(self.cfg["moment_wait_s"]["close"])
+            schedule = self.schedule
 
-            def after(kind=kind, text=text, at=at, bound=bound) -> None:
-                self.schedule(Incoming(kind, platform, invite.sender, text, at=self.clock()), at, at + bound,
-                              "she said yes to the invitation")
+            def _after(kind=kind, text=text, at=at, bound=bound) -> None:
+                schedule(Incoming(kind, platform, invite.sender, text, at=self.clock()), at, at + bound,
+                         "she said yes to the invitation")
+            after = _after
         return Plan(answer, intent_for(answer, invite), after)
 
 

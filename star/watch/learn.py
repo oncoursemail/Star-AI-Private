@@ -65,7 +65,7 @@ def summarize(brain: Brain | None, result: WatchResult) -> Learned:
         return notes
     notes.summary = clean(data.get("summary"), 600) or notes.summary
     notes.facts = [clean(f, 240) for f in (data.get("facts") or []) if isinstance(f, str) and clean(f, 240)][:6]
-    notes.kind = data.get("kind") if data.get("kind") in KINDS else "other"
+    notes.kind = str(data.get("kind")) if data.get("kind") in KINDS else "other"
     notes.skill = _SKILL.sub("", clean(data.get("skill"), 60)).strip()[:48]
     notes.topic = clean(data.get("topic"), 60)
     notes.liked = number(data.get("liked"), 0.0, 1.0, result.interest)

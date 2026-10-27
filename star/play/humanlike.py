@@ -18,7 +18,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 
 @dataclass(frozen=True)
@@ -87,8 +87,8 @@ Intent = Aim | Look | Hold | Tap | Release
 class Event:
     t: float                           # absolute time on the actuator's clock
     kind: str                          # move_to | move_rel | button_down | button_up | key_down | key_up
-    a: object = None
-    b: object = None
+    a: Any = None
+    b: Any = None
     channel: str = "mouse"             # mouse events of a newer aim replace pending ones; keys are per key
 
 

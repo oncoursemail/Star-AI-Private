@@ -182,7 +182,7 @@ class Computer:
         if not el.enabled:
             return False, f"{el.name!r} is disabled", el
         x, y = self.aim_point(el)
-        button = action.get("button") if action.get("button") in ("left", "right", "middle") else "left"
+        button = str(action.get("button")) if action.get("button") in ("left", "right", "middle") else "left"
         self.hands.click(x, y, width=min(el.width, el.height) or 20, button=button, clicks=2 if action.get("double") else 1)
         return True, f"clicked {el.name!r} ({el.role})", el
 

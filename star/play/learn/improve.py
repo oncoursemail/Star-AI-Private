@@ -36,14 +36,14 @@ def select_steps(corpus: Corpus, *, replay_frac: float = 0.3, human: tuple[str, 
                  rng: np.random.Generator | None = None) -> tuple[np.ndarray, int]:
     """(train indices, number of success steps): every usable step inside a successful episode, plus human steps
     (not from failed episodes) so that they make up `replay_frac` of the result."""
-    rng = rng or np.random.default_rng(0)
+    gen = rng or np.random.default_rng(0)
     usable = corpus.usable()
     success = usable[corpus.episode[usable] == 1]
     who = np.array([corpus.who[s] in human for s in corpus.session[usable]], dtype=bool)
     pool = usable[who & (corpus.episode[usable] != -1)]
     pool = np.setdiff1d(pool, success)
     want = int(len(success) * replay_frac / max(1e-9, 1 - replay_frac))
-    replay = rng.choice(pool, size=min(want, len(pool)), replace=False) if want and len(pool) else pool[:0]
+    replay = gen.choice(pool, size=min(want, len(pool)), replace=False) if want and len(pool) else pool[:0]
     return np.sort(np.concatenate([success, replay])), int(len(success))
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from typing import Callable
+from typing import Any, Callable
 
 from . import control
 
@@ -179,7 +179,8 @@ def register_play(registry) -> None:
                             "failures": [f"roblox: {started.note}"]}
                 sleep(float(play_cfg.get("load_wait_s", 20.0)))
             session = None
-            if roblox.current.place_id in obby_places:
+            current = roblox.current
+            if current is not None and current.place_id in obby_places:
                 from ..play.roblox import ObbyProfile
                 if not rt.host.focus_window("Roblox"):
                     return {"ok": False, "verified": False, "summary": "Roblox is not in front", "evidence": [],
@@ -187,7 +188,7 @@ def register_play(registry) -> None:
                 make = rt.hooks.get("roblox_session")
                 if make is None:
                     from ..play.session import roblox_obby_session as make
-                session = make(ObbyProfile(place_id=roblox.current.place_id), brain=rt.planner_brain(),
+                session = make(ObbyProfile(place_id=current.place_id), brain=rt.planner_brain(),
                                speak=rt.voice.speak, voice_window=rt.voice.window_for("roblox_obby"))
                 session.fast.on_moment.append(_moment_listener(ctx.situation))
                 session.start()
@@ -290,7 +291,7 @@ def wire_watch(registry) -> None:
     def run(ctx) -> dict:
         """The watcher sleeps through `parts.sleep`; ending that sleep early when a friend needs her stops the video
         cleanly (paused with 'k'), and she comes back to a video afterwards."""
-        browser_error = getattr(importlib.import_module("star.watch.browser"), "BrowserError", RuntimeError)
+        browser_error: Any = getattr(importlib.import_module("star.watch.browser"), "BrowserError", RuntimeError)
 
         class Interrupted(browser_error):
             pass

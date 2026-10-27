@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 import time
+from typing import Any
 
 from ..discord_bot.proactive import invented_numbers
 from ..persona import leaked_reasoning, strip_reasoning
@@ -180,7 +181,7 @@ def consolidate(store: InnerStore, now: float) -> dict:
                 merged += 1
             else:
                 seen[key] = ep
-        newest: dict[str, object] = {}
+        newest: dict[str, Any] = {}
         for ep in sorted((e for e in eps if e.kind == "fact" and e.id not in drop), key=lambda e: e.ts):
             match = _SUPERSEDE.match(ep.text)
             if match:

@@ -1728,7 +1728,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     memory_limit=memory_limit, allowed_context_chars=allowed_context_chars,
                     document_block=document_block, client=client, event=audited_event)
                 learned['grounding'] = docs
-                kwargs = dict(client=client, model=route.model, prompt=prompt, image_paths=images,
+                kwargs: dict[str, Any] = dict(client=client, model=route.model, prompt=prompt, image_paths=images,
                               now=current_turn_line(conversation_records),
                               project_memory=stable_memory(settings, memory.get(memory_scope)),
                               history=history,
@@ -1771,7 +1771,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 if minecraft_tools is not None:
                     kwargs['minecraft_tools'] = minecraft_tools
                 if song_tool is not None:
-                    kwargs['song_lookup'] = song_tool  # type: ignore[assignment]  # kwargs' value type is inferred from the dict above
+                    kwargs['song_lookup'] = song_tool
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.
@@ -1790,7 +1790,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 resample_request: list[dict] = []
                 if (settings.verify_resample == 'on' and settings.verify_ladder == 'on' and several is None
                         and plain_code_turn):
-                    kwargs['on_first_request'] = resample_request.append  # type: ignore[assignment]  # as above: kwargs' value type is inferred
+                    kwargs['on_first_request'] = resample_request.append
                 # Opt-in diff-only edits (star/edit_format.py): pasted code plus a change request is answered with
                 # SEARCH/REPLACE blocks that STAR applies and checks here. Plain chat turns only, not with best-of-N.
                 edit = (edit_format.find_edit(prompt)
@@ -1831,16 +1831,17 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                     from .local_mcp import connect_studio
                                 # One guarded connection per attempt: a retry below happens only when
                                 # nothing was sent to the model or to Studio, so nothing is replayed.
-                                    guarded = await connections.enter_async_context(
+                                    # LocalStudioClient answers like a GuardedStudio (verdict, journal, ...).
+                                    guarded = cast(Any, await connections.enter_async_context(
                                         connect_studio(settings, home,
-                                            studio_configuration_home=studio_configuration_home))
+                                            studio_configuration_home=studio_configuration_home)))
                                     # The tool list is the connector's own, read now. What STAR may do in
                                     # the open place is decided in code from what that place is.
                                     discovered = guarded.discovered
                                     if settings.studio_tool_examples:
                                         # Description text only; what may run is still decided by policy.
                                         discovered = studio_tool_examples.with_examples(discovered)
-                                    sections = list(kwargs.get('turn_sections') or ())
+                                    sections: list[Any] = list(kwargs.get('turn_sections') or ())
                                     # The verdict's text can quote the place; like every other section
                                     # it may not look like lessons (guard_sections).
                                     sections.extend(learning.guard_sections(

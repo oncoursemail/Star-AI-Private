@@ -27,8 +27,8 @@ def idle_seconds() -> float:  # pragma: no cover - Windows only
         _fields_ = [("cbSize", wt.UINT), ("dwTime", wt.DWORD)]
     info = LASTINPUTINFO()
     info.cbSize = ctypes.sizeof(info)
-    ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info))
-    return (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000.0
+    ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info))  # pyright: ignore[reportAttributeAccessIssue]
+    return (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000.0  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def _context(home: Path, dry: bool):  # pragma: no cover - real backends
@@ -45,7 +45,7 @@ def _context(home: Path, dry: bool):  # pragma: no cover - real backends
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the real desktop
     from ..home import control
-    parser = argparse.ArgumentParser(prog="python -m star.computer", description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(prog="python -m star.computer", description=(__doc__ or "").split("\n")[0])
     parser.add_argument("command", choices=["see-app", "draw-test", "act", "calibrate"])
     parser.add_argument("arg", nargs="?", default="")
     parser.add_argument("--home", type=Path, default=None)
@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the
             print(f"see() #{i + 1}: {len(screen.elements)} elements in {(time.perf_counter() - started) * 1000:.0f} ms")
         print(screen.prompt(80))
         if info and args.close:
-            ctypes.windll.user32.PostMessageW(info.hwnd, 0x10, 0, 0)           # WM_CLOSE: asks the window to close
+            ctypes.windll.user32.PostMessageW(info.hwnd, 0x10, 0, 0)           # WM_CLOSE: asks the window to close  # pyright: ignore[reportAttributeAccessIssue]
         return 0 if info else 1
     if args.command == "draw-test":
         data = json.loads(args.plan.read_text(encoding="utf-8")) if args.plan else DEMO_PLAN

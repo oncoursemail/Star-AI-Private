@@ -229,11 +229,11 @@ class Runtime:
             return None
         from .notifications import NotificationWatcher, best_source
         apps = tuple(cfg.get("apps") or ("discord", "roblox"))
-        self.watcher = NotificationWatcher(
+        watcher = self.watcher = NotificationWatcher(
             best_source(apps), self.inbox, apps=apps, ring_s=float(self.model.cfg["call_ring_s"]), clock=self.clock,
             on_toast=lambda toast, incoming: control.log_action(
                 self.home, "notification", "seen", app=toast.app, parsed=incoming.route if incoming else ""))
-        return lambda: self.watcher.run(float(cfg.get("poll_s", 2.0)))
+        return lambda: watcher.run(float(cfg.get("poll_s", 2.0)))
 
     def background(self) -> list[Callable[[], None]]:  # pragma: no cover
         jobs = [self.watcher_job()]

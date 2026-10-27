@@ -23,7 +23,10 @@ class ScreenEye:  # pragma: no cover - reads the real screen
             source = self._sources.get(region)
             if source is None:
                 source = self._sources[region] = GdiCapture(region)
-            return Image.fromarray(source.grab().image)
+            frame = source.grab()
+            if frame is None:
+                raise RuntimeError("no frame")        # falls back to ImageGrab, as an AttributeError did before
+            return Image.fromarray(frame.image)
         except Exception:
             from PIL import ImageGrab
             return ImageGrab.grab(bbox=region, all_screens=False).convert("RGB")

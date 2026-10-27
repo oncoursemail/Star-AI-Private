@@ -24,7 +24,9 @@ MEMBERS_PER_ITEM = 6
 
 
 def _source(dump: dict) -> dict:
-    source = dump.get("StarSource") if isinstance(dump.get("StarSource"), dict) else {}
+    source = dump.get("StarSource")
+    if not isinstance(source, dict):
+        source = {}
     return {k: source.get(k) for k in ("studioVersion", "clientVersionUpload", "generated") if source.get(k)}
 
 

@@ -199,7 +199,8 @@ class InnerStore:
 
     def episodes(self, *, pkey: str | None = None, since: float = 0.0, kind: str | None = None,
                  limit: int = 500) -> list[Episode]:
-        sql, args = f"SELECT {_SELECT} FROM episodes WHERE ts >= ?", [since]
+        sql = f"SELECT {_SELECT} FROM episodes WHERE ts >= ?"
+        args: list = [since]
         if pkey is not None:
             sql += " AND pkey = ?"
             args.append(pkey)

@@ -128,7 +128,7 @@ def detect_format(raw_points: list[tuple[float, float]], truth: list[tuple[int, 
     for fmt in FORMATS:
         pts = [to_pixels(p, size, fmt) for p in raw_points]
         errors[fmt] = sum(math.hypot(a[0] - b[0], a[1] - b[1]) for a, b in zip(pts, truth)) / max(1, len(truth))
-    return min(errors, key=errors.get), errors
+    return min(errors, key=lambda k: errors[k]), errors
 
 
 def encode_png(image, max_side: int) -> tuple[str, tuple[int, int]]:

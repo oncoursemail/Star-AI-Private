@@ -81,7 +81,7 @@ class NodeTransport:
         threading.Thread(target=self._read, daemon=True).start()
 
     def _read(self) -> None:
-        for line in self._proc.stdout:
+        for line in self._proc.stdout or ():
             try:
                 event = json.loads(line)
             except ValueError:
@@ -91,9 +91,10 @@ class NodeTransport:
         self._events.append({"type": "end", "reason": "process exited"})
 
     def send(self, command: dict) -> None:
-        if self._proc.poll() is None:
-            self._proc.stdin.write(json.dumps(command) + "\n")
-            self._proc.stdin.flush()
+        stdin = self._proc.stdin
+        if self._proc.poll() is None and stdin is not None:
+            stdin.write(json.dumps(command) + "\n")
+            stdin.flush()
 
     def poll(self) -> list[dict]:
         out = []

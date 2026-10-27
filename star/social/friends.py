@@ -16,6 +16,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 PLATFORMS = ("discord", "minecraft", "roblox")
 MAX_FACTS = 200
@@ -128,7 +129,7 @@ class FriendMemory:
                                    ((name or handle)[:100], now, now, int(they_started)))
             self._db.execute("INSERT INTO handles VALUES (?, ?, ?)", (platform, handle.lower(), cur.lastrowid))
             self._db.commit()
-            return self.get(cur.lastrowid)
+            return self.get(cast(int, cur.lastrowid))
         return self.get(row[0])
 
     def known(self, platform: str, handle: str) -> Person | None:

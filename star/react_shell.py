@@ -9,6 +9,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 import hashlib
 import json
 import os
@@ -382,6 +383,7 @@ def sanitize_event(event: dict) -> dict:
     passed authorization. Goals, arguments, outputs and model-authored task ids
     are never included.
     """
+    activity: dict[str, Any]
     kind = str(event.get('event', 'working'))[:36]
     research_activity = sanitize_research_event(event)
     if research_activity is not None:
@@ -458,7 +460,7 @@ def sanitize_event(event: dict) -> dict:
         if first is not None:
             activity['first_token_ms'] = first
         rate = event.get('tokens_per_second')
-        if type(rate) in (int, float) and 0 <= rate <= 10000:
+        if isinstance(rate, (int, float)) and type(rate) in (int, float) and 0 <= rate <= 10000:
             activity['tokens_per_second'] = round(float(rate), 1)
         activity['estimated_tokens'] = event.get('estimated_tokens') is True
         return {'phase': 'Answer complete', 'activity': activity}
@@ -1590,13 +1592,13 @@ def launch():
                             raise RuntimeError('Could not capture current screen')
                         screenshot=bytes(buffer.data())
                         buffer.close()
-                    def worker():
+                    def export_worker():
                         result=export_review_bundle(
                             app_data(),Settings.load(self.settings_file),destination,
                             runtime_status=self.runtime.status(),screenshot_png=screenshot)
                         return {'filename':result.name,'screenshot_included':bool(screenshot),
                                 'saved_to_user_selected_location':True}
-                    self._run(rid,action,worker)
+                    self._run(rid,action,export_worker)
                     return json.dumps({'ok':True,'pending':True,'requestId':rid})
                 if action=='openLegacy':
                     raise PermissionError('The legacy UI is diagnostic-only; start STAR.exe --legacy-ui explicitly if necessary.')
@@ -1735,8 +1737,8 @@ def launch():
                     # timings and model IDs go back to the interface.
                     self._run(rid,action,lambda:probe_server(Settings.load(self.settings_file)))
                 elif action=='listModels':
-                    def worker():return {'models':query_models(Settings.load(self.settings_file))}
-                    self._run(rid,action,worker)
+                    def models_worker():return {'models':query_models(Settings.load(self.settings_file))}
+                    self._run(rid,action,models_worker)
                 elif action=='repairStrataConfig':
                     return json.dumps({'ok': True, 'data': _repair_strata_config(self.host, self.active_task)})
                 elif action=='testStrata':

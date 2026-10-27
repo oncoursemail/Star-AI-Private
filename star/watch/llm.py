@@ -8,7 +8,7 @@ import io
 import json
 from pathlib import Path
 import re
-from typing import Callable
+from typing import Any, Callable
 
 from .model import Brain, Vision
 
@@ -45,7 +45,7 @@ def parse_json(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def number(value: object, low: float, high: float, default: float) -> float:
+def number(value: Any, low: float, high: float, default: float) -> float:
     try:
         return min(high, max(low, float(value)))
     except (TypeError, ValueError):

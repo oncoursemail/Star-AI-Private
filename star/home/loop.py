@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 import threading
 import time
+from typing import Any
 
 from .. import curiosity
 from . import control
@@ -47,7 +48,8 @@ def _inner_tick(home: Path, chat) -> None:
     try:
         from ..inner import night
         complete = night.complete_from_chat(chat) if chat is not None else None
-        night.tick(life_home=home, **({"complete": complete} if complete else {}))
+        extra: dict[str, Any] = {"complete": complete} if complete else {}
+        night.tick(life_home=home, **extra)
     except Exception as exc:
         control.log_action(home, "inner", "error", detail=str(exc)[:200])
 

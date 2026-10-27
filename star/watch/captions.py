@@ -15,7 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Callable
+from typing import Callable, cast
 
 from .model import AudioState, Candidate, Line
 
@@ -54,7 +54,7 @@ def parse_vtt(text: str) -> list[tuple[float, float, str]]:
             continue
         cue = next((i for i, row in enumerate(block) if _CUE.search(row)), None)
         if cue is not None:
-            g = _CUE.search(block[cue]).groups()
+            g = cast(re.Match[str], _CUE.search(block[cue])).groups()
             start, end = _seconds(g[0], g[1], g[2], g[3]), _seconds(g[4], g[5], g[6], g[7])
             rows = [re.sub(r"\s+", " ", _TAG.sub("", row)).strip() for row in block[cue + 1:]]
             rows = [row for row in rows if row]

@@ -21,6 +21,7 @@ from __future__ import annotations
 import sys
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -76,8 +77,9 @@ class VirtualMicRoute:
         return self.playback is not None and self.recording is not None
 
     def describe(self) -> str:
-        if self.ready:
-            return (f'Voice goes to "{self.playback["name"]}"; apps record "{self.recording["name"]}"'
+        playback, recording = self.playback, self.recording
+        if playback is not None and recording is not None:
+            return (f'Voice goes to "{playback["name"]}"; apps record "{recording["name"]}"'
                     + ("" if self.renamed else f' (not renamed to "{MIC_NAME}" yet)') + ".")
         missing = [n for n, d in (("playback", self.playback), ("recording", self.recording)) if d is None]
         return f"Virtual cable not found ({', '.join(missing)} endpoint missing): see the one-time install steps."
@@ -246,28 +248,29 @@ def verify(devices: list[dict] | None = None, *, seconds: float = 3.0, dry_run: 
         out(f"  [{d['index']:>2}] {d['name']}  ({d['host']}, {d['rate']} Hz, {d['channels']} ch)")
     route = find_route(devices)
     out(route.describe())
-    report = {"route_ready": route.ready, "renamed": route.renamed, "dry_run": dry_run}
-    if dry_run or not route.ready:
+    report: dict[str, Any] = {"route_ready": route.ready, "renamed": route.renamed, "dry_run": dry_run}
+    playback, recording = route.playback, route.recording
+    if dry_run or playback is None or recording is None:
         out("(dry run) would play a 3 s sweep into the cable and record 3 s from the recording endpoint."
             if dry_run else "Nothing to record: install the cable first.")
         return report
     if sd is None:
         from ..voice.devices import _sounddevice
         sd = _sounddevice()
-    rate = route.recording["rate"]
+    rate = recording["rate"]
     signal = _test_signal(rate, seconds)
-    play_channels = min(2, route.playback["channels"])
+    play_channels = min(2, playback["channels"])
     frames = np.repeat(signal[:, None], play_channels, axis=1) if play_channels > 1 else signal[:, None]
     started = time.perf_counter()
-    recorded = sd.playrec(frames, samplerate=rate, channels=min(2, route.recording["channels"]),
-                          device=(route.recording["index"], route.playback["index"]), dtype="float32")
+    recorded = sd.playrec(frames, samplerate=rate, channels=min(2, recording["channels"]),
+                          device=(recording["index"], playback["index"]), dtype="float32")
     sd.wait()
     mono = recorded.mean(axis=1)
     level = float(np.sqrt(np.mean(mono ** 2)))
     lag = _round_trip(signal, mono, rate)
     report.update({"rate": rate, "recorded_rms": round(level, 4), "round_trip_ms": lag,
                    "format_ok": rate == 48000, "seconds": round(time.perf_counter() - started, 2)})
-    out(f"Recorded {seconds:.0f} s from \"{route.recording['name']}\": level {level:.4f}, "
+    out(f"Recorded {seconds:.0f} s from \"{recording['name']}\": level {level:.4f}, "
         f"round trip {lag if lag is not None else 'not found'} ms, rate {rate} Hz"
         + ("" if rate == 48000 else "  <- set the endpoint to 48000 Hz (Advanced tab)"))
     if level < 0.01:
