@@ -318,3 +318,101 @@ class TestStudioVisualEvidence(unittest.IsolatedAsyncioTestCase):
             VisualAssessment(True, .9, "\x00secret")
         with self.assertRaises(ValueError):
             self.new_observer(studio_id="../other")
+
+    async def test_timeout_quarantines_noncooperative_gpu_worker_across_sessions(self):
+        """Cancellation of Python await is not proof that underlying GPU work stopped."""
+        resume = asyncio.Event()
+        entered = asyncio.Event()
+
+        async def ignores_cancel(_image):
+            entered.set()
+            try:
+                await asyncio.sleep(100)
+            except asyncio.CancelledError:
+                # Simulate a thread/subprocess that continues after cancel.
+                await resume.wait()
+            return VisualAssessment(True, 1.0, "stale result")
+
+        obs = self.new_observer(assessor=ignores_cancel, assess_timeout_s=.05)
+        await obs.arm(owner_approved=True)
+        with self.assertRaisesRegex(ObservationRejected, "visual_assessor_unavailable"):
+            await obs.observe()
+        await entered.wait()
+        lease = obs.quarantined_worker()
+        self.assertIsNotNone(lease)
+        self.assertTrue(obs.metrics()["worker_quarantined"])
+        self.assertFalse(obs.acknowledge_worker_stopped(lease, worker_stopped=True))
+        with self.assertRaisesRegex(ObservationRejected, "previous_visual_worker_not_stopped"):
+            await obs.observe()
+        obs.disarm()
+        calls_before = len(self.mcp.calls)
+        with self.assertRaisesRegex(RuntimeError, "physically stop"):
+            await obs.arm(owner_approved=True)
+        self.assertEqual(len(self.mcp.calls), calls_before)
+        resume.set()
+        await asyncio.wait_for(asyncio.shield(obs._quarantined_task), timeout=.5)
+        self.assertFalse(obs.acknowledge_worker_stopped(lease, worker_stopped=False))
+        self.assertTrue(obs.acknowledge_worker_stopped(lease, worker_stopped=True))
+        self.assertFalse(obs.acknowledge_worker_stopped(lease, worker_stopped=True))
+        await obs.arm(owner_approved=True)
+        self.assertEqual(obs.metrics()["quarantines"], 1)
+        self.assertEqual(obs.metrics()["worker_releases"], 1)
+
+    async def test_caller_cancellation_quarantines_a_still_running_assessor(self):
+        release = asyncio.Event()
+        entered = asyncio.Event()
+
+        async def assessor(_image):
+            entered.set()
+            try:
+                await asyncio.sleep(100)
+            except asyncio.CancelledError:
+                await release.wait()
+            return VisualAssessment(True, .99)
+
+        obs = self.new_observer(assessor=assessor)
+        await obs.arm(owner_approved=True)
+        job = asyncio.create_task(obs.observe())
+        await asyncio.wait_for(entered.wait(), timeout=.5)
+        job.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await job
+        lease = obs.quarantined_worker()
+        self.assertIsNotNone(lease)
+        self.assertTrue(obs.metrics()["worker_quarantined"])
+        obs.disarm()
+        release.set()
+        await asyncio.wait_for(asyncio.shield(obs._quarantined_task), timeout=.5)
+        self.assertTrue(obs.acknowledge_worker_stopped(lease, worker_stopped=True))
+        await obs.arm(owner_approved=True)
+
+    async def test_timeout_lease_uses_identity_not_structural_value(self):
+        from dataclasses import replace
+
+        async def slow(_image):
+            await asyncio.sleep(1)
+            return VisualAssessment(True, 1.0)
+
+        obs = self.new_observer(assessor=slow, assess_timeout_s=.05)
+        await obs.arm(owner_approved=True)
+        with self.assertRaises(ObservationRejected):
+            await obs.observe()
+        lease = obs.quarantined_worker()
+        self.assertIsNotNone(lease)
+        with self.assertRaises(TypeError):
+            obs.acknowledge_worker_stopped(lease, worker_stopped=1)
+        with self.assertRaises(TypeError):
+            obs.acknowledge_worker_stopped({"ticket": lease.ticket}, worker_stopped=True)
+        await asyncio.sleep(0)
+        self.assertFalse(obs.acknowledge_worker_stopped(replace(lease), worker_stopped=True))
+        self.assertTrue(obs.acknowledge_worker_stopped(lease, worker_stopped=True))
+        self.assertEqual(obs.metrics()["stale_worker_acks"], 1)
+
+    async def test_successful_visual_assessment_needs_no_quarantine(self):
+        obs = self.new_observer()
+        await obs.arm(owner_approved=True)
+        first = await obs.observe()
+        self.assertTrue(first.actionable_when_captured)
+        self.assertIsNone(obs.quarantined_worker())
+        self.assertFalse(obs.metrics()["worker_quarantined"])
+        self.assertEqual(obs.metrics()["quarantines"], 0)
