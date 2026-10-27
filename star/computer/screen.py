@@ -28,6 +28,7 @@ class Element:
     password: bool = False
     auto_id: str = ""
     class_name: str = ""
+    toggle: int = -1                 # UIA TogglePattern: 0 off, 1 on, 2 mixed, -1 not a switch
 
     @property
     def center(self) -> tuple[int, int]:
@@ -59,7 +60,7 @@ class Screen:
     _sig: frozenset = field(default=frozenset(), repr=False)
 
     def __post_init__(self) -> None:
-        self._sig = frozenset((e.role, e.name, tuple(v // 8 for v in e.rect)) for e in self.elements)
+        self._sig = frozenset((e.role, e.name, tuple(v // 8 for v in e.rect), e.toggle) for e in self.elements)
 
     @property
     def thin(self) -> bool:
@@ -117,7 +118,7 @@ class Screen:
         lines = []
         for e in sorted(ranked[:limit], key=lambda e: e.id):
             flags = ("" if e.enabled else " disabled") + (" focused" if e.focused else "") + (
-                " password" if e.password else "")
+                " password" if e.password else "") + {0: " off", 1: " on"}.get(e.toggle, "")
             value = f" = {e.value[:40]!r}" if e.value and e.role in ("edit", "combobox") and not e.password else ""
             lines.append(f"[{e.id}] {e.role} {e.name[:60]!r}{value}{flags} @{e.center[0]},{e.center[1]}")
         head = f"window {self.window[:80]!r} ({self.process}), screen {self.size[0]}x{self.size[1]}"

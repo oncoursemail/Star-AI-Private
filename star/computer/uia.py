@@ -23,7 +23,8 @@ ROLES = {50000: "button", 50002: "checkbox", 50003: "combobox", 50004: "edit", 5
          50032: "window", 50033: "pane", 50036: "table", 50037: "titlebar"}
 _KEEP_UNNAMED = {"edit", "combobox", "slider", "document"}
 _PROPS = {"name": 30005, "type": 30003, "rect": 30001, "enabled": 30010, "offscreen": 30022, "focus": 30008,
-          "password": 30019, "auto_id": 30011, "class": 30012, "value": 30045}
+          "password": 30019, "auto_id": 30011, "class": 30012, "value": 30045,
+          "toggle": 30086}
 
 
 class UiaUnavailable(RuntimeError):
@@ -42,6 +43,7 @@ class RawNode:
     value: str = ""
     auto_id: str = ""
     class_name: str = ""
+    toggle: int = -1
 
 
 class UiaSource(Protocol):
@@ -75,7 +77,7 @@ def elements_from(nodes: list[RawNode], screen: tuple[int, int], max_elements: i
     order = {id(k[0]): i for i, k in enumerate(keep)}
     chosen.sort(key=lambda k: order[id(k[0])])                      # back to the app's own (reading) order
     return [Element(i, " ".join(n.name.split()) or n.auto_id or n.class_name, role, n.rect, "uia", n.enabled,
-                    n.focused, n.value, n.password, n.auto_id, n.class_name)
+                    n.focused, n.value, n.password, n.auto_id, n.class_name, n.toggle)
             for i, (n, role) in enumerate(chosen, start=1)]
 
 
@@ -122,7 +124,8 @@ class ComtypesUia:  # pragma: no cover - needs a Windows desktop and the comtype
         else:
             box = (0, 0, 0, 0)
         value = prop("value")
+        toggle = prop("toggle")
         return RawNode(str(prop("name") or ""), int(prop("type") or 0), box, bool(prop("enabled")),
                        bool(prop("offscreen")), bool(prop("focus")), bool(prop("password")),
                        str(value) if isinstance(value, str) else "", str(prop("auto_id") or ""),
-                       str(prop("class") or ""))
+                       str(prop("class") or ""), toggle if isinstance(toggle, int) and 0 <= toggle <= 2 else -1)
