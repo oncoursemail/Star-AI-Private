@@ -303,3 +303,31 @@ def test_service_reads_the_app_door_config(tmp_path):
     assert opts == {"app_hours": 2.0, "app_code": APP_CODE}
     with pytest.raises(ValueError):
         app_auth_options({"app_token_secret_file": str(tmp_path / "missing")})
+
+
+class FakeLink:
+    """Stands in for metallic.accounts.link.AccountLink (the real one is tested in test_accounts_api.py)."""
+    def __init__(self, live):
+        self.live = live
+
+    def verify(self, token, roles=None):
+        info = self.live.get(token)
+        return info if info and (not roles or info["role"] in roles) else None
+
+
+def test_metallic_owner_account_opens_the_app_door(app_door):
+    app_door.account_link = FakeLink({"owner-token": {"name": "alex", "role": "owner"},
+                                      "user-token": {"name": "sam", "role": "user"}})
+    code, _, body = call(app_door, "POST", "/api/app/verify", {"account_token": "owner-token"})
+    assert code == 200 and body["ok"]
+    claims = app_door.auth.app_token("Bearer " + body["token"])
+    assert claims["acct"] == "alex" and claims["sub"] == "star-app"
+    assert call(app_door, "GET", "/api/app/state", headers=bearer(body["token"]))[0] == 200
+    for bad in ("user-token", "signed-out-token", 42):
+        assert call(app_door, "POST", "/api/app/verify", {"account_token": bad}, client="192.0.2.7")[0] == 401
+    left = call(app_door, "POST", "/api/app/verify", {"account_token": "nope"}, client="192.0.2.7")[2]
+    assert left["attempts_left"] == 1                     # wrong account tokens count toward the same lockout
+
+
+def test_account_tokens_refused_without_accounts_configured(app_door):
+    assert call(app_door, "POST", "/api/app/verify", {"account_token": "owner-token"})[0] == 401

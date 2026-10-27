@@ -20,6 +20,10 @@ The STAR AI desktop app ("Metallic" sign-in) has its own read-only door that sha
                            Authorization: Bearer <app token>; the same documents as the cookie API, read-only
     POST /api/app/signout  (Bearer) revokes that token
 
+Instead of the code, the app may send {"account_token"}: a Metallic account access token (metallic/accounts) whose
+live role is owner or admin, checked with the accounts service (`accounts_url` + `accounts_fingerprint` in
+control.toml). Wrong tokens count toward the same lockout. One account system, no second password.
+
 The app code is the content of `app_code_file` (the owner login token when unset). An app token is an HMAC-SHA256
 signed {sub: "star-app", exp, jti}; it can never run actions, push, or open a cookie session.
 
@@ -147,12 +151,22 @@ class Auth:
                 return 0
             return max(1, math.ceil(recent[-APP_FAIL_MAX] + APP_FAIL_WINDOW - now))
 
-    def app_verify(self, client: str, code) -> dict:
-        """{"ok": True, "token", "expires_at"} | {"ok": False, "attempts_left"} | {"ok": False, "retry_after"}."""
+    def app_verify(self, client: str, code, account_token=None, account_link=None) -> dict:
+        """{"ok": True, "token", "expires_at"} | {"ok": False, "attempts_left"} | {"ok": False, "retry_after"}.
+
+        With account_token + account_link (metallic.accounts.link.AccountLink) a Metallic owner/admin account
+        replaces the code."""
         wait = self.app_retry_after(client)
         if wait:
             return {"ok": False, "retry_after": wait}
-        if not isinstance(code, str) or not hmac.compare_digest(_digest(code), self.app_code):
+        who = None
+        if account_token is not None:
+            info = account_link.verify(account_token, roles=("owner", "admin")) if account_link else None
+            good = info is not None
+            who = info.get("name") if info else None
+        else:
+            good = isinstance(code, str) and hmac.compare_digest(_digest(code), self.app_code)
+        if not good:
             with self.lock:
                 fails = self.app_fails.setdefault(client, [])
                 fails.append(self.clock())
@@ -161,8 +175,10 @@ class Auth:
         with self.lock:
             self.app_fails.pop(client, None)
         exp = int(self.clock() + self.app_life)
-        payload = _b64(json.dumps({"sub": APP_SUB, "exp": exp, "jti": secrets.token_urlsafe(16)},
-                                  separators=(",", ":")).encode())
+        claims = {"sub": APP_SUB, "exp": exp, "jti": secrets.token_urlsafe(16)}
+        if who:
+            claims["acct"] = who
+        payload = _b64(json.dumps(claims, separators=(",", ":")).encode())
         sig = _b64(hmac.new(self.app_key, payload.encode("ascii"), hashlib.sha256).digest())
         return {"ok": True, "token": payload + "." + sig, "expires_at": exp}
 
@@ -201,8 +217,9 @@ class App:
     """Routes, independent of the socket server so tests can call `handle` directly."""
 
     def __init__(self, collector, store, runner, auth: Auth, machines: list[dict], ui_dir: str | None = None,
-                 secure_cookie: bool = False):
+                 secure_cookie: bool = False, account_link=None):
         self.collector, self.store, self.runner, self.auth = collector, store, runner, auth
+        self.account_link = account_link
         self.machines, self.ui = machines, Path(ui_dir) if ui_dir else None
         self.secure = secure_cookie
 
@@ -296,10 +313,11 @@ class App:
         """The desktop app's read-only door (Bearer app token): never actions, push or a cookie session."""
         if route == "/api/app/verify" and method == "POST":
             try:
-                code = json.loads(body or b"{}").get("code", "")
+                req = json.loads(body or b"{}")
+                code, account_token = req.get("code", ""), req.get("account_token")
             except (ValueError, AttributeError):
-                code = ""
-            result = self.auth.app_verify(client, code)
+                code, account_token = "", None
+            result = self.auth.app_verify(client, code, account_token, self.account_link)
             if result["ok"]:
                 return self._json(200, result)
             if "retry_after" in result:
