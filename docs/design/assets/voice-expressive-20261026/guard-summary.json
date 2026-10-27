@@ -1,0 +1,11 @@
+{
+ "chunks": 57,
+ "attempts": 57,
+ "rejected": 14,
+ "rejection_rate": 0.246,
+ "gave_up": 0,
+ "reasons": {
+  "pitch": 10,
+  "jump": 5
+ }
+}

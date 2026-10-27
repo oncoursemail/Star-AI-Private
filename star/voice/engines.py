@@ -343,6 +343,22 @@ class KokoroTTS:
             for _ in self.synthesize(text):
                 pass
 
+    def synthesize_float(self, text: str, voice: str | None = None, rate: float = 1.0,
+                         pitch_semitones: float = 0.0, seed: int = 0, instruct: str | None = None):
+        """Speech only (no trailing gap) as float samples: (samples, sample_rate). For the expressive layer
+        (star/voice/expressive.py): `voice` renders another recipe (role-play characters) without changing this
+        engine's own voice, `rate` multiplies the speed, `pitch_semitones` adds to the voice's pitch. Kokoro is
+        deterministic, so `seed` and `instruct` are accepted and ignored."""
+        style = self._style if voice is None else sum(self._kokoro.get_voice_style(n) * w
+                                                      for n, w in parse_kokoro_voice(voice))
+        ratio = pitch_ratio(min(12.0, max(-12.0, self.pitch_semitones + pitch_semitones)))
+        with self._lock:
+            samples, sr = self._kokoro.create(text, voice=style, speed=min(2.0, max(0.5, self.speed * rate / ratio)),
+                                              lang=self.lang)
+        if ratio != 1.0:
+            samples = resample(samples, int(sr), int(round(sr / ratio)))
+        return samples, int(sr)
+
     def synthesize(self, text: str, prosody=None) -> Iterable[tuple[bytes, int]]:
         """`prosody` (star.emotion.Prosody) shifts this one sentence a little: speed times rate, semitones added to the
         voice's pitch, milliseconds added to the pause after it. None leaves the voice exactly as configured."""

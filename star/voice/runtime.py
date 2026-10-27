@@ -43,6 +43,10 @@ class Engines:
                                              lang=settings.tts_lang, gap_ms=settings.sentence_gap_ms,
                                              pitch_semitones=settings.pitch_semitones))
 
+        if settings.expressive:                      # same interface, same output paths: calls, read-aloud, games
+            from .expressive import build as build_expressive
+            tts = timed("Loading expressive voice", lambda: build_expressive(tts, settings, asr=asr, report=say))
+
         def warm() -> None:
             if hasattr(tts, "warm_up"):
                 tts.warm_up()

@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 
 from .call import CallConfig
 from .catalog import STYLE_IDS
+from .styles import STYLES
 from .turn import TurnConfig
 
 TTS_ENGINES = ("kokoro",)
@@ -25,6 +26,8 @@ OUTPUT_MODES = ("headphones", "speakers")
 VOICE_ROUTES = ("default", "virtual-mic")           # virtual-mic: only into the virtual cable (star/senses/routes.py)
 FAST_PROFILES = ("off", "auto", "dedicated", "game", "game-tight")      # star/senses/fastpath.py
 CALL_MODES = ("push-to-talk", "hands-free")
+EXPRESSIVE_ENGINES = ("kokoro", "qwen3-tts", "chatterbox-turbo")    # star/voice/expressive.py; kokoro = live DSP styles only
+ARTEFACT_GUARDS = ("off", "signal", "full")                          # star/voice/guard.py
 # The default "Star" persona voice: a warm, nurturing, mum-like blend of Kokoro stock voices (no real person),
 # chosen in the 2026-10-13 audition round (docs/STAR_VOICE_CALLS.md section 10, catalog id "star-mum").
 STAR_VOICE_ID = "star-mum"
@@ -75,6 +78,17 @@ class VoiceSettings:
     output_device: str = ""
     system_extra: str = ""
     emotion: bool = False                # star/emotion.py: mood-driven tone, small pitch/speed shifts, avatar events
+    # Expressive voice (star/voice/expressive.py, docs/agents/voice-expressive-20261026.md). Off by default.
+    expressive: bool = False             # tags in her words (<whisper>, <laugh>), tone follows the talk and her mood
+    expressive_engine: str = "kokoro"    # kokoro (live, DSP styles in the chosen voice) | qwen3-tts | chatterbox-turbo
+    default_style: str = "warm"          # tone when nothing else decides (star/voice/styles.py STYLES)
+    style_intensity: float = 0.6         # 0..1, how strongly the default tone is applied
+    allowed_styles: str = ""             # comma list of styles she may use; "" = all
+    asmr: bool = False                   # ASMR mode: close-mic whisper, slow, light breaths
+    voice_sounds: bool = True            # laughs, sighs, gasps ... (rare, mood-driven)
+    fillers: bool = False                # an occasional "um," or micro-pause
+    artefact_guard: str = "signal"       # off | signal | full (full also re-listens with speech recognition)
+    expressive_home: str = ""            # folder with sounds/, characters.json, reference/ (default <models>/expressive)
 
     def validate(self) -> "VoiceSettings":
         checks = [(self.tts_engine in TTS_ENGINES, "Unknown text-to-speech engine"),
@@ -104,7 +118,13 @@ class VoiceSettings:
                   (96 <= int(self.barge_in_ms) <= 2000, "barge_in_ms must be 96-2000"),
                   (16 <= int(self.max_reply_tokens) <= 800, "max_reply_tokens must be 16-800"),
                   (len(self.input_device) <= 120 and len(self.output_device) <= 120, "Device name is too long"),
-                  (len(self.system_extra) <= 1200, "Extra context is too long")]
+                  (len(self.system_extra) <= 1200, "Extra context is too long"),
+                  (self.expressive_engine in EXPRESSIVE_ENGINES, "Unknown expressive engine"),
+                  (self.default_style in STYLES, "Unknown default style"),
+                  (0.0 <= float(self.style_intensity) <= 1.0, "style_intensity must be between 0 and 1"),
+                  (all(s.strip() in STYLES for s in self.allowed_styles.split(",") if s.strip()), "Unknown style in allowed_styles"),
+                  (self.artefact_guard in ARTEFACT_GUARDS, "Unknown artefact guard setting"),
+                  (len(self.expressive_home) <= 400 and len(self.allowed_styles) <= 400, "Expressive setting is too long")]
         for ok, message in checks:
             if not ok:
                 raise ValueError(message)
@@ -143,4 +163,5 @@ class VoiceSettings:
                           use_echo_gate=self.output == "speakers", style=self.voice_style,
                           push_to_talk=self.call_mode == "push-to-talk", acknowledgements=self.acknowledgements,
                           speculative_reply=self.speculative_reply, first_clause_words=int(self.first_clause_words),
-                          backchannels=self.backchannels and self.output != "speakers", emotion=self.emotion)
+                          backchannels=self.backchannels and self.output != "speakers", emotion=self.emotion,
+                          expressive=self.expressive)

@@ -35,6 +35,7 @@ from .pcm import FRAME_MS, rms
 from .. import emotion as emotion_state
 from ..persona import leaked_reasoning
 from .persona import opener_hint, system_message
+from .styles import strip_tags
 from .turn import EchoGate, Endpointer, TurnConfig, TurnDetector, TurnEvent
 
 
@@ -94,6 +95,7 @@ class CallConfig:
     emotion: bool = False                 # star/emotion.py: tone note in the prompt, small prosody shifts, avatar event
     emotion_person: str = "owner"         # attachment is kept per person; the social module passes a friend id here
     emotion_partner_adult: bool | None = None   # romance only when the social module says True
+    expressive: bool = False              # star/voice/styles.py: the prompt teaches her voice tags, the chunker keeps them
 
 
 # Said when the model twice wrote its plan instead of an answer, and when asking again: see _generate_and_speak.
@@ -496,6 +498,7 @@ class CallSession:
         Only reply.user_text enters the history."""
         messages = self._context() + [{"role": "user", "content": reply.user_text}]
         extras = [self._feel(reply)]
+        self._tune_voice(reply)
         if self.config.varied_openers:
             extras.append(opener_hint(reply.metrics.turn, self.config.style).strip())
         if self.config.game_context_for_voice and self.game_events is not None:
@@ -601,6 +604,20 @@ class CallSession:
         except Exception:
             return ""
 
+    def _tune_voice(self, reply: _Reply) -> None:
+        """Expressive voice (star/voice/expressive.py): her tone for this reply follows what was just said and how she
+        feels. Engines without set_mood are left alone; a failure never touches the call."""
+        tune = getattr(self.tts, "set_mood", None)
+        if tune is None:
+            return
+        try:
+            mood = None
+            if self.emotion is not None:
+                mood = self.emotion.snapshot(self.config.emotion_person, self.config.emotion_partner_adult)
+            tune(mood, reply.user_text)
+        except Exception:
+            pass
+
     def _acknowledge(self, reply: _Reply) -> None:
         """Play the acknowledgement clip for this turn, if any. Its length is counted as reply audio, so the
         sentence offsets used for "what the user heard" after a barge-in stay right; it never enters the history."""
@@ -629,7 +646,8 @@ class CallSession:
             if len(self.history) > limit:
                 keep = (limit // 2) // 2 * 2
                 del self.history[: len(self.history) - keep]
-            return [system_message(self.config.system_extra, self.config.style, self.config.varied_openers)] + list(self.history)
+            return [system_message(self.config.system_extra, self.config.style, self.config.varied_openers,
+                                   expressive=self.config.expressive)] + list(self.history)
 
     def _generate_and_speak(self, reply: _Reply, messages: list[dict]) -> None:
         metrics = reply.metrics
@@ -661,7 +679,7 @@ class CallSession:
         spoken and ends the reply (what follows is the same plan). Returns False when the reply was only such
         a plan (nothing spoken), True when something was queued, None when the call was cancelled first."""
         metrics = reply.metrics
-        chunker = SentenceChunker(first_clause_words=self.config.first_clause_words)
+        chunker = SentenceChunker(first_clause_words=self.config.first_clause_words, keep_tags=self.config.expressive)
         queued = 0
         leaked = False
 
@@ -730,7 +748,7 @@ class CallSession:
             metrics.tts_seconds += self.clock() - started
             if reply.audio_seconds > begin:
                 reply.sentences.append(_Sentence(sentence, begin, reply.audio_seconds))
-                self._reply_emit(reply, {"type": "assistant_sentence", "turn": metrics.turn, "text": sentence})
+                self._reply_emit(reply, {"type": "assistant_sentence", "turn": metrics.turn, "text": strip_tags(sentence)})
 
     def _reply_emit(self, reply: _Reply, event: dict) -> None:
         """Emit a reply event now, or keep it until a speculative reply is committed (its turn number is then fixed)."""
