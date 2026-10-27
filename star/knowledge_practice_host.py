@@ -116,6 +116,12 @@ class KnowledgePracticeHost:
         self._inference_timeout_s = inference_timeout_s
         self._grading_timeout_s = grading_timeout_s
         self._enabled = False
+        self._epoch = 0
+        self._quarantined = False
+        self._stop_ticket = 0
+        self._pending_stop_ticket: int | None = None
+        self._inference_running = False
+        self._grading_running = False
         self._lock = asyncio.Lock()
         self._active_task: asyncio.Task | None = None
         self._counts = {
@@ -128,18 +134,61 @@ class KnowledgePracticeHost:
             raise PermissionError("trusted owner must enable local recall execution")
         if self._enabled:
             raise RuntimeError("recall execution is already enabled")
+        # Revocation cannot be undone while an old inference or grading
+        # callback is executing. Async cancellation is NOT physical worker stop.
+        if (self._quarantined or self._lock.locked() or
+                (self._active_task is not None and not self._active_task.done())):
+            raise RuntimeError("old practice worker must stop and be acknowledged")
+        self._epoch += 1
         self._enabled = True
+
+    def _quarantine(self) -> None:
+        """Hold physical compute resources until this specific job is stopped."""
+        if not self._quarantined:
+            self._stop_ticket += 1
+            self._pending_stop_ticket = self._stop_ticket
+        self._quarantined = True
+
+    def pending_stop_ticket(self) -> int | None:
+        """Trusted host-only ticket for the worker that must be stopped."""
+        return self._pending_stop_ticket
 
     def disable(self) -> None:
         self._enabled = False
-        # Stop work started under a revoked host authorization. The caller must
-        # invoke this on the same asyncio event loop / planner host thread.
+        self._epoch += 1
+        if self._inference_running or self._grading_running:
+            self._quarantine()
+        # A cancellation request is not evidence that a GPU worker / separate
+        # grader process stopped. The embedding host must stop and join workers.
         if self._active_task is not None and not self._active_task.done():
             self._active_task.cancel()
 
+    def acknowledge_workers_stopped(
+        self, *, stop_ticket: int, workers_stopped: bool
+    ) -> bool:
+        """Release only the matching stopped worker; ignore stale acknowledgments.
+
+        This method makes no OS calls and never treats model text, task
+        cancellation, or a timeout as proof of worker termination. The caller
+        must invoke it on the owning asyncio event-loop thread.
+        """
+        if type(workers_stopped) is not bool:
+            raise TypeError("explicit host worker-stop confirmation required")
+        if type(stop_ticket) is not int or stop_ticket <= 0:
+            raise ValueError("a valid host-issued stop ticket is required")
+        if (not workers_stopped or self._enabled or self._lock.locked() or
+                self._active_task is not None or not self._quarantined or
+                stop_ticket != self._pending_stop_ticket):
+            return False
+        self._quarantined = False
+        self._pending_stop_ticket = None
+        return True
+
     def metrics(self) -> dict[str, int | bool]:
         return {**self._counts, "enabled": self._enabled,
-                "busy": self._lock.locked()}
+                "busy": self._lock.locked(), "quarantined": self._quarantined,
+                "inference_running": self._inference_running,
+                "grading_running": self._grading_running}
 
     def _result(self, status: str, reason: str,
                 question_id: str | None = None,
@@ -175,13 +224,16 @@ class KnowledgePracticeHost:
         """
         if not self._enabled:
             return self._result("deferred", "host_opt_in_missing")
+        if self._quarantined:
+            return self._result("deferred", "worker_stop_unconfirmed")
         if self._lock.locked():
             return self._result("reentrant", "one_practice_attempt_at_a_time")
         async with self._lock:
             self._active_task = asyncio.current_task()
+            epoch = self._epoch
             ticket: str | None = None
             try:
-                if not self._enabled:
+                if not self._enabled or epoch != self._epoch or self._quarantined:
                     return self._result("deferred", "host_opt_in_revoked")
                 advice = self._planner.reserve(
                     now_unix_s=self._clock(), telemetry=self._telemetry())
@@ -194,35 +246,55 @@ class KnowledgePracticeHost:
                 if (question is None or
                         self._planner.pinned_source_for(qid) != question.source_sha256):
                     return self._result("aborted", "vetted_prompt_pin_missing", qid)
-                if not self._enabled or not self._offline():
+                if (not self._enabled or epoch != self._epoch or
+                        self._quarantined or not self._offline()):
                     return self._result("aborted", "offline_window_closed", qid)
                 started = monotonic()
+                self._inference_running = True
                 try:
                     answer = await asyncio.wait_for(
                         self._infer(question.prompt), timeout=self._inference_timeout_s)
                 except TimeoutError:
+                    # A timed-out local callback may have an external inference
+                    # worker which ignores asyncio cancellation. Block all
+                    # further learning until the host confirms physical stop.
+                    self._quarantine()
                     self._counts["timeouts"] += 1
                     return self._result("aborted", "local_inference_timeout", qid)
+                except asyncio.CancelledError:
+                    self._quarantine()
+                    raise
+                finally:
+                    self._inference_running = False
                 inference_ms = max(0, round((monotonic() - started) * 1000))
                 if (type(answer) is not str or
                         len(answer.encode("utf-8")) > _MAX_ANSWER or
                         not answer.strip() or "\x00" in answer):
                     return self._result("aborted", "invalid_model_response", qid,
                                         inference_ms)
-                if not self._enabled or not self._offline():
+                if (not self._enabled or epoch != self._epoch or
+                        self._quarantined or not self._offline()):
                     return self._result("aborted", "offline_window_closed", qid,
                                         inference_ms)
+                self._grading_running = True
                 try:
                     graded = await asyncio.wait_for(
                         self._grade(qid, ticket, question.source_sha256, answer),
                         timeout=self._grading_timeout_s)
                 except TimeoutError:
+                    self._quarantine()
                     self._counts["timeouts"] += 1
                     return self._result("aborted", "independent_grader_timeout", qid,
                                         inference_ms)
+                except asyncio.CancelledError:
+                    self._quarantine()
+                    raise
+                finally:
+                    self._grading_running = False
                 # A slow model or slow grader cannot complete after the host
                 # moved to live mode, lost telemetry, or revoked permission.
-                if not self._enabled or not self._offline():
+                if (not self._enabled or epoch != self._epoch or
+                        self._quarantined or not self._offline()):
                     return self._result("aborted", "offline_window_closed", qid,
                                         inference_ms)
                 if (not isinstance(graded, GradedRecall) or
@@ -241,6 +313,8 @@ class KnowledgePracticeHost:
             finally:
                 if ticket is not None:
                     self._safe_cancel(ticket)
+                self._inference_running = False
+                self._grading_running = False
                 self._active_task = None
 
 
