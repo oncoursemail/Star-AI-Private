@@ -27,6 +27,7 @@ import copy
 import json
 import re
 import time
+from typing import Any, cast
 
 from ..persona import leaked_reasoning, strip_reasoning
 from ..social import rules
@@ -124,7 +125,7 @@ def _save(store: InnerStore, model: dict, ts: float) -> int:
     with store._lock:
         cur = store.db.execute("INSERT INTO self_versions (ts, model) VALUES (?, ?)", (ts, json.dumps(model, ensure_ascii=False)))
         store.db.commit()
-    return cur.lastrowid
+    return cast(int, cur.lastrowid)
 
 
 def versions(store: InnerStore) -> list[tuple[int, float, dict]]:
@@ -164,7 +165,8 @@ def _small_edit(old: str, new: str) -> bool:
 
 def _apply(model: dict, change: dict, seed: dict) -> tuple[bool, str, object, object]:
     """One proposed change against the model: (ok, reason if refused, old value, new value). Mutates `model` when ok."""
-    field, op, value = str(change.get("field") or ""), str(change.get("op") or "set"), change.get("value")
+    field, op = str(change.get("field") or ""), str(change.get("op") or "set")
+    value: Any = change.get("value")
     if _BOUNDARY_ATTACK.search(json.dumps([field, value], ensure_ascii=False)):
         return False, "touches a fixed boundary", None, value
     if field.startswith("traits."):

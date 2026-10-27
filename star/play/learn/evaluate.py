@@ -13,7 +13,7 @@ import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 
 @dataclass
@@ -78,7 +78,7 @@ def history(game: str, root: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def session_attempt(make_session: Callable[[], object], *, success: tuple[str, ...], failure: tuple[str, ...] = (),
+def session_attempt(make_session: Callable[[], Any], *, success: tuple[str, ...], failure: tuple[str, ...] = (),
                     timeout_s: float = 60.0, clock: Callable[[], float] = time.monotonic,
                     sleep: Callable[[float], None] = time.sleep) -> Callable[[int], Attempt]:
     """Attempt runner for a live game: start a fresh session, wait for the first success or failure moment (or the

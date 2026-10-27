@@ -14,7 +14,7 @@ import math
 from pathlib import Path
 import random
 import time
-from typing import Callable
+from typing import Callable, cast
 
 from ..home import control
 from ..play.humanlike import Actuator, Aim, Event, HumanInput, HumanProfile
@@ -144,7 +144,7 @@ class Hands:
     def _pointer(self) -> None:
         position = getattr(self.sink, "position", None)
         if position is not None:
-            self.human.pointer = tuple(float(v) for v in position())
+            self.human.pointer = cast("tuple[float, float]", tuple(float(v) for v in position()))
 
     def _play(self, events: list[Event]) -> None:
         """Play timed events on the sink; checks STOP every ~50 ms and lets go of everything if it is set."""

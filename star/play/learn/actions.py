@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class GameSpec:
     @classmethod
     def from_dict(cls, data: dict) -> GameSpec:
         known = {f for f in cls.__dataclass_fields__}
-        clean = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items() if k in known}
+        clean: dict[str, Any] = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items() if k in known}
         return cls(**clean)
 
     # ---- mouse bins ------------------------------------------------------------------------------------------

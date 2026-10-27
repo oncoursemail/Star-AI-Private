@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from ..persona import strip_reasoning
 from . import rules
@@ -100,12 +100,12 @@ def mood_line(emotion, person: Person | None = None, mode: rules.Mode | None = N
     if hasattr(emotion, "enabled") and not emotion.enabled():
         return ""
     try:
-        text = emotion.directive(person=_person_id(person) if person else None,
+        text: Any = emotion.directive(person=_person_id(person) if person else None,
                                  partner_adult=True if mode is not None and mode.romance == "allowed" else None)
     except Exception:
         return ""
-    note_line = getattr(emotion, "note_line", None)
-    return (note_line(text) if callable(note_line) else f"(mood: {text})") if text else ""
+    note_line: Any = getattr(emotion, "note_line", None)
+    return (str(note_line(text)) if callable(note_line) else f"(mood: {text})") if text else ""
 
 
 def _inner_context(memory, person, text: str, *, first_turn: bool):

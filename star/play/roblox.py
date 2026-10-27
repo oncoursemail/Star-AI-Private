@@ -118,7 +118,7 @@ class ObbyController:
             self.last_checkpoint = now
             self._moments.append("checkpoint")
 
-    def moments(self, p: Percept) -> list[str]:
+    def moments(self, p: Percept | None = None) -> list[str]:
         out, self._moments = self._moments, []
         return out
 

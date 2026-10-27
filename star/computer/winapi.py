@@ -32,10 +32,10 @@ def vk_of(name: str) -> int:
 def ensure_dpi_aware() -> None:  # pragma: no cover - Windows only
     """Without this, UI Automation rectangles, screenshots and the cursor can use different scales."""
     try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # pyright: ignore[reportAttributeAccessIssue]
     except (OSError, AttributeError):
         try:
-            ctypes.windll.user32.SetProcessDPIAware()
+            ctypes.windll.user32.SetProcessDPIAware()  # pyright: ignore[reportAttributeAccessIssue]
         except (OSError, AttributeError):
             pass
 
@@ -51,8 +51,8 @@ class WindowInfo:
 
 class Windows:  # pragma: no cover - needs a Windows desktop
     def __init__(self) -> None:
-        self.u = ctypes.WinDLL("user32", use_last_error=True)
-        self.k = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.u = ctypes.WinDLL("user32", use_last_error=True)  # pyright: ignore[reportAttributeAccessIssue]
+        self.k = ctypes.WinDLL("kernel32", use_last_error=True)  # pyright: ignore[reportAttributeAccessIssue]
         self.k.OpenProcess.restype = wt.HANDLE
         self.k.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
         self.k.CloseHandle.argtypes = [wt.HANDLE]
@@ -104,7 +104,7 @@ class Windows:  # pragma: no cover - needs a Windows desktop
 
     def windows(self) -> list[WindowInfo]:
         found: list[int] = []
-        proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)  # pyright: ignore[reportAttributeAccessIssue]
 
         def visit(hwnd, _):
             if self.u.IsWindowVisible(hwnd) and self.u.GetWindowTextLengthW(hwnd) > 0:
@@ -147,7 +147,7 @@ class DesktopSink:  # pragma: no cover - sends real input on a Windows desktop
         self.dropped = 0
         self.accepted_events = 0
         self.failed_events = 0
-        self.u = ctypes.WinDLL("user32")
+        self.u = ctypes.WinDLL("user32")  # pyright: ignore[reportAttributeAccessIssue]
 
     def _ok(self) -> bool:
         if self.guard():

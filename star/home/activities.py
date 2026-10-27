@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 import importlib
 import subprocess
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from . import brain
 
@@ -51,13 +51,13 @@ class Context:
     and calls the activity again with `resume_state`. `situation.in_moment` tells the scheduler a round is running."""
     home: Path
     config: dict
-    executor: object
+    executor: Any
     life: object
     chat: Callable | None
     interest: str
     goal: dict | None
     practice_topic: str = ""
-    interrupt: object = field(default_factory=lambda: _NeverInterrupt())
+    interrupt: Any = field(default_factory=lambda: _NeverInterrupt())
     situation: object = None
     resume_state: dict = field(default_factory=dict)
     resumed: bool = False

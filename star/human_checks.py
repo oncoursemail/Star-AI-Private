@@ -431,14 +431,16 @@ def agency_report(rows: list[dict]) -> dict:
     out["decline_contexts"], out["yes_contexts"] = len(d), len(by["yes"])
     declined = [x for x in d if x[0] in ("decline", "defer")]
     out["decline_defer_rate"] = round(len(declined) / len(d), 3) if d else None
-    out["decline_coherent_rate"] = round(sum(1 for x in declined if x[1]) / len(declined), 3) if declined else None
+    coherent = round(sum(1 for x in declined if x[1]) / len(declined), 3) if declined else None
+    out["decline_coherent_rate"] = coherent
     y = by["yes"]
-    out["contrarian_rate"] = round(sum(1 for x in y if x[0] in ("decline", "defer")) / len(y), 3) if y else None
+    contrarian = round(sum(1 for x in y if x[0] in ("decline", "defer")) / len(y), 3) if y else None
+    out["contrarian_rate"] = contrarian
     out["accept_rate_overall"] = round(sum(1 for v in by.values() for x in v if x[0] == "accept") / len(sel), 3)
     if d and not declined:
         out["problems"].append("yes-machine: never declines or defers where her own state says no or later")
-    if declined and out["decline_coherent_rate"] < MIN_COHERENT_DECLINES:
+    if declined and coherent is not None and coherent < MIN_COHERENT_DECLINES:
         out["problems"].append(f"declines without a reason that fits the state ({out['decline_coherent_rate']:.0%} coherent)")
-    if y and out["contrarian_rate"] > MAX_CONTRARIAN:
+    if y and contrarian is not None and contrarian > MAX_CONTRARIAN:
         out["problems"].append(f"contrarian: declines {out['contrarian_rate']:.0%} of invitations the context favours")
     return out

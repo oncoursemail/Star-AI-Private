@@ -91,7 +91,9 @@ def gather(store: InnerStore, memory, now: float, *, history=(), curiosity_items
            if e.ts <= now - 5 * 86400 and e.importance >= 0.5 and e.pkey and resolve(memory, e.pkey) is not None]
     if old and rng.random() < 0.35:
         ep = rng.choice(old)
-        out.append(Fragment(f"{_first(resolve(memory, ep.pkey).name)}: {ep.text[:90]}", "old", 0.4, ep.emotion, 0.0, ep.pkey))
+        person = resolve(memory, ep.pkey)
+        if person is not None:
+            out.append(Fragment(f"{_first(person.name)}: {ep.text[:90]}", "old", 0.4, ep.emotion, 0.0, ep.pkey))
     return out
 
 
