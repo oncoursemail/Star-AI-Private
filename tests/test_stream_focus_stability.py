@@ -94,7 +94,7 @@ def test_small_fingerprint_jitter_never_becomes_cue():
 @pytest.mark.parametrize("kwargs", [
     {"confirm_frames": 1}, {"confirm_frames": 6},
     {"confirm_frames": True}, {"max_gap_ms": float("nan")},
-    {"max_gap_ms": True}, {"max_gap_ms": 10},
+    {"max_gap_ms": True}, {"max_gap_ms": 10}, {"max_gap_ms": 10**1000},
     {"edge_threshold": 0}, {"tone_threshold": 64},
 ])
 def test_unbounded_or_invalid_stability_settings_rejected(kwargs):

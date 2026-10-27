@@ -52,15 +52,20 @@ class TemporalFocusGate:
     ) -> None:
         if type(confirm_frames) is not int or not 2 <= confirm_frames <= 5:
             raise ValueError("confirm_frames must be 2..5")
-        if (type(max_gap_ms) not in (float, int)
-                or not math.isfinite(max_gap_ms) or not 30 <= max_gap_ms <= 3000):
+        if type(max_gap_ms) not in (float, int):
+            raise ValueError("max_gap_ms must be finite and between 30 and 3000")
+        try:
+            gap = float(max_gap_ms)
+        except (ValueError, OverflowError) as exc:
+            raise ValueError("max_gap_ms must be finite and between 30 and 3000") from exc
+        if not math.isfinite(gap) or not 30 <= gap <= 3000:
             raise ValueError("max_gap_ms must be finite and between 30 and 3000")
         if type(edge_threshold) is not int or not 1 <= edge_threshold <= 64:
             raise ValueError("edge_threshold must be 1..64")
         if type(tone_threshold) is not int or not 1 <= tone_threshold <= 63:
             raise ValueError("tone_threshold must be 1..63")
         self.confirm_frames = confirm_frames
-        self.max_gap_ms = float(max_gap_ms)
+        self.max_gap_ms = gap
         self.edge_threshold = edge_threshold
         self.tone_threshold = tone_threshold
         self.reset()
