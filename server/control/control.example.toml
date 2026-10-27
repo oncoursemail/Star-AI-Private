@@ -61,3 +61,7 @@ id = "server3"
 name = "New server"
 role = "Xeon E5-2660, 16 vCPU, 31 GB: game servers"
 pending = "Not connected yet: needs key access (owner: ssh-copy-id once), then the gate install."
+
+# Metallic accounts (metallic/accounts): owner/admin accounts can open the Star app door instead of the app code
+# accounts_url = "https://<accounts LAN address>:8475"
+# accounts_fingerprint = "<SHA-256 of its TLS certificate, see ~/.star/metallic-accounts-fingerprint>"

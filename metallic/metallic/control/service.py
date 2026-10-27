@@ -75,9 +75,15 @@ def run(config_path: str) -> int:
     collector = Collector(conf, store, runner)
     auth = Auth(_read_secret(conf["login_token_file"]), _read_secret(conf["push_token_file"]), **app_auth_options(conf))
     host = conf.get("listen", "0.0.0.0")
-    servers = [serve(App(collector, store, runner, auth, machines, conf.get("ui")), host, int(conf.get("port", 8470)))]
+    link = None
+    if conf.get("accounts_url"):            # Metallic accounts: owner/admin accounts open the Star app door
+        from ..accounts.link import AccountLink
+        link = AccountLink(conf["accounts_url"], fingerprint=conf.get("accounts_fingerprint"))
+    servers = [serve(App(collector, store, runner, auth, machines, conf.get("ui"), account_link=link), host,
+                     int(conf.get("port", 8470)))]
     if conf.get("tls_port") and conf.get("tls_cert") and conf.get("tls_key"):
-        servers.append(serve(App(collector, store, runner, auth, machines, conf.get("ui"), secure_cookie=True), host,
+        servers.append(serve(App(collector, store, runner, auth, machines, conf.get("ui"), secure_cookie=True,
+                                 account_link=link), host,
                              int(conf["tls_port"]), (conf["tls_cert"], conf["tls_key"])))
     collector.start(base)
     print(f"metallic control: listening on {host}:{conf.get('port', 8470)}"
