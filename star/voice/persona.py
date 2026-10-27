@@ -109,10 +109,11 @@ def opener_hint(turn: int, style: str = DEFAULT_STYLE) -> str:
 
 
 def system_message(extra: str = "", style: str = DEFAULT_STYLE, varied: bool = False, *,
-                   partner_adult: bool | None = None) -> dict:
+                   partner_adult: bool | None = None, expressive: bool = False) -> dict:
     """Build the single system message for a call. `extra` carries optional context such as the user's name.
     `style` picks the speaking manner; an unknown style falls back to the warm one. `varied` swaps the opener rule's
-    example phrases for a description (see opener_hint)."""
+    example phrases for a description (see opener_hint). `expressive` adds the voice-tag lesson (styles.TAGS_PROMPT)
+    and lifts the "no stage directions" rule for those tags only; it is fixed per call, so the prompt cache holds."""
     if style not in STYLE_PROMPTS:
         style = DEFAULT_STYLE
     # Adult-peer mode requires the exact trusted host value; its natural phrasing
@@ -121,6 +122,10 @@ def system_message(extra: str = "", style: str = DEFAULT_STYLE, varied: bool = F
     if varied and partner_adult is not True:
         literal, described = _OPENER_LINES[style]
         prompt = prompt.replace(literal, described)
+    if expressive:
+        from .styles import TAGS_PROMPT
+        prompt = f"{prompt}
 
+{TAGS_PROMPT}"
     content = prompt if not extra.strip() else f"{prompt}\n\n{extra.strip()[:1200]}"
     return {"role": "system", "content": content}

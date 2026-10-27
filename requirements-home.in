@@ -43,3 +43,5 @@ pyvirtualcam>=0.15,<1
 obsws-python==1.8.0
 keyring==25.7.0
 websocket-client==1.9.2             # official read-only Twitch EventSub socket adapter
+# star.voice expressive styles, hums, yawns and singing in her own voice (WORLD vocoder, MIT)
+pyworld>=0.3.5,<0.4

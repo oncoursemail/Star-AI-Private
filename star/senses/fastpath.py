@@ -89,7 +89,34 @@ PROFILES = {
 }
 
 
-def vram_budget(profile: str, total_gb: float = 8.0, game_gb: float = 0.0) -> dict:
+# Expressive neural voice engines (star/voice_neural.py): allowed only when no game holds the card. In game modes the
+# expressive voice still works (Kokoro + DSP styles + pre-rendered sounds, all on the CPU side of the budget).
+EXPRESSIVE_GB = {"qwen3-tts": 2.9, "chatterbox-turbo": 3.2}      # torch peak allocated, measured 2026-10-27
+EXPRESSIVE_PROFILES = frozenset({"off", "dedicated"})
+
+
+def expressive_allowed(profile: str, engine: str, free_gb: float | None = None, total_gb: float = 8.0) -> tuple[bool, str]:
+    """(allowed, why) for loading a neural expressive engine beside the rest of the voice stack on her 8 GB card.
+    Never while a game holds the card; never next to the local fast model when the budget table says they do not both
+    fit (dedicated: 4B model + Qwen3-TTS is about 9.2 GB); otherwise only with the measured VRAM free right now."""
+    if engine not in EXPRESSIVE_GB:
+        return False, f"unknown engine {engine}"
+    if profile not in EXPRESSIVE_PROFILES and profile != "auto":
+        return False, f"profile {profile}: a game owns the VRAM, the live DSP voice is used instead"
+    free_gb = free_vram_gb() if free_gb is None else free_gb
+    if free_gb is None:
+        return False, "no NVIDIA GPU found: live DSP voice"
+    if profile == "auto" and pick_profile(free_gb) != "dedicated":
+        return False, "auto profile without room for the dedicated set: live DSP voice"
+    if profile in ("auto", "dedicated") and vram_budget("dedicated", total_gb, expressive=engine)["used_gb"] > total_gb:
+        return False, (f"{engine} and the local fast model do not both fit in {total_gb:g} GB; set fast_profile off "
+                       "(turns go to brain 1) to use the neural voice")
+    if free_gb < EXPRESSIVE_GB[engine] + 0.3:
+        return False, f"only {free_gb:.1f} GB free, {engine} needs about {EXPRESSIVE_GB[engine]} GB"
+    return True, "ok"
+
+
+def vram_budget(profile: str, total_gb: float = 8.0, game_gb: float = 0.0, expressive: str = "") -> dict:
     """Rows of (what, GB, basis) and the total for a profile on an 8 GB card. basis is "measured" only where this
     project measured it; everything else is an estimate to be replaced by nvidia-smi readings on her PC."""
     p = PROFILES[profile]
@@ -102,6 +129,9 @@ def vram_budget(profile: str, total_gb: float = 8.0, game_gb: float = 0.0) -> di
         rows.append((f"{llm.name} weights", llm.weights_gb, "file size"))
         rows.append(("llama.cpp process: CUDA context, compute buffers, KV cache at the profile context size",
                      0.8 if llm.weights_gb > 2 else 0.65, "estimate"))
+    if expressive in EXPRESSIVE_GB and profile in EXPRESSIVE_PROFILES:
+        rows.append((f"expressive voice {expressive} (bf16 weights, codec, CUDA graphs)", EXPRESSIVE_GB[expressive],
+                     "measured on an RTX 3060 Ti (docs/agents/voice-expressive-20261026.md)"))
     used = round(sum(r[1] for r in rows), 2)
     return {"profile": profile, "rows": rows, "used_gb": used, "free_gb": round(total_gb - used, 2),
             "fits_with_game": (total_gb - used) >= game_gb, "game_gb": game_gb}

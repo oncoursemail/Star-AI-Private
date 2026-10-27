@@ -24,7 +24,7 @@ PACKAGES = ("home", "senses", "social", "games", "play", "computer", "watch", "v
 IMPORT_TO_PACKAGE = {"PIL": "pillow", "comtypes": "comtypes", "numpy": "numpy", "pyautogui": "pyautogui", "dxcam": "dxcam",
                      "faster_whisper": "faster-whisper", "httpx": "httpx", "kokoro_onnx": "kokoro-onnx", "mss": "mss",
                      "onnxruntime": "onnxruntime-gpu", "pyvirtualcam": "pyvirtualcam", "soundcard": "soundcard",
-                     "sounddevice": "sounddevice", "winsdk": "winsdk", "torch": "torch"}
+                     "sounddevice": "sounddevice", "winsdk": "winsdk", "torch": "torch", "pyworld": "pyworld"}
 
 
 def locked() -> dict[str, str]:
