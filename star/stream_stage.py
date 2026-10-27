@@ -24,6 +24,7 @@ from .stream_budget import StreamTelemetry
 from .stream_episode import EpisodePacket
 from .stream_director import SpeechIntent, StreamDirector, StreamSignal
 from .stream_knowledge import KnowledgePacket
+from .stream_idle_attention import QuietAttention
 from .stream_motion import (
     AudioLevel, ExpressionCue, MotionFrame, neutral_frame, plan_motion,
 )
@@ -88,6 +89,15 @@ class StagePlan:
         return {"role": "user", "content": self.context_record}
 
 
+@dataclass(frozen=True)
+class QuietStageFrame:
+    """Host must revalidate this frame before sending rig parameters."""
+
+    serial: int
+    sampled_at: float
+    motion: MotionFrame
+
+
 class StarStage:
     """A single-stream, bounded in-memory scene coordinator.
 
@@ -111,6 +121,9 @@ class StarStage:
         self._plan: StagePlan | None = None
         self._intent: SpeechIntent | None = None
         self._phase = "idle"
+        self._quiet = QuietAttention()
+        self._quiet_serial = 0
+        self._quiet_frame: QuietStageFrame | None = None
         self._counts = {
             "prepared": 0, "queued": 0, "audible": 0,
             "abandoned": 0, "interrupted": 0, "motion_requests": 0,
@@ -125,6 +138,8 @@ class StarStage:
             if self._plan is not None:
                 raise RuntimeError("finish or interrupt the current turn first")
             self._director.enable(owner_approved=True)
+            self._quiet.reset()
+            self._quiet_frame = None
             self._mode, self._reduced_motion = mode, reduced_motion
             self._enabled = True
 
@@ -142,6 +157,8 @@ class StarStage:
             if self._plan is not None:
                 raise RuntimeError("cannot swap rigs during a turn")
             self._mode, self._reduced_motion = mode, reduced_motion
+            self._quiet.reset()
+            self._quiet_frame = None
 
     def disable(self) -> MotionFrame:
         """Invalidate the stage; the host must silence playback/reset its rig."""
@@ -149,6 +166,8 @@ class StarStage:
             self._drop(interrupted=True)
             self._director.disable()
             self._enabled = False
+            self._quiet_frame = None
+            self._quiet.reset()
             return neutral_frame()
 
     def offer(self, event: StreamSignal, *,
@@ -167,6 +186,64 @@ class StarStage:
             if event.kind.startswith("viewer") and moderated is not True:
                 return False
             return self._director.offer(event, now=current)
+
+    def idle_motion(
+        self, *, now: float | None = None,
+        viewer_speaking: bool = False, game_active: bool = False,
+        gameplay_critical: bool = False,
+    ) -> QuietStageFrame | None:
+        """Suggest nonverbal attention only when no utterance owns the rig.
+
+        Host must call current_idle(frame) immediately before dispatch. An old
+        frame cannot overlay TTS lip motion or survive a mode/session change.
+        This method does not send parameters to VTube Studio.
+        """
+        with self._lock:
+            try:
+                current = _time(self._clock() if now is None else now)
+                if not self._enabled or self._plan is not None:
+                    return None
+                motion = self._quiet.sample(
+                    now=current, viewer_speaking=viewer_speaking,
+                    game_active=game_active, gameplay_critical=gameplay_critical,
+                    mode=self._mode, reduced_motion=self._reduced_motion,
+                )
+            except ValueError:
+                # A clock reversal or invalid host flag cannot leave a stale
+                # previous frame authorized for asynchronous dispatch.
+                self._quiet_frame = None
+                raise
+            self._quiet_serial += 1
+            frame = QuietStageFrame(
+                serial=self._quiet_serial, sampled_at=current, motion=motion,
+            )
+            self._quiet_frame = frame
+            return frame
+
+    def current_idle(
+        self, frame: QuietStageFrame, *, now: float | None = None,
+    ) -> bool:
+        """Validate a fresh, current frame at the physical rig boundary.
+
+        A dropped renderer batch may not replay a quiet gesture seconds later;
+        the trusted renderer must sample a fresh frame at least every 200 ms.
+        """
+        with self._lock:
+            if not (
+                isinstance(frame, QuietStageFrame)
+                and self._enabled and self._plan is None
+                and self._quiet_frame is frame
+            ):
+                return False
+            try:
+                current = _time(self._clock() if now is None else now)
+            except ValueError:
+                self._quiet_frame = None
+                return False
+            if not 0 <= current - frame.sampled_at <= 0.2:
+                self._quiet_frame = None
+                return False
+            return True
 
     def prepare(self, *, now: float | None = None,
                 voice_speaking: bool = False,
@@ -230,6 +307,7 @@ class StarStage:
                 expression=None if expression is None else expression[0],
                 expression_strength=0.0 if expression is None else expression[1],
             )
+            self._quiet_frame = None
             self._plan, self._intent, self._phase = plan, intent, "prepared"
             self._counts["prepared"] += 1
             return plan
@@ -357,6 +435,8 @@ class StarStage:
         current = _time(self._clock() if now is None else now)
         with self._lock:
             self._drop(interrupted=True, now=current)
+            self._quiet_frame = None
+            self._quiet.reset()
             return neutral_frame()
 
     def interrupt_if_current(
@@ -384,4 +464,4 @@ class StarStage:
                     "director": self._director.metrics()}
 
 
-__all__ = ["StagePlan", "StarStage"]
+__all__ = ["StagePlan", "StarStage", "QuietStageFrame"]
