@@ -4,6 +4,10 @@
   draw-test          paint a fixed two-stroke plan in a fresh MS Paint window and save it (--gallery DIR, --plan FILE)
   act "goal"         run act() with the brain from config.json (--dry-run: plan and log, move nothing)
   calibrate          measure a vision endpoint's coordinate convention (settings grounder.url / grounder.model)
+  enroll --star-pc   OWNER, ON HER PC ONLY: mark this machine as STAR's (writes <home>/machine.json)
+  check-machine      is this STAR's enrolled PC? (exit 0 yes, 4 no)
+  skill NAME         run a skill from skills.py with --args '{"url": "https://..."}' (also starts the stop API + hotkey)
+  bench FILE         grounding benchmark: FILE is a JSON list of {"image", "query", "rect"} (see ground.bench)
 Options: --home DIR (default STAR_HOME_DIR or ProgramData), --require-idle SECONDS (default 300 for draw-test: refuse
 to run while the owner used the keyboard or mouse that recently).
 """
@@ -46,7 +50,10 @@ def _context(home: Path, dry: bool):  # pragma: no cover - real backends
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the real desktop
     from ..home import control
     parser = argparse.ArgumentParser(prog="python -m star.computer", description=__doc__.split("\n")[0])
-    parser.add_argument("command", choices=["see-app", "draw-test", "act", "calibrate"])
+    parser.add_argument("command", choices=["see-app", "draw-test", "act", "calibrate", "enroll", "check-machine",
+                                            "skill", "bench"])
+    parser.add_argument("--star-pc", action="store_true")
+    parser.add_argument("--args", default="{}")
     parser.add_argument("arg", nargs="?", default="")
     parser.add_argument("--home", type=Path, default=None)
     parser.add_argument("--gallery", type=Path, default=None)
@@ -56,6 +63,38 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the
     parser.add_argument("--require-idle", type=float, default=300.0)
     args = parser.parse_args(argv)
     home = args.home or control.home_dir()
+    from . import identity
+    if args.command == "enroll":
+        if not args.star_pc:
+            print("enroll marks THIS machine as STAR's own PC. Run it only on her PC, with --star-pc.")
+            return 2
+        print(f"enrolled: {identity.enroll(home)}")
+        return 0
+    if args.command == "check-machine":
+        ok, why = identity.check(home)
+        print("this is STAR's PC" if ok else f"NOT STAR's PC: {why}")
+        return 0 if ok else 4
+    if args.command == "bench":
+        from . import settings
+        from .ground import StarVisionGrounder, bench
+        cfg = settings.load(home)
+        grounders = {"remote-vision": StarVisionGrounder()} if cfg.get("remote_vision") else {}
+        local = settings.make_grounder(cfg)
+        if local is not None:
+            grounders["local-vision"] = local
+        if not grounders:
+            print("no grounder configured (computer.json grounder.kind=vlm and/or remote_vision=true)")
+            return 2
+        cases = json.loads(Path(args.arg).read_text(encoding="utf-8"))
+        base = Path(args.arg).parent
+        for case in cases:
+            case["image"] = str(base / case["image"])
+        print(json.dumps(bench(cases, grounders), indent=1))
+        return 0
+    ok, why = identity.check(home)
+    if not ok:
+        print(f"refusing: {why}")
+        return 4
     if args.command == "calibrate":
         from . import settings
         grounder = settings.make_grounder(settings.load(home))
@@ -68,8 +107,13 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the
     if args.command != "see-app" and idle_seconds() < args.require_idle and not args.dry_run:
         print(f"the owner used the PC {idle_seconds():.0f} s ago (< {args.require_idle:.0f} s): not touching it")
         return 3
-    from . import build_computer, draw
+    from . import build_computer, build_driver, draw
     ctx = _context(home, args.dry_run)
+    if args.command == "skill":
+        from .skills import run_skill
+        result = run_skill(build_driver(ctx, hotkey=True), args.arg, **json.loads(args.args))
+        print(json.dumps(result, indent=1))
+        return 0 if result["ok"] else 1
     computer = build_computer(ctx)
     if args.command == "see-app":
         info, message = computer.open_app(args.arg or "mspaint.exe")
