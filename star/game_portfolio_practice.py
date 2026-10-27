@@ -13,13 +13,17 @@ GameTrial with the exact reserved run_id. Keep all signing keys host-side.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from threading import RLock
 from typing import Sequence
 
 from .active_practice import ActivePracticePlanner
 from .game_learning_ladder import GameLearningLadder, LadderAdvice
+from .game_prediction_lab import GamePredictionLab
 from .gameplay_skill_bank import GameplaySkillBank
 from .stream_budget import StreamTelemetry, advise_workload
+
+_MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,11 @@ class GamePortfolioPractice:
     bounded per-game cooldowns and eventually require manual diagnosis.
     Completion/mastery always remains ladder/practice-only evidence; separate
     holdout evaluation is required before claiming cross-game proficiency.
+
+    An optional owner-supplied, independently enabled GamePredictionLab can
+    prioritize *already eligible* actions with repeatedly inaccurate forecasts.
+    This breaks ties among equally offered games; focus never overrides
+    prerequisites, failure cooldowns, stream priority or signed results.
     """
 
     def __init__(
@@ -66,6 +75,8 @@ class GamePortfolioPractice:
         reservation_seconds: int = 90,
         unverified_cooldown_seconds: int = 15,
         max_unverified_per_game: int = 3,
+        prediction_lab: GamePredictionLab | None = None,
+        prediction_model_id: str | None = None,
     ) -> None:
         if not isinstance(bank, GameplaySkillBank):
             raise TypeError("expected a signed GameplaySkillBank")
@@ -80,6 +91,13 @@ class GamePortfolioPractice:
         games = [item.game_id for item in ladders]
         if len(set(games)) != len(games):
             raise ValueError("portfolio requires distinct game IDs")
+        if (prediction_lab is None) != (prediction_model_id is None):
+            raise ValueError("forecast routing needs both a verified lab and model ID")
+        if prediction_lab is not None:
+            if not isinstance(prediction_lab, GamePredictionLab) or prediction_lab._bank is not bank:
+                raise ValueError("forecast lab must share the independent signed practice bank")
+            if type(prediction_model_id) is not str or not _MODEL_ID.fullmatch(prediction_model_id):
+                raise ValueError("forecast model ID must be a bounded host-owned identifier")
         if (type(reservation_seconds) is not int
                 or not 10 <= reservation_seconds <= 600
                 or type(unverified_cooldown_seconds) is not int
@@ -89,6 +107,8 @@ class GamePortfolioPractice:
             raise ValueError("invalid bounded portfolio budgets")
 
         self._ladders = tuple(sorted(ladders, key=lambda x: x.game_id))
+        self._prediction_lab = prediction_lab
+        self._prediction_model_id = prediction_model_id
         self._planner = ActivePracticePlanner(
             bank, reservation_seconds=reservation_seconds
         )
@@ -105,6 +125,7 @@ class GamePortfolioPractice:
         self._stats = {
             "offered": 0, "deferred": 0, "verified": 0,
             "unverified": 0, "expired": 0, "reviews": 0,
+            "focus_routed": 0, "focus_unavailable": 0,
         }
 
     def enable(self, *, owner_approved: bool = False) -> None:
@@ -203,11 +224,42 @@ class GamePortfolioPractice:
                     return defer("game_mechanics_need_review", status="manual_diagnosis")
                 return defer("no_safe_practice_candidate")
 
-            # Session offer count is resistant to self-reported or absent wins.
-            # Trial counts break ties, then fixed difficulty and stable game ID.
+            # Never let a forecast outrank fair coverage, private-game safety,
+            # owner-curated actions, prerequisite mastery or retry cooldowns.
+            # Only consult diagnostics for games tied at the lowest offer count.
+            lowest_offers = min(self._offers[idx] for idx, _ in candidates)
+            focus: dict[int, float] = {}
+            if self._prediction_lab is not None:
+                try:
+                    if self._prediction_lab.metrics()["enabled"] is True:
+                        assert self._prediction_model_id is not None
+                        for idx, target in candidates:
+                            if self._offers[idx] != lowest_offers:
+                                continue
+                            ladder = self._ladders[idx]
+                            for card in self._prediction_lab.focus_suggestions(
+                                self._prediction_model_id, game_id=ladder.game_id,
+                                game_version=ladder.game_version,
+                                now_unix_s=now, minimum_trials=8, limit=10,
+                            ):
+                                if (card.authorized_to_play is False
+                                        and card.objective_id == ladder.objective_id
+                                        and card.situation_id == target.situation_id
+                                        and card.action_id == target.action_id):
+                                    focus[idx] = card.brier_score * min(1.0, card.trials / 24)
+                                    break
+                except Exception:
+                    # Closed or corrupt diagnostic stores must not authorize
+                    # practice or silently become model-authored priorities.
+                    self._stats["focus_unavailable"] += 1
+                    return defer("verified_prediction_diagnostics_unavailable")
+
+            # Exposure fairness is primary. Among tied games, prefer a real
+            # verified prediction-error pattern, not a model's self-report.
             idx, target = min(candidates, key=lambda pair: (
-                self._offers[pair[0]], pair[1].practice_trials,
-                pair[1].difficulty or 0, self._ladders[pair[0]].game_id
+                self._offers[pair[0]], -focus.get(pair[0], 0.0),
+                pair[1].practice_trials, pair[1].difficulty or 0,
+                self._ladders[pair[0]].game_id,
             ))
             ladder = self._ladders[idx]
             assert target.situation_id is not None and target.action_id is not None
@@ -231,6 +283,8 @@ class GamePortfolioPractice:
             )
             self._offers[idx] += 1
             self._stats["offered"] += 1
+            if focus.get(idx, 0.0) > 0:
+                self._stats["focus_routed"] += 1
             return offer
 
     def matches_reservation(
