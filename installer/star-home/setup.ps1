@@ -12,7 +12,7 @@
 #   setup.cmd -DiscordAccessibility  optional shortcut setup for UI Automation; normal Discord is unchanged by default
 #   setup.cmd -Uninstall         remove the scheduled task and desktop files (keeps her data and workspace)
 # Steps (ids for -Skip / -Only): preflight python files venv pip torch node apps models cable camera grounder discord
-#   config task controls ssh autologon nolock check optimize acceptance.
+#   config enroll task controls ssh autologon nolock check optimize acceptance.
 # Every step is idempotent (run setup.cmd again and finished steps do nothing), is reported as OK / SKIPPED / FAILED with the
 # fix, and a failed step never stops the others. Python packages come from requirements-home.txt (exact versions with
 # hashes; regenerate with installer\star-home\pin_requirements.py); other downloads are pinned in pins.json, star.senses.setup
@@ -34,7 +34,7 @@ $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is very slow with
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Pins = Get-Content (Join-Path $PSScriptRoot 'pins.json') -Raw | ConvertFrom-Json
 $StepIds = @('preflight', 'python', 'files', 'venv', 'pip', 'torch', 'node', 'apps', 'models', 'cable', 'camera', 'grounder',
-    'discord', 'config', 'task', 'controls', 'ssh', 'autologon', 'nolock', 'check', 'optimize', 'acceptance')
+    'discord', 'config', 'enroll', 'task', 'controls', 'ssh', 'autologon', 'nolock', 'check', 'optimize', 'acceptance')
 $Skip = @($Skip | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
 $Only = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
 foreach ($id in $Skip + $Only) { if ($StepIds -notcontains $id) { throw "Unknown step '$id'. Steps: $($StepIds -join ' ')" } }
@@ -701,6 +701,22 @@ Invoke-Step 'config' "Her settings -> $ConfigFile" 'Create the folder and a conf
     New-Item -ItemType Directory -Force -Path $Data, $Workspace | Out-Null
     ([ordered]@{ brain_url = $A.Brain; model = 'star-fast'; dry_run = $A.ConfigDry } | ConvertTo-Json) | Set-Content -Path $ConfigFile -Encoding utf8
     Mark-Ok "written (dry_run $($A.ConfigDry); the lead sets brain_url later if it is empty)"
+}
+
+Invoke-Step 'enroll' 'Computer use: mark this PC as STAR''s own (python -m star.computer enroll --star-pc)' "Run: cd /d $App && $VenvPy -m star.computer enroll --star-pc --home $Data   (without it she cannot use apps on any PC)" {
+    if ($DryRun) { Would "python -m star.computer enroll --star-pc --home $Data (writes $Data\machine.json: role star-pc + a hash of this PC's id)"; Mark-DryRun 'would enroll this PC'; return }
+    if (-not (Test-Path $VenvPy)) { Mark-Skipped 'needs the venv' 'Fix the venv step first, then run setup.cmd -Only enroll'; return }
+    if (-not (Test-Path (Join-Path $App 'star\computer\identity.py'))) { Mark-Skipped 'this STAR version has no computer use' 'Update the app files, then run setup.cmd -Only files,enroll'; return }
+    Push-Location $App
+    try {
+        $r = Run-Native $VenvPy @('-m', 'star.computer', 'check-machine', '--home', $Data) -Quiet
+        if ($r.Code -eq 0) { Mark-Ok 'already enrolled: this is STAR''s PC'; return }
+        $r = Run-Native $VenvPy @('-m', 'star.computer', 'enroll', '--star-pc', '--home', $Data)
+        if ($r.Code -ne 0) { Mark-Failed "enroll exit $($r.Code)"; return }
+        $r = Run-Native $VenvPy @('-m', 'star.computer', 'check-machine', '--home', $Data) -Quiet
+        if ($r.Code -ne 0) { Mark-Failed 'enrolled, but check-machine does not agree'; return }
+    } finally { Pop-Location }
+    Mark-Ok "enrolled: $Data\machine.json (STAR's actions cannot write this folder, so she cannot enroll another PC)"
 }
 
 Invoke-Step 'task' "Scheduled task '$Task' (at logon of $env:USERDOMAIN\$env:USERNAME, highest privileges)" 'Run setup.cmd -Only task as administrator.' {
