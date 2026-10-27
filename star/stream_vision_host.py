@@ -23,6 +23,7 @@ from typing import Callable
 from .stream_hardware_telemetry import RealtimeTelemetryHost
 from .frame_fingerprint import Region
 from .stream_observe import FrameCue, ObservationDecision, ObservationGovernor
+from .stream_focus_stability import TemporalFocusGate
 
 
 def _now_ms(clock: Callable[[], float]) -> float:
@@ -70,6 +71,9 @@ class StreamVisionHost:
         self, *, telemetry: RealtimeTelemetryHost,
         governor: ObservationGovernor,
         clock_ms: Callable[[], float] = lambda: time.monotonic() * 1000,
+        stabilize_focus: bool = False,
+        focus_confirmation_frames: int = 2,
+        focus_max_gap_ms: float = 1800.0,
     ) -> None:
         if not isinstance(telemetry, RealtimeTelemetryHost):
             raise TypeError("expected existing RealtimeTelemetryHost")
@@ -77,6 +81,12 @@ class StreamVisionHost:
             raise TypeError("expected existing ObservationGovernor")
         if not callable(clock_ms):
             raise TypeError("trusted monotonic clock required")
+        if type(stabilize_focus) is not bool:
+            raise ValueError("stabilize_focus requires explicit host bool")
+        gate = TemporalFocusGate(
+            confirm_frames=focus_confirmation_frames, max_gap_ms=focus_max_gap_ms
+        )
+        self._focus_gate = gate if stabilize_focus else None
         self._telemetry = telemetry
         self._governor = governor
         self._clock = clock_ms
@@ -87,7 +97,8 @@ class StreamVisionHost:
         self._counters = {
             "admitted": 0, "deferred": 0, "stopped": 0,
             "completed": 0, "discarded": 0, "missing_sensor": 0,
-            "stale_lease": 0,
+            "stale_lease": 0, "unstable_focus_suppressed": 0,
+            "focus_confirmed": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -100,6 +111,8 @@ class StreamVisionHost:
                 raise RuntimeError("stop previous vision session and worker first")
             _now_ms(self._clock)
             self._governor.enable(owner_approved=True)
+            if self._focus_gate is not None:
+                self._focus_gate.reset()
             self._enabled = True
             self._generation += 1
 
@@ -109,6 +122,8 @@ class StreamVisionHost:
             self._enabled = False
             self._generation += 1
             self._governor.disable()
+            if self._focus_gate is not None:
+                self._focus_gate.reset()
 
     def consider(self, frame: FrameCue) -> VisionAdmission:
         """Admit an owner-captured frame only with fresh real CPU/GPU/FPS/audio.
@@ -128,6 +143,14 @@ class StreamVisionHost:
                 self._counters["missing_sensor"] += 1
                 self._counters["deferred"] += 1
                 return VisionAdmission(False, "trusted_hardware_game_audio_missing", 0.0)
+            # Filter only already authorized, fresh host frame signatures.
+            # Never advance the temporal gate on stale/future-dated frames.
+            if (self._focus_gate is not None
+                    and -20 <= now - frame.captured_ms <= self._governor.frame_max_age_ms):
+                filtered = self._focus_gate.filter(frame)
+                frame = filtered.frame
+                self._counters["unstable_focus_suppressed"] += filtered.suppressed
+                self._counters["focus_confirmed"] += len(filtered.confirmed)
             decision: ObservationDecision = self._governor.consider(
                 frame, sample.telemetry, now_ms=now, capture_authorized=True
             )
