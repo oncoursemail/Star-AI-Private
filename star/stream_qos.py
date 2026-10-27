@@ -26,6 +26,10 @@ _CLOCK_CEILING = 1e13
 _JOBS = frozenset({"speech", "vision", "commentary", "research", "training", "render"})
 _BACKGROUND = frozenset({"research", "training", "render"})
 _GPU_ONLY = frozenset({"vision", "render"})
+# A single good FPS sample does not mean the game recovered from a stall.
+_GPU_VOICE_RECOVERY_FPS = 58.0
+_GPU_VOICE_RECOVERY_MS = 2_000.0
+_GPU_VOICE_SAMPLE_GAP_MS = 750.0
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 
 
@@ -151,6 +155,9 @@ class AdaptiveQoS:
         self._samples: dict[tuple[str, str, str], deque[tuple[float, float]]] = {}
         self._consecutive_failures: dict[tuple[str, str], int] = {}
         self._last_vision_ms: float | None = None
+        self._gpu_voice_guarded = False
+        self._gpu_recovery_since_ms: float | None = None
+        self._gpu_last_healthy_ms: float | None = None
         self._counts = dict(admitted=0, deferred=0, completed=0, failed=0, expired=0)
 
     def enable(self, *, owner_approved: bool = False) -> None:
@@ -176,6 +183,9 @@ class AdaptiveQoS:
         self._samples.clear()
         self._consecutive_failures.clear()
         self._last_vision_ms = None
+        self._gpu_voice_guarded = False
+        self._gpu_recovery_since_ms = None
+        self._gpu_last_healthy_ms = None
         self._counts = dict(admitted=0, deferred=0, completed=0, failed=0, expired=0)
 
     def disable(self) -> None:
@@ -203,6 +213,60 @@ class AdaptiveQoS:
                 # memory and slot until a trusted host confirms it stopped.
                 self._consecutive_failures[key] = self._consecutive_failures.get(key, 0) + 1
         return now
+
+    def _observe_game_fps(self, snap: QoSSnapshot, now: float) -> None:
+        """Hysteresis against one-frame FPS recovery and GPU speech flapping.
+
+        Called ONLY after trusted-sample freshness checks. A healthy sample
+        must recur without a >750ms observation gap for >=2 seconds. Samples
+        from a non-live or inactive game clear the latch; missing/stale data
+        must never release it. This is not a GPU performance measurement.
+        """
+        stream = snap.stream
+        if not (stream.live and stream.game_active):
+            self._gpu_voice_guarded = False
+            self._gpu_recovery_since_ms = None
+            self._gpu_last_healthy_ms = None
+        elif stream.game_fps < 50.0:
+            self._gpu_voice_guarded = True
+            self._gpu_recovery_since_ms = None
+            self._gpu_last_healthy_ms = None
+        elif not self._gpu_voice_guarded:
+            self._gpu_recovery_since_ms = None
+            self._gpu_last_healthy_ms = None
+        elif stream.game_fps < _GPU_VOICE_RECOVERY_FPS:
+            self._gpu_recovery_since_ms = None
+            self._gpu_last_healthy_ms = None
+        else:
+            if (self._gpu_recovery_since_ms is None
+                    or self._gpu_last_healthy_ms is None
+                    or now - self._gpu_last_healthy_ms > _GPU_VOICE_SAMPLE_GAP_MS):
+                self._gpu_recovery_since_ms = now
+            self._gpu_last_healthy_ms = now
+            if now - self._gpu_recovery_since_ms >= _GPU_VOICE_RECOVERY_MS:
+                self._gpu_voice_guarded = False
+                self._gpu_recovery_since_ms = None
+                self._gpu_last_healthy_ms = None
+
+    def observe_telemetry(self, snap: QoSSnapshot, *, now_ms: float) -> bool:
+        """Host-only telemetry heartbeat; no synthetic inference jobs needed.
+
+        The embedding computer should call this after polling real hardware
+        and frame-present statistics. Fresh observations may complete a
+        recovery window even when Star wisely chooses not to speak. A stale
+        or missing sample never clears game protection.
+        """
+        if not isinstance(snap, QoSSnapshot):
+            raise TypeError("expected host QoSSnapshot")
+        with self._lock:
+            now = self._advance(now_ms)
+            if not self._enabled or snap.sampled_ms > now + 20 or (
+                    now - snap.sampled_ms > (
+                        250 if snap.stream.live else 2_000
+                    )):
+                return False
+            self._observe_game_fps(snap, now)
+            return True
 
     def _reason(self, reason: str) -> QoSDecision:
         self._counts["deferred"] += 1
@@ -259,6 +323,7 @@ class AdaptiveQoS:
             if snap.sampled_ms > now + 20 or now - snap.sampled_ms > (
                     250 if snap.stream.live else 2_000):
                 return self._reason("host_telemetry_stale_or_future_dated")
+            self._observe_game_fps(snap, now)
             if job.created_ms > now + 20 or now > job.deadline_ms:
                 return self._reason("job_clock_or_deadline_invalid")
             if now - job.created_ms > (1000 if snap.stream.live else 30000):
@@ -270,7 +335,9 @@ class AdaptiveQoS:
             stream = snap.stream
             if stream.live and job.kind in _BACKGROUND:
                 return self._reason("protect_live_stream_from_background_work")
-            under_pressure = ((stream.game_active and stream.game_fps < 50)
+            under_pressure = ((stream.game_active and (
+                                  stream.game_fps < 50
+                                  or (stream.live and self._gpu_voice_guarded)))
                               or stream.speech_backlog_ms > 250)
             if under_pressure and (stream.live or stream.game_active) and job.kind != "speech":
                 return self._reason("game_or_voice_backpressure")
@@ -289,7 +356,7 @@ class AdaptiveQoS:
             # This is a host-sampled protection rule, not an actual FPS fix.
             low_game_fps = (
                 stream.live and stream.game_active
-                and stream.game_fps < 50.0 and job.kind == "speech"
+                and self._gpu_voice_guarded and job.kind == "speech"
             )
             if low_game_fps:
                 devices = [device for device in devices if device == "cpu"]
@@ -375,6 +442,8 @@ class AdaptiveQoS:
                     if (value := _p95(samples, now_ms=self._clock_ms or 0)) is not None
                 },
                 "unhealthy_routes": sum(n >= 3 for n in self._consecutive_failures.values()),
+                "gpu_voice_fps_guarded": self._gpu_voice_guarded,
+                "gpu_voice_recovering": self._gpu_recovery_since_ms is not None,
                 "basis": "host-provided same-clock elapsed times; advisory only",
             }
 
