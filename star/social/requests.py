@@ -279,6 +279,9 @@ class FriendDesk:
     def stop(self) -> None:
         self._due.clear()
 
+    def _click(self, x: int, y: int) -> None:
+        getattr(self.host, "click")(x, y)         # ready() has checked that the host agent can click
+
     def _front(self) -> bool:
         return self.window_title.lower() in self.host.foreground_title().lower()
 
@@ -293,7 +296,7 @@ class FriendDesk:
         if view.get("screen") != "requests":
             target = _xy(view.get("open_requests"))
             if target and self._front():
-                self.host.click(*target)
+                self._click(*target)
                 return StepResult(True, "opened the friend requests", acted=True)
             return StepResult(True, "friend requests are not on screen")
         now = self._clock()
@@ -305,7 +308,7 @@ class FriendDesk:
             if decision.action == "decline":
                 spot = _xy(item.get("decline"))
                 if spot and self._front():
-                    self.host.click(*spot)
+                    self._click(*spot)
                     return StepResult(True, f"declined {name}: {decision.reason}", acted=True)
                 continue
             if decision.action != "accept":
@@ -317,7 +320,7 @@ class FriendDesk:
             if not spot or not self._front():
                 continue
             self.pace.read(name)
-            self.host.click(*spot)
+            self._click(*spot)
             after = self.reader(self.host.screenshot())
             if any(isinstance(r, dict) and str(r.get("name") or "").strip().lower() == name.lower() for r in after.get("requests") or []):
                 return StepResult(False, f"clicked accept for {name} but the request is still listed")
@@ -345,6 +348,6 @@ class FriendDesk:
         if not spot or not self._front():
             return None                                   # not visible right now (Roblox: she must see them); try later
         self.pace.read(handle)
-        self.host.click(*spot)
+        self._click(*spot)
         self.requests.mark_sent(self.platform, person)
         return StepResult(True, f"sent {handle} a friend request", acted=True)

@@ -151,9 +151,11 @@ def bench(cases: list[dict], grounders: dict, load_image: Callable | None = None
     if load_image is None:
         from PIL import Image
 
-        def load_image(ref):
+        def _open(ref):
             return Image.open(ref).convert("RGB")
-    images = [c["image"] if hasattr(c["image"], "size") else load_image(c["image"]) for c in cases]
+        load_image = _open
+    loader = load_image
+    images = [c["image"] if hasattr(c["image"], "size") else loader(c["image"]) for c in cases]
     out = {}
     for name, grounder in grounders.items():
         hits, times, misses = 0, [], []

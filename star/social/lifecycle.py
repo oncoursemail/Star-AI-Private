@@ -23,6 +23,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from . import rules
 from .friends import _INTEREST, _SENSITIVE, FriendMemory, Person, extract_facts
@@ -158,19 +159,18 @@ def followup_from(text: str, *, personal: bool) -> tuple[str, str]:
     if match:
         verb, det, obj = match.group(1).lower(), (match.group(2) or "").lower(), match.group(3)
         found = (verb, ("your " if det == "my" else f"{det} " if det else "") + obj.strip())
-    elif _STUCK.search(text):
-        match = _STUCK.search(text)
-        found = ("stuck", ("your " if (match.group(1) or "").lower() == "my" else f"{match.group(1)} " if match.group(1) else "")
-                 + match.group(2).strip())
-    elif personal and _EVENT.search(text):
-        found = ("event", "your " + _EVENT.search(text).group(1).strip())
+    elif (stuck := _STUCK.search(text)):
+        found = ("stuck", ("your " if (stuck.group(1) or "").lower() == "my" else f"{stuck.group(1)} " if stuck.group(1) else "")
+                 + stuck.group(2).strip())
+    elif personal and (event := _EVENT.search(text)):
+        found = ("event", "your " + event.group(1).strip())
     if not found or _SENSITIVE.search(found[1]):
         return "", ""
     return _QUESTION[found[0]].format(o=found[1].strip()), _clip(text, 120)
 
 
 class Bonds:
-    def __init__(self, memory: FriendMemory, *, sink=..., clock=time.time) -> None:
+    def __init__(self, memory: FriendMemory, *, sink: Any = ..., clock=time.time) -> None:
         self.memory = memory
         self._clock = clock
         self._sink = _default_sink() if sink is ... else sink
@@ -528,7 +528,7 @@ class Bonds:
 def _default_sink():
     """star.brain's memory stream when that module exists and offers one; otherwise None (nothing breaks)."""
     try:
-        from .. import brain
+        from .. import brain  # pyright: ignore[reportAttributeAccessIssue]
     except Exception:
         return None
     for name in ("remember", "add_memory", "memory_stream_add"):

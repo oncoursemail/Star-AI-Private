@@ -213,7 +213,7 @@ def _goal_activity(registry):
         found = goals.evidence_from_outcome(goal, outcome) if verified else None
         goals.practice(store, goal["id"], f"{activity.name}: {str(outcome.get('summary', ''))[:160]}", verified,
                        ref=(found or {}).get("ref", ""), sure=bool(outcome.get("goal_done")) or found is not None)
-        result = dict(outcome, life_counted=True)
+        result: dict = dict(outcome, life_counted=True)
         if not verified:
             goals.hand_to_night_school(goal, str(outcome.get("summary", ""))[:200])
         elif goals.judge(store, goal["id"], outcome, rng):

@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - drives the
         from . import settings
         from .ground import StarVisionGrounder, bench
         cfg = settings.load(home)
-        grounders = {"remote-vision": StarVisionGrounder()} if cfg.get("remote_vision") else {}
+        grounders: dict = {"remote-vision": StarVisionGrounder()} if cfg.get("remote_vision") else {}
         local = settings.make_grounder(cfg)
         if local is not None:
             grounders["local-vision"] = local

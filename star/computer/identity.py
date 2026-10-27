@@ -25,12 +25,12 @@ class WrongMachine(RuntimeError):
 
 def machine_guid() -> str:  # pragma: no cover - reads the Windows registry
     import winreg
-    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0,
-                         winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
+    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography", 0,  # pyright: ignore[reportAttributeAccessIssue]
+                         winreg.KEY_READ | winreg.KEY_WOW64_64KEY)  # pyright: ignore[reportAttributeAccessIssue]
     try:
-        return str(winreg.QueryValueEx(key, "MachineGuid")[0])
+        return str(winreg.QueryValueEx(key, "MachineGuid")[0])  # pyright: ignore[reportAttributeAccessIssue]
     finally:
-        winreg.CloseKey(key)
+        winreg.CloseKey(key)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def fingerprint(read_guid: Callable[[], str] = machine_guid) -> str:

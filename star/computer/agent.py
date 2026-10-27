@@ -148,7 +148,9 @@ class Computer:
         self._closed = False
         self._on_close: Callable[[bool], None] | None = None
         self._visual_target: tuple[Element, _VisualTarget] | None = None
-        self.chain = self.actionlog = self.limits = None       # set by build_driver: grounding chain, log, pace
+        self.chain: Any = None                                  # set by build_driver: grounding chain, log, pace
+        self.actionlog: Any = None
+        self.limits: Any = None
 
     def _vision_blocked(self) -> bool:
         try:

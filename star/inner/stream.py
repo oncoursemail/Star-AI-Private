@@ -32,6 +32,7 @@ import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import cast
 
 from .embed import HASH_MODEL, HashEmbedder, cosine, hash_vector
 
@@ -251,7 +252,7 @@ class MemoryStream:
 
     def all(self, *, kind: str | None = None, since: float = 0.0, until: float | None = None, skill: str | None = None,
             limit: int = 5000) -> list[Memory]:
-        sql, args = f"SELECT {', '.join(_COLS)} FROM memories WHERE ts >= ?", [since]
+        sql, args = f"SELECT {', '.join(_COLS)} FROM memories WHERE ts >= ?", cast(list, [since])
         if until is not None:
             sql += " AND ts <= ?"
             args.append(until)

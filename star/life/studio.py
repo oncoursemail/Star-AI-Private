@@ -75,7 +75,7 @@ def add_work(store: LifeStore, kind: str, title: str, *, theme: str = "", path: 
     return store.run("INSERT INTO works (kind, title, theme, path, created, status, why, improve, feeling, verified, note) "
                      "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                      (kind, " ".join(title.split())[:80] or kind, theme[:100], str(path), now, status, why[:240],
-                      improve[:240], feeling[:24], verified, note[:200])).lastrowid
+                      improve[:240], feeling[:24], verified, note[:200])).lastrowid or 0
 
 
 # ---- variety and novelty ----------------------------------------------------------------------------------------
@@ -179,7 +179,7 @@ def _stamp(now: float) -> str:
     return time.strftime("%Y%m%d-%H%M", time.localtime(now))
 
 
-def make_drawing(store, theme, *, complete=None, now=0.0, generate=None, **_) -> dict:
+def make_drawing(store, theme, *, complete=None, now=0.0, generate=None, **_) -> dict:  # pyright: ignore[reportRedeclaration]
     prompt = f"{theme}. Her own style notes: {style_notes(store).replace(chr(10), ' ')[:400] or 'none yet'}"[:1400]
     if generate is None:
         try:
@@ -188,7 +188,7 @@ def make_drawing(store, theme, *, complete=None, now=0.0, generate=None, **_) ->
             settings = Settings.load(store.home / "settings.json")
             out = folder(store, "drawings")
 
-            def generate(prompt_text: str) -> Path:           # pragma: no cover - needs ComfyUI on her PC
+            def generate(prompt_text: str) -> Path:            # pragma: no cover - needs ComfyUI on her PC
                 image_gen.generate(settings, prompt_text, out)
                 found = image_gen.latest(out)
                 if found is None:
@@ -252,7 +252,7 @@ def make_song(store, theme, *, complete=None, now=0.0, sing=None, **_) -> dict:
             audio = sing(lyrics, title, folder(store, "songs"))
         except Exception:
             audio = None
-    if audio and Path(audio).is_file() and Path(audio).stat().st_size > 0:
+    if audio and Path(str(audio)).is_file() and Path(str(audio)).stat().st_size > 0:
         return {"path": str(audio), "title": title, "status": "finished", "note": f"lyrics: {path.name}"}
     return {"path": str(path), "title": title, "status": "lyrics_draft",
             "note": "text-only: no singing available" if sing is None else "singing failed, lyrics kept"}
@@ -333,7 +333,7 @@ def make_work(store: LifeStore, *, kind: str | None = None, complete=None, rng: 
     rng = rng or random.Random()
     makers = makers or MAKERS
     kind = kind or pick_kind(store, now, rng, tuple(k for k in KINDS if k in makers))
-    if kind not in makers:
+    if kind is None or kind not in makers:
         return {"ok": False, "verified": False, "summary": "nothing to make with the pipelines available", "work_id": None}
     theme = pick_theme(store, kind, complete=complete, rng=rng, wanted=theme)
     try:

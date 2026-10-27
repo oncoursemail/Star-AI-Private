@@ -27,6 +27,7 @@ import random
 import re
 import time
 from pathlib import Path
+from typing import cast
 
 from .store import LifeStore, day_of, default_store, flag
 
@@ -193,7 +194,7 @@ def form(store: LifeStore, interests: dict | None = None, weak: list[str] | None
     text = _rephrase(_phrase(origin, want, mood_kind, skill.partition(":")[2]), complete)[:140]
     cur = store.run("INSERT INTO goals (text, want, domain, skill, interest, origin, created, keen, updated) VALUES (?,?,?,?,?,?,?,?,?)",
                     (text, want, domain, skill, DOMAINS[domain], origin, now, round(rng.uniform(0.6, 0.9), 2), now))
-    goal_id = cur.lastrowid
+    goal_id = int(cur.lastrowid or 0)
     _log(store, goal_id, "set", origin, now=now)
     if life is not None:
         try:
@@ -356,7 +357,7 @@ def finish(store: LifeStore, goal_id: int, words: str = "", evidence: dict | Non
         ev.append({**evidence, "at": now})
     _set(store, goal_id, status="done", closed=now, words=" ".join(str(words or "").split())[:200], evidence=json.dumps(ev[-5:]))
     _log(store, goal_id, "done", words, now=now)
-    nudge_skill(store, goal["skill"], 1.0, 0.3 if level_of(store, get(store, goal_id)) == "sure" else 0.15, now)
+    nudge_skill(store, goal["skill"], 1.0, 0.3 if level_of(store, cast(dict, get(store, goal_id))) == "sure" else 0.15, now)
     _home_goal(life, goal, "done")
     _feel(emotion, "creative_done" if goal["domain"] in ("drawing", "music", "build") else "task_success")
     return get(store, goal_id)

@@ -257,7 +257,7 @@ def record(store: LifeStore, kind: str, choice: str, *, why: str, status: str, m
     now = store.clock() if now is None else now
     return store.run("INSERT INTO style_history (ts, kind, choice, why, mood, season, ref, status, week, traits) "
                      "VALUES (?,?,?,?,?,?,?,?,?,?)", (now, kind, choice[:200], why[:300], mood_kind, season, ref[:300], status,
-                                                       week_of(now), json.dumps(traits or []))).lastrowid
+                                                       week_of(now), json.dumps(traits or []))).lastrowid or 0
 
 
 HCOLS = ("id", "ts", "kind", "choice", "why", "mood", "season", "ref", "status", "week", "traits")
@@ -305,7 +305,7 @@ def why_of(mood_kind: str, season: str, occasion: list[str], traits: list[str], 
     return "; ".join(b for b in bits if b).capitalize() + "."
 
 
-def _gallery_pick(store: LifeStore, want: set[str], now: float, workspace: Path) -> Path | None:
+def _gallery_pick(store: LifeStore, want: set[str], now: float, workspace: Path) -> tuple[Path, float] | None:
     used = {h["ref"] for h in history(store, "wallpaper", 60) if now - h["ts"] < 30 * 86400}
     best, best_score = None, 0.0
     for w in studio.works(store, 80, "drawing"):

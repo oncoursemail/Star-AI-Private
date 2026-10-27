@@ -148,6 +148,8 @@ class Driver:
     def _perform(self, step: Step, obs: Observation, el: Element | None) -> str:
         hands, kind = self.c.hands, step.do
         if kind in ("click", "double", "right"):
+            if el is None:
+                raise RuntimeError(f"{kind} without a target")
             x, y = self._aim(el)
             hands.click(x, y, width=min(el.width, el.height) or 20, button="right" if kind == "right" else "left",
                         clicks=2 if kind == "double" else 1)
