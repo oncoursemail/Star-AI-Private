@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 import threading
 from collections import deque
-from typing import Callable
+from typing import Any, Callable
 
 from . import control
 
@@ -469,7 +469,7 @@ def wire_watch(registry) -> None:
     def run(ctx) -> dict:
         """The watcher sleeps through `parts.sleep`; ending that sleep early when a friend needs her stops the video
         cleanly (paused with 'k'), and she comes back to a video afterwards."""
-        browser_error = getattr(importlib.import_module("star.watch.browser"), "BrowserError", RuntimeError)
+        browser_error: Any = getattr(importlib.import_module("star.watch.browser"), "BrowserError", RuntimeError)
 
         class Interrupted(browser_error):
             pass

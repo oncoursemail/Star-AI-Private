@@ -57,7 +57,7 @@ def vk_of(name: str) -> int:
 
 
 def foreground_title() -> str:  # pragma: no cover - needs a Windows desktop
-    user32 = ctypes.windll.user32
+    user32 = ctypes.windll.user32  # pyright: ignore[reportAttributeAccessIssue]
     hwnd = user32.GetForegroundWindow()
     buf = ctypes.create_unicode_buffer(512)
     user32.GetWindowTextW(hwnd, buf, 512)
@@ -76,7 +76,7 @@ class SendInputSink:  # pragma: no cover - sends real input on a Windows desktop
         self.accepted_events = 0
         self.failed_events = 0
         self.confirmed_moves = 0
-        self._user32 = ctypes.windll.user32
+        self._user32 = ctypes.windll.user32  # pyright: ignore[reportAttributeAccessIssue]
 
     def _send(self, inp: INPUT, *, release: bool = False) -> None:
         if not release and not self.guard():
