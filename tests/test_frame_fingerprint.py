@@ -221,3 +221,149 @@ def test_authorized_host_can_admit_raw_pixels_without_relying_on_model_hashes():
     assert host.status()["admitted"] == 2
     host.disable()
     assert host.status()["quarantined"]
+
+
+# Color-aware visual novelty: dHash ignores uniform RGB/luminance shifts.
+from star.frame_fingerprint import visual_fingerprint, tone_distance
+
+
+def rgb_constant(value, *, width=45, height=24, order="RGB"):
+    return bytes(value if order == "RGB" else value[::-1]) * (width * height)
+
+
+def test_uniform_color_transition_detected_even_when_dhash_is_identical():
+    red = visual_fingerprint(rgb_constant((255, 0, 0)), width=45, height=24,
+                             pixel_format="RGB")
+    green = visual_fingerprint(rgb_constant((0, 255, 0)), width=45, height=24,
+                               pixel_format="RGB")
+    assert red.edge_hash == green.edge_hash == 0
+    assert tone_distance(red.tone_signature, green.tone_signature) >= 20
+    assert 0 <= red.tone_signature < (1 << 42)
+
+
+def test_gray_fade_detected_without_structural_change():
+    dark = FrameCue.from_pixels(1000, bytes([45]) * (45 * 24),
+                                width=45, height=24, pixel_format="GRAY")
+    fade = FrameCue.from_pixels(2200, bytes([95]) * (45 * 24),
+                                width=45, height=24, pixel_format="GRAY")
+    assert dark.perceptual_hash == fade.perceptual_hash
+    g = ObservationGovernor()
+    g.enable(owner_approved=True)
+    hardware = StreamTelemetry(True, True, 3500, 8192, 60, 20)
+    first = g.consider(dark, hardware, now_ms=1000, capture_authorized=True)
+    assert first.admitted
+    assert g.complete(ticket=first.ticket, now_ms=1010, succeeded=True)
+    assert g.consider(fade, hardware, now_ms=2200,
+                      capture_authorized=True).admitted
+
+
+def test_small_ambient_brightness_shift_still_suppressed():
+    base = FrameCue.from_pixels(1000, bytes([55]) * (45 * 24),
+                                width=45, height=24, pixel_format="GRAY")
+    shifted = FrameCue.from_pixels(2200, bytes([57]) * (45 * 24),
+                                   width=45, height=24, pixel_format="GRAY")
+    assert tone_distance(base.tone_signature, shifted.tone_signature) <= 1
+    g = ObservationGovernor()
+    g.enable(owner_approved=True)
+    hardware = StreamTelemetry(True, True, 3500, 8192, 60, 20)
+    first = g.consider(base, hardware, now_ms=1000, capture_authorized=True)
+    assert first.admitted
+    assert g.complete(ticket=first.ticket, now_ms=1010, succeeded=True)
+    assert g.consider(shifted, hardware, now_ms=2200,
+                      capture_authorized=True).reason == "low_visual_novelty"
+
+
+def test_hud_uniform_color_change_detected_separately_from_world():
+    def frame(hud_color):
+        # 50x24 pixels. Left/game is unchanged; right/HUD changes color.
+        return b"".join(
+            bytes((x * 4, x * 4, x * 4)) if x < 25 else bytes(hud_color)
+            for _y in range(24) for x in range(50)
+        )
+    first = FrameCue.from_pixels(
+        1000, frame((255, 0, 0)), width=50, height=24,
+        pixel_format="RGB", game_region=(0, 0, 25, 24),
+        hud_region=(25, 0, 25, 24))
+    second = FrameCue.from_pixels(
+        2200, frame((0, 255, 0)), width=50, height=24,
+        pixel_format="RGB", game_region=(0, 0, 25, 24),
+        hud_region=(25, 0, 25, 24))
+    assert first.perceptual_hash == second.perceptual_hash
+    assert first.tone_signature == second.tone_signature
+    assert first.hud_hash == second.hud_hash == 0
+    assert tone_distance(first.hud_tone_signature, second.hud_tone_signature) > 3
+    g = ObservationGovernor()
+    g.enable(owner_approved=True)
+    hardware = StreamTelemetry(True, True, 3500, 8192, 60, 20)
+    a = g.consider(first, hardware, now_ms=1000, capture_authorized=True)
+    assert g.complete(ticket=a.ticket, now_ms=1010, succeeded=True)
+    assert g.consider(second, hardware, now_ms=2200,
+                      capture_authorized=True).admitted
+
+
+def test_rgb_bgr_alpha_and_stride_are_equivalent():
+    rgb = (120, 50, 220)
+    a = visual_fingerprint(rgb_constant(rgb), width=45, height=24,
+                           pixel_format="RGB")
+    b = visual_fingerprint(rgb_constant(rgb, order="BGR"), width=45,
+                           height=24, pixel_format="BGR")
+    c = visual_fingerprint(bytes((220, 50, 120, 3)) * (45 * 24),
+                           width=45, height=24, pixel_format="BGRA")
+    d = visual_fingerprint(bytes((220, 50, 120, 255)) * (45 * 24),
+                           width=45, height=24, pixel_format="BGRA")
+    padded = b"".join((bytes(rgb) * 45 + b"PAD") for _ in range(24))
+    e = visual_fingerprint(padded, width=45, height=24,
+                           row_stride=45 * 3 + 3, pixel_format="RGB")
+    assert a == b == c == d == e
+
+
+@pytest.mark.parametrize("bad", [True, -1, 1 << 42, "0", 1.0])
+def test_tone_signatures_reject_invalid_values(bad):
+    with pytest.raises(ValueError):
+        FrameCue(0, 0, tone_signature=bad)
+    with pytest.raises(ValueError):
+        FrameCue(0, 0, hud_tone_signature=bad)
+    with pytest.raises(ValueError):
+        tone_distance(0, bad)
+
+
+@pytest.mark.parametrize("options", [
+    {"tone_novelty_bins": 0}, {"tone_novelty_bins": 64},
+    {"tone_novelty_bins": True}, {"hud_tone_novelty_bins": "3"},
+])
+def test_color_threshold_configuration_is_strict(options):
+    with pytest.raises(ValueError):
+        ObservationGovernor(**options)
+
+
+def test_out_of_order_capture_rejected_without_bypassing_headroom():
+    g = ObservationGovernor()
+    g.enable(owner_approved=True)
+    hardware = StreamTelemetry(True, True, 3500, 8192, 60, 20)
+    first = g.consider(FrameCue(1000, 0), hardware, now_ms=1000,
+                       capture_authorized=True)
+    assert g.complete(ticket=first.ticket, now_ms=1010, succeeded=True)
+    assert g.consider(FrameCue(900, (1 << 64) - 1, "win"), hardware,
+                      now_ms=1800, capture_authorized=True).reason == (
+                          "out_of_order_capture")
+    # A newer capture remains eligible even after an out-of-order rejection.
+    later = g.consider(FrameCue(2200, (1 << 64) - 1), hardware,
+                       now_ms=2200, capture_authorized=True)
+    assert later.admitted
+
+
+def test_signature_not_bypassing_minute_budget_or_game_pressure():
+    g = ObservationGovernor(calls_per_minute=1, burst=1)
+    g.enable(owner_approved=True)
+    safe = StreamTelemetry(True, True, 3500, 8192, 60, 20)
+    red = FrameCue.from_pixels(1000, rgb_constant((255, 0, 0)),
+                               width=45, height=24, pixel_format="RGB")
+    green = FrameCue.from_pixels(2500, rgb_constant((0, 255, 0)),
+                                 width=45, height=24, pixel_format="RGB")
+    a = g.consider(red, safe, now_ms=1000, capture_authorized=True)
+    assert g.complete(ticket=a.ticket, now_ms=1010, succeeded=True)
+    assert g.consider(green, safe, now_ms=2500,
+                      capture_authorized=True).reason == "minute_budget_exhausted"
+    strained = StreamTelemetry(True, True, 100, 8192, 25, 600)
+    assert g.consider(green, strained, now_ms=3500,
+                      capture_authorized=True).reason == "realtime_headroom_unavailable"
