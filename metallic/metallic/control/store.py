@@ -8,6 +8,7 @@ Resolution tiers (each query picks the tier that covers its range):
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import sqlite3
 import threading
@@ -55,7 +56,16 @@ class Store:
         return sid
 
     def add(self, ts: float, values: dict[str, float | None]) -> None:
-        rows = [(k, float(v)) for k, v in values.items() if isinstance(v, (int, float)) and v == v]
+        rows = []
+        for key, value in values.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            try:
+                number = float(value)
+            except OverflowError:
+                continue
+            if math.isfinite(number):
+                rows.append((key, number))
         if not rows:
             return
         with self.lock:
@@ -190,4 +200,4 @@ class Store:
 
 
 def _round(v):
-    return None if v is None else round(v, 3)
+    return None if v is None or not math.isfinite(v) else round(v, 3)

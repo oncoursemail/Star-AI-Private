@@ -230,5 +230,5 @@ def test_key(graph: Graph, test: str, cfg: Config, toolchain: str, extra=()) -> 
     if graph.global_inputs is None:
         graph.global_inputs = frozenset(p for p in graph.files if cfg.full_on and matches(p, cfg.full_on))
     inputs = graph.closure(test) | graph.global_inputs
-    return cache_mod.key("test", cfg.test_cmd, sorted(cfg.test_env), toolchain, list(extra),
+    return cache_mod.key("test", cfg.test_cmd, sorted(cfg.test_env.items()), toolchain, list(extra),
                          sorted((p, graph.files[p]) for p in inputs if p in graph.files))

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ago, byAttention, health, seconds, short,
+  ago, byAttention, health, projectFromHash, seconds, short,
   type Check, type CheckRun, type Health, type Project, type QueueRun, type Runner, type Severity, type Status,
 } from "./model";
 
@@ -35,7 +35,7 @@ function Mark() {
 export default function App() {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   // The project is in the URL (#STAR) so a link or a reload opens the same view.
-  const [pick, setPickState] = useState<string | null>(() => decodeURIComponent(location.hash.slice(1)) || null);
+  const [pick, setPickState] = useState<string | null>(() => projectFromHash(location.hash));
   const setPick = (name: string) => { setPickState(name); history.replaceState(null, "", "#" + encodeURIComponent(name)); };
   const [now, setNow] = useState(() => new Date());
 
