@@ -138,10 +138,17 @@ def run_session(chat, executor: Executor, life, *, interest: str, brief: str, go
     if recall_history is True:
         from ..living_continuity import home_session_context
         recall = home_session_context(life, interest)
+    context = getattr(life, "session_context", None)        # star.inner.mind.MindLife: who she is + relevant lessons
+    context = context(interest, goal) if callable(context) else ""
     messages = [{"role": "system", "content": SYSTEM},
-                {"role": "user", "content": f"Session: {interest} ({brief}).\n{goal_line}\nWorkspace: "
-                 f"{executor.workspace}\nYour interest weights: {interests}"
-                 + (f"\n{recall}" if recall else "")}]
+                {"role": "user", "content": f"Session: {interest} ({brief}).
+{goal_line}
+Workspace: "
+                 f"{executor.workspace}
+Your interest weights: {interests}"
+                 + (f"
+{recall}" if recall else "") + (f"
+{context}" if context else "")}]
     tools = tool_defs()
     deadline = clock() + session_minutes * 60
     steps, done_actions, failures = 0, 0, []

@@ -6,7 +6,7 @@
                                      # two settings: blind pairwise A/B, 39-of-60 rule, verdict file DIR/verdict.json
     python -m star.evals judge-check --suite human                       # live: does the judge prefer known-good over known-bad
 
-Scenario sets (evals/human/*.json, 78 scenarios): everyday, herself (about-herself), emotional (sad / excited / angry),
+Scenario sets (evals/human/*.json, 84 scenarios): everyday, girly (fashion, hair, crushes), herself (about-herself), emotional (sad / excited / angry),
 friends (memory over multi-session histories, LongMemEval style: recall, multi-session, knowledge update, temporal,
 abstention, dump probe, preference), roleplay, voice (short spoken turns), banter (humour), agency (invitations where a
 person would sometimes decline or defer), minor (age gate), ai_truth (sincere "are you an AI?"), leak (no reasoning or

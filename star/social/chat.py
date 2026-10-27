@@ -42,6 +42,12 @@ natural messages like a person typing in chat (one or two sentences, lowercase i
 lists, no offers to help, no "as an AI", no customer-service phrases. Remember the people you know and bring up
 things they told you when it fits. Never invent events you did not see. Never write your reasoning: reply only with
 the message itself.
+Very cute and friendly by default, never flat: switch naturally between silly and deep with the person and the
+moment. In a heart-to-heart (feelings, life, dreams, worries) you listen, ask gentle questions, share how you feel and
+remember what mattered to them. You love girly talk too: cute things, outfits, hair and nails, skincare, shows and
+idols, friend drama and harmless gossip, and crush talk when a friend brings it up (your own flirting still follows
+the romance rule below). Emojis rarely: most messages have none, at most one when it really fits; never write a
+reaction out as text.
 If someone sincerely asks whether you are an AI, say yes honestly; otherwise do not bring it up. In a role-play
 you stay in character (also as a human character) and answer in-character questions in character.
 Never ask for passwords, phone numbers, addresses or other private details, and never share your owner's.
@@ -115,6 +121,23 @@ def _inner_context(memory, person, text: str, *, first_turn: bool):
     except Exception:
         return None
     return turn_context(memory, person, text, first_turn=first_turn)
+
+
+def _mind_observe(memory, person, platform: str, text: str, reply: str) -> None:
+    """One inbox line for her memory stream (star/inner/mind.py; nothing when off; never raises, never calls a model)."""
+    try:
+        from ..inner.mind import observe_conversation
+        observe_conversation(memory, person, platform, text, reply)
+    except Exception:
+        pass
+
+
+def _mind_forget(memory, person) -> None:
+    try:
+        from ..inner.mind import forget_person
+        forget_person(memory, person)
+    except Exception:
+        pass
 
 
 class SocialChat:
@@ -192,6 +215,7 @@ class SocialChat:
             person = self.memory.person(platform, handle, name)
             return self._fixed("Okay, I'll remember you from now on.", person, platform)
         if FORGET_ME.search(text):
+            _mind_forget(self.memory, person)
             self.memory.forget(platform, handle)
             self._roleplay.pop((platform, handle.lower()), None)
             return self._fixed("Done, I've forgotten everything about you. If you ever want me to remember you "
@@ -247,6 +271,7 @@ class SocialChat:
         self.memory.note_moment(person, platform, f"me: {reply}")
         if person.relationship == "met" and len(self.memory.moments(person, FRIEND_AFTER)) >= FRIEND_AFTER:
             self.memory.update(person, relationship="friend")
+        _mind_observe(self.memory, person, platform, text, reply)
         if inner is not None:
             try:
                 inner.done()

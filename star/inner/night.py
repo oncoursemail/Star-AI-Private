@@ -144,6 +144,7 @@ def tick(home=None, *, now: float | None = None, force: bool = False, **kwargs) 
     now = time.time() if now is None else now
     store = kwargs.pop("store", None) or default_store(home)
     out: dict = {}
+    kwargs = _constrained(home, kwargs)
     if (force or in_night_window(now)) and flag("inner_night_enabled", home) and store.meta("last_night") != night_of(now):
         out["night"] = run_night(home, now=now, store=store, **kwargs)
     emotion = kwargs.get("emotion")
@@ -154,7 +155,32 @@ def tick(home=None, *, now: float | None = None, force: bool = False, **kwargs) 
     if woke:
         out["woke"] = woke
     reachout.expire(store, now)
+    try:                                 # the memory stream, insights, planner state, consolidation (mind.py; off = no-op)
+        from .mind import default_mind
+        brain = default_mind(home, kwargs.get("life_home")).tick(now, complete=kwargs.get("complete"))
+        if brain:
+            out["brain"] = brain
+    except Exception as why:
+        out["brain"] = {"error": f"{type(why).__name__}: {why}"}
     return out
+
+
+def _constrained(home, kwargs: dict) -> dict:
+    """On her PC with model calls on, night calls use JSON-schema constrained decoding straight to the brain
+    (structured.schema_complete) instead of the loop's plain chat: small models then cannot emit broken JSON."""
+    try:
+        from . import settings as brain_settings
+        from .structured import schema_complete
+        life_home = kwargs.get("life_home")
+        if life_home is None or not brain_settings.on(brain_settings.load(home), "model_calls"):
+            return kwargs
+        from ..home.control import load_config
+        config = load_config(Path(life_home))
+        if config.get("brain_url"):
+            return {**kwargs, "complete": schema_complete(config)}
+    except Exception:
+        pass
+    return kwargs
 
 
 def register_home_activities(registry) -> None:
@@ -171,8 +197,10 @@ def register_home_activities(registry) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     command = args[0] if args else "tick"
+    if command in BRAIN_COMMANDS:
+        return brain_cli(command, args[1:])
     if command not in ("tick", "night", "journal", "dream"):
-        print("usage: python -m star.inner tick | night | journal | dream")
+        print("usage: python -m star.inner tick | night | journal | dream | " + " | ".join(BRAIN_COMMANDS))
         return 2
     store = default_store()
     if command == "journal":
@@ -183,4 +211,51 @@ def main(argv: list[str] | None = None) -> int:
     else:
         result = tick(force=command == "night")
         print(json.dumps(result, ensure_ascii=False, default=str, indent=1))
+    return 0
+
+
+BRAIN_COMMANDS = ("brain", "page", "plan", "memories", "facts", "settings", "set", "forget-person", "stop")
+
+
+def brain_cli(command: str, rest: list[str]) -> int:
+    """Owner commands for the memory stream / planner / journal (mind.py, journal_view.py)."""
+    from . import journal_view, settings as brain_settings
+    from .mind import default_mind
+    mind = default_mind()
+    if command == "settings":
+        print(json.dumps(brain_settings.load(), indent=1))
+    elif command == "set":
+        if len(rest) != 2:
+            print("usage: python -m star.inner set NAME VALUE   (VALUE: true/false/number/JSON)")
+            return 2
+        try:
+            value = json.loads(rest[1])
+        except ValueError:
+            value = rest[1]
+        print(json.dumps(brain_settings.save(None, **{rest[0]: value}), indent=1))
+    elif command == "stop":
+        from ..home import control
+        print(f"STOP created: {control.stop(mind.life_home)}")
+    elif command == "brain":
+        print(json.dumps(journal_view.snapshot(mind), ensure_ascii=False, default=str, indent=1))
+    elif command == "page":
+        print(journal_view.write_page(mind))
+    elif command == "plan":
+        from . import planner
+        day = planner.day_of(time.time(), int(mind.settings["wake_hour"]))
+        print(json.dumps(planner.load_plan(mind.stream, day) or {"day": day, "blocks": []}, indent=1))
+    elif command == "memories":
+        query = " ".join(rest)
+        rows = mind.stream.retrieve(query, k=10, touch=False) if query else mind.stream.all()[-20:]
+        for m in rows:
+            print(f"{m.id:>6} {time.strftime('%m-%d %H:%M', time.localtime(m.ts))} [{m.kind}] {m.text}")
+    elif command == "facts":
+        for m in mind.stream.all(kind="semantic"):
+            state = "superseded" if m.invalid_at else "current"
+            print(f"{m.id:>6} {state:<10} {m.fact_key}: {m.text}")
+    elif command == "forget-person":
+        if len(rest) != 1:
+            print("usage: python -m star.inner forget-person PERSON_KEY   (the <id>.<first met> key)")
+            return 2
+        print(f"removed {mind.forget_person(rest[0])} memories")
     return 0

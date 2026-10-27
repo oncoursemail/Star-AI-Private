@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from ..persona import leaked_reasoning, strip_reasoning
 from ..redact import redact_text
 from ..social import rules
-from ..social.activity import parse_json
+from . import structured
 from . import reachout
 from .recall import _FUTURE
 from .store import InnerStore, resolve, wake_time_after
@@ -129,7 +129,7 @@ def _romantic_ok(memory, pkeys: list[str]) -> bool:
 
 
 def _clean(raw: str, memory, pkeys: list[str]) -> dict | None:
-    data = parse_json(strip_reasoning(raw or ""))
+    data = structured.parse(strip_reasoning(raw or ""))
     dream = redact_text(" ".join(str(data.get("dream") or "").split()))[:MAX_DREAM]
     if len(dream) < 40 or leaked_reasoning(dream) or CLAIMS_REAL.search(dream):
         return None
@@ -162,7 +162,8 @@ def generate(store: InnerStore, memory, complete, now: float, rng: random.Random
     cleaned = None
     for attempt in range(2):
         try:
-            cleaned = _clean(complete(SYSTEM, user + ("\n(Keep it gentle and unromantic.)" if attempt else "")), memory, pkeys)
+            prompt = user + ("\n(Keep it gentle and unromantic.)" if attempt else "")
+            cleaned = _clean(structured.call(complete, SYSTEM, prompt, structured.DREAM_SCHEMA, "dream"), memory, pkeys)
         except Exception:
             cleaned = None
         if cleaned:

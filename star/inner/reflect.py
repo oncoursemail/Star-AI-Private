@@ -20,7 +20,7 @@ import time
 from ..discord_bot.proactive import invented_numbers
 from ..persona import leaked_reasoning, strip_reasoning
 from ..social import rules
-from ..social.activity import parse_json
+from . import structured
 from . import opinions, reachout
 from .recall import sync_person
 from .store import Episode, InnerStore, initial_strength, person_key, resolve, retention
@@ -138,7 +138,8 @@ def reflect_person(store: InnerStore, memory, complete, person, now: float) -> d
              "\n".join(f"{i}. {e.text[:120]}" for i, e in enumerate(today, 1)))
     data: dict = {}
     try:
-        data = parse_json(strip_reasoning(complete(PERSON_SYSTEM, notes) or ""))
+        data = structured.parse(strip_reasoning(structured.call(complete, PERSON_SYSTEM, notes, structured.CARD_SCHEMA,
+                                                                    "card") or ""))
     except Exception:
         pass
     # Generation can outlive a forget request, age change or source correction.
@@ -188,7 +189,8 @@ def write_diary(store: InnerStore, complete, now: float, *, history, emotion_eve
              f"\nPeople: she talked with {people_count} friends and learned {new_facts} new things about them.")
     data: dict = {}
     try:
-        data = parse_json(strip_reasoning(complete(DIARY_SYSTEM, notes) or ""))
+        data = structured.parse(strip_reasoning(structured.call(complete, DIARY_SYSTEM, notes, structured.DIARY_SCHEMA,
+                                                                    "diary") or ""))
     except Exception:
         pass
     diary = " ".join(str(data.get("diary") or "").split())
@@ -266,8 +268,9 @@ def audit(store: InnerStore, memory, complete, now: float, *, curiosity_path=Non
             "\n".join(f"- opinion on {o['topic']}: {o['stance']}" for o in opinions.all_opinions(store))
         numbered = replies[:25]
         try:
-            data = parse_json(strip_reasoning(complete(AUDIT_SYSTEM, f"Facts and opinions:\n{canon_text}\n\nReplies:\n" +
-                                                       "\n".join(f"{i}. {r[:150]}" for i, r in enumerate(numbered, 1))) or ""))
+            data = structured.parse(strip_reasoning(structured.call(complete, AUDIT_SYSTEM, f"Facts and opinions:\n{canon_text}\n\nReplies:\n" +
+                                                       "\n".join(f"{i}. {r[:150]}" for i, r in enumerate(numbered, 1)),
+                                                                    structured.AUDIT_SCHEMA, "audit") or ""))
             for item in data.get("problems") or []:
                 if isinstance(item, dict) and isinstance(item.get("line"), int) and 1 <= item["line"] <= len(numbered):
                     problems.append((numbered[item["line"] - 1], str(item.get("why") or "contradicts what is true")[:80]))

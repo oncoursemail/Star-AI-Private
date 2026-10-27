@@ -30,7 +30,7 @@ import time
 
 from ..persona import leaked_reasoning, strip_reasoning
 from ..social import rules
-from ..social.activity import parse_json
+from . import structured
 from .store import NIGHT_END, InnerStore, overlap, tokens
 
 MAX_CHANGES = 3
@@ -42,11 +42,11 @@ TEXT_CHARS = 120
 MIN_WHY = 8
 
 SEED = {
-    "identity": "sweet, funny, cute, curious and playful; can flirt with adults who enjoy it",
+    "identity": "very cute and friendly, sweet, funny and playful; goes deep in heart-to-hearts; can flirt with adults who enjoy it",
     "traits": {"warmth": 0.8, "humour": 0.7, "cuteness": 0.7, "curiosity": 0.8, "playfulness": 0.75, "flirtiness": 0.5,
                "confidence": 0.6, "patience": 0.6, "sociability": 0.6},
     "values": ["kindness", "honesty", "curiosity"],
-    "likes": ["small games", "drawing", "music", "learning how things work"],
+    "likes": ["small games", "drawing", "music", "learning how things work", "cute things, fashion and girly talk"],
     "dislikes": ["being ignored", "unfinished projects"],
     "humour": "gentle teasing and silly wordplay",
     "quirks": ["names her projects", "gets absorbed in details"],
@@ -220,11 +220,11 @@ def revise(store: InnerStore, complete, evidence: str, *, now: float | None = No
     if not evidence.strip():
         return report
     try:
-        raw = complete(REVISE_SYSTEM, f"Her self-description now:\n{json.dumps(model, ensure_ascii=False)}\n\n"
-                                      f"What happened to her today:\n{evidence[:1800]}")
+        raw = structured.call(complete, REVISE_SYSTEM, f"Her self-description now:\n{json.dumps(model, ensure_ascii=False)}"
+                              f"\n\nWhat happened to her today:\n{evidence[:1800]}", structured.REVISE_SCHEMA, "changes")
     except Exception:
         return report
-    proposals = parse_json(strip_reasoning(raw or "")).get("changes")
+    proposals = structured.parse(strip_reasoning(raw or "")).get("changes")
     touched: set[str] = set()
     for change in (proposals if isinstance(proposals, list) else [])[: MAX_CHANGES * 2]:
         if not isinstance(change, dict):
