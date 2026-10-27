@@ -47,6 +47,8 @@ class DiscordDesktop:
         self.left_out = left_out        # star.home.attention.LeftOutWatch, or None (then she never feels left out)
 
     def ready(self) -> tuple[bool, str]:
+        if self.chat.killed("discord"):
+            return False, "the owner's kill switch is on for discord"
         if not self.host.focus_window(self.window_title):
             return False, "the Discord app is not open on her PC"
         return True, "ok"
@@ -96,7 +98,12 @@ class DiscordDesktop:
         fresh = [m for m in messages[last_mine + 1:] if _key(channel, str(m["author"]), str(m["text"])) not in self._seen]
         for m in fresh:
             self._seen.append(_key(channel, str(m["author"]), str(m["text"])))
-        targets = fresh if is_dm else [m for m in fresh if self._addressed(m)]
+        room = f"discord:{channel}"
+        if not is_dm:
+            for m in fresh:
+                self.chat.heard("discord", str(m["author"]), str(m["text"]), channel=room)
+        targets = fresh if is_dm else [m for m in fresh if self._addressed(m)
+                                       or self.chat.for_her("discord", str(m["author"]), str(m["text"]), channel=room)[0]]
         if not is_dm:
             self._watch_left_out(channel, fresh, addressed=bool(targets))
         if not targets:
@@ -107,7 +114,8 @@ class DiscordDesktop:
         history = [(str(m["author"]), str(m["text"])) for m in messages[:-1]][-8:]
         plan = self.on_invite(author, said) if self.on_invite is not None and is_dm else None
         reply = self.chat.handle("discord", author, said, name=author, public=not is_dm, history=history,
-                                 intent=getattr(plan, "intent", "") if plan is not None else "")
+                                 intent=getattr(plan, "intent", "") if plan is not None else "",
+                                 channel="" if is_dm else room)
         if reply is None or not self.pacer.allow(channel, reply.text):
             self.host.key("escape")
             return StepResult(True, "chose not to reply")
@@ -128,6 +136,8 @@ class DiscordDesktop:
         if not rules.may_initiate(person, "discord"):
             return StepResult(False, "she only starts conversations with friends who talked to her first")
         text = rules.check_outgoing(text, incoming="", mode=rules.romance_mode("discord", person), platform="discord")
+        if not text:
+            return StepResult(False, "the safety rules removed the whole message (manipulative or dependency wording)")
         ok, why = self.ready()
         if not ok or not self.pacer.allow(f"dm:{handle}", text):
             return StepResult(False, why if not ok else "too soon")

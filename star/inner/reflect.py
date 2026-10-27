@@ -62,7 +62,15 @@ def _clip(text: str, limit: int) -> str:
 
 def rule_card(memory, person) -> str:
     """The card without a model: name, how they like to be talked to, their newest facts."""
-    parts = [f"{person.name}, {'a friend' if person.relationship == 'friend' else 'someone she has met'}."]
+    label = {"friend": "a friend", "met": "someone she has met"}[person.relationship if person.relationship in ("friend", "met") else "met"]
+    try:
+        from ..social.lifecycle import Bonds
+        bond = Bonds(memory, sink=None).get(person)
+        label = bond.label.replace("someone she just met", "someone she has met")
+        label += f" (she calls them {bond.nickname})" if bond.nickname else ""
+    except Exception:
+        pass
+    parts = [f"{person.name}, {label}."]
     if person.style:
         parts.append(f"Likes: {_clip(person.style, 60)}.")
     facts = memory.facts(person, 3)
@@ -100,7 +108,12 @@ def reflect_person(store: InnerStore, memory, complete, person, now: float) -> d
     today = store.episodes(pkey=pkey, since=now - DAY_S, limit=12)
     facts = memory.facts(person, 12)
     old_card, _ = store.card(pkey)
-    notes = (f"Name: {person.name}. Relationship: {person.relationship}. Talks like: {person.style or 'not known'}.\n"
+    try:
+        from ..social.lifecycle import Bonds
+        bond_notes = Bonds(memory, sink=None).card_notes(person)
+    except Exception:
+        bond_notes = ""
+    notes = (f"Name: {person.name}. Relationship: {person.relationship}. {bond_notes} Talks like: {person.style or 'not known'}.\n"
              f"Facts: {'; '.join(facts) or 'none'}\nCurrent card: {old_card or 'none'}\nToday:\n" +
              "\n".join(f"{i}. {e.text[:120]}" for i, e in enumerate(today, 1)))
     out = {"card": False, "seed": False}

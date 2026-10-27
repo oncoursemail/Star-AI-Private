@@ -22,6 +22,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
+from . import safety
 from .friends import FriendMemory, Person
 
 ADULT_AGE = 18
@@ -165,6 +166,7 @@ def check_outgoing(reply: str, *, incoming: str, mode: Mode, platform: str, role
         text = OFF_PLATFORM_DECLINE
     if mode.age_status in ("minor", "doubt") and _ASKS_PERSONAL.search(text):
         text = STEER_AWAY
+    text = safety.protect(text, age_status=mode.age_status, incoming=incoming)   # no manipulation; no dependency for kids/unknown
     limit = MAX_CHARS.get(platform, 500)
     if len(text) > limit:
         cut = text.rfind(" ", 0, limit - 1)
