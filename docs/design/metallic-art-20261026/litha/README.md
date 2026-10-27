@@ -1,5 +1,7 @@
 # Litha launcher illustrations
 
+**Historical exploration, superseded for launcher use:** the owner selected non-chibi Solstice Architect in a newer [issue comment](https://github.com/oncoursemail/Star-AI-Private/issues/682#issuecomment-6429859220). See the [Solstice expression drafts](../litha-solstice/README.md) and [improved full-body candidate](../../litha-concepts-20261026/chatgpt/litha-solstice-architect-improved-v1.png). The Sun Engineer files below are preserved for comparison, not selected as final assets.
+
 Built-in ChatGPT image-generation outputs for the Litha portion of [issue #682](https://github.com/oncoursemail/Star-AI-Private/issues/682), using the [Sun Engineer sheet](../../litha-concepts-20261026/chatgpt/litha-a-sun-engineer-sheet.png) as the character reference. The six poses share the same chibi identity and outfit.
 
 | Pose | PNG | Actual dimensions |
