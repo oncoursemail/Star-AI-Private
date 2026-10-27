@@ -124,8 +124,6 @@ def system_message(extra: str = "", style: str = DEFAULT_STYLE, varied: bool = F
         prompt = prompt.replace(literal, described)
     if expressive:
         from .styles import TAGS_PROMPT
-        prompt = f"{prompt}
-
-{TAGS_PROMPT}"
+        prompt = f"{prompt}\n\n{TAGS_PROMPT}"
     content = prompt if not extra.strip() else f"{prompt}\n\n{extra.strip()[:1200]}"
     return {"role": "system", "content": content}

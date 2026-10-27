@@ -247,6 +247,10 @@ class Settings:
     # Settings > Account & Metallic (star/metallic_access.py): the Metallic Control base URL, http(s); '' = not set up.
     # STAR_METALLIC_CONTROL_URL overrides it. The sign-in token never goes here (DPAPI file under app data).
     metallic_control_url: str = ''
+    # Optional second door (star/metallic_access.py sign_in_account): the Metallic accounts service, https only, and the
+    # SHA-256 fingerprint of its self-signed certificate ('' = normal certificate check). Passwords are never stored.
+    metallic_accounts_url: str = ''
+    metallic_accounts_fingerprint: str = ''
 
     @classmethod
     def load(cls, file: Path):
@@ -399,10 +403,16 @@ class Settings:
             raise ValueError('Use my GPU: idle minutes must be 1 to 240')
         if not 1 <= self.max_calls <= 30 or not 6000 <= self.context_chars <= 80000:
             raise ValueError('Invalid model call or context budget')
-        from .metallic_access import normalize_url
+        from .metallic_access import normalize_accounts_url, normalize_fingerprint, normalize_url
         if not isinstance(self.metallic_control_url, str) or (
                 self.metallic_control_url.strip() and not normalize_url(self.metallic_control_url)):
             raise ValueError('Metallic Control address must be an http:// or https:// URL')
+        if not isinstance(self.metallic_accounts_url, str) or (
+                self.metallic_accounts_url.strip() and not normalize_accounts_url(self.metallic_accounts_url)):
+            raise ValueError('Metallic accounts address must be an https:// URL')
+        if not isinstance(self.metallic_accounts_fingerprint, str) or (
+                self.metallic_accounts_fingerprint.strip() and not normalize_fingerprint(self.metallic_accounts_fingerprint)):
+            raise ValueError('Metallic accounts fingerprint must be 64 hex characters (SHA-256)')
 
     def _validate_server(self):
         """STAR Server (LAN) settings. The loopback `endpoint` rule above is separate."""

@@ -15,6 +15,7 @@ beforeAll(async () => { desktop = installFakeDesktop(); await initializeBridge()
 beforeEach(() => {
   desktop.reset()
   desktop.onAction('metallicSignIn', () => ({ok: true, pending: true}))
+  desktop.onAction('metallicAccountSignIn', () => ({ok: true, pending: true}))
   desktop.onAction('metallicState', () => ({ok: true, pending: true}))
 })
 afterEach(() => cleanup())
@@ -22,6 +23,7 @@ afterEach(() => cleanup())
 const now = () => Math.round(Date.now() / 1000)
 const ADDRESS = 'http://metallic-control.local:8470'
 const signedOut: MetallicStatus = {signed_in: false, expires_at: null, configured: true, control_url: ADDRESS, locked_until: null, secure_store: true}
+const withAccounts: MetallicStatus = {...signedOut, accounts_configured: true}
 const signedIn = (): MetallicStatus => ({...signedOut, signed_in: true, expires_at: now() + 8 * 3600})
 
 /** What Desktop does: one session, the sidebar entry only while signed in, the section and the Settings block. */
@@ -153,5 +155,105 @@ describe('Settings > Account & Metallic', () => {
     expect(screen.getByRole('status').textContent).toMatch(/Not signed in/)
     expect(screen.getByText('No Metallic entry')).toBeTruthy()
     expect(screen.getByLabelText(/Metallic access code/)).toBeTruthy()
+  })
+})
+
+describe('Metallic account sign-in (one account system, access code as the fallback)', () => {
+  const fill = async (user: string, password: string) => {
+    await userEvent.type(screen.getByLabelText('Metallic username'), user)
+    await userEvent.type(screen.getByLabelText('Metallic password'), password)
+    await userEvent.click(screen.getByRole('button', {name: 'Sign in'}))
+    await waitFor(() => expect(desktop.sent('metallicAccountSignIn').length).toBeGreaterThan(0))
+  }
+
+  it('offers only the access code while no accounts address is set', () => {
+    render(<div className="shell"><SignIn status={signedOut} onDone={vi.fn()} onSignedIn={vi.fn()} /></div>)
+    expect(screen.getByLabelText(/Metallic access code/)).toBeTruthy()
+    expect(screen.queryByRole('group', {name: 'Sign in with'})).toBeNull()
+    expect(screen.queryByLabelText('Metallic username')).toBeNull()
+  })
+
+  it('opens on the account form when an accounts address is set, and switches to the code and back', async () => {
+    render(<div className="shell"><SignIn status={withAccounts} onDone={vi.fn()} onSignedIn={vi.fn()} /></div>)
+    expect(screen.getByLabelText('Metallic username')).toBeTruthy()
+    expect(screen.queryByLabelText(/Metallic access code/)).toBeNull()
+    await userEvent.click(screen.getByRole('button', {name: 'Access code'}))
+    expect(screen.getByLabelText(/Metallic access code/)).toBeTruthy()
+    expect(screen.queryByLabelText('Metallic username')).toBeNull()
+    await userEvent.click(screen.getByRole('button', {name: 'Metallic account'}))
+    expect(screen.getByLabelText('Metallic password')).toBeTruthy()
+  })
+
+  it('sends the username and password once, clears the password after a refusal and says why', async () => {
+    const onSignedIn = vi.fn()
+    render(<div className="shell"><SignIn status={withAccounts} onDone={vi.fn()} onSignedIn={onSignedIn} /></div>)
+    await fill('alex', 'wrong-password-1')
+    expect(desktop.sent('metallicAccountSignIn')[0].payload).toEqual({username: 'alex', password: 'wrong-password-1'})
+    await desktop.emitRaw(desktop.requestOf('metallicAccountSignIn'), 'result', {ok: false, signed_in: false, error: 'wrong_login', message: ''})
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Wrong username or password\./)
+    expect((screen.getByLabelText('Metallic password') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Metallic username') as HTMLInputElement).value).toBe('alex')
+    expect(onSignedIn).not.toHaveBeenCalled()
+  })
+
+  it('asks for the 2FA code when the account has one, then sends it with the same password', async () => {
+    const onSignedIn = vi.fn()
+    const onDone = vi.fn()
+    render(<div className="shell"><SignIn status={withAccounts} onDone={onDone} onSignedIn={onSignedIn} /></div>)
+    await fill('alex', 'right-password-1')
+    await desktop.emitRaw(desktop.requestOf('metallicAccountSignIn'), 'result', {ok: false, signed_in: false, error: 'otp_required', message: ''})
+    const code = await screen.findByLabelText('6-digit code from your authenticator app')
+    await userEvent.type(code, '123456')
+    await userEvent.click(screen.getByRole('button', {name: 'Sign in'}))
+    await waitFor(() => expect(desktop.sent('metallicAccountSignIn')).toHaveLength(2))
+    expect(desktop.sent('metallicAccountSignIn')[1].payload).toEqual({username: 'alex', password: 'right-password-1', otp: '123456'})
+    const expires = now() + 8 * 3600
+    await desktop.emitRaw(desktop.sent('metallicAccountSignIn')[1].requestId, 'result', {ok: true, signed_in: true, expires_at: expires, message: 'Signed in.'})
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(expect.objectContaining({ok: true, expires_at: expires})))
+    expect(onDone).toHaveBeenCalledOnce()
+  })
+
+  it('can use a recovery code instead of the authenticator code', async () => {
+    render(<div className="shell"><SignIn status={withAccounts} onDone={vi.fn()} onSignedIn={vi.fn()} /></div>)
+    await fill('alex', 'right-password-1')
+    await desktop.emitRaw(desktop.requestOf('metallicAccountSignIn'), 'result', {ok: false, signed_in: false, error: 'otp_required', message: ''})
+    await userEvent.click(await screen.findByRole('button', {name: 'Use a recovery code instead'}))
+    await userEvent.type(screen.getByLabelText('Recovery code'), 'abcde-12345')
+    await userEvent.click(screen.getByRole('button', {name: 'Sign in'}))
+    await waitFor(() => expect(desktop.sent('metallicAccountSignIn')).toHaveLength(2))
+    expect(desktop.sent('metallicAccountSignIn')[1].payload).toEqual({username: 'alex', password: 'right-password-1', recovery_code: 'abcde-12345'})
+  })
+
+  it('names the cases an owner can fix: not an owner or admin, accounts offline, certificate mismatch', async () => {
+    render(<div className="shell"><SignIn status={withAccounts} onDone={vi.fn()} onSignedIn={vi.fn()} /></div>)
+    const cases: [string, RegExp][] = [
+      ['not_allowed', /Only owner and admin accounts can/],
+      ['accounts_unreachable', /Metallic accounts did not answer/],
+      ['bad_certificate', /certificate does not match the fingerprint/],
+    ]
+    for (const [i, [error, text]] of cases.entries()) {
+      if (i === 0) await userEvent.type(screen.getByLabelText('Metallic username'), 'sam')
+      await userEvent.type(screen.getByLabelText('Metallic password'), 'some-password-1')
+      await userEvent.click(screen.getByRole('button', {name: 'Sign in'}))
+      await waitFor(() => expect(desktop.sent('metallicAccountSignIn')).toHaveLength(i + 1))
+      await desktop.emitRaw(desktop.sent('metallicAccountSignIn')[i].requestId, 'result', {ok: false, signed_in: false, error, message: ''})
+      expect((await screen.findByRole('alert')).textContent).toMatch(text)
+    }
+  })
+
+  it('shows the accounts address and fingerprint fields in Settings and passes edits on', async () => {
+    const onAccounts = vi.fn()
+    const onFingerprint = vi.fn()
+    const Settings = () => {
+      const session = useMetallicStatus(withAccounts, false)
+      return <div className="shell"><MetallicAccount session={session} address={ADDRESS} onAddressChange={() => {}}
+        accountsAddress="" onAccountsAddressChange={onAccounts} fingerprint="" onFingerprintChange={onFingerprint} /></div>
+    }
+    render(<Settings />)
+    await userEvent.type(screen.getByLabelText(/Metallic accounts address/), 'h')
+    expect(onAccounts).toHaveBeenCalledWith('h')
+    await userEvent.type(screen.getByLabelText(/certificate fingerprint/), 'a')
+    expect(onFingerprint).toHaveBeenCalledWith('a')
+    expect(screen.getByLabelText('Metallic username')).toBeTruthy()
   })
 })

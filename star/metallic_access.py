@@ -3,21 +3,29 @@
 Bridge actions (star/react_shell.py, docs/agents/ui-2-20261026.md "Contract: desktop bridge actions"):
     metallicStatus  -> {signed_in, expires_at, configured, control_url, locked_until, secure_store}
     metallicSignIn  {code} -> {ok, signed_in, expires_at?, error?, message, attempts_left?, locked_until?}
+    metallicAccountSignIn {username, password, otp?, recovery_code?} -> the same result. The Metallic account (owner or
+                    admin role) signs in to Metallic accounts, and its access token goes to Metallic Control as
+                    `account_token` instead of a code. The password goes to the accounts service only.
     metallicSignOut -> status (token file deleted; the server revoke is best effort, in a thread)
     metallicState   {range?} -> {reachable, signed_in, expired?, message?, state?, speed?, series?}
 
 Times (expires_at, locked_until) are unix seconds. Expected failures (wrong code, lockout, offline, not configured, a
 reply that makes no sense) are result dicts, not exceptions. The code is never stored or logged; the token is kept
 in `<app data>/metallic_session.bin`, encrypted with Windows DPAPI for the current user, or only in memory where DPAPI
-is missing (`secure_store: false`). A token is only ever sent to the control URL it was issued by.
+is missing (`secure_store: false`). A token is only ever sent to the control URL it was issued by. The account's own
+refresh token is never kept: that account session is ended right after Control has answered.
 """
 from __future__ import annotations
 
 import ctypes
+import hashlib
+import hmac
+import http.client
 import json
 import os
 from pathlib import Path
 import re
+import ssl
 import threading
 import time
 import urllib.error
@@ -26,13 +34,16 @@ import urllib.request
 
 TOKEN_FILE = 'metallic_session.bin'
 ENV_URL = 'STAR_METALLIC_CONTROL_URL'
+ENV_ACCOUNTS_URL = 'STAR_METALLIC_ACCOUNTS_URL'
+ENV_ACCOUNTS_FINGERPRINT = 'STAR_METALLIC_ACCOUNTS_FINGERPRINT'
 FAIL_WINDOW = 900
 FAIL_MAX = 5
 TIMEOUT = 4.0
 MAX_REPLY = 4_000_000
 RANGES = ('hour', 'day', 'week')
 KEY_RE = re.compile(r'[A-Za-z0-9._:-]{1,120}')
-METALLIC_ACTIONS = frozenset({'metallicStatus', 'metallicSignIn', 'metallicSignOut', 'metallicState'})
+METALLIC_ACTIONS = frozenset({'metallicStatus', 'metallicSignIn', 'metallicSignOut', 'metallicState',
+                              'metallicAccountSignIn'})
 
 
 def normalize_url(raw) -> str:
@@ -50,6 +61,42 @@ def normalize_url(raw) -> str:
     if parts.query or parts.fragment or any(c.isspace() for c in text):
         return ''
     return text
+
+
+def normalize_accounts_url(raw) -> str:
+    """The Metallic accounts base URL: https only, because a password goes there."""
+    url = normalize_url(raw)
+    return url if url.startswith('https://') else ''
+
+
+def normalize_fingerprint(raw) -> str:
+    """SHA-256 of the accounts server certificate as 64 lowercase hex characters ('AB:CD:..' accepted), or ''."""
+    if not isinstance(raw, str):
+        return ''
+    text = raw.strip().replace(':', '').lower()
+    return text if re.fullmatch(r'[0-9a-f]{64}', text) else ''
+
+
+def check_account_login(body) -> dict:
+    """The bridge payload of metallicAccountSignIn, checked: username, password, and at most one second factor."""
+    if not isinstance(body, dict):
+        raise ValueError('Enter your Metallic username and password')
+    out = {}
+    for key, limit in (('username', 64), ('password', 128)):
+        value = body.get(key)
+        if not isinstance(value, str) or not 1 <= len(value) <= limit:
+            raise ValueError(f'Enter your Metallic {key} (1 to {limit} characters)')
+        out[key] = value
+    for key in ('otp', 'recovery_code'):
+        value = body.get(key)
+        if value in (None, ''):
+            continue
+        if not isinstance(value, str) or not 1 <= len(value.strip()) <= 64:
+            raise ValueError('That code is too long')
+        out[key] = value.strip()
+    if 'otp' in out and 'recovery_code' in out:
+        raise ValueError('Use the authenticator code or a recovery code, not both')
+    return out
 
 
 def check_code(code) -> str:
@@ -110,12 +157,54 @@ class _Unreachable(Exception):
     pass
 
 
+class _BadCertificate(Exception):
+    pass
+
+
+def pinned_post(base: str, fingerprint: str, path: str, body: dict, token: str | None, timeout: float):
+    """POST JSON to the Metallic accounts service over HTTPS: (status, JSON object or None).
+
+    With a fingerprint the server certificate must hash to it (a self-signed certificate, pinned); without one the
+    normal CA check applies. No cookies and no Origin header, which the service requires of native clients."""
+    parts = urllib.parse.urlsplit(base)
+    ctx = ssl.create_default_context()
+    if fingerprint:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE          # identity comes from the pinned fingerprint below
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'STAR-AI-Desktop'}
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    conn = http.client.HTTPSConnection(parts.hostname, parts.port or 443, timeout=timeout, context=ctx)
+    try:
+        conn.connect()
+        if fingerprint and not hmac.compare_digest(
+                hashlib.sha256(conn.sock.getpeercert(binary_form=True)).hexdigest(), fingerprint):
+            raise _BadCertificate()
+        conn.request('POST', parts.path.rstrip('/') + path, json.dumps(body).encode('utf-8'), headers)
+        reply = conn.getresponse()
+        status, raw = reply.status, reply.read(MAX_REPLY)
+    except _BadCertificate:
+        raise
+    except (OSError, http.client.HTTPException, ValueError):      # ssl.SSLError is an OSError
+        raise _Unreachable() from None
+    finally:
+        conn.close()
+    try:
+        doc = json.loads(raw or b'null')
+    except ValueError:
+        doc = None
+    return status, doc
+
+
 class MetallicAccess:
     """One per app data folder (use `for_home`): the bootstrap and the bridge must see the same memory state."""
 
-    def __init__(self, home: Path, *, opener=None, vault='default', clock=time.time, timeout: float = TIMEOUT):
+    def __init__(self, home: Path, *, opener=None, vault='default', clock=time.time, timeout: float = TIMEOUT,
+                 account_post=None):
         self.file = Path(home) / TOKEN_FILE
         self.open = opener or urllib.request.urlopen
+        self.account_post = account_post or pinned_post
         self.vault = default_vault() if vault == 'default' else vault
         self.clock, self.timeout = clock, timeout
         self.lock = threading.Lock()
@@ -128,6 +217,17 @@ class MetallicAccess:
     def control_url(setting: str = '') -> str:
         env = os.environ.get(ENV_URL)
         return normalize_url(env if env else setting)
+
+    @staticmethod
+    def accounts_url(setting: str = '') -> str:
+        env = os.environ.get(ENV_ACCOUNTS_URL)
+        return normalize_accounts_url(env if env else setting)
+
+    @staticmethod
+    def accounts_fingerprint_text(setting: str = '') -> str:
+        """The configured fingerprint as typed (environment first); '' means none, so the CA check applies."""
+        env = os.environ.get(ENV_ACCOUNTS_FINGERPRINT)
+        return (env if env else setting or '').strip()
 
     def _lock_until(self) -> float | None:
         now = self.clock()
@@ -173,12 +273,12 @@ class MetallicAccess:
             return None
         return session
 
-    def status(self, setting: str = '') -> dict:
+    def status(self, setting: str = '', accounts_setting: str = '') -> dict:
         url = self.control_url(setting)
         session = self._session(url) if url else None
         return {'signed_in': session is not None, 'expires_at': session['expires_at'] if session else None,
                 'configured': bool(url), 'control_url': url, 'locked_until': self._lock_until(),
-                'secure_store': self.vault is not None}
+                'secure_store': self.vault is not None, 'accounts_configured': bool(self.accounts_url(accounts_setting))}
 
     # ---------------------------------------------------------------- HTTP
     def _request(self, method: str, url: str, body: dict | None = None, token: str | None = None):
@@ -211,6 +311,11 @@ class MetallicAccess:
     # ---------------------------------------------------------------- actions
     def sign_in(self, code, setting: str = '') -> dict:
         check_code(code)
+        return self._exchange({'code': code}, setting, 'wrong_code', 'That code is not right.')
+
+    def _exchange(self, body: dict, setting: str, refusal: str, refusal_text: str) -> dict:
+        """POST the code (or account token) to Metallic Control's /api/app/verify and keep the token it returns.
+        Refusals count toward the same local lockout as the server's (5 in 15 minutes)."""
         url = self.control_url(setting)
         if not url:
             return {'ok': False, 'signed_in': False, 'error': 'not_configured',
@@ -220,7 +325,7 @@ class MetallicAccess:
             return {'ok': False, 'signed_in': False, 'error': 'locked', 'locked_until': until,
                     'message': 'Too many wrong codes. Wait, then try again.'}
         try:
-            status, doc = self._request('POST', url + '/api/app/verify', {'code': code})
+            status, doc = self._request('POST', url + '/api/app/verify', body)
         except _Unreachable:
             return {'ok': False, 'signed_in': False, 'error': 'unreachable',
                     'message': 'Metallic Control did not answer. Check the address and that it is running.'}
@@ -240,8 +345,8 @@ class MetallicAccess:
             server_left = doc.get('attempts_left')
             if type(server_left) is int:
                 left = max(0, min(left, server_left))
-            result = {'ok': False, 'signed_in': False, 'error': 'wrong_code', 'attempts_left': left,
-                      'message': 'That code is not right.'}
+            result = {'ok': False, 'signed_in': False, 'error': refusal, 'attempts_left': left,
+                      'message': refusal_text}
             if left == 0:
                 with self.lock:
                     self.locked_until = max(self.locked_until, self.clock() + FAIL_WINDOW)
@@ -256,6 +361,63 @@ class MetallicAccess:
                     'message': 'Too many wrong codes. Wait, then try again.'}
         return {'ok': False, 'signed_in': False, 'error': 'bad_reply',
                 'message': f'Metallic Control gave an unexpected answer (HTTP {status}).'}
+
+    def sign_in_account(self, login: dict, setting: str = '', accounts_setting: str = '',
+                        fingerprint_setting: str = '') -> dict:
+        """Sign in with a Metallic account (`login` from check_account_login). The accounts service checks the password
+        and the second factor; Metallic Control then accepts the access token only for an owner or admin account."""
+        def refuse(error: str, message: str, **extra) -> dict:
+            return {'ok': False, 'signed_in': False, 'error': error, 'message': message, **extra}
+
+        if not self.control_url(setting):
+            return refuse('not_configured', 'Set the Metallic Control address in Settings first.')
+        accounts = self.accounts_url(accounts_setting)
+        if not accounts:
+            return refuse('accounts_not_configured', 'Set the Metallic accounts address (https) in Settings first.')
+        until = self._lock_until()
+        if until:
+            return refuse('locked', 'Too many wrong codes. Wait, then try again.', locked_until=until)
+        typed = self.accounts_fingerprint_text(fingerprint_setting)
+        pin = normalize_fingerprint(typed)
+        if typed and not pin:
+            return refuse('bad_certificate', 'The Metallic accounts certificate fingerprint is not 64 hex characters.')
+        try:
+            status, doc = self.account_post(accounts, pin, '/v1/login', login, None, self.timeout)
+        except _BadCertificate:
+            return refuse('bad_certificate', 'The Metallic accounts certificate does not match the fingerprint. '
+                                             'Not connecting.')
+        except _Unreachable:
+            return refuse('accounts_unreachable', 'Metallic accounts did not answer. Check the address and that it '
+                                                  'is running.')
+        doc = doc if isinstance(doc, dict) else {}
+        token = doc.get('access_token')
+        if status != 200 or not isinstance(token, str) or token.count('.') != 2:
+            code = doc.get('error')
+            if status == 429:
+                wait = doc.get('retry_after')
+                wait = wait if isinstance(wait, (int, float)) and 0 < wait <= 86400 else FAIL_WINDOW
+                return refuse('account_locked', 'Too many wrong tries. This account is paused for a while.',
+                              locked_until=self.clock() + wait)
+            if status == 401 and code == 'otp_required':
+                return refuse('otp_required', 'Enter the 6-digit code from your authenticator app.')
+            if status == 401 and code == 'wrong_code':
+                return refuse('wrong_code', 'That code is not right.')
+            if status == 401:
+                return refuse('wrong_login', 'Wrong username or password.')
+            if status == 403 and code == 'disabled':
+                return refuse('disabled', 'This Metallic account is turned off. Ask a Metallic admin for help.')
+            return refuse('bad_reply', f'Metallic accounts gave an unexpected answer (HTTP {status}).')
+        try:
+            return self._exchange({'account_token': token}, setting, 'not_allowed',
+                                  'This Metallic account cannot open Metallic Control (owner or admin accounts only).')
+        finally:
+            # STAR keeps only Control's token: end the account session it just opened (best effort, off this thread).
+            def end_account_session():
+                try:
+                    self.account_post(accounts, pin, '/v1/logout', {'everywhere': False}, token, self.timeout)
+                except (_Unreachable, _BadCertificate):
+                    pass
+            threading.Thread(target=end_account_session, daemon=True, name='metallic-account-logout').start()
 
     def sign_out(self, setting: str = '') -> dict:
         url = self.control_url(setting)
@@ -319,10 +481,11 @@ def for_home(home: Path) -> MetallicAccess:
         return _SHARED[key]
 
 
-def status_for(home: Path, setting: str = '') -> dict:
+def status_for(home: Path, setting: str = '', accounts_setting: str = '') -> dict:
     """The bootstrap's `metallic` entry; never raises (a broken store reads as signed out)."""
     try:
-        return for_home(home).status(setting)
+        return for_home(home).status(setting, accounts_setting)
     except Exception:
         return {'signed_in': False, 'expires_at': None, 'configured': bool(MetallicAccess.control_url(setting)),
-                'control_url': MetallicAccess.control_url(setting), 'locked_until': None, 'secure_store': False}
+                'control_url': MetallicAccess.control_url(setting), 'locked_until': None, 'secure_store': False,
+                'accounts_configured': bool(MetallicAccess.accounts_url(accounts_setting))}

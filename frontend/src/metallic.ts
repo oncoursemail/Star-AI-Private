@@ -15,8 +15,12 @@ export type MetallicStatus = {
   control_url: string
   locked_until: number | null
   secure_store: boolean
+  /** A https Metallic accounts address is set (Settings), so "Metallic account" sign-in can be offered. */
+  accounts_configured?: boolean
 }
 export type MetallicSignInError = 'wrong_code' | 'locked' | 'unreachable' | 'not_configured' | 'bad_reply'
+  | 'otp_required' | 'wrong_login' | 'disabled' | 'not_allowed' | 'account_locked' | 'accounts_unreachable'
+  | 'accounts_not_configured' | 'bad_certificate'
 export type MetallicSignInResult = {
   ok: boolean
   signed_in: boolean

@@ -16,6 +16,13 @@ export function refusalText(result: MetallicSignInResult, address: string): stri
   }
   if (result.error === 'unreachable') return `Metallic Control did not answer${address ? ` at ${address}` : ''}. Check the address or your network.`
   if (result.error === 'not_configured') return 'No Metallic Control address is set. Add it in Settings > Account & Metallic.'
+  if (result.error === 'wrong_login') return 'Wrong username or password.'
+  if (result.error === 'disabled') return 'This Metallic account is turned off. Ask a Metallic admin for help.'
+  if (result.error === 'not_allowed') return 'This Metallic account cannot open Metallic Control. Only owner and admin accounts can.'
+  if (result.error === 'account_locked') return until ? `Too many wrong tries. This account is paused until ${clockTime(until)} (${untilText(until)}).` : 'Too many wrong tries. This account is paused for a while.'
+  if (result.error === 'accounts_unreachable') return 'Metallic accounts did not answer. Check the accounts address in Settings > Account & Metallic.'
+  if (result.error === 'accounts_not_configured') return 'No Metallic accounts address is set. Add it in Settings > Account & Metallic.'
+  if (result.error === 'bad_certificate') return 'The Metallic accounts certificate does not match the fingerprint in Settings. STAR did not connect.'
   return result.message || 'Metallic Control sent a reply STAR could not read.'
 }
 
@@ -89,6 +96,113 @@ export function MetallicCodeForm({status, onSignedIn, submitLabel = 'Sign in', d
   )
 }
 
+function previewAccountSignIn(): MetallicSignInResult {
+  return {ok: false, signed_in: false, error: 'wrong_login', message: ''}
+}
+
+/** The Metallic account form: username, password, and the second-factor code once the accounts service asks for it.
+ *  The password goes to the host once and is cleared after every answer except "second factor needed / wrong code",
+ *  where the same password is sent again with the code. Nothing here stores it. */
+export function MetallicAccountForm({status, onSignedIn, submitLabel = 'Sign in', disabled = false, autoFocus = false}: {
+  status: MetallicStatus | null
+  onSignedIn: (result: MetallicSignInResult) => void
+  submitLabel?: string
+  disabled?: boolean
+  autoFocus?: boolean
+}) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [second, setSecond] = useState('')
+  const [needSecond, setNeedSecond] = useState(false)
+  const [recovery, setRecovery] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [refusal, setRefusal] = useState('')
+  const [lockedUntil, setLockedUntil] = useState<number | null>(status?.locked_until ?? null)
+  const [, setTick] = useState(0)
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false }, [])
+  useEffect(() => { if (status?.locked_until) setLockedUntil(status.locked_until) }, [status?.locked_until])
+  const locked = lockedUntil !== null && lockedUntil * 1000 > Date.now()
+  useEffect(() => {
+    if (!locked) return
+    const timer = window.setInterval(() => setTick(t => t + 1), 15000)
+    return () => window.clearInterval(timer)
+  }, [locked])
+
+  const ready = username.trim() !== '' && password !== '' && (!needSecond || second.trim() !== '')
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!ready || busy || locked || disabled) return
+    const payload: Record<string, unknown> = {username: username.trim().slice(0, 64), password: password.slice(0, 128)}
+    if (needSecond && second.trim()) payload[recovery ? 'recovery_code' : 'otp'] = second.trim().slice(0, 64)
+    setBusy(true)
+    setRefusal('')
+    setSecond('')
+    const reply = metallicPreview()
+      ? {ok: true as const, data: previewAccountSignIn()}
+      : await askHost<MetallicSignInResult>('metallicAccountSignIn', payload)
+    if (!mounted.current) return
+    setBusy(false)
+    const result = reply.ok ? reply.data : null
+    const again = result?.error === 'otp_required' || result?.error === 'wrong_code'
+    if (!again) setPassword('')
+    if (!reply.ok) { setRefusal(reply.error); return }
+    if (result?.ok && result.signed_in) { onSignedIn(result); return }
+    if (!result) { setRefusal('Metallic sent a reply STAR could not read.'); return }
+    if (result.error === 'otp_required') { setNeedSecond(true); return }
+    if (result.locked_until && result.error === 'locked') setLockedUntil(result.locked_until)
+    setRefusal(refusalText(result, status?.control_url || ''))
+  }
+  const message = locked && lockedUntil ? `Too many wrong codes. Sign-in is locked until ${clockTime(lockedUntil)} (${untilText(lockedUntil)}).` : refusal
+  const off = busy || disabled || locked
+  return (
+    <form className="metallic-code-form" onSubmit={event => void submit(event)}>
+      <label className="metallic-field"><span>Metallic username</span>
+        <input type="text" autoComplete="username" spellCheck={false} maxLength={64} value={username}
+          onChange={event => setUsername(event.target.value)} disabled={off || needSecond} autoFocus={autoFocus} /></label>
+      <label className="metallic-field"><span>Metallic password</span>
+        <input type="password" autoComplete="current-password" spellCheck={false} maxLength={128} value={password}
+          onChange={event => setPassword(event.target.value)} disabled={off || needSecond} /></label>
+      {needSecond && <label className="metallic-field"><span>{recovery ? 'Recovery code' : '6-digit code from your authenticator app'}</span>
+        <input type="text" inputMode={recovery ? 'text' : 'numeric'} autoComplete="one-time-code" spellCheck={false} maxLength={64}
+          value={second} onChange={event => setSecond(event.target.value)} disabled={off} autoFocus />
+      </label>}
+      {needSecond && <button type="button" className="metallic-link" onClick={() => { setRecovery(r => !r); setSecond('') }}>
+        {recovery ? 'Use the authenticator code instead' : 'Use a recovery code instead'}</button>}
+      <div className="metallic-code-row">
+        <button type="submit" className="secondary-button" disabled={!ready || off}>
+          {busy ? <LoaderCircle className="spin" size={14} aria-hidden="true" /> : null} {busy ? 'Checking' : submitLabel}
+        </button>
+      </div>
+      <p className="metallic-code-note">Metallic accounts checks the password and gives STAR only a short sign-in for Metallic Control (owner and admin accounts). STAR does not keep the password.</p>
+      {message && <p className="metallic-refusal" role="alert">{message}</p>}
+    </form>
+  )
+}
+
+/** Both ways in: a Metallic account (when its address is set) and, always, the access code as the fallback. */
+export function MetallicSignInForm({status, onSignedIn, disabled = false, autoFocus = false}: {
+  status: MetallicStatus | null
+  onSignedIn: (result: MetallicSignInResult) => void
+  disabled?: boolean
+  autoFocus?: boolean
+}) {
+  const accounts = Boolean(status?.accounts_configured)
+  const [mode, setMode] = useState<'account' | 'code'>(accounts ? 'account' : 'code')
+  useEffect(() => { if (!accounts) setMode('code') }, [accounts])
+  return (
+    <div className="metallic-signin-forms">
+      {accounts && <div className="metallic-mode" role="group" aria-label="Sign in with">
+        <button type="button" className={mode === 'account' ? 'metallic-mode-on' : ''} aria-pressed={mode === 'account'} onClick={() => setMode('account')}>Metallic account</button>
+        <button type="button" className={mode === 'code' ? 'metallic-mode-on' : ''} aria-pressed={mode === 'code'} onClick={() => setMode('code')}>Access code</button>
+      </div>}
+      {mode === 'account'
+        ? <MetallicAccountForm key="account" status={status} onSignedIn={onSignedIn} disabled={disabled} autoFocus={autoFocus} />
+        : <MetallicCodeForm key="code" status={status} onSignedIn={onSignedIn} disabled={disabled} autoFocus={autoFocus} />}
+    </div>
+  )
+}
+
 /** Full-screen first-launch screen. "Continue" opens normal STAR with or without a code; a code only adds Metallic.
  *  Render it inside `.shell` (it covers the window). */
 export function SignIn({status, onDone, onSignedIn}: {
@@ -106,7 +220,7 @@ export function SignIn({status, onDone, onSignedIn}: {
         <h1 id="metallic-signin-title">Welcome to STAR</h1>
         <p className="metallic-signin-lead">STAR works on its own: chat, projects and tools need no account. If you run Metallic, sign in to also see your Metallic projects and machines.</p>
         {configured
-          ? <MetallicCodeForm status={status} autoFocus onSignedIn={result => { onSignedIn(result); onDone() }} />
+          ? <MetallicSignInForm status={status} autoFocus onSignedIn={result => { onSignedIn(result); onDone() }} />
           : <p className="metallic-code-note">No Metallic Control address is set yet. You can add it later in Settings &gt; Account &amp; Metallic and sign in there.</p>}
         <div className="metallic-signin-actions">
           <button type="button" className="primary-button" onClick={onDone}>Continue</button>

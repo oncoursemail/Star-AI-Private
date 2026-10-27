@@ -635,3 +635,50 @@ html[data-star-theme='pearl'] :is(.shell, .star-layer) {
     flex-direction: column;
   }
 }
+
+/* ---------- Metallic account / access code switch ---------- */
+.shell .metallic-signin-forms {
+  display: grid;
+  gap: var(--star-3);
+}
+.shell .metallic-mode {
+  display: inline-flex;
+  justify-self: start;
+  padding: 2px;
+  border: 1px solid var(--star-stroke-control);
+  border-radius: var(--star-r-sm);
+}
+.shell .metallic-mode button {
+  min-height: 30px;
+  padding: 0 var(--star-3);
+  border: 0;
+  border-radius: calc(var(--star-r-sm) - 2px);
+  background: transparent;
+  color: var(--star-body);
+  font-size: var(--star-fs-nav);
+  cursor: pointer;
+}
+.shell .metallic-mode button.metallic-mode-on {
+  background: var(--star-bg);
+  color: var(--star-text);
+  font-weight: 600;
+}
+.shell .metallic-mode button:focus-visible,
+.shell .metallic-link:focus-visible {
+  outline: 2px solid var(--star-stroke-focus);
+  outline-offset: 1px;
+}
+.shell .metallic-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--star-body);
+  font-size: var(--star-fs-meta);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.shell .metallic-field > span small {
+  color: var(--star-faint);
+  font-weight: 400;
+}

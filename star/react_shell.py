@@ -67,7 +67,7 @@ from .chat_media import prepare_turn
 from .roblox_cloud import (ROBLOX_ACTIONS, ROBLOX_NETWORK_ACTIONS, RobloxCloud,
                            handle_action as handle_roblox_action)
 from .research_activity import sanitize_research_event
-from .metallic_access import METALLIC_ACTIONS, check_code as check_metallic_code, for_home as metallic_for_home
+from .metallic_access import METALLIC_ACTIONS, check_account_login, check_code as check_metallic_code, for_home as metallic_for_home
 from .metallic_access import status_for as metallic_status
 
 ALLOWED_ACTIONS = frozenset({
@@ -177,6 +177,7 @@ PERMITTED_SETTINGS = frozenset({
     'edit_diff',              # star/edit_format.py: changed lines only for pasted-code edits, off by default
     'music_recognition_enabled','fpcalc_path',   # star/music_recognition.py, off by default
     'metallic_control_url',   # star/metallic_access.py: the Metallic Control address (never the code or token)
+    'metallic_accounts_url','metallic_accounts_fingerprint',   # the Metallic accounts address and its pinned certificate
 })
 
 # Settings > Media "session capabilities" line: put before the owner's words of every turn (and of a draft warm-up).
@@ -778,7 +779,7 @@ def _get_state(settings_file: Path, runtime: Runtime, busy: bool = False, studio
         'lesson_bundle':lesson_bundle,
         'learning_bundle':learning_bundle,
         'credentials':credential_status(),
-        'metallic':metallic_status(home,settings.metallic_control_url),
+        'metallic':metallic_status(home,settings.metallic_control_url,settings.metallic_accounts_url),
         'server':server_status(settings),
         'roblox':roblox_state(home),
         'intelligence':for_settings(settings,home).status(),
@@ -1360,14 +1361,18 @@ def launch():
                 if action in METALLIC_ACTIONS:
                     # The network calls run off the Qt thread; status and sign-out only touch the local file.
                     metallic=metallic_for_home(app_data())
-                    url_setting=Settings.load(self.settings_file).metallic_control_url
+                    saved_metallic=Settings.load(self.settings_file)
+                    url_setting=saved_metallic.metallic_control_url
                     if action=='metallicStatus':
-                        return json.dumps({'ok':True,'data':metallic.status(url_setting)})
+                        return json.dumps({'ok':True,'data':metallic.status(url_setting,saved_metallic.metallic_accounts_url)})
                     if action=='metallicSignOut':
                         return json.dumps({'ok':True,'data':metallic.sign_out(url_setting)})
                     if action=='metallicSignIn':
                         code=check_metallic_code(body.get('code'))
                         self._run(rid,action,lambda:metallic.sign_in(code,url_setting))
+                    elif action=='metallicAccountSignIn':
+                        login=check_account_login(body)
+                        self._run(rid,action,lambda:metallic.sign_in_account(login,url_setting,saved_metallic.metallic_accounts_url,saved_metallic.metallic_accounts_fingerprint))
                     else:
                         rng=body.get('range','hour')
                         if rng not in ('hour','day','week'):raise ValueError('Range is hour, day or week')
