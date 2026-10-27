@@ -37,6 +37,33 @@ def _ms(value: object, label: str) -> float:
 
 
 @dataclass(frozen=True)
+class FocusSample:
+    """Bounded fingerprint of ONE host-selected small UI/gameplay ROI.
+
+    Coordinate scope is included so changed crops never compare as identical.
+    No raw pixels, images or personally identifiable information are retained.
+    """
+
+    region: Region
+    edge_hash: int
+    tone_signature: int
+
+    def __post_init__(self) -> None:
+        if (type(self.region) is not tuple or len(self.region) != 4
+                or any(type(part) is not int for part in self.region)):
+            raise ValueError("focus region must contain four integers")
+        x, y, width, height = self.region
+        if (x < 0 or y < 0 or width < 9 or height < 8
+                or x + width > 8192 or y + height > 8192):
+            raise ValueError("focus region must fit an 8192px frame")
+        if type(self.edge_hash) is not int or not 0 <= self.edge_hash < (1 << 64):
+            raise ValueError("focus edge hash must be a 64-bit unsigned integer")
+        if (type(self.tone_signature) is not int
+                or not 0 <= self.tone_signature < (1 << 42)):
+            raise ValueError("focus tone signature must be 42-bit unsigned")
+
+
+@dataclass(frozen=True)
 class FrameCue:
     captured_ms: float
     perceptual_hash: int  # locally computed 64-bit pHash/dHash, not a crypto digest
@@ -44,6 +71,7 @@ class FrameCue:
     hud_hash: int | None = None  # optional separately cropped UI fingerprint
     tone_signature: int | None = None  # seven color/luma bins; None for legacy host
     hud_tone_signature: int | None = None  # same, but from host-selected HUD ROI
+    focus_samples: tuple[FocusSample, ...] = ()  # up to 8 independent host-scoped ROIs
 
     def __post_init__(self) -> None:
         _ms(self.captured_ms, "captured_ms")
@@ -60,6 +88,13 @@ class FrameCue:
                 raise ValueError(f"{name} must be a 42-bit signature or None")
         if type(self.cue) is not str or self.cue not in _CUES:
             raise ValueError("unknown host-observed cue")
+        if (type(self.focus_samples) is not tuple
+                or len(self.focus_samples) > 8
+                or any(type(sample) is not FocusSample for sample in self.focus_samples)):
+            raise ValueError("at most eight immutable FocusSample values are allowed")
+        regions = tuple(sample.region for sample in self.focus_samples)
+        if regions != tuple(sorted(set(regions))):
+            raise ValueError("focus regions must be unique and canonically ordered")
 
     @classmethod
     def from_pixels(
@@ -67,6 +102,7 @@ class FrameCue:
         width: int, height: int, pixel_format: str = "BGRA",
         row_stride: int | None = None, cue: str = "none",
         game_region: Region | None = None, hud_region: Region | None = None,
+        focus_regions: tuple[Region, ...] = (),
     ) -> FrameCue:
         """Fingerprint approved host pixels. No recording, inference or capture.
 
@@ -76,6 +112,14 @@ class FrameCue:
         _ms(captured_ms, "captured_ms")
         if type(cue) is not str or cue not in _CUES:
             raise ValueError("unknown host-observed cue")
+        # These ROIs are selected by the trusted local capture host, never by
+        # a viewer, prompt, game chat or the model. Reject unbounded scans.
+        if (type(focus_regions) is not tuple or len(focus_regions) > 8
+                or any(type(region) is not tuple or len(region) != 4
+                       or any(type(value) is not int for value in region)
+                       for region in focus_regions)
+                or len(set(focus_regions)) != len(focus_regions)):
+            raise ValueError("focus_regions must be at most eight unique ROI tuples")
         main = visual_fingerprint(
             pixels, width=width, height=height, pixel_format=pixel_format,
             row_stride=row_stride, region=game_region,
@@ -84,11 +128,21 @@ class FrameCue:
             pixels, width=width, height=height, pixel_format=pixel_format,
             row_stride=row_stride, region=hud_region,
         ) if hud_region is not None else None)
+        focus_samples = []
+        for region in sorted(focus_regions):
+            sample = visual_fingerprint(
+                pixels, width=width, height=height, pixel_format=pixel_format,
+                row_stride=row_stride, region=region,
+            )
+            focus_samples.append(
+                FocusSample(region, sample.edge_hash, sample.tone_signature)
+            )
         return cls(
             captured_ms, main.edge_hash, cue,
             hud.edge_hash if hud is not None else None,
             main.tone_signature,
             hud.tone_signature if hud is not None else None,
+            tuple(focus_samples),
         )
 
 
@@ -286,7 +340,27 @@ class ObservationGovernor:
                     return a is None and b is None
                 return tone_distance(a, b) < limit
 
+            # A tiny health icon or inventory slot may be *completely missed*
+            # by the 9x8 sampling grid over a full-screen or broad HUD crop.
+            # Compare host-selected high-resolution focus crops individually.
+            # Changed ROI positions/count invalidate comparisons (fail open
+            # for observing a different scope, never claim semantic events).
+            focus_is_similar = (
+                len(frame.focus_samples) == len(previous.focus_samples)
+                and all(
+                    current.region == prior.region
+                    and (current.edge_hash ^ prior.edge_hash).bit_count()
+                    < self.hud_novelty_bits
+                    and tone_distance(
+                        current.tone_signature, prior.tone_signature
+                    ) < self.hud_tone_novelty_bins
+                    for current, prior in zip(
+                        frame.focus_samples, previous.focus_samples
+                    )
+                )
+            )
             if (distance < self.novelty_bits and hud_is_similar
+                    and focus_is_similar
                     and tone_similar(frame.tone_signature,
                                      previous.tone_signature,
                                      self.tone_novelty_bins)

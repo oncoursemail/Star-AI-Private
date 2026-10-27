@@ -149,6 +149,7 @@ class StreamVisionHost:
         width: int, height: int, pixel_format: str = "BGRA",
         row_stride: int | None = None, cue: str = "none",
         game_region: Region | None = None, hud_region: Region | None = None,
+        focus_regions: tuple[Region, ...] = (),
     ) -> VisionAdmission:
         """Use CPU fingerprints on an existing approved host-captured frame.
 
@@ -166,6 +167,7 @@ class StreamVisionHost:
                 captured_ms, pixels, width=width, height=height,
                 pixel_format=pixel_format, row_stride=row_stride, cue=cue,
                 game_region=game_region, hud_region=hud_region,
+                focus_regions=focus_regions,
             )
             return self.consider(frame)
 
