@@ -120,7 +120,8 @@ ZIMAGE_FILES = {
     'vae': 'ae.safetensors',
 }
 ZIMAGE_NAME = 'Z-Image Turbo (bf16)'
-ZIMAGE_STEPS = 8
+ZIMAGE_STEPS = 8               # what the model is trained for
+ZIMAGE_STEPS_FAST = 5          # drafts: 4, 5, 6 and 8 steps look the same on six hard prompts, one step of margin over 4 (docs/agents/image-quality-2-20261026.md)
 ENGINES = {'klein': (KLEIN_NAME, KLEIN_FILES), 'zimage': (ZIMAGE_NAME, ZIMAGE_FILES)}
 KLEIN_STEPS = 4
 START_HINT = ('Start it in Settings → Where STAR generates → Start ComfyUI '
@@ -166,8 +167,8 @@ def _klein_base(prompt: str, width: int, height: int, seed: int) -> dict:
     }
 
 
-def zimage_text_to_image(prompt: str, width: int, height: int, seed: int) -> dict:
-    """Z-Image Turbo text to image (8 steps, CFG 1, no negative: the model is distilled). ComfyUI nodes only."""
+def zimage_text_to_image(prompt: str, width: int, height: int, seed: int, steps: int = ZIMAGE_STEPS) -> dict:
+    """Z-Image Turbo text to image (CFG 1, no negative: the model is distilled). ComfyUI nodes only."""
     return {
         'unet': {'class_type': 'UNETLoader',
                  'inputs': {'unet_name': ZIMAGE_FILES['diffusion_models'], 'weight_dtype': 'default'}},
@@ -180,11 +181,26 @@ def zimage_text_to_image(prompt: str, width: int, height: int, seed: int) -> dic
         'latent': {'class_type': 'EmptySD3LatentImage', 'inputs': {'width': width, 'height': height, 'batch_size': 1}},
         'sample': {'class_type': 'KSampler',
                    'inputs': {'model': ['model', 0], 'positive': ['text', 0], 'negative': ['blank', 0],
-                              'latent_image': ['latent', 0], 'seed': seed, 'steps': ZIMAGE_STEPS, 'cfg': 1.0,
+                              'latent_image': ['latent', 0], 'seed': seed, 'steps': steps, 'cfg': 1.0,
                               'sampler_name': 'res_multistep', 'scheduler': 'simple', 'denoise': 1.0}},
         'decode': {'class_type': 'VAEDecode', 'inputs': {'samples': ['sample', 0], 'vae': ['vae', 0]}},
         'out': {'class_type': 'PreviewImage', 'inputs': {'images': ['decode', 0]}},
     }
+
+
+def zimage_inpaint(prompt: str, image_name: str, mask_name: str, width: int, height: int, seed: int,
+                   denoise: float = 0.78, steps: int = ZIMAGE_STEPS) -> dict:
+    """Masked repaint with Z-Image itself (white = may change). The same model that drew the picture repairs it, so the
+    8 GB card never swaps models. `image_name` and `mask_name` must already be width x height."""
+    flow = zimage_text_to_image(prompt, width, height, seed, steps)
+    del flow['latent']
+    flow['source'] = {'class_type': 'LoadImage', 'inputs': {'image': image_name}}
+    flow['encode'] = {'class_type': 'VAEEncode', 'inputs': {'pixels': ['source', 0], 'vae': ['vae', 0]}}
+    flow['mask_image'] = {'class_type': 'LoadImage', 'inputs': {'image': mask_name}}
+    flow['mask'] = {'class_type': 'ImageToMask', 'inputs': {'image': ['mask_image', 0], 'channel': 'red'}}
+    flow['masked'] = {'class_type': 'SetLatentNoiseMask', 'inputs': {'samples': ['encode', 0], 'mask': ['mask', 0]}}
+    flow['sample']['inputs'].update({'latent_image': ['masked', 0], 'denoise': denoise})
+    return flow
 
 
 def _add_reference(flow: dict, key: str, image_name: str, megapixels: float | None) -> str:

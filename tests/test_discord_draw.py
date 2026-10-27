@@ -60,7 +60,7 @@ def test_prompt_checks_match_the_desktop_limits_plus_one_hard_line():
 
 
 def test_draw_settings_parse_and_are_allowed_in_the_local_settings_file():
-    assert DrawSettings.from_env({}) == DrawSettings(True, False, 240, False)
+    assert DrawSettings.from_env({}) == DrawSettings(True, False, 420, False)
     parsed = parse_env_text("STAR_DISCORD_DRAW=0\nSTAR_DISCORD_DRAW_ANYONE=1\nSTAR_DISCORD_DRAW_TIMEOUT=120\n"
                             "STAR_DISCORD_MENTIONS=1\n", origin="x")
     assert DrawSettings.from_env(parsed) == DrawSettings(False, True, 120, True)

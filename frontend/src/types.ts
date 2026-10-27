@@ -50,6 +50,8 @@ export type MediaCapability = { id: 'images'|'voice'|'video'; title: string; fie
 export type MediaStatus = { places: MediaCapability[]; images: { running: boolean; ready: boolean; missing: string[]; model: string; message: string; version?: string }; sizes: Array<{id: string; label: string}>; can_start: boolean; detected_home?: string; ffmpeg: { found: boolean; message: string }; measured_on: string; references: number }
 export type MediaReference = { id: string; label: string; note: string; width: number; height: number; added: string; preview: string }
 export type MediaComparison = { reference: {id: string; label: string}; image: string; saved: string; candidate: string; differences: string[]; measured: { lines: string[] }; model: string; seconds: number; model_error: string }
+export type AbPair = { id: string; prompt: string; left: string; right: string; waiting: number }
+export type AbSummary = { picked: number; new: number; old: number; tie: number; decided: number; new_rate: number | null; p: number; verdict: string; waiting: number; pairs: number }
 /** `voice` events belong to a voice call or a voice preview; they are keyed by the request that started it. */
 export type BackendEvent = { requestId:string; kind:'result'|'progress'|'error'|'voice'; data:unknown }
 /** Roblox Open Cloud connection as the desktop host reports it. The API key itself is never part of any of these. */
