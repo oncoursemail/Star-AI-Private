@@ -1,7 +1,7 @@
 """The small read-only status API on her PC that the owner's mood widget talks to (the widget never touches her PC itself).
 
     GET /life/mood      {"kind": "sunny|cloudy|stormy|starry|off", "label", "why", "icon", "dominant", "at"}
-    GET /life/journal   plain text: her self-journal changes, her own journal entries, her gallery commentary, her goals
+    GET /life/journal   plain text: her self-journal changes, her own journal entries, her gallery commentary, her diary about what she wants to do
 Both need `Authorization: Bearer <token>`; the token is a random string in <home>/life/extras/api_token, created on first
 use, compared in constant time and never printed or logged. Only GET exists (no write route), nothing here can start an
 action, and the journal leaves out her friends' chats and her friend diary on purpose. Off unless `life_api_enabled`
@@ -76,12 +76,9 @@ def journal_text(home=None, *, store=None, inner_store=None) -> str:
     looks = style.style_text(store)
     if looks:
         parts.append("MY STYLE\n" + looks)
-    live = goals_mod.goals(store, ("open", "active"))
-    done = goals_mod.goals(store, "done")[-3:]
-    lines = [f"- {g['text']} (streak {g['streak']}, {g['tries']} tries)" for g in live]
-    lines += [f"- done: {g['text']} (proof: {g['proof']})" for g in done]
-    if lines:
-        parts.append("MY GOALS\n" + "\n".join(lines))
+    diary = goals_mod.diary_text(store, 21)
+    if diary:
+        parts.append("WHAT I WANT TO DO\n" + diary)
     return "\n\n".join(parts) or "Nothing in my journal yet."
 
 

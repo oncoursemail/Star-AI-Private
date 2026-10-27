@@ -1,7 +1,7 @@
 # life-extras-20261026: STAR's life extras (scrapbook, goals, studio, mood weather)
 
 Branch `star/life-extras-20261026` (worktree `worktrees/life-extras`, from origin/star/next 0ee2701d). Package `star/life/`,
-tests `tests/test_life_extras.py`. Umbrella: #613. Honesty line: the feelings, goals and "taste" are a designed simulation
+tests `tests/test_life_extras.py`. Umbrella: #613. Honesty line: the feelings, wishes and "taste" are a designed simulation
 that shapes her behaviour; nothing here claims she is conscious. Built and tested on fakes only: nothing ran on her PC, no
 real ComfyUI picture, no real singing, no Studio place, no real widget window was opened.
 
@@ -10,7 +10,7 @@ real ComfyUI picture, no real singing, no Studio place, no real widget window wa
 | Piece | File | Default | What the code enforces |
 |---|---|---|---|
 | Shared scrapbook + anniversaries | `scrapbook.py` | ON (`life_scrapbook_enabled`) | a moment needs a `source`, a date not in the future, a unique source, and (for a "first") no earlier moment with the same `first_key`. Anniversary only for a stored moment whose date is 1/3/6/12... months back (grace 2 days), text built from stored fields by a template; 1 a day, 2 a week, once per (moment, milestone); marked only after the reply (`Note.done()`) |
-| Goals, streaks, skill confidence | `goals.py` | ON (`life_goals_enabled`) | lifecycle open -> active -> done (needs PROOF) or abandoned (needs a reason). Proof = screenshot/clip file that exists, is non-empty, is newer than the goal and was not used for another goal; or a test result with `passed is True`, a name and a time after the goal. Overdue + 7 days untouched = abandoned with that reason. Max 3 open, no two of one domain, dropped/done goals are not re-proposed for 14 days |
+| What she wants to do (human goals), skill confidence | `goals.py` | ON (`life_goals_enabled`) | NO forms, proof or reason is required to finish or drop anything: wishes form organically (`form`: from her mood, interests, a shaky skill, something she saw, something a friend does; not every day, at most 4 at once), fade and change (`drift`: keenness decays, a bored one is put aside ("got distracted") or let go with a casual word or none, a put-aside one comes back when something stirs it, a well-practised one is called good enough), are put off some days (`p_put_off`), and are finished/dropped by her own call (`finish`, `drop`, `judge`). The ONE kept check, invisible: what she TELLS others. `level_of` (sure / think / tried / none, from sessions that really worked, clips that still exist, the runner's `goal_done`) sets the wording of `announcement` ("I did it!" / "I think I finally did it" / "been trying, not there yet") and `honest_text` / `life.honest` soften any outgoing sentence that claims more. Clips are offered when she is proud, never needed. Her diary (`diary_text`, first person) is what the owner's journal page shows ("WHAT I WANT TO DO") |
 | Creative studio + gallery | `studio.py` | ON (`life_studio_enabled`) | five kinds (drawing, story, journal, song, roblox), `verified` = file exists and is non-empty, her commentary (why / what to improve) comes from the brain or stays pending (`fill_commentary` later), never templated. Variety (kinds she made lately weigh less), novelty (a theme overlapping the last 20 pieces is skipped), 2 pieces a day, 3 h apart |
 | Mood weather | `mood.py` | pure mapping | sunny / cloudy / stormy / starry / off from `emotion.current()` + `emotion.history()`; the why-line comes from a fixed table keyed by event KIND, never the free-text detail |
 | Personal style (her PC only) | `style.py` | ON (`life_style_enabled`), and only where `her_pc()` | wallpaper (SystemParametersInfo + Desktop style), accent colour (DWM/Explorer registry), cursor (her own .cur/.ani), sounds (her own .wav, 4 whitelisted events), up to 3 desktop stickers, avatar outfit/accessory/expression; each is one PowerShell script through the Executor's `shell` action (STOP, action log, dry run apply) and is `applied` only when the readback shows her value (dry run / failure are recorded as such). Values are validated first (hex colours, whitelisted events, paths inside her workspace, no quote/shell characters). Taste = `style_prefs` (15 cute traits, [0.05, 1], at most 0.1 per experience, use-up for variety, drift back to rest, owner praise/dislike via `owner_reaction`). Limits: wallpaper/accent daily (earlier for a new occasion), cursor/sounds/stickers weekly, avatar twice a day. History table = "wallpaper of the week", shown on the journal page ("MY STYLE") with each why (built only from the facts that drove the pick) |
@@ -26,18 +26,13 @@ else the app data folder. (STAR Home's own `<home>/life/` JSON files are untouch
 - `star.home.activities.PLUGIN_MODULES` gained `"star.life"`; `star.life.register_home_activities` adds the interests
   `creative_studio` and `personal_goals` (only if missing) and three activities: "creative studio" (story, journal, song,
   roblox), "studio drawing" (`gpu_mb=6000`, so game mode keeps her game's video memory) and "pursue a goal".
-- `star/home/loop.py`: `_life_tick` (each cycle: sweep goals, set at most one goal a day via `goals.propose` from her weak
-  skills then her interest weights, write pending commentary) and `_life_after` (after each session: save the moment the
-  activity reports in `outcome["moment"]` if `with_owner`, count the session as practice for the open goal of that interest,
-  finish it only when `goals.proof_from_outcome` finds real proof). Both wrapped, never fail the loop.
+- `star/home/loop.py`: `_life_tick` (each cycle: `life.tick` lets her wishes drift at most hourly and has a "thought" about a new wish every ~6 h that may or may not become one, from her mood, her recent sessions' summaries (what she saw/played; never a friend's chat) and `friend_hints` if a caller passes them, plus pending commentary) and `_life_after` (after each session: save the moment it reports in `outcome["moment"]` if `with_owner`, count the session as an attempt at the wish of that interest she is keenest on, and let `goals.judge` decide whether it feels done; no proof needed). Both wrapped, never fail the loop.
 - Practice is delegated, not rebuilt: "pursue a goal" runs the registered activity of the goal's interest (star.play's
   roblox/minecraft for obby/game goals, `practice` for Luau tricks, `draw` for drawing...) with the goal as its goal, and
   a goal she could not do goes to the curiosity queue (`star/curiosity.py`, kind `failed_verification`), which night school
-  studies. A goal is mirrored into star-home's `Life` goals when its interest exists there (so `goal_for(interest)` hands it
-  to the session) and closed there on done/abandon.
-- Self-model: `star/inner/night.py` passes `goals.evidence_text()` (finished goals, given-up goals with reasons, skill
-  confidence lowest/highest) into the nightly `self_model.revise` evidence. It is only evidence: the bounded revision in
-  `star/inner/self_model.py` is unchanged, and a goal can never touch the fixed boundaries.
+  studies. A wish is mirrored into star-home's `Life` goals when its interest exists there (so `goal_for(interest)` hands it
+  to the session) and closed there on done/drop.
+- Self-model: `star/inner/night.py` passes `goals.evidence_text()` (her diary of the week in prose, and which skills she feels shaky or sure about) into the nightly `self_model.revise` evidence. It is only evidence: the bounded revision in `star/inner/self_model.py` is unchanged, and a wish can never touch the fixed boundaries.
 - Emotion: `creative_done` (finished drawings/music/builds and studio pieces that are not drafts) and `task_success` (other
   goals) through `emotion.on_event(..., only_if_enabled=True)`; the widget reads `emotion.current()/history()` through the API only.
 - Singing: studio looks for `sing(lyrics, title, folder) -> Path | None` in `star.voice.singing` or `star.senses.singing`
@@ -64,7 +59,7 @@ else the app data folder. (STAR Home's own `<home>/life/` JSON files are untouch
 
 ## Not wired yet (real gaps, in order)
 
-1. **Chat hook.** `star.life.chat_note(home, owner=True)` returns the note (anniversary or a finished goal with its proof)
+1. **Chat hook.** `star.life.chat_note(home, owner=True)` returns the note (an anniversary, or something she finished and honestly wants to tell)
    for the NEW user message of the OWNER's chat, `note.done()` after the reply. Nothing calls it yet: star/social has no
    owner identification and the desktop chat runs on the owner's PC, so I did not edit `desktop_core.py` or `social/chat.py`
    (other agents are in them, and the scrapbook must never reach a friend's chat). Wire it where the owner is known.
@@ -81,10 +76,4 @@ else the app data folder. (STAR Home's own `<home>/life/` JSON files are untouch
 
 ## Checks run
 
-`tests/test_life_extras.py` (52 tests) and `tests/test_life_style.py` (17 tests, fake host), all fakes: moment refusals, anniversary only from real dated memories (day before, grace,
-too late, no source, future row, rate limit, no repeat, month-end, year), chat note owner-only and marked after the reply,
-goal lifecycle + every proof refusal + proof reuse + abandon reason + sweep + streaks + skill confidence + proof_from_outcome
-+ after_session + the goal activity through a home activity + night-school hand-off, gallery records with commentary / pending
-commentary / style notes / unavailable pipeline / unverified file / song with and without singing / roblox draft vs run /
-variety, novelty and schedule, weather mapping (10 cases), why-line never leaks detail, API auth and read-only, widget state
-mapping and offline, tick once a day. Full suite: see the PR.
+`tests/test_life_extras.py` (about 70 tests) and `tests/test_life_style.py` (17 tests, fake host), all fakes: moment refusals, anniversary only from real dated memories (day before, grace, Goals: ideas from each source and their wording, not every time and never a pile, no instant repeat, finishing and dropping with no words or evidence, drift (put aside / let go / comes back / forgotten for a month / good enough), putting it off, judge (her call), honesty levels, announcements by level, outgoing claims softened, one telling, diary language (no ticket words), after_session, the goal activity (practice or put off, night-school hand-off), tick cadence. Also gallery, weather, API, widget and style tests as before.
