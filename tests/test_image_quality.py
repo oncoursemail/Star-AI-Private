@@ -1,6 +1,7 @@
 """Image quality pipeline: rewriter, blind-judge parsing and counting, exact text overlay, draft selection. No GPU."""
 import io
 import json
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -231,7 +232,7 @@ def test_run_rounds_picks_the_best_draft_without_a_repair_round():
     drawn = []
     items, best, rounds = image_quality.run_rounds(
         plan_of(), drafts=3, seed=10, render=lambda prompt, seed: (drawn.append(seed) or b'png%d' % seed),
-        judge_one=lambda png_, plan: next(verdicts))
+        judge_one=lambda png_, plan: next(verdicts), early_stop=False)
     assert drawn == [10, 11, 12] and best == 1 and rounds == 1 and items[best]['seed'] == 11
 
 
@@ -308,6 +309,12 @@ class FakeComfy:
 
     def run(self, flow, **kwargs):
         self.runs += 1
+        cancel = kwargs.get('cancel_event')
+        if self.runs > 1 and cancel is not None:     # the 2nd draft is "in flight" until the judge says the 1st is clear
+            for _ in range(300):
+                if cancel.is_set():
+                    raise RuntimeError('STAR image generation cancelled by user')
+                time.sleep(0.01)
         size = (flow['latent']['inputs']['width'], flow['latent']['inputs']['height'])
         return [png(color=(self.runs * 20, 90, 120), size=size)]
 
@@ -315,20 +322,31 @@ class FakeComfy:
         pass
 
 
+GOOD_BLIND = '{"subjects":[{"kind":"cow","visible_legs":4,"heads":1}],"text":[]}'
+
+
+def vision_by_question(blind=GOOD_BLIND, checks='{"answers":["yes","yes"]}'):
+    """A fake vision model that answers by what is asked (the yes/no questions may be asked at the same time)."""
+    def ask(settings, question, images, max_tokens=0):
+        return SimpleNamespace(text=blind if 'List every animal' in question else checks)
+    return ask
+
+
 def test_generate_best_end_to_end_with_fakes(tmp_path, monkeypatch):
     image_prompt._CACHE.clear()
     monkeypatch.setattr(image_quality.media_places, 'require', lambda *a, **k: 'pc')
     monkeypatch.setattr(image_quality.references, 'paths', lambda *a, **k: [])
-    answers = iter(['{"subjects":[{"kind":"cow","visible_legs":4,"heads":1}],"text":[]}', '{"answers":["yes","yes"]}'] * 3)
     comfy = FakeComfy()
     result = image_quality.generate_best(
         Settings(), 'a real cow', tmp_path, client=comfy, ask_brain=lambda s, system, user: GOOD_PLAN,
-        ask_vision=lambda s, q, images, max_tokens=0: SimpleNamespace(text=next(answers)), seed=3)
-    assert comfy.runs == 3
+        ask_vision=vision_by_question(), seed=3)
+    assert comfy.runs == 2                          # the 2nd draft was cancelled when the judge called the 1st clearly good
     assert result['path'].is_file() and result['message'].endswith(result['path'].name)
     note = json.loads(result['path'].with_suffix('.json').read_text(encoding='utf-8'))
-    assert note['prompt'] == 'a real cow' and note['plan']['rewritten'] and len(note['drafts']) == 3
-    assert '3 drafts judged blind' in result['answer'] and 'SCORE 0420' in result['answer']
+    assert note['prompt'] == 'a real cow' and note['plan']['rewritten'] and len(note['drafts']) == 1
+    assert note['timing']['early_stop'] and note['timing']['pictures_drawn'] == 1
+    assert '1 draft judged blind' in result['answer'] and 'rest were skipped' in result['answer']
+    assert 'SCORE 0420' in result['answer']
     assert (note['width'], note['height']) == (1280, 720)                       # the rewriter said "wide"
     drawn = Image.open(result['path']).convert('RGB')
     assert drawn.size == (1280, 720)

@@ -219,7 +219,7 @@ candidates, screen capture and Night School DMs stay 0 until you change them.
 | `STAR_DISCORD_LEARNING_DM_OPT_IN` | 0 | DM a short Night School digest when the verified practice numbers change (at most one per 6 h); `/digest` shows it on demand. Report source: `STAR_DISCORD_LEARNING_REPORT_SSH` (your existing key login to the brain server) or `STAR_DISCORD_LEARNING_REPORT` (a local file). |
 | `STAR_DISCORD_DRAW` | 1 | Make images (`draw ...` DMs, `/draw`) on this PC's graphics card. 0 = off; the bot then says so and how to turn it on. |
 | `STAR_DISCORD_DRAW_ANYONE` | 0 | 1 = members of your approved server may use `/draw` too (rate-limited each). Strangers' DMs never reach the image engine. |
-| `STAR_DISCORD_DRAW_TIMEOUT` | 240 | Seconds before a picture is cancelled in ComfyUI (30-900). |
+| `STAR_DISCORD_DRAW_TIMEOUT` | 420 | Seconds before a picture is cancelled in ComfyUI (30-900). |
 | `STAR_DISCORD_MENTIONS` | 0 | 1 = answer `@STAR ...` in your approved server (draw requests and, for you, questions). Discord then sends the bot server message events; without the message-content intent it only sees the text of messages that mention it. |
 | `STAR_DISCORD_HOST` | pc | `server` = the bot runs on a STAR server (section 4 C): drawing goes to the PC's STAR GPU worker, `/screen` answers that it needs the PC. |
 | `STAR_DISCORD_RATE_LIMIT` | 30 | Requests per 10 minutes before STAR asks you to slow down. |

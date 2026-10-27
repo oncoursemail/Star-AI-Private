@@ -50,11 +50,20 @@ class Verdict:
     blank: bool = False
     judged: bool = True
     score: float = 0.0
+    text_ok: bool | None = None      # None: no in-picture text was expected; True/False: every expected string was read exactly
 
     @property
     def passed(self) -> bool:
-        return (self.judged and self.anatomy_ok and not self.blank
+        return (self.judged and self.anatomy_ok and not self.blank and self.text_ok is not False
                 and (self.checks_total == 0 or self.checks_yes * 3 >= self.checks_total * 2))
+
+    @property
+    def clear(self) -> bool:
+        """A pass with nothing left to doubt, so the picture may be taken without judging the other drafts: clean anatomy, no
+        soft count, exact words when words were expected, and every yes/no check answered yes (with three or more checks one
+        "no" is allowed: the checks are the rewriter's and some are matters of taste, such as "is it realistic")"""
+        allowed_no = 1 if self.checks_total >= 3 else 0
+        return self.passed and not self.soft and self.checks_yes >= self.checks_total - allowed_no
 
     def brief(self) -> str:
         if not self.judged:
@@ -62,6 +71,8 @@ class Verdict:
         parts = ['anatomy ok' if self.anatomy_ok else 'anatomy FAIL: ' + '; '.join(self.issues[:2])]
         if self.checks_total:
             parts.append(f'prompt match {self.checks_yes}/{self.checks_total}')
+        if self.text_ok is not None:
+            parts.append('text read back exactly' if self.text_ok else 'text NOT read back exactly')
         if self.blank:
             parts.append('blank picture')
         return ', '.join(parts)
@@ -69,7 +80,8 @@ class Verdict:
     def as_note(self) -> dict:
         return {'anatomy_ok': self.anatomy_ok, 'issues': self.issues, 'soft': self.soft, 'text_read': self.text_read,
                 'checks_yes': self.checks_yes, 'checks_total': self.checks_total, 'blank': self.blank,
-                'judged': self.judged, 'score': round(self.score, 3), 'passed': self.passed}
+                'judged': self.judged, 'score': round(self.score, 3), 'passed': self.passed,
+                'text_ok': self.text_ok, 'clear': self.clear}
 
 
 def _number(value):
@@ -143,6 +155,14 @@ def text_matches(expected: list[str], read: list[str]) -> float:
     return sum(_normal(e) in seen for e in expected) / len(expected)
 
 
+def exact_text(expected: list[str], read: list[str]) -> bool:
+    """True when EVERY expected string was read as a whole (case and punctuation aside): "PIZZA" is not in "PIZZAS"."""
+    if not expected:
+        return True
+    seen = ' ' + _normal(' '.join(read)) + ' '
+    return all(' ' + _normal(e) + ' ' in seen for e in expected if _normal(e))
+
+
 def parse_blind(reply: str) -> tuple[list[str], list[str], list[str]] | None:
     """(hard, soft, text read) from the blind reply, or None when the reply is not usable JSON."""
     data = parse_json(reply)
@@ -181,8 +201,13 @@ def is_blank(image_path: Path) -> bool:
 
 
 def judge(settings, image_path: Path, checks: tuple[str, ...], *, expected_text: list[str] | None = None,
-          ask=None) -> Verdict:
-    """Judge one picture. `ask(settings, question, [path], max_tokens=...)` returns an object with `.text`."""
+          ask=None, checks_image: Path | None = None, parallel: bool = False) -> Verdict:
+    """Judge one picture. `ask(settings, question, [path], max_tokens=...)` returns an object with `.text`.
+
+    `checks_image` is a smaller copy for the yes/no questions (the vision server reads the picture again for every call, at
+    about 25 tokens a second, so a coarse look at the subject and setting is cheaper than a second fine one).
+    `parallel=True` asks the yes/no questions at the same time as the blind look (the server answers two requests at once:
+    measured 13 s instead of 25 s for the pair); the answers are only used when the blind look passes."""
     if ask is None:
         from .vision import ask as vision_ask
         ask = vision_ask
@@ -191,6 +216,15 @@ def judge(settings, image_path: Path, checks: tuple[str, ...], *, expected_text:
         verdict.anatomy_ok = False
         verdict.issues.append('the picture is blank')
         return verdict
+    numbered = '\n'.join(f'{i}. {q}' for i, q in enumerate(checks, 1))
+    check_question = ('Answer each question about this picture with yes or no, from what you see. Reply with '
+                      'JSON only: {"answers":["yes","no",...]} in order.\n' + numbered)
+    early = None
+    if parallel and checks:
+        import concurrent.futures
+        helper = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        early = helper.submit(lambda: ask(settings, check_question, [checks_image or image_path], max_tokens=120).text)
+        helper.shutdown(wait=False)
     blind = parse_blind(ask(settings, BLIND_QUESTION, [image_path], max_tokens=450).text)
     if blind is None:           # one retry: small models sometimes wrap or truncate the JSON
         blind = parse_blind(ask(settings, BLIND_QUESTION, [image_path], max_tokens=450).text)
@@ -200,13 +234,16 @@ def judge(settings, image_path: Path, checks: tuple[str, ...], *, expected_text:
     hard, soft, read = blind
     verdict.issues, verdict.soft, verdict.text_read = hard, soft, read
     verdict.anatomy_ok = not hard
-    if hard:                    # cheap first: no match check on a picture that already failed
-        verdict.score = 0.05 * max(0, 3 - len(hard))
+    if expected_text:
+        verdict.text_ok = exact_text(expected_text, read)
+        if not verdict.text_ok:
+            verdict.issues.append('the words in the picture must read exactly: ' + ' / '.join(expected_text))
+    if hard or verdict.text_ok is False:     # cheap first: no match check on a picture that already failed
+        verdict.score = 0.05 * max(0, 3 - len(verdict.issues))
         return verdict
     if checks:
-        numbered = '\n'.join(f'{i}. {q}' for i, q in enumerate(checks, 1))
-        reply = ask(settings, 'Answer each question about this picture with yes or no, from what you see. Reply with '
-                    'JSON only: {"answers":["yes","no",...]} in order.\n' + numbered, [image_path], max_tokens=120).text
+        reply = (early.result() if early is not None
+                 else ask(settings, check_question, [checks_image or image_path], max_tokens=120).text)
         yes = parse_answers(reply, len(checks))
         if yes is not None:
             verdict.checks_yes, verdict.checks_total = yes, len(checks)
