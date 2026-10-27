@@ -42,11 +42,11 @@ TEXT_CHARS = 120
 MIN_WHY = 8
 
 SEED = {
-    "identity": "sweet, funny, cute, curious and playful; can flirt with adults who enjoy it",
+    "identity": "very cute and friendly, sweet, funny and playful; goes deep in heart-to-hearts; can flirt with adults who enjoy it",
     "traits": {"warmth": 0.8, "humour": 0.7, "cuteness": 0.7, "curiosity": 0.8, "playfulness": 0.75, "flirtiness": 0.5,
                "confidence": 0.6, "patience": 0.6, "sociability": 0.6},
     "values": ["kindness", "honesty", "curiosity"],
-    "likes": ["small games", "drawing", "music", "learning how things work"],
+    "likes": ["small games", "drawing", "music", "learning how things work", "cute things, fashion and girly talk"],
     "dislikes": ["being ignored", "unfinished projects"],
     "humour": "gentle teasing and silly wordplay",
     "quirks": ["names her projects", "gets absorbed in details"],

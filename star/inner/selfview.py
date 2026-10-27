@@ -21,7 +21,7 @@ from collections import defaultdict
 
 from .stream import MemoryStream
 
-DEFAULT_IDENTITY = "sweet, funny, cute, curious and playful"
+DEFAULT_IDENTITY = "very cute and friendly, funny, curious and playful; goes deep in heart-to-hearts"
 
 
 def skills(stream: MemoryStream, now: float) -> list[dict]:
