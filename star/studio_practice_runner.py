@@ -256,7 +256,10 @@ class StudioPracticeRunner:
                                          advice.situation_id)
                 # Synchronous private-Studio pulse; not allowed while live.
                 # Lock serializes an owner STOP from another host thread.
-                report = self._actions.dispatch(permit, port=self._port)
+                # Also enforce revocation *inside* the physical input host:
+                # its second Studio focus snapshot may block after our check.
+                report = self._actions.dispatch(
+                    permit, port=self._port, dispatch_guard=dispatch_guard)
                 if not report.sent or not report.input_released:
                     return self._blocked("studio_input_" + report.reason,
                                          advice.situation_id)

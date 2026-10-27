@@ -114,7 +114,8 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
         await self.observer.arm(owner_approved=True)
         self.runner.enable(owner_approved=True)
         self.bridge = PortfolioStudioBridge(
-            self.portfolio, self.offer, self.runner, now_unix_s=NOW)
+            self.portfolio, self.offer, self.runner, now_unix_s=NOW,
+            clock_unix_s=lambda: self.now[0])
 
     async def asyncTearDown(self):
         self.runner.stop()
@@ -173,12 +174,14 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
             self.scope.game_id, self.scope.version_id, "attacker_episode")
         with self.assertRaises(ValueError):
             PortfolioStudioBridge(
-                self.portfolio, self.offer, self.runner, now_unix_s=NOW)
+                self.portfolio, self.offer, self.runner, now_unix_s=NOW,
+                clock_unix_s=lambda: self.now[0])
         self.runner._scope = self.scope
         with self.assertRaises(PermissionError):
             PortfolioStudioBridge(
                 self.portfolio, replace(self.offer, action_id="other"),
-                self.runner, now_unix_s=NOW)
+                self.runner, now_unix_s=NOW,
+                clock_unix_s=lambda: self.now[0])
 
     async def test_portfolio_revoked_inside_model_no_input_pulse(self):
         async def revoke(evidence, advice):
@@ -236,6 +239,122 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
         result = await self.bridge.take_step(self.propose, now_unix_s=NOW)
         self.assertEqual(result.reason, "portfolio_reservation_missing")
         self.assertFalse(self.port.keys)
+
+    async def test_offer_expires_mid_proposal_at_real_dispatch_boundary(self):
+        # A proposal starts on the exact last valid second of its reservation.
+        # After the await, the next host-clock sample is already expired.
+        self.now[0] = NOW + 90
+
+        async def expires_during_inference(_evidence, _advice):
+            self.now[0] = NOW + 91
+            return PracticeProposal("jump", 60)
+
+        blocked = await self.bridge.take_step(
+            expires_during_inference, now_unix_s=NOW + 90)
+        self.assertEqual(blocked.reason, "portfolio_reservation_revoked")
+        self.assertEqual(self.port.keys, [])
+        self.assertEqual(self.portfolio.metrics()["expired"], 1)
+        self.assertEqual(self.portfolio.metrics()["verified"], 0)
+
+    async def test_stale_clock_hint_cannot_reuse_valid_reservation(self):
+        # The slot is still alive, but the caller reused its old timestamp.
+        async def delay(_evidence, _advice):
+            self.now[0] = NOW + 4
+            return PracticeProposal("jump", 60)
+
+        blocked = await self.bridge.take_step(delay, now_unix_s=NOW)
+        self.assertEqual(blocked.reason, "portfolio_reservation_revoked")
+        self.assertEqual(self.bridge.metrics()["clock_rejections"], 1)
+        self.assertFalse(self.port.keys)
+        self.assertEqual(self.portfolio.metrics()["verified"], 0)
+        # A genuinely fresh host time and NEW scene can authorize this slot.
+        # The first failed proposal already consumed the previous visual frame.
+        self.mcp.image = AFTER
+        self.tick[0] = 1400
+        allowed = await self.bridge.take_step(
+            self.propose, now_unix_s=NOW + 4)
+        self.assertTrue(allowed.action_sent, allowed.reason)
+
+    async def test_clock_unavailable_fails_closed_without_input(self):
+        self.bridge._clock_unix_s = lambda: None
+        result = await self.bridge.take_step(self.propose, now_unix_s=NOW)
+        self.assertEqual(result.reason, "portfolio_reservation_missing")
+        self.assertEqual(self.bridge.metrics()["clock_rejections"], 1)
+        self.assertFalse(self.port.keys)
+
+        def broken_clock():
+            raise OSError("host clock unavailable")
+
+        self.bridge._clock_unix_s = broken_clock
+        result = await self.bridge.take_step(self.propose, now_unix_s=NOW)
+        self.assertEqual(result.reason, "portfolio_reservation_missing")
+        self.assertEqual(self.bridge.metrics()["clock_rejections"], 2)
+        self.assertFalse(self.port.keys)
+
+    async def test_future_timestamp_cannot_extend_portfolio_reservation(self):
+        with self.assertRaises(ValueError):
+            PortfolioStudioBridge(
+                self.portfolio, self.offer, self.runner,
+                now_unix_s=NOW + 12,
+                clock_unix_s=lambda: self.now[0])
+        self.assertFalse(self.port.keys)
+
+    async def test_signed_outcome_rejected_when_reservation_expired(self):
+        await self.send_and_observe()
+        trial, receipt = self.signed_trial()
+        self.now[0] = NOW + 91
+        result = self.bridge.record_signed_outcome(
+            trial, receipt, now_unix_s=NOW + 91)
+        self.assertFalse(result.portfolio_verified)
+        self.assertFalse(result.signed_evidence_recorded)
+        self.assertEqual(result.reason, "reservation_expired_or_revoked")
+        self.assertIsNone(self.bridge.evidence_for_evaluator(
+            now_unix_s=self.now[0]))
+        self.assertEqual(self.portfolio.metrics()["verified"], 0)
+
+    async def test_expiry_during_second_physical_focus_snapshot_blocks_keydown(self):
+        # Earlier control-plane checks are not enough. The Studio input port
+        # can block on its second private-focus snapshot just before key_down.
+        self.now[0] = NOW + 90
+        snapshot = self.port.snapshot
+        seen = [0]
+
+        def expire_on_second_snapshot(studio_id):
+            seen[0] += 1
+            result = snapshot(studio_id)
+            if seen[0] == 2:
+                self.now[0] = NOW + 91
+            return result
+
+        self.port.snapshot = expire_on_second_snapshot
+        step = await self.bridge.take_step(self.propose, now_unix_s=NOW + 90)
+        self.assertEqual(step.reason,
+                         "studio_input_trusted_dispatch_guard_revoked")
+        self.assertFalse(step.action_sent)
+        self.assertEqual(seen[0], 2)
+        self.assertFalse(any(kind == "down" for kind, _ in self.port.keys))
+        self.assertFalse(self.actions.metrics()["key_release_pending"])
+        self.assertEqual(self.portfolio.metrics()["expired"], 1)
+
+    async def test_capture_expiry_never_exposes_stale_scoring_input(self):
+        sent = await self.bridge.take_step(self.propose, now_unix_s=NOW)
+        self.assertTrue(sent.action_sent, sent.reason)
+        self.tick[0] = 1250
+        self.mcp.image = AFTER
+        capture = self.mcp.call_tool
+
+        async def capture_then_expire(name, arguments=None):
+            result = await capture(name, arguments)
+            if name == "screen_capture":
+                self.now[0] = NOW + 91
+            return result
+
+        self.mcp.call_tool = capture_then_expire
+        result = await self.bridge.observe_after(now_unix_s=NOW)
+        self.assertEqual(result.reason, "portfolio_reservation_missing")
+        self.assertIsNone(self.bridge.evidence_for_evaluator(
+            now_unix_s=self.now[0]))
+        self.assertEqual(self.portfolio.metrics()["verified"], 0)
 
     async def test_live_stream_has_priority_over_practice(self):
         self.tele[0] = StreamTelemetry(True, True, 4200, 8192, 60, 0)
