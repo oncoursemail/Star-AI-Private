@@ -275,6 +275,12 @@ def test_concurrent_second_attempt_fails_fast_and_cancelled_reservation_cleans(e
             await first
         assert not planner.metrics()["pending"]
         assert host.metrics()["busy"] is False
+        assert host.metrics()["quarantined"] is True
+        assert (await host.run_once()).reason == "worker_stop_unconfirmed"
+        host.disable()
+        assert not host.acknowledge_workers_stopped(stop_ticket=host.pending_stop_ticket(), workers_stopped=False)
+        assert host.acknowledge_workers_stopped(stop_ticket=host.pending_stop_ticket(), workers_stopped=True)
+        host.enable(owner_approved=True)
         unblock.set()
         assert (await host.run_once()).status == "verified"
     asyncio.run(scenario())
@@ -368,3 +374,144 @@ def test_untrusted_grader_cannot_forge_another_question_or_ticket(env):
     host.enable(owner_approved=True)
     assert run(host).reason == "unsigned_or_stale_grade"
     assert planner.metrics()["attempts"] == 0
+
+
+def test_inference_timeout_quarantines_until_physical_worker_ack(env):
+    async def stalled(_):
+        await asyncio.sleep(10)
+        return "too late"
+
+    host, planner, calls, _ = setup(env, model=stalled, inference_timeout_s=1)
+    planner.enable(owner_approved=True)
+    host.enable(owner_approved=True)
+    assert run(host).reason == "local_inference_timeout"
+    assert host.metrics()["quarantined"] is True
+    assert run(host).reason == "worker_stop_unconfirmed"
+    assert calls["grade"] == []
+    host.disable()
+    with pytest.raises(RuntimeError):
+        host.enable(owner_approved=True)
+    assert not host.acknowledge_workers_stopped(stop_ticket=host.pending_stop_ticket(), workers_stopped=False)
+    with pytest.raises(TypeError):
+        host.acknowledge_workers_stopped(stop_ticket=host.pending_stop_ticket(), workers_stopped=1)
+    old_ticket = host.pending_stop_ticket()
+    assert host.acknowledge_workers_stopped(stop_ticket=old_ticket, workers_stopped=True)
+    assert not host.acknowledge_workers_stopped(stop_ticket=old_ticket, workers_stopped=True)
+    host.enable(owner_approved=True)
+    assert run(host).reason == "local_inference_timeout"
+    assert planner.metrics()["attempts"] == 0
+
+
+def test_grading_timeout_also_quarantines_and_cannot_self_grade(env):
+    async def slow_grader(*args):
+        await asyncio.sleep(10)
+
+    host, planner, calls, _ = setup(env, grader=slow_grader, grading_timeout_s=1)
+    planner.enable(owner_approved=True)
+    host.enable(owner_approved=True)
+    assert run(host).reason == "independent_grader_timeout"
+    assert host.metrics()["quarantined"] is True
+    assert planner.metrics()["attempts"] == 0
+    host.disable()
+    assert host.acknowledge_workers_stopped(stop_ticket=host.pending_stop_ticket(), workers_stopped=True)
+    host.enable(owner_approved=True)
+
+
+def test_disable_reenable_rejected_until_noncooperative_callback_exits(env):
+    async def scenario():
+        entered = asyncio.Event()
+        released = asyncio.Event()
+        cancel_seen = asyncio.Event()
+
+        async def ignores_cancel(_):
+            entered.set()
+            try:
+                await asyncio.sleep(120)
+            except asyncio.CancelledError:
+                cancel_seen.set()
+                await released.wait()
+                return "late response from revoked session"
+
+        host, planner, calls, _ = setup(env, model=ignores_cancel)
+        planner.enable(owner_approved=True)
+        host.enable(owner_approved=True)
+        attempt = asyncio.create_task(host.run_once())
+        await entered.wait()
+        host.disable()
+        await cancel_seen.wait()
+        assert host.metrics()["quarantined"] is True
+        with pytest.raises(RuntimeError):
+            host.enable(owner_approved=True)
+        assert not host.acknowledge_workers_stopped(stop_ticket=host.pending_stop_ticket(), workers_stopped=True)
+        released.set()
+        result = await attempt
+        assert result.reason == "offline_window_closed"
+        assert calls["grade"] == []
+        assert planner.metrics()["attempts"] == 0
+        assert host.acknowledge_workers_stopped(stop_ticket=host.pending_stop_ticket(), workers_stopped=True)
+        host.enable(owner_approved=True)
+        assert host.metrics()["enabled"] is True
+
+    asyncio.run(scenario())
+
+
+def test_revoke_during_noncooperative_grader_never_accepts_old_grade(env):
+    async def scenario():
+        entered = asyncio.Event()
+        released = asyncio.Event()
+        cancel_seen = asyncio.Event()
+
+        async def ignores_cancel(qid, ticket, pin, answer):
+            entered.set()
+            try:
+                await asyncio.sleep(120)
+            except asyncio.CancelledError:
+                cancel_seen.set()
+                await released.wait()
+            feedback = GradedRecall(qid, ticket, pin, "correct", NOW,
+                                    "independent_grader", "0" * 64)
+            return replace(feedback, receipt=hmac.new(
+                KEY, feedback.canonical_bytes(), "sha256").hexdigest())
+
+        host, planner, calls, _ = setup(env, grader=ignores_cancel)
+        planner.enable(owner_approved=True)
+        host.enable(owner_approved=True)
+        attempt = asyncio.create_task(host.run_once())
+        await entered.wait()
+        host.disable()
+        await cancel_seen.wait()
+        with pytest.raises(RuntimeError):
+            host.enable(owner_approved=True)
+        released.set()
+        result = await attempt
+        assert result.reason == "offline_window_closed"
+        assert planner.metrics()["attempts"] == 0
+        assert len(calls["grade"]) == 1
+        assert host.acknowledge_workers_stopped(stop_ticket=host.pending_stop_ticket(), workers_stopped=True)
+
+    asyncio.run(scenario())
+
+
+def test_replayed_stop_ticket_never_releases_next_timed_out_worker(env):
+    async def stalled(_):
+        await asyncio.sleep(3)
+
+    host, planner, _, _ = setup(env, model=stalled, inference_timeout_s=1)
+    planner.enable(owner_approved=True)
+    host.enable(owner_approved=True)
+    assert run(host).reason == "local_inference_timeout"
+    first_ticket = host.pending_stop_ticket()
+    host.disable()
+    assert host.acknowledge_workers_stopped(
+        stop_ticket=first_ticket, workers_stopped=True)
+    host.enable(owner_approved=True)
+    assert run(host).reason == "local_inference_timeout"
+    second_ticket = host.pending_stop_ticket()
+    assert second_ticket != first_ticket
+    host.disable()
+    assert not host.acknowledge_workers_stopped(
+        stop_ticket=first_ticket, workers_stopped=True)
+    assert host.metrics()["quarantined"] is True
+    assert host.acknowledge_workers_stopped(
+        stop_ticket=second_ticket, workers_stopped=True)
+    assert host.metrics()["quarantined"] is False
