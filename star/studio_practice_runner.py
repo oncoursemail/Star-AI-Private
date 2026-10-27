@@ -168,6 +168,7 @@ class StudioPracticeRunner:
     async def take_step(
         self, proposer: Callable[[VisualEvidence, LadderAdvice], Awaitable[PracticeProposal]],
         *, now_unix_s: int,
+        dispatch_guard: Callable[[], bool] | None = None,
     ) -> PracticeStep:
         """At most one approved input pulse; no auto evaluation or repeat loop.
 
@@ -177,6 +178,8 @@ class StudioPracticeRunner:
         """
         if not callable(proposer):
             raise TypeError("proposer must be async callable")
+        if dispatch_guard is not None and not callable(dispatch_guard):
+            raise TypeError("dispatch_guard must be trusted host callable")
         async with self._turn_lock:
             with self._state_lock:
                 if not self._enabled:
@@ -230,6 +233,17 @@ class StudioPracticeRunner:
                     self._observer._private()
                 except Exception:
                     return self._blocked("private_focus_revoked_before_input")
+                # A trusted scheduler may revoke an episode while slow model
+                # inference is in progress. Recheck immediately before input.
+                # This callback has no authority to grant a Studio permit.
+                if dispatch_guard is not None:
+                    try:
+                        if dispatch_guard() is not True:
+                            return self._blocked("portfolio_reservation_revoked",
+                                                 advice.situation_id)
+                    except Exception:
+                        return self._blocked("portfolio_reservation_unavailable",
+                                             advice.situation_id)
                 now = _ms(self._clock)
                 hint = GameActionHint(
                     proposal.action_id, evidence.frame.sequence,
