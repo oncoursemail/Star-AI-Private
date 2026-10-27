@@ -37,9 +37,10 @@ TelemetryProbe = Callable[[], StreamTelemetry | None]
 
 @dataclass(frozen=True)
 class PracticeProposal:
-    """UNTRUSTED, narrow suggestion; NEVER a key, permit or authority."""
+    """UNTRUSTED narrow suggestion; probability is a diagnostic only."""
     action_id: str
     hold_ms: int
+    success_probability_bps: int | None = None  # for pre-action forecast, never an authorization
 
 
 @dataclass(frozen=True)
@@ -214,7 +215,10 @@ class StudioPracticeRunner:
                     or type(proposal.action_id) is not str
                     or proposal.action_id != advice.action_id
                     or type(proposal.hold_ms) is not int
-                    or not 1 <= proposal.hold_ms <= 180):
+                    or not 1 <= proposal.hold_ms <= 180
+                    or (proposal.success_probability_bps is not None
+                        and (type(proposal.success_probability_bps) is not int
+                             or not 1 <= proposal.success_probability_bps <= 9999))):
                 return self._blocked("untrusted_or_off_curriculum_action", advice.situation_id)
             tele = self._sample_telemetry()  # remeasure AFTER model inference
             if not self._practice_capacity(tele):

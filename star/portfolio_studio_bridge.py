@@ -13,6 +13,8 @@ This adapter closes that handoff and confirms it again at input dispatch.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+import sqlite3
 from threading import RLock
 import time
 from typing import Awaitable, Callable
@@ -20,6 +22,7 @@ from typing import Awaitable, Callable
 from .game_learning_ladder import LadderAdvice
 from .game_portfolio_practice import GamePortfolioPractice, PortfolioAdvice
 from .gameplay_skill_bank import GameTrial
+from .game_prediction_lab import GameForecast, GamePredictionLab
 from .studio_practice_runner import (
     PracticeProposal, PracticeStep, StudioPracticeRunner,
 )
@@ -51,6 +54,8 @@ class PortfolioStudioBridge:
         self, portfolio: GamePortfolioPractice, offer: PortfolioAdvice,
         runner: StudioPracticeRunner, *, now_unix_s: int,
         clock_unix_s: Callable[[], int] = _unix_clock,
+        prediction_lab: GamePredictionLab | None = None,
+        forecast_model_id: str | None = None,
     ) -> None:
         if not isinstance(portfolio, GamePortfolioPractice):
             raise TypeError("expected GamePortfolioPractice")
@@ -62,6 +67,15 @@ class PortfolioStudioBridge:
             raise ValueError("only a scheduler-issued practice offer is accepted")
         if not callable(clock_unix_s):
             raise ValueError("a trusted live Unix clock is required")
+        if prediction_lab is not None:
+            if (not isinstance(prediction_lab, GamePredictionLab)
+                    or prediction_lab._bank is not runner._outcomes._bank):
+                raise ValueError("forecast lab must share the signed game evidence bank")
+            if (type(forecast_model_id) is not str or
+                    re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", forecast_model_id) is None):
+                raise ValueError("trusted host must supply a bounded model version ID")
+        elif forecast_model_id is not None:
+            raise ValueError("model version without forecast lab")
         # The caller's timestamp is NOT a trusted dispatch clock. A previously
         # checked, perfectly valid offer could expire during model inference.
         self._clock_unix_s = clock_unix_s
@@ -83,10 +97,13 @@ class PortfolioStudioBridge:
         self._portfolio = portfolio
         self._offer = offer
         self._runner = runner
+        self._prediction_lab = prediction_lab
+        self._forecast_model_id = forecast_model_id
         self._lock = RLock()
         self._finished = False
         self._counts = dict(actions=0, blocked=0, signed=0, rejected=0,
-                            clock_rejections=0)
+                            clock_rejections=0, forecast_committed=0,
+                            forecast_rejected=0, forecast_verified=0)
 
     def _trusted_now(self, hint_unix_s: int) -> int:
         """Require a recent host clock read, not an old caller-supplied time.
@@ -142,8 +159,30 @@ class PortfolioStudioBridge:
                     or advice.situation_id != self._offer.situation_id
                     or advice.difficulty != self._offer.difficulty):
                 raise PermissionError("current curriculum differs from reserved action")
-            # Model text may suggest hold_ms but NEVER alter the verified scope.
-            return await proposer(evidence, advice)
+            # Model text may suggest hold_ms and confidence; neither can
+            # alter the verified scope, reserved action or input permissions.
+            proposal = await proposer(evidence, advice)
+            if (isinstance(proposal, PracticeProposal)
+                    and self._prediction_lab is not None
+                    and proposal.success_probability_bps is not None):
+                # The exact estimate is immutable BEFORE the input dispatch;
+                # a later game result cannot retroactively change confidence.
+                try:
+                    stamp = self._clock_unix_s()
+                    forecast = GameForecast(
+                        self._offer.game_id, self._offer.game_version,
+                        self._offer.objective_id, self._offer.situation_id,
+                        self._offer.action_id, self._offer.expected_run_id,
+                        self._forecast_model_id, proposal.success_probability_bps,
+                        stamp,
+                    )
+                    if self._prediction_lab.precommit(forecast, now_unix_s=stamp):
+                        self._counts["forecast_committed"] += 1
+                    else:
+                        self._counts["forecast_rejected"] += 1
+                except (TypeError, ValueError, OverflowError, sqlite3.Error):
+                    self._counts["forecast_rejected"] += 1
+            return proposal
 
         result = await self._runner.take_step(
             reserved_proposer, now_unix_s=now_unix_s,
@@ -217,6 +256,16 @@ class PortfolioStudioBridge:
             self._finished = True
             if verified:
                 self._counts["signed"] += 1
+                if self._prediction_lab is not None:
+                    # Non-authoritative analytics: a forecasting failure never
+                    # changes the independently verified gameplay verdict.
+                    try:
+                        if self._prediction_lab.resolve(trial, now_unix_s=live_now):
+                            self._counts["forecast_verified"] += 1
+                        else:
+                            self._counts["forecast_rejected"] += 1
+                    except (TypeError, ValueError, OverflowError, sqlite3.Error):
+                        self._counts["forecast_rejected"] += 1
             return PortfolioStudioResult(
                 recorded.accepted, verified, recorded.episode_memory_updated,
                 "signed_practice_accepted" if verified
@@ -230,6 +279,11 @@ class PortfolioStudioBridge:
                 return False
             self._finished = True
             self._runner.discard_unverified()
+            if self._prediction_lab is not None:
+                try:
+                    self._prediction_lab.cancel(self._offer.expected_run_id)
+                except (TypeError, ValueError, sqlite3.Error):
+                    self._counts["forecast_rejected"] += 1
             try:
                 self._portfolio.finish(
                     self._offer.ticket, now_unix_s=now_unix_s,
