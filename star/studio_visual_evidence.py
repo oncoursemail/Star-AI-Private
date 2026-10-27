@@ -6,7 +6,9 @@ visual assessor -> scoped, timed GameFrame. It never performs keyboard input,
 writes files, broadcasts frames, or calls arbitrary model-selected MCP tools.
 
 The signed gameplay evaluator is separate. A screenshot and a successful key
-press do not prove an objective was accomplished. GameFrame confidence is
+press do not prove an objective was accomplished. When an assessor times out or
+caller cancels, its worker stays quarantined until the trusted host confirms
+physical termination; cancelling a Python task alone cannot stop a GPU thread. GameFrame confidence is
 assessor-reported, not a calibrated guarantee.
 """
 from __future__ import annotations
@@ -70,6 +72,16 @@ class VisualEvidence:
     actionable_when_captured: bool
     # Even actionable_when_captured NEVER grants input privileges; it is
     # only a timing indication. GameActionGate must recheck the clock.
+
+
+
+@dataclass(frozen=True)
+class VisualWorkerLease:
+    """Opaque timeout/cancellation lease, not a model tool or game permission."""
+
+    generation: int
+    ticket: int
+
 
 
 Clock = Callable[[], float]
@@ -188,7 +200,12 @@ class StudioVisualObserver:
         self._last_image: str | None = None
         self._last_assessment: VisualAssessment | None = None
         self._last_assessed_ms: float = 0
-        self._counts = {"observations": 0, "unchanged": 0, "rejected": 0, "cache_hits": 0}
+        self._worker_ticket = 0
+        self._quarantined: VisualWorkerLease | None = None
+        self._quarantined_task: asyncio.Future[VisualAssessment] | None = None
+        self._counts = {"observations": 0, "unchanged": 0, "rejected": 0,
+                        "cache_hits": 0, "quarantines": 0,
+                        "worker_releases": 0, "stale_worker_acks": 0}
 
     def _private(self) -> None:
         try:
@@ -211,6 +228,8 @@ class StudioVisualObserver:
         async with self._lock:
             if self._armed:
                 raise RuntimeError("disarm before starting another observation session")
+            if self._quarantined is not None:
+                raise RuntimeError("previous visual worker must physically stop before rearming")
             self._private()
             generation = self._generation
             try:
@@ -237,6 +256,8 @@ class StudioVisualObserver:
                 raise PermissionError("observer is not armed")
             generation = self._generation
             try:
+                if self._quarantined is not None:
+                    raise ObservationRejected("previous_visual_worker_not_stopped")
                 self._private()
                 if not _play_state(await self._call(
                         "get_studio_state", {"studio_id": self._studio_id})):
@@ -268,11 +289,7 @@ class StudioVisualObserver:
                     assessment = self._last_assessment
                     self._counts["cache_hits"] += 1
                 else:
-                    try:
-                        assessment = await asyncio.wait_for(self._assessor(raw),
-                                                            timeout=self._assess_timeout)
-                    except Exception:
-                        raise ObservationRejected("visual_assessor_unavailable") from None
+                    assessment = await self._assess(raw)
                     if not isinstance(assessment, VisualAssessment):
                         raise ObservationRejected("invalid_visual_assessment")
                 if not self._armed or generation != self._generation:
@@ -299,6 +316,77 @@ class StudioVisualObserver:
                 self._counts["rejected"] += 1
                 raise
 
+    @staticmethod
+    def _drain_worker(task: asyncio.Future[VisualAssessment]) -> None:
+        """Consume delayed failures without treating cancellation as a GPU stop."""
+        try:
+            task.result()
+        except BaseException:
+            pass
+
+    def _quarantine_worker(
+        self, lease: VisualWorkerLease, task: asyncio.Future[VisualAssessment],
+    ) -> None:
+        # No follow-up vision is allowed while a cancelled coroutine, thread,
+        # subprocess or GPU request might still be executing.
+        self._quarantined = lease
+        self._quarantined_task = task
+        self._counts["quarantines"] += 1
+        task.add_done_callback(self._drain_worker)
+        task.cancel()
+
+    async def _assess(self, raw: bytes) -> VisualAssessment:
+        self._worker_ticket += 1
+        lease = VisualWorkerLease(self._generation, self._worker_ticket)
+        try:
+            task = asyncio.ensure_future(self._assessor(raw))
+        except Exception:
+            raise ObservationRejected("visual_assessor_unavailable") from None
+        try:
+            done, _ = await asyncio.wait({task}, timeout=self._assess_timeout)
+        except asyncio.CancelledError:
+            if not task.done():
+                self._quarantine_worker(lease, task)
+            raise
+        except Exception:
+            if not task.done():
+                self._quarantine_worker(lease, task)
+            raise ObservationRejected("visual_assessor_unavailable") from None
+        if not done:
+            self._quarantine_worker(lease, task)
+            raise ObservationRejected("visual_assessor_unavailable")
+        try:
+            return task.result()
+        except BaseException:
+            raise ObservationRejected("visual_assessor_unavailable") from None
+
+    def quarantined_worker(self) -> VisualWorkerLease | None:
+        """Trusted host obtains exact lease to acknowledge after joining worker."""
+        return self._quarantined
+
+    def acknowledge_worker_stopped(
+        self, lease: VisualWorkerLease, *, worker_stopped: bool,
+    ) -> bool:
+        """Release quarantine only after independent physical worker stop.
+
+        A cancelled asyncio task may wrap a still-running C/GPU worker.
+        Merely calling task.cancel(), disabling the observer, or claiming the
+        job timed out is NOT a termination acknowledgement. The trusted local
+        host must join/terminate the actual worker before calling this.
+        """
+        if not isinstance(lease, VisualWorkerLease) or type(worker_stopped) is not bool:
+            raise TypeError("exact worker lease and explicit host stop flag required")
+        if self._quarantined is not lease:
+            self._counts["stale_worker_acks"] += 1
+            return False
+        task = self._quarantined_task
+        if not worker_stopped or task is None or not task.done():
+            return False
+        self._quarantined = None
+        self._quarantined_task = None
+        self._counts["worker_releases"] += 1
+        return True
+
     def disarm(self) -> None:
         # Revocation must be effective even while the assessor is awaited.
         self._generation += 1
@@ -307,4 +395,9 @@ class StudioVisualObserver:
         self._last_assessment = None
 
     def metrics(self) -> dict[str, int | bool]:
-        return {**self._counts, "armed": self._armed}
+        return {**self._counts, "armed": self._armed,
+                "worker_quarantined": self._quarantined is not None}
+
+
+__all__ = ["ObservationRejected", "MCPReadSession", "VisualAssessment",
+           "VisualEvidence", "VisualWorkerLease", "StudioVisualObserver"]
