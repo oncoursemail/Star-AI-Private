@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from threading import RLock
+import time
 from typing import Awaitable, Callable
 
 from .game_learning_ladder import LadderAdvice
@@ -33,6 +34,11 @@ class PortfolioStudioResult:
     reason: str
 
 
+def _unix_clock() -> int:
+    """Read the trusted host wall-clock. Unit tests inject a deterministic clock."""
+    return int(time.time())
+
+
 class PortfolioStudioBridge:
     """One reservation -> one authorized Studio input -> signed feedback.
 
@@ -44,6 +50,7 @@ class PortfolioStudioBridge:
     def __init__(
         self, portfolio: GamePortfolioPractice, offer: PortfolioAdvice,
         runner: StudioPracticeRunner, *, now_unix_s: int,
+        clock_unix_s: Callable[[], int] = _unix_clock,
     ) -> None:
         if not isinstance(portfolio, GamePortfolioPractice):
             raise TypeError("expected GamePortfolioPractice")
@@ -53,7 +60,13 @@ class PortfolioStudioBridge:
             raise TypeError("expected StudioPracticeRunner")
         if offer.status != "practice_candidate" or offer.authorized_to_play is not False:
             raise ValueError("only a scheduler-issued practice offer is accepted")
-        if not portfolio.matches_reservation(offer, now_unix_s=now_unix_s):
+        if not callable(clock_unix_s):
+            raise ValueError("a trusted live Unix clock is required")
+        # The caller's timestamp is NOT a trusted dispatch clock. A previously
+        # checked, perfectly valid offer could expire during model inference.
+        self._clock_unix_s = clock_unix_s
+        live_now = self._trusted_now(now_unix_s)
+        if not portfolio.matches_reservation(offer, now_unix_s=live_now):
             raise PermissionError("practice reservation missing, revoked or expired")
         scope = runner._scope
         ladder = runner._ladder
@@ -72,13 +85,40 @@ class PortfolioStudioBridge:
         self._runner = runner
         self._lock = RLock()
         self._finished = False
-        self._counts = dict(actions=0, blocked=0, signed=0, rejected=0)
+        self._counts = dict(actions=0, blocked=0, signed=0, rejected=0,
+                            clock_rejections=0)
+
+    def _trusted_now(self, hint_unix_s: int) -> int:
+        """Require a recent host clock read, not an old caller-supplied time.
+
+        The ±1 second boundary tolerance accounts for Unix-second rollover
+        between the embedding host and this call. It never extends the
+        portfolio's own reservation expiry. Bad clocks fail closed.
+        """
+        if type(hint_unix_s) is not int or not 0 < hint_unix_s <= 10**11:
+            raise ValueError("invalid time hint")
+        try:
+            now = self._clock_unix_s()
+        except Exception:
+            raise ValueError("trusted live clock unavailable") from None
+        if type(now) is not int or not 0 < now <= 10**11:
+            raise ValueError("trusted live clock invalid")
+        if abs(now - hint_unix_s) > 1:
+            raise ValueError("caller time is stale or in the future")
+        return now
 
     def _active(self, now_unix_s: int) -> bool:
         with self._lock:
-            return not self._finished and self._portfolio.matches_reservation(
-                self._offer, now_unix_s=now_unix_s,
-            )
+            if self._finished:
+                return False
+            try:
+                live_now = self._trusted_now(now_unix_s)
+                return self._portfolio.matches_reservation(
+                    self._offer, now_unix_s=live_now,
+                )
+            except (TypeError, ValueError):
+                self._counts["clock_rejections"] += 1
+                return False
 
     async def take_step(
         self,
@@ -117,7 +157,13 @@ class PortfolioStudioBridge:
         if not self._active(now_unix_s):
             self._counts["blocked"] += 1
             return PracticeStep("deferred", "portfolio_reservation_missing")
-        return await self._runner.observe_after()
+        result = await self._runner.observe_after()
+        # Observing can itself block on screen capture or visual inference.
+        # Never expose a formerly valid episode for external scoring.
+        if not self._active(now_unix_s):
+            self._counts["blocked"] += 1
+            return PracticeStep("deferred", "portfolio_reservation_missing")
+        return result
 
     def evidence_for_evaluator(self, *, now_unix_s: int):
         """Trusted host ONLY; never put image, receipts or proof in model chat."""
@@ -139,6 +185,7 @@ class PortfolioStudioBridge:
             if not self._active(now_unix_s):
                 return PortfolioStudioResult(False, False, False,
                                              "reservation_expired_or_revoked")
+            live_now = self._trusted_now(now_unix_s)
             if (trial.split != "practice"
                     or trial.game_id != self._offer.game_id
                     or trial.game_version != self._offer.game_version
@@ -152,7 +199,7 @@ class PortfolioStudioBridge:
             # digest, timestamp, independent signature, and single-use run ID.
             try:
                 recorded = self._runner.record_signed_outcome(
-                    trial, receipt, now_unix_s=now_unix_s,
+                    trial, receipt, now_unix_s=live_now,
                 )
             except (TypeError, ValueError, PermissionError, OverflowError):
                 self._counts["rejected"] += 1
@@ -164,7 +211,7 @@ class PortfolioStudioBridge:
                 self._finished = True
                 raise
             verified = self._portfolio.finish(
-                self._offer.ticket, now_unix_s=now_unix_s,
+                self._offer.ticket, now_unix_s=live_now,
                 host_reports_recorded=recorded.accepted,
             )
             self._finished = True
