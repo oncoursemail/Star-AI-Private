@@ -6,17 +6,17 @@ wraps engines.tts when VoiceSettings.expressive is on). One sentence in, its chu
 
   1. tags -> segments (star/voice/styles.py), the owner's allowed styles/sounds applied, sounds kept rare (SoundPolicy)
   2. each speech segment is rendered
-       live     by the base voice (Kokoro "star-mum": 0.3 s per sentence) and shaped by DSP in that same voice:
-                speed from the style, pitch level/movement/breathiness by WORLD (pyworld), whisper by spectral
-                re-synthesis (voicedsp.whisper), question rise and word emphasis
-       quality  by a neural engine when one is loaded (Qwen3-TTS cloned from her own voice, with the style's
-                instruction), checked by the artefact guard and re-made with a new seed when bad; Kokoro+DSP when the
-                guard gives up, so a sentence is never lost
-  3. sounds come from the non-verbal bank in her voice (nonverbal.route), level-matched and padded with room tone
-  4. ASMR: close-mic warmth (low shelf), gentle compression, slower pace, a soft breath before some sentences
-  5. every chunk is loudness-normalised to TARGET_LUFS plus the style's level, with a peak ceiling
+       live     by the base voice (Kokoro "star-mum": 0.3 s per sentence), plainly. The DSP styles of v1 (WORLD
+                pitch shaping, spectral whisper, ASMR chain) were rated 1-2 by the owner and are gone: tone now comes
+                only from a model that makes it itself (docs/agents/voice-v2-20261027.md)
+       quality  by a neural engine when one is loaded, with the style's instruction when the engine follows
+                instructions (Star's designed voice, qwen3-design); checked by the artefact guard and re-made with a
+                new seed when bad; the plain base voice when the guard gives up, so a sentence is never lost
+  3. sounds only where the speaking engine makes them natively (nonverbal.route); otherwise they are left out
+  4. every chunk is loudness-normalised to TARGET_LUFS plus the style's level, with a peak ceiling
 
-Role-play: speak_script() renders narrator + characters (star/voice/library.py) line by line. Songs: sing().
+Role-play: speak_script() renders narrator + characters (star/voice/library.py) line by line. Singing is paused
+(singing.SINGING_PAUSED): <sing> lines are spoken.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ LIVE, QUALITY = "live", "quality"
 
 @dataclass
 class ExpressiveConfig:
-    mode: str = LIVE                       # live (base voice + DSP) | quality (neural engine first)
+    mode: str = LIVE                       # live (plain base voice) | quality (neural engine first)
     default_style: str = "warm"            # tone when nothing else decides (the mum voice's own warmth)
     intensity: float = S.DEFAULT_INTENSITY
     follow_mood: bool = True               # set_mood() picks the tone from the conversation and her feeling
@@ -65,10 +65,6 @@ class Rendered:
     engine: str
     report: object = None
     extra: dict = field(default_factory=dict)
-
-
-def lerp(a: float, b: float, t: float) -> float:
-    return a + (b - a) * t
 
 
 class ExpressiveTTS:
@@ -108,14 +104,8 @@ class ExpressiveTTS:
 
     # -- TextToSpeech interface ---------------------------------------------------------------------------------
     def warm_up(self) -> None:
-        """Base voice, then one pass of each DSP path (the first numpy FFT / WORLD call pays a one-off ~0.2 s)."""
         if hasattr(self.base, "warm_up"):
             self.base.warm_up()
-        carry, choice = self._carry, self.choice
-        for text in ("<whisper> Hm.", "<excited> Okay?"):
-            for _ in self.render(text):
-                pass
-        self._carry, self.choice, self.last, self._sentences = carry, choice, [], 0
 
     def synthesize(self, text: str, prosody=None):
         """One sentence (may carry tags) -> PCM16 chunks, one per segment, each loudness-normalised."""
@@ -143,10 +133,6 @@ class ExpressiveTTS:
             if seg.kind == "speech":
                 if self.config.asmr and seg.style not in ("asmr", "whisper"):
                     seg = replace(seg, style="asmr", intensity=max(seg.intensity, 0.7))
-                if seg.style == "asmr" and self.bank is not None and self._sentences % 2 == 1:
-                    breath = self._sound("breath-in", seg)
-                    if breath is not None:
-                        yield breath
                 yield self._speech(seg, prosody)
                 gap = self._gap(seg, prosody)
                 if gap is not None:
@@ -188,54 +174,24 @@ class ExpressiveTTS:
         return (np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)), rate
 
     def _base(self, seg: S.Segment, prosody=None) -> Rendered:
-        from . import voicedsp
-        spec = S.STYLES.get(seg.style, S.STYLES["neutral"])
-        t = seg.intensity
-        rate = lerp(1.0, spec.rate, t) * (prosody.rate if prosody is not None else 1.0)
-        world = voicedsp.have_world()
-        pitch = lerp(0.0, spec.pitch_st, t) + (prosody.pitch_semitones if prosody is not None else 0.0)
-        # With WORLD the pitch is moved there (formants stay put); without it the base voice's resample does it.
-        shift = _Shift(rate=rate, pitch_semitones=0.0 if world else pitch)
-        samples, sr = self._base_float(seg.text, None if shift.neutral else shift)
+        """The base voice as it is: no style shaping (the call's own prosody, e.g. emotion.py's small shifts, stays)."""
+        shift = _Shift(rate=prosody.rate, pitch_semitones=prosody.pitch_semitones) if prosody is not None else None
+        samples, sr = self._base_float(seg.text, None if shift is None or shift.neutral else shift)
         report = None
         if self.guard is not None and self.config.guard != "off" and samples.size:
             report = self.guard.check(samples, sr, seg.text)
             self.stats.record(seg.text, 0, report, "kokoro")
             with self.stats._lock:
                 self.stats.chunks += 1
-        samples = self._shape(samples, sr, seg, spec, pitch if world else 0.0)
-        return Rendered(samples, sr, "kokoro+dsp", report)
-
-    def _shape(self, x, sr: int, seg: S.Segment, spec: S.StyleSpec, pitch: float):
-        """Style DSP in her own voice: pitch level and movement, sing-song swing, question rise, emphasis,
-        breathiness (WORLD), then whisper (spectral)."""
-        from . import voicedsp
-        t = seg.intensity
-        range_scale = lerp(1.0, spec.pitch_range, t)
-        breath = spec.breath * t
-        rise = 3.5 * (0.6 + 0.4 * t) if seg.question and not spec.whisper else 0.0
-        emphasis = voicedsp.emphasis_spans(seg.text, seg.emphasis) if seg.emphasis else []
-        reshape = (abs(pitch) > 0.05 or abs(range_scale - 1.0) > 0.02 or spec.melody or rise or emphasis or breath > 0.02)
-        if reshape and not spec.whisper and voicedsp.have_world() and x.size > sr // 20:
-            f0, sp, ap = voicedsp.world_analyse(x, sr)
-            f0 = voicedsp.reshape_f0(f0, shift_st=pitch, range_scale=range_scale, melody_st=spec.melody * t,
-                                     rise_st=rise, emphasis=emphasis)
-            if breath > 0.02:                           # aspiration noise lives mostly above ~2 kHz
-                import numpy as np
-                weight = np.clip(np.linspace(0.0, 2.5, ap.shape[1]), 0.15, 1.0)
-                ap = ap + (1.0 - ap) * breath * weight
-            y = voicedsp.world_synth(f0, sp, ap, sr)
-            x = y[:x.size] if y.size >= x.size else voicedsp.crossfade_concat([y], sr)
-        if spec.whisper:
-            mix = 0.55 + 0.45 * t                       # low intensity keeps a trace of voice ("half-whisper")
-            x = voicedsp.whisper(x, sr, seed=self.rng.randrange(1 << 16)) * mix + x * (1.0 - mix) * 0.35
-        return x
+        return Rendered(samples, sr, "kokoro", report)
 
     def _neural(self, seg: S.Segment) -> Rendered | None:
-        """Quality path: neural engine with the style instruction, guarded; None when every attempt failed."""
+        """Quality path: neural engine with the style instruction (only engines that follow one get it), guarded; None
+        when every attempt failed."""
         from .guard import GuardedTTS
         spec = S.STYLES.get(seg.style, S.STYLES["neutral"])
-        instruct = spec.instruct if seg.style != "neutral" else None
+        follows = getattr(self.neural, "follows_instruct", False)
+        instruct = spec.instruct if follows and seg.style != "neutral" else None
         try:
             if self.guard is not None and self.config.guard != "off":
                 runner = GuardedTTS(self.neural, self.guard, self.config.guard_attempts, self.stats,
@@ -249,17 +205,11 @@ class ExpressiveTTS:
                 report = None
         except Exception:
             return None
-        from . import voicedsp
-        if spec.whisper and not getattr(self.neural, "follows_whisper", False):
-            samples = voicedsp.whisper(samples, sr, seed=1)
         return Rendered(samples, sr, getattr(self.neural, "name", "neural"), report)
 
     def _finish(self, x, sr: int, seg: S.Segment):
         from . import voicedsp
         spec = S.STYLES.get(seg.style, S.STYLES["neutral"])
-        if seg.style == "asmr" or self.config.asmr:
-            x = voicedsp.shelf(x, sr, 4.0, 180.0, low=True)          # close-mic proximity warmth
-            x = voicedsp.compress(x, sr, -30.0, 2.5)
         x = voicedsp.fade(x, sr, 3.0, 12.0)
         return voicedsp.normalize(x, sr, self.config.target_lufs + spec.gain_db * seg.intensity)
 
@@ -316,23 +266,14 @@ class ExpressiveTTS:
         recipe = character.voice or "af_sarah:1.0"
         samples, sr = self.base.synthesize_float(seg.text, voice=recipe, rate=character.speed) \
             if hasattr(self.base, "synthesize_float") else self._base_float(seg.text, None)
-        samples = self._shape(samples, sr, seg, spec, character.pitch_semitones + spec.pitch_st * seg.intensity)
         samples = self._finish(samples, sr, seg)
-        self.last.append({"kind": "speech", "text": seg.text, "voice": character.name, "engine": "kokoro+dsp"})
-        return Rendered(samples, sr, "kokoro+dsp")
+        self.last.append({"kind": "speech", "text": seg.text, "voice": character.name, "engine": "kokoro"})
+        return Rendered(samples, sr, "kokoro")
 
     def _sung(self, seg: S.Segment) -> Rendered:
-        """<sing>: her own words to a tune composed on the spot (a lullaby when the mood is soft). Without pyworld the
-        line is spoken in the sing-song style instead."""
-        from . import voicedsp
-        from .singing import compose
-        if not voicedsp.have_world():
-            return self._speech(replace(seg, style="sing-song"))
-        lullaby = self.choice.style in ("soft", "sleepy", "caring", "tender", "asmr", "calm")
-        song = compose(seg.text[:40], [seg.text], mood="lullaby" if lullaby else "happy", seed=sum(map(ord, seg.text)))
-        samples, sr = self.sing(song)
-        self.last.append({"kind": "speech", "text": seg.text, "style": "sing", "engine": "kokoro+world-singing"})
-        return Rendered(voicedsp.normalize(samples, sr, self.config.target_lufs - 1.0), sr, "singing")
+        """<sing>: singing is paused (no engine here sings well enough), so the line is spoken in the reply's tone."""
+        tone = self.choice.style if self.choice.style not in ("sing", "sing-song") else self.config.default_style
+        return self._speech(replace(seg, style=tone))
 
     def speak_script(self, script: str, narrator_style: str = "calm"):
         """Role-play: narrator + characters, one line at a time. Lines by Star use her own voice and current tone;
@@ -360,23 +301,14 @@ class ExpressiveTTS:
                     yield as_pcm(out.samples), out.rate
             yield as_pcm(self._silence(0.35).samples), self.sample_rate
 
-    def sing(self, song):
-        """A song (singing.Song) in her own voice: (float samples, rate)."""
-        from .singing import sing
-
-        def word(w: str):
-            return self._base_float(w + ".", None)
-        return sing(song, word, self.sample_rate)
-
 
 def build(base, settings, *, asr=None, report=print):
-    """Wrap the call's TTS for VoiceSettings with expressive=True: bank, guard, library and (when the VRAM budget for
-    the current profile allows and the setting asks for it) the neural engine. Never raises for a missing optional
-    part: it is left out and the reason reported."""
+    """Wrap the call's TTS for VoiceSettings with expressive=True: guard, library and (when the VRAM budget for the
+    current profile allows and the setting asks for it) the neural engine. Never raises for a missing optional part:
+    it is left out and the reason reported. The v1 sound bank (Chatterbox clips, rated 1-2) is no longer loaded."""
     from pathlib import Path
     from .guard import ArtefactGuard, GuardStats
     from .library import CharacterLibrary
-    from .nonverbal import NonverbalBank
     root = Path(settings.expressive_home) if settings.expressive_home else _default_home()
     allowed = frozenset(x.strip() for x in settings.allowed_styles.split(",") if x.strip()) or None
     config = ExpressiveConfig(mode=QUALITY if settings.expressive_engine != "kokoro" else LIVE,
@@ -393,15 +325,14 @@ def build(base, settings, *, asr=None, report=print):
         if ok:
             try:
                 from ..voice_neural import make_neural
-                neural = make_neural(settings.expressive_engine, root, base)
+                neural = make_neural(settings.expressive_engine, root, base, star_voice=settings.star_voice)
             except Exception as exc:              # missing package or weights: live path only
                 report(f"expressive engine {settings.expressive_engine} not loaded: {exc}")
                 config.mode = LIVE
         else:
             report(f"expressive engine off: {why}")
             config.mode = LIVE
-    bank = NonverbalBank(root / "sounds") if (root / "sounds").is_dir() else None
-    return ExpressiveTTS(base, neural=neural, bank=bank, guard=guard, library=CharacterLibrary(root / "characters.json"),
+    return ExpressiveTTS(base, neural=neural, guard=guard, library=CharacterLibrary(root / "characters.json"),
                          config=config, stats=GuardStats(root / "guard-log.jsonl"))
 
 

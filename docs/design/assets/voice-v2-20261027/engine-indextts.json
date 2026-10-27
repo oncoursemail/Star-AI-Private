@@ -1,0 +1,110 @@
+{
+ "ref": "j-girlfriend",
+ "load_s": 24.8,
+ "peak_vram_gb": 5.97,
+ "streaming": "none in this API (whole sentence; first audio = synth_s)",
+ "rows": [
+  {
+   "name": "emo-indextts-neutral",
+   "seconds": 6.49,
+   "synth_s": 27.41,
+   "rtf": 4.22,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.955
+  },
+  {
+   "name": "emo-indextts-warm",
+   "seconds": 5.33,
+   "synth_s": 25.18,
+   "rtf": 4.72,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.84
+  },
+  {
+   "name": "emo-indextts-excited",
+   "seconds": 5.87,
+   "synth_s": 26.44,
+   "rtf": 4.51,
+   "attempts": 1,
+   "problems": [
+    "speaker"
+   ],
+   "wer": 0.154,
+   "similarity": 0.737
+  },
+  {
+   "name": "emo-indextts-sad",
+   "seconds": 6.02,
+   "synth_s": 26.81,
+   "rtf": 4.46,
+   "attempts": 3,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.884
+  },
+  {
+   "name": "emo-indextts-playful",
+   "seconds": 4.77,
+   "synth_s": 22.82,
+   "rtf": 4.78,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.771
+  },
+  {
+   "name": "emo-indextts-whisper",
+   "seconds": 4.87,
+   "synth_s": 22.29,
+   "rtf": 4.58,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.888
+  },
+  {
+   "name": "emo-indextts-sleepy",
+   "seconds": 6.06,
+   "synth_s": 28.25,
+   "rtf": 4.66,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.3,
+   "similarity": 0.92
+  },
+  {
+   "name": "emo-indextts-whisper-audioref",
+   "seconds": 5.1,
+   "synth_s": 48.35,
+   "rtf": 9.48,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.914
+  },
+  {
+   "name": "emo-indextts-excited-audioref",
+   "seconds": 7.62,
+   "synth_s": 46.34,
+   "rtf": 6.08,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.154,
+   "similarity": 0.866
+  },
+  {
+   "name": "emo-indextts-sad-audioref",
+   "seconds": 5.13,
+   "synth_s": 29.02,
+   "rtf": 5.65,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.951
+  }
+ ]
+}

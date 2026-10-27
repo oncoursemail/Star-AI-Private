@@ -1,0 +1,97 @@
+{
+ "ref": "j-girlfriend",
+ "design_peak_vram_gb": 4.67,
+ "design_stream_first_chunk_s": [
+  0.96,
+  0.58,
+  0.54
+ ],
+ "clone_peak_vram_gb": 2.99,
+ "clone_stream_first_chunk_s": [
+  0.65,
+  0.68,
+  0.57
+ ],
+ "rows": [
+  {
+   "name": "emo-qwen3design-warm",
+   "seconds": 4.64,
+   "synth_s": 2.62,
+   "rtf": 0.56,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.862
+  },
+  {
+   "name": "emo-qwen3design-excited",
+   "seconds": 6.16,
+   "synth_s": 4.78,
+   "rtf": 0.78,
+   "attempts": 2,
+   "problems": [],
+   "wer": 0.077,
+   "similarity": 0.791
+  },
+  {
+   "name": "emo-qwen3design-sad",
+   "seconds": 3.92,
+   "synth_s": 4.74,
+   "rtf": 1.21,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.902
+  },
+  {
+   "name": "emo-qwen3design-playful",
+   "seconds": 4.64,
+   "synth_s": 3.91,
+   "rtf": 0.84,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.868
+  },
+  {
+   "name": "emo-qwen3design-whisper",
+   "seconds": 4.32,
+   "synth_s": 3.76,
+   "rtf": 0.87,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.871
+  },
+  {
+   "name": "emo-qwen3design-sleepy",
+   "seconds": 6.8,
+   "synth_s": 4.03,
+   "rtf": 0.59,
+   "attempts": 2,
+   "problems": [],
+   "wer": 0.3,
+   "similarity": 0.828
+  },
+  {
+   "name": "emo-qwen3clone-greeting",
+   "seconds": 3.84,
+   "synth_s": 2.29,
+   "rtf": 0.6,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.928
+  },
+  {
+   "name": "emo-qwen3clone-comfort",
+   "seconds": 6.08,
+   "synth_s": 3.12,
+   "rtf": 0.51,
+   "attempts": 1,
+   "problems": [],
+   "wer": 0.0,
+   "similarity": 0.94
+  }
+ ]
+}
