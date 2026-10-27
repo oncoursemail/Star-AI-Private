@@ -1,6 +1,6 @@
 import {Fragment,useCallback,useEffect,useRef,useState} from 'react'
 import {AnimatePresence,motion} from 'motion/react'
-import {Activity,ArrowRight,BookOpen,Box,Boxes,Braces,BrainCircuit,Check,ChevronDown,ChevronRight,CircleAlert,Copy,Download,Ellipsis,Folder,FolderOpen,Gauge,GraduationCap,ImagePlus,Info,LayoutDashboard,LoaderCircle,MessageCircleMore,PanelLeftClose,PanelLeftOpen,Pencil,Plus,Search,Settings2,Shield,SquarePen,Store,Trash2,Undo2,Workflow,X,Zap} from 'lucide-react'
+import {Activity,ArrowRight,BookOpen,Box,Boxes,Braces,BrainCircuit,Check,ChevronDown,ChevronRight,CircleAlert,Copy,Download,Ellipsis,Folder,FolderOpen,Gauge,GraduationCap,ImagePlus,Info,Layers,LayoutDashboard,LoaderCircle,MessageCircleMore,PanelLeftClose,PanelLeftOpen,Pencil,Plus,Search,Settings2,Shield,SquarePen,Store,Trash2,Undo2,Workflow,X,Zap} from 'lucide-react'
 import {AnalyticsView} from './Charts'
 import {BrainOverview} from './BrainOverview'
 import {CommercePanel} from './CommercePanel'
@@ -54,9 +54,13 @@ import {AppearanceControls,AppearancePanel} from './AppearancePanel'
 import {useAppearance} from './useAppearance'
 import {CompanionControls,CompanionShelf} from './CompanionShelf'
 import {useCompanionPreferences} from './companion-catalog'
+import {useMetallicStatus,type MetallicStatus} from './metallic'
+import {SignIn} from './SignIn'
+import {MetallicAccount} from './MetallicAccount'
+import {MetallicSection} from './MetallicSection'
 
-type Tab='chat'|'projects'|'business'|'brain'|'brain-overview'|'analytics'|'tools'|'library'|'settings'
-const sections:[Tab,string,typeof MessageCircleMore][]=[['chat','Chat',MessageCircleMore],['projects','Projects',Boxes],['business','Business',Store],['library','Library',BookOpen],['tools','Tools',Workflow],['analytics','Analytics',Activity],['brain-overview','Brain',BrainCircuit],['brain','Model & connection',Gauge],['settings','Settings',Settings2]]
+type Tab='chat'|'projects'|'business'|'metallic'|'brain'|'brain-overview'|'analytics'|'tools'|'library'|'settings'
+const sections:[Tab,string,typeof MessageCircleMore][]=[['chat','Chat',MessageCircleMore],['projects','Projects',Boxes],['business','Business',Store],['library','Library',BookOpen],['tools','Tools',Workflow],['metallic','Metallic',Layers],['analytics','Analytics',Activity],['brain-overview','Brain',BrainCircuit],['brain','Model & connection',Gauge],['settings','Settings',Settings2]]
 const truncate=(s:string,n=90)=>s.length>n?s.slice(0,n-1)+'…':s
 const fileName=(path:string)=>path.split(/[\\/]/).pop()||path
 const defaultSettings:AppSettings={endpoint:'http://127.0.0.1:8080/v1',provider:'local',model:'',fast_model:'',reasoning_model:'',roblox_model:'',vision_model:'',router_models_dir:'',router_context:4096,gpu_layers:25,instant_route_enabled:false,project:'STAR',workspace:'',studio_id:'',studio_target:'local_pc',studio_edit:false,workspace_edit:false,max_calls:12,context_chars:26000,reduced_motion:false,obsidian_vault:'',obsidian_enabled:false,skills_enabled:true,graphify_enabled:true,comfy_workflow:'',comfy_prompt_node:'6',comfy_port:8188,mcp_graphify_docs:false,mcp_graphify_local:false,mcp_graphify_port:8931,mcp_obsidian_live:false,mcp_github_repositories:false,github_repository_access_source:'gh',blender_enabled:false,blender_edit:false,blender_executable:'',roblox_research_enabled:true,asset_forge_enabled:false,commerce_enabled:false,tool_workshop_enabled:true,specialists_enabled:true,specialist_parallelism:1}
@@ -76,7 +80,7 @@ const starters=[
 
 function initialPreviewTab(preview:boolean):Tab {
  const value=new URLSearchParams(window.location.search).get('tab')
- if(preview&&value&&['chat','projects','business','brain','brain-overview','analytics','tools','library','settings'].includes(value))return value as Tab
+ if(preview&&value&&['chat','projects','business','metallic','brain','brain-overview','analytics','tools','library','settings'].includes(value))return value as Tab
  return 'chat'
 }
 /** Scripted fixtures exist only for the browser preview; the Qt desktop can never select one. */
@@ -103,12 +107,16 @@ function groupChats(chats:ChatThread[]):Array<{label:string;chats:ChatThread[]}>
 export function Desktop({initial=null,preview=false}:{initial?:BootData|null;preview?:boolean}) {
  // Studio layout (workspace switch, Appearance menu, companion shelf): off until turned on in Settings > Interface.
  const [studioLayout,setStudioLayout]=useState(()=>readPreference('star.studio.layout')==='on')
- const {preferences:appearance,updateAppearance,resetAppearance,persisted:appearancePersisted}=useAppearance(studioLayout)
+ const {preferences:appearance,updateAppearance,resetAppearance,persisted:appearancePersisted,applied:appearanceApplied}=useAppearance(studioLayout,preview?new URLSearchParams(window.location.search).get('theme'):null)
  const [companionPreferences,setCompanionPreferences]=useCompanionPreferences()
  const compactStudio=useCompactStudio()
  const [tab,setTab]=useState<Tab>(()=>initialPreviewTab(preview))
  const [data,setData]=useState<BootData>(initial??{version:'2.0.0',project:'STAR',projects:[],messages:[],active_chat:'',chats:[],settings:defaultSettings,brain_installed:false,brain_running:false,analytics:emptyAnalytics,release_url:WEBSITE_RELEASES,credentials:{}})
  const [messages,setMessages]=useState<ChatMessage[]>(initial?.messages??[])
+ // Metallic (issue #552): signed in only with a code Metallic Control verified; the sidebar entry follows this session.
+ const metallic=useMetallicStatus((data as BootData&{metallic?:MetallicStatus}).metallic??null,preview||!initial)
+ // First launch shows the optional sign-in once, and only where a Metallic Control address is configured.
+ const [signInSeen,setSignInSeen]=useState(()=>readPreference('star.metallic.seen')==='on')
  const [prompt,setPrompt]=useState('')
  const [showStar,setShowStar]=useState(()=>readPreference('star.pet.visible')==='on')
  const [newHome,setNewHome]=useState(()=>readPreference('star.home.workbench')==='on')
@@ -201,6 +209,8 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  // The collapsed sidebar is a view preference: it survives restarts.
  useEffect(()=>writePreference('star.sidebar',sidebarCollapsed?'collapsed':'open'),[sidebarCollapsed])
  useEffect(()=>writePreference('star.sidebar.more',moreOpen?'open':'closed'),[moreOpen])
+ // Sign-out or an expired token hides Metallic at once, including the page that was open.
+ useEffect(()=>{if(tab==='metallic'&&!metallic.signedIn)setTab('chat')},[tab,metallic.signedIn])
  useDismiss(chatMenu,()=>setChatMenu(false),chatMenuWrap,chatMenuTrigger)
  chatRef.current=data.active_chat
  // What a request sent now would talk to. An answer or a failure is only evidence about that target.
@@ -595,7 +605,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
  const chooseWorkflow=async()=>{const v=await act('pickFiles',{kind:'workflow'});if(Array.isArray(v)&&v[0])setDraft(d=>({...d,comfy_workflow:String(v[0])}))}
  const filteredChats=data.chats.filter(c=>c.id!==pendingDelete?.id&&c.title.toLowerCase().includes(historyQuery.toLowerCase()))
  const chatGroups=groupChats(filteredChats.slice(0,CHAT_WINDOW))
- const saveSettings=async()=>{const v=await act('saveSettings',{settings:draft});if(v){setNotice('Settings saved.');setModelCheck(null);void sync()}}
+ const saveSettings=async()=>{const v=await act('saveSettings',{settings:draft});if(v){setNotice('Settings saved.');setModelCheck(null);void sync();void metallic.refresh()}}
  /** Reduced motion applies at once and is stored straight away, not only on Save. */
  const setReducedMotion=(reduced:boolean)=>{
    setDraft(d=>({...d,reduced_motion:reduced}));setThemeMotion(!reduced)
@@ -758,7 +768,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
        {historySearchOpen&&<div className="rail-search"><input type="search" autoFocus aria-label="Find a conversation" placeholder="Find a chat" value={historyQuery} onChange={e=>setHistoryQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setHistorySearchOpen(false);setHistoryQuery('')}}}/><button type="button" aria-label="Close search" onClick={()=>{setHistorySearchOpen(false);setHistoryQuery('')}}><X size={14}/></button></div>}
      </div>
      <nav className="rail-group" aria-label="Workspace">
-       {sections.filter(([id])=>id==='projects'||(id==='business'&&data.settings.commerce_enabled===true)||id==='tools').map(([id,name,Icon])=><button className={'rail-item '+(tab===id?'is-current':'')} type="button" key={id} aria-current={tab===id?'page':undefined} onClick={()=>nav(id)}><Icon size={16}/><span>{name}</span>{id==='projects'&&<small dir="auto" title={'Current project: '+data.project}>{data.project}</small>}</button>)}
+       {sections.filter(([id])=>id==='projects'||(id==='business'&&data.settings.commerce_enabled===true)||id==='tools'||(id==='metallic'&&metallic.signedIn)).map(([id,name,Icon])=><button className={'rail-item '+(tab===id?'is-current':'')} type="button" key={id} aria-current={tab===id?'page':undefined} onClick={()=>nav(id)}><Icon size={16}/><span>{name}</span>{id==='projects'&&<small dir="auto" title={'Current project: '+data.project}>{data.project}</small>}</button>)}
        <button className="rail-item rail-more" type="button" aria-expanded={showMore} onClick={()=>setMoreOpen(v=>!v)}><ChevronRight size={16} className={showMore?'is-open':undefined}/><span>More</span></button>
        {showMore&&<div className="rail-more-group">
          {sections.filter(([id])=>extraPages.includes(id)).map(([id,name,Icon])=><button className={'rail-item '+(tab===id?'is-current':'')} type="button" key={id} aria-current={tab===id?'page':undefined} onClick={()=>nav(id)}><Icon size={16}/><span>{id==='brain'?'Model':name}</span></button>)}
@@ -868,6 +878,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
            <div className="sr-only" role="status" aria-live="polite">{announce}</div>
          </div></StudioFrame>}
           {tab==='analytics'&&<AnalyticsView data={data.analytics}/>}
+         {tab==='metallic'&&<div className="scroll-region"><div className="page-wrap metallic-page"><MetallicSection session={metallic} active onOpenSignIn={()=>nav('settings')}/></div></div>}
          {tab==='business'&&<div className="scroll-region"><div className="page-wrap commerce-page"><CommercePanel project={data.project} preview={inactive} enabled={data.settings.commerce_enabled===true}/></div></div>}
          {tab==='brain-overview'&&<div className="scroll-region"><div className="page-wrap"><BrainOverview load={!inactive}/></div></div>}
          {tab==='projects'&&<div className="scroll-region"><div className="page-wrap"><PageTitle eyebrow="PROJECT MANAGEMENT" title="Your workspaces" description="Separate contexts, conversations, and design decisions for every project."/><div className="project-create"><input aria-label="New project name" value={newProject} onChange={e=>setNewProject(e.target.value)} placeholder="New project name" maxLength={60} onKeyDown={e=>{if(e.key==='Enter'&&newProject.trim()){void changeProject(newProject.trim());setNewProject('')}}}/><button className="primary-button" onClick={()=>{if(newProject.trim()){void changeProject(newProject.trim());setNewProject('')}}}><Plus size={17}/> New workspace</button></div><div className="project-grid">{[...new Set([data.project,...data.projects])].map(name=><button className={'project-card '+(name===data.project?'project-current':'')} key={name} type="button" aria-current={name===data.project?'page':undefined} aria-label={'Workspace '+name+(name===data.project?' — current workspace':'')} onClick={()=>changeProject(name)}><FolderOpen size={25}/><strong dir="auto" title={name}>{name}</strong><span>{name===data.project?'Current workspace':'Open workspace'}</span><ArrowRight size={18}/></button>)}</div><LearningPanel project={data.project} settings={data.settings} counts={data.learning} invoke={act} disabled={inactive} refresh={()=>void sync()}/><ReferencesPanel project={data.project} invoke={act} disabled={inactive}/></div></div>}
@@ -933,7 +944,9 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
            selectRouterFolder={()=>void selectRouterFolder()} startLocalRouter={()=>void startLocalRouter()} stopLocalBrain={()=>void stopLocalBrain()} testSpecialists={()=>void testSpecialists()}
            imageMode={imageMode} chooseWorkflow={()=>void chooseWorkflow()} showStar={showStar} setShowStar={setShowStar} newHome={newHome} setNewHome={setNewHome} clipsOn={clipsOn} setClipsOn={setClipsOn} setReducedMotion={setReducedMotion}
            studioLayout={studioLayout} setStudioLayout={setStudioLayout}
-           appearance={studioLayout&&<AppearanceControls preferences={appearance} onChange={updateAppearance} onReset={resetAppearance} companionSettings={companionSettings} persisted={appearancePersisted}/>}
+           appearance={<AppearanceControls preferences={appearance} onChange={updateAppearance} onReset={resetAppearance} persisted={appearancePersisted} active={appearanceApplied}/>}
+           companions={companionSettings}
+           account={<Panel className="settings-section"><h3 className="settings-group-title">Metallic</h3><p className="settings-panel-note">Optional. With an access code from Metallic Control on your home network, a Metallic page with your projects and machines appears in the sidebar.</p><MetallicAccount session={metallic} address={draft.metallic_control_url||''} onAddressChange={value=>setDraft(d=>({...d,metallic_control_url:value}))} disabled={inactive&&!preview}/></Panel>}
            update={update} updateBusy={updateBusy} updateProgress={updateProgress} checkForUpdates={()=>void checkForUpdates()} installVerifiedUpdate={()=>void installVerifiedUpdate()} saveSettings={()=>void saveSettings()}
            initialSection={preview?new URLSearchParams(window.location.search).get('section')||undefined:undefined}/></div></div>}
        </MotionSurface>
@@ -952,6 +965,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
      {notice&&<div role="status" className="toast" data-notice-region="page"><Info size={16} aria-hidden="true"/><span>{truncate(notice,240)}</span><button aria-label="Dismiss message" onClick={()=>setNotice('')}><X size={16}/></button></div>}
    </div>
    {tab==='chat'&&showStar&&<StarPet state={petState} reducedMotion={reducedMotion} idleEnabled={!inactive}/>}
+   {!signInSeen&&metallic.status?.configured&&!metallic.signedIn&&<SignIn status={metallic.status} onSignedIn={metallic.signedInWith} onDone={()=>{setSignInSeen(true);writePreference('star.metallic.seen','on')}}/>}
    {leftOpen&&<button className="mobile-scrim" onClick={()=>setLeftOpen(false)} aria-label="Close navigation"/>}
  </div></MotionPolicy>
 }

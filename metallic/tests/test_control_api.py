@@ -180,3 +180,126 @@ def test_logout_ends_the_session(app):
 def test_short_tokens_are_rejected():
     with pytest.raises(ValueError):
         Auth("short", PUSH)
+
+
+# ---------------------------------------------------------------- the STAR AI desktop app door (/api/app/*)
+
+APP_CODE = "app-code-123"
+
+
+@pytest.fixture()
+def app_door(tmp_path):
+    clock = Clock(1000.0)
+    store = Store(":memory:", clock=clock)
+    runner = Runner(store, MACHINES, ["ssh", "-T"], str(tmp_path / "audit.jsonl"),
+                    run=lambda args, **kw: pytest.fail("an app token must never run anything"), clock=clock)
+    collector = Collector({"machine": MACHINES}, store, runner, clock=clock)
+    a = App(collector, store, runner, Auth(LOGIN, PUSH, clock=clock, app_code=APP_CODE, app_hours=8), MACHINES)
+    a.clock = clock
+    return a
+
+
+def app_token(app, code=APP_CODE, client="192.0.2.5"):
+    code_, _, body = call(app, "POST", "/api/app/verify", {"code": code}, client=client)
+    assert code_ == 200 and body["ok"] is True and body["expires_at"] == int(app.clock.t) + 8 * 3600
+    return body["token"]
+
+
+def bearer(token):
+    return {"authorization": "Bearer " + token}
+
+
+def test_right_app_code_gives_a_token_that_reads_state_series_and_speed(app_door):
+    token = app_token(app_door)
+    code, _, state = call(app_door, "GET", "/api/app/state", headers=bearer(token))
+    assert code == 200 and {m["id"] for m in state["machines"]} == {"brain1", "pc"}
+    assert call(app_door, "GET", "/api/app/series?keys=brain1.cpu&range=day", headers=bearer(token))[0] == 200
+    assert call(app_door, "GET", "/api/app/series?keys=a&range=year", headers=bearer(token))[0] == 400
+    code, _, speed = call(app_door, "GET", "/api/app/speed?days=7", headers=bearer(token))
+    assert code == 200 and speed == {"hours": []}
+    for path in ("/api/app/state", "/api/app/series?keys=a", "/api/app/speed"):
+        assert call(app_door, "GET", path)[0] == 401                          # no token
+    # the login token is not the app code once app_code_file is set, and the app code is not a login token
+    assert call(app_door, "POST", "/api/app/verify", {"code": LOGIN})[0] == 401
+    assert call(app_door, "POST", "/api/login", {"token": APP_CODE})[0] == 401
+
+
+def test_without_an_app_code_file_the_login_token_is_the_code(app):
+    code, _, body = call(app, "POST", "/api/app/verify", {"code": LOGIN})
+    assert code == 200 and call(app, "GET", "/api/app/state", headers=bearer(body["token"]))[0] == 200
+
+
+def test_wrong_app_codes_count_down_then_lock_the_client_out_for_15_minutes(app_door):
+    for left in (4, 3, 2, 1, 0):
+        code, _, body = call(app_door, "POST", "/api/app/verify", {"code": "nope"}, client="192.0.2.9")
+        assert code == 401 and body == {"ok": False, "text": "that code is not right", "attempts_left": left}
+    code, extra, body = call(app_door, "POST", "/api/app/verify", {"code": APP_CODE}, client="192.0.2.9")
+    assert code == 429 and body["retry_after"] == 900 and extra["Retry-After"] == "900" and "token" not in body
+    assert call(app_door, "POST", "/api/app/verify", {"code": 7}, client="192.0.2.5")[0] == 401   # other clients
+    app_door.clock.t += 600
+    assert call(app_door, "POST", "/api/app/verify", {"code": APP_CODE}, client="192.0.2.9")[2]["retry_after"] == 300
+    app_door.clock.t += 300
+    app_token(app_door, client="192.0.2.9")
+    # the cookie login's own limit is separate
+    assert call(app_door, "POST", "/api/login", {"token": LOGIN}, client="192.0.2.9")[0] == 200
+
+
+def test_expired_signed_out_and_tampered_app_tokens_are_refused(app_door):
+    token = app_token(app_door)
+    payload, sig = token.split(".")
+    flipped = ("A" if sig[0] != "A" else "B") + sig[1:]
+    for bad in (payload + "." + flipped, payload + ".", token + "x", "x" + token, "not-a-token", LOGIN, PUSH):
+        assert call(app_door, "GET", "/api/app/state", headers=bearer(bad))[0] == 401
+    forged = json.dumps({"sub": "star-app", "exp": 10 ** 10, "jti": "x"}).encode()
+    import base64
+    forged_payload = base64.urlsafe_b64encode(forged).rstrip(b"=").decode()
+    assert call(app_door, "GET", "/api/app/state", headers=bearer(forged_payload + "." + sig))[0] == 401
+    other = Auth(LOGIN, PUSH, clock=app_door.clock, app_code=APP_CODE)        # another process, another key
+    assert other.app_token("Bearer " + token) is None
+
+    assert call(app_door, "POST", "/api/app/signout", {}, headers=bearer(token))[0] == 200
+    assert call(app_door, "GET", "/api/app/state", headers=bearer(token))[0] == 401
+    assert call(app_door, "POST", "/api/app/signout", {}, headers=bearer(token))[0] == 401
+
+    later = app_token(app_door)
+    app_door.clock.t += 8 * 3600
+    assert call(app_door, "GET", "/api/app/state", headers=bearer(later))[0] == 401
+
+
+def test_an_app_token_can_never_run_actions_push_or_use_cookie_endpoints(app_door):
+    token = app_token(app_door)
+    run = {"action": "brain1/ns-pause", "confirm": "brain1/ns-pause"}
+    assert call(app_door, "POST", "/api/actions/run", run, headers=bearer(token))[0] == 401
+    assert call(app_door, "POST", "/api/app/actions/run", run, headers=bearer(token))[0] == 404
+    assert call(app_door, "POST", "/api/push", {"sample": {}}, headers=bearer(token))[0] == 401
+    for path in ("/api/state", "/api/series?keys=a", "/api/speed", "/api/actions", "/api/audit", "/api/session",
+                 "/api/keys"):
+        assert call(app_door, "GET", path, headers=bearer(token))[0] == 401
+    assert call(app_door, "GET", "/api/app/audit", headers=bearer(token))[0] == 404
+    assert call(app_door, "POST", "/api/app/state", {}, headers=bearer(token))[0] == 404
+    # nor does the push token or a cookie session open the app door
+    assert call(app_door, "GET", "/api/app/state", headers=bearer(PUSH))[0] == 401
+    cookie, _ = sign_in(app_door)
+    assert call(app_door, "GET", "/api/app/state", cookie=cookie)[0] == 401
+
+
+def test_app_options_are_checked():
+    with pytest.raises(ValueError):
+        Auth(LOGIN, PUSH, app_code="short")
+    with pytest.raises(ValueError):
+        Auth(LOGIN, PUSH, app_secret="short")
+    with pytest.raises(ValueError):
+        Auth(LOGIN, PUSH, app_hours=0)
+    a = Auth(LOGIN, PUSH, app_code=APP_CODE, app_secret="S" * 32)
+    b = Auth(LOGIN, PUSH, app_code=APP_CODE, app_secret="S" * 32)
+    assert b.app_token("Bearer " + a.app_verify("c", APP_CODE)["token"]) is not None   # a shared secret survives restarts
+
+
+def test_service_reads_the_app_door_config(tmp_path):
+    from metallic.control.service import app_auth_options
+    assert app_auth_options({}) == {"app_hours": 8.0}
+    (tmp_path / "code").write_text(APP_CODE + "\n")
+    opts = app_auth_options({"app_code_file": str(tmp_path / "code"), "app_token_hours": 2})
+    assert opts == {"app_hours": 2.0, "app_code": APP_CODE}
+    with pytest.raises(ValueError):
+        app_auth_options({"app_token_secret_file": str(tmp_path / "missing")})

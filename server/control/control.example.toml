@@ -10,6 +10,11 @@ tls_cert = "/etc/metallic-control/tls/cert.pem"
 tls_key = "/etc/metallic-control/tls/key.pem"
 login_token_file = "/etc/metallic-control/login-token"
 push_token_file = "/etc/metallic-control/push-token"
+# STAR AI desktop app sign-in (POST /api/app/verify). Without app_code_file the owner login token is the code; without
+# app_token_secret_file the signing key is random per process (a restart signs every app out).
+app_code_file = "/etc/metallic-control/app-code"
+app_token_secret_file = "/etc/metallic-control/app-token-secret"
+app_token_hours = 8
 ssh_key = "/etc/metallic-control/ssh/id_ed25519"
 known_hosts = "/etc/metallic-control/ssh/known_hosts"
 

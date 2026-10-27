@@ -67,6 +67,8 @@ from .chat_media import prepare_turn
 from .roblox_cloud import (ROBLOX_ACTIONS, ROBLOX_NETWORK_ACTIONS, RobloxCloud,
                            handle_action as handle_roblox_action)
 from .research_activity import sanitize_research_event
+from .metallic_access import METALLIC_ACTIONS, check_code as check_metallic_code, for_home as metallic_for_home
+from .metallic_access import status_for as metallic_status
 
 ALLOWED_ACTIONS = frozenset({
     'bootstrap','brainSnapshot','plannerStatus','switchProject','pickFiles','sendMessage','saveSettings',
@@ -109,6 +111,9 @@ ALLOWED_ACTIONS = ALLOWED_ACTIONS | STUDIO_HOST_ACTIONS
 # Settings > Discord: status, Start/Stop and the opt-in autostart for the Discord bot process
 # (star/discord_supervisor.py). Never carries the token, the owner's IDs or any key.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | DISCORD_ACTIONS
+# Metallic sign-in and read-only stats (star/metallic_access.py): the code goes to Metallic Control once and is
+# never stored; the token is kept with Windows DPAPI. No action here can run anything on Metallic.
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | METALLIC_ACTIONS
 # STAR Clips only accepts explicit desktop UI clicks; never model tool calls.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_ACTIONS
 # Optional read-only clip folders and developer-owned SteelSeries Moments events.
@@ -171,6 +176,7 @@ PERMITTED_SETTINGS = frozenset({
     'fixed_roblox_tools',     # star/turn_memory.py: one fixed tool list for Roblox chats (prompt cache reuse), on
     'edit_diff',              # star/edit_format.py: changed lines only for pasted-code edits, off by default
     'music_recognition_enabled','fpcalc_path',   # star/music_recognition.py, off by default
+    'metallic_control_url',   # star/metallic_access.py: the Metallic Control address (never the code or token)
 })
 
 # Settings > Media "session capabilities" line: put before the owner's words of every turn (and of a draft warm-up).
@@ -772,6 +778,7 @@ def _get_state(settings_file: Path, runtime: Runtime, busy: bool = False, studio
         'lesson_bundle':lesson_bundle,
         'learning_bundle':learning_bundle,
         'credentials':credential_status(),
+        'metallic':metallic_status(home,settings.metallic_control_url),
         'server':server_status(settings),
         'roblox':roblox_state(home),
         'intelligence':for_settings(settings,home).status(),
@@ -1350,6 +1357,22 @@ def launch():
                         saved.discord_autostart=enabled
                         saved.save(self.settings_file)
                     return json.dumps({'ok':True,'data':handle_discord_action(action,self.discord,autostart=saved.discord_autostart)})
+                if action in METALLIC_ACTIONS:
+                    # The network calls run off the Qt thread; status and sign-out only touch the local file.
+                    metallic=metallic_for_home(app_data())
+                    url_setting=Settings.load(self.settings_file).metallic_control_url
+                    if action=='metallicStatus':
+                        return json.dumps({'ok':True,'data':metallic.status(url_setting)})
+                    if action=='metallicSignOut':
+                        return json.dumps({'ok':True,'data':metallic.sign_out(url_setting)})
+                    if action=='metallicSignIn':
+                        code=check_metallic_code(body.get('code'))
+                        self._run(rid,action,lambda:metallic.sign_in(code,url_setting))
+                    else:
+                        rng=body.get('range','hour')
+                        if rng not in ('hour','day','week'):raise ValueError('Range is hour, day or week')
+                        self._run(rid,action,lambda:metallic.state(url_setting,rng))
+                    return json.dumps({'ok':True,'pending':True,'requestId':rid})
                 if action == 'gameLabCatalog' or action in CLIP_INTEROP_ACTIONS or action in CLIP_ACTIONS:
                     return self._clip_action(action, body, rid)
                 if action in MUSIC_ACTIONS:

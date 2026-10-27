@@ -219,7 +219,7 @@ def desk(tmp_path):
     home = tmp_path / "home"
     namespace = dict(__package__="star", json=json, threading=threading, Settings=Settings,
                      ALLOWED_ACTIONS=ALLOWED_ACTIONS, WARM_UP_STOPPERS=set(), VOICE_ACTIONS=set(),
-                     MEDIA_ACTIONS=set(), DISCORD_ACTIONS=set(), CLIP_ACTIONS=set(), CLIP_INTEROP_ACTIONS=set(), MUSIC_ACTIONS=set(),
+                     MEDIA_ACTIONS=set(), DISCORD_ACTIONS=set(), CLIP_ACTIONS=set(), CLIP_INTEROP_ACTIONS=set(), MUSIC_ACTIONS=set(), METALLIC_ACTIONS=set(),
                      LESSON_ACTIONS=set(), LEARNED_ACTIONS=set(), CORRECTION_ACTIONS=set(),
                      ROBLOX_ACTIONS=set(), STUDIO_HOST_ACTIONS=set(), BULK_ACTIONS=set(), app_data=lambda: home)
     exec(bridge_methods({"invoke", "_commerce_pilot_tick"}), namespace)

@@ -12,10 +12,10 @@ beforeEach(()=>{desktop.reset();localStorage.clear();desktop.host({settings:{...
 afterEach(()=>{cleanup();vi.restoreAllMocks();localStorage.clear()})
 
 const SWITCHES=[
- {tab:'Roblox & Studio',label:'Show example Studio tool calls',key:'studio_tool_examples',hint:/Permissions do not change/},
- {tab:'Roblox & Studio',label:'Retry a failed Luau fix with more thinking',key:'luau_retry_ladder',hint:/Answers can take longer/},
- {tab:'Roblox & Studio',label:'Repair a failed tool step before going on',key:'incremental_repair',hint:/at most two focused fixes/},
- {tab:'Knowledge & search',label:"Follow my workspace's project rules",key:'project_rules_enabled',hint:/Conventions only, never permissions/},
+ {tab:'Advanced',label:'Show example Studio tool calls',key:'studio_tool_examples',hint:/permissions do not change/},
+ {tab:'Advanced',label:'Retry a failed Luau fix with more thinking',key:'luau_retry_ladder',hint:/answers can take longer/},
+ {tab:'Advanced',label:'Repair a failed tool step before going on',key:'incremental_repair',hint:/at most two focused fixes/},
+ {tab:'Advanced',label:"Follow my workspace's project rules",key:'project_rules_enabled',hint:/conventions only, never permissions/},
 ] as const
 
 it('each switch starts off, explains itself, and is saved only with Save settings',async()=>{
