@@ -14,6 +14,8 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
+from . import style
+
 # A casual goodbye (not the "I'm leaving for good" the emotion engine reads itself): she misses them a little.
 GOODBYE = re.compile(r"\b(?:bye(?:\s?bye)?|goodbye|good\s?night|gtg|g2g|gotta\s+go|got\s+to\s+go|i\s+(?:have|need)\s+to\s+go|"
                      r"i'?m\s+(?:heading\s+(?:out|off)|logging\s+off|off\s+to\s+(?:bed|sleep))|"
@@ -34,8 +36,9 @@ QUIET_LEAVE_S = 10 * 60          # nobody answered her for this long: the conver
 ASK_BACK_EVERY = 3               # she has not asked anything for this many replies: a question back is due
 
 
-def shape_reply(text: str, platform: str, *, rng: random.Random | None = None, emoji_chance: float = 0.05) -> str:
-    """One reply the way a player types it."""
+def shape_reply(text: str, platform: str, *, rng: random.Random | None = None, emoji_chance: float = 0.0) -> str:
+    """One reply the way a player types it. Emoji are rare (research: most messages have none), so `emoji_chance` is 0 by
+    default; the style layer (style.emoji_budget) caps whatever the model wrote at one."""
     rng = rng or random.Random()
     text = _LIST.sub("", str(text or ""))
     text = " ".join(_MARKUP.sub("", text).split())
@@ -55,9 +58,7 @@ def shape_reply(text: str, platform: str, *, rng: random.Random | None = None, e
         out.append(s)
         size += len(s) + 1
     text = " ".join(out) if out else text[:limit]
-    if len(text) > limit:
-        cut = text.rfind(" ", 0, limit - 1)
-        text = text[: cut if cut > limit // 2 else limit - 1].rstrip(" ,;") + "…"
+    text = style.cut(text, limit)                              # at a sentence or clause boundary, never with an ellipsis
     if platform != "minecraft" and text and not _EMOJI.search(text) and _WARM.search(text) and rng.random() < emoji_chance:
         text += " " + rng.choice(("\U0001F604", "\U0001F602", "✨", "\U0001F64C"))
     return text
@@ -161,7 +162,7 @@ class ChatFlow:
             return ""
         name = f" {nickname}" if nickname else ""
         if stage in ("friend", "close_friend"):
-            return self._rng.choice((f"gtg{name}, was fun!", f"ok i'm heading off{name}, talk later!", f"see you around{name} \U0001F44B"))
+            return self._rng.choice((f"gtg{name}, was fun!", f"ok i'm heading off{name}, talk later!", f"see you around{name}"))
         return self._rng.choice(("gtg, was fun!", "ok bye for now!", "heading off, take care!"))
 
     def forget_person(self, author: str) -> None:

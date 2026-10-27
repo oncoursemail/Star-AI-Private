@@ -15,6 +15,7 @@ from typing import Any, Callable
 from . import rules
 from .activity import HostAgent, HumanPace, StepResult, vision_reader
 from .chat import SocialChat
+from .reactions import ReactionPolicy
 
 READ_QUESTION = """This is a screenshot of the Discord desktop app. Answer with JSON only:
 {"channel": "<DM partner's name or #channel name>", "is_dm": true|false,
@@ -35,7 +36,8 @@ class DiscordDesktop:
     def __init__(self, host: HostAgent, chat: SocialChat, *, my_names: list[str] | None = None,
                  window_title: str = "Discord", reader: Callable | None = None, pace: HumanPace | None = None,
                  pacer: rules.Pacer | None = None, on_invite: Callable[[str, str], Any] | None = None,
-                 left_out=None) -> None:
+                 left_out=None, reactions: ReactionPolicy | None = None,
+                 react: Callable[[str, str, str, str], bool] | None = None) -> None:
         self.host, self.chat = host, chat
         self.on_invite = on_invite      # (author, text) -> a plan with .intent and .after (star.home.invites), or None
         self.my_names = [n.lower() for n in (my_names or ["Star"])]
@@ -45,6 +47,8 @@ class DiscordDesktop:
         self.pacer = pacer or rules.Pacer(min_gap_s=3.0, per_minute=8)
         self._seen: deque[str] = deque(maxlen=2000)
         self.left_out = left_out        # star.home.attention.LeftOutWatch, or None (then she never feels left out)
+        self.reactions = reactions or ReactionPolicy()
+        self.react = react              # (channel, author, text, emoji) -> bool: puts the reaction on the message in the app (not verified)
 
     def ready(self) -> tuple[bool, str]:
         if self.chat.killed("discord"):
@@ -106,6 +110,25 @@ class DiscordDesktop:
                                        or self.chat.for_her("discord", str(m["author"]), str(m["text"]), channel=room)[0]]
         if not is_dm:
             self._watch_left_out(channel, fresh, addressed=bool(targets))
+        nod = ""
+        if fresh:
+            last = fresh[-1]
+            person = self.chat.memory.known("discord", str(last["author"]))
+            choice = self.reactions.decide(room if not is_dm else f"dm:{channel}", str(last["author"]), str(last["text"]),
+                                           addressed=last in targets, person=person,
+                                           age_status=rules.age_status(person) if person is not None else "unknown")
+            if choice.action == "react" or (choice.action == "react_then_reply" and last in targets):
+                done = self.react is not None and self.react(channel, str(last["author"]), str(last["text"]), choice.emoji)
+                self.chat.memory.log("reaction" if done else "reaction_skipped", "discord", person,
+                                     f"{choice.emoji} {choice.reason}" + ("" if done else " (no way to react in the app)"))
+                if done and choice.action == "react":
+                    self.chat.window.skipped(room if not is_dm else f"discord:{str(last['author']).lower()}")
+                    self.host.key("escape")
+                    return StepResult(True, f"reacted {choice.emoji}: {choice.reason}", acted=True)
+                nod = choice.emoji if done else ""
+            if choice.action == "react" and last in targets and not nod:
+                self.host.key("escape")
+                return StepResult(True, f"a reaction is enough here ({choice.reason}), nothing to react with in the app")
         if not targets:
             self.host.key("escape")
             return StepResult(True, "nothing addressed to her")
@@ -116,15 +139,17 @@ class DiscordDesktop:
         reply = self.chat.handle("discord", author, said, name=author, public=not is_dm, history=history,
                                  intent=getattr(plan, "intent", "") if plan is not None else "",
                                  channel="" if is_dm else room)
-        if reply is None or not self.pacer.allow(channel, reply.text):
+        lines = list(reply.to_send) if reply is not None else []
+        if reply is None or not self.pacer.allow_burst(channel, lines):
             self.host.key("escape")
             return StepResult(True, "chose not to reply")
         self.pace.read(said)
         if self.window_title.lower() not in self.host.foreground_title().lower():
             return StepResult(False, "Discord lost focus; nothing typed")
-        self.pace.type(self.host, reply.text)
-        self.host.key("enter")
-        self.pacer.sent(channel, reply.text)
+        front = lambda: self.window_title.lower() in self.host.foreground_title().lower()
+        sent = self.pace.send_lines(self.host, lines, after_each=lambda: self.host.key("enter"), still_ok=front)
+        for line in lines[:sent]:
+            self.pacer.sent(channel, line)
         if plan is not None and getattr(plan, "after", None) is not None:
             plan.after()                                        # what she decided to do next (call, game)
         return StepResult(True, f"replied in {'DM' if is_dm else channel}", acted=True,

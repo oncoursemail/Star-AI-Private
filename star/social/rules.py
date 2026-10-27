@@ -22,7 +22,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
-from . import safety
+from . import safety, style
 from .friends import FriendMemory, Person
 
 ADULT_AGE = 18
@@ -148,11 +148,20 @@ def asks_age(reply: str) -> bool:
     return bool(_ASKS_AGE.search(reply or ""))
 
 
-def check_outgoing(reply: str, *, incoming: str, mode: Mode, platform: str, roleplay: bool = False) -> str:
+def check_outgoing(reply: str, *, incoming: str, mode: Mode, platform: str, roleplay: bool = False, busy: str = "",
+                   real_history: bool = False) -> str:
     """Her reply after the rules: truthful about being an AI when sincerely asked (in character inside a role-play),
     nothing romantic unless allowed, no off-platform moves where kids may be, no personal-detail questions to a
-    possible minor, within the platform's length."""
+    possible minor, no manipulation, within the platform's length. Then her texting style (style.py): the deterministic
+    rewrites first (before the AI-identity checks, so the plain yes is never reworded), a cut at a sentence boundary
+    without an ellipsis, a short message in lowercase without a final period. The honesty guards drop a sentence that
+    claims an offline life, a "busy" state she is not in (`busy` names a real one) or shared history she does not have
+    (`real_history`)."""
+    sincere = is_sincere_ai_question(incoming, roleplay=roleplay)
     text = _ROBOTIC.sub("", " ".join(str(reply or "").split())).strip()
+    text = style.rewrite(text)
+    if not roleplay:
+        text, _ = style.guard(text, busy=busy, real_history=real_history)
     if is_sincere_ai_question(incoming, roleplay=roleplay):
         if not _ADMITS_AI.search(text):
             # An in-character or denying reply would contradict the truth: answer with the plain yes.
@@ -168,10 +177,8 @@ def check_outgoing(reply: str, *, incoming: str, mode: Mode, platform: str, role
         text = STEER_AWAY
     text = safety.protect(text, age_status=mode.age_status, incoming=incoming)   # no manipulation; no dependency for kids/unknown
     limit = MAX_CHARS.get(platform, 500)
-    if len(text) > limit:
-        cut = text.rfind(" ", 0, limit - 1)
-        text = text[: cut if cut > limit // 2 else limit - 1].rstrip(" ,;") + "…"
-    return text
+    text = style.cut(text, limit)
+    return text if sincere else style.finish(text, platform=platform, roleplay=roleplay)
 
 
 def may_initiate(person: Person, platform: str) -> bool:
@@ -200,6 +207,22 @@ class Pacer:
         if any(c == channel and k == key for _, c, k in self._sent):
             return False
         return True
+
+    def allow_burst(self, channel: str, lines: list[str], *, max_lines: int = 3) -> bool:
+        """One short burst of up to 3 lines (one thought sent as several messages) counts as one turn: the gap between
+        turns applies to the first line only, the per-minute cap counts every line, no line may repeat a recent one."""
+        lines = [l for l in lines if l][:max_lines]
+        if not lines:
+            return False
+        now = self._clock()
+        while self._sent and now - self._sent[0][0] > 600:
+            self._sent.popleft()
+        if now - self._last.get(channel, -1e9) < self.min_gap_s:
+            return False
+        if sum(1 for t, _, _ in self._sent if now - t < 60) + len(lines) > self.per_minute:
+            return False
+        keys = {" ".join(l.lower().split()) for l in lines}
+        return not any(c == channel and k in keys for _, c, k in self._sent)
 
     def sent(self, channel: str, text: str) -> None:
         now = self._clock()
