@@ -41,6 +41,14 @@ class ObservationGovernorTests(unittest.TestCase):
         first = g.consider(FrameCue(0, 1), telemetry(), now_ms=0,
                            capture_authorized=True)
         g.disable()
+        # Revoking the grant does not imply the physical GPU worker stopped.
+        with self.assertRaises(RuntimeError):
+            g.enable(owner_approved=True)
+        self.assertFalse(g.complete(ticket=first.ticket, now_ms=10001, succeeded=True))
+        self.assertFalse(g.acknowledge_worker_stopped(
+            ticket=first.ticket, now_ms=10001, worker_stopped=False))
+        self.assertTrue(g.acknowledge_worker_stopped(
+            ticket=first.ticket, now_ms=10002, worker_stopped=True))
         g.enable(owner_approved=True)
         next_ticket = g.consider(FrameCue(10000, 1), telemetry(), now_ms=10000,
                                  capture_authorized=True)
@@ -156,14 +164,83 @@ class ObservationGovernorTests(unittest.TestCase):
         self.assertTrue(b.admitted)
         self.assertEqual(g.stats()["failed"], 1)
 
-    def test_timeouts_expire_pending_even_without_finish(self):
+    def test_timeout_quarantines_physical_gpu_worker_until_stopped(self):
         g = ObservationGovernor(ticket_timeout_ms=2000)
         g.enable(owner_approved=True)
         a = g.consider(FrameCue(0, 1), telemetry(), now_ms=0, capture_authorized=True)
         b = g.consider(FrameCue(2001, 2), telemetry(), now_ms=2001, capture_authorized=True)
+        self.assertFalse(b.admitted)
+        self.assertEqual(b.reason, "vision_worker_stop_unconfirmed")
+        self.assertTrue(g.stats()["quarantined"])
         self.assertFalse(g.complete(ticket=a.ticket, now_ms=2002, succeeded=True))
-        self.assertTrue(b.admitted)
+        self.assertFalse(g.acknowledge_worker_stopped(
+            ticket=a.ticket + 1, now_ms=2003, worker_stopped=True))
+        self.assertFalse(g.acknowledge_worker_stopped(
+            ticket=a.ticket, now_ms=2004, worker_stopped=False))
+        self.assertTrue(g.acknowledge_worker_stopped(
+            ticket=a.ticket, now_ms=2005, worker_stopped=True))
+        self.assertFalse(g.acknowledge_worker_stopped(
+            ticket=a.ticket, now_ms=2006, worker_stopped=True))
+        self.assertFalse(g.stats()["quarantined"])
+        next_ = g.consider(FrameCue(2006, 2), telemetry(), now_ms=2006,
+                           capture_authorized=True)
+        self.assertTrue(next_.admitted)
         self.assertEqual(g.stats()["expired"], 1)
+        self.assertEqual(g.stats()["stop_confirmed"], 1)
+        self.assertNotEqual(a.ticket, next_.ticket)
+
+    def test_latency_feedback_reduces_sampling_pressure_without_faking_fps(self):
+        # Offline nominal sampling is 4 Hz, but a vision call taking 800 ms
+        # should not cause another request 250 ms after its admission.
+        g = ObservationGovernor(latency_safety_factor=2.0)
+        g.enable(owner_approved=True)
+        first = g.consider(FrameCue(0, 1), telemetry(live=False), now_ms=0,
+                           capture_authorized=True)
+        self.assertEqual(first.target_fps, 4.0)
+        self.assertTrue(g.complete(ticket=first.ticket, now_ms=800, succeeded=True))
+        early = g.consider(FrameCue(1000, 2, "new_scene"), telemetry(live=False),
+                           now_ms=1000, capture_authorized=True)
+        self.assertEqual(early.reason, "minimum_sampling_interval")
+        later = g.consider(FrameCue(1600, 2, "new_scene"), telemetry(live=False),
+                           now_ms=1600, capture_authorized=True)
+        self.assertTrue(later.admitted)
+        self.assertAlmostEqual(later.target_fps, 0.625)
+        self.assertTrue(g.complete(ticket=later.ticket, now_ms=1610, succeeded=False))
+
+    def test_timeout_and_consent_revoke_across_sessions_preserve_quarantine(self):
+        g = ObservationGovernor(ticket_timeout_ms=2000)
+        g.enable(owner_approved=True)
+        slow = g.consider(FrameCue(0, 100), telemetry(), now_ms=0,
+                          capture_authorized=True)
+        # A late successful inference cannot become the freshness baseline.
+        self.assertFalse(g.complete(ticket=slow.ticket, now_ms=2001, succeeded=True))
+        g.disable()
+        with self.assertRaises(RuntimeError):
+            g.enable(owner_approved=True)
+        self.assertTrue(g.stats()["quarantined"])
+        self.assertTrue(g.acknowledge_worker_stopped(
+            ticket=slow.ticket, now_ms=2002, worker_stopped=True))
+        g.enable(owner_approved=True)
+        next_ = g.consider(FrameCue(3000, 100), telemetry(), now_ms=3000,
+                           capture_authorized=True)
+        self.assertTrue(next_.admitted)
+        self.assertFalse(g.complete(ticket=slow.ticket, now_ms=3001, succeeded=True))
+
+    def test_vision_timeouts_never_leak_multiple_inflight_gpu_jobs(self):
+        g = ObservationGovernor(ticket_timeout_ms=1000, calls_per_minute=120)
+        g.enable(owner_approved=True)
+        old = g.consider(FrameCue(0, 1), telemetry(), now_ms=0,
+                         capture_authorized=True)
+        for at in (1000, 2000, 3000, 5000, 10000):
+            blocked = g.consider(FrameCue(at, at), telemetry(), now_ms=at,
+                                 capture_authorized=True)
+            self.assertFalse(blocked.admitted)
+            self.assertEqual(blocked.reason, "vision_worker_stop_unconfirmed")
+        self.assertEqual(g.stats()["admitted"], 1)
+        self.assertTrue(g.acknowledge_worker_stopped(
+            ticket=old.ticket, now_ms=10001, worker_stopped=True))
+        self.assertTrue(g.consider(FrameCue(11000, 2), telemetry(), now_ms=11000,
+                                   capture_authorized=True).admitted)
 
     def test_stale_and_future_captured_frames(self):
         g = ObservationGovernor()
@@ -195,7 +272,10 @@ class ObservationGovernorTests(unittest.TestCase):
     def test_bad_config_and_bad_arguments(self):
         for kwargs in ({"calls_per_minute": 0}, {"burst": 100},
                        {"novelty_bits": -2}, {"ticket_timeout_ms": 5},
-                       {"frame_max_age_ms": 0}, {"refresh_ms": math.inf}):
+                       {"frame_max_age_ms": 0}, {"refresh_ms": math.inf},
+                       {"latency_safety_factor": 0},
+                       {"latency_safety_factor": 9},
+                       {"latency_safety_factor": math.nan}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 ObservationGovernor(**kwargs)
         g = ObservationGovernor()
@@ -206,6 +286,13 @@ class ObservationGovernorTests(unittest.TestCase):
             g.complete(ticket=True, now_ms=0, succeeded=True)
         with self.assertRaises(TypeError):
             g.consider(object(), telemetry(), now_ms=0)
+        for invalid in (True, 0, "1"):
+            with self.assertRaises(ValueError):
+                g.acknowledge_worker_stopped(
+                    ticket=invalid, now_ms=1, worker_stopped=True)
+        with self.assertRaises(ValueError):
+            g.acknowledge_worker_stopped(
+                ticket=1, now_ms=1, worker_stopped="yes")
 
     def test_counter_output_does_not_expose_frame_fingerprint(self):
         g = ObservationGovernor()
@@ -214,7 +301,8 @@ class ObservationGovernorTests(unittest.TestCase):
                             capture_authorized=True)
         g.complete(ticket=ticket.ticket, now_ms=1, succeeded=True)
         self.assertTrue(set(g.stats()) <= {"admitted", "completed", "failed",
-                                            "expired", "deferred", "pending", "enabled"})
+                                            "expired", "deferred", "pending", "enabled",
+                                            "quarantined", "stop_confirmed"})
 
 
 if __name__ == "__main__":
