@@ -13,6 +13,7 @@ from star.game_action_gate import GameScope
 from star.game_learning_ladder import GameLearningLadder, PracticeSituation
 from star.game_portfolio_practice import GamePortfolioPractice
 from star.gameplay_skill_bank import GameTrial, GameplaySkillBank
+from star.game_prediction_lab import GamePredictionLab
 from star.portfolio_studio_bridge import PortfolioStudioBridge
 from star.studio_outcome_bridge import StudioOutcomeBridge, transition_digest
 from star.studio_playtest_host import StudioBinding, StudioPlaytestHost, StudioSnapshot
@@ -137,8 +138,9 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
             self.offer.action_id, self.offer.expected_run_id,
             "practice", "success", "0" * 64, self.now[0],
         )
+        trial = replace(trial, **alter)
         trial = replace(trial, evidence_sha256=transition_digest(
-            delivery, after, trial=trial), **alter)
+            delivery, after, trial=trial))
         signature = hmac.new(key, trial.canonical_bytes(), hashlib.sha256).hexdigest()
         return trial, signature
 
@@ -361,3 +363,75 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
         result = await self.bridge.take_step(self.propose, now_unix_s=NOW)
         self.assertEqual(result.reason, "offline_game_or_realtime_headroom_missing")
         self.assertFalse(self.port.keys)
+
+
+    async def test_preaction_probability_resolves_only_from_signed_studio_result(self):
+        # The model predicts BEFORE keydown. The independent post-action
+        # Studio receipt is the ONLY permitted label for calibration.
+        with GamePredictionLab(self.bank) as lab:
+            lab.enable(owner_approved=True)
+            bridge = PortfolioStudioBridge(
+                self.portfolio, self.offer, self.runner, now_unix_s=NOW,
+                clock_unix_s=lambda: self.now[0], prediction_lab=lab,
+                forecast_model_id="star_v1",
+            )
+            self.bridge = bridge
+
+            async def proposer(_evidence, _advice):
+                return PracticeProposal("jump", 60, 9000)
+
+            result = await bridge.take_step(proposer, now_unix_s=NOW)
+            self.assertTrue(result.action_sent, result.reason)
+            self.assertEqual(bridge.metrics()["forecast_committed"], 1)
+            self.assertEqual(lab.report("star_v1").trials, 0)
+            self.tick[0] = 1250
+            self.mcp.image = AFTER
+            observed = await bridge.observe_after(now_unix_s=NOW)
+            self.assertEqual(observed.status, "feedback_ready")
+            self.assertEqual(lab.report("star_v1").trials, 0)
+            trial, signature = self.signed_trial()
+            accepted = bridge.record_signed_outcome(trial, signature, now_unix_s=NOW)
+            self.assertTrue(accepted.portfolio_verified)
+            self.assertEqual(bridge.metrics()["forecast_verified"], 1)
+            self.assertAlmostEqual(lab.report("star_v1").brier_score, 0.01)
+
+    async def test_predicted_win_does_not_override_signed_game_failure(self):
+        with GamePredictionLab(self.bank) as lab:
+            lab.enable(owner_approved=True)
+            self.bridge = PortfolioStudioBridge(
+                self.portfolio, self.offer, self.runner, now_unix_s=NOW,
+                clock_unix_s=lambda: self.now[0], prediction_lab=lab,
+                forecast_model_id="star_v1")
+            async def confident(_evidence, _advice):
+                return PracticeProposal("jump", 60, 9999)
+            result = await self.bridge.take_step(confident, now_unix_s=NOW)
+            self.assertTrue(result.action_sent, result.reason)
+            self.tick[0] = 1250
+            self.mcp.image = AFTER
+            self.assertEqual((await self.bridge.observe_after(
+                now_unix_s=NOW)).status, "feedback_ready")
+            trial, receipt = self.signed_trial(outcome="failure")
+            recorded = self.bridge.record_signed_outcome(trial, receipt, now_unix_s=NOW)
+            self.assertTrue(recorded.portfolio_verified)
+            self.assertGreater(lab.report("star_v1").brier_score, 0.99)
+            self.assertFalse(lab.advise(
+                "star_v1", game_id="practice_obby", game_version="v1",
+                proposed_bps=9999).authorized_to_play)
+
+    async def test_untrusted_or_abandoned_forecast_cannot_change_gameplay(self):
+        with GamePredictionLab(self.bank) as lab:
+            lab.enable(owner_approved=True)
+            self.bridge = PortfolioStudioBridge(
+                self.portfolio, self.offer, self.runner, now_unix_s=NOW,
+                clock_unix_s=lambda: self.now[0], prediction_lab=lab,
+                forecast_model_id="star_v1")
+            async def invalid_confidence(_evidence, _advice):
+                return PracticeProposal("jump", 60, True)
+            rejected = await self.bridge.take_step(
+                invalid_confidence, now_unix_s=NOW)
+            self.assertFalse(rejected.action_sent)
+            self.assertEqual(rejected.reason, "untrusted_or_off_curriculum_action")
+            self.assertEqual(lab.report("star_v1").trials, 0)
+            self.assertFalse(self.port.keys)
+            self.assertTrue(self.bridge.abandon(now_unix_s=NOW))
+            self.assertEqual(lab.metrics()["pending"], 0)
