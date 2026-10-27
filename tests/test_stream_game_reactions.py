@@ -131,6 +131,94 @@ class VerifiedReactionTests(unittest.TestCase):
         self.assertEqual(plan.expression, "focus")
         self.assertIn("three recent attempts", plan.context_record)
 
+    def test_signed_comeback_is_a_second_grounded_moment_after_setbacks(self):
+        first = trial(1)
+        self._ingest(first)
+        self.assertTrue(self._send(first).reaction_queued)
+        for n in (2, 3, 4):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        recovery = trial(18)
+        self._ingest(recovery)
+        result = self._send(recovery)
+        self.assertEqual(result.status, "queued_for_review")
+        self.assertTrue(result.reaction_queued)
+        plan = self.stage.prepare(now=518)
+        self.assertIsNotNone(plan)
+        self.assertEqual((plan.kind, plan.expression), ("game_success", "joy"))
+        self.assertIn("three recent attempts", plan.context_record)
+        self.assertIn("then this one action succeeded", plan.context_record)
+        self.assertIn("the left jump", plan.context_record)
+        self.assertIn("do not claim the level was completed", plan.context_record)
+        for secret in (recovery.trial_id, recovery.run_id, recovery.evidence_sha256):
+            self.assertNotIn(secret, plan.context_record)
+
+    def test_no_false_comeback_from_two_failures_or_unverified_claims(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        for n in (2, 3):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        unverified = trial(4, outcome="failure")
+        self.assertEqual(self._send(unverified).status, "unverified")
+        recovered = trial(18)
+        self._ingest(recovered)
+        self.assertEqual(self._send(recovered).status, "already_reacted")
+        self.assertEqual(self.bridge.metrics()["offered"], 1)
+
+    def test_old_signed_failures_cannot_invent_a_fresh_comeback(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        stale = trial(2, outcome="failure")
+        self._ingest(stale)
+        self.assertEqual(
+            self._send(stale, at=NOW + 8, clock=508).status, "stale"
+        )
+        for n in (9, 10):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        recovered = trial(22)
+        self._ingest(recovered)
+        self.assertEqual(self._send(recovered).status, "already_reacted")
+
+    def test_comeback_is_one_per_episode_not_repeated_emotional_spam(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        for n in (2, 3, 4):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        recovered = trial(18)
+        self._ingest(recovered)
+        self.assertTrue(self._send(recovered).reaction_queued)
+        for n in (19, 20, 21):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        repeat = trial(40)
+        self._ingest(repeat)
+        self.assertEqual(self._send(repeat).status, "already_reacted")
+        self.assertEqual(self.bridge.metrics()["offered"], 2)
+
+    def test_recovery_outside_sixty_second_streak_is_not_new_success(self):
+        first = trial(1)
+        self._ingest(first)
+        self._send(first)
+        for n in (2, 3, 4):
+            item = trial(n, outcome="failure")
+            self._ingest(item)
+            self._send(item)
+        late = trial(90)
+        self._ingest(late)
+        self.assertEqual(self._send(late).status, "already_reacted")
+
+
     def test_failure_reaction_once_only_even_if_more_failures(self):
         for n in range(1, 6):
             item = trial(n, outcome="failure")

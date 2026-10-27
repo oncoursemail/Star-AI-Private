@@ -283,11 +283,26 @@ class AdaptiveQoS:
                        (["gpu"] if job.kind in _GPU_ONLY else
                         ["cpu", "gpu"] if job.kind == "speech" and stream.game_active
                         else ["gpu", "cpu"]))
+            # When a game is visibly struggling, speech may still be useful,
+            # but falling back to GPU inference can worsen rendering stalls.
+            # Prefer a deadline-safe CPU speech worker or deliberate silence.
+            # This is a host-sampled protection rule, not an actual FPS fix.
+            low_game_fps = (
+                stream.live and stream.game_active
+                and stream.game_fps < 50.0 and job.kind == "speech"
+            )
+            if low_game_fps:
+                devices = [device for device in devices if device == "cpu"]
+                if not devices:
+                    return self._reason("protect_low_fps_game_from_gpu_voice")
             offers = [(device, self._route(job, snap, now, device))
                       for device in devices]
             viable = [(device, result) for device, result in offers if result is not None]
             if not viable:
-                return self._reason("no_calibrated_deadline_safe_route_or_headroom")
+                return self._reason(
+                    "low_fps_cpu_voice_unavailable" if low_game_fps
+                    else "no_calibrated_deadline_safe_route_or_headroom"
+                )
             # Prefer measured routes over unknown ones; during gameplay give a
             # deadline-compliant CPU speech route priority over the gaming GPU.
             if job.kind == "speech" and stream.live and stream.game_active:
