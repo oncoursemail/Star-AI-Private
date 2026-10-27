@@ -70,7 +70,8 @@ def build_session(settings: VoiceSettings, engines: Engines, speaker: Speaker, b
     config = settings.call_config()
     if prime and hasattr(brain, "prime"):
         brain.prime([system_message(config.system_extra, config.style,
-                                    partner_adult=config.emotion_partner_adult)])
+                                    partner_adult=config.emotion_partner_adult,
+                                    expressive=config.expressive)])
     if hasattr(engines.vad, "reset"):
         engines.vad.reset()
     return CallSession(vad=engines.vad, asr=engines.asr, brain=brain, tts=engines.tts, speaker=speaker,
