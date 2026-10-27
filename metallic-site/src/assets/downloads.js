@@ -1,6 +1,7 @@
-/* Downloads page: lists what the release channel really contains. Reads /releases/channels/<channel>.json, the same
-   file the launcher verifies. The browser cannot check the signature, so this page only describes; the launcher
-   verifies. Text goes in through textContent. */
+/* Downloads page: lists what the release channel really contains. First asks Metallic API v1 on the same site
+   (/api/v1/releases/<channel>: the server has checked the Ed25519 signature); when the site has no /api proxy it reads
+   /releases/channels/<channel>.json, the same file the launcher verifies. Either way the launcher verifies again
+   before installing. Text goes in through textContent. */
 (function () {
   "use strict";
   var list = document.getElementById("dl-list");
@@ -29,10 +30,17 @@
   }
   function empty(text) { list.textContent = ""; list.appendChild(el("p", "empty", text)); }
 
+  function fromApi(ch) {      // API shape (components as a list) -> manifest shape
+    var comps = {};
+    (ch.components || []).forEach(function (c) { comps[c.name] = c; });
+    return { components: comps, verified: ch.verified === true };
+  }
+
   function render(manifest, channel) {
     list.textContent = "";
     var names = Object.keys(manifest.components || {}).sort();
     if (!names.length) return empty("Nothing has been published on the " + channel + " channel yet.");
+    if (manifest.verified) list.appendChild(el("p", "m3", "Signature checked by the Metallic server."));
     names.forEach(function (name) {
       var c = manifest.components[name];
       var card = el("article", "dl-card");
@@ -63,8 +71,11 @@
     note.className = channel === "beta" ? "warn" : "m3";
     buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.channel === channel)); });
     empty("Loading the release list...");
-    fetch("/releases/channels/" + channel + ".json", { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+    function json(r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); }
+    fetch("/api/v1/releases/" + channel, { cache: "no-store" })
+      .then(json)
+      .then(fromApi)
+      .catch(function () { return fetch("/releases/channels/" + channel + ".json", { cache: "no-store" }).then(json); })
       .then(function (m) { render(m, channel); })
       .catch(function () { empty("No " + channel + " release has been published yet."); });
   }

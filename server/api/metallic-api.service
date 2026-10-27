@@ -1,0 +1,33 @@
+[Unit]
+Description=Metallic API v1 (metallic/metallic/api, server/api)
+After=network-online.target metallic-accounts.service
+Wants=network-online.target
+
+[Service]
+User=mapi
+Group=mapi
+Environment=PYTHONPATH=/opt/metallic-api/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=/var/lib/metallic-api
+ExecStart=/usr/bin/python3 -m metallic.api serve --config /etc/metallic-api/api.toml
+Restart=on-failure
+RestartSec=5
+Nice=10
+MemoryMax=96M
+TasksMax=96
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/metallic-api
+
+[Install]
+WantedBy=multi-user.target
