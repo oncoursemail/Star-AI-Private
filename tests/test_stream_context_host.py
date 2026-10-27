@@ -333,3 +333,80 @@ def test_context_packets_not_retained_in_anonymous_stats(rig):
     assert "bridge" not in status
     assert "checkpoint" not in status
     assert "favorite" not in status
+
+from star.stream_continuity import StreamContinuityVault
+
+
+def test_cross_session_game_memory_reaches_only_real_viewer_question(rig, tmp_path):
+    rig.ready()
+    continuity = StreamContinuityVault(
+        rig.bank, tmp_path / "past_games.sqlite",
+        integrity_key=b"separate-stream-memory-integrity-key-01234567",
+        game_id="obby", game_version="v1", objective_id="checkpoint",
+        situation_id="ledge", recordable_action_ids=frozenset({"jump_left"}),
+    )
+    try:
+        continuity.enable(owner_approved=True)
+        assert continuity.start_episode("first_episode", now_unix_s=rig.unix)
+        rig.unix += 1
+        row = GameTrial(
+            trial_id="first_ledge_attempt", game_id="obby", game_version="v1",
+            objective_id="checkpoint", situation_id="ledge", action_id="jump_left",
+            run_id="trusted_ledge_attempt", split="practice", outcome="failure",
+            evidence_sha256=sha256(b"first_ledge_frame").hexdigest(),
+            observed_unix_s=rig.unix,
+        )
+        receipt = hmac.new(PRACTICE, row.canonical_bytes(), "sha256").hexdigest()
+        rig.bank.ingest(row, receipt, now_unix_s=rig.unix)
+        assert continuity.record(row, now_unix_s=rig.unix)
+        rig.unix += 1
+        assert continuity.finish_episode(now_unix_s=rig.unix)
+
+        host = StreamContextHost(
+            governor=rig.governor, knowledge=rig.store, episode=rig.episode,
+            project="obby", public_note_ids=frozenset(),
+            public_action_ids=frozenset(),
+            continuity=continuity,
+            public_continuity_action_ids=frozenset({"jump_left"}),
+            utc_clock=lambda: datetime.now(timezone.utc),
+            unix_clock=lambda: rig.unix,
+        )
+        host.enable(owner_approved=True, broadcast_approved=True)
+        assert rig.signal("viewer_question", "What happened last time?")
+        plan = host.prepare(moderated_question="earlier jump attempts",
+                            include_past_experience=True)
+        assert plan is not None
+        assert "STAR VERIFIED PAST GAME PRACTICE" in plan.context_record
+        assert '"failures":1' in plan.context_record
+        assert host.status()["continuity_candidates"] == 1
+        assert "first_episode" not in plan.context_record
+        assert rig.stage.finish(plan)
+
+        assert rig.signal("game_danger", "There is a ledge", ident="danger")
+        danger = host.prepare(moderated_question="previous ledge?",
+                              include_past_experience=True)
+        assert danger is not None and "STAR VERIFIED PAST GAME PRACTICE" not in danger.context_record
+        assert rig.stage.finish(danger)
+        host.disable()
+        assert host.prepare(moderated_question="earlier ledge") is None
+    finally:
+        continuity.close()
+
+
+def test_wrong_project_rejected_at_host_boundary(rig, tmp_path):
+    continuity = StreamContinuityVault(
+        rig.bank, tmp_path / "other.sqlite",
+        integrity_key=b"independent-private-continuity-key-01234567",
+        game_id="unrelated", game_version="v1", objective_id="checkpoint",
+        situation_id="ledge", recordable_action_ids=frozenset({"jump_left"}),
+    )
+    try:
+        with pytest.raises(ValueError, match="cross-project"):
+            StreamContextHost(
+                governor=rig.governor, knowledge=rig.store, episode=rig.episode,
+                project="obby", public_note_ids=frozenset(),
+                public_action_ids=frozenset(), continuity=continuity,
+                public_continuity_action_ids=frozenset({"jump_left"}),
+            )
+    finally:
+        continuity.close()

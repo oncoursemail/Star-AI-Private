@@ -22,6 +22,7 @@ from typing import Callable, Sequence
 
 from .stream_budget import StreamTelemetry
 from .stream_episode import EpisodePacket
+from .stream_continuity import ContinuityPacket
 from .stream_director import SpeechIntent, StreamDirector, StreamSignal
 from .stream_knowledge import KnowledgePacket
 from .stream_idle_attention import QuietAttention
@@ -252,6 +253,7 @@ class StarStage:
                 knowledge: KnowledgePacket | None = None,
                 telemetry: StreamTelemetry | None = None,
                 episode: EpisodePacket | None = None,
+                continuity: ContinuityPacket | None = None,
                 turn: TurnAdvice | None = None) -> StagePlan | None:
         """Propose a short reaction; measured overload favors silence and gameplay."""
         current = _time(self._clock() if now is None else now)
@@ -261,6 +263,8 @@ class StarStage:
             raise TypeError("telemetry must be host-provided StreamTelemetry")
         if episode is not None and not isinstance(episode, EpisodePacket):
             raise TypeError("episode must be a host-approved EpisodePacket")
+        if continuity is not None and not isinstance(continuity, ContinuityPacket):
+            raise TypeError("continuity must be a trusted ContinuityPacket")
         if turn is not None and not isinstance(turn, TurnAdvice):
             raise TypeError("turn must be a host-provided TurnAdvice")
         # The host, not chat or a prompt, supplies validated GPU/FPS/voice data.
@@ -299,6 +303,10 @@ class StarStage:
                 "game_observation", "game_success", "viewer_question"
             }:
                 prompt += "\n" + episode.context_record
+            # Earlier sealed episodes belong in answers to viewer questions
+            # ONLY. Never narrate them over a current game emergency.
+            if continuity is not None and intent.kind == "viewer_question":
+                prompt += "\n" + continuity.context_record
             plan = StagePlan(
                 sequence=self._sequence, signal_id=intent.signal_id,
                 kind=intent.kind, evidence=intent.evidence,

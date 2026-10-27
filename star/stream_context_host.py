@@ -22,6 +22,7 @@ import time
 from .knowledge import KnowledgeStore
 from .stream_brain_governor import StreamBrainGovernor
 from .stream_episode import StreamEpisode
+from .stream_continuity import StreamContinuityVault
 from .stream_knowledge import public_knowledge_packet
 from .stream_stage import StagePlan
 from .stream_turntaking import TurnAdvice
@@ -43,6 +44,8 @@ class StreamContextHost:
         episode: StreamEpisode | None, project: str,
         public_note_ids: frozenset[int],
         public_action_ids: frozenset[str],
+        continuity: StreamContinuityVault | None = None,
+        public_continuity_action_ids: frozenset[str] = frozenset(),
         utc_clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         unix_clock: Callable[[], int] = lambda: int(time.time()),
     ) -> None:
@@ -52,8 +55,17 @@ class StreamContextHost:
             raise TypeError("knowledge must be an existing KnowledgeStore")
         if episode is not None and not isinstance(episode, StreamEpisode):
             raise TypeError("episode must be StreamEpisode or None")
+        if continuity is not None and not isinstance(continuity, StreamContinuityVault):
+            raise TypeError("continuity must be an approved StreamContinuityVault")
+        if (type(public_continuity_action_ids) is not frozenset
+                or len(public_continuity_action_ids) > 32
+                or any(type(x) is not str or _ID.fullmatch(x) is None
+                       for x in public_continuity_action_ids)):
+            raise ValueError("past-game action labels require a bounded owner allowlist")
         if type(project) is not str or _ID.fullmatch(project) is None:
             raise ValueError("project must be a bounded project name")
+        if continuity is not None and continuity.game_id != project:
+            raise ValueError("cross-project streaming memory requires a separate host")
         if (type(public_note_ids) is not frozenset or len(public_note_ids) > 128 or
                 any(type(x) is not int or x <= 0 for x in public_note_ids)):
             raise ValueError("public notes must be curated numeric IDs")
@@ -65,6 +77,8 @@ class StreamContextHost:
         self._governor = governor
         self._knowledge = knowledge
         self._episode = episode
+        self._continuity = continuity
+        self._past_actions = public_continuity_action_ids
         self._project = project
         self._note_ids = public_note_ids
         self._action_ids = public_action_ids
@@ -75,7 +89,8 @@ class StreamContextHost:
         self._enabled = False
         self._counts = {
             "prepared": 0, "silence": 0, "knowledge_candidates": 0,
-            "episode_candidates": 0, "retrieval_faults": 0,
+            "episode_candidates": 0, "continuity_candidates": 0,
+            "retrieval_faults": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -95,6 +110,7 @@ class StreamContextHost:
 
     def prepare(
         self, *, moderated_question: str | None = None,
+        include_past_experience: bool = False,
         voice_speaking: bool = False,
         viewer_speaking: bool = False,
         gameplay_critical: bool = False,
@@ -112,6 +128,8 @@ class StreamContextHost:
                 type(moderated_question) is not str
                 or not 1 <= len(moderated_question.strip()) <= 300):
             raise ValueError("moderated_question must contain 1..300 characters")
+        if type(include_past_experience) is not bool:
+            raise ValueError("past-game request flag must be an explicit host boolean")
         if get_ident() != self._owner_thread:
             raise RuntimeError("marshal context retrieval to the SQLite owner thread")
         with self._lock:
@@ -124,6 +142,7 @@ class StreamContextHost:
 
             public_facts = None
             public_episode = None
+            past_experience = None
             try:
                 if moderated_question is not None and self._note_ids:
                     public_facts = public_knowledge_packet(
@@ -138,6 +157,16 @@ class StreamContextHost:
                         public_action_ids=self._action_ids,
                         broadcast_approved=True, limit=3,
                     )
+                # The authorized host must explicitly classify a request for
+                # previous experience. Avoid adding irrelevant memory tokens
+                # to every viewer question (and avoid unsolicited disclosure).
+                if (include_past_experience and moderated_question is not None
+                        and self._continuity is not None and self._past_actions):
+                    past_experience = self._continuity.public_packet(
+                        now_unix_s=self._unix_clock(),
+                        public_action_ids=self._past_actions,
+                        broadcast_approved=True, limit=2,
+                    )
             except Exception:
                 # A broken note DB, UTC clock, or invalid episode state must
                 # not degrade into invented context or a partial disclosure.
@@ -150,6 +179,7 @@ class StreamContextHost:
                 viewer_speaking=viewer_speaking,
                 gameplay_critical=gameplay_critical, turn=turn,
                 knowledge=public_facts, episode=public_episode,
+                continuity=past_experience,
             )
             if result is None:
                 self._counts["silence"] += 1
@@ -162,6 +192,9 @@ class StreamContextHost:
                     public_episode is not None and result.kind in {
                         "viewer_question", "game_success", "game_observation"
                     }
+                )
+                self._counts["continuity_candidates"] += int(
+                    past_experience is not None and result.kind == "viewer_question"
                 )
             return result
 
