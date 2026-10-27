@@ -1,7 +1,8 @@
 """Make an image from Discord: "draw a dragon" in a DM or mention, or `/draw prompt:`.
 
-The picture is made exactly the way STAR Desktop's "Create image" makes it (`star.image_gen.generate`:
-ComfyUI on 127.0.0.1 with FLUX.2 klein 4B on this PC's graphics card), with the same checks. When
+The picture is made exactly the way STAR Desktop's chat makes it (`make_picture` below: the careful pipeline of
+`star.image_quality` when it is on in Settings, otherwise the single shot of `star.image_gen`; both on ComfyUI at
+127.0.0.1 on this PC's graphics card), with the same checks and the same Settings. When
 ComfyUI is not running, STAR starts the install it finds (the desktop's own launcher and search) and
 stops it again after a quiet spell, so the graphics memory goes back to games.
 
@@ -29,6 +30,7 @@ _LOG = logging.getLogger(__name__)
 MAX_DRAW_PROMPT = 1500          # the desktop's limit (image_gen.generate)
 MAX_DISCORD_FILE = 8 * 1024 * 1024
 IDLE_STOP_SECONDS = 600         # stop a ComfyUI that the bot started after 10 quiet minutes
+DEFAULT_TIMEOUT = 420           # the careful pipeline (rewrite, draw, judge, maybe a repair) takes 1.5 to 4 minutes
 START_WAIT_SECONDS = 240        # a cold start on a busy PC took over 120 s (2026-10-14); 25-28 s when warm
 TURN_ON_HINT = "Set STAR_DISCORD_DRAW=1 in ~/.star/discord-settings.env and restart the bot."
 NO_SUBJECT = ("What should I draw? Say what you want to see, for example "
@@ -46,7 +48,7 @@ def _flag(source, name: str, default: str) -> bool:
 class DrawSettings:
     enabled: bool = True            # owner-only by default, local GPU only
     anyone: bool = False            # also members of the approved server (never strangers' DMs)
-    timeout_seconds: int = 240
+    timeout_seconds: int = DEFAULT_TIMEOUT
     mentions: bool = False          # answer @STAR mentions in the approved server (needs guild messages)
     on_pc: bool = True              # False on a server (STAR_DISCORD_HOST=server): the PC GPU worker draws
 
@@ -54,7 +56,7 @@ class DrawSettings:
     def from_env(cls, env=None) -> "DrawSettings":
         from .local_config import bot_host
         source = os.environ if env is None else env
-        raw = str(source.get("STAR_DISCORD_DRAW_TIMEOUT", "240")).strip() or "240"
+        raw = str(source.get("STAR_DISCORD_DRAW_TIMEOUT", str(DEFAULT_TIMEOUT))).strip() or str(DEFAULT_TIMEOUT)
         if not raw.isdecimal() or not 30 <= int(raw) <= 900:
             raise ValueError("STAR_DISCORD_DRAW_TIMEOUT must be a number of seconds from 30 to 900")
         return cls(_flag(source, "STAR_DISCORD_DRAW", "1"), _flag(source, "STAR_DISCORD_DRAW_ANYONE", "0"),
@@ -178,6 +180,18 @@ class Drawing:
                           f"{self.width} x {self.height} · seed {self.seed}", max_chars=1900)
 
 
+def make_picture(settings, prompt: str, home: Path, *, size: str = "square", use_references: bool = False,
+                 cancel_event=None) -> dict:
+    """One text-to-image picture, the way the desktop chat makes it: the careful pipeline (rewrite, drafts, blind judge,
+    repair, exact text) when `image_quality` is on and the owner has no workflow of their own, else the single shot."""
+    from .. import image_gen, image_quality
+    if image_quality.enabled(settings) and not str(getattr(settings, "comfy_workflow", "") or "").strip():
+        return image_quality.generate_best(settings, prompt, home, size=size, use_references=use_references,
+                                           cancel_event=cancel_event)
+    return image_gen.generate(settings, prompt, home, size=size, use_references=use_references,
+                              cancel_event=cancel_event)
+
+
 def default_home() -> Path:
     return Path.home() / ".star" / "discord-images"
 
@@ -225,7 +239,7 @@ class Drawer:
         from .. import image_gen, media_actions
         if self._launcher is None:
             self._launcher = media_actions.ComfyLauncher()
-        return (self._generate or image_gen.generate, self._engine_status or image_gen.status,
+        return (self._generate or make_picture, self._engine_status or image_gen.status,
                 self._find_engine or media_actions.effective_comfy_home)
 
     async def _ensure_engine(self, settings, find, status, say) -> None:

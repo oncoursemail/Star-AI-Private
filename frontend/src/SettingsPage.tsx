@@ -8,7 +8,7 @@ import {ProviderPanel} from './IntegrationPanels'
 import {onBackendEvent} from './bridge'
 import {RobloxPanel} from './RobloxPanel'
 import {BlenderPanel} from './BlenderPanel'
-import {MediaPlaces} from './MediaPanel'
+import {ImageAbPanel,MediaPlaces} from './MediaPanel'
 import {VoiceSettings} from './VoiceSettings'
 import {DiscordSettings} from './DiscordSettings'
 import {StudioTargetSettings} from './StudioTargetSettings'
@@ -348,6 +348,9 @@ export function SettingsPage(props:SettingsPageProps) {
   creative:<>
    <Block id="media" keywords="image picture voice video where generate comfyui gpu">
      <MediaPlaces settings={data.settings} invoke={act} disabled={inactive} refresh={sync}/>
+   </Block>
+   <Block id="image-ab" keywords="picture quality blind test compare old new pipeline image better">
+     <ImageAbPanel invoke={act} disabled={inactive}/>
    </Block>
    <Block id="comfy" keywords="comfyui workflow image generation node port">
      <details className="settings-expander" open={props.imageMode||undefined}>
