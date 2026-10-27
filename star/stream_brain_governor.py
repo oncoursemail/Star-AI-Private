@@ -392,6 +392,16 @@ class StreamBrainGovernor:
             self._counts["audio_interrupted"] += 1
             return True
 
+    def session_generation(self) -> int:
+        """Session-scoped host token, invalid after disable/re-enable."""
+        with self._lock:
+            return self._generation if self._enabled else -1
+
+    def prepared_plan(self, plan: StagePlan) -> bool:
+        """Only the exact active, unqueued StagePlan may consume a preview."""
+        with self._lock:
+            return self._enabled and self._stage.prepared(plan)
+
     def status(self) -> dict[str, object]:
         """Anonymous health counters only, never audience or prompt contents."""
         with self._lock:
