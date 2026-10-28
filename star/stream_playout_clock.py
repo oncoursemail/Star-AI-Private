@@ -272,6 +272,14 @@ class StarPlayoutClock:
                 return False
             return True
 
+    def duration_if_armed(self, plan: StagePlan) -> float | None:
+        """Return the exact active audio-track duration, never inferred from TTS."""
+        with self._lock:
+            if (not self._enabled or self._plan is not plan
+                    or not self._stage.current(plan)):
+                return None
+            return self._duration
+
     def metrics(self) -> dict[str, object]:
         """Only aggregate counts and the current phase; no audio or chat data."""
         with self._lock:
