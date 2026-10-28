@@ -26,6 +26,7 @@ from pathlib import Path
 
 from . import instant
 from .loop import runner as loop_runner
+from .speed import hook as speed
 
 VERSION = "3"
 FAST, DEEP = "litha", "litha-deep"
@@ -95,6 +96,7 @@ DEFAULTS = {
     "docs_timeout_s": 0.15,           # late = no docs (the answer never waits longer than this for them)
     "docs_budget": 500,               # tokens
     "context_budget": 900,            # docs + verified-answer grounding together; docs get what grounding leaves
+    **speed.DEFAULTS,                 # parallel sections (server/mesh/speed/), off by default
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -747,6 +749,9 @@ class Router:
                         req["messages"] = instant.grounded_messages(req["messages"], refs)
                         self.counters["ground_used"] += 1
                         ground_hdr["X-Mesh-Ground-Ids"] = ",".join(str(r["id"]) for r in refs)
+        # parallel sections (server/mesh/speed/hook.py): only once the cache has said no (or cannot answer)
+        if model == FAST and stream and (decided or not question) and                 await speed.try_sections(self, path, headers, req, conv, writer, t0, {**cache_hdr, **ground_hdr}):
+            return
 
         if model == FAST:
             cache_hdr.update(await self.docs_inject(req, headers))

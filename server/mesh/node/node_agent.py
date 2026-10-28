@@ -65,7 +65,9 @@ DEFAULTS: dict = {
     "load_timeout_seconds": 300,
     "need_free_vram_mb": 0,                     # free video memory needed to load (0 = do not check)
     "ngl_ladder": [],                           # [[ngl, own_mb], ...] best first (own_mb = measured card memory of
-                                                # the model at that -ngl); the first step that leaves
+                                                # the model at that -ngl; a step may add args, [ngl, own_mb,
+                                                # ["--model-draft", "x.gguf"]], ngl 100 = all layers ranked above a
+                                                # plain 99 step); the first step that leaves
     "vram_reserve_mb": 1536,                    # this much free for the owner's apps once loaded; none fits = busy
     "min_free_loaded_mb": 800,                  # loaded and less free than this: step down the ladder or unload
     "drain_seconds": 30,                        # memory-pressure reload/unload waits this long for answers in flight
@@ -310,36 +312,62 @@ def program_reason(config: dict, procs: dict[int, str], own: set[int], exe_path,
 
 
 # ---- the model server ----------------------------------------------------------------------------------------------
-def pick_ngl(config: dict, free_mb: int) -> int | None:
-    """The highest -ngl from `ngl_ladder` whose model still leaves `vram_reserve_mb` free on a card with `free_mb`
-    free now; 0 = none fits; None = no ladder (llama_args as written)."""
+def pick_step(config: dict, free_mb: int) -> int | None:
+    """Index of the first `ngl_ladder` step (best first) whose model still leaves `vram_reserve_mb` free on a card
+    with `free_mb` free now; -1 = none fits; None = no ladder (llama_args as written). Steps are ordered by
+    preference, so an -ngl may appear twice (e.g. 46 with a draft model above 46 without)."""
     ladder = config.get("ngl_ladder") or []
     reserve = int(config.get("vram_reserve_mb") or 0)
-    for ngl, own in ladder:
+    for i, (ngl, own, *_) in enumerate(ladder):
         if free_mb - int(own) >= reserve:
-            return int(ngl)
-    return 0 if ladder else None
+            return i
+    return -1 if ladder else None
+
+
+def pick_ngl(config: dict, free_mb: int) -> int | None:
+    """The -ngl of `pick_step`; 0 = none fits; None = no ladder."""
+    i = pick_step(config, free_mb)
+    return None if i is None else 0 if i < 0 else int(config["ngl_ladder"][i][0])
+
+
+def step_label(config: dict, step: int | None) -> str:
+    if step is None or step < 0:
+        return "ngl as written"
+    s = config["ngl_ladder"][step]
+    return f"ngl {s[0]}" + (" + draft" if len(s) > 2 and s[2] else "")
 
 
 def need_mb(config: dict) -> int:
     ladder = config.get("ngl_ladder") or []
     if ladder:
-        return min(int(own) for _, own in ladder) + int(config.get("vram_reserve_mb") or 0)
+        return min(int(step[1]) for step in ladder) + int(config.get("vram_reserve_mb") or 0)
     return int(config.get("need_free_vram_mb") or 0)
 
 
-def llama_argv(config: dict, home: Path, ngl: int | None = None) -> list[str]:
+def llama_argv(config: dict, home: Path, ngl: int | None = None, step: int | None = None) -> list[str]:
     exe, model = resolve(home, config["llama_server"]), resolve(home, config["model_path"])
     if exe.name.lower() not in ("llama-server.exe", "llama-server") or not exe.is_file():
         raise ValueError(f"llama-server was not found at {exe}")
     if model.suffix.lower() != ".gguf" or not model.is_file():
         raise ValueError(f"the model file was not found at {model}")
     args = [str(a) for a in config.get("llama_args", [])]
+    ladder = config.get("ngl_ladder") or []
+    if step is not None and 0 <= step < len(ladder):
+        ngl = int(ladder[step][0])
     if ngl:
         if "-ngl" in args[:-1]:
             args[args.index("-ngl") + 1] = str(ngl)
         else:
             args += ["-ngl", str(ngl)]
+        # a ladder step may carry extra llama-server args (e.g. a speculative draft model): [ngl, own_mb, [args]] or
+        # [ngl, own_mb, "name"] for config["step_args"]["name"]; when a file they name is missing, the step loads
+        # without them (same layers, no draft)
+        st = ladder[step] if step is not None and 0 <= step < len(ladder) else             next((s for s in ladder if int(s[0]) == ngl), None)
+        st = st if st is not None and len(st) > 2 else None
+        more = (config.get("step_args") or {}).get(st[2], []) if st and isinstance(st[2], str) else (st[2] if st else [])
+        extras = [str(resolve(home, a)) if str(a).lower().endswith(".gguf") else str(a) for a in more]
+        if all(Path(a).is_file() for a in extras if a.lower().endswith(".gguf")):
+            args += extras
     return [str(exe), "-m", str(model), "--alias", str(config["model_id"]), "--host", "127.0.0.1",
             "--port", str(int(config["internal_port"])), "-c", str(int(config["ctx"])), *args]
 
@@ -394,6 +422,8 @@ def kill_leftover(home: Path) -> None:
 def slot_ctx(config: dict) -> int:
     """Context per request: llama-server splits -c over its -np slots."""
     args = [str(a) for a in config.get("llama_args", [])]
+    if "-kvu" in args or "--kv-unified" in args:         # one KV pool shared by the slots: each may use all of it
+        return int(config["ctx"])
     for flag in ("-np", "--parallel"):
         if flag in args[:-1]:
             try:
@@ -462,6 +492,7 @@ class Node:
         self.last_gpu: dict | None = None
         self.load_started = 0.0
         self.ngl: int | None = None
+        self.step: int | None = None                        # index in ngl_ladder of the loaded step
         self.step_to = 0
         self.draining: tuple[float, str] | None = None     # (since, why): no new requests, answers in flight finish
         self.wake = threading.Event()                       # the last drained answer ended: act without the poll wait
@@ -521,9 +552,9 @@ class Node:
                 return f"other programs took {grown} MB more graphics memory"
             free, low = free_of(gpu), int(self.config.get("min_free_loaded_mb") or 0)
             if low and free < low:
-                lower = pick_ngl(self.config, free + self.own_mb)
-                if lower and self.ngl and lower < self.ngl:
-                    self.step_to = lower                    # tick reloads with fewer layers at once
+                lower = pick_step(self.config, free + self.own_mb)
+                if lower is not None and self.step is not None and lower > self.step >= 0:
+                    self.step_to = lower                    # tick reloads with a smaller step at once (index > 0)
                     return ""
                 return f"only {free} MB of graphics memory is free while loaded (others need it)"
         elif not self.loading:
@@ -568,12 +599,13 @@ class Node:
                 self._set("busy", reason)
                 return
             if self.step_to and self.ready and gpu and self.in_flight > 0 and not waited:
-                return self._drain(now, f"step down to ngl {self.step_to}")
+                return self._drain(now, f"step down to {step_label(self.config, self.step_to)}")
             if self.step_to and self.ready and gpu:
                 lower, self.step_to = self.step_to, 0
-                self._log(f"step down: ngl {self.ngl} -> {lower} ({free_of(gpu)} MB free while loaded)")
+                self._log(f"step down: {step_label(self.config, self.step)} -> {step_label(self.config, lower)} "
+                          f"({free_of(gpu)} MB free while loaded)")
                 freed = dict(gpu, used=gpu["used"] - self.own_mb, free=free_of(gpu) + self.own_mb)
-                self._stop(f"step down to ngl {lower}")
+                self._stop(f"step down to {step_label(self.config, lower)}")
                 self.start_load(freed)
                 return
             if self.was_busy:
@@ -615,9 +647,10 @@ class Node:
             if self.ready or self.loading:
                 return True, "already loaded" if self.ready else "already loading"
             gpu = gpu if gpu is not None else self._gpu()
+            self.step = pick_step(self.config, free_of(gpu)) if gpu else None
             self.ngl = pick_ngl(self.config, free_of(gpu)) if gpu else None
             try:
-                argv = llama_argv(self.config, self.home, self.ngl)
+                argv = llama_argv(self.config, self.home, self.ngl, self.step)
             except ValueError as exc:
                 self.failed_at = self._clock()
                 self._set("away", f"failed: {exc}")
@@ -673,7 +706,7 @@ class Node:
                     self.loading, self.ready = False, True
                     self.quiet_until = self._clock() + 3.0
                     self._set("idle", "model loaded")
-                    self._log(f"loaded (ngl {self.ngl}) in {self._clock() - self.load_started:.0f} s, {self.tok_s} tok/s gen, "
+                    self._log(f"loaded ({step_label(self.config, self.step)}) in {self._clock() - self.load_started:.0f} s, {self.tok_s} tok/s gen, "
                               f"{self.prompt_tok_s} tok/s prompt, {self.own_mb} MB on the card")
                 return
             if self._background:
