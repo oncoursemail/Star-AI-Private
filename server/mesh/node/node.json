@@ -1,0 +1,12 @@
+{
+  "node": "",
+  "llama_server": "engine/llama-server.exe",
+  "model_path": "models/gemma-4-12b-it-qat-q4_0.gguf",
+  "model_id": "litha-fast",
+  "ctx": 8192,
+  "llama_args": ["--fit", "off", "-ngl", "46", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-t", "4", "-np", "1", "--jinja"],
+  "need_free_vram_mb": 5800,
+  "autoload": true,
+  "resume_seconds": 180,
+  "poll_seconds": 2.5
+}
