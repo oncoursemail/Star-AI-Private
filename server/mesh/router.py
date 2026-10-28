@@ -822,12 +822,16 @@ class Router:
         body = {k: v for k, v in req.items() if k not in instant.MESH_FIELDS + ("wait", "stream_options")}
         body.update(model=mid, stream=False, max_tokens=self.cfg["prefetch_max_tokens"], cache_prompt=True)
         t0 = time.monotonic()
-        up = await open_upstream(url + "/chat/completions", "POST", json.dumps(body).encode(),
-                                 self._headers_for(backend, auth), idle_s=60)
         try:
-            raw = await asyncio.wait_for(up.body(), 60)
-        finally:
-            up.close()
+            up = await open_upstream(url + "/chat/completions", "POST", json.dumps(body).encode(),
+                                     self._headers_for(backend, auth), idle_s=60)
+            try:
+                raw = await asyncio.wait_for(up.body(), 60)
+            finally:
+                up.close()
+        except (UpstreamError, asyncio.TimeoutError) as e:
+            self.counters["prefetch_failed"] += 1
+            return {"backend": backend.name, "skipped": f"failed: {str(e)[:80] or type(e).__name__}"}
         if up.status != 200:
             self.counters["prefetch_failed"] += 1
             return {"backend": backend.name, "skipped": f"HTTP {up.status}"}
