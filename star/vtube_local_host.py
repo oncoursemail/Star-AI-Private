@@ -84,6 +84,12 @@ class VTubeLocalHost:
         with self._lock:
             return self._socket is not None
 
+    @property
+    def ready(self) -> bool:
+        """Authenticated session with required custom inputs registered."""
+        with self._lock:
+            return self._socket is not None and self._registered
+
     def _close_locked(self) -> None:
         sock, self._socket = self._socket, None
         self._registered = False
@@ -241,6 +247,30 @@ class VTubeLocalHost:
             # emitted as though it were synchronized to audible speech.
             dispatch_age_ms = self._monotonic() * 1000.0 - sampled_ms
             if not 0 <= dispatch_age_ms <= 100 or not self._stage.current(plan):
+                return False
+            self._exchange(packet["messageType"], packet["data"])
+            return True
+
+    def send_silence(
+        self, plan: Any, *, playback_epoch: str,
+        sampled_ms: float, host_reports_no_fresh_playback: bool = False,
+    ) -> bool:
+        """Issue one neutral hold when device evidence pauses, without unbinding."""
+        with self._lock:
+            if self._socket is None or not self._registered:
+                raise VTSHostError("VTube Studio parameters are not registered")
+            now_ms = self._monotonic() * 1000.0
+            if (type(sampled_ms) not in (int, float)
+                    or not 0 <= now_ms - sampled_ms <= 100
+                    or not self._stage.current(plan)):
+                return False
+            packet = self._bridge.hold_silence(
+                plan, playback_epoch=playback_epoch, sampled_ms=sampled_ms,
+                host_reports_no_fresh_playback=host_reports_no_fresh_playback,
+            )
+            if packet is None:
+                return False
+            if not self._stage.current(plan):
                 return False
             self._exchange(packet["messageType"], packet["data"])
             return True
