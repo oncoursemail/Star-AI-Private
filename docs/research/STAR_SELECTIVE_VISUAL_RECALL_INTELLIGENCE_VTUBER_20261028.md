@@ -8,9 +8,9 @@ changes, but comparing only an immediately preceding frame misses context: when
 did an obstacle first appear, what did the HUD look like before a failed jump,
 and did a menu change persist across several frames?
 
-New \`star.stream_visual_recall.VisualRecallHost\` is an optional wrapper for an
-**already-authorized** \`trusted_worker\`. It preserves that worker's
-\`CapturedVisionFrame -> WorkerReport\` behavior and adds a small **RAM-only
+New `star.stream_visual_recall.VisualRecallHost` is an optional wrapper for an
+**already-authorized** `trusted_worker`. It preserves that worker's
+`CapturedVisionFrame -> WorkerReport` behavior and adds a small **RAM-only
 visual history** following *successful worker reports*. The host can query
 metadata-only bookmarks and request an older frame's *host-selected crop*.
 The crop can then become context for a separately approved local vision task.
@@ -33,7 +33,7 @@ a model, automatic inference, or broadcast permission.
 
 ### Host integration (no automatic rollout)
 
-\`\`\`python
+```python
 from star.stream_local_vlm import LocalLlamaComparisonWorker
 from star.stream_visual_recall import VisualRecallHost
 
@@ -49,7 +49,7 @@ history.enable(owner_approved=True, game_capture_approved=True)
 # Pass history as the existing capture host's trusted_worker.
 # A host-only "inspect older observation" tool can call recent() and inspect().
 # After use: crop.erase(). At end of session: history.disable(); vision.disable().
-\`\`\`
+```
 
 The current pull request does not configure that live host, install an actual
 supported visual model, or publish images. Historical JPEGs are **lossy,
