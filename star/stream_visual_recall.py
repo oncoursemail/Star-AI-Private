@@ -155,6 +155,17 @@ class VisualRecallHost:
         while self._entries and now - self._entries[0].bookmark.captured_ms > self._ttl_ms:
             self._entries.popleft().erase()
             self._counts["expired"] += 1
+        # Inspection handles are copies of past pixels: expire them too.
+        # Their access order is unrelated to capture timestamps, so filter
+        # every handle instead of assuming the deque is time-ordered.
+        kept: deque[InspectedCrop] = deque()
+        while self._outstanding:
+            crop = self._outstanding.popleft()
+            if now - crop.captured_ms > self._ttl_ms:
+                crop.erase()
+            else:
+                kept.append(crop)
+        self._outstanding = kept
 
     def _encoded(self, frame: CapturedVisionFrame) -> bytearray:
         if type(frame) is not CapturedVisionFrame:
