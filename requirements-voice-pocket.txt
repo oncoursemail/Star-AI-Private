@@ -1,0 +1,5 @@
+# Optional Kyutai CPU streaming TTS engine; not installed by Star's default voice requirements.
+# Tested API target: https://github.com/kyutai-labs/pocket-tts/releases/tag/v4.0.1
+# For Linux CPU-only PyTorch wheels follow Kyutai's official install instructions;
+# default pip may fetch enormous CUDA dependencies. Never auto-install during streams.
+pocket-tts==4.0.1

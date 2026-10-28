@@ -376,7 +376,15 @@ def make_asr(name: str = "faster-whisper", model: str = "", device: str = "auto"
 
 
 def make_tts(name: str = "kokoro", voice: str = "", speed: float = 0.92, device: str = "auto", lang: str = "en-us",
-             gap_ms: int = 0, pitch_semitones: float = 0.0):
+             gap_ms: int = 0, pitch_semitones: float = 0.0, *,
+             pocket_model: str = "english_18m_2026-10"):
+    if name == "pocket":
+        from .pocket import PocketStreamingTTS
+        if speed != 1.0 or pitch_semitones != 0.0 or lang != "en-us":
+            raise ValueError("Pocket TTS requires native speed/pitch and English")
+        if device not in ("auto", "cpu"):
+            raise ValueError("Pocket TTS in Star's voice adapter is CPU-only")
+        return PocketStreamingTTS(voice or "alba", model=pocket_model, gap_ms=gap_ms)
     if name == "kokoro":
         return KokoroTTS(voice or "heart", speed=speed, device=device, lang=lang, gap_ms=gap_ms,
                          pitch_semitones=pitch_semitones)

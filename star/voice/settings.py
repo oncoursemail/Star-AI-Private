@@ -14,7 +14,7 @@ from .call import CallConfig
 from .catalog import STYLE_IDS
 from .turn import TurnConfig
 
-TTS_ENGINES = ("kokoro",)
+TTS_ENGINES = ("kokoro", "pocket")
 TTS_LANGS = ("en-us", "en-gb")
 ASR_ENGINES = ("faster-whisper",)
 ASR_MODELS = ("auto", "tiny.en", "base.en", "small.en", "medium.en", "distil-large-v3", "large-v3-turbo",
@@ -36,6 +36,7 @@ _VOICE_ID = re.compile(r"^[A-Za-z0-9_.:+\-]{1,120}$")
 @dataclass
 class VoiceSettings:
     tts_engine: str = "kokoro"
+    pocket_model: str = "english_18m_2026-10"  # opt-in CPU TTS candidate
     voice: str = STAR_VOICE              # id from the audition page, or an engine-specific recipe
     speed: float = STAR_SPEED            # slower than neutral: calmer, mum-like
     voice_style: str = "warm-caring"     # speaking manner: warm-caring | confident-commanding | anime-bright
@@ -63,6 +64,17 @@ class VoiceSettings:
     system_extra: str = ""
 
     def validate(self) -> "VoiceSettings":
+        from .pocket import POCKET_MODELS, POCKET_VOICES
+
+        if self.pocket_model not in POCKET_MODELS:
+            raise ValueError("Unknown Pocket TTS model")
+        if self.tts_engine == "pocket":
+            if self.voice not in POCKET_VOICES or self.voice_id:
+                raise ValueError("Pocket TTS requires a named stock voice and empty voice_id")
+            if self.speed != 1.0 or self.pitch_semitones != 0.0 or self.tts_lang != "en-us":
+                raise ValueError("Pocket TTS does not support independent speed, pitch or language settings")
+            if self.device == "cuda":
+                raise ValueError("Pocket TTS in Star's voice adapter is CPU-only")
         checks = [(self.tts_engine in TTS_ENGINES, "Unknown text-to-speech engine"),
                   (bool(_VOICE_ID.match(self.voice)), "Invalid voice id"),
                   (0.6 <= float(self.speed) <= 1.4, "Speed must be between 0.6 and 1.4"),

@@ -38,10 +38,12 @@ class Engines:
         asr = timed("Loading speech recognition",
                     lambda: engines.make_asr(settings.asr_engine, settings.asr_model, settings.device,
                                              settings.asr_prompt))
+        tts_kwargs = ({"pocket_model": settings.pocket_model}
+                      if settings.tts_engine == "pocket" else {})
         tts = timed("Loading Star's voice",
                     lambda: engines.make_tts(settings.tts_engine, settings.voice, settings.speed, settings.device,
                                              lang=settings.tts_lang, gap_ms=settings.sentence_gap_ms,
-                                             pitch_semitones=settings.pitch_semitones))
+                                             pitch_semitones=settings.pitch_semitones, **tts_kwargs))
 
         def warm() -> None:
             if hasattr(tts, "warm_up"):
