@@ -38,6 +38,8 @@ DEFAULTS = {
     "fix_timeout_s": 180,
     "client_keys_file": "/etc/star-mesh/api_keys",
     "max_body_kb": 512,
+    "docs_url": "http://127.0.0.1:8102",      # official docs entries for the fix loop ("" = off)
+    "docs_timeout_s": 1.0,
 }
 
 
@@ -63,7 +65,23 @@ def model_caller(cfg: dict, auth: str):
     return call
 
 
-def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_caller):
+def docs_lookup(cfg: dict, auth: str):
+    """docs(names) -> exact entries text from the docs service ('' when off, down or late)."""
+    def docs(names):
+        if not cfg.get("docs_url") or not names:
+            return ""
+        req = urllib.request.Request(cfg["docs_url"].rstrip("/") + "/mesh/docs/entries",
+                                     json.dumps({"names": list(names)}).encode(),
+                                     {"Content-Type": "application/json", "Authorization": auth})
+        try:
+            with urllib.request.urlopen(req, timeout=cfg["docs_timeout_s"]) as r:
+                return json.loads(r.read()).get("text") or ""
+        except (OSError, ValueError):
+            return ""
+    return docs
+
+
+def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_caller, docs_factory=docs_lookup):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "star-verify/1"
@@ -108,7 +126,8 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
             if not fix:
                 return self._send(200, verifier.verify(text, lang))
             rounds = max(1, min(int(req.get("rounds") or cfg["fix_rounds"]), cfg["fix_rounds"]))
-            return self._send(200, verifier.fix(text, caller_factory(cfg, auth), lang, rounds))
+            docs = docs_factory(cfg, auth) if req.get("docs") is not False else None
+            return self._send(200, verifier.fix(text, caller_factory(cfg, auth), lang, rounds, docs))
 
     return Handler
 
