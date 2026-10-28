@@ -205,3 +205,21 @@ def test_direct_unvalidated_constructor_cannot_inject_truth_or_stale_success():
     row = valid_row()
     row["candidate"]["findings"][0]["kind"] = "unknown"
     assert VisionEvalCase.from_dict(row).candidate.labels == ()
+
+
+def test_fast_but_equally_useless_model_does_not_earn_manual_pilot():
+    empty = [case(i, b=predicted(latency=100), c=predicted(latency=40))
+             for i in range(100)]
+    report = compare_vision(empty)
+    assert report.baseline.f1 == report.candidate.f1 == 0
+    assert report.verdict == "inconclusive"
+
+
+def test_zero_latency_is_not_evidence_of_a_real_speedup():
+    rows = [case(i,
+                 b=predicted(*(["hud_change"] if i % 2 == 0 else []), latency=0),
+                 c=predicted(*(["hud_change"] if i % 2 == 0 else []), latency=0))
+            for i in range(100)]
+    report = compare_vision(rows)
+    assert report.candidate.f1 == 1
+    assert report.verdict == "inconclusive"

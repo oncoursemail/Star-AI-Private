@@ -52,7 +52,12 @@ Scoring drops late visual guesses. A deterministic paired bootstrap estimates
 uncertainty. At least 60 independent frame pairs, 12 positive and 12 negative
 examples, non-inferior cue accuracy and no worse false-alert/failure/stale
 rates plus at least 10% lower p95 latency are needed for a *manual-pilot*
-recommendation. Nothing deploys or switches models automatically. Failures
+recommendation. Absolute candidate floors also apply: F1 >= 0.80, precision
+>= 0.85, recall >= 0.75, false-alert rate <= 0.10, stale rate <= 0.05,
+failure rate <= 0.05, and nonzero baseline latency. A useless baseline
+must not let a faster but useless candidate pass. These provisional default
+floors are not calibrated accuracy certifications.
+Nothing deploys or switches models automatically. Failures
 remain visible in the report instead of being hidden behind averages.
 
 No screenshots, game video, player information, secrets, free-form model

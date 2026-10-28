@@ -321,6 +321,15 @@ def compare_vision(
           or candidate.p95_latency_ms > baseline.p95_latency_ms * 1.10):
         verdict = "regressed"
     elif (ci[0] >= -.03
+          # Noninferiority to a broken baseline must never pass. These are
+          # conservative default manual-pilot floors, not model certifications.
+          and candidate.f1 >= .80
+          and candidate.precision >= .85
+          and candidate.recall >= .75
+          and candidate.false_alert_rate <= .10
+          and candidate.stale_rate <= .05
+          and candidate.failed_rate <= .05
+          and baseline.p95_latency_ms > 0
           and candidate.false_alert_rate <= baseline.false_alert_rate
           and candidate.stale_rate <= baseline.stale_rate
           and candidate.failed_rate <= baseline.failed_rate
