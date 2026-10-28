@@ -1183,7 +1183,7 @@ class Router:
         self.counters["cache_hit"] += 1
         self.cache.hit(row["id"])
         if time.time() - row["verified_at"] > self.cfg["cache_reverify_s"]:
-            asyncio.get_running_loop().create_task(self._reverify(row["id"], row["answer"]))
+            asyncio.get_running_loop().create_task(self._reverify(dict(row)))
         hdr = {"X-Mesh-Backend": "cache", "X-Mesh-Cache": "hit", "X-Mesh-Cache-Match": how,
                "X-Mesh-Cache-Id": str(row["id"]), "X-Mesh-Cache-Ms": str(lookup_ms)}
         if sim is not None:
@@ -1199,12 +1199,14 @@ class Router:
                                "chosen": "cache", "entry": row["id"], "outcome": "ok", "stage2": stage2 or None,
                                "total_ms": round((time.monotonic() - t0) * 1000, 1)})
 
-    async def _reverify(self, rid: int, answer: str):
-        ok = await self.verify_ok(answer)
+    async def _reverify(self, snapshot: dict):
+        cache = self.cache
+        if cache is None:
+            return
+        ok = await self.verify_ok(snapshot["answer"])
         if ok is True:
-            self.cache.reverified(rid)
-        elif ok is False:
-            self.cache.delete(rid)
+            cache.reverified_if_current(snapshot)
+        elif ok is False and cache.delete_if_current(snapshot):
             self.counters["cache_dropped_on_reverify"] += 1
 
     async def cache_api(self, method: str, headers: dict, body: bytes) -> tuple[int, dict]:
