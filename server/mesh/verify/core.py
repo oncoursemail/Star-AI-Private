@@ -120,8 +120,9 @@ class Verifier:
                 "ms": round((time.perf_counter() - t0) * 1000, 1),
                 "dump": {k: self.api.meta.get(k) for k in ("version", "fetched")}}
 
-    def fix(self, text: str, call_model, language: str | None = None, rounds: int = 2) -> dict:
-        """Repair the blocks that need it with `call_model(messages) -> str`, re-verify, at most `rounds` times."""
+    def fix(self, text: str, call_model, language: str | None = None, rounds: int = 2, docs=None) -> dict:
+        """Repair the blocks that need it with `call_model(messages) -> str`, re-verify, at most `rounds` times.
+        `docs(names) -> str` (optional): the official docs entries for the flagged names, given to the model."""
         t0 = time.perf_counter()
         first = report = self.verify(text, language)
         changes, done, model_ms = [], 0, 0.0
@@ -141,7 +142,8 @@ class Verifier:
                 span = spans[b["index"]]
                 t1 = time.perf_counter()
                 try:
-                    reply = call_model(fix_messages(span["code"], b["language"], b["problems"]))
+                    ref = docs(problem_names(b["problems"])) if docs else ""
+                    reply = call_model(fix_messages(span["code"], b["language"], b["problems"], ref))
                 except Exception as e:     # model unreachable: keep the answer, report it
                     changes.append({"round": rnd, "block": b["index"], "error": f"fix call failed: {e}"})
                     continue
@@ -195,7 +197,28 @@ FIX_SYSTEM = ("You repair code. You get one code block and a list of problems fo
 FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction"}
 
 
-def fix_messages(code: str, language: str, problems: list[dict]) -> list[dict]:
+HINT_OWNER = re.compile(r"'(\w+)' is an? (?:event|method|property) of ([\w, ]+?), not of")
+
+
+def problem_names(problems: list[dict]) -> list[str]:
+    """API names worth looking up in the docs for these problems: the flagged name, its suggestions and the class the
+    hint says the member really belongs to (PlayerRemoving -> Players.PlayerRemoving)."""
+    out = []
+    for p in problems:
+        if p["severity"] == "info":
+            continue
+        names = [p.get("name")] + (p.get("suggestion") or "").split(" or ")
+        m = HINT_OWNER.search(p.get("hint") or p.get("message") or "")
+        if m:
+            names += [f"{c.strip()}.{m.group(1)}" for c in m.group(2).split(",")]
+        for n in names:
+            n = (n or "").strip()
+            if n and n not in out and not is_placeholder(n):
+                out.append(n)
+    return out[:12]
+
+
+def fix_messages(code: str, language: str, problems: list[dict], docs: str = "") -> list[dict]:
     lines = []
     for p in problems:
         if p["severity"] == "info":
@@ -207,9 +230,10 @@ def fix_messages(code: str, language: str, problems: list[dict]) -> list[dict]:
             s += f"\n  real members of that class you may use: {', '.join(p['candidates'])}"
         lines.append(s)
     tag = FENCE_TAG.get(language, language or "")
+    ref = ("\n\nOfficial docs for these names (exact signatures; follow them):\n" + docs) if docs else ""
     return [{"role": "system", "content": FIX_SYSTEM},
             {"role": "user", "content": f"Language: {language}\n\nCode:\n```{tag}\n{code.rstrip()}\n```\n\n"
-                                        "Problems:\n" + "\n".join(lines)}]
+                                        "Problems:\n" + "\n".join(lines) + ref}]
 
 
 def code_from_reply(reply: str, old: str) -> str:

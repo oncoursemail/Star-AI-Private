@@ -89,6 +89,12 @@ DEFAULTS = {
                                       # starts (grounding changes the prompt; a one-slot node cannot judge while it
                                       # answers); late = no grounding, the lookup goes on in parallel
     **loop_runner.LOOP_DEFAULTS,      # best-of-2 + verified pick + hidden tool loop (server/mesh/loop), opt-in per request
+    # official docs (server/mesh/docs, :8102): a compact block of exact API entries in front of Litha questions
+    "docs": True,
+    "docs_url": "http://127.0.0.1:8102",
+    "docs_timeout_s": 0.15,           # late = no docs (the answer never waits longer than this for them)
+    "docs_budget": 500,               # tokens
+    "context_budget": 900,            # docs + verified-answer grounding together; docs get what grounding leaves
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -626,6 +632,8 @@ class Router:
             return await send_json(writer, *await self.prefetch(body, headers))
         if path == "/mesh/verify":
             return await self.forward(self.cfg["verify_url"], method, path, headers, body, writer)
+        if path in ("/mesh/docs", "/mesh/docs/block", "/mesh/docs/entries"):
+            return await self.forward(self.cfg["docs_url"], method, path, headers, body, writer)
         if path == "/mesh/cache":
             return await send_json(writer, *await self.cache_api(method, headers, body))
         if method == "POST" and path in ("/v1/chat/completions", "/v1/completions"):
@@ -740,6 +748,9 @@ class Router:
                         self.counters["ground_used"] += 1
                         ground_hdr["X-Mesh-Ground-Ids"] = ",".join(str(r["id"]) for r in refs)
 
+        if model == FAST:
+            cache_hdr.update(await self.docs_inject(req, headers))
+
         def body_for(mid):
             return json.dumps({**req, "model": mid}).encode()
 
@@ -753,6 +764,8 @@ class Router:
         if ground_hdr:
             log["ground"] = ground_hdr.get("X-Mesh-Ground-Ids") or ground_hdr["X-Mesh-Ground"]
             cache_hdr.update(ground_hdr)
+        if "X-Mesh-Docs" in cache_hdr:
+            log["docs"] = cache_hdr["X-Mesh-Docs"]
         self.decisions.append(log)
         # the semantic cache lookup (an embedding round trip) runs while the backend starts: a hit before the first
         # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
@@ -1042,6 +1055,54 @@ class Router:
         except (UpstreamError, asyncio.TimeoutError) as e:
             return await send_json(writer, 502, err(f"verifier: {e}", "server_error"))
         return await send_raw(writer, up.status, up.headers.get("content-type", "application/json"), data)
+
+    async def docs_inject(self, req: dict, headers: dict) -> dict:
+        """Litha: the docs service's block (exact API entries + maybe one guide passage) goes in front of the user's
+        question; the system prompt stays the cached prefix. Returns the X-Mesh-Docs header ({} = no docs: off, not a
+        plain chat turn, nothing relevant, or the service was late or down; never waits longer than docs_timeout_s)."""
+        asked = req.pop("mesh_docs", None)
+        if not self.cfg["docs"] or asked is False or headers.get("x-mesh-docs", "").lower() in ("off", "0", "no"):
+            return {}
+        msgs = req.get("messages")
+        if not isinstance(msgs, list) or not msgs or not isinstance(msgs[-1], dict) or \
+                msgs[-1].get("role") != "user" or not isinstance(msgs[-1].get("content"), str) or \
+                any(req.get(k) for k in ("tools", "functions", "response_format", "grammar", "json_schema")):
+            return {}
+        content = msgs[-1]["content"]
+        # one injection point with the verified-answer grounding (instant.grounded_messages): its references stay
+        # first, the docs go right before its "---\nQuestion:" line, and both share context_budget (grounding first)
+        refs, sep, question = content.rpartition("\n---\nQuestion: ")
+        if not sep:
+            refs, question = "", content
+        budget = min(self.cfg["docs_budget"], self.cfg["context_budget"] - round(len(refs) / 3.6))
+        if budget < 80:
+            return {"X-Mesh-Docs": "no room"}
+        extra = "\n".join(m["content"] for m in msgs[:-1] if isinstance(m, dict) and m.get("role") in
+                          ("user", "assistant") and isinstance(m.get("content"), str))[-6000:]
+        system = msgs[0].get("content") if isinstance(msgs[0], dict) and msgs[0].get("role") == "system" else ""
+        body = json.dumps({"question": question, "extra": extra, "budget": budget,
+                           "context": system[-300:] if isinstance(system, str) else ""}).encode()
+        t0 = time.monotonic()
+        try:
+            up = await open_upstream(self.cfg["docs_url"].rstrip("/") + "/mesh/docs/block", "POST", body,
+                                     {"Content-Type": "application/json",
+                                      "Authorization": f"Bearer {self.keys.first()}"},
+                                     connect_s=self.cfg["docs_timeout_s"], idle_s=self.cfg["docs_timeout_s"])
+            try:
+                raw = await asyncio.wait_for(up.body(), self.cfg["docs_timeout_s"])
+            finally:
+                up.close()
+            block = json.loads(raw) if up.status == 200 else {}
+        except (UpstreamError, asyncio.TimeoutError, ValueError):
+            self.counters["docs_failed"] += 1
+            return {"X-Mesh-Docs": "late"}
+        text = block.get("text") or ""
+        if not text:
+            return {}
+        msgs[-1] = {**msgs[-1], "content": f"{refs}\n\n{text}{sep}{question}" if sep else f"{text}\n\n---\n{content}"}
+        self.counters["docs_used"] += 1
+        return {"X-Mesh-Docs": f"{len(block.get('entries') or [])}e{len(block.get('passages') or [])}p "
+                               f"{round((time.monotonic() - t0) * 1000)}ms"}
 
     async def embed(self, text: str) -> list[float] | None:
         body = json.dumps({"model": self.cfg["embed_model"], "input": self.cfg["embed_prefix"] + text}).encode()
