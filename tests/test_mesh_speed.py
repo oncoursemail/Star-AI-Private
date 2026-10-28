@@ -207,3 +207,48 @@ def test_ladder_step_can_add_a_draft_model_and_lower_steps_do_not(tmp_path):
     (tmp_path / "models" / "mtp.gguf").unlink()             # no draft file: the step loads plain (all layers)
     bare = na.llama_argv(cfg, tmp_path, 100)
     assert "--model-draft" not in bare and "--spec-type" not in bare and bare[bare.index("-ngl") + 1] == "100"
+
+
+def test_ladder_steps_can_name_a_shared_arg_set_and_kvu_keeps_the_full_context(tmp_path):
+    sys.path.insert(0, str(ROOT / "server" / "mesh" / "node"))
+    import node_agent as na  # noqa: PLC0415
+    (tmp_path / "models").mkdir()
+    for f in ("llama-server.exe", "models/m.gguf", "models/mtp.gguf"):
+        (tmp_path / f).write_bytes(b"x")
+    cfg = {**na.DEFAULTS, "llama_server": "llama-server.exe", "model_path": "models/m.gguf", "ctx": 6144,
+           "llama_args": ["-ngl", "99", "-np", "2", "-kvu"], "vram_reserve_mb": 150,
+           "step_args": {"mtp": ["--model-draft", "models/mtp.gguf", "--spec-type", "draft-mtp"]},
+           "ngl_ladder": [[99, 7300, "mtp"], [46, 6800, "mtp"], [40, 5900]]}
+    assert na.pick_ngl(cfg, 7000) == 46
+    a46 = na.llama_argv(cfg, tmp_path, 46)
+    assert a46[a46.index("-ngl") + 1] == "46" and a46[a46.index("--model-draft") + 1] == str(tmp_path / "models" / "mtp.gguf")
+    assert "--model-draft" not in na.llama_argv(cfg, tmp_path, 40)
+    assert na.slot_ctx(cfg) == 6144                                   # -kvu: every slot may use the whole pool
+    assert na.slot_ctx({**cfg, "llama_args": ["-np", "2"]}) == 3072
+
+
+def test_ladder_prefers_draft_with_fewer_layers_and_steps_down_by_position_even_with_a_repeated_ngl(tmp_path):
+    from test_mesh_node import Proc, make, na  # noqa: PLC0415
+    (tmp_path / "models").mkdir(exist_ok=True)
+    (tmp_path / "models" / "mtp.gguf").write_bytes(b"x")
+    mtp = ["--model-draft", "models/mtp.gguf", "--spec-type", "draft-mtp"]
+    ladder = [[100, 7400, "mtp"], [47, 7170, "mtp"], [99, 7130], [46, 7050, "mtp"], [47, 6900], [44, 6560]]
+    node, gpu, clock, procs = make(tmp_path, ngl_ladder=ladder, step_args={"mtp": mtp}, llama_args=["-ngl", "99"],
+                                   other_vram_grow_mb=99999, min_free_loaded_mb=100, vram_reserve_mb=150)
+    assert [na.pick_step(node.config, f) for f in (7600, 7330, 7290, 7210, 7060, 6720, 6000)] == [0, 1, 2, 3, 4, 5, -1]
+    own = {i: s[1] for i, s in enumerate(ladder)}
+
+    def popen(argv, **kw):
+        procs.append((argv, kw))
+        gpu["used"] = 8192 - 7330 + own[node.step]          # desktop leaves 7330 MB free -> step 1 (47 + draft)
+        return Proc()
+    node._popen = popen
+    gpu["used"] = 8192 - 7330
+    node.tick()
+    argv = procs[-1][0]
+    assert node.step == 1 and argv[argv.index("-ngl") + 1] == "47" and "--model-draft" in argv
+    gpu["used"] = 8192 - 10                                  # the launcher grew: 10 MB free while loaded
+    node.tick()                                              # 10 + 7170 freed -> step 4 (plain 47, same -ngl)
+    argv = procs[-1][0]
+    assert node.step == 4 and len(procs) == 2 and argv[argv.index("-ngl") + 1] == "47" and "--model-draft" not in argv
+    assert na.step_label(node.config, 1) == "ngl 47 + draft" and na.step_label(node.config, 4) == "ngl 47"

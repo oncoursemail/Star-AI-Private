@@ -82,7 +82,24 @@ Args: `-lm none --fit off -ngl 99 -fa on -ctk q4_0 -ctv q4_0 -np 1 -b 512 -ub 12
 accepted; +250 MB on the card (7263 MB loaded at -c 8192 -ub 128). With -ub 256 it does not fit next to the desktop
 and spills into shared memory (38 tok/s, slower than no drafter). `ngl 100` = all layers, ranked above the plain 99
 step, so a busier desktop falls back to plain -ngl 99; a step whose .gguf is missing loads without its extra args.
-Prompt reading is ~900-1100 tok/s with the drafter and -ub 128 (vs ~1300-1450 before). The owner's apps (Metallic Launcher/QtWebEngine, browser, Discord) need room on the same card, so the node
+Prompt reading is ~900-1100 tok/s with the drafter and -ub 128 (vs ~1300-1450 before).
+
+**Two slots + Metallic open (2026-10-28):** `-np 2 -kvu -c 4096` (one 4096-token KV pool both slots share; Litha
+requests peak at ~3.2k tokens) so the router's cache judge answers while a reply streams (0.37 s instead of waiting).
+Ladder steps are tried in list order (an -ngl may repeat, with and without the drafter) and named arg sets live in
+`step_args`. Measured with the owner's Metallic window open (desktop ~530-570 MB), 10 code prompts, own MB at peak:
+
+| step | own MB | gen tok/s | s per 200 tokens |
+|---|---|---|---|
+| all layers + drafter | 7287 | 94 (107.6 through the router) | 2.3 |
+| ngl 47 + drafter | 7125 | 48.5 | 4.4 |
+| ngl 99, no drafter | 7083 | 46.1 | 4.5 |
+| ngl 46 + drafter | 7005 | 39.4 | 5.4 |
+| ngl 47 | 6851 | 33.4 | 6.2 |
+| ngl 45 + drafter / 44 + drafter / 42 + drafter | 6923 / 6755 / 6515 | 31.2 / 26.7 / 18.4 | (beaten by plain steps with less memory) |
+| ngl 44 | 6479 | 24.0 | 8.7 |
+With -np 2 -kvu, -c 8192 spills (41 tok/s) even at -ub 128; -c 6144 costs ~70 MB more than 4096. Lower plain steps
+(46, 43-40) are the -np 1 numbers above + ~80 MB. The owner's apps (Metallic Launcher/QtWebEngine, browser, Discord) need room on the same card, so the node
 keeps `vram_reserve_mb` (1536) free as nvidia-smi reports it (memory.free): `ngl_ladder` lists [ngl, the model's
 measured card memory]; the node loads the highest step that still leaves the reserve. Measured on the owner's RTX
 3060 Ti (2026-10-28, -c 8192, q4_0 KV, -np 1):
