@@ -89,10 +89,12 @@ class _ReferenceFrame:
     captured_ms: float
     size: tuple[int, int]
     raw_sha256: bytes | None = None
+    sparse_digest: bytes | None = None
 
     def erase(self) -> None:
         self.jpeg[:] = b"\x00" * len(self.jpeg)
         self.raw_sha256 = None
+        self.sparse_digest = None
 
 
 class LocalLlamaComparisonWorker:
@@ -115,6 +117,7 @@ class LocalLlamaComparisonWorker:
         focus_box: tuple[int, int, int, int] | None = None,
         skip_identical: bool = False,
         raw_exact_fast_path: bool = False,
+        raw_sparse_prescreen: bool = False,
         max_result_latency_ms: int | None = None,
         slow_cooldown_ms: int = 0,
         clock_ns: Callable[[], int] | None = None,
@@ -147,6 +150,9 @@ class LocalLlamaComparisonWorker:
             raise ValueError("skip_identical must be a host boolean")
         if type(raw_exact_fast_path) is not bool or (raw_exact_fast_path and not skip_identical):
             raise ValueError("raw_exact_fast_path requires explicit identical-frame gating")
+        if (type(raw_sparse_prescreen) is not bool
+                or (raw_sparse_prescreen and not raw_exact_fast_path)):
+            raise ValueError("raw_sparse_prescreen requires exact RGB gating")
         # Opt-in live-stream freshness: a delayed result describes a past
         # frame, not the game as it exists now. Drop it instead of narrating
         # stale hazards or HUD changes. This does not cancel model compute.
@@ -166,6 +172,7 @@ class LocalLlamaComparisonWorker:
         self._cooldown_until_ns = 0
         self._skip_identical = skip_identical
         self._raw_exact_fast_path = raw_exact_fast_path
+        self._raw_sparse_prescreen = raw_sparse_prescreen
         self._focus_box = focus_box
         self._model = model
         self._port = port
@@ -190,6 +197,8 @@ class LocalLlamaComparisonWorker:
             "baselines": 0, "requests": 0, "accepted": 0,
             "model_rejected": 0, "ambiguous_stop": 0, "invalid_frames": 0,
             "identical_pairs_skipped": 0, "raw_exact_fast_skips": 0, "focused_pairs": 0,
+            "raw_sha_computations": 0, "sparse_checks": 0,
+            "sparse_mismatch_hash_skips": 0,
             "busy_rejected": 0, "revoked_results": 0,
             "stale_results_dropped": 0, "cooldown_frames_skipped": 0,
         }
@@ -244,6 +253,25 @@ class LocalLlamaComparisonWorker:
                 or frame.rgb.ndim != 1 or frame.rgb.itemsize != 1
                 or not frame.rgb.c_contiguous):
             raise ValueError("invalid RGB frame layout")
+
+    @staticmethod
+    def _sparse_digest(rgb: memoryview) -> bytes:
+        """Cheap *negative* prefilter over 64 distributed byte positions.
+
+        A mismatch proves raw frames differ so SHA-256 can be avoided. A match
+        NEVER proves image equality: only full-frame SHA-256 is authorized to
+        skip encoding/inference. Raw sampled bytes are cleared immediately;
+        only an in-memory 16-byte digest survives in the reference frame.
+        """
+        source = rgb.cast("B")
+        length = len(source)
+        sample = bytearray(64)
+        try:
+            for index in range(64):
+                sample[index] = source[index * (length - 1) // 63]
+            return hashlib.blake2s(sample, digest_size=16).digest()
+        finally:
+            sample[:] = b"\x00" * len(sample)
 
     def _encode(self, frame: CapturedVisionFrame) -> bytearray:
         self._validate_frame(frame)
@@ -387,26 +415,44 @@ class LocalLlamaComparisonWorker:
                 return WorkerReport(True, False)
             try:
                 raw_sha256 = None
+                sparse_digest = None
                 if self._raw_exact_fast_path:
-                    # Hash only the exact authorized RGB view. This cannot
-                    # declare near-identical pixels equivalent, and a match
-                    # avoids PIL conversion, JPEG and all model work.
+                    # The sparse screen sample only proves DIFFERENCE; it is
+                    # never permitted to declare two raw frames identical.
+                    # Dynamic scenes can avoid full-frame hashing, while a
+                    # stationary scene still gets the exact SHA-256 bypass.
                     self._validate_frame(frame)
-                    raw_sha256 = hashlib.sha256(frame.rgb).digest()
                     previous = self._previous
-                    if (previous is not None
+                    sample_changed = False
+                    if self._raw_sparse_prescreen:
+                        sparse_digest = self._sparse_digest(frame.rgb)
+                        self._counts["sparse_checks"] += 1
+                        sample_changed = (
+                            previous is not None
+                            and previous.sparse_digest is not None
+                            and previous.sparse_digest != sparse_digest
+                            and previous.size == (frame.width, frame.height)
+                            and 0 < frame.captured_ms - previous.captured_ms <= self._gap
+                        )
+                    if sample_changed:
+                        self._counts["sparse_mismatch_hash_skips"] += 1
+                    else:
+                        raw_sha256 = hashlib.sha256(frame.rgb).digest()
+                        self._counts["raw_sha_computations"] += 1
+                    if (raw_sha256 is not None
+                            and previous is not None
                             and previous.raw_sha256 == raw_sha256
                             and previous.size == (frame.width, frame.height)
                             and 0 < frame.captured_ms - previous.captured_ms <= self._gap):
-                        # Advance the baseline's time without retaining the
-                        # new frame or reusing a stale capture timestamp.
+                        # Advance time without reusing a stale capture or
+                        # changing the trusted reference image.
                         previous.captured_ms = frame.captured_ms
                         self._counts["raw_exact_fast_skips"] += 1
                         self._counts["identical_pairs_skipped"] += 1
                         return WorkerReport(True, True)
                 newest = _ReferenceFrame(
                     self._encode(frame), frame.captured_ms,
-                    (frame.width, frame.height), raw_sha256,
+                    (frame.width, frame.height), raw_sha256, sparse_digest,
                 )
             except (TypeError, ValueError, ImportError, OSError):
                 self._counts["invalid_frames"] += 1
@@ -513,6 +559,7 @@ class LocalLlamaComparisonWorker:
                     "focus_enabled": self._focus_box is not None,
                     "identical_gate_enabled": self._skip_identical,
                     "raw_exact_gate_enabled": self._raw_exact_fast_path,
+                    "raw_sparse_prescreen_enabled": self._raw_sparse_prescreen,
                     "freshness_gate_enabled": self._max_result_latency_ms is not None,
                     "cooldown_remaining_ms": max(
                         0, (self._cooldown_until_ns - self._clock_ns() + 999_999)
