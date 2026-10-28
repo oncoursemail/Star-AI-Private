@@ -12,13 +12,15 @@ Contract (docs/agents/WAVE-20261027-MESH-BRIEF.md):
   :8098               the model (llama-server, OpenAI-compatible), same mesh token. llama-server itself listens
                       only on 127.0.0.1; this process forwards LAN requests to it, so one program needs a firewall rule.
 
-States: idle = the model is loaded and serving; busy = the machine is in use (game, stream, other GPU work), the
-model is unloaded and comes back after `resume_seconds` free; away = nothing is in the way but the model is not
-loaded (loading, unloaded on request, failed); off = the OFF file exists.
+States: idle = the model is loaded and serving; draining = it takes no new request and finishes the answers in
+flight (at most `drain_seconds`) before it reloads or unloads; busy = the machine is in use (game, stream, other GPU
+work), the model is unloaded and comes back after `resume_seconds` free; away = nothing is in the way but the model is
+not loaded (loading, unloaded on request, failed); off = the OFF file exists.
 
 The busy guard runs every `poll_seconds`: a full-screen program in front, a known game/stream/VR program, a Steam
-game, Minecraft (Java), the FAKE_BUSY test file, another program's GPU load or video memory. It stops the model at
-once (TerminateProcess) when any of them appears. Standard library only; the mesh token is read, never printed.
+game, Minecraft (Java), the FAKE_BUSY test file (these win at once: the state turns busy, then the model is stopped
+with TerminateProcess), another program's GPU load or video memory (these drain first: answers in flight finish).
+Standard library only; the mesh token is read, never printed.
 """
 from __future__ import annotations
 
@@ -66,6 +68,7 @@ DEFAULTS: dict = {
                                                 # the model at that -ngl); the first step that leaves
     "vram_reserve_mb": 1536,                    # this much free for the owner's apps once loaded; none fits = busy
     "min_free_loaded_mb": 800,                  # loaded and less free than this: step down the ladder or unload
+    "drain_seconds": 30,                        # memory-pressure reload/unload waits this long for answers in flight
     "busy_util_percent": 40, "busy_util_looks": 2,   # other programs' GPU load (while the model is not working)
     "other_vram_grow_mb": 1200,                 # other programs grew their video memory this much since the load
     "fullscreen": True,
@@ -460,6 +463,8 @@ class Node:
         self.load_started = 0.0
         self.ngl: int | None = None
         self.step_to = 0
+        self.draining: tuple[float, str] | None = None     # (since, why): no new requests, answers in flight finish
+        self.wake = threading.Event()                       # the last drained answer ended: act without the poll wait
 
     # -- logging -----------------------------------------------------------------------------------------------------
     def _file_log(self, text: str) -> None:
@@ -483,14 +488,23 @@ class Node:
         return {self.process.pid} if self.process is not None else set()
 
     def busy_reason(self, gpu: dict | None) -> str:
+        return self.busy_check(gpu)[0]
+
+    def busy_check(self, gpu: dict | None) -> tuple[str, bool]:
+        """(why the card is needed or '', hard). Hard = a game, stream, VR or full-screen program (or FAKE_BUSY): it
+        wins at once. Soft = memory or load of other programs: answers in flight may finish first (draining)."""
+        self.step_to = 0
         if (self.home / "FAKE_BUSY").exists():
-            return "test hook (the FAKE_BUSY file exists)"
+            return "test hook (the FAKE_BUSY file exists)", True
         if self.probe is not None:
             procs = self.probe.processes()
             found = program_reason(self.config, procs, self.own_pids(), self.probe.exe_path,
                                    self.probe.windows, self.probe.fullscreen())
             if found:
-                return found
+                return found, True
+        return self._resource_reason(gpu), False
+
+    def _resource_reason(self, gpu: dict | None) -> str:
         if gpu is None:
             return ""
         now = self._clock()
@@ -525,18 +539,36 @@ class Node:
             self.last_gpu = gpu
             self._check_process()
             if (self.home / "OFF").exists():
+                self.draining = None
                 self._stop("off switch")
                 self.free_since, self.was_busy = None, False
                 self._set("off", "the OFF file exists")
                 return
-            reason = self.busy_reason(gpu)
+            reason, hard = self.busy_check(gpu)
             now = self._clock()
+            waited = False                                  # drained already: act now, answers or not
+            if self.draining is not None and not hard:
+                since, why = self.draining
+                if (reason or self.step_to) and self.ready and self.in_flight > 0 \
+                        and now - since < float(self.config["drain_seconds"]):
+                    self._set("draining", f"finishing {self.in_flight} answer(s) before: {why}")
+                    return
+                self.draining, waited = None, True
+                self._log(f"drained in {now - since:.1f} s" if not self.in_flight else
+                          f"drain gave up after {now - since:.0f} s with {self.in_flight} answer(s) in flight")
+            elif hard:
+                self.draining = None
             if reason:
+                if not hard and not waited and self.ready and self.in_flight > 0:
+                    return self._drain(now, reason)
                 if self.process is not None:
+                    self._set("busy", reason)               # reported before the cut (status shows why)
                     self._stop(reason)
                 self.free_since, self.was_busy = None, True
                 self._set("busy", reason)
                 return
+            if self.step_to and self.ready and gpu and self.in_flight > 0 and not waited:
+                return self._drain(now, f"step down to ngl {self.step_to}")
             if self.step_to and self.ready and gpu:
                 lower, self.step_to = self.step_to, 0
                 self._log(f"step down: ngl {self.ngl} -> {lower} ({free_of(gpu)} MB free while loaded)")
@@ -564,6 +596,11 @@ class Node:
                 self._set("away", self.reason if self.reason.startswith("failed") else "failed; retrying later")
             else:
                 self.start_load(gpu)
+
+    def _drain(self, now: float, why: str) -> None:
+        """Stop taking requests; the next ticks reload/unload once the answers in flight are done (or time is up)."""
+        self.draining = (now, why)
+        self._set("draining", f"finishing {self.in_flight} answer(s) before: {why}")
 
     def _check_process(self) -> None:
         if self.process is not None and not self.loading and self.process.poll() is not None:
@@ -674,7 +711,7 @@ class Node:
     # -- requests through the proxy ------------------------------------------------------------------------------------
     def begin_request(self) -> bool:
         with self.lock:
-            if not self.ready:
+            if not self.ready or self.draining is not None:
                 return False
             self.in_flight += 1
             return True
@@ -683,6 +720,8 @@ class Node:
         with self.lock:
             self.in_flight = max(0, self.in_flight - 1)
             self.quiet_until = self._clock() + 3.0
+            if self.draining is not None and not self.in_flight:
+                self.wake.set()
 
     # -- status ------------------------------------------------------------------------------------------------------
     def status(self) -> dict:
@@ -707,7 +746,8 @@ class Node:
                 self.tick()
             except Exception as exc:                        # noqa: BLE001 - the guard must never die silently
                 self._log(f"guard error: {type(exc).__name__}: {exc}")
-            stop.wait(float(self.config["poll_seconds"]))
+            self.wake.wait(float(self.config["poll_seconds"]))
+            self.wake.clear()
 
 
 # ---- HTTP ----------------------------------------------------------------------------------------------------------
@@ -789,32 +829,45 @@ def make_model_handler(node: Node, token: str):
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else None
             if not node.begin_request():
-                return self._error(503, f"model not loaded: {node.state}: {node.reason}")
+                return self._error(503, f"not taking requests: {node.state}: {node.reason}")
+            started, sse, tail = False, False, b""
             try:
                 upstream = http.client.HTTPConnection("127.0.0.1", port, timeout=600)
                 headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
                 upstream.request(self.command, self.path, body=body, headers=headers)
                 resp = upstream.getresponse()
+                sse = "event-stream" in (resp.getheader("Content-Type") or "")
                 self.send_response(resp.status)
                 for key, value in resp.getheaders():
                     if key.lower() not in HOP:
                         self.send_header(key, value)
                 self.send_header("Connection", "close")
                 self.end_headers()
+                started = True
                 while True:
                     chunk = resp.read1(65536)
                     if not chunk:
                         break
+                    tail = (tail + chunk)[-64:]
                     self.wfile.write(chunk)
                     self.wfile.flush()
                 upstream.close()
             except (OSError, http.client.HTTPException):
-                try:
-                    self._error(502, "the model server stopped answering (unloaded?)")
-                except OSError:
-                    pass
+                if not started:
+                    try:
+                        self._error(502, "the model server stopped answering (unloaded?)")
+                    except OSError:
+                        pass
             finally:
                 node.end_request()
+            if started and sse and b"[DONE]" not in tail:    # the model was stopped in the middle of the answer
+                event = {"error": {"message": f"node {node.name}: the answer was cut ({node.state}: {node.reason})",
+                                   "type": "node_cut"}}
+                try:
+                    self.wfile.write(b"data: " + json.dumps(event).encode() + b"\n\n")
+                    self.wfile.flush()
+                except OSError:
+                    pass
 
         do_GET = do_POST = do_DELETE = do_PUT = _forward
     return Model

@@ -447,3 +447,140 @@ def test_low_free_memory_while_loaded_steps_down_then_unloads(tmp_path):
 def test_free_memory_is_what_nvidia_smi_shows():
     assert na.free_of({"total": 8192, "used": 6634, "free": 1391}) == 1391     # memory.free leaves out the reserve
     assert na.free_of({"total": 8192, "used": 6634}) == 1558
+
+
+# ---- draining: memory pressure never cuts an answer; games still win at once ----------------------------------------
+def _ladder_node(tmp_path):
+    ladder = [[99, 7040], [47, 6800], [30, 4500]]
+    node, gpu, clock, procs = make(tmp_path, ngl_ladder=ladder, llama_args=["-ngl", "99"], other_vram_grow_mb=99999,
+                                   min_free_loaded_mb=100, vram_reserve_mb=150)
+    gpu["total"] = 8192
+    gpu["used"] = 600
+
+    def popen(argv, **kw):
+        procs.append((argv, kw))
+        ngl = int(argv[argv.index("-ngl") + 1])
+        gpu["used"] = 600 + dict(ladder)[ngl]
+        return Proc()
+    node._popen = popen
+    node.tick()
+    assert node.ngl == 99 and node.ready
+    return node, gpu, clock, procs
+
+
+def test_memory_pressure_drains_the_answer_in_flight_then_steps_down(tmp_path):
+    node, gpu, clock, procs = _ladder_node(tmp_path)
+    first = node.process
+    assert node.begin_request()                             # a long answer is streaming
+    gpu["used"] = 8192 - 60                                 # Metallic opens: 60 MB free while loaded
+    node.tick()
+    assert node.state == "draining" and "step down to ngl" in node.reason and not first.killed
+    assert not node.begin_request() and node.in_flight == 1  # no new request while draining (router skips it)
+    clock.t += 10
+    node.tick()
+    assert node.state == "draining" and not first.killed and len(procs) == 1
+    node.end_request()
+    assert node.wake.is_set()                               # the guard acts at once, not after the poll wait
+    node.tick()
+    assert first.killed and node.ngl == 47 and node.ready and node.state == "idle" and len(procs) == 2
+    assert node.begin_request()
+
+
+def test_drain_gives_up_after_drain_seconds(tmp_path):
+    node, gpu, clock, procs = _ladder_node(tmp_path)
+    first = node.process
+    assert node.begin_request()
+    gpu["used"] = 8192 - 60
+    node.tick()
+    clock.t += 29
+    node.tick()
+    assert node.state == "draining" and not first.killed
+    clock.t += 2
+    node.tick()
+    assert first.killed and node.ngl == 47
+
+
+def test_drain_ends_without_reload_when_the_memory_comes_back(tmp_path):
+    node, gpu, clock, procs = _ladder_node(tmp_path)
+    assert node.begin_request()
+    gpu["used"] = 8192 - 60
+    node.tick()
+    assert node.state == "draining"
+    gpu["used"] = 600 + 7040                                # the other program closed again
+    node.tick()
+    assert node.state == "idle" and node.ngl == 99 and len(procs) == 1 and node.begin_request()
+
+
+def test_other_programs_growing_drain_then_unload(tmp_path):
+    node, gpu, clock, procs = _ladder_node(tmp_path)
+    node.config["other_vram_grow_mb"] = 300
+    assert node.begin_request()
+    gpu["used"] += 400                                      # others +400 MB: unload, but after the answer
+    node.tick()
+    assert node.state == "draining" and "400 MB more" in node.reason and node.ready
+    node.end_request()
+    node.tick()
+    assert node.state == "busy" and not node.ready and node.process is None
+
+
+def test_game_cuts_at_once_even_with_an_answer_in_flight_and_reports_busy_first(tmp_path):
+    states = []
+    node, gpu, clock, procs = _ladder_node(tmp_path)
+    process = node.process
+    real_kill = process.kill
+    process.kill = lambda: (states.append(node.state), real_kill())
+    assert node.begin_request()
+    gpu["used"] = 8192 - 60
+    node.tick()
+    assert node.state == "draining"
+    node.probe.procs[999] = "RobloxPlayerBeta.exe"          # a game wins over the drain
+    node.tick()
+    assert process.killed and states == ["busy"] and node.state == "busy" and node.draining is None
+
+
+class _FakeStream(na.http.server.BaseHTTPRequestHandler):
+    finish = True
+
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        self.wfile.write(b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n')
+        if type(self).finish:
+            self.wfile.write(b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
+        self.wfile.flush()
+        self.close_connection = True
+
+
+def test_proxy_marks_a_cut_stream_and_refuses_while_draining(tmp_path):
+    node, gpu, clock, procs = loaded(tmp_path)
+    upstream = na.Server(("127.0.0.1", 0), _FakeStream)
+    threading.Thread(target=upstream.serve_forever, daemon=True).start()
+    node.config["internal_port"] = upstream.server_address[1]
+    proxy = na.Server(("127.0.0.1", 0), na.make_model_handler(node, TOKEN))
+    threading.Thread(target=proxy.serve_forever, daemon=True).start()
+
+    def raw():
+        conn = http.client.HTTPConnection("127.0.0.1", proxy.server_address[1], timeout=5)
+        conn.request("POST", "/v1/chat/completions", body=b"{}", headers={"Authorization": "Bearer " + TOKEN})
+        resp = conn.getresponse()
+        data = resp.read()
+        conn.close()
+        return resp.status, data
+    try:
+        code, data = raw()
+        assert code == 200 and data.endswith(b"data: [DONE]\n\n") and b"node_cut" not in data
+        _FakeStream.finish = False                          # llama-server killed after the first piece
+        code, data = raw()
+        assert code == 200 and b'"Hel"' in data and b"node_cut" in data and b"the answer was cut" in data
+        node.draining = (clock(), "step down to ngl 47")
+        code, data = raw()
+        assert code == 503 and b"not taking requests" in data
+    finally:
+        _FakeStream.finish = True
+        proxy.shutdown()
+        upstream.shutdown()

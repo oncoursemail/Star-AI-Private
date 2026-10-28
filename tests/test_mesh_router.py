@@ -22,10 +22,11 @@ class Fake:
     """A fake node (status on /status, llama-server-like chat on /v1/chat/completions) or a fake brain."""
 
     def __init__(self, name, state="idle", tok_s=30.0, loaded=True, first_delay=0.0, words=("Hi", " there", "!"),
-                 die_before_token=False, die_after=None, http_status=200):
+                 die_before_token=False, die_after=None, http_status=200, end="finish", cut_body=False):
         self.name, self.state, self.tok_s, self.loaded = name, state, tok_s, loaded
         self.first_delay, self.words, self.die_before_token, self.die_after = first_delay, words, die_before_token, die_after
         self.http_status = http_status
+        self.end, self.cut_body = end, cut_body        # end: finish | clean (no finish_reason) | error (error event)
         self.requests, self.auth, self.loads, self.cancelled = [], [], [], 0
         self.server, self.port = None, 0
 
@@ -72,6 +73,11 @@ class Fake:
                 out = {"model": req["model"], "choices": [{"message": {"role": "assistant",
                                                                       "content": "".join(self.words)}}],
                        "timings": {"predicted_per_second": self.tok_s}}
+                if self.cut_body:                      # killed while writing a non-stream answer
+                    writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
+                                 + json.dumps(out).encode()[:20])
+                    await writer.drain()
+                    return
                 return await self.reply(writer, 200, json.dumps(out).encode())
             writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n")
             await self.chunk(writer, {"choices": [{"delta": {"role": "assistant", "content": None}}]})
@@ -85,9 +91,12 @@ class Fake:
                     return
                 await self.chunk(writer, {"model": req["model"], "choices": [{"delta": {"content": w}}]})
                 await asyncio.sleep(0.01)
-            await self.chunk(writer, {"choices": [{"delta": {}, "finish_reason": "stop"}],
-                                      "timings": {"predicted_per_second": self.tok_s}})
-            await self.chunk(writer, "[DONE]")
+            if self.end == "error":
+                await self.chunk(writer, {"error": {"message": "slot killed", "type": "server_error"}})
+            elif self.end == "finish":
+                await self.chunk(writer, {"choices": [{"delta": {}, "finish_reason": "stop"}],
+                                          "timings": {"predicted_per_second": self.tok_s}})
+                await self.chunk(writer, "[DONE]")
             writer.write(b"0\r\n\r\n")
             await writer.drain()
         except (ConnectionError, asyncio.IncompleteReadError):
@@ -212,15 +221,92 @@ def test_failure_before_first_token_retries_next_backend(tmp_path):
     run(go())
 
 
-def test_mid_stream_failure_ends_stream_with_error(tmp_path):
+def test_mid_stream_drop_continues_on_next_backend_with_the_sent_words_as_prefix(tmp_path):
     async def go():
-        node = Fake("owner-pc", tok_s=31.0, words=("a", "b", "c", "d"), die_after=2)
+        node = Fake("owner-pc", tok_s=31.0, words=("Hello", " wor", "ld", " again"), die_after=2)
+        brain = Fake("brain", tok_s=10.0, words=(" world", " again", "."))
+        r, port, brain = await setup(tmp_path, [node], brain=brain)
+        body = {**CHAT, "max_tokens": 100}
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", body)
+        assert headers["X-Mesh-Backend"] == "owner-pc"
+        assert sse_text(data) == "Hello world again." and data.count(b"[DONE]") == 1 and b"error" not in data
+        cont = brain.requests[0]
+        assert cont["messages"][-1] == {"role": "assistant", "content": "Hello"}       # stops before the cut word
+        assert cont["messages"][:-1] == CHAT["messages"] and cont["max_tokens"] == 98 and cont["stream"]
+        d = r.decisions[-1]
+        assert d["outcome"] == "cut, continued on brain1: ok" and d["continued_on"] == ["brain1"]
+        assert d["cuts"][0]["backend"] == "owner-pc" and d["cuts"][0]["sent_chars"] == 9
+        assert r.nodes[0].inflight == 0 and r.brain.inflight == 0 and r.nodes[0].fail_until > time.monotonic()
+    run(go())
+
+
+def test_stream_ending_without_finish_reason_or_with_an_error_event_is_a_cut(tmp_path):
+    async def go():
+        for end in ("clean", "error"):
+            node = Fake("owner-pc", tok_s=31.0, words=("One", " two"), end=end)
+            brain = Fake("brain", tok_s=10.0, words=(" two", " three"))
+            r, port, brain = await setup(tmp_path, [node], brain=brain)
+            status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
+            assert sse_text(data) == "One two three" and b"slot killed" not in data, end
+            assert brain.requests[0]["messages"][-1]["content"] == "One"
+            assert r.decisions[-1]["outcome"].startswith("cut") and r.decisions[-1]["cuts"][0]["why"].startswith(
+                "error event" if end == "error" else "stream ended without")
+    run(go())
+
+
+def test_cut_with_nobody_to_continue_sends_an_error_event_and_logs_cut(tmp_path):
+    async def go():
+        node = Fake("owner-pc", tok_s=31.0, words=("a", " b", " c", " d"), die_after=2)
+        brain = Fake("brain", tok_s=10.0, words=(" b", " c"), die_after=1)
+        r, port, brain = await setup(tmp_path, [node], brain=brain)
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
+        assert sse_text(data) == "a b" and b"stopped in the middle" in data and data.rstrip().endswith(b"[DONE]")
+        d = r.decisions[-1]
+        assert d["outcome"].startswith("cut: brain1") and len(d["cuts"]) == 2
+        assert r.nodes[0].inflight == 0 and r.brain.inflight == 0
+    run(go())
+
+
+def test_cut_before_any_word_is_a_plain_retry(tmp_path):
+    async def go():
+        node = Fake("owner-pc", tok_s=31.0, words=("x",), die_after=0)
+        r, port, brain = await setup(tmp_path, [node])
+        body = {**CHAT, "max_tokens": 50}
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", body)
+        assert sse_text(data) == "Brain here" and brain.requests[0]["messages"] == CHAT["messages"]
+        assert brain.requests[0]["max_tokens"] == 50
+    run(go())
+
+
+def test_cut_non_stream_body_retries_next_backend(tmp_path):
+    async def go():
+        node = Fake("owner-pc", tok_s=31.0, words=("partial",), cut_body=True)
+        r, port, brain = await setup(tmp_path, [node])
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions",
+                                                        {**CHAT, "stream": False})
+        assert status == 200 and headers["X-Mesh-Backend"] == "brain1"
+        assert json.loads(data)["choices"][0]["message"]["content"] == "Brain here"
+        assert "incomplete body" in r.decisions[-1]["errors"][0]
+    run(go())
+
+
+def test_prefix_split_and_tail_strip():
+    assert mesh._split_prefix("1. Mercury\n2. Ve") == ("1. Mercury\n2.", " Ve")
+    assert mesh._split_prefix("end)\n") == ("end)", "\n")
+    assert mesh._split_prefix("Hi") == ("", "Hi")
+    assert mesh._split_prefix("x" * 100) == ("x" * 100, "")
+    assert mesh._strip_tail(" Venus", " Ve") == ("nus", "")
+    assert mesh._strip_tail(" V", " Ve") == ("", "e")
+    assert mesh._strip_tail("Mars", " Ve") == ("Mars", "")
+
+
+def test_draining_node_is_skipped(tmp_path):
+    async def go():
+        node = Fake("owner-pc", state="draining", tok_s=31.0)
         r, port, brain = await setup(tmp_path, [node])
         status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
-        assert headers["X-Mesh-Backend"] == "owner-pc" and sse_text(data) == "ab"
-        assert b"stopped in the middle" in data and not brain.requests
-        assert r.decisions[-1]["outcome"].startswith("backend failed mid-stream")
-        assert r.nodes[0].inflight == 0
+        assert headers["X-Mesh-Backend"] == "brain1" and not node.requests
+        assert "owner-pc: draining" in r.decisions[-1]["reason"]
     run(go())
 
 

@@ -26,7 +26,8 @@ EXECUTE_SUBS = {"align", "anchored", "as", "at", "facing", "if", "in", "on", "po
 RESLOC = re.compile(r"^#?([a-z0-9_.-]+:)?[a-z0-9_./-]+$")
 COORD = re.compile(r"^([~^]?-?(\d+\.?\d*|\.\d+)?|-?(\d+\.?\d*|\.\d+))$")
 INT = re.compile(r"^-?\d+$")
-PLACEHOLDER = re.compile(r"^<[^<>]+>$")      # <spawn_x>, <player>: a value the reader fills in
+# a value the reader fills in: <spawn_x>, <player>, [X], {x}, X_POS, a lone X/Y/Z
+PLACEHOLDER = re.compile(r"^(<[^<>]+>|\[[A-Za-z_][\w ]*\]|\{[A-Za-z_][\w ]*\}|[A-Z][A-Z0-9]*(_[A-Z0-9]+)+|[XYZxyz])$")
 FILL_MODES = {"destroy", "hollow", "keep", "outline", "replace", "strict"}
 SETBLOCK_MODES = {"destroy", "keep", "replace", "strict"}
 

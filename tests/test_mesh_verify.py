@@ -53,7 +53,8 @@ FAKE_DUMP = {"Version": 1, "Classes": [
     {"Name": "Player", "Superclass": "Instance", "Tags": ["NotCreatable"], "Members": [
         _m("Property", "UserId"), _m("Property", "Character", "Model"),
         _m("Property", "userId", tags=DEP + [{"PreferredDescriptorName": "UserId"}]),
-        _m("Event", "CharacterAdded", params=["Model"]), _m("Function", "Kick"),
+        _m("Event", "CharacterAdded", params=["Model"]), _m("Event", "CharacterRemoving", params=["Model"]),
+        _m("Function", "Kick"),
         _m("Function", "SetSuperSecret", security="RobloxScriptSecurity")]},
     {"Name": "Model", "Superclass": "Instance", "Tags": [], "Members": [_m("Function", "PivotTo")]},
     {"Name": "BasePart", "Superclass": "Instance", "Tags": ["NotCreatable"], "Members": [
@@ -292,7 +293,8 @@ def test_fix_loop_second_round_and_give_up():
     assert r["ok"] and r["rounds"] == 2 and 'Instance.new("Part")' in r["answer"]
     stubborn = FakeModel(["```lua\nlocal p = Instance.new(\"Prat2\")\n```", "```lua\nlocal p = Instance.new(\"Prat3\")\n```"])
     r = V.fix(answer, stubborn)
-    assert not r["ok"] and r["rounds"] == 2 and len(stubborn.calls) == 2     # max 2 rounds, then the last version
+    assert not r["ok"] and r["rounds"] == 2 and len(stubborn.calls) == 2     # max 2 rounds
+    assert r["answer"] == answer and [c.get("rejected", "")[:14] for c in r["changes"]] == ["the fix did no"] * 2
 
     def broken(messages):
         raise OSError("router down")
@@ -339,3 +341,54 @@ def test_http_service(tmp_path):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ---- safe fixes: placeholders stay, a real-but-wrong API is never swapped in, a fix must remove problems ---------------
+def test_placeholders_are_not_problems():
+    for line in ("tp @s [X] [Y] [Z]", "tp @s X_POS Y_POS Z_POS", "tp @s X Y Z", "tp @s {x} {y} {z}",
+                 "execute as @a at @s if block ~ ~-1 ~ minecraft:gold_block run tp @s [X] [Y] [Z]"):
+        assert minecraft.check_commands(line) == [], line
+    assert core.is_placeholder("[X]") and core.is_placeholder("<spawn_x>") and core.is_placeholder("X_POS")
+    assert not core.is_placeholder("Players.PlayerRemoving") and not core.is_placeholder("t[X]")
+    assert core.placeholders("tp @s [X] [Y] [Z]\nlocal a = t[k]\nGetComponent<Rigidbody>()") == {"[X]", "[Y]", "[Z]"}
+    assert core.placeholders("tp @s ~ ~1 ~") == {"~ ~1 ~"}
+
+
+def test_fix_never_rewrites_a_placeholder():
+    answer = "```mcfunction\n/execute as @a at @s if block ~ ~-1 ~ minecraft:gold_block run tp @s [X] [Y] [Z]\n```\n"
+    assert V.verify(answer)["needs_fix"]                     # the leading '/' in a .mcfunction file
+    model = FakeModel(["```mcfunction\nexecute as @a at @s if block ~ ~-1 ~ minecraft:gold_block run tp @s 0 64 0\n```",
+                       "```mcfunction\nexecute as @a at @s if block ~ ~-1 ~ minecraft:gold_block run tp @s 0 64 0\n```"])
+    r = V.fix(answer, model)
+    assert r["answer"] == answer and "placeholder [X]" in r["changes"][0]["rejected"]
+    assert "stay exactly as written" in model.calls[0][0]["content"]
+    keeps = FakeModel(["```mcfunction\nexecute as @a at @s if block ~ ~-1 ~ minecraft:gold_block run tp @s [X] [Y] [Z]\n```"])
+    r = V.fix(answer, keeps)
+    assert r["ok"] and "[X] [Y] [Z]" in r["answer"] and "/execute" not in r["answer"]
+
+
+def test_real_but_wrong_api_is_not_suggested():
+    code = ('local Players = game:GetService("Players")\nPlayers.PlayerAdded:Connect(function(player)\n'
+            "    player.PlayerRemoving:Connect(function() end)\nend)\n")
+    [p] = problems(code)
+    assert p["kind"] == "unknown_api" and p["severity"] == "warning" and p["suggestion"] is None
+    assert "is an event of Players, not of Player" in p["hint"] and "CharacterRemoving" in p["candidates"]
+    msg = core.fix_messages(code, "luau", [p])[1]["content"]
+    assert "real members of that class you may use: CharacterAdded, CharacterRemoving" in msg and "(use:" not in msg
+    # a close name of the right kind and signature is still a sure suggestion
+    assert kinds('local part = Instance.new("Part")\npart.Touch:Connect(function() end)\n') == [
+        ("unknown_api", "Part.Touch", "Touched")]
+    assert kinds('local Players = game:GetService("Players")\nPlayers.PlayerAdded:Connect(function(p)\n'
+                 "    p:Kik()\nend)\n") == [("unknown_api", "Player:Kik", "Kick")]
+    # called like a method, but the only close name is a property: no swap
+    [p] = problems('local Players = game:GetService("Players")\nlocal me = Players.LocalPlayer\nme.Charactr()\n')
+    assert p["severity"] == "warning" and p["suggestion"] is None and "(Character, CharacterAdded) are not a method of Player" in p["hint"]
+
+
+def test_fix_must_remove_problems_or_it_is_dropped():
+    answer = '```lua\nlocal p = Instance.new("Prat")\np.Parent = workspace\n```\n'
+    worse = FakeModel(['```lua\nlocal p = Instance.new("Part")\np:Destroyy()\nwait(1)\n```',
+                       '```lua\nlocal p = Instance.new("Part")\np.Parent = workspace\n```'])
+    r = V.fix(answer, worse)
+    assert r["ok"] and r["rounds"] == 2 and "Destroyy" not in r["answer"] and 'Instance.new("Part")' in r["answer"]
+    assert r["changes"][0]["rejected"].startswith("the fix did not remove problems")
