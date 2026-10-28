@@ -1,1 +1,4 @@
-"""Litha code verifier: checks code blocks (Roblox Luau, Unity C#, Minecraft commands) before the user sees them."""
+"""Litha code checks: Roblox Luau, Unity C#, Minecraft, Python compiler syntax and general JSON.
+
+Checks do not execute submitted Python or establish runtime, import, type or general application correctness.
+"""

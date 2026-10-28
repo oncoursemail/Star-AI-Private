@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import time
 
-from . import csharp, minecraft
+from . import csharp, json_code, minecraft, python_code
 from .apidump import ApiIndex
 from .luau import LuauChecker
 
@@ -21,7 +21,8 @@ OPEN_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?P<info>[^\n`]*)\n", re
 LANGS = {"lua": "luau", "luau": "luau", "rbxlua": "luau", "roblox": "luau",
          "cs": "csharp", "csharp": "csharp", "c#": "csharp", "unity": "csharp",
          "mcfunction": "mcfunction", "minecraft": "minecraft", "mcf": "mcfunction", "mc": "minecraft",
-         "json": "json", "java": "java", "kotlin": "java"}
+         "json": "json", "python": "python", "py": "python", "python3": "python",
+         "java": "java", "kotlin": "java"}
 # what a reader fills in: <spawn_x>, [X], X_POS, ~ ~ ~ (the fix loop never rewrites these)
 PLACEHOLDER = re.compile(r"(?<![\w>])<[A-Za-z_][\w -]{0,30}>|(?<![\w\])}])\[[A-Za-z_][\w ]{0,30}\]"
                          r"|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|(?<!\S)[~^][-\d.]*[ \t]+[~^][-\d.]*[ \t]+[~^][-\d.]*(?!\S)")
@@ -55,17 +56,30 @@ def _bad(problems: list[dict]) -> tuple[int, int]:
     return (sum(p["severity"] == "error" for p in problems), sum(p["severity"] == "warning" for p in problems))
 
 
+def _block_context(text: str, start: int, info: str) -> str:
+    preceding = text[:start].rstrip()
+    label = preceding.rsplit("\n", 1)[-1] if preceding else ""
+    return info + "\n" + label
+
+
+def _pack_label(context: str) -> bool:
+    clean = re.sub(r"[`*_]", "", context)
+    return bool(re.search(r"(?:^|[/\s=])pack\.mcmeta\s*(?:contents?|with)?\s*:?\s*$", clean, re.I | re.M))
+
+
 def extract_blocks(text: str, language: str | None = None) -> list[dict]:
     """Fenced code blocks with their spans. Text without fences is one block only when `language` is given
     ("auto" = detect it)."""
     blocks = []
     for m in FENCE.finditer(text):
         blocks.append({"start": m.start("code"), "end": m.end("code"), "code": m.group("code"),
-                       "info": m.group("info").strip(), "line": text.count("\n", 0, m.start("code")) + 1})
+                       "info": m.group("info").strip(), "line": text.count("\n", 0, m.start("code")) + 1,
+                       "context": _block_context(text, m.start(), m.group("info"))})
     tail = OPEN_FENCE.search(text, blocks[-1]["end"] + 1 if blocks else 0)
     if tail:                                   # a last fence that is never closed runs to the end of the text
         blocks.append({"start": tail.end(), "end": len(text), "code": text[tail.end():],
-                       "info": tail.group("info").strip(), "line": text.count("\n", 0, tail.end()) + 1})
+                       "info": tail.group("info").strip(), "line": text.count("\n", 0, tail.end()) + 1,
+                       "context": _block_context(text, tail.start(), tail.group("info"))})
     if not blocks and text.strip() and language:     # unfenced text is code only when the caller says so
         lang = LANGS.get(language.lower(), language) if language != "auto" else _detect(text, "")
         blocks.append({"start": 0, "end": len(text), "code": text, "info": lang, "line": 1})
@@ -88,14 +102,22 @@ class Verifier:
         return problems, checked
 
     def _check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
+        if lang == "python":
+            return python_code.check_python(code)
         if lang == "luau":
             return self.luau.check(code), True
         if lang == "csharp":
             return csharp.check_csharp(code), True
         if lang in ("minecraft", "mcfunction"):
             return minecraft.check_commands(code, in_function=lang == "mcfunction"), True
-        if lang == "json" and ("pack_format" in code or "pack.mcmeta" in prose):
-            return minecraft.check_pack_mcmeta(code), True
+        if lang == "json":
+            problems, checked, members = json_code.analyze_json(code)
+            if not checked or any(p["severity"] == "error" for p in problems):
+                return problems, checked
+            # A neighbouring tick.json is ordinary JSON; object key order must not hide a real pack.
+            if members & {"pack", "pack_format"} or _pack_label(prose):
+                problems += minecraft.check_pack_mcmeta(code)
+            return problems, True
         return [], False
 
     def verify(self, text: str, language: str | None = None) -> dict:
@@ -103,7 +125,8 @@ class Verifier:
         blocks = extract_blocks(text, language)
         out = []
         for k, b in enumerate(blocks):
-            problems, checked = self.check_block(b["code"], b["language"], text)
+            context = b.get("context", "") if b["language"] == "json" else text
+            problems, checked = self.check_block(b["code"], b["language"], context)
             for p in problems:
                 if p.get("line"):
                     p["answer_line"] = b["line"] + p["line"] - 1
@@ -129,7 +152,8 @@ class Verifier:
             changes.append({"round": 0, "block": None, "fixed": [p["message"] for p in report["problems"]]})
             report = self.verify(text, language)
         for rnd in range(1, rounds + 1):
-            todo = [b for b in report["blocks"] if b["needs_fix"]]
+            # An input/complexity refusal is not a syntax diagnosis the model can repair.
+            todo = [b for b in report["blocks"] if b["needs_fix"] and b["checked"]]
             if not todo:
                 break
             done = rnd
@@ -154,7 +178,8 @@ class Verifier:
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": f"the fix rewrote the placeholder {lost[0]}; kept as written"})
                     continue
-                if _bad(self.check_block(new, b["language"], text)[0]) >= _bad(b["problems"]):
+                context = span.get("context", "") if b["language"] == "json" else text
+                if _bad(self.check_block(new, b["language"], context)[0]) >= _bad(b["problems"]):
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": "the fix did not remove problems; kept as written"})
                     continue
