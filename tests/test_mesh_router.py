@@ -295,3 +295,56 @@ def test_queue_lowers_a_busy_nodes_rank():
     assert [b.name for b, _, _ in r.plan("litha")[0]] == ["b", "a", "brain1"]
     r.nodes[0].inflight, r.nodes[1].inflight = 3, 3   # 7.5 and 5 < brain 10
     assert [b.name for b, _, _ in r.plan("litha")[0]][0] == "brain1"
+
+
+def test_self_registration_routes_expires_and_needs_mesh_token(tmp_path):
+    async def go():
+        node = Fake("star-pc", tok_s=40.0, words=("Reg", "!"))
+        static = Fake("owner-pc", state="busy")
+        await node.start()
+        r, port, brain = await setup(tmp_path, [static], register_ttl_s=0.6)
+        reg = {"node": "star-pc", "status_url": f"{node.url}/status"}
+        # refused without / with a wrong token (a client key is not a mesh token either)
+        for key in (None, KEY, "wrong"):
+            assert (await asyncio.to_thread(call, port, "POST", "/mesh/register", reg, key=key))[0] == 401
+        assert len(r.nodes) == 1
+        status, _, data = await asyncio.to_thread(call, port, "POST", "/mesh/register", reg,
+                                                  key="mesh-token-for-tests")
+        out = json.loads(data)
+        assert status == 200 and out["source"] == "registered" and out["status_url"] == f"{node.url}/status"
+        await asyncio.sleep(0.1)                   # registration triggers an immediate poll
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
+        assert headers["X-Mesh-Backend"] == "star-pc" and sse_text(data) == "Reg!"
+        assert node.auth[0] == "Bearer mesh-token-for-tests"
+        st = json.loads((await asyncio.to_thread(call, port, "GET", "/mesh/status"))[2])
+        src = {n["name"]: n["source"] for n in st["nodes"]}
+        assert src == {"owner-pc": "static", "star-pc": "registered"}
+        # a static node may register too (new URL while fresh, static again after expiry)
+        await asyncio.to_thread(call, port, "POST", "/mesh/register",
+                                {"node": "owner-pc", "status_url": f"{static.url}/status",
+                                 "model_url": "http://127.0.0.1:9/v1"}, key="mesh-token-for-tests")
+        assert r.nodes[0].source == "static+registered"
+        # heartbeat stops -> the registered node is gone, the static one stays
+        await asyncio.sleep(0.7)
+        r.expire()
+        assert [(n.name, n.source) for n in r.nodes] == [("owner-pc", "static")]
+        status, headers, _ = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
+        assert headers["X-Mesh-Backend"] == "brain1"
+    run(go())
+
+
+def test_registration_fills_missing_or_loopback_addresses_from_source_ip():
+    async def go():
+        r = mesh.Router({**mesh.DEFAULTS})
+        code, out = r.register({"node": "laptop"}, "192.0.2.7")
+        assert code == 200 and out["status_url"] == "http://192.0.2.7:8099/status" and out["model_url"] == ""
+        code, out = r.register({"node": "laptop", "model_url": "http://127.0.0.1:8098/v1"}, "192.0.2.7")
+        assert out["model_url"] == "http://192.0.2.7:8098/v1"
+        assert r.register({"node": "bad name!"}, "192.0.2.7")[0] == 400
+        assert r.register({"node": "x", "status_url": "ftp://h/status"}, "192.0.2.7")[0] == 400
+        n = r.nodes[0]                               # a loopback URL in the node's status is reached via its address
+        n.status = {"models": [{"id": "litha-fast", "url": "http://127.0.0.1:8098/v1", "loaded": True}]}
+        n.reg_model_url = None
+        assert n.model(["litha-fast"])["url"] == "http://192.0.2.7:8098/v1"
+        await asyncio.sleep(0)
+    asyncio.run(go())
