@@ -7,7 +7,7 @@ candidate A stream as usual. When A finishes, the router verifies it; if A has a
 "careful" framing, started at the same moment on the node's second slot) is better on the cheap signals, or the tool
 loop repaired A's code, ONE extra SSE event goes out before [DONE]:
 
-    data: {"object": "mesh.replace", "mesh_replace": {"content": "<whole final answer>", "source": "B|patch|B+patch",
+    data: {"object": "mesh.replace", "mesh_replace": {"content": "<whole final answer>", "source": "B|patch|rules|B+patch+rules",
            "why": "...", "verify": {"errors": n, "warnings": n}}}
 
 It has no "choices", so clients that do not know it keep A unchanged. B is never started when the node has only one
@@ -21,8 +21,13 @@ import re
 import time
 
 from . import checks, judge, patch
+from ..rules import fix as rules_fix, rules as rules_mod
 
 LOOP_DEFAULTS = {
+    "rules_enabled": True,           # Roblox architecture rules (server/mesh/rules) + ONE targeted fix pass on a hit
+    "rules_fix_budget_s": 20.0,      # the fix pass rewrites the whole answer (~300-500 tokens on the fast node)
+    "rules_fix_max_tokens": 1000,
+    "rules_docs_url": "http://127.0.0.1:8102",   # docs service (/mesh/docs/entries); down or slow = rule text only
     "loop_best_of_nodes": [],        # node names with 2 llama-server slots (-np 2); empty = no second candidate
     "loop_wait_b_s": 4.0,            # after A ends with a problem, wait at most this long for B to finish
     "loop_tool_budget_s": 1.5,       # hidden Roblox tool loop budget (model part) after A ends
@@ -159,9 +164,27 @@ class Run:
         finally:
             self.close()
 
+    async def _model_full(self, body: dict) -> dict:
+        backend, url, mid = self._fast_backend()
+        out = await self._call(backend, url, {**body, "model": mid}, self.cfg["rules_fix_budget_s"] + 5)
+        return {"text": out["text"], "finish": out["finish"]}
+
+    async def _docs(self, names: list) -> str:
+        from ..router import open_upstream
+        url = (self.cfg.get("docs_url") or self.cfg["rules_docs_url"]).rstrip("/") + "/mesh/docs/entries"
+        up = await open_upstream(url, "POST", json.dumps({"names": names}).encode(),
+                                 {"Content-Type": "application/json",
+                                  "Authorization": f"Bearer {self.router.keys.first()}"}, idle_s=1)
+        try:
+            raw = await asyncio.wait_for(up.body(), 1)
+            return (json.loads(raw).get("text") or "") if up.status == 200 else ""
+        finally:
+            up.close()
+
     async def _decide(self, text_a: str) -> bytes:
         t_end = time.monotonic()
-        if "```" not in text_a:
+        rule_hits = rules_mod.check(text_a, last_user(self.req)) if self.cfg["rules_enabled"] else []
+        if "```" not in text_a and not rules_mod.errors(rule_hits):
             self.log["result"] = "no code: A kept"
             return b""
         if self.b_task is None:
@@ -196,6 +219,15 @@ class Run:
             if fixed != final:
                 final, source = fixed, (source + "+patch" if source else "patch")
                 rep = await self._verify(final)
+        notes = []
+        if self.cfg["rules_enabled"]:            # server/mesh/rules: ONE targeted rewrite when a rule finds an error
+            fixed, rinfo = await rules_fix.run(
+                last_user(self.req), final, self._model_full, self._verify, self._docs, self.cfg["rules_fix_budget_s"],
+                self.cfg["rules_fix_max_tokens"], hits=rule_hits if final == text_a else None, old_report=rep)
+            self.log["rules"] = rinfo
+            if fixed != final:
+                final, source, notes = fixed, (source + "+rules" if source else "rules"), rinfo.get("notes") or []
+                rep = await self._verify(final)
         self.log["extra_ms"] = round((time.monotonic() - t_end) * 1000)
         if final == text_a:
             self.log["result"] = "A kept" + (f" ({why})" if why else "")
@@ -205,6 +237,8 @@ class Run:
         event = {"object": "mesh.replace", "mesh_replace": {
             "content": final, "source": source, "why": why,
             "verify": {"errors": summ["errors"], "warnings": summ["warnings"]}}}
+        if notes:
+            event["mesh_replace"]["notes"] = notes
         return b"data: " + json.dumps(event).encode() + b"\n\n"
 
     def close(self):
