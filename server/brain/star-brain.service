@@ -18,7 +18,7 @@ Environment=LD_LIBRARY_PATH=/opt/star/bin
 ExecStartPre=/opt/star/bin/star-brain-prestart.sh
 ExecStart=/usr/bin/numactl --interleave=all /opt/star/bin/llama-server --host 0.0.0.0 --port 8080 \
   --api-key-file /opt/star/secrets/api_keys \
-  --models-preset /opt/star/config/models.ini --models-max 5 \
+  --models-preset /opt/star/config/models.ini --models-max 6 \
   --numa distribute --jinja --metrics
 Restart=on-failure
 RestartSec=5
