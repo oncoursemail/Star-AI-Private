@@ -1,0 +1,767 @@
+diff --git a/README.md b/README.md
+index f18f9ae..44b2c45 100644
+--- a/README.md
++++ b/README.md
+@@ -10 +10 @@ scene layers and a production character rig are not included. Game artwork is no
+-The October 27 Litha candidate adds bounded selected-code context, Stop handling, smoother streamed replies and
++The October 28 Litha candidate adds bounded selected-code context, Stop handling, incremental streamed replies and
+@@ -15,0 +16,5 @@ This is a local review candidate, not a published release; see the first-start g
++The current performance pass avoids rebuilding settled chat messages during streaming, preserves reading position,
++packs the same selected source into smaller JSON requests and marks output-limit replies as incomplete. Measurements
++and limitations are recorded in [the research note](docs/research/litha-speed-quality-20261028.md); request-byte and DOM
++operation reductions are not model latency or intelligence measurements.
++
+diff --git a/docs/FIRST_START.md b/docs/FIRST_START.md
+index 0046267..95410a7 100644
+--- a/docs/FIRST_START.md
++++ b/docs/FIRST_START.md
+@@ -3 +3 @@
+-This is the local Metallic Launcher review candidate updated on 2026-10-27. The accompanying build receipt and
++This is the local Metallic Launcher review candidate updated on 2026-10-28. The accompanying build receipt and
+@@ -42 +42 @@ Roadmap states and evidence dates are separate from live ticket counts; neither
+-- **Code questions:** use Choose code in the desktop chat to select up to four supported source files (8 KiB each,
++- **Code questions:** use Choose files in the desktop chat to select up to four supported source files (8 KiB each,
+@@ -49,0 +50,6 @@ Roadmap states and evidence dates are separate from live ticket counts; neither
++- **Incomplete replies:** when the engine reports its output limit, partial code remains visible with a warning.
++  It is excluded from later model history as a successful reply. Ask for a smaller change; this does not trigger
++  automatic continuation or imply that the partial code is valid.
++- **Reading while a reply streams:** older messages retain their DOM nodes. Scrolling up keeps your reading
++  position; replies follow the bottom when you are already near it or send a new question. Draft text remains in
++  the composer. Source context is packed without deleting lines, and the JSON request uses UTF-8.
+diff --git a/docs/agents/litha-render-efficiency-20261028.md b/docs/agents/litha-render-efficiency-20261028.md
+new file mode 100644
+index 0000000..dfc20e8
+--- /dev/null
++++ b/docs/agents/litha-render-efficiency-20261028.md
+@@ -0,0 +1,30 @@
++# Litha streaming render work
++
++The chat previously formatted and replaced every visible message on each streamed frame: four messages in Home and 60 in the dock. It also rebuilt unchanged suggestion/file rows and always scrolled to the bottom.
++
++Each view now retains rows for its current message window. New or removed messages reconcile the child list; changed content or terminal flags update that message's existing row. Settled message nodes remain in place during streaming, and unchanged file/suggestion HTML is not reassigned. The current reply is still formatted as a whole so partial code fences keep the existing formatting behavior. HTML-only hosts retain the former rendering path when a child-node API is unavailable.
++
++Streaming follows the bottom when the reader was already within 32 pixels of it. A reader looking higher keeps that scroll position. A new question requests bottom-following; zero-height/hidden lists are not programmatically scrolled. Composer nodes, drafts and composer text selections are not replaced. The active reply's HTML still changes; this does not preserve selections inside that changing reply. Native browser layout, selection and scrolling still require the integrator's visual review.
++
++An `incomplete` terminal event preserves formatted partial text and shows an escaped warning. It ends the pending turn, invalidates queued callbacks and marks the assistant fragment as an error so it is excluded from later model history. It does not automatically continue, apply code or claim tests ran. Generic errors retain their previous replacement behavior; cancelled replies keep their stopped label.
++
++## Local operation counts
++
++The optional comparison used the exact production module from commit `79489ad`, stored as an ignored local baseline file. Both implementations ran against the same inert DOM with 200 synthetic settled messages, Home/dock views, 100 streamed frames and a terminal flush. Initialization and the question's initial render precede the counter window.
++
++| Measured operation | Prior production | Current |
++|---|---:|---:|
++| Settled-message formatter calls | 3,030 | 0 |
++| Whole message-list replacements | 202 | 0 |
++| HTML assignments, including file/suggestion rows | 606 | 200 |
++| Assigned HTML string length, UTF-16 code units | 4,268,940 | 78,890 |
++
++These are observed JavaScript/DOM API operation counts, not browser parsing, wall-clock, GPU, model latency or reasoning-quality measurements. The inert DOM does not parse `innerHTML` into native nodes. No speed multiplier or model-quality improvement is established.
++
++## Verification
++
++`node scripts/verify_litha_render_efficiency.mjs` passed 129 checks. It exercises actual production rendering with child-node identity, bounded row windows, drafts/selection, reader scrolling, hidden views, context updates, remounts, cancellation, errors, escaped code/warnings, incomplete fragments and history exclusion. Its default run needs no Git history, baseline file, browser, model or network.
++
++`node scripts/verify_litha_render_efficiency.mjs --baseline build/litha-render-baseline-79489ad.mjs` passed 132 checks and produced the comparison above. The optional argument must name the trusted prior production module; the verifier imports that module without starting the app.
++
++Existing standalone chat (59), Grid mount (14), main hooks (14), portrait lifecycle (61), portrait framing (59), and nine existing JavaScript checks passed unchanged. These selections overlap and are not an aggregate acceptance total. Node syntax checks passed. No existing tests, evaluation fixtures, portrait code, image assets or model prompts were edited by this lane.
+diff --git a/docs/agents/litha-speed-quality-integration-20261028.md b/docs/agents/litha-speed-quality-integration-20261028.md
+new file mode 100644
+index 0000000..23f624d
+--- /dev/null
++++ b/docs/agents/litha-speed-quality-integration-20261028.md
+@@ -0,0 +1,20 @@
++# Litha speed and reply-integrity candidate
++
++This branch stacks on `79489ad`, the prior isolated Litha candidate. The Forge default branch was freshly fetched and remained `a1eca945`; that repository has no `main` branch. Claude's checkout and branches were not edited. This candidate needs review before integration; it does not change the active STAR engine or sealed evaluation.
++
++## Changes and evidence
++
++1. The chat retains bounded per-view message nodes and changes only rows whose content or terminal state changes. A comparison against the actual prior production module used 100 streamed frames, Home/dock views and 200 synthetic settled turns. Settled formatter calls fell from 3,030 to zero; whole-list replacements fell from 202 to zero; assigned HTML string length fell from 4,268,940 to 78,890 UTF-16 code units. The changing reply is still formatted as a whole. These are inert-DOM operation counts, not browser timing or a model-speed multiplier.
++2. Compact source-capsule JSON and UTF-8 request JSON preserve decoded file data, line numbers, metadata, route/model options and untrusted-source boundaries. Four retained synthetic cases showed 0.79% to 39.35% fewer request bytes. An independent reviewer reproduced them using the actual prior builder and request encoder, including the previous context-size limit. No source line was deleted. Transport savings do not establish model-token savings or inference latency.
++3. A normal `stop` terminal closes the stream without reading again. `length` produces a typed incomplete terminal after yielding any validated final text; the UI retains partial code with an escaped warning and excludes that assistant fragment from successful history. Unsupported and unknown finish reasons fail visibly. No automatic continuation request is sent.
++4. Both raw response bytes and decoded JSON text must be valid UTF-8. This prevents a provider's escaped lone surrogate from silently corrupting code. Invalid request Unicode fails before reading the engine key. Authentication headers, no-redirect handling, default prompts, model preferences, generation limits, sampling and thinking options are unchanged.
++
++## Verification
++
++Existing tests and evaluation fixtures are unchanged. New retained checks cover completion integrity (7 groups), context wire equivalence (2 groups), and actual incremental rendering (129 checks, or 132 with an optional trusted baseline module). Earlier protocol, context, session, app-hook, chat and portrait checks remain in the build pipeline. Independent reviewers reran the focused checks and inspected the final source.
++
++Root also used a real browser DOM with a byte-identical copy of the production chat module and synthetic bridge events. Observed: Home retained four rows and Dock 60; settled node identity survived chunks; draft text remained; an older reading position stayed at scrollTop 3501 while scrollHeight grew from 4749 to 4769; incomplete text and the escaped warning remained visible. The actual composer, Stop control and normal-completion path were exercised, and a new question followed the bottom. This isolated fixture did not load a model, use credentials or read project files. Evidence screenshot is local at `build/litha-speed-browser.png` and is excluded from the package/source commit.
++
++The first-start guide and local Windows package are refreshed. `dist/BUILD_RECEIPT.json` identifies final source, checked frozen modules, web resources, artifact hashes and ZIP integrity. Native Qt installation/connected-engine performance, coding accuracy and GPU latency remain unverified. The source changes are practical optimizations and correctness repairs; no claim of unprecedented intelligence or a new foundation model is made.
++
++Research links and rejected broader changes are in `docs/research/litha-speed-quality-20261028.md`. Larger token budgets, different models, moving source for prefix caching, general SSE framing and autonomous editing need their own evidence and review. No active model evaluation, account, release, updater activation or permissions were changed.
+diff --git a/docs/agents/litha-wire-review-20261028.md b/docs/agents/litha-wire-review-20261028.md
+new file mode 100644
+index 0000000..01d36ca
+--- /dev/null
++++ b/docs/agents/litha-wire-review-20261028.md
+@@ -0,0 +1,48 @@
++# Independent Litha context wire review
++
++The baseline was the actual `launcher/litha_context.py` and `launcher/litha.py` from Git commit `79489ad0d62aba4aa6323de93531a27fb3c171f2`. The reviewer loaded their `git show` bytes into an isolated in-memory package, with a stub key module. Both baseline and current context builders read temporary synthetic files; both actual `ask_stream` / request encoders produced captured requests through an injected SSE response. Socket connection attempts were blocked. No real credential, provider, model, tokenizer or GPU was used. All attached source files were synthetic.
++
++The retained verifier's four cases were independently exercised against those actual baseline modules, rather than relying only on its reconstructed prior formatting. The question was `Explain the selected source.` in both versions. All old capsules fit the existing 65,536-character limit.
++
++| Retained case | Source bytes | Old capsule characters | Actual prior request bytes | Current request bytes | Reduction |
++|---|---:|---:|---:|---:|---:|
++| Many short lines | 14,400 | 53,000 | 61,443 | 37,268 | 39.35% |
++| Long lines | 24,000 | 24,569 | 25,821 | 25,616 | 0.79% |
++| Unicode and escaping | 9,600 | 17,600 | 28,143 | 20,768 | 26.21% |
++| Empty selected file | 0 | 358 | 1,572 | 1,499 | 4.64% |
++
++`python -B scripts/verify_litha_context_wire.py` also passed its two retained test groups independently. They check lossless JSON transport, source/metadata preservation and rejection of invalid Unicode before reading the engine key.
++
++## Additional ad hoc evidence
++
++These three extra cases are independent audit probes, not additional retained cases in the wire verifier. Each used three 8,192-byte files: exactly 24,576 bytes of supported UTF-8 source in total. Whole repeated source units plus ASCII padding avoided cutting a UTF-8 character. All three were accepted by the actual old builder under its existing capsule limit.
++
++| Additional source pattern | Old capsule characters | Actual prior request bytes | Current request bytes | Reduction |
++|---|---:|---:|---:|---:|
++| ASCII helper/comment lines | 38,366 | 42,156 | 33,491 | 20.55% |
++| Quotes, backslashes and markup characters | 44,210 | 52,302 | 46,397 | 11.29% |
++| Greek/CJK/emoji comment lines | 24,830 | 70,587 | 31,682 | 55.12% |
++
++Across all seven cases, the decoded source JSON, file order, numbered line values, metadata and SHA-256 values matched. The untrusted-data wrapper and its no-authority wording matched. Other request options, model selection and non-context messages matched; the default non-context prompt was unchanged. No source was truncated, and file-selection rules or permissions were not expanded.
++
++Compacting the embedded capsule removes JSON whitespace outside source strings. Compact UTF-8 transport additionally avoids expanding Unicode into ASCII escape sequences. Transport-only savings do not reduce the decoded model input; no token reduction, inference latency, native performance or coding-quality improvement was measured.
++
++The existing attachment is already an immutable snapshot. After each probe changed its temporary files, request assembly still produced identical bytes with `_read` patched to fail if called. This confirms no request-time reread; it does not make the snapshot a live view of later edits.
++
++The additional probes used three distinct files all named `helper.js`. Their existing source `file` numbers remain distinct (1, 2 and 3), while displayed basenames alone are ambiguous. No duplicate-basename schema, prompt or UI change was made in this review. The reviewer made no production edits.
++
++## Separate frontend review
++
++The final `LithaChat` renderer was independently reviewed at source SHA-256 `845ec5596f9f7a285ab7f0a4138f4bb49ab5acec7573e4b4c6808a72fe0a892b`. The portable render verifier passed 129 checks; the existing chat verifier passed 59 and main-hook verifier passed 14. These overlap and are not an aggregate acceptance score.
++
++The optional renderer baseline file was independently compared byte-for-byte with `git show 79489ad:launcher/web/js/litha.js` (SHA-256 `a660a0a73592a678e2aca0e90bdd49ee6a02c59cf979b17fec6f425315cd9ecd`). The comparison run passed 132 checks against that exact prior production module. Its 100-frame, Home/dock, 200-settled-message fixture reproduced 3,030 to zero settled-message formatter calls, 202 to zero whole-list replacements, 606 to 200 HTML assignments, and 4,268,940 to 78,890 assigned UTF-16 code units.
++
++Source review found no scoped blocker in the bounded per-view row cache, retained node identity, scroll-follow rules or incomplete-response handling. Incomplete partial text remains visible with an escaped warning, is marked unsuccessful and excluded from later assistant history; stale events cannot complete that turn. No portrait, selected source, model prompt or permissions were changed by this review. These are inert DOM operation counts, not native rendering, parsing, selection, latency, GPU or coding-quality measurements. Native acceptance remains a separate requirement.
++
++## Final backend completion gate
++
++The final backend source was reviewed at SHA-256 `acf4a45c61164569b27ead3e1084f0ca08d70fd5438621b00ee3113795910f37`. `python -B scripts/verify_litha_completion.py` independently passed all seven groups, including immediate stop without an extra read, output-limit partial text followed by exactly one incomplete session receipt, unsupported finish reasons, invalid text, valid Unicode and empty-reply failure. Typed incomplete results preserve partial text without promoting a later `[DONE]` marker to success.
++
++An additional fake-response probe found that ASCII JSON can contain an escaped lone surrogate even when its wire bytes decode as UTF-8. The author added strict UTF-8 encodability validation before yielding decoded text. The independent high/low-surrogate reproductions now reject with the static protocol error and close their response; the retained valid literal backslash-u case remains supported. No production edit was made by the reviewer.
++
++This is the final scoped source gate. Earlier artifacts built from `79489ad` do not contain this correction and require rebuilding before being described as this candidate. No real socket, key, provider, model, GPU or native UI was exercised by these completion checks.
+diff --git a/docs/research/litha-speed-quality-20261028.md b/docs/research/litha-speed-quality-20261028.md
+new file mode 100644
+index 0000000..c622385
+--- /dev/null
++++ b/docs/research/litha-speed-quality-20261028.md
+@@ -0,0 +1,46 @@
++# Litha speed and coding reliability: source audit
++
++Reviewed 2026-10-28 on `codex/litha-speed-quality-20261028`. This is a source review and a measurement proposal. No engine, credentials, provider requests, model inference, server settings, evaluation fixtures, or owner files were used. Sources below were opened directly; upstream `master` documentation is moving and does not establish the installed engine's revision or supported options.
++
++## Repair incomplete replies before tuning speed
++
++At branch base `79489ad`, `launcher/litha.py:ask_stream` requested at most 700 output tokens but used `bool(finish_reason)` as successful completion. Consequently `length`, unsupported tool completion, and arbitrary nonempty strings could admit partial code as a completed answer. Receiving text establishes neither completion nor correctness.
++
++The upstream [llama.cpp response implementation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-task.cpp) assigns `length` to limited generations and `stop` to normal EOS/stop-word completion; tool calls have a separate reason. Its [server benchmark](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/bench/README.md) explicitly counts `length` as truncation. This supports a compatible client repair without changing models, sampling, prompts, or token limits:
++
++- Accept `stop` as the normal text terminal. Close immediately rather than awaiting another read for an optional usage chunk.
++- Report a static, useful incomplete-code warning for `length`; unsupported completion reasons and unknown reasons must also fail visibly. A later `[DONE]` cannot convert an earlier error into success.
++- Preserve the existing `[DONE]`-only compatibility path explicitly. It is a transport terminal convention, not independent evidence that code is complete.
++- Preserve streamed partial text for visibility, but do not commit it as a successful assistant-history turn. The candidate uses typed `LithaIncomplete` for the limit case; the session emits one `incomplete` terminal and the UI retains partial text plus a warning, marking it excluded from future assistant history. A validated delta accompanying `length` is yielded before the typed terminal so the final chunk is retained. No automatic continuation request: that would introduce more inference, cost, cancellation states, and possible duplicated code.
++
++Root's candidate implements these backend/session changes. Independent injected-response probes rejected `length`, `content_filter`, `tool_calls`, and an arbitrary reason, including when followed by `[DONE]`; all response objects closed. Independently reran seven new completion groups, 14 retained protocol groups, nine session groups, 12 app-hook groups, nine context groups, two context-wire groups, and six existing toggle tests: all passed. The actual-session completion check uses a real worker thread with a fake stream and establishes chunk then one incomplete terminal, including an only/final chunk carrying `length`. These checks used synthetic responses/source and no sockets. UI behavior is separately tested; this note does not claim generated code was executed or verified.
++
++## Transport scope and follow-up
++
++The current parser consumes one JSON payload per `data:` line. It handles the server's common line format, comments, usage-only chunks, and cooperative cancellation boundaries. It is not a full general-purpose SSE decoder. The [WHATWG event-stream specification](https://html.spec.whatwg.org/multipage/server-sent-events.html#parsing-an-event-stream) dispatches on blank lines, joins multiple data fields with newlines, permits a leading BOM and several line endings, and discards an unfinished event at EOF.
++
++The final candidate validates both raw stream UTF-8 and the decoded JSON content string before yielding it. JSON-escaped lone high/low surrogates can otherwise bypass wire-byte validation. Independently reran the seven completion and 14 protocol groups after this correction: malformed raw bytes and escaped lone surrogates fail statically and close the response; valid Unicode and literal code containing the characters `\\ud800` remain intact. This is protocol correctness, not validation that generated source is safe or correct.
++
++A separate bounded decoder could retain pending event bytes, dispatch assembled payloads, cap event size, and reject malformed UTF-8/JSON with static errors. Test multiline JSON events, BOM, CRLF, comments, fragmented reads, oversize events, and EOF without dispatch. Existing one-line synthetic fixtures are not proof of full SSE compliance; compatibility needs deliberate tests rather than silently changing their meaning. No reconnect/retry should replay authenticated generation automatically. Cooperative cancellation still cannot interrupt an already blocked read or guarantee GPU work has stopped.
++
++## What `cache_prompt` does
++
++Litha already sends `cache_prompt: true`. The current [llama.cpp server documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) describes reuse of a common token prefix in KV cache, processing the differing suffix when possible. It is not semantic answer caching. Reuse depends on server/backend state and request similarity; the documentation warns that changing batching through caching can change logits. The chat endpoint accepts completion-specific options, but support on an installed or alternative engine must be checked, not inferred from current upstream docs.
++
++Keep stable system text and history serialization. Do not move untrusted source into the system message or add hidden long-lived source memory for cache hits. Current selected code follows the changing user question, so that portion need not share a prefix across questions. Reordering it might increase reuse but changes model input and needs separate quality evidence. The candidate's compact JSON removes formatting whitespace while preserving parsed file names, numbered source lines, and escaping. The synthetic context-wire verifier measured request-byte reductions from 0.79% to 39.35% in its four cases; these are not measured token savings or a measured latency improvement. Each comparison asserts that its previous-format capsule fits the existing 65,536-character limit; the 800-lines-times-three sample replaces an earlier oversized, invalid baseline comparison. Cache benefit must be observed, not assumed from the request field.
++
++The outer request envelope now also uses compact UTF-8 JSON. [RFC 8259 section 8.1](https://www.rfc-editor.org/rfc/rfc8259.html#section-8.1) specifies UTF-8 for exchanged JSON. This preserves the decoded request values; malformed Unicode fails with a static error before reading the key. This representation change does not alter the system prompt, chosen model, sampling parameters, output budget, cache option, or thinking-template option.
++
++## Context and quality
++
++[Anthropic's context-engineering article](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents) recommends curating a small, relevant set of context and separating deliberate retrieval/compaction choices. This is engineering guidance, not a coding-quality result for Litha's local model. Preserve explicit owner file selection, source boundaries, line citations, and attachment limits. Compact representation can preserve all selected source; model-generated summaries would risk deleting the exact line needed to diagnose a bug.
++
++The [Lost in the Middle paper](https://arxiv.org/html/2307.03172v3) reports position-sensitive performance in multi-document question answering and key-value retrieval. Those tasks and tested models do not establish Litha's coding accuracy. A practical inference is to test relevant-file and line placement rather than assuming a larger context improves answers. No paper here warrants a new quality score or an activation decision.
++
++## Bounded measurement plan, not executed
++
++First finish offline protocol checks: every stop reason, invalid UTF-8, terminal-stop-with-blocked-next-read, missing terminal, cancellation, response closure, and source-capsule preservation. Use fake monotonic clocks where useful; fake throughput is not native model throughput.
++
++For a later explicitly authorized local-engine experiment, record model/GGUF hash, engine build, GPU/driver, context size, sampling, output budget, prompt bytes/tokens, and competing load. Keep requests and outputs synthetic and free of credentials/private project code. Measure request-to-first-content, request-to-terminal, output token count, cancellation-to-worker-release, and truncation/error counts separately. Report cold startup separately from warm inference. Use repeated paired cases with the same source and question, changed questions with a stable prefix, and changed source; alternate ordering to reduce warmup bias. Report sample count and median/p95 with failures included, without treating warm cached requests as cold performance.
++
++Where the installed server returns them, distinguish client elapsed time from its prompt-processing, generated-token, and cached-token metrics. The server benchmark's truncation count is useful alongside latency; a fast partial answer is a failure. Judge coding results on predeclared, independent tasks for valid syntax, intended behavior, correct file/line references, and honest test claims. Keep any new benchmark artifacts outside harness-owned baselines, and do not claim evaluation admission, release readiness, or quality improvement until the responsible gate actually runs.
+diff --git a/launcher/litha.py b/launcher/litha.py
+index 1fbf877..2d60234 100644
+--- a/launcher/litha.py
++++ b/launcher/litha.py
+@@ -48,0 +49,4 @@ class LithaCancelled(LithaUnavailable):
++class LithaIncomplete(LithaUnavailable):
++    """Visible partial text must not be treated as a completed assistant turn."""
++
++
+@@ -167 +171,4 @@ class Litha:
+-        data = json.dumps(body).encode("utf-8") if body is not None else None
++        try:
++            data = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8") if body is not None else None
++        except UnicodeError:
++            raise LithaUnavailable("The question or attached source is not valid Unicode text.") from None
+@@ -245 +252,4 @@ class Litha:
+-                    line = raw.decode("utf-8", "replace").strip()
++                    try:
++                        line = raw.decode("utf-8", "strict").strip()
++                    except (UnicodeError, AttributeError):
++                        raise LithaUnavailable(PROTOCOL_ERROR) from None
+@@ -267 +277,5 @@ class Litha:
+-                    finished = finished or bool(finish)
++                    if finish in {"tool_calls", "function_call", "content_filter"}:
++                        raise LithaUnavailable("The engine did not complete a text reply. Try a smaller, specific code question.")
++                    if finish not in (None, "", "stop", "length"):
++                        raise LithaUnavailable(PROTOCOL_ERROR)
++                    finished = finish == "stop"
+@@ -268,0 +283,4 @@ class Litha:
++                        try:
++                            delta.encode("utf-8", "strict")
++                        except UnicodeError:
++                            raise LithaUnavailable(PROTOCOL_ERROR) from None
+@@ -271,0 +290,4 @@ class Litha:
++                    if finish == "length":
++                        raise LithaIncomplete("The reply reached the engine's output limit. Ask for a smaller change; the code may be incomplete.")
++                    if finished:
++                        break  # A terminal stop must not wait on another network read or an optional usage event.
+diff --git a/launcher/litha_context.py b/launcher/litha_context.py
+index f3b4229..eb20afb 100644
+--- a/launcher/litha_context.py
++++ b/launcher/litha_context.py
+@@ -174 +174,2 @@ def build_context(paths: Sequence[Path]) -> CodeContext:
+-    encoded = json.dumps({"files": sources}, ensure_ascii=False, indent=2)
++    # Keep every numbered source line; whitespace outside JSON strings carries no source information.
++    encoded = json.dumps({"files": sources}, ensure_ascii=False, separators=(",", ":"))
+diff --git a/launcher/litha_session.py b/launcher/litha_session.py
+index dd34c5f..6494478 100644
+--- a/launcher/litha_session.py
++++ b/launcher/litha_session.py
+@@ -9 +9 @@ from dataclasses import asdict, dataclass, field
+-from .litha import LithaUnavailable
++from .litha import LithaIncomplete, LithaUnavailable
+@@ -100,0 +101,2 @@ class LithaSession:
++            except LithaIncomplete as exc:
++                self._publish(request, "incomplete", str(exc))
+diff --git a/launcher/web/js/litha.js b/launcher/web/js/litha.js
+index 52c6b59..dc21ed6 100644
+--- a/launcher/web/js/litha.js
++++ b/launcher/web/js/litha.js
+@@ -338,0 +339 @@ export class LithaChat {
++    this._welcome = { role: 'assistant', content: "Hi, I'm Litha. I help with Roblox, Unity, Minecraft and RC rooms. What are you building?" };
+@@ -357,0 +359 @@ export class LithaChat {
++    this.views.forEach((view) => { view.followNext = true; });
+@@ -417,0 +420,5 @@ export class LithaChat {
++    } else if (ev.type === 'incomplete') {
++      m.error = m.incomplete = true;
++      m.notice = typeof ev.text === 'string' && ev.text ? ev.text : 'This response is incomplete. Ask for a smaller change.';
++      this.pending = null;
++      this._flush('surprised');
+@@ -499 +506,2 @@ export class LithaChat {
+-    v.files.innerHTML = this.contextFiles.map((f) => `<span class="chip" title="${f.lines} lines · ${f.bytes} bytes · SHA-256 ${f.sha256}">${esc(f.name)}</span>`).join('');
++    const filesHTML = this.contextFiles.map((f) => `<span class="chip" title="${f.lines} lines · ${f.bytes} bytes · SHA-256 ${f.sha256}">${esc(f.name)}</span>`).join('');
++    if (v.filesHTML !== filesHTML) { v.files.innerHTML = filesHTML; v.filesHTML = filesHTML; }
+@@ -501 +509,2 @@ export class LithaChat {
+-    v.contextStatus.textContent = this.contextBusy ? 'Selecting files…' : this.contextError;
++    const status = this.contextBusy ? 'Selecting files…' : this.contextError;
++    if (v.contextStatus.textContent !== status) v.contextStatus.textContent = status;
+@@ -504,0 +514,37 @@ export class LithaChat {
++  _message(message) {
++    if (message.role === 'user') return { className: 'msg me', html: esc(message.content) };
++    if (message.cancelled) return { className: 'msg her', html: `${message.content ? format(message.content) : ''}<small class="m3">Response stopped.</small>` };
++    if (message.incomplete) return { className: 'msg her', html: `${message.content ? format(message.content) : ''}<small class="m3" role="status">${esc(message.notice || 'This response is incomplete.')}</small>` };
++    if (message.error) return { className: 'msg err', html: esc(message.content) };
++    return { className: 'msg her', html: message.content ? format(message.content)
++      : '<span class="typing" aria-label="Litha is thinking"><i></i><i></i><i></i></span>' };
++  }
++
++  _messages(v, items) {
++    const messages = items.length ? items : [this._welcome];
++    const list = v.list, doc = list.ownerDocument;
++    if (!doc?.createElement || !list.replaceChildren || !list.insertBefore) {
++      // HTML-only hosts keep the same output without requiring a live child-node API.
++      list.innerHTML = messages.map((m) => { const row = this._message(m); return `<div class="${row.className}">${row.html}</div>`; }).join('');
++      return;
++    }
++    if (!v.rows) { v.rows = new Map(); list.replaceChildren(); }
++    const retained = new Set(messages);
++    for (const [message, row] of v.rows) {
++      if (!retained.has(message)) { row.node.remove(); v.rows.delete(message); }
++    }
++    messages.forEach((message, index) => {
++      let row = v.rows.get(message);
++      if (!row) { row = { node: doc.createElement('div') }; v.rows.set(message, row); }
++      if (row.role !== message.role || row.content !== message.content || row.error !== message.error || row.cancelled !== message.cancelled
++        || row.incomplete !== message.incomplete || row.notice !== message.notice) {
++        const rendered = this._message(message);
++        row.node.className = rendered.className;
++        row.node.innerHTML = rendered.html;
++        Object.assign(row, { role: message.role, content: message.content, error: message.error, cancelled: message.cancelled,
++          incomplete: message.incomplete, notice: message.notice });
++      }
++      if (list.children[index] !== row.node) list.insertBefore(row.node, list.children[index] || null);
++    });
++  }
++
+@@ -509,10 +555,14 @@ export class LithaChat {
+-      v.list.innerHTML = items.length ? items.map((m) => {
+-        if (m.role === 'user') return `<div class="msg me">${esc(m.content)}</div>`;
+-        if (m.cancelled) return `<div class="msg her">${m.content ? format(m.content) : ''}<small class="m3">Response stopped.</small></div>`;
+-        if (m.error) return `<div class="msg err">${esc(m.content)}</div>`;
+-        if (!m.content) return '<div class="msg her"><span class="typing" aria-label="Litha is thinking"><i></i><i></i><i></i></span></div>';
+-        return `<div class="msg her">${format(m.content)}</div>`;
+-      }).join('') : `<div class="msg her">Hi, I'm Litha. I help with Roblox, Unity, Minecraft and RC rooms. What are you building?</div>`;
+-      v.chips.innerHTML = this.msgs.length ? '' : SUGGEST.slice(0, v.compact ? 2 : 3).map((s) => `<button class="chip" type="button">${esc(s)}</button>`).join('');
+-      v.chips.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => this.send(c.textContent)));
+-      v.list.scrollTop = v.list.scrollHeight;
++      const top = v.list.scrollTop;
++      const follow = !v.rendered || v.followNext || v.list.scrollHeight - v.list.clientHeight - top <= 32;
++      this._messages(v, items);
++      const chipsHTML = this.msgs.length ? '' : SUGGEST.slice(0, v.compact ? 2 : 3).map((s) => `<button class="chip" type="button">${esc(s)}</button>`).join('');
++      if (v.chipsHTML !== chipsHTML) {
++        v.chips.innerHTML = chipsHTML; v.chipsHTML = chipsHTML;
++        v.chips.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => this.send(c.textContent)));
++      }
++      if (v.list.clientHeight > 0) {
++        if (follow) v.list.scrollTop = v.list.scrollHeight;
++        else if (v.list.scrollTop !== top) v.list.scrollTop = top;
++        v.followNext = false;
++      }
++      v.rendered = true;
+diff --git a/scripts/verify_litha_completion.py b/scripts/verify_litha_completion.py
+new file mode 100644
+index 0000000..abfd2d6
+--- /dev/null
++++ b/scripts/verify_litha_completion.py
+@@ -0,0 +1,121 @@
++"""Completion correctness and terminal-read checks; injected replies, no sockets, keys or model."""
++from __future__ import annotations
++
++import json
++import sys
++import unittest
++from pathlib import Path
++from threading import Event
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from launcher.litha import Litha, LithaIncomplete, LithaUnavailable
++from launcher.litha_session import LithaSession
++
++
++def event(content=None, finish=None):
++    return ("data: " + json.dumps({"choices": [{"delta": {"content": content}, "finish_reason": finish}]}) + "\n").encode()
++
++
++class Reply:
++    def __init__(self, lines, *, forbid_extra=False):
++        self.lines, self.forbid_extra = iter(lines), forbid_extra
++        self.closed, self.reads = False, 0
++
++    def __enter__(self):
++        return self
++
++    def __exit__(self, *_):
++        self.closed = True
++
++    def __iter__(self):
++        return self
++
++    def __next__(self):
++        self.reads += 1
++        try:
++            return next(self.lines)
++        except StopIteration:
++            if self.forbid_extra:
++                raise AssertionError("Terminal stop performed an unnecessary potentially blocking read") from None
++            raise
++
++
++class CompletionChecks(unittest.TestCase):
++    def model(self, reply):
++        instance = Litha(url="http://127.0.0.1:9", opener=lambda *_a, **_k: reply)
++        instance._key = lambda: "synthetic-test-credential"
++        return instance
++
++    def test_stop_without_done_or_connection_close_never_reads_again(self):
++        for lines in ([event("complete", "stop")], [event("complete"), event(finish="stop")]):
++            with self.subTest(events=len(lines)):
++                reply = Reply(lines, forbid_extra=True)
++                self.assertEqual(list(self.model(reply).ask_stream("Question")), ["complete"])
++                self.assertEqual(reply.reads, len(lines))
++                self.assertTrue(reply.closed)
++
++    def test_length_cannot_be_promoted_to_success_by_done(self):
++        reply = Reply([event("def unfinished():\n"), event("    return", "length"), b"data: [DONE]\n"])
++        stream = self.model(reply).ask_stream("Write code")
++        self.assertEqual(next(stream), "def unfinished():\n")
++        self.assertEqual(next(stream), "    return")
++        with self.assertRaisesRegex(LithaIncomplete, "output limit"):
++            next(stream)
++        self.assertEqual(reply.reads, 2)
++        self.assertTrue(reply.closed)
++
++    def test_actual_session_reports_one_incomplete_terminal_after_partial_chunks(self):
++        records = []
++        settled = Event()
++        reply = Reply([event("def partial():\n", "length"), b"data: [DONE]\n"])
++
++        def receive(raw):
++            records.append(json.loads(raw))
++            if records[-1]["type"] != "chunk":
++                settled.set()
++
++        session = LithaSession(self.model(reply), receive)
++        self.addCleanup(session.close)
++        self.assertTrue(session.request("cutoff", "Write code", "[]"))
++        self.assertTrue(settled.wait(3), "Synthetic worker did not publish a terminal receipt")
++        self.assertEqual([row["type"] for row in records], ["chunk", "incomplete"])
++        self.assertEqual(records[0]["text"], "def partial():\n")
++        self.assertIn("output limit", records[1]["text"])
++        self.assertTrue(reply.closed)
++
++    def test_unsupported_or_unknown_finish_never_succeeds(self):
++        for reason in ("tool_calls", "function_call", "content_filter", "unknown", "end_turn", "DO_NOT_EXPOSE"):
++            with self.subTest(reason=reason):
++                reply = Reply([event("partial"), event(finish=reason), b"data: [DONE]\n"])
++                with self.assertRaises(LithaUnavailable) as caught:
++                    list(self.model(reply).ask_stream("Question"))
++                self.assertNotIn("DO_NOT_EXPOSE", str(caught.exception))
++                self.assertTrue(reply.closed)
++
++    def test_invalid_utf8_is_not_silently_changed_inside_code(self):
++        for invalid in (b'data: {"choices":[{"delta":{"content":"bad\xffcode"}}]}\n',
++                        event("\ud800", "stop"), event("\udfff", "stop"), "not bytes"):
++            with self.subTest(shape=type(invalid).__name__):
++                reply = Reply([invalid, b"data: [DONE]\n"])
++                with self.assertRaisesRegex(LithaUnavailable, "invalid reply"):
++                    list(self.model(reply).ask_stream("Question"))
++                self.assertTrue(reply.closed)
++
++    def test_valid_unicode_and_legacy_done_remain_supported(self):
++        for lines in ([event("return '你好 🌱'", "stop")], [event("return '你好 🌱'"), b"data: [DONE]\n"]):
++            reply = Reply(lines)
++            self.assertEqual(list(self.model(reply).ask_stream("Question")), ["return '你好 🌱'"])
++            self.assertTrue(reply.closed)
++        literal_escape = "return '\\ud800'"
++        self.assertEqual(list(self.model(Reply([event(literal_escape, "stop")])).ask_stream("Question")), [literal_escape])
++
++    def test_empty_stop_is_still_empty_failure(self):
++        reply = Reply([event(finish="stop")], forbid_extra=True)
++        with self.assertRaisesRegex(LithaUnavailable, "no text"):
++            list(self.model(reply).ask_stream("Question"))
++        self.assertEqual(reply.reads, 1)
++        self.assertTrue(reply.closed)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)
+diff --git a/scripts/verify_litha_context_wire.py b/scripts/verify_litha_context_wire.py
+new file mode 100644
+index 0000000..63f23d2
+--- /dev/null
++++ b/scripts/verify_litha_context_wire.py
+@@ -0,0 +1,107 @@
++"""Lossless context wire-size comparison on temporary synthetic source; no model/tokenizer/network."""
++from __future__ import annotations
++
++import hashlib
++import json
++import sys
++import tempfile
++import unittest
++from dataclasses import replace
++from pathlib import Path
++from typing import ClassVar
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from launcher.litha import Litha, LithaUnavailable
++from launcher.litha_context import MAX_CAPSULE_CHARS, build_context
++
++
++def decoded(capsule):
++    start, end = capsule.index("{"), capsule.rindex("}") + 1
++    return json.loads(capsule[start:end]), capsule[:start], capsule[end:]
++
++
++class Reply:
++    def __enter__(self):
++        return iter([b'data: {"choices":[{"delta":{"content":"synthetic"},"finish_reason":"stop"}]}\n'])
++
++    def __exit__(self, *_):
++        return False
++
++
++def actual_request(context):
++    recorded = []
++    model = Litha(url="http://127.0.0.1:9", opener=lambda request, **_k: recorded.append(request.data) or Reply())
++    model._key = lambda: "synthetic-test-credential"
++    assert list(model.ask_stream("Explain the selected source.", context=context)) == ["synthetic"]
++    assert len(recorded) == 1
++    return recorded[0]
++
++
++class ContextWireChecks(unittest.TestCase):
++    reports: ClassVar[list[dict]] = []
++
++    def test_utf8_envelope_is_lossless_and_invalid_unicode_never_reads_key(self):
++        reads = []
++        model = Litha(url="http://127.0.0.1:9", opener=lambda *_a, **_k: self.fail("must not open"))
++        model._key = lambda: reads.append("key") or "synthetic-test-credential"
++        value = {"text": "你好 🌱 <tag> & \\", "controls": "a\nb\t\"c"}
++        request = model._request("/chat/completions", value)
++        payload = request.data
++        assert isinstance(payload, bytes)
++        self.assertEqual(json.loads(payload), value)
++        self.assertIn("你好 🌱".encode(), payload)
++        self.assertEqual(reads, ["key"])
++        reads.clear()
++        with self.assertRaisesRegex(LithaUnavailable, "Unicode"):
++            model._request("/chat/completions", {"text": "\ud800"})
++        self.assertEqual(reads, [])
++
++    def test_lossless_source_and_actual_request_comparison(self):
++        cases = {
++            "many_short_lines": ["x = 1\n" * 800] * 3,
++            "long_lines": ["#" + "x" * 7999] * 3,
++            "unicode_and_escaping": ["print('你好 🌱 <tag> & \\\\')\n" * 100] * 3,
++            "empty": [""],
++        }
++        with tempfile.TemporaryDirectory(prefix="litha-wire-check-") as directory:
++            root = Path(directory)
++            for name, texts in cases.items():
++                with self.subTest(case=name):
++                    paths = []
++                    for index, text in enumerate(texts):
++                        path = root / f"unit{index}.py"
++                        path.write_bytes(text.encode())
++                        paths.append(path)
++                    context = build_context(paths)
++                    payload, prefix, suffix = decoded(context.text)
++                    pretty = json.dumps(payload, ensure_ascii=False, indent=2)
++                    pretty = pretty.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
++                    baseline = replace(context, text=prefix + pretty + suffix)
++                    self.assertLessEqual(len(baseline.text), MAX_CAPSULE_CHARS, "Comparison must fit the old context limit")
++                    self.assertEqual(decoded(baseline.text)[0], payload)
++                    for index, text in enumerate(texts):
++                        self.assertEqual(payload["files"][index], {
++                            "file": index + 1, "name": paths[index].name,
++                            "lines": [f"{line}: {value}" for line, value in enumerate(text.splitlines(), 1)],
++                        })
++                        self.assertEqual(context.files[index].sha256, hashlib.sha256(text.encode()).hexdigest())
++                        self.assertEqual(paths[index].read_bytes(), text.encode())
++                    current = actual_request(context)
++                    # Reconstruct the prior request's default ASCII/spaced JSON envelope around its pretty capsule.
++                    old = json.dumps(json.loads(actual_request(baseline))).encode("utf-8")
++                    self.assertLess(len(current), len(old))
++                    self.assertEqual(context.files, baseline.files)
++                    self.assertNotIn(str(root), context.text)
++                    self.assertEqual(prefix, decoded(baseline.text)[1])
++                    self.assertEqual(suffix, decoded(baseline.text)[2])
++                    self.reports.append({"case": name, "source_bytes": sum(len(t.encode()) for t in texts),
++                                         "previous_request_bytes": len(old), "current_request_bytes": len(current),
++                                         "wire_reduction_percent": round(100 * (len(old) - len(current)) / len(old), 2)})
++
++
++if __name__ == "__main__":
++    suite = unittest.defaultTestLoader.loadTestsFromTestCase(ContextWireChecks)
++    result = unittest.TextTestRunner(verbosity=2).run(suite)
++    if result.wasSuccessful():
++        print(json.dumps({"kind": "synthetic_wire_bytes_not_token_or_latency_benchmark", "cases": ContextWireChecks.reports}))
++    raise SystemExit(not result.wasSuccessful())
+diff --git a/scripts/verify_litha_render_efficiency.mjs b/scripts/verify_litha_render_efficiency.mjs
+new file mode 100644
+index 0000000..f74633f
+--- /dev/null
++++ b/scripts/verify_litha_render_efficiency.mjs
+@@ -0,0 +1,182 @@
++// Actual chat renderer against an inert child-node DOM. Optional trusted prior production module: --baseline path.
++import assert from 'node:assert/strict';
++import { resolve } from 'node:path';
++import { pathToFileURL } from 'node:url';
++import { LithaChat } from '../launcher/web/js/litha.js';
++
++let checks = 0;
++const check = (yes) => { assert.ok(yes); checks++; };
++const originals = Object.fromEntries(['requestAnimationFrame', 'cancelAnimationFrame'].map(k => [k, globalThis[k]]));
++const frames = new Map(); let frameId = 0;
++globalThis.requestAnimationFrame = fn => { frames.set(++frameId, fn); return frameId; };
++globalThis.cancelAnimationFrame = id => frames.delete(id);
++function tick() { const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn()); }
++function counters() { return { html_writes: 0, assigned_html_code_units: 0, list_replacements: 0, node_insertions: 0, node_removals: 0, settled_formatter_calls: 0 }; }
++function inertDocument() {
++  const doc = { counts: counters(), createElement(tag) { return new Element(tag, doc); } };
++  return doc;
++}
++class Element {
++  constructor(tag, doc) {
++    this.tagName = tag; this.ownerDocument = doc; this.parentNode = null; this.children = [];
++    this.connected = false; this._html = ''; this._scrollTop = 0; this.clientHeight = 160;
++    this.value = ''; this.textContent = ''; this.className = ''; this.style = {}; this.events = new Map(); this.selectors = new Map();
++  }
++  get isConnected() { return this.connected || !!this.parentNode?.isConnected; }
++  set innerHTML(value) {
++    this.ownerDocument.counts.html_writes++;
++    this.ownerDocument.counts.assigned_html_code_units += value.length;
++    if (this.kind === 'list') this.ownerDocument.counts.list_replacements++;
++    for (const child of this.children) child.parentNode = null;
++    this.children = []; this.selectors.clear(); this._html = value;
++  }
++  get innerHTML() { return this.children.length ? this.children.map(n => `<${n.tagName} class="${n.className}">${n.innerHTML}</${n.tagName}>`).join('') : this._html; }
++  querySelector(selector) {
++    if (!this.selectors.has(selector)) {
++      const node = this.ownerDocument.createElement(selector === 'textarea' ? 'textarea' : 'div');
++      node.parentNode = this;
++      if (selector === '.litha-msgs') node.kind = 'list';
++      this.selectors.set(selector, node);
++    }
++    return this.selectors.get(selector);
++  }
++  querySelectorAll() { return []; }
++  addEventListener(type, fn) { this.events.set(type, fn); }
++  insertBefore(node, reference) {
++    if (node === reference) return node;
++    if (node.parentNode) node.remove();
++    const index = reference ? this.children.indexOf(reference) : this.children.length;
++    assert.ok(index >= 0, 'reference belongs to this list');
++    this.children.splice(index, 0, node); node.parentNode = this;
++    this.ownerDocument.counts.node_insertions++;
++    return node;
++  }
++  replaceChildren(...nodes) {
++    for (const child of [...this.children]) child.remove();
++    this._html = ''; this.selectors.clear(); this.ownerDocument.counts.list_replacements++;
++    for (const node of nodes) this.insertBefore(node, null);
++  }
++  remove() {
++    if (this.parentNode) {
++      this.parentNode.children = this.parentNode.children.filter(n => n !== this);
++      this.parentNode = null; this.ownerDocument.counts.node_removals++;
++    }
++  }
++  get scrollHeight() {
++    if (this.heightOverride !== undefined) return this.heightOverride;
++    const length = this.children.length ? this.children.reduce((total, n) => total + n.innerHTML.length + 80, 0) : this._html.length;
++    return Math.max(this.clientHeight, Math.ceil(length / 80) * 20);
++  }
++  get scrollTop() { return this._scrollTop; }
++  set scrollTop(value) { this._scrollTop = Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)); }
++}
++function fixture(Chat = LithaChat, count = 200) {
++  const doc = inertDocument(), moods = [], asks = []; let emit;
++  const chat = new Chat({ on(_name, fn) { emit = fn; }, lithaAsk(...args) { asks.push(args); }, lithaCancel() {},
++    pickLithaContext: async () => ({ ok: true, files: [{ name: 'code.py', lines: 2, bytes: 20, sha256: 'a'.repeat(64) }] }),
++    clearLithaContext: async () => ({ ok: true, files: [] }),
++  }, { onMood: m => moods.push(m) });
++  chat.msgs = Array.from({ length: count }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user',
++    content: `settled ${i}\n` + (i % 2 ? 'A code explanation.\n```js\nconst value = 42;\n```\n' : 'A user question.\n').repeat(20) }));
++  const settled = new Set(chat.msgs.filter(m => m.role === 'assistant').map(m => m.content));
++  const home = doc.createElement('section'), dock = doc.createElement('section'); home.connected = dock.connected = true;
++  const a = chat.mount(home, { compact: true }), b = chat.mount(dock);
++  return { doc, chat, a, b, moods, asks, settled, emit: event => emit(event) };
++}
++function measuredStreaming(Chat) {
++  const f = fixture(Chat);
++  f.chat.send('Synthetic render comparison'); const id = f.chat.pending.id;
++  f.doc.counts = counters();
++  const split = String.prototype.split;
++  String.prototype.split = function (separator, ...rest) {
++    if (separator instanceof RegExp && separator.source.startsWith('```') && f.settled.has(String(this))) f.doc.counts.settled_formatter_calls++;
++    return split.call(this, separator, ...rest);
++  };
++  try {
++    for (let i = 0; i < 100; i++) { f.emit({ id, type: 'chunk', text: `piece${i} ` }); tick(); }
++    f.emit({ id, type: 'done' });
++    return { ...f.doc.counts };
++  } finally { String.prototype.split = split; }
++}
++try {
++  const f = fixture();
++  check(f.a.rows.size === 4 && f.b.rows.size === 60);
++  f.chat.send('First question'); const id = f.chat.pending.id;
++  const past = [...f.b.rows].filter(([m]) => m !== f.chat.pending.msg).map(([m, row]) => [m, row.node]);
++  const replyNode = f.b.rows.get(f.chat.pending.msg).node;
++  const draft = f.b.ta; draft.value = 'Keep this draft'; draft.selectionStart = 2; draft.selectionEnd = 7;
++  f.b.list.scrollTop = 50; const readingPosition = f.b.list.scrollTop;
++  f.a.list.scrollTop = f.a.list.scrollHeight;
++  f.doc.counts = counters();
++  for (let i = 0; i < 100; i++) {
++    f.emit({ id, type: 'chunk', text: `text${i} ` }); tick();
++    check(f.b.list.scrollTop === readingPosition);
++  }
++  check(f.doc.counts.list_replacements === 0 && f.doc.counts.node_insertions === 0 && f.doc.counts.node_removals === 0);
++  check(past.every(([m, node]) => f.b.rows.get(m).node === node && node.parentNode === f.b.list));
++  check(f.b.ta === draft && draft.value === 'Keep this draft' && draft.selectionStart === 2 && draft.selectionEnd === 7);
++  check(f.a.list.scrollTop === f.a.list.scrollHeight - f.a.list.clientHeight);
++  f.emit({ id, type: 'done' });
++  check(f.b.rows.get(f.chat.msgs.at(-1)).node === replyNode && f.b.stop.hidden);
++  check(f.b.rows.size === 60 && f.a.rows.size === 4 && f.b.list.scrollTop === readingPosition);
++  const replacements = f.doc.counts.list_replacements;
++  check(await f.chat.chooseContext() && f.doc.counts.list_replacements === replacements);
++  check(f.a.files.innerHTML === f.b.files.innerHTML && f.b.files.innerHTML.includes('code.py'));
++  const afterPicker = f.doc.counts.html_writes; f.chat._render();
++  check(f.doc.counts.html_writes === afterPicker); // No changes: no formatter/HTML writes, including context and suggestion rows.
++  f.chat.send('Second question'); const second = f.chat.pending.id;
++  check(f.b.rows.size === 60 && f.b.list.scrollTop === f.b.list.scrollHeight - f.b.list.clientHeight);
++  f.emit({ id: second, type: 'chunk', text: '<unsafe>\n```js\nlet x = 1;' }); tick();
++  const secondNode = f.b.rows.get(f.chat.pending.msg).node;
++  check(secondNode.innerHTML.includes('&lt;unsafe&gt;') && !secondNode.innerHTML.includes('<unsafe>'));
++  f.chat.cancel();
++  check(secondNode.innerHTML.includes('Response stopped.') && !f.chat.pending);
++  f.emit({ id: second, type: 'chunk', text: 'late' }); check(!secondNode.innerHTML.includes('late'));
++  f.chat.send('Third question'); const third = f.chat.pending.id;
++  const thirdNode = f.b.rows.get(f.chat.pending.msg).node;
++  f.emit({ id: third, type: 'error', text: 'Safe failure' });
++  check(thirdNode.className === 'msg err' && thirdNode.innerHTML === 'Safe failure');
++  f.chat.send('Limited response'); const limited = f.chat.pending.id;
++  const limitedMessage = f.chat.pending.msg, limitedNode = f.b.rows.get(limitedMessage).node;
++  f.emit({ id: limited, type: 'chunk', text: '```js\nconst proof = "<tool>";' }); tick();
++  const partial = limitedMessage.content;
++  f.emit({ id: limited, type: 'incomplete', text: 'Output stopped <script>unsafe</script>; review this partial code.' });
++  check(!f.chat.pending && limitedMessage.error && limitedMessage.incomplete && limitedMessage.content === partial);
++  check(limitedNode.innerHTML.includes('<pre>') && limitedNode.innerHTML.includes('&lt;tool&gt;'));
++  check(limitedNode.innerHTML.includes('&lt;script&gt;unsafe&lt;/script&gt;') && !limitedNode.innerHTML.includes('<script>'));
++  check(f.moods.at(-1) === 'surprised' && frames.size === 0);
++  f.emit({ id: limited, type: 'chunk', text: 'ignored later text' });
++  check(limitedMessage.content === partial);
++  limitedMessage.notice = 'Updated static notice'; f.chat._render();
++  check(limitedNode.innerHTML.includes('Updated static notice'));
++  f.chat.send('After limited response');
++  check(f.asks.at(-1)[2].every(m => m.content !== partial)); f.chat.cancel();
++  let hiddenWrites = 0;
++  f.b.list.clientHeight = 0; f.b.list.heightOverride = 0;
++  Object.defineProperty(f.b.list, 'scrollTop', { configurable: true, get: () => 0, set: () => { hiddenWrites++; } });
++  f.chat._render(); check(hiddenWrites === 0);
++  delete f.b.list.scrollTop; delete f.b.list.heightOverride; f.b.list.clientHeight = 160;
++  const remount = f.doc.createElement('section'); remount.connected = true;
++  const c = f.chat.mount(remount); check(c.rows.size === 60 && c.list.innerHTML.includes('Safe failure'));
++  f.chat.unmount(f.b.el); check(!f.chat.views.has(f.b));
++  f.a.el.connected = false; f.chat._render(); check(!f.chat.views.has(f.a));
++  const empty = fixture(LithaChat, 0); check(empty.b.rows.size === 1 && empty.b.list.innerHTML.includes("Hi, I'm Litha"));
++  const incremental = measuredStreaming(LithaChat);
++  check(incremental.list_replacements === 0 && incremental.settled_formatter_calls === 0 && incremental.node_insertions === 0);
++  console.log(JSON.stringify({ measurement: '100 streamed frames; Home4/dock60; 200 synthetic settled messages', incremental }));
++  if (process.argv.length > 2) {
++    assert.equal(process.argv[2], '--baseline'); assert.equal(process.argv.length, 4);
++    const { LithaChat: BaselineChat } = await import(pathToFileURL(resolve(process.argv[3])).href);
++    const baseline = measuredStreaming(BaselineChat);
++    check(baseline.settled_formatter_calls > incremental.settled_formatter_calls);
++    check(baseline.list_replacements > incremental.list_replacements);
++    check(baseline.assigned_html_code_units > incremental.assigned_html_code_units);
++    console.log(JSON.stringify({ baseline, scope: 'Actual prior module against the same inert DOM; no timing, GPU or model-quality claim.' }));
++  }
++  check(frames.size === 0);
++  console.log(`${checks} actual incremental-render checks passed; inert DOM counters, no browser/model/network.`);
++} finally {
++  for (const [key, value] of Object.entries(originals)) {
++    if (value === undefined) delete globalThis[key]; else globalThis[key] = value;
++  }
++}
