@@ -10,6 +10,8 @@ Environment=PYTHONPATH=/opt/star-mesh/app
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/opt/star-mesh
+StateDirectory=star-mesh
+StateDirectoryMode=0750
 ExecStart=/usr/bin/python3 -m mesh /etc/star-mesh/mesh.json
 Restart=always
 RestartSec=2

@@ -21,7 +21,9 @@ import time
 import urllib.parse
 from pathlib import Path
 
-VERSION = "1"
+from . import instant
+
+VERSION = "2"
 FAST, DEEP = "litha", "litha-deep"
 
 DEFAULTS = {
@@ -47,6 +49,22 @@ DEFAULTS = {
     "max_body_mb": 64,
     "register_ttl_s": 60.0,           # a self-registration lasts this long unless re-sent (nodes re-send every 30 s)
     "max_registered": 16,
+    # instant answers (server/mesh/instant.py)
+    "affinity_bonus": 2.0,            # score multiplier for the backend that holds the conversation's KV cache
+    "affinity_ttl_s": 1800.0,
+    "prefetch_debounce_s": 0.4,       # at most one prefetch per conversation per this many seconds (latest text wins)
+    "prefetch_max_tokens": 0,         # 0 = prompt only (llama-server fills the KV cache and returns)
+    "prefetch_brain": True,           # prefetch on the brain too, only while its model is already loaded and idle
+    "verify_url": "http://127.0.0.1:8101",   # the verifier; /mesh/verify on this router is forwarded there
+    "cache_db": "",                   # SQLite path of the verified answer cache; "" = cache off
+    "cache_threshold": 0.95,          # cosine for a semantic hit (calibrated on star-embed: 0 false hits in 27 near
+                                      # misses, 5 of 19 paraphrases; docs/agents/instant-answers-20261028.md)
+    "cache_ttl_days": 30.0,
+    "cache_reverify_s": 86400.0,      # a hit on an entry verified longer ago than this re-checks it in the background
+    "cache_min_score_ratio": 1.0,     # entries need score / max_score >= this (full marks by default)
+    "embed_model": "star-embed",
+    "embed_prefix": "task: sentence similarity | query: ",
+    "embed_timeout_s": 1.0,
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -294,6 +312,10 @@ class Router:
         self.decisions = collections.deque(maxlen=50)
         self.started = time.time()
         self.server = None
+        self.affinity = instant.Affinity(cfg["affinity_ttl_s"])
+        self.prefetching: dict[str, dict] = {}
+        self.counters = collections.Counter()
+        self.cache = instant.AnswerCache(cfg["cache_db"]) if cfg.get("cache_db") else None
 
     # ---- node status ---------------------------------------------------------------------------------------------
     def _node_headers(self) -> dict:
@@ -384,6 +406,9 @@ class Router:
     async def poll_loop(self):
         while True:
             self.expire()
+            now = time.monotonic()
+            for key in [k for k, v in self.prefetching.items() if now - v["last"] > 60 and v["task"].done()]:
+                del self.prefetching[key]
             await asyncio.gather(self.poll_brain(), *(self.poll_node(n) for n in self.nodes))
             await asyncio.sleep(self.cfg["poll_s"])
 
@@ -402,24 +427,31 @@ class Router:
             return False, "model not loaded (warming)"
         return True, ""
 
-    def plan(self, model: str) -> tuple[list[tuple[Backend, str, str]], str]:
-        """Ranked [(backend, base_url, backend_model)] for a requested model, plus a reason line."""
+    def plan(self, model: str, conv: str | None = None) -> tuple[list[tuple[Backend, str, str]], str]:
+        """Ranked [(backend, base_url, backend_model)] for a requested model, plus a reason line. The backend that
+        served this conversation last gets `affinity_bonus` on its score (its llama-server still holds the KV)."""
         brain_url = self.cfg["brain_url"].rstrip("/") + "/v1"
         if model == DEEP:
             return [(self.brain, brain_url, self.cfg["brain_deep_model"])], "litha-deep -> brain star-deep"
         if model != FAST:
             return [(self.brain, brain_url, model)], "pass-through to brain"
         now, ranked, skipped = time.monotonic(), [], []
+        sticky = self.affinity.get(conv)
+
+        def bonus(b):
+            return self.cfg["affinity_bonus"] if b.name == sticky else 1.0
         for node in self.nodes:
             ok, why = self.node_usable(node, now)
             if ok:
                 m = node.model(self.cfg["node_fast_models"])
-                ranked.append((node.score(), 1, node, m["url"].rstrip("/"), m["id"]))
+                ranked.append((node.score() * bonus(node), 1, node, m["url"].rstrip("/"), m["id"]))
             else:
                 skipped.append(f"{node.name}: {why}")
-        ranked.append((self.brain.score(), 0, self.brain, brain_url, self.cfg["brain_fast_model"]))
+        ranked.append((self.brain.score() * bonus(self.brain), 0, self.brain, brain_url,
+                       self.cfg["brain_fast_model"]))
         ranked.sort(key=lambda r: (r[0], r[1]), reverse=True)
-        parts = [f"{b.name} {b.tok_s:.1f} tok/s q{b.inflight}" for _, _, b, _, _ in ranked]
+        parts = [f"{b.name} {b.tok_s:.1f} tok/s q{b.inflight}" + (" (kv)" if b.name == sticky else "")
+                 for _, _, b, _, _ in ranked]
         reason = "ranked: " + " > ".join(parts) + ("; skipped " + "; ".join(skipped) if skipped else "")
         return [(b, url, mid) for _, _, b, url, mid in ranked], reason
 
@@ -525,7 +557,9 @@ class Router:
                 return await send_json(writer, 413, err("request too large"))
             body = await asyncio.wait_for(reader.readexactly(n), 120) if n else b""
             peer = (writer.get_extra_info("peername") or ("",))[0]
-            await self.dispatch(method, urllib.parse.urlsplit(target).path, headers, body, writer, peer)
+            url = urllib.parse.urlsplit(target)
+            headers[":query"] = url.query
+            await self.dispatch(method, url.path, headers, body, writer, peer)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionError, ValueError):
             pass
         finally:
@@ -549,12 +583,20 @@ class Router:
             except (ValueError, AssertionError):
                 return await send_json(writer, 400, err("body must be a JSON object"))
             return await send_json(writer, *self.register(req, peer))
+        if path == "/mesh/cache" and method != "GET":    # cache changes: mesh token (checked in cache_api)
+            return await send_json(writer, *await self.cache_api(method, headers, body))
         if not token or not self.keys.check(token):
             return await send_json(writer, 401, err("invalid api key", "invalid_request_error"))
         if method == "GET" and path == "/v1/models":
             return await send_json(writer, 200, await self.models())
         if method == "GET" and path == "/mesh/status":
             return await send_json(writer, 200, self.status())
+        if method == "POST" and path == "/mesh/prefetch":
+            return await send_json(writer, *await self.prefetch(body, headers))
+        if path == "/mesh/verify":
+            return await self.forward(self.cfg["verify_url"], method, path, headers, body, writer)
+        if path == "/mesh/cache":
+            return await send_json(writer, *await self.cache_api(method, headers, body))
         if method == "POST" and path in ("/v1/chat/completions", "/v1/completions"):
             return await self.complete(path[3:], headers, body, writer)
         return await self.passthrough(method, path, auth, body, writer)
@@ -591,6 +633,9 @@ class Router:
                            "hedge_default": self.cfg["hedge"], "poll_s": self.cfg["poll_s"]},
                 "brain": {"name": self.brain.name, "healthy": self.brain_ok, "tok_s": round(self.brain.tok_s, 1),
                           "inflight": self.brain.inflight, "served": self.brain.served},
+                "instant": {"affinity_conversations": len(self.affinity), "counters": dict(self.counters),
+                            "cache": self.cache.stats() if self.cache else None,
+                            "cache_threshold": self.cfg["cache_threshold"]},
                 "nodes": nodes, "decisions": list(self.decisions)[::-1]}
 
     async def complete(self, path, headers, body, writer):
@@ -603,17 +648,55 @@ class Router:
         hedge = req.pop("mesh_hedge", None)
         if hedge is None:
             hedge = headers.get("x-mesh-hedge", "").strip().lower() in ("1", "true", "yes") or self.cfg["hedge"]
+        conv = instant.conversation_key(req, headers) if model == FAST else None
+        t0 = time.monotonic()
+        cache_hdr, question, context = {}, None, ""
+        if model == FAST and self.cache is not None:
+            cache_hdr, question, context = self.cache_check(req, headers)
+            row = self.cache.exact(question, context) if question else None
+            if row is not None:
+                return await self.serve_cached(row, "exact", 1.0, round((time.monotonic() - t0) * 1000, 1), stream,
+                                               writer, t0)
+        for k in instant.MESH_FIELDS:
+            req.pop(k, None)
+        if model == FAST:
+            req.setdefault("cache_prompt", True)
+
         def body_for(mid):
             return json.dumps({**req, "model": mid}).encode()
 
-        plan, reason = self.plan(model)
-        t0 = time.monotonic()
+        plan, reason = self.plan(model, conv)
         log = {"ts": round(time.time(), 3), "model": model, "stream": stream, "hedge": bool(hedge),
                "candidates": [b.name for b, _, _ in plan], "reason": reason, "errors": []}
+        if conv:
+            log["conv"], log["affinity"] = conv[:12], self.affinity.get(conv)
         self.decisions.append(log)
+        # the semantic cache lookup (an embedding round trip) runs while the backend starts: a hit before the first
+        # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
+        race = asyncio.ensure_future(self.race(plan, path, body_for, headers.get("authorization", ""), stream,
+                                               bool(hedge), log))
+        if question:
+            lookup = asyncio.ensure_future(self.cache_semantic(question, context))
+            await asyncio.wait({race, lookup}, return_when=asyncio.FIRST_COMPLETED)
+            if lookup.done() and not race.done():
+                row, sim, ms = lookup.result()
+                if row is not None:
+                    race.cancel()
+                    await asyncio.gather(race, return_exceptions=True)
+                    log.update(chosen=None, outcome="cancelled: semantic cache hit")
+                    return await self.serve_cached(row, "semantic", sim, ms, stream, writer, t0)
+                cache_hdr["X-Mesh-Cache-Ms"] = str(ms)
+                if sim is not None:
+                    cache_hdr["X-Mesh-Cache-Similarity"] = f"{sim:.4f}"
+                    log["cache_similarity"] = round(sim, 4)
+            else:
+                lookup.cancel()
+                cache_hdr["X-Mesh-Cache-Ms"] = "late"
+            self.counters["cache_miss"] += 1
+        if cache_hdr:
+            log["cache"] = cache_hdr.get("X-Mesh-Cache")
         try:
-            backend, result = await self.race(plan, path, body_for, headers.get("authorization", ""), stream,
-                                              bool(hedge), log)
+            backend, result = await race
         except UpstreamError as e:
             log.update(chosen=None, outcome=f"failed: {e}")
             print("mesh", json.dumps(log), flush=True)
@@ -621,12 +704,13 @@ class Router:
                 return await send_raw(writer, e.status, e.headers.get("content-type", "application/json"), e.body)
             return await send_json(writer, 502, err(f"no backend answered: {e}", "server_error"))
         log["chosen"] = backend.name
+        self.affinity.set(conv, backend.name)
         up, pending, rest = result
         log["ttft_ms"] = round((time.monotonic() - t0) * 1000)
         try:
             if not stream:
                 await send_raw(writer, 200, up.headers.get("content-type", "application/json"), rest,
-                               {"X-Mesh-Backend": backend.name})
+                               {"X-Mesh-Backend": backend.name, **cache_hdr})
                 try:
                     timings = json.loads(rest).get("timings") or {}
                 except (ValueError, AttributeError):
@@ -634,16 +718,17 @@ class Router:
                 backend.measured(timings.get("predicted_per_second"))
                 log["tok_s"], log["outcome"] = timings.get("predicted_per_second"), "ok"
                 return
-            await self.relay_stream(backend, up, pending, rest, writer, log)
+            await self.relay_stream(backend, up, pending, rest, writer, log, cache_hdr)
         finally:
             backend.inflight -= 1
             up.close()
             log["total_ms"] = round((time.monotonic() - t0) * 1000)
             print("mesh", json.dumps(log), flush=True)
 
-    async def relay_stream(self, backend, up, pending, events, writer, log):
+    async def relay_stream(self, backend, up, pending, events, writer, log, extra=None):
+        more = "".join(f"{k}: {v}\r\n" for k, v in (extra or {}).items()).encode("latin-1")
         writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\n"
-                     b"Connection: close\r\nX-Mesh-Backend: " + backend.name.encode() + b"\r\n\r\n")
+                     b"Connection: close\r\nX-Mesh-Backend: " + backend.name.encode() + b"\r\n" + more + b"\r\n")
         first_at, pieces, timings = time.monotonic(), 0, None
         try:
             for ev in pending:
@@ -675,6 +760,215 @@ class Router:
                 await writer.drain()
             except (ConnectionError, OSError):
                 pass
+
+    # ---- instant answers -----------------------------------------------------------------------------------------
+    async def prefetch(self, body: bytes, headers: dict) -> tuple[int, dict]:
+        """Warm the KV cache of the backend that will serve this conversation (prompt only, no answer). Debounced:
+        at most one upstream prefetch per conversation per `prefetch_debounce_s`; newer text replaces waiting text."""
+        try:
+            req = json.loads(body or b"{}")
+            assert isinstance(req, dict) and isinstance(req.get("messages"), list) and req["messages"]
+        except (ValueError, AssertionError):
+            return 400, err("body must be {\"messages\": [...], \"conversation_id\"?: ...}")
+        if str(req.get("model") or FAST) != FAST:
+            return 400, err(f"prefetch is for model {FAST} only")
+        conv = instant.conversation_key(req, headers)
+        if conv is None:
+            return 400, err("need a user message or a conversation_id")
+        slot = self.prefetching.setdefault(conv, {"last": 0.0, "task": None, "result": None})
+        slot["payload"], slot["auth"] = req, headers.get("authorization", "")
+        self.counters["prefetch_requests"] += 1
+        if slot["task"] is None or slot["task"].done():
+            slot["task"] = asyncio.get_running_loop().create_task(self._prefetch_loop(conv, slot))
+            state = "scheduled"
+        else:
+            state = "debounced"
+            self.counters["prefetch_debounced"] += 1
+        if req.get("wait"):
+            await asyncio.shield(slot["task"])
+            return 200, {"ok": True, "conversation": conv[:12], **(slot["result"] or {})}
+        return 202, {"ok": True, "conversation": conv[:12], "state": state}
+
+    async def _prefetch_loop(self, conv: str, slot: dict):
+        while slot.get("payload") is not None:
+            wait = slot["last"] + self.cfg["prefetch_debounce_s"] - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            req = slot.pop("payload", None)
+            if req is None:
+                break
+            slot["last"] = time.monotonic()
+            try:
+                slot["result"] = await self._prefetch_once(conv, req, slot.get("auth", ""))
+            except Exception as e:                       # never let a prefetch break anything
+                slot["result"] = {"skipped": f"error: {type(e).__name__}"}
+
+    async def _brain_loaded(self, model: str) -> bool:
+        await self.models()
+        for m in self.brain_models:
+            if model == m.get("id") or model in (m.get("aliases") or []):
+                return (m.get("status") or {}).get("value", "loaded") == "loaded"
+        return False
+
+    async def _prefetch_once(self, conv: str, req: dict, auth: str) -> dict:
+        plan, _ = self.plan(FAST, conv)
+        backend, url, mid = plan[0]
+        if backend.inflight > 0:
+            self.counters["prefetch_skipped"] += 1
+            return {"backend": backend.name, "skipped": "backend busy with an answer"}
+        if backend is self.brain and not (self.cfg["prefetch_brain"] and await self._brain_loaded(mid)):
+            self.counters["prefetch_skipped"] += 1
+            return {"backend": backend.name, "skipped": "brain model not loaded (a prefetch never loads one)"}
+        body = {k: v for k, v in req.items() if k not in instant.MESH_FIELDS + ("wait", "stream_options")}
+        body.update(model=mid, stream=False, max_tokens=self.cfg["prefetch_max_tokens"], cache_prompt=True)
+        t0 = time.monotonic()
+        up = await open_upstream(url + "/chat/completions", "POST", json.dumps(body).encode(),
+                                 self._headers_for(backend, auth), idle_s=60)
+        try:
+            raw = await asyncio.wait_for(up.body(), 60)
+        finally:
+            up.close()
+        if up.status != 200:
+            self.counters["prefetch_failed"] += 1
+            return {"backend": backend.name, "skipped": f"HTTP {up.status}"}
+        self.affinity.set(conv, backend.name)
+        self.counters["prefetch_sent"] += 1
+        try:
+            t = json.loads(raw).get("timings") or {}
+        except (ValueError, AttributeError):
+            t = {}
+        return {"backend": backend.name, "prompt_n": t.get("prompt_n"), "cache_n": t.get("cache_n"),
+                "prompt_ms": t.get("prompt_ms"), "ms": round((time.monotonic() - t0) * 1000)}
+
+    async def forward(self, base: str, method: str, path: str, headers: dict, body: bytes, writer):
+        """/mesh/verify -> the verifier (same key; the fix loop can take minutes)."""
+        query = headers.get(":query") or ""
+        url = base.rstrip("/") + path + (f"?{query}" if query else "")
+        try:
+            up = await open_upstream(url, method, body, {"Content-Type": "application/json",
+                                                         "Authorization": headers.get("authorization", "")},
+                                     idle_s=400)
+            data = await asyncio.wait_for(up.body(), 400)
+            up.close()
+        except (UpstreamError, asyncio.TimeoutError) as e:
+            return await send_json(writer, 502, err(f"verifier: {e}", "server_error"))
+        return await send_raw(writer, up.status, up.headers.get("content-type", "application/json"), data)
+
+    async def embed(self, text: str) -> list[float] | None:
+        body = json.dumps({"model": self.cfg["embed_model"], "input": self.cfg["embed_prefix"] + text}).encode()
+        try:
+            up = await open_upstream(self.cfg["brain_url"].rstrip("/") + "/v1/embeddings", "POST", body,
+                                     {"Content-Type": "application/json",
+                                      "Authorization": f"Bearer {self.keys.first()}"},
+                                     connect_s=self.cfg["embed_timeout_s"], idle_s=self.cfg["embed_timeout_s"])
+            try:
+                raw = await asyncio.wait_for(up.body(), self.cfg["embed_timeout_s"])
+            finally:
+                up.close()
+            vec = json.loads(raw)["data"][0]["embedding"]
+            return [float(x) for x in vec] if up.status == 200 else None
+        except (UpstreamError, asyncio.TimeoutError, ValueError, KeyError, IndexError, TypeError):
+            self.counters["embed_failed"] += 1
+            return None
+
+    async def verify_ok(self, answer: str) -> bool | None:
+        """True when the verifier finds no error and no warning, False otherwise, None when it cannot be reached."""
+        try:
+            up = await open_upstream(self.cfg["verify_url"].rstrip("/") + "/mesh/verify", "POST",
+                                     json.dumps({"answer": answer}).encode(),
+                                     {"Content-Type": "application/json",
+                                      "Authorization": f"Bearer {self.keys.first()}"}, idle_s=30)
+            raw = await asyncio.wait_for(up.body(), 30)
+            up.close()
+            if up.status != 200:
+                return None
+            report = json.loads(raw)                     # warnings (deprecated API ...) also keep it out
+            return bool(report.get("ok")) and not report.get("needs_fix")
+        except (UpstreamError, asyncio.TimeoutError, ValueError, AttributeError):
+            return None
+
+    async def cache_semantic(self, question: str, context: str) -> tuple[dict | None, float | None, float]:
+        """(row or None, best similarity, ms): embed the question through the brain, compare with the entries."""
+        t0 = time.monotonic()
+        emb = await self.embed(question)
+        row, sim = self.cache.nearest(emb, context, question) if emb is not None else (None, None)
+        if row is not None and sim < self.cfg["cache_threshold"]:
+            row = None
+        return row, sim, round((time.monotonic() - t0) * 1000, 1)
+
+    def cache_check(self, req: dict, headers: dict) -> tuple[dict, str | None, str]:
+        """X-Mesh-Cache headers for a live answer, plus (question, context) when the cache may answer it."""
+        if req.get("mesh_cache") is False or headers.get("x-mesh-cache", "").lower() in ("off", "0", "no"):
+            return {"X-Mesh-Cache": "off"}, None, ""
+        question, why = instant.cache_question(req)
+        if question is None:
+            self.counters["cache_skip"] += 1
+            return {"X-Mesh-Cache": "skip"}, None, ""
+        return {"X-Mesh-Cache": "miss"}, question, instant.clean_context(
+            headers.get("x-mesh-context") or req.get("mesh_context"))
+
+    async def serve_cached(self, row: dict, how: str, sim, lookup_ms: float, stream: bool, writer, t0: float):
+        self.counters["cache_hit"] += 1
+        self.cache.hit(row["id"])
+        if time.time() - row["verified_at"] > self.cfg["cache_reverify_s"]:
+            asyncio.get_running_loop().create_task(self._reverify(row["id"], row["answer"]))
+        hdr = {"X-Mesh-Backend": "cache", "X-Mesh-Cache": "hit", "X-Mesh-Cache-Match": how,
+               "X-Mesh-Cache-Id": str(row["id"]), "X-Mesh-Cache-Ms": str(lookup_ms)}
+        if stream:
+            await send_raw(writer, 200, "text/event-stream", instant.sse_from_text(row["answer"], FAST), hdr)
+        else:
+            await send_json(writer, 200, instant.completion_from_text(row["answer"], FAST), hdr)
+        self.decisions.append({"ts": round(time.time(), 3), "model": FAST, "stream": stream, "cache": how,
+                               "similarity": round(sim, 4) if sim is not None else None, "lookup_ms": lookup_ms,
+                               "chosen": "cache", "entry": row["id"], "outcome": "ok",
+                               "total_ms": round((time.monotonic() - t0) * 1000, 1)})
+
+    async def _reverify(self, rid: int, answer: str):
+        ok = await self.verify_ok(answer)
+        if ok is True:
+            self.cache.reverified(rid)
+        elif ok is False:
+            self.cache.delete(rid)
+            self.counters["cache_dropped_on_reverify"] += 1
+
+    async def cache_api(self, method: str, headers: dict, body: bytes) -> tuple[int, dict]:
+        """GET: list (client key). POST add / DELETE ?id=N: mesh token only (the night jobs, never the launcher)."""
+        if self.cache is None:
+            return 404, err("answer cache is off (cache_db not set)")
+        if method == "GET":
+            self.cache.purge_expired()
+            return 200, {"stats": self.cache.stats(), "entries": self.cache.listing()}
+        auth = headers.get("authorization", "")
+        token, mesh_token = auth[7:].strip() if auth.lower().startswith("bearer ") else "", self.mesh_token.first()
+        if not token or not mesh_token or not hmac.compare_digest(token.encode(), mesh_token.encode()):
+            return 401, err("cache changes need the mesh token")
+        if method == "DELETE":
+            ids = urllib.parse.parse_qs(headers.get(":query") or "").get("id", [""])
+            return (200, {"ok": True}) if ids[0].isdigit() and self.cache.delete(int(ids[0])) else (404, err("no such id"))
+        if method != "POST":
+            return 405, err("GET, POST or DELETE")
+        try:
+            e = json.loads(body or b"{}")
+            question, answer = str(e["question"]), str(e["answer"])
+            score, max_score = float(e["score"]), float(e.get("max_score") or 3)
+        except (ValueError, KeyError, TypeError):
+            return 400, err("need question, answer, score (+ max_score, context, source)")
+        if max_score <= 0 or score / max_score < self.cfg["cache_min_score_ratio"]:
+            return 422, err("score too low for the cache")
+        q, why = instant.cache_question({"messages": [{"role": "user", "content": question}]})
+        if q is None:
+            return 422, err(f"not cacheable: {why}")
+        ok = await self.verify_ok(answer)
+        if ok is None:
+            return 503, err("verifier unreachable; nothing cached unverified")
+        if not ok:
+            return 422, err("the verifier found problems in this answer")
+        emb = await self.embed(q)
+        if emb is None:
+            return 503, err("embedding failed")
+        rid = self.cache.put(q, answer, instant.clean_context(e.get("context")), str(e.get("source") or "")[:120],
+                             score / max_score, emb, self.cfg["cache_ttl_days"] * 86400)
+        return 200, {"ok": True, "id": rid}
 
     async def passthrough(self, method, path, auth, body, writer):
         try:

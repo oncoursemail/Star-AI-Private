@@ -96,7 +96,8 @@ step_config() {
 import json, pathlib, sys
 nodes = pathlib.Path(sys.argv[2])
 cfg = {"port": 8100, "brain_url": f"http://{sys.argv[1]}:8080", "nodes": [], "hedge": False,
-       "client_keys_file": "/etc/star-mesh/api_keys", "mesh_token_file": "/etc/star-mesh/mesh_token"}
+       "client_keys_file": "/etc/star-mesh/api_keys", "mesh_token_file": "/etc/star-mesh/mesh_token",
+       "cache_db": "/var/lib/star-mesh/answers.db"}
 if nodes.is_file():
     cfg.update(json.loads(nodes.read_text(encoding="utf-8")))
 print(json.dumps(cfg, indent=2))
