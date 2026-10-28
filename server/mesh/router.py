@@ -16,6 +16,7 @@ import collections
 import hmac
 import json
 import os
+import re
 import time
 import urllib.parse
 from pathlib import Path
@@ -44,7 +45,10 @@ DEFAULTS = {
     "warm_every_s": 60.0,             # at most one POST /load per node per this many seconds
     "hedge": False,                   # default; a request can ask with header X-Mesh-Hedge: 1 or "mesh_hedge": true
     "max_body_mb": 64,
+    "register_ttl_s": 60.0,           # a self-registration lasts this long unless re-sent (nodes re-send every 30 s)
+    "max_registered": 16,
 }
+NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
 
 def load_config(path: str | None = None) -> dict:
@@ -235,20 +239,47 @@ class Backend:
             self.tok_s = tok_s if self.samples == 1 else 0.7 * self.tok_s + 0.3 * tok_s
 
 
+LOOPBACK = ("0.0.0.0", "localhost", "127.0.0.1", "::", "::1")
+
+
+def _same_host(url: str, ref: str) -> str:
+    """A loopback host in a node-reported URL means 'me': use the host the router reaches the node on."""
+    u, r = urllib.parse.urlsplit(url), urllib.parse.urlsplit(ref)
+    if u.hostname in LOOPBACK and r.hostname and r.hostname not in LOOPBACK:
+        return u._replace(netloc=f"{r.hostname}:{u.port or 80}").geturl()
+    return url
+
+
 class Node(Backend):
-    def __init__(self, name: str, status_url: str):
+    def __init__(self, name: str, status_url: str | None, static: bool = True):
         super().__init__(name, 0.0)
-        self.status_url, self.status, self.state, self.reason = status_url, {}, "unknown", "not polled yet"
+        self.static_url = status_url if static else None
+        self.status, self.state, self.reason = {}, "unknown", "not polled yet"
         self.last_ok, self.last_warm = 0.0, 0.0
+        self.reg_status_url, self.reg_model_url, self.reg_until = status_url if not static else None, None, 0.0
+
+    def registered(self, now: float | None = None) -> bool:
+        return (now if now is not None else time.monotonic()) < self.reg_until
+
+    @property
+    def status_url(self) -> str:
+        return self.reg_status_url if self.registered() and self.reg_status_url else (self.static_url or "")
+
+    @property
+    def source(self) -> str:
+        if self.static_url:
+            return "static+registered" if self.registered() else "static"
+        return "registered"
 
     @property
     def measured_any(self) -> bool:
         return self.samples > 0
 
     def model(self, ids) -> dict | None:
+        url = self.reg_model_url if self.registered() else None
         for m in self.status.get("models") or []:
-            if m.get("id") in ids and m.get("url"):
-                return m
+            if m.get("id") in ids and (url or m.get("url")):
+                return {**m, "url": url or _same_host(m["url"], self.status_url)}
         return None
 
 
@@ -316,8 +347,43 @@ class Router:
         except (UpstreamError, asyncio.TimeoutError):
             self.brain_ok = False
 
+    def register(self, body: dict, peer: str) -> tuple[int, dict]:
+        """Node self-registration (heartbeat). Missing URLs are built from the request's source address."""
+        name = str(body.get("node") or "")
+        if not NODE_NAME.match(name):
+            return 400, err("node must be 1-40 letters, digits, '.', '_' or '-'")
+        urls = {"status_url": str(body.get("status_url") or "") or f"http://{peer}:8099/status",
+                "model_url": str(body.get("model_url") or "")}
+        for key, port in (("status_url", 8099), ("model_url", 8098)):
+            if not urls[key]:
+                continue                  # no model_url: the URL in the node's own status is used
+            u = urllib.parse.urlsplit(urls[key])
+            if u.scheme != "http" or not u.hostname:
+                return 400, err(f"{key} must be an http:// URL")
+            if u.hostname in LOOPBACK and peer:   # the node does not know its LAN address: use the source IP
+                urls[key] = u._replace(netloc=f"{peer}:{u.port or port}").geturl()
+        node = next((n for n in self.nodes if n.name == name), None)
+        if node is None:
+            if sum(1 for n in self.nodes if not n.static_url) >= self.cfg["max_registered"]:
+                return 429, err("too many registered nodes")
+            node = Node(name, urls["status_url"], static=False)
+            self.nodes.append(node)
+        fresh = not node.registered() or node.reg_status_url != urls["status_url"]
+        node.reg_status_url, node.reg_model_url = urls["status_url"], urls["model_url"] or None
+        node.reg_until = time.monotonic() + self.cfg["register_ttl_s"]
+        if fresh:                                   # poll it now so it can take requests at once
+            asyncio.get_running_loop().create_task(self.poll_node(node))
+        return 200, {"ok": True, "node": name, "source": node.source, **urls,
+                     "expires_in_s": self.cfg["register_ttl_s"]}
+
+    def expire(self):
+        """Drop registered-only nodes whose heartbeat stopped; static nodes fall back to their configured URL."""
+        now = time.monotonic()
+        self.nodes = [n for n in self.nodes if n.static_url or n.registered(now)]
+
     async def poll_loop(self):
         while True:
+            self.expire()
             await asyncio.gather(self.poll_brain(), *(self.poll_node(n) for n in self.nodes))
             await asyncio.sleep(self.cfg["poll_s"])
 
@@ -458,7 +524,8 @@ class Router:
             if n > self.cfg["max_body_mb"] << 20:
                 return await send_json(writer, 413, err("request too large"))
             body = await asyncio.wait_for(reader.readexactly(n), 120) if n else b""
-            await self.dispatch(method, urllib.parse.urlsplit(target).path, headers, body, writer)
+            peer = (writer.get_extra_info("peername") or ("",))[0]
+            await self.dispatch(method, urllib.parse.urlsplit(target).path, headers, body, writer, peer)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionError, ValueError):
             pass
         finally:
@@ -467,11 +534,21 @@ class Router:
             except Exception:
                 pass
 
-    async def dispatch(self, method, path, headers, body, writer):
+    async def dispatch(self, method, path, headers, body, writer, peer=""):
         if path == "/health":
             return await send_json(writer, 200, {"status": "ok"})
         auth = headers.get("authorization", "")
         token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        if method == "POST" and path == "/mesh/register":
+            mesh_token = self.mesh_token.first()
+            if not token or not mesh_token or not hmac.compare_digest(token.encode(), mesh_token.encode()):
+                return await send_json(writer, 401, err("invalid mesh token", "invalid_request_error"))
+            try:
+                req = json.loads(body or b"{}")
+                assert isinstance(req, dict)
+            except (ValueError, AssertionError):
+                return await send_json(writer, 400, err("body must be a JSON object"))
+            return await send_json(writer, *self.register(req, peer))
         if not token or not self.keys.check(token):
             return await send_json(writer, 401, err("invalid api key", "invalid_request_error"))
         if method == "GET" and path == "/v1/models":
@@ -502,7 +579,9 @@ class Router:
         nodes = []
         for n in self.nodes:
             ok, why = self.node_usable(n, now)
-            nodes.append({"name": n.name, "state": n.state, "reason": n.reason, "usable": ok, "why_not": why,
+            nodes.append({"name": n.name, "source": n.source, "status_url": n.status_url,
+                          "registered_expires_in_s": round(n.reg_until - now, 1) if n.registered(now) else None,
+                          "state": n.state, "reason": n.reason, "usable": ok, "why_not": why,
                           "status_age_s": round(now - n.last_ok, 1) if n.last_ok else None,
                           "tok_s": round(n.tok_s, 1), "tok_s_measured": n.measured_any, "inflight": n.inflight,
                           "served": n.served, "last_error": n.last_error, "gpu": n.status.get("gpu"),
