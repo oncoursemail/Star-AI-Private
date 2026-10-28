@@ -111,6 +111,9 @@ class LocalLlamaComparisonWorker:
         max_tokens: int = 180, transport: Transport | None = None,
         focus_box: tuple[int, int, int, int] | None = None,
         skip_identical: bool = False,
+        max_result_latency_ms: int | None = None,
+        slow_cooldown_ms: int = 0,
+        clock_ns: Callable[[], int] | None = None,
     ) -> None:
         if (type(model) is not str or not 1 <= len(model) <= _MAX_MODEL_ID
                 or "://" in model or ".." in model
@@ -138,6 +141,23 @@ class LocalLlamaComparisonWorker:
                 raise ValueError("focus_box must be a valid 0..1000 region >=5% wide/high")
         if type(skip_identical) is not bool:
             raise ValueError("skip_identical must be a host boolean")
+        # Opt-in live-stream freshness: a delayed result describes a past
+        # frame, not the game as it exists now. Drop it instead of narrating
+        # stale hazards or HUD changes. This does not cancel model compute.
+        if (max_result_latency_ms is not None
+                and (type(max_result_latency_ms) is not int
+                     or not 100 <= max_result_latency_ms <= 30000)):
+            raise ValueError("max_result_latency_ms must be 100..30000 or None")
+        if type(slow_cooldown_ms) is not int or not 0 <= slow_cooldown_ms <= 120000:
+            raise ValueError("slow_cooldown_ms must be 0..120000")
+        if slow_cooldown_ms and max_result_latency_ms is None:
+            raise ValueError("slow cooldown requires a result latency budget")
+        if clock_ns is not None and not callable(clock_ns):
+            raise TypeError("clock_ns must be a trusted host clock")
+        self._clock_ns = clock_ns if clock_ns is not None else time.perf_counter_ns
+        self._max_result_latency_ms = max_result_latency_ms
+        self._slow_cooldown_ms = slow_cooldown_ms
+        self._cooldown_until_ns = 0
         self._skip_identical = skip_identical
         self._focus_box = focus_box
         self._model = model
@@ -164,6 +184,7 @@ class LocalLlamaComparisonWorker:
             "model_rejected": 0, "ambiguous_stop": 0, "invalid_frames": 0,
             "identical_pairs_skipped": 0, "focused_pairs": 0,
             "busy_rejected": 0, "revoked_results": 0,
+            "stale_results_dropped": 0, "cooldown_frames_skipped": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -338,11 +359,18 @@ class LocalLlamaComparisonWorker:
         No model-reported message can acknowledge a physical stop. Unknown
         connection/timeout failures retain the existing quarantine policy.
         """
+        received_ns = self._clock_ns()
         with self._lock:
             if not self._enabled or self._quarantined:
                 return WorkerReport(True, False)
             if self._inflight:
                 self._counts["busy_rejected"] += 1
+                return WorkerReport(True, False)
+            # Check before reading or encoding frame pixels. Cooldown is
+            # monotonic and persists across disable/re-enable, so a toggled
+            # switch cannot accidentally undo live-stream load shedding.
+            if received_ns < self._cooldown_until_ns:
+                self._counts["cooldown_frames_skipped"] += 1
                 return WorkerReport(True, False)
             try:
                 newest = _ReferenceFrame(
@@ -382,7 +410,7 @@ class LocalLlamaComparisonWorker:
         # Critically, never hold _lock during network I/O. A disable() that
         # races this handoff cannot retract an already-prepared HTTP payload;
         # the epoch prevents the response from being accepted as fresh.
-        started_ns = time.perf_counter_ns()
+        started_ns = self._clock_ns()
         try:
             status, raw = self._transport(payload)
         except ConnectionRefusedError:
@@ -400,7 +428,8 @@ class LocalLlamaComparisonWorker:
                 self._counts["ambiguous_stop"] += 1
             return WorkerReport(False, False)
         finally:
-            elapsed_ms = max(0, (time.perf_counter_ns() - started_ns) // 1_000_000)
+            completed_ns = self._clock_ns()
+            elapsed_ms = max(0, (completed_ns - started_ns) // 1_000_000)
             with self._lock:
                 self._request_ms.append(elapsed_ms)
             previous.erase()
@@ -410,6 +439,21 @@ class LocalLlamaComparisonWorker:
             self._inflight = False
             if not self._enabled or session != self._epoch:
                 self._counts["revoked_results"] += 1
+                return WorkerReport(True, False)
+            # The result may be structurally valid while already useless
+            # for game decisions or spoken live commentary. Include JPEG
+            # preparation and transport in the measurement. A fresh
+            # subsequent baseline is required after discarding a slow pair.
+            frame_processing_ms = max(
+                0, (completed_ns - received_ns) // 1_000_000,
+            )
+            if (self._max_result_latency_ms is not None
+                    and frame_processing_ms > self._max_result_latency_ms):
+                self._counts["stale_results_dropped"] += 1
+                self._cooldown_until_ns = max(
+                    self._cooldown_until_ns,
+                    completed_ns + self._slow_cooldown_ms * 1_000_000,
+                )
                 return WorkerReport(True, False)
             if type(status) is not int or type(raw) is not bytes or status != 200:
                 self._counts["model_rejected"] += 1
@@ -435,7 +479,12 @@ class LocalLlamaComparisonWorker:
                     "transport_samples": len(ordered),
                     "reference_cached": self._previous is not None,
                     "focus_enabled": self._focus_box is not None,
-                    "identical_gate_enabled": self._skip_identical}
+                    "identical_gate_enabled": self._skip_identical,
+                    "freshness_gate_enabled": self._max_result_latency_ms is not None,
+                    "cooldown_remaining_ms": max(
+                        0, (self._cooldown_until_ns - self._clock_ns() + 999_999)
+                        // 1_000_000,
+                    )}
 
 
 __all__ = ["LocalLlamaComparisonWorker"]
