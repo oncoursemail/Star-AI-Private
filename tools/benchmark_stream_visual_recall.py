@@ -25,7 +25,8 @@ def _frames(count: int = 30) -> list[CapturedVisionFrame]:
     for index in range(count):
         image = Image.new("RGB", (960, 540), (24, 32, 52))
         pen = ImageDraw.Draw(image)
-        pen.rectangle((index * 13 % 800, 45, 230, 125),
+        left = index * 13 % 800
+        pen.rectangle((left, 45, left + 90, 125),
                       fill=(30 + index % 180, 220, 45))
         pen.text((35, 350), f"synthetic scene {index:03d}", fill=(220, 230, 240))
         result.append(CapturedVisionFrame(
