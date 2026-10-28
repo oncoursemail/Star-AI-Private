@@ -3,8 +3,9 @@
 Contract: docs/agents/WAVE-20261027-MESH-BRIEF.md. Each GPU node publishes `GET :8099/status`
 ({"state": "idle|busy|away|off", "models": [{"id": "litha-fast", "url": ".../v1", "loaded": true, "tok_s": ..}]}).
 
-Models: `litha` = the best idle node by measured tok/s and queue, else the brain's star-fast; `litha-deep` = the same
-node model with thinking on and a thinking budget (`deep_node_body`), else the brain's star-deep;
+Models: `litha` = the best idle node by measured tok/s and queue, else the brain's litha-26b, then star-fast;
+`litha-deep` = the same node model with thinking on and a thinking budget (`deep_node_body`), else the brain's
+litha-26b, then star-deep; header `X-Mesh-Nodes: off` skips the nodes for one request (tests the brain path);
 every other model id passes through to the brain. A request is never sent to a node whose state is not `idle` or
 whose status is stale. The client sees nothing until a backend produced its first token, so any failure before that
 moves on to the next backend; with hedging the two best start together and the first token wins (the other is
@@ -38,6 +39,10 @@ DEFAULTS = {
     "brain_url": "http://127.0.0.1:8080",
     "brain_fast_model": "star-fast",
     "brain_deep_model": "star-deep",
+    # the brain's first choice when no GPU node takes a litha / litha-deep request: gemma-4-26B-A4B, thinking off
+    # (blind 36-38 strict passes of 57-60 = the node's gemma-12b; star-fast 19/60; first token 1.7 s vs star-deep's
+    # 142 s cold; docs/agents/litha-26b-fallback-20261028.md). star-fast / star-deep only when it fails; "" = off
+    "brain_litha_model": "litha-26b",
     # "Think harder" (litha-deep): an idle GPU node's model with thinking on and a 1,500-token thinking cap
     # (docs/agents/litha-brain-20261028.md); the brain's star-deep only when no node is usable
     "deep_on_nodes": True,
@@ -465,16 +470,24 @@ class Router:
             return False, "model not loaded (warming)"
         return True, ""
 
-    def plan(self, model: str, conv: str | None = None) -> tuple[list[tuple[Backend, str, str]], str]:
+    def _brain_chain(self, brain_url: str, last: str) -> tuple[list[tuple[Backend, str, str]], str]:
+        """The brain's entries for litha / litha-deep: `brain_litha_model` first, then `last` (star-fast/star-deep)."""
+        mids = [m for m in dict.fromkeys((self.cfg.get("brain_litha_model") or "", last)) if m]
+        return [(self.brain, brain_url, m) for m in mids], " > ".join(f"brain {m}" for m in mids)
+
+    def plan(self, model: str, conv: str | None = None,
+             nodes: bool = True) -> tuple[list[tuple[Backend, str, str]], str]:
         """Ranked [(backend, base_url, backend_model)] for a requested model, plus a reason line. The backend that
-        served this conversation last gets `affinity_bonus` on its score (its llama-server still holds the KV)."""
+        served this conversation last gets `affinity_bonus` on its score (its llama-server still holds the KV).
+        nodes=False (header X-Mesh-Nodes: off) plans as if no GPU node were usable."""
         brain_url = self.cfg["brain_url"].rstrip("/") + "/v1"
+        node_list = self.nodes if nodes else []
         if model == DEEP:
-            brain_deep = (self.brain, brain_url, self.cfg["brain_deep_model"])
+            brain_deep, deep_names = self._brain_chain(brain_url, self.cfg["brain_deep_model"])
             if not self.cfg["deep_on_nodes"]:
-                return [brain_deep], "litha-deep -> brain star-deep"
-            now, ranked, skipped = time.monotonic(), [], []
-            for node in self.nodes:
+                return brain_deep, "litha-deep -> " + deep_names
+            now, ranked, skipped = time.monotonic(), [], [] if nodes else ["skipped by request"]
+            for node in node_list:
                 ok, why = self.node_usable(node, now)
                 if ok:
                     m = node.model(self.cfg["node_fast_models"])
@@ -483,8 +496,8 @@ class Router:
                     skipped.append(f"{node.name}: {why}")
             ranked.sort(key=lambda r: r[0], reverse=True)
             if not ranked:
-                return [brain_deep], "litha-deep -> brain star-deep (no usable node" +                     (": " + "; ".join(skipped) if skipped else "") + ")"
-            return [(b, url, mid) for _, b, url, mid in ranked] + [brain_deep],                 "litha-deep -> " + " > ".join(f"{b.name} (thinking)" for _, b, _, _ in ranked) + " > brain star-deep"
+                return brain_deep, f"litha-deep -> {deep_names} (no usable node" +                     (": " + "; ".join(skipped) if skipped else "") + ")"
+            return [(b, url, mid) for _, b, url, mid in ranked] + brain_deep,                 "litha-deep -> " + " > ".join(f"{b.name} (thinking)" for _, b, _, _ in ranked) + " > " + deep_names
         if model != FAST:
             return [(self.brain, brain_url, model)], "pass-through to brain"
         now, ranked, skipped = time.monotonic(), [], []
@@ -492,20 +505,25 @@ class Router:
 
         def bonus(b):
             return self.cfg["affinity_bonus"] if b.name == sticky else 1.0
-        for node in self.nodes:
+        if not nodes:
+            skipped.append("nodes skipped by request")
+        for node in node_list:
             ok, why = self.node_usable(node, now)
             if ok:
                 m = node.model(self.cfg["node_fast_models"])
                 ranked.append((node.score() * bonus(node), 1, node, m["url"].rstrip("/"), m["id"]))
             else:
                 skipped.append(f"{node.name}: {why}")
-        ranked.append((self.brain.score() * bonus(self.brain), 0, self.brain, brain_url,
-                       self.cfg["brain_fast_model"]))
+        brain_fast, brain_names = self._brain_chain(brain_url, self.cfg["brain_fast_model"])
+        ranked.append((self.brain.score() * bonus(self.brain), 0, self.brain, brain_url, None))
         ranked.sort(key=lambda r: (r[0], r[1]), reverse=True)
-        parts = [f"{b.name} {b.tok_s:.1f} tok/s q{b.inflight}" + (" (kv)" if b.name == sticky else "")
-                 for _, _, b, _, _ in ranked]
+        parts = [f"{b.name} {b.tok_s:.1f} tok/s q{b.inflight}" + (f" ({brain_names})" if mid is None else "") +
+                 (" (kv)" if b.name == sticky else "") for _, _, b, _, mid in ranked]
         reason = "ranked: " + " > ".join(parts) + ("; skipped " + "; ".join(skipped) if skipped else "")
-        return [(b, url, mid) for _, _, b, url, mid in ranked], reason
+        out = []
+        for _, _, b, url, mid in ranked:        # the brain's place in the ranking holds its whole chain
+            out += brain_fast if mid is None else [(b, url, mid)]
+        return out, reason
 
     def _headers_for(self, backend: Backend, client_auth: str) -> dict:
         h = {"Content-Type": "application/json"}
@@ -567,7 +585,8 @@ class Router:
         remaining = list(plan)
         last_err: UpstreamError | None = None
         while remaining:
-            n = 2 if hedge and len(remaining) >= 2 else 1
+            # never two brain models at once (one CPU): a hedge needs two different backends
+            n = 2 if hedge and len(remaining) >= 2 and remaining[0][0] is not remaining[1][0] else 1
             batch, remaining = remaining[:n], remaining[n:]
             tasks = {asyncio.ensure_future(self._attempt(b, url, path, body_for(mid), client_auth, stream)): b
                      for b, url, mid in batch}
@@ -731,7 +750,8 @@ class Router:
         if model == FAST:
             req.setdefault("cache_prompt", True)
 
-        plan, reason = self.plan(model, conv)
+        nodes = headers.get("x-mesh-nodes", "").strip().lower() not in ("off", "0", "no")
+        plan, reason = self.plan(model, conv, nodes)
         if ground_q and plan and plan[0][0] is self.brain:
             # ~400 more prompt tokens cost the brain (~45 tok/s prompt) ~9 s before the first word: GPU nodes only
             ground_q = None
@@ -777,7 +797,8 @@ class Router:
             cache_hdr.update(await self.docs_inject(req, headers))
 
         def body_for(mid):
-            if model == DEEP and mid != self.cfg["brain_deep_model"]:     # a node: thinking on, capped
+            if model == DEEP and mid not in (self.cfg["brain_deep_model"], self.cfg.get("brain_litha_model")):
+                # a node: thinking on, capped
                 body = {**req, **self.cfg["deep_node_body"], "model": mid}
                 if isinstance(req.get("max_tokens"), int):              # the thinking does not eat the answer
                     body["max_tokens"] = req["max_tokens"] + int(body.get("thinking_budget_tokens") or 0)
@@ -858,7 +879,7 @@ class Router:
                 log["tok_s"], log["outcome"] = timings.get("predicted_per_second"), "ok"
                 return
             await self.relay_stream(backend, up, pending, rest, writer, log, cache_hdr,
-                                    {"model": model, "req": req, "path": path, "conv": conv,
+                                    {"model": model, "req": req, "path": path, "conv": conv, "nodes": nodes,
                                      "auth": headers.get("authorization", ""),
                                      "before_done": loop_run.before_done if loop_run else None})
         finally:
@@ -972,7 +993,7 @@ class Router:
             for k in ("max_tokens", "n_predict", "max_completion_tokens"):
                 if isinstance(req.get(k), int) and req[k] > 0:
                     req[k] = max(32, req[k] - pieces)
-        plan, _ = self.plan(ctx["model"], ctx["conv"])
+        plan, _ = self.plan(ctx["model"], ctx["conv"], ctx.get("nodes", True))
         plan = [p for p in plan if p[0] not in used]
         if not plan:
             return None, ""
