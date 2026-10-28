@@ -211,6 +211,8 @@ def test_service_endpoints(docs_server):
     st, out = _call(port, "GET", "/mesh/docs?q=how%20to%20use%20TweenService:Create%20to%20tween%20a%20part")
     assert st == 200 and out["entries"][0]["name"] == "TweenService:Create" and out["dense"] is False
     assert out["passages"] and out["passages"][0]["url"].endswith("/animation/tweens")
+    st, out = _call(port, "POST", "/mesh/docs/block", {"question": "how do I tween a part position up and down smoothly in roblox"})
+    assert st == 200 and out["passages"] == []          # passages are off in the service by default
     st, out = _call(port, "POST", "/mesh/docs/block", {"question": "hi there"})
     assert st == 200 and out["text"] == ""
     st, out = _call(port, "POST", "/mesh/docs/entries", {"names": ["wait", "nope"]})

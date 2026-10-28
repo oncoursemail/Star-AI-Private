@@ -36,6 +36,7 @@ DEFAULTS = {
     "dense_in_block": False,                    # measured: docs/agents/litha-docs-20261028.md
     "dense_in_search": True,
     "budget_tokens": 500,
+    "block_passages": 0,                        # guide passages in the block: measured harmful (wrong guides followed)
     "max_body_kb": 256,
 }
 
@@ -141,7 +142,7 @@ def make_handler(cfg: dict, idx: DocsIndex, keys, embed):
             if cfg["dense_in_block"] and idx.vectors and idx.wants_docs(question, str(req.get("context") or "")):
                 vec = embed(question)
             out = idx.block(question, str(req.get("extra") or "")[:8000], vec, str(req.get("context") or "")[:500],
-                            budget)
+                            budget, max_passages=cfg["block_passages"])
             out["dense"] = vec is not None
             return self._send(200, out)
 
