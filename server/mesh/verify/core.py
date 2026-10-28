@@ -94,16 +94,19 @@ class Verifier:
         self.api = api
         self.luau = LuauChecker(api, analyzer)
 
-    def check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
-        problems, checked = self._check_block(code, lang, prose)
+    def check_block(self, code: str, lang: str, prose: str = "", *, scope: dict | None = None) -> tuple[list[dict], bool]:
+        problems, checked = self._check_block(code, lang, prose, scope=scope)
         for p in problems:                      # a placeholder is for the reader, not a mistake to fix
             if p["severity"] != "info" and is_placeholder(p.get("name")):
                 p["severity"] = "info"
         return problems, checked
 
-    def _check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
+    def _check_block(self, code: str, lang: str, prose: str = "", *, scope: dict | None = None) -> tuple[list[dict], bool]:
         if lang == "python":
-            return python_code.check_python(code)
+            result = python_code.check_python(code)
+            if scope is not None:
+                scope["syntax_checked"] = result[1]
+            return result
         if lang == "luau":
             return self.luau.check(code), True
         if lang == "csharp":
@@ -112,12 +115,17 @@ class Verifier:
             return minecraft.check_commands(code, in_function=lang == "mcfunction"), True
         if lang == "json":
             problems, checked, members = json_code.analyze_json(code)
+            if scope is not None:
+                scope["syntax_checked"] = checked
             if not checked or any(p["severity"] == "error" for p in problems):
-                return problems, checked
+                return problems, checked and _pack_label(prose)
             # A neighbouring tick.json is ordinary JSON; object key order must not hide a real pack.
-            if members & {"pack", "pack_format"} or _pack_label(prose):
+            pack = bool(members & {"pack", "pack_format"}) or _pack_label(prose)
+            if pack:
                 problems += minecraft.check_pack_mcmeta(code)
-            return problems, True
+            # Preserve this legacy field's Minecraft/domain coverage. The report separately exposes
+            # syntax_checked for general JSON; a syntax check is not tag/config schema validation.
+            return problems, pack
         return [], False
 
     def verify(self, text: str, language: str | None = None) -> dict:
@@ -126,7 +134,8 @@ class Verifier:
         out = []
         for k, b in enumerate(blocks):
             context = b.get("context", "") if b["language"] == "json" else text
-            problems, checked = self.check_block(b["code"], b["language"], context)
+            scope: dict = {}
+            problems, checked = self.check_block(b["code"], b["language"], context, scope=scope)
             for p in problems:
                 if p.get("line"):
                     p["answer_line"] = b["line"] + p["line"] - 1
@@ -134,6 +143,7 @@ class Verifier:
                         "ok": not any(p["severity"] == "error" for p in problems),
                         "needs_fix": any(p["severity"] in ("error", "warning") for p in problems),
                         "problems": problems})
+            out[-1].update(scope)
         prose_problems = minecraft.check_datapack_paths(text) if "data/" in text else []
         return {"ok": all(b["ok"] for b in out) and not prose_problems,
                 "needs_fix": any(b["needs_fix"] for b in out),
@@ -153,7 +163,7 @@ class Verifier:
             report = self.verify(text, language)
         for rnd in range(1, rounds + 1):
             # An input/complexity refusal is not a syntax diagnosis the model can repair.
-            todo = [b for b in report["blocks"] if b["needs_fix"] and b["checked"]]
+            todo = [b for b in report["blocks"] if b["needs_fix"] and (b["checked"] or b.get("syntax_checked"))]
             if not todo:
                 break
             done = rnd

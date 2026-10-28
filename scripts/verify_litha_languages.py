@@ -91,7 +91,8 @@ class LanguageChecks(unittest.TestCase):
                 self.assertEqual(json_code.check_json(source), ([], True))
                 result = self.verifier.verify(f"```json\n{source}\n```\n")
                 self.assertTrue(result["ok"])
-                self.assertTrue(result["blocks"][0]["checked"])
+                self.assertTrue(result["blocks"][0]["syntax_checked"])
+                self.assertFalse(result["blocks"][0]["checked"])
 
     def test_json_errors_have_actual_line_and_column(self):
         result = self.verifier.verify('```json\n{\n  "a": 1,\n}\n```\n')
@@ -99,6 +100,18 @@ class LanguageChecks(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual((issue["kind"], issue["line"], issue["column"], issue["answer_line"]), ("syntax", 3, 1, 4))
         self.assertIsNone(issue["name"])
+
+    def test_grammar_coverage_is_explicit_and_refusals_are_never_claimed_checked(self):
+        for source in ('{"a":1}', '{"a":}', "NaN"):
+            result = self.verifier.verify(source, "json")["blocks"][0]
+            self.assertFalse(result["checked"])
+            self.assertTrue(result["syntax_checked"])
+        for source, language in (("x" * 65537, "python"), ("[" * 129 + "0" + "]" * 129, "json")):
+            result = self.verifier.verify(source, language)["blocks"][0]
+            self.assertFalse(result["checked"])
+            self.assertFalse(result["syntax_checked"])
+            self.assertFalse(result["ok"])
+        self.assertEqual(len(self.verifier.check_block('{"a":1}', "json")), 2)
 
     def test_duplicate_decoded_keys_warn_without_placeholder_demotion(self):
         for source in ('{"x":1,"x":2}', '{"x":1,"\\u0078":2}', '{"X_POS":1,"X_POS":2}', '{"a":{"nested":1,"nested":2}}'):
@@ -146,7 +159,8 @@ class LanguageChecks(unittest.TestCase):
         self.assertEqual(malformed["blocks"][0]["problems"][0]["kind"], "syntax")
         tick = self.verifier.verify('pack.mcmeta is separate.\n```json\n{"values":["demo:tick"]}\n```\n')
         self.assertTrue(tick["ok"])
-        self.assertTrue(tick["blocks"][0]["checked"])
+        self.assertTrue(tick["blocks"][0]["syntax_checked"])
+        self.assertFalse(tick["blocks"][0]["checked"])
         self.assertFalse(self.verifier.verify('```java\nclass A {}\n```\n')["blocks"][0]["checked"])
 
     def test_existing_report_consumers_count_new_syntax_failures_without_harness_changes(self):
@@ -164,7 +178,8 @@ class LanguageChecks(unittest.TestCase):
                   'tick.json:\n```json\n{"values":["demo:tick"]}\n```\n')
         result = self.verifier.verify(answer)
         self.assertTrue(result["ok"])
-        self.assertEqual([row["checked"] for row in result["blocks"]], [True, True])
+        self.assertEqual([row["checked"] for row in result["blocks"]], [True, False])
+        self.assertEqual([row["syntax_checked"] for row in result["blocks"]], [True, True])
         self.assertTrue(self.verifier.verify('{"note":{"pack":{}}}', "json")["ok"])
         self.assertTrue(self.verifier.verify('{"label":"pack_format"}', "json")["ok"])
         self.assertFalse(self.verifier.verify('{"note":1,"pack":{}}', "json")["ok"])
@@ -196,7 +211,7 @@ class LanguageChecks(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertIn("Problems:", calls[0][-1]["content"])
             self.assertFalse(result["verify"]["needs_fix"])
-            self.assertTrue(result["verify"]["blocks"][0]["checked"])
+            self.assertTrue(result["verify"]["blocks"][0]["syntax_checked"])
 
     def test_actual_http_handler_verifies_and_repairs_with_injected_model(self):
         model_calls = []
