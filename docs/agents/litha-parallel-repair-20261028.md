@@ -1,6 +1,6 @@
 # Litha: bounded multi-block repair
 
-Candidate stacked on #741 (`7cea7eea`); target integration remains `star/next`. This is actual
+Candidate stacked on #746 (`95d4b157`), after #741 (`7cea7eea`); target integration remains `star/next`. This is actual
 `server/mesh/verify` source. It has not been merged, deployed, or enabled on a live model.
 
 ## Behavior
@@ -53,6 +53,12 @@ successful edits or saved inference. Static diagnostics do not establish correct
 - Scoped Ruff and Pyright for batch/core/service, `compileall -q star main.py server/mesh/verify`, and diff
   whitespace checks passed. No full-repository local pytest result is claimed here.
 - Independent source review reproduced the new 15 groups and the existing verifier checks.
+
+The deliberately combined source at `1fe2e217` contains the independently reviewed cache revision fix from
+#746. All 15 batch groups, 15 cache-race groups, 21 language groups and 108 existing mesh tests passed together
+(the existing mesh run took 18.23 s). Combined Ruff, compilation and diff checks passed; tests/evals remain
+byte-identical to `star/next`. This is integration of source candidates in our task branch, not a GitHub merge
+to `star/next` or a deployment. The following documentation-only commit records these results.
 
 `python scripts/verify_litha_repair_batch.py --benchmark` ran five trials per mode with six broken Python fences,
 three distinct prompts, and a deterministic synthetic callback sleeping 40 ms per call. Every output cleared

@@ -1,7 +1,8 @@
 # Litha repair and procedural reuse
 
 Research/design snapshot: 2026-10-28. This note proposes improvements to `server/mesh`, not launcher UI.
-The parallel repair candidate is under implementation. This note reports no candidate test results, deployment, performance measurements or model-quality gains.
+The parallel repair implementation is a review candidate. Executed synthetic checks and timings are recorded in
+`docs/agents/litha-parallel-repair-20261028.md`; this research note reports no live deployment or model-quality gains.
 
 ## What the sources actually implement
 
