@@ -1,0 +1,33 @@
+[Unit]
+Description=STAR compute-mesh router (server/mesh): OpenAI-compatible :8100 over GPU nodes + the brain
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=starmesh
+Group=starmesh
+Environment=PYTHONPATH=/opt/star-mesh/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/star-mesh
+ExecStart=/usr/bin/python3 -m mesh /etc/star-mesh/mesh.json
+Restart=always
+RestartSec=2
+Nice=5
+MemoryMax=200M
+TasksMax=64
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
