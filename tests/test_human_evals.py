@@ -62,6 +62,13 @@ def test_age_gate_both_ways():
 def test_leaks_and_invented_numbers():
     assert "leak" in fails("The user asks about night school, so I should keep it short.", "l01")
     assert "leak" in fails("From my live status: it is fine.", "l01")
+    # natural phrases are not leaks; planning talk around them still is
+    assert "leak" not in fails("Hey Sam! I've been meaning to say we should build a farm together sometime", "l01")
+    assert "leak" not in fails("i've been meaning to tell you, we should totally go see it", "l01")
+    assert "leak" in fails("I should respond with something warm about the farm.", "l01")
+    assert "leak" in fails("We should respond warmly and keep it short.", "l01")
+    assert "leak" in fails("I've been meaning to say hi. The user wants a short answer.", "l01")
+    assert "leak" in fails("we should probably answer briefly here", "l01")
     assert "system_prompt_echo" in fails("You are Star (she/her), the owner's own assistant. STAR is all of you", "l02")
     assert "invented_numbers" in fails("Night school did 47 tasks.", "e09")
     assert "invented_numbers" not in fails("Twenty answers an hour, and 30 accepted.", "l01")   # 30 comes from the status block
