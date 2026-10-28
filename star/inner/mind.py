@@ -407,6 +407,12 @@ class MindLife:
                 self.mind.on_session(interest, activity, outcome, row, life=self._life)
         except Exception as why:
             self.mind.log("error", detail=f"on_session: {type(why).__name__}: {why}")
+        if row.get("verified"):                 # something real she did: a friend who loves it may hear about it
+            try:
+                from ..social.initiative import share_learned
+                share_learned(interest, str(row.get("summary") or ""), verified=True)
+            except Exception:
+                pass
         return row
 
     def session_context(self, interest: str, goal: dict | None = None) -> str:

@@ -31,7 +31,7 @@ CLOSE_DAYS = 30
 LIVE_CHAT_S = 20 * 60
 MIN_GAP_H = 3.0
 PERSON_GAP_H = 48.0
-KINDS = {"followup": 1.0, "share": 0.8, "dream": 0.7}
+KINDS = {"followup": 1.0, "promise": 1.0, "online": 0.9, "share": 0.8, "dream": 0.7, "miss": 0.65}   # social/initiative.py adds promise/online/miss
 MAX_TEXT = 200
 
 GUILT = re.compile(
@@ -129,7 +129,7 @@ def add_seed(store: InnerStore, memory, person, text: str, *, kind: str = "follo
     with store._lock:
         cur = store.db.execute(
             "INSERT INTO seeds (pkey, kind, text, reason, created, not_before, expires, platform) VALUES (?,?,?,?,?,?,?,?)",
-            (pkey, kind, text, reason[:120], now, start, start + max(0.5, ttl_days) * 86400, platform))
+            (pkey, kind, text, reason[:120], now, start, start + max(0.04, ttl_days) * 86400, platform))
         store.db.commit()
     return cur.lastrowid
 
