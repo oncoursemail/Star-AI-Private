@@ -229,6 +229,10 @@ class VisualRecallHost:
                     encoded[:] = b"\x00" * len(encoded)
                     self._counts["duplicate"] += 1
                     return report
+                if len(encoded) > self._max_bytes:
+                    encoded[:] = b"\x00" * len(encoded)
+                    self._counts["rejected"] += 1
+                    return report
                 self._serial += 1
                 bookmark = RecallBookmark(
                     f"{self._epoch}:{self._serial}", when, frame.width, frame.height
