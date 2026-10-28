@@ -94,7 +94,9 @@ class Verifier:
             return csharp.check_csharp(code), True
         if lang in ("minecraft", "mcfunction"):
             return minecraft.check_commands(code, in_function=lang == "mcfunction"), True
-        if lang == "json" and ("pack_format" in code or "pack.mcmeta" in prose):
+        # only a block that looks like pack.mcmeta: an answer that names pack.mcmeta also shows other JSON files
+        # (data/minecraft/tags/function/tick.json = {"values": [...]}), which are not pack.mcmeta
+        if lang == "json" and ("pack_format" in code or re.search(r'^\s*\{\s*"pack"\s*:', code)):
             return minecraft.check_pack_mcmeta(code), True
         return [], False
 

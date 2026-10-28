@@ -243,6 +243,19 @@ def test_router_puts_the_docs_block_in_front_of_the_question(docs_server, tmp_pa
         st, headers, _ = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions",
                                                  {**chat, "mesh_docs": False})
         assert "X-Mesh-Docs" not in headers and not node.requests[-1]["messages"][-1]["content"].startswith("Docs")
+        # one injection point with the verified-answer grounding: refs first, docs, ONE "---\nQuestion:" line
+        grounded = "Reference: checked answers\n\n[Q] q\n[A] a\n\n---\nQuestion: Why is Humanoid:LoadAnimation underlined?"
+        chat["messages"][-1]["content"] = grounded
+        st, headers, _ = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", chat)
+        sent = node.requests[-1]["messages"][-1]["content"]
+        assert sent.startswith("Reference: checked answers") and sent.count("---\nQuestion:") == 1
+        assert sent.index("[A] a") < sent.index("Docs (official") < sent.index("Question: Why is")
+        # grounding that already fills the shared budget leaves no room for docs
+        chat["messages"][-1]["content"] = "Reference:\n" + "x" * 4000 + "\n---\nQuestion: Why Humanoid:LoadAnimation?"
+        st, headers, _ = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", chat)
+        assert headers.get("X-Mesh-Docs") == "no room" and "Docs (official" not in node.requests[-1]["messages"][-1][
+            "content"]
+        chat["messages"][-1]["content"] = "Why is Humanoid:LoadAnimation underlined?"
         # forwarded search
         st, _, data = await asyncio.to_thread(call, port, "GET", "/mesh/docs?q=task.wait")
         assert st == 200 and json.loads(data)["entries"][0]["name"] == "task.wait"

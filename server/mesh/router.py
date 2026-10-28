@@ -69,11 +69,30 @@ DEFAULTS = {
     "embed_model": "star-embed",
     "embed_prefix": "task: sentence similarity | query: ",
     "embed_timeout_s": 1.0,
+    # second stage for the grey zone (judge_floor <= similarity < cache_threshold): intent guard, then the live model
+    # on an idle GPU node picks which candidate (canonical question) asks the same thing, one token, or none.
+    # Calibrated on 208 held-out paraphrases + 61 near misses: docs/agents/litha-recall-rag-20261028.md (the brain's
+    # star-rerank was measured too: 1.8 s per call and at most 49% with zero wrong serves)
+    "judge": True,
+    "judge_floor": 0.86,              # the chosen candidate needs at least this similarity
+    "judge_min_p": 0.8,               # probability of the judge's digit
+    "judge_candidates": 4,
+    "judge_timeout_s": 0.35,          # the judge is ~0.15-0.2 s on an idle node; a busy one-slot node times out
+    "cache_hold_s": 0.15,             # a live first token waits at most this long for a lookup still running
+    # grounding: no cache hit -> the nearest verified answers go in front of the question as marked references
+    "ground": True,
+    "ground_floor": 0.80,             # similarity a verified answer needs to be shown as a reference
+    "ground_max": 2,
+    "ground_max_chars": 1800,         # longer verified answers are not attached (prompt time on the brain fallback)
+    "lookup_wait_s": 0.25,            # when a GPU node will answer, the embedding is waited for this long before it
+                                      # starts (grounding changes the prompt; a one-slot node cannot judge while it
+                                      # answers); late = no grounding, the lookup goes on in parallel
     # official docs (server/mesh/docs, :8102): a compact block of exact API entries in front of Litha questions
     "docs": True,
     "docs_url": "http://127.0.0.1:8102",
     "docs_timeout_s": 0.15,           # late = no docs (the answer never waits longer than this for them)
     "docs_budget": 500,               # tokens
+    "context_budget": 900,            # docs + verified-answer grounding together; docs get what grounding leaves
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -653,7 +672,9 @@ class Router:
                           "inflight": self.brain.inflight, "served": self.brain.served},
                 "instant": {"affinity_conversations": len(self.affinity), "counters": dict(self.counters),
                             "cache": self.cache.stats() if self.cache else None,
-                            "cache_threshold": self.cfg["cache_threshold"]},
+                            "cache_threshold": self.cfg["cache_threshold"],
+                            "stage2": {k: self.cfg[k] for k in ("judge", "judge_floor", "judge_min_p")},
+                            "ground": {k: self.cfg[k] for k in ("ground", "ground_floor", "ground_max")}},
                 "nodes": nodes, "decisions": list(self.decisions)[::-1]}
 
     async def complete(self, path, headers, body, writer):
@@ -668,17 +689,61 @@ class Router:
             hedge = headers.get("x-mesh-hedge", "").strip().lower() in ("1", "true", "yes") or self.cfg["hedge"]
         conv = instant.conversation_key(req, headers) if model == FAST else None
         t0 = time.monotonic()
-        cache_hdr, question, context = {}, None, ""
+        cache_hdr, question, context, ground_q = {}, None, "", None
         if model == FAST and self.cache is not None:
             cache_hdr, question, context = self.cache_check(req, headers)
             row = self.cache.exact(question, context) if question else None
             if row is not None:
                 return await self.serve_cached(row, "exact", 1.0, round((time.monotonic() - t0) * 1000, 1), stream,
                                                writer, t0)
+            if self.cfg["ground"] and req.get("mesh_ground") is not False and \
+                    headers.get("x-mesh-ground", "").lower() not in ("off", "0", "no"):
+                ground_q = instant.ground_question(req)
+                if ground_q and not context:
+                    context = instant.clean_context(headers.get("x-mesh-context") or req.get("mesh_context"))
         for k in instant.MESH_FIELDS:
             req.pop(k, None)
         if model == FAST:
             req.setdefault("cache_prompt", True)
+
+        plan, reason = self.plan(model, conv)
+        if ground_q and plan and plan[0][0] is self.brain:
+            # ~400 more prompt tokens cost the brain (~45 tok/s prompt) ~9 s before the first word: GPU nodes only
+            ground_q = None
+            self.counters["ground_skipped_brain"] += 1
+        # one embedding serves the cache lookup and the grounding. When a GPU node will answer, it is waited for
+        # (briefly) and the cache decision (incl. the judge, which needs that node's slot) is made BEFORE the backend
+        # starts; otherwise (brain) the lookup runs in parallel with the backend start as before
+        text = question or ground_q
+        cands_task = asyncio.ensure_future(self.cache_candidates(text, context)) if text else None
+        ground_hdr, decided = {}, False
+        if cands_task is not None and plan and plan[0][0] is not self.brain:
+            done, _ = await asyncio.wait({cands_task}, timeout=self.cfg["lookup_wait_s"])
+            if not done:
+                if ground_q:
+                    ground_hdr["X-Mesh-Ground"] = "late"
+                    self.counters["ground_late"] += 1
+            else:
+                cands, _ = cands_task.result()
+                if question:
+                    decided = True
+                    row, sim, _, how = await self.cache_semantic(question, context, cands_task)
+                    ms = round((time.monotonic() - t0) * 1000, 1)
+                    if row is not None:
+                        return await self.serve_cached(row, "semantic", sim, ms, stream, writer, t0, how)
+                    self.counters["cache_miss"] += 1
+                    cache_hdr["X-Mesh-Cache-Ms"] = str(ms)
+                    if sim is not None:
+                        cache_hdr["X-Mesh-Cache-Similarity"] = f"{sim:.4f}"
+                    if how:
+                        cache_hdr["X-Mesh-Cache-Stage2"] = how
+                if ground_q:
+                    refs = self.ground_refs(ground_q, cands)
+                    ground_hdr["X-Mesh-Ground"] = str(len(refs))
+                    if refs:
+                        req["messages"] = instant.grounded_messages(req["messages"], refs)
+                        self.counters["ground_used"] += 1
+                        ground_hdr["X-Mesh-Ground-Ids"] = ",".join(str(r["id"]) for r in refs)
 
         if model == FAST:
             cache_hdr.update(await self.docs_inject(req, headers))
@@ -686,11 +751,16 @@ class Router:
         def body_for(mid):
             return json.dumps({**req, "model": mid}).encode()
 
-        plan, reason = self.plan(model, conv)
         log = {"ts": round(time.time(), 3), "model": model, "stream": stream, "hedge": bool(hedge),
                "candidates": [b.name for b, _, _ in plan], "reason": reason, "errors": []}
         if conv:
             log["conv"], log["affinity"] = conv[:12], self.affinity.get(conv)
+        if decided:
+            log["cache_similarity"] = cache_hdr.get("X-Mesh-Cache-Similarity")
+            log["cache_stage2"] = cache_hdr.get("X-Mesh-Cache-Stage2")
+        if ground_hdr:
+            log["ground"] = ground_hdr.get("X-Mesh-Ground-Ids") or ground_hdr["X-Mesh-Ground"]
+            cache_hdr.update(ground_hdr)
         if "X-Mesh-Docs" in cache_hdr:
             log["docs"] = cache_hdr["X-Mesh-Docs"]
         self.decisions.append(log)
@@ -698,24 +768,34 @@ class Router:
         # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
         race = asyncio.ensure_future(self.race(plan, path, body_for, headers.get("authorization", ""), stream,
                                                bool(hedge), log))
-        if question:
-            lookup = asyncio.ensure_future(self.cache_semantic(question, context))
+        if question and not decided:
+            lookup = asyncio.ensure_future(self.cache_semantic(question, context, cands_task))
             await asyncio.wait({race, lookup}, return_when=asyncio.FIRST_COMPLETED)
-            if lookup.done() and not race.done():
-                row, sim, ms = lookup.result()
+            if not lookup.done():           # the first token is ready: a lookup still running gets a short grace
+                await asyncio.wait({lookup}, timeout=self.cfg["cache_hold_s"])
+            if lookup.done():
+                row, sim, ms, how = lookup.result()
                 if row is not None:
                     race.cancel()
                     await asyncio.gather(race, return_exceptions=True)
-                    log.update(chosen=None, outcome="cancelled: semantic cache hit")
-                    return await self.serve_cached(row, "semantic", sim, ms, stream, writer, t0)
+                    if race.done() and not race.cancelled() and race.exception() is None:
+                        backend, (up, _, _) = race.result()     # it had its first token already: free it
+                        backend.inflight -= 1
+                        up.close()
+                    log.update(chosen=None, outcome=f"cancelled: semantic cache hit ({how})")
+                    return await self.serve_cached(row, "semantic", sim, ms, stream, writer, t0, how)
                 cache_hdr["X-Mesh-Cache-Ms"] = str(ms)
                 if sim is not None:
                     cache_hdr["X-Mesh-Cache-Similarity"] = f"{sim:.4f}"
                     log["cache_similarity"] = round(sim, 4)
+                if how:
+                    log["cache_stage2"] = cache_hdr["X-Mesh-Cache-Stage2"] = how
             else:
                 lookup.cancel()
                 cache_hdr["X-Mesh-Cache-Ms"] = "late"
             self.counters["cache_miss"] += 1
+        elif not decided and cands_task is not None and not cands_task.done():
+            cands_task.cancel()
         if cache_hdr:
             log["cache"] = cache_hdr.get("X-Mesh-Cache")
         try:
@@ -978,11 +1058,18 @@ class Router:
                 any(req.get(k) for k in ("tools", "functions", "response_format", "grammar", "json_schema")):
             return {}
         content = msgs[-1]["content"]
-        question = content.rsplit("\n---\nQuestion: ", 1)[-1]      # without reference answers put in front of it
+        # one injection point with the verified-answer grounding (instant.grounded_messages): its references stay
+        # first, the docs go right before its "---\nQuestion:" line, and both share context_budget (grounding first)
+        refs, sep, question = content.rpartition("\n---\nQuestion: ")
+        if not sep:
+            refs, question = "", content
+        budget = min(self.cfg["docs_budget"], self.cfg["context_budget"] - round(len(refs) / 3.6))
+        if budget < 80:
+            return {"X-Mesh-Docs": "no room"}
         extra = "\n".join(m["content"] for m in msgs[:-1] if isinstance(m, dict) and m.get("role") in
                           ("user", "assistant") and isinstance(m.get("content"), str))[-6000:]
         system = msgs[0].get("content") if isinstance(msgs[0], dict) and msgs[0].get("role") == "system" else ""
-        body = json.dumps({"question": question, "extra": extra, "budget": self.cfg["docs_budget"],
+        body = json.dumps({"question": question, "extra": extra, "budget": budget,
                            "context": system[-300:] if isinstance(system, str) else ""}).encode()
         t0 = time.monotonic()
         try:
@@ -1001,7 +1088,7 @@ class Router:
         text = block.get("text") or ""
         if not text:
             return {}
-        msgs[-1] = {**msgs[-1], "content": f"{text}\n\n---\n{content}"}
+        msgs[-1] = {**msgs[-1], "content": f"{refs}\n\n{text}{sep}{question}" if sep else f"{text}\n\n---\n{content}"}
         self.counters["docs_used"] += 1
         return {"X-Mesh-Docs": f"{len(block.get('entries') or [])}e{len(block.get('passages') or [])}p "
                                f"{round((time.monotonic() - t0) * 1000)}ms"}
@@ -1039,14 +1126,107 @@ class Router:
         except (UpstreamError, asyncio.TimeoutError, ValueError, AttributeError):
             return None
 
-    async def cache_semantic(self, question: str, context: str) -> tuple[dict | None, float | None, float]:
-        """(row or None, best similarity, ms): embed the question through the brain, compare with the entries."""
+    async def cache_candidates(self, text: str, context: str) -> tuple[list[dict], float]:
+        """(candidates best first, ms): embed the question through the brain, compare with the entries."""
         t0 = time.monotonic()
-        emb = await self.embed(question)
-        row, sim = self.cache.nearest(emb, context, question) if emb is not None else (None, None)
-        if row is not None and sim < self.cfg["cache_threshold"]:
+        emb = await self.embed(text)
+        cands = self.cache.candidates(emb, context, text, self.cfg["judge_candidates"]) if emb is not None else []
+        return cands, round((time.monotonic() - t0) * 1000, 1)
+
+    async def cache_semantic(self, question: str, context: str, cands_task=None
+                             ) -> tuple[dict | None, float | None, float, str]:
+        """(row or None, similarity, ms, second-stage note). A hit: similarity >= cache_threshold, or in the grey zone
+        (>= judge_floor) when the live model on an idle GPU node picks that candidate (instant.judge_messages) with
+        probability >= judge_min_p. The intent guard (direction, language, edition) vetoes either way."""
+        t0 = time.monotonic()
+        cands, _ = await (cands_task if cands_task is not None else self.cache_candidates(question, context))
+        if not cands:                   # nothing for this page/platform (similarity -1, as before)
+            return None, -1.0, round((time.monotonic() - t0) * 1000, 1), ""
+        best, how = cands[0], ""
+        conflict = instant.intent_conflict(question, best["canon"]) or instant.intent_conflict(
+            question, best["question"])
+        ok = best["sim"] >= self.cfg["cache_threshold"] and not conflict
+        if conflict and best["sim"] >= self.cfg["judge_floor"]:      # also above the threshold: "server to client"
+            how = f"intent: {conflict}"                               # scores ~0.97 to "client to server"
+            self.counters["cache_intent_blocked"] += 1
+        elif not ok and self.cfg["judge"] and best["sim"] >= self.cfg["judge_floor"]:
+            try:
+                pick = await asyncio.wait_for(self.judge(question, [c["canon"] for c in cands]),
+                                              self.cfg["judge_timeout_s"])
+            except asyncio.TimeoutError:
+                pick, how = None, "judge: late"
+                self.counters["judge_late"] += 1
+            if pick is None:
+                how = how or "judge: no idle node"
+            else:
+                k, p = pick
+                chosen = cands[k - 1] if k else None
+                if chosen is None:
+                    how = f"judge: none ({p:.2f})"
+                elif chosen["sim"] < self.cfg["judge_floor"]:
+                    how = f"judge: {k} below floor"
+                elif instant.intent_conflict(question, chosen["canon"]):
+                    how = "judge: intent"
+                else:
+                    best, ok, how = chosen, True, f"judge: {k} ({p:.2f})"
+                    self.counters["cache_judge_hit"] += 1
+        row = self.cache.get(best["id"]) if ok else None
+        if row is not None and row["expires"] <= time.time():
             row = None
-        return row, sim, round((time.monotonic() - t0) * 1000, 1)
+        return row, best["sim"], round((time.monotonic() - t0) * 1000, 1), how
+
+    async def judge(self, question: str, docs: list[str]) -> tuple[int, float] | None:
+        """Ask the live model on the best idle GPU node which doc asks the same thing as the question: (number 1..n,
+        probability) or (0, p); None when no node is idle (the brain is too slow for this) or the call fails/is late."""
+        now = time.monotonic()
+        usable = [n for n in self.nodes if self.node_usable(n, now)[0]]
+        if not usable:
+            return None
+        node = max(usable, key=lambda n: n.score())
+        m = node.model(self.cfg["node_fast_models"])
+        body = json.dumps({"model": m["id"], "messages": instant.judge_messages(question, docs), "max_tokens": 1,
+                           "temperature": 0, "logprobs": True, "top_logprobs": 5, "stream": False,
+                           "chat_template_kwargs": {"enable_thinking": False}}).encode()
+        t = self.cfg["judge_timeout_s"]
+        self.counters["cache_judge"] += 1
+        node.inflight += 1
+        try:
+            up = await open_upstream(m["url"].rstrip("/") + "/chat/completions", "POST", body,
+                                     self._headers_for(node, ""), connect_s=t, idle_s=t)
+            try:
+                raw = await asyncio.wait_for(up.body(), t)
+            finally:
+                up.close()
+            if up.status != 200:
+                raise ValueError(up.status)
+            choice = json.loads(raw)["choices"][0]
+            top = ((choice.get("logprobs") or {}).get("content") or [{}])[0].get("top_logprobs")
+            if not top:                    # no logprobs: the answer token itself counts as certain
+                top = [{"token": (choice.get("message") or {}).get("content") or "", "logprob": 0.0}]
+            return instant.judge_pick(top, len(docs), self.cfg["judge_min_p"])
+        except (UpstreamError, asyncio.TimeoutError, OSError, ValueError, KeyError, IndexError, TypeError,
+                AttributeError):
+            self.counters["judge_failed"] += 1
+            return None
+        finally:
+            node.inflight -= 1
+
+    def ground_refs(self, question: str, cands: list[dict]) -> list[dict]:
+        """Up to ground_max verified answers for the question: similarity >= ground_floor, no intent conflict, short
+        enough; [{"id", "sim", "question", "answer"}]."""
+        refs = []
+        for c in cands:
+            if len(refs) >= self.cfg["ground_max"] or c["sim"] < self.cfg["ground_floor"]:
+                break
+            if instant.intent_conflict(question, c["canon"]):
+                continue
+            row = self.cache.get(c["id"])
+            if row is None or row["expires"] <= time.time() or len(row["answer"]) > self.cfg["ground_max_chars"]:
+                continue
+            canon = self.cache.get(self.cache.canon.get(c["group"], c["id"])) or row
+            refs.append({"id": row["id"], "sim": round(c["sim"], 4), "question": canon["question"],
+                         "answer": row["answer"]})
+        return refs
 
     def cache_check(self, req: dict, headers: dict) -> tuple[dict, str | None, str]:
         """X-Mesh-Cache headers for a live answer, plus (question, context) when the cache may answer it."""
@@ -1059,20 +1239,25 @@ class Router:
         return {"X-Mesh-Cache": "miss"}, question, instant.clean_context(
             headers.get("x-mesh-context") or req.get("mesh_context"))
 
-    async def serve_cached(self, row: dict, how: str, sim, lookup_ms: float, stream: bool, writer, t0: float):
+    async def serve_cached(self, row: dict, how: str, sim, lookup_ms: float, stream: bool, writer, t0: float,
+                           stage2: str = ""):
         self.counters["cache_hit"] += 1
         self.cache.hit(row["id"])
         if time.time() - row["verified_at"] > self.cfg["cache_reverify_s"]:
             asyncio.get_running_loop().create_task(self._reverify(row["id"], row["answer"]))
         hdr = {"X-Mesh-Backend": "cache", "X-Mesh-Cache": "hit", "X-Mesh-Cache-Match": how,
                "X-Mesh-Cache-Id": str(row["id"]), "X-Mesh-Cache-Ms": str(lookup_ms)}
+        if sim is not None:
+            hdr["X-Mesh-Cache-Similarity"] = f"{sim:.4f}"
+        if stage2:
+            hdr["X-Mesh-Cache-Stage2"] = stage2
         if stream:
             await send_raw(writer, 200, "text/event-stream", instant.sse_from_text(row["answer"], FAST), hdr)
         else:
             await send_json(writer, 200, instant.completion_from_text(row["answer"], FAST), hdr)
         self.decisions.append({"ts": round(time.time(), 3), "model": FAST, "stream": stream, "cache": how,
                                "similarity": round(sim, 4) if sim is not None else None, "lookup_ms": lookup_ms,
-                               "chosen": "cache", "entry": row["id"], "outcome": "ok",
+                               "chosen": "cache", "entry": row["id"], "outcome": "ok", "stage2": stage2 or None,
                                "total_ms": round((time.monotonic() - t0) * 1000, 1)})
 
     async def _reverify(self, rid: int, answer: str):
