@@ -3,7 +3,8 @@
 Contract: docs/agents/WAVE-20261027-MESH-BRIEF.md. Each GPU node publishes `GET :8099/status`
 ({"state": "idle|busy|away|off", "models": [{"id": "litha-fast", "url": ".../v1", "loaded": true, "tok_s": ..}]}).
 
-Models: `litha` = the best idle node by measured tok/s and queue, else the brain's star-fast; `litha-deep` = star-deep;
+Models: `litha` = the best idle node by measured tok/s and queue, else the brain's star-fast; `litha-deep` = the same
+node model with thinking on and a thinking budget (`deep_node_body`), else the brain's star-deep;
 every other model id passes through to the brain. A request is never sent to a node whose state is not `idle` or
 whose status is stale. The client sees nothing until a backend produced its first token, so any failure before that
 moves on to the next backend; with hedging the two best start together and the first token wins (the other is
@@ -37,6 +38,11 @@ DEFAULTS = {
     "brain_url": "http://127.0.0.1:8080",
     "brain_fast_model": "star-fast",
     "brain_deep_model": "star-deep",
+    # "Think harder" (litha-deep): an idle GPU node's model with thinking on and a 1,500-token thinking cap
+    # (docs/agents/litha-brain-20261028.md); the brain's star-deep only when no node is usable
+    "deep_on_nodes": True,
+    "deep_node_body": {"chat_template_kwargs": {"enable_thinking": True}, "thinking_budget_tokens": 1500,
+                       "reasoning_budget_message": " Okay, I have thought enough. Now I will write the final answer."},
     "brain_tok_s": 10.0,              # starting guess until a brain answer has been measured
     "client_keys_file": "/etc/star-mesh/api_keys",   # same file the brain uses: one key per line
     "mesh_token_file": "/etc/star-mesh/mesh_token",
@@ -464,7 +470,21 @@ class Router:
         served this conversation last gets `affinity_bonus` on its score (its llama-server still holds the KV)."""
         brain_url = self.cfg["brain_url"].rstrip("/") + "/v1"
         if model == DEEP:
-            return [(self.brain, brain_url, self.cfg["brain_deep_model"])], "litha-deep -> brain star-deep"
+            brain_deep = (self.brain, brain_url, self.cfg["brain_deep_model"])
+            if not self.cfg["deep_on_nodes"]:
+                return [brain_deep], "litha-deep -> brain star-deep"
+            now, ranked, skipped = time.monotonic(), [], []
+            for node in self.nodes:
+                ok, why = self.node_usable(node, now)
+                if ok:
+                    m = node.model(self.cfg["node_fast_models"])
+                    ranked.append((node.score(), node, m["url"].rstrip("/"), m["id"]))
+                else:
+                    skipped.append(f"{node.name}: {why}")
+            ranked.sort(key=lambda r: r[0], reverse=True)
+            if not ranked:
+                return [brain_deep], "litha-deep -> brain star-deep (no usable node" +                     (": " + "; ".join(skipped) if skipped else "") + ")"
+            return [(b, url, mid) for _, b, url, mid in ranked] + [brain_deep],                 "litha-deep -> " + " > ".join(f"{b.name} (thinking)" for _, b, _, _ in ranked) + " > brain star-deep"
         if model != FAST:
             return [(self.brain, brain_url, model)], "pass-through to brain"
         now, ranked, skipped = time.monotonic(), [], []
@@ -757,6 +777,11 @@ class Router:
             cache_hdr.update(await self.docs_inject(req, headers))
 
         def body_for(mid):
+            if model == DEEP and mid != self.cfg["brain_deep_model"]:     # a node: thinking on, capped
+                body = {**req, **self.cfg["deep_node_body"], "model": mid}
+                if isinstance(req.get("max_tokens"), int):              # the thinking does not eat the answer
+                    body["max_tokens"] = req["max_tokens"] + int(body.get("thinking_budget_tokens") or 0)
+                return json.dumps(body).encode()
             return json.dumps({**req, "model": mid}).encode()
 
         log = {"ts": round(time.time(), 3), "model": model, "stream": stream, "hedge": bool(hedge),

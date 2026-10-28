@@ -355,6 +355,40 @@ def test_streaming_passthrough_and_models(tmp_path):
     run(go())
 
 
+def test_litha_deep_thinks_on_an_idle_node_else_brain_star_deep(tmp_path):
+    async def go():
+        node = Fake("owner-pc", tok_s=31.0, words=("Deep", "!"))
+        r, port, brain = await setup(tmp_path, [node])
+        deep = {**CHAT, "model": "litha-deep", "max_tokens": 1400, "chat_template_kwargs": {"enable_thinking": False}}
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", deep)
+        assert status == 200 and headers["X-Mesh-Backend"] == "owner-pc" and sse_text(data) == "Deep!"
+        sent = node.requests[-1]
+        assert sent["model"] == "litha-fast" and sent["chat_template_kwargs"] == {"enable_thinking": True}
+        assert sent["thinking_budget_tokens"] == 1500 and sent["max_tokens"] == 2900 and not brain.requests
+        assert sent["reasoning_budget_message"].startswith(" Okay, I have thought enough")
+        assert r.decisions[-1]["reason"] == "litha-deep -> owner-pc (thinking) > brain star-deep"
+        # the node fails before its first token -> brain star-deep, without the node's thinking fields
+        node.die_before_token = True
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", deep)
+        assert headers["X-Mesh-Backend"] == "brain1" and sse_text(data) == "Brain here"
+        assert brain.requests[-1]["model"] == "star-deep" and brain.requests[-1]["max_tokens"] == 1400
+        assert "thinking_budget_tokens" not in brain.requests[-1]
+        # node busy (owner gaming) -> straight to the brain, the reason says why
+        node.die_before_token, node.state = False, "busy"
+        await r.poll_node(r.nodes[0])
+        r.nodes[0].fail_until = 0
+        n = len(node.requests)
+        status, headers, _ = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", deep)
+        assert headers["X-Mesh-Backend"] == "brain1" and len(node.requests) == n
+        assert r.decisions[-1]["reason"].startswith("litha-deep -> brain star-deep (no usable node: owner-pc: busy")
+        # thinking requests never touch the fast path's plain litha body
+        node.state = "idle"
+        await r.poll_node(r.nodes[0])
+        await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
+        assert "chat_template_kwargs" not in node.requests[-1]
+    run(go())
+
+
 def test_auth_uses_brain_key_file(tmp_path):
     async def go():
         r, port, brain = await setup(tmp_path)
