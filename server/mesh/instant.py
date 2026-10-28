@@ -15,6 +15,7 @@ import re
 import sqlite3
 import time
 import unicodedata
+import uuid
 
 MESH_FIELDS = ("conversation_id", "mesh_context", "mesh_cache", "mesh_ground")   # router-only, never forwarded
 
@@ -267,12 +268,23 @@ class AnswerCache:
         id INTEGER PRIMARY KEY, norm TEXT NOT NULL, context TEXT NOT NULL DEFAULT '', question TEXT NOT NULL,
         answer TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', score REAL, emb BLOB,
         created REAL NOT NULL, verified_at REAL NOT NULL, expires REAL NOT NULL, hits INTEGER NOT NULL DEFAULT 0,
+        revision TEXT NOT NULL DEFAULT '',
         UNIQUE(norm, context))"""
 
     def __init__(self, path: str):
         self.db = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute(self.SCHEMA)
+        # Existing databases receive a generation marker before this router accepts requests.
+        # Serialize schema discovery + migration with other cache constructors on the same database.
+        try:
+            with self.db:
+                self.db.execute("BEGIN IMMEDIATE")
+                if "revision" not in {row[1] for row in self.db.execute("PRAGMA table_info(answers)")}:
+                    self.db.execute("ALTER TABLE answers ADD COLUMN revision TEXT NOT NULL DEFAULT ''")
+        except BaseException:
+            self.db.close()
+            raise
         # id -> (context, unit vector, question, platform, answer group): the scan in candidates() stays cheap with
         # thousands of entries (it runs on the router's event loop). platform = the platforms the question names, else
         # its page context's (an entry seeded for the Roblox page is a Roblox answer). answer group = hash of the
@@ -308,10 +320,10 @@ class AnswerCache:
         if r is None:
             return None
         keys = ("id", "norm", "context", "question", "answer", "source", "score", "created", "verified_at",
-                "expires", "hits")
+                "expires", "hits", "revision")
         return dict(zip(keys, r))
 
-    _COLS = "id, norm, context, question, answer, source, score, created, verified_at, expires, hits"
+    _COLS = "id, norm, context, question, answer, source, score, created, verified_at, expires, hits, revision"
 
     def get(self, rid: int) -> dict | None:
         return self._row(self.db.execute(f"SELECT {self._COLS} FROM answers WHERE id=?", (rid,)).fetchone())
@@ -353,11 +365,11 @@ class AnswerCache:
         now = time.time()
         blob = array.array("f", emb).tobytes() if emb else None
         self.db.execute(
-            "INSERT INTO answers (norm, context, question, answer, source, score, emb, created, verified_at, expires)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(norm, context) DO UPDATE SET question=excluded.question,"
+            "INSERT INTO answers (norm, context, question, answer, source, score, emb, created, verified_at, expires, revision)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(norm, context) DO UPDATE SET question=excluded.question,"
             " answer=excluded.answer, source=excluded.source, score=excluded.score, emb=excluded.emb,"
-            " verified_at=excluded.verified_at, expires=excluded.expires",
-            (normalize(question), context, question, answer, source, score, blob, now, now, now + ttl_s))
+            " verified_at=excluded.verified_at, expires=excluded.expires, revision=excluded.revision",
+            (normalize(question), context, question, answer, source, score, blob, now, now, now + ttl_s, uuid.uuid4().hex))
         rid = self.db.execute("SELECT id FROM answers WHERE norm=? AND context=?",
                               (normalize(question), context)).fetchone()[0]
         if emb:
@@ -368,7 +380,32 @@ class AnswerCache:
         self.db.execute("UPDATE answers SET hits = hits + 1 WHERE id=?", (rid,))
 
     def reverified(self, rid: int):
-        self.db.execute("UPDATE answers SET verified_at=? WHERE id=?", (time.time(), rid))
+        self.db.execute("UPDATE answers SET verified_at=?, revision=? WHERE id=?", (time.time(), uuid.uuid4().hex, rid))
+
+    @staticmethod
+    def _snapshot_match(snapshot: dict) -> tuple[str, tuple]:
+        # Hits may change while a check runs. The revision also rejects A -> B -> A replacements,
+        # reused row IDs and accepted rechecks when the wall clock repeats or moves backwards.
+        fields = ("id", "norm", "context", "question", "answer", "source", "score", "created", "verified_at", "expires",
+                  "revision")
+        return " AND ".join(f"{field} IS ?" for field in fields), tuple(snapshot[field] for field in fields)
+
+    def reverified_if_current(self, snapshot: dict) -> bool:
+        """Apply a background success only to the row that was checked, in one SQLite statement."""
+        where, values = self._snapshot_match(snapshot)
+        return self.db.execute(f"UPDATE answers SET verified_at=?, revision=? WHERE {where}",
+                               (time.time(), uuid.uuid4().hex, *values)).rowcount > 0
+
+    def delete_if_current(self, snapshot: dict) -> bool:
+        """Discard a failed snapshot without removing a replacement's vector/canonical entry."""
+        where, values = self._snapshot_match(snapshot)
+        if not self.db.execute(f"DELETE FROM answers WHERE {where}", values).rowcount:
+            return False
+        rid = snapshot["id"]
+        gone = self.vectors.pop(rid, None)
+        if gone and self.canon.get(gone[4]) == rid:
+            self._recanon(gone[4])
+        return True
 
     def delete(self, rid: int) -> bool:
         gone = self.vectors.pop(rid, None)
