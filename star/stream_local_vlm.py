@@ -107,6 +107,8 @@ class LocalLlamaComparisonWorker:
         self, *, model: str, port: int = 8080, max_image_side: int = 512,
         max_gap_ms: int = 5000, timeout_seconds: float = 8.0,
         max_tokens: int = 180, transport: Transport | None = None,
+        focus_box: tuple[int, int, int, int] | None = None,
+        skip_identical: bool = False,
     ) -> None:
         if (type(model) is not str or not 1 <= len(model) <= _MAX_MODEL_ID
                 or "://" in model or ".." in model
@@ -123,6 +125,19 @@ class LocalLlamaComparisonWorker:
             raise ValueError("max_tokens must be 32..256")
         if transport is not None and not callable(transport):
             raise TypeError("host transport must be callable")
+        # Host-configured, normalized (x0, y0, x1, y1) ROI. No model,
+        # viewer, webpage or game overlay is permitted to choose it.
+        if focus_box is not None:
+            if (type(focus_box) is not tuple or len(focus_box) != 4
+                    or any(type(v) is not int or not 0 <= v <= 1000
+                           for v in focus_box)
+                    or focus_box[2] - focus_box[0] < 50
+                    or focus_box[3] - focus_box[1] < 50):
+                raise ValueError("focus_box must be a valid 0..1000 region >=5% wide/high")
+        if type(skip_identical) is not bool:
+            raise ValueError("skip_identical must be a host boolean")
+        self._skip_identical = skip_identical
+        self._focus_box = focus_box
         self._model = model
         self._port = port
         self._side = max_image_side
@@ -137,6 +152,7 @@ class LocalLlamaComparisonWorker:
         self._counts = {
             "baselines": 0, "requests": 0, "accepted": 0,
             "model_rejected": 0, "ambiguous_stop": 0, "invalid_frames": 0,
+            "identical_pairs_skipped": 0, "focused_pairs": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -190,10 +206,20 @@ class LocalLlamaComparisonWorker:
         # no image, transcript or response is written to a file or logged.
         image = Image.frombytes("RGB", (w, h), frame.rgb.tobytes())
         try:
-            if max(w, h) > self._side:
-                ratio = self._side / max(w, h)
+            if self._focus_box is not None:
+                x0, y0, x1, y1 = self._focus_box
+                left, top = w * x0 // 1000, h * y0 // 1000
+                right, bottom = w * x1 // 1000, h * y1 // 1000
+                if right - left < 8 or bottom - top < 8:
+                    raise ValueError("focus region is too small at this frame resolution")
+                cropped = image.crop((left, top, right, bottom))
+                image.close()
+                image = cropped
+            if max(image.size) > self._side:
+                ratio = self._side / max(image.size)
                 scaled = image.resize(
-                    (max(1, round(w * ratio)), max(1, round(h * ratio))),
+                    (max(1, round(image.width * ratio)),
+                     max(1, round(image.height * ratio))),
                     Image.Resampling.BILINEAR,
                 )
                 image.close()
@@ -214,9 +240,17 @@ class LocalLlamaComparisonWorker:
             return {"type": "image_url",
                     "image_url": {"url": "data:image/jpeg;base64," + data}}
 
+        description = (
+            "First image is earlier; second image is later. "
+            "Return one bounded JSON object; if no visible difference, use unknown."
+        )
+        if self._focus_box is not None:
+            description += (
+                " Both views are the SAME fixed host-selected crop of the game."
+                " Infer nothing about the rest of the window."
+            )
         message = [
-            {"type": "text", "text": "First image is earlier; second image is later. "
-             "Return one bounded JSON object; if no visible difference, use unknown."},
+            {"type": "text", "text": description},
             image_part(older),
             image_part(newer),
         ]
@@ -306,6 +340,14 @@ class LocalLlamaComparisonWorker:
                 self._previous = newest
                 self._counts["baselines"] += 1
                 return WorkerReport(True, True)
+            # Byte-identical bounded JPEGs cannot provide visual-difference
+            # evidence. Skip the expensive inference while keeping the newest
+            # baseline timestamp; never make up a positive visual finding.
+            if self._skip_identical and previous.jpeg == newest.jpeg:
+                previous.erase()
+                self._previous = newest
+                self._counts["identical_pairs_skipped"] += 1
+                return WorkerReport(True, True)
             self._previous = None
             try:
                 payload = self._payload(previous.jpeg, newest.jpeg)
@@ -317,6 +359,8 @@ class LocalLlamaComparisonWorker:
                 return WorkerReport(True, False)
             try:
                 self._counts["requests"] += 1
+                if self._focus_box is not None:
+                    self._counts["focused_pairs"] += 1
                 status, raw = self._transport(payload)
             except ConnectionRefusedError:
                 # No local server accepted a connection; no inference started.
@@ -347,7 +391,9 @@ class LocalLlamaComparisonWorker:
         with self._lock:
             return {**self._counts, "enabled": self._enabled,
                     "quarantined": self._quarantined,
-                    "reference_cached": self._previous is not None}
+                    "reference_cached": self._previous is not None,
+                    "focus_enabled": self._focus_box is not None,
+                    "identical_gate_enabled": self._skip_identical}
 
 
 __all__ = ["LocalLlamaComparisonWorker"]
