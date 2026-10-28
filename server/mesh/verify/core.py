@@ -22,6 +22,9 @@ LANGS = {"lua": "luau", "luau": "luau", "rbxlua": "luau", "roblox": "luau",
          "cs": "csharp", "csharp": "csharp", "c#": "csharp", "unity": "csharp",
          "mcfunction": "mcfunction", "minecraft": "minecraft", "mcf": "mcfunction", "mc": "minecraft",
          "json": "json", "java": "java", "kotlin": "java"}
+# what a reader fills in: <spawn_x>, [X], X_POS, ~ ~ ~ (the fix loop never rewrites these)
+PLACEHOLDER = re.compile(r"(?<![\w>])<[A-Za-z_][\w -]{0,30}>|(?<![\w\])}])\[[A-Za-z_][\w ]{0,30}\]"
+                         r"|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|(?<!\S)[~^][-\d.]*[ \t]+[~^][-\d.]*[ \t]+[~^][-\d.]*(?!\S)")
 LUAU_HINT = re.compile(r"game:GetService|Instance\.new|\bworkspace\b|\blocal\s+\w+\s*=|:Connect\(|\bend\b")
 CS_HINT = re.compile(r"using\s+UnityEngine|:\s*MonoBehaviour|\bvoid\s+Update\s*\(")
 
@@ -38,6 +41,18 @@ def _detect(code: str, info: str) -> str:
     if LUAU_HINT.search(code):
         return "luau"
     return ""
+
+
+def placeholders(code: str) -> set[str]:
+    return {m.group(0) for m in PLACEHOLDER.finditer(code)}
+
+
+def is_placeholder(name: str | None) -> bool:
+    return bool(name) and bool(PLACEHOLDER.fullmatch(name.strip()))
+
+
+def _bad(problems: list[dict]) -> tuple[int, int]:
+    return (sum(p["severity"] == "error" for p in problems), sum(p["severity"] == "warning" for p in problems))
 
 
 def extract_blocks(text: str, language: str | None = None) -> list[dict]:
@@ -66,6 +81,13 @@ class Verifier:
         self.luau = LuauChecker(api, analyzer)
 
     def check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
+        problems, checked = self._check_block(code, lang, prose)
+        for p in problems:                      # a placeholder is for the reader, not a mistake to fix
+            if p["severity"] != "info" and is_placeholder(p.get("name")):
+                p["severity"] = "info"
+        return problems, checked
+
+    def _check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
         if lang == "luau":
             return self.luau.check(code), True
         if lang == "csharp":
@@ -124,8 +146,19 @@ class Verifier:
                 finally:
                     model_ms += (time.perf_counter() - t1) * 1000
                 new = code_from_reply(reply, span["code"])
-                if new and new.strip() != span["code"].strip():
-                    edits.append((span, new, b))
+                if not new or new.strip() == span["code"].strip():
+                    continue
+                flagged = {p.get("name") for p in b["problems"] if p.get("name")}
+                lost = sorted(ph for ph in placeholders(span["code"]) if ph not in flagged and ph not in new)
+                if lost:
+                    changes.append({"round": rnd, "block": b["index"],
+                                    "rejected": f"the fix rewrote the placeholder {lost[0]}; kept as written"})
+                    continue
+                if _bad(self.check_block(new, b["language"], text)[0]) >= _bad(b["problems"]):
+                    changes.append({"round": rnd, "block": b["index"],
+                                    "rejected": "the fix did not remove problems; kept as written"})
+                    continue
+                edits.append((span, new, b))
             for span, new, b in sorted(edits, key=lambda e: -e[0]["start"]):
                 text = text[:span["start"]] + new + text[span["end"]:]
             report = self.verify(text, language)
@@ -135,7 +168,7 @@ class Verifier:
                                                                              if p["severity"] != "info"],
                                 "remaining": [p["message"] for p in (after or {}).get("problems", [])
                                               if p["severity"] != "info"]})
-            if not edits:
+            if not edits and not any(c.get("rejected") and c["round"] == rnd for c in changes):
                 break
         return {"answer": text, "ok": report["ok"], "rounds": done, "changes": changes,
                 "before": _summary(first), "after": _summary(report), "verify": report,
@@ -151,7 +184,10 @@ def _summary(report: dict) -> dict:
 
 FIX_SYSTEM = ("You repair code. You get one code block and a list of problems found by a verifier that checks every "
               "API name against the official API list. Fix exactly those problems and keep everything else "
-              "unchanged (same structure, names, comments). When a problem gives a suggestion, use it. Never invent "
+              "unchanged (same structure, names, comments). Placeholders the reader fills in ([X], <x>, X_POS, "
+              "~ ~ ~) stay exactly as written. When a problem gives a suggestion, use it. When it lists the real "
+              "members instead, the name usually belongs to another object (for example a service): write what the "
+              "code means, which may need that other object; never just take the closest-sounding name. Never invent "
               "an API: if a call does not exist and there is no suggestion, rewrite that part with APIs you are sure "
               "exist. Reply with only the corrected code in one fenced code block, nothing else.")
 FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction"}
@@ -165,6 +201,8 @@ def fix_messages(code: str, language: str, problems: list[dict]) -> list[dict]:
         s = f"- line {p['line']}: {p['message']}" if p.get("line") else f"- {p['message']}"
         if p.get("suggestion"):
             s += f" (use: {p['suggestion']})"
+        if p.get("candidates"):
+            s += f"\n  real members of that class you may use: {', '.join(p['candidates'])}"
         lines.append(s)
     tag = FENCE_TAG.get(language, language or "")
     return [{"role": "system", "content": FIX_SYSTEM},
