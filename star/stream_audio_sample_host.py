@@ -157,6 +157,14 @@ class DeviceAudibleSampleHost:
             self._counts["observed"] += 1
             return True
 
+    def active_for(self, epoch: DevicePlayoutEpoch, plan: StagePlan) -> bool:
+        """Identity-only check for a host renderer; not permission to play sound."""
+        with self._lock:
+            return bool(
+                self._enabled and epoch is self._active and plan is self._plan
+                and self._playout.duration_if_armed(plan) is not None
+            )
+
     def sample(self, epoch: DevicePlayoutEpoch) -> PlayoutRigFrame | None:
         """Get an advisory frame, only after audible sample advancement."""
         with self._lock:
