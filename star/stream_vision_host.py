@@ -22,6 +22,7 @@ from typing import Callable
 
 from .stream_hardware_telemetry import RealtimeTelemetryHost
 from .frame_fingerprint import Region
+from .stream_budget import advise_workload
 from .stream_observe import FrameCue, ObservationDecision, ObservationGovernor
 from .stream_focus_stability import TemporalFocusGate
 
@@ -99,6 +100,8 @@ class StreamVisionHost:
             "completed": 0, "discarded": 0, "missing_sensor": 0,
             "stale_lease": 0, "unstable_focus_suppressed": 0,
             "focus_confirmed": 0,
+            "pixel_preflight_skipped": 0,
+            "pixel_fingerprinted": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -186,12 +189,53 @@ class StreamVisionHost:
                 # Never inspect disabled-session image buffers.
                 self._counters["deferred"] += 1
                 return VisionAdmission(False, "owner_opt_in_missing", 0.0)
+
+            # A 1080p frame with several focus ROIs may take milliseconds to
+            # fingerprint. Do not pay that cost when real hardware telemetry,
+            # capture freshness, or physical worker state already forbids a
+            # new vision job. Never inspect user-owned pixels on these paths.
+            now = _now_ms(self._clock)
+            stamp = FrameCue(captured_ms, 0).captured_ms  # strict clock validation
+            sample = self._telemetry.snapshot()
+            def skip(reason: str, target_fps: float = 0.0) -> VisionAdmission:
+                self._counters["deferred"] += 1
+                self._counters["pixel_preflight_skipped"] += 1
+                return VisionAdmission(False, reason, target_fps)
+
+            if sample is None or sample.qos is None:
+                self._counters["missing_sensor"] += 1
+                return skip("trusted_hardware_game_audio_missing")
+            if self._governor.stats()["quarantined"]:
+                return skip("vision_worker_stop_unconfirmed")
+            advice = advise_workload("vision", sample.telemetry)
+            if not advice.allowed:
+                return skip("realtime_headroom_unavailable", advice.sample_fps)
+            telemetry = sample.telemetry
+            if (telemetry.free_vram_mib < 1024
+                    or (telemetry.game_active and telemetry.game_fps < 45)
+                    or telemetry.speech_backlog_ms > 350):
+                return skip("insufficient_game_or_voice_headroom", advice.sample_fps)
+            if stamp > now + 20 or now - stamp > self._governor.frame_max_age_ms:
+                return skip("frame_stale_or_future_dated", advice.sample_fps)
+            if self._leases:
+                # A timed-out worker still owns its capacity until the host
+                # explicitly confirms that the physical process has stopped.
+                reason = ("vision_worker_stop_unconfirmed"
+                          if any(now >= lease.expires_ms
+                                 for lease in self._leases.values())
+                          else "vision_request_already_in_flight")
+                return skip(reason, advice.sample_fps)
+
             frame = FrameCue.from_pixels(
                 captured_ms, pixels, width=width, height=height,
                 pixel_format=pixel_format, row_stride=row_stride, cue=cue,
                 game_region=game_region, hud_region=hud_region,
                 focus_regions=focus_regions,
             )
+            self._counters["pixel_fingerprinted"] += 1
+            # consider() rechecks telemetry, admission and novelty after
+            # fingerprinting. Preflight is only a no-work fast path, NEVER a
+            # substitute for the authoritative governor.
             return self.consider(frame)
 
     def acknowledge_worker_stopped(
