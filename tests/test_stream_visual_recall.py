@@ -255,3 +255,16 @@ def test_outstanding_crop_handles_are_bounded_and_wiped():
     assert any(results[-1].jpeg)
     host.disable()
     assert not any(results[-1].jpeg)
+
+
+def test_expired_inspection_handles_are_wiped_on_host_clock_progress():
+    host = recall(ttl_ms=2000)
+    host(frame(1000, variant=1))
+    mark = host.recent(now_ms=1000)[0]
+    crop = host.inspect(mark.frame_id, focus_box=(0, 0, 1000, 1000),
+                        now_ms=1100, owner_approved=True,
+                        inspection_approved=True)
+    assert crop is not None and any(crop.jpeg)
+    assert host.recent(now_ms=3001) == ()
+    assert not any(crop.jpeg)
+    assert host.metrics()["inspection_handles"] == 0
