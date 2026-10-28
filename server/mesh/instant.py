@@ -16,7 +16,7 @@ import sqlite3
 import time
 import unicodedata
 
-MESH_FIELDS = ("conversation_id", "mesh_context", "mesh_cache")   # router-only request fields, never forwarded
+MESH_FIELDS = ("conversation_id", "mesh_context", "mesh_cache", "mesh_ground")   # router-only, never forwarded
 
 
 # ---- conversations ---------------------------------------------------------------------------------------------------
@@ -144,6 +144,105 @@ def same_platform(question: str, context: str, entry_question: str) -> bool:
         entry_question)
 
 
+# ---- second stage for the grey zone: intent guard, the live model as judge ---------------------------------------
+_DIR_S2C = re.compile(r"\bserver\b[\w ]{0,20}?\b(to|->|into)\b[\w ]{0,12}?\b(client|clients|player|players|"
+                      r"local ?scripts?|everyone)\b|\bfireclient\b|\bfireallclients\b|\bonclientevent\b")
+_DIR_C2S = re.compile(r"\b(client|local ?scripts?|player|gui|button)\b[\w ]{0,20}?\b(to|->|tell|tells|ask|asks)\b"
+                      r"[\w ]{0,12}?\bserver\b|\bfireserver\b|\bonserverevent\b|\binvokeserver\b")
+# (name, cues A, cues B): a question with an A cue and a candidate with a B cue (and no A cue) ask different things
+INTENT_PAIRS = (
+    ("language", re.compile(r"\b(luau|lua)\b"), re.compile(r"\b(csharp|python|javascript|js|java)\b")),
+    ("language", re.compile(r"\bpython\b"), re.compile(r"\b(luau|lua|csharp|javascript|js|java)\b")),
+    ("language", re.compile(r"\bcsharp\b"), re.compile(r"\b(luau|lua|python|javascript|js)\b")),
+    ("edition", re.compile(r"\bbedrock\b"), re.compile(r"\bjava\b")),
+    ("dimension", re.compile(r"\b2d\b"), re.compile(r"\b3d\b")),
+)
+
+
+def _cue_text(text: str) -> str:
+    return " " + unicodedata.normalize("NFKC", text).lower().replace("c#", "csharp") + " "
+
+
+def _direction(text: str) -> str:
+    return "s2c" if _DIR_S2C.search(text) else ("c2s" if _DIR_C2S.search(text) else "")
+
+
+def intent_conflict(question: str, entry_question: str) -> str | None:
+    """Why a grey-zone candidate asks a different thing than the question (None = no conflict found). Embeddings
+    score "server to client" ~0.97 to "client to server"; these cues are cheap and exact."""
+    q, e = _cue_text(question), _cue_text(entry_question)
+    qd, ed = _direction(q), _direction(e)
+    if qd and ed and qd != ed:
+        return "direction"
+    for name, a, b in INTENT_PAIRS:
+        for x, y in ((q, e), (e, q)):
+            if a.search(x) and b.search(y) and not a.search(y):
+                return name
+    return None
+
+
+JUDGE_SYSTEM = "You match a user's question to a list of questions that already have checked answers. Reply with one digit."
+
+
+def judge_messages(question: str, candidates: list[str]) -> list[dict]:
+    """A one-token multiple-choice prompt for the live model: which candidate asks for exactly the same thing (its
+    answer fully answers the user), or 0."""
+    listing = "\n".join(f"{i}. {c}" for i, c in enumerate(candidates, 1))
+    return [{"role": "system", "content": JUDGE_SYSTEM},
+            {"role": "user", "content": f"User question: {question}\n\nAnswered questions:\n{listing}\n\nWhich answered "
+             "question asks for exactly the same thing, so that its answer fully answers the user (same game or engine, "
+             "same feature, same trigger such as touching vs pressing a key, same direction such as client to server vs "
+             "server to client)? Reply with its number, or 0 if none is exactly the same."}]
+
+
+def judge_pick(top_logprobs: list | None, n: int, min_p: float) -> tuple[int, float]:
+    """(candidate number 1..n, probability) from the judge's first-token top logprobs, or (0, p) when the judge says
+    none, is unsure (best digit below min_p) or answered something else."""
+    probs: dict[int, float] = {}
+    for t in top_logprobs or []:
+        tok = str(t.get("token") or "").strip()
+        if tok.isdigit() and int(tok) <= n:
+            probs[int(tok)] = probs.get(int(tok), 0.0) + math.exp(float(t.get("logprob", -99)))
+    if not probs:
+        return 0, 0.0
+    k = max(probs, key=probs.get)
+    return (k, probs[k]) if probs[k] >= min_p else (0, probs[k])
+
+
+# ---- grounding on verified answers (no cache hit) -------------------------------------------------------------------
+GROUND_HEAD = ("Reference: checked answers to SIMILAR questions (not necessarily this one). Use only what really fits "
+               "this question, check names and script places yourself, never copy blindly, do not mention them.")
+
+
+def ground_question(req: dict, max_q: int = 300) -> str | None:
+    """The user's question when this request may get reference answers: the first user turn of a chat (system/page
+    context allowed), plain text, no code or error text from the user, no tools."""
+    msgs = req.get("messages")
+    if not isinstance(msgs, list) or not msgs or not isinstance(msgs[-1], dict) or msgs[-1].get("role") != "user":
+        return None
+    if any(req.get(k) for k in ("tools", "functions", "response_format", "grammar", "json_schema")):
+        return None
+    roles = [m.get("role") if isinstance(m, dict) else None for m in msgs]
+    if any(r not in ("system", "developer", "user") for r in roles) or roles.count("user") != 1:
+        return None
+    content = msgs[-1].get("content")
+    if not isinstance(content, str):
+        return None
+    q = content.strip()
+    if not q or len(q) > max_q or CODE_HINTS.search(q) or q.count("\n") > 3:
+        return None
+    return q
+
+
+def grounded_messages(msgs: list[dict], refs: list[dict]) -> list[dict]:
+    """The same messages with the reference answers put in front of the user's question (the system prompt and page
+    context stay unchanged first, so the backend's cached prompt prefix still matches)."""
+    block = "\n\n".join(f"[Q] {r['question']}\n[A] {r['answer'].strip()}" for r in refs)
+    last = dict(msgs[-1])
+    last["content"] = f"{GROUND_HEAD}\n\n{block}\n\n---\nQuestion: {last['content']}"
+    return [*msgs[:-1], last]
+
+
 # ---- the cache -------------------------------------------------------------------------------------------------------
 def cosine(a, b) -> float:
     dot = sum(x * y for x, y in zip(a, b))
@@ -174,11 +273,35 @@ class AnswerCache:
         self.db = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute(self.SCHEMA)
-        # id -> (context, unit vector, question, platforms of the question): the scan in nearest() stays cheap with
-        # thousands of entries (it runs on the router's event loop)
-        self.vectors: dict[int, tuple[str, list[float], str, frozenset]] = {}
-        for rid, ctx, emb, q in self.db.execute("SELECT id, context, emb, question FROM answers WHERE emb IS NOT NULL"):
-            self.vectors[rid] = (ctx, unit(array.array("f", emb)), q, platforms(q))
+        # id -> (context, unit vector, question, platform, answer group): the scan in candidates() stays cheap with
+        # thousands of entries (it runs on the router's event loop). platform = the platforms the question names, else
+        # its page context's (an entry seeded for the Roblox page is a Roblox answer). answer group = hash of the
+        # answer: the paraphrases of one item share it, so candidates are items, not phrasings
+        self.vectors: dict[int, tuple[str, list[float], str, frozenset, str]] = {}
+        self.canon: dict[str, int] = {}       # answer group -> its first entry (the item's canonical question)
+        for rid, ctx, emb, q, ans in self.db.execute(
+                "SELECT id, context, emb, question, answer FROM answers WHERE emb IS NOT NULL ORDER BY id"):
+            self._index(rid, ctx, array.array("f", emb), q, ans)
+
+    @staticmethod
+    def entry_platforms(question: str, context: str) -> frozenset:
+        return platforms(question) or platforms(context.replace("-", " ").replace("_", " "))
+
+    def _index(self, rid: int, ctx: str, emb, question: str, answer: str):
+        group = hashlib.sha1(answer.strip().encode()).hexdigest()[:16]
+        old = self.vectors.get(rid)
+        self.vectors[rid] = (ctx, unit(emb), question, self.entry_platforms(question, ctx), group)
+        if old and old[4] != group:
+            self._recanon(old[4])
+        if rid < self.canon.get(group, rid + 1):
+            self.canon[group] = rid
+
+    def _recanon(self, group: str):
+        rest = [r for r, v in self.vectors.items() if v[4] == group]
+        if rest:
+            self.canon[group] = min(rest)
+        else:
+            self.canon.pop(group, None)
 
     @staticmethod
     def _row(r) -> dict | None:
@@ -199,21 +322,32 @@ class AnswerCache:
                             "ORDER BY context DESC LIMIT 1", (normalize(question), context, now)).fetchone()
         return self._row(r)
 
-    def nearest(self, emb, context: str, question: str | None = None) -> tuple[dict | None, float]:
-        """Most similar live entry for this page context (and, given the question, about the same platform)."""
-        best, best_sim = None, -1.0
-        want = None if question is None else (
-            platforms(question) or platforms(context.replace("-", " ").replace("_", " ")))   # = same_platform()
+    def candidates(self, emb, context: str, question: str | None = None, k: int = 4) -> list[dict]:
+        """The k most similar answers (best phrasing per answer group) for this page context and, given the question,
+        about the same platform: [{"id", "sim", "group", "question", "canon"}], best first."""
+        want = None if question is None else self.entry_platforms(question, context)    # = same_platform()
         emb = unit(emb)
-        for rid, (ctx, vec, q, plat) in self.vectors.items():
+        best: dict[str, tuple[float, int]] = {}
+        for rid, (ctx, vec, q, plat, group) in self.vectors.items():
             if ctx in (context, "") and (want is None or plat == want):
                 sim = _dot(emb, vec)
-                if sim > best_sim:
-                    best, best_sim = rid, sim
-        row = self.get(best) if best is not None else None
+                if sim > best.get(group, (-2.0, 0))[0]:
+                    best[group] = (sim, rid)
+        out = []
+        for group, (sim, rid) in sorted(best.items(), key=lambda kv: -kv[1][0])[:k]:
+            canon = self.vectors.get(self.canon.get(group, rid), self.vectors[rid])[2]
+            out.append({"id": rid, "sim": sim, "group": group, "question": self.vectors[rid][2], "canon": canon})
+        return out
+
+    def nearest(self, emb, context: str, question: str | None = None) -> tuple[dict | None, float]:
+        """Most similar live entry for this page context (and, given the question, about the same platform)."""
+        cands = self.candidates(emb, context, question, k=1)
+        if not cands:
+            return None, -1.0
+        row = self.get(cands[0]["id"])
         if row is None or row["expires"] <= time.time():
-            return None, best_sim
-        return row, best_sim
+            return None, cands[0]["sim"]
+        return row, cands[0]["sim"]
 
     def put(self, question: str, answer: str, context: str, source: str, score, emb, ttl_s: float) -> int:
         now = time.time()
@@ -227,7 +361,7 @@ class AnswerCache:
         rid = self.db.execute("SELECT id FROM answers WHERE norm=? AND context=?",
                               (normalize(question), context)).fetchone()[0]
         if emb:
-            self.vectors[rid] = (context, unit(emb), question, platforms(question))
+            self._index(rid, context, emb, question, answer)
         return rid
 
     def hit(self, rid: int):
@@ -237,7 +371,9 @@ class AnswerCache:
         self.db.execute("UPDATE answers SET verified_at=? WHERE id=?", (time.time(), rid))
 
     def delete(self, rid: int) -> bool:
-        self.vectors.pop(rid, None)
+        gone = self.vectors.pop(rid, None)
+        if gone and self.canon.get(gone[4]) == rid:          # the next phrasing of that answer becomes canonical
+            self._recanon(gone[4])
         return self.db.execute("DELETE FROM answers WHERE id=?", (rid,)).rowcount > 0
 
     def purge_expired(self) -> int:

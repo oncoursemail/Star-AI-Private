@@ -235,6 +235,14 @@ def test_datapack_rules_in_answer():
     assert r["blocks"][0]["ok"] and not r["blocks"][1]["ok"]
 
 
+def test_tick_tag_json_is_not_checked_as_pack_mcmeta():
+    # an answer that shows pack.mcmeta AND the tick tag: only the pack.mcmeta-shaped block is a pack.mcmeta
+    answer = ("pack.mcmeta:\n```json\n{\"pack\": {\"pack_format\": 48, \"description\": \"x\"}}\n```\n\n"
+              "data/minecraft/tags/function/tick.json:\n```json\n{\"values\": [\"mypack:main_loop\"]}\n```\n")
+    r = V.verify(answer)
+    assert r["ok"] and r["blocks"][0]["checked"] and not r["blocks"][1]["checked"]
+
+
 def test_csharp_light_checks():
     good = ("using UnityEngine;\npublic class M : MonoBehaviour {\n  void Update() { string s = \"{\"; }\n"
             "  void OnTriggerEnter(Collider other) { }\n}\n")
