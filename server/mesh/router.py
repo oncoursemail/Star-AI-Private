@@ -77,14 +77,17 @@ DEFAULTS = {
     "judge_floor": 0.86,              # the chosen candidate needs at least this similarity
     "judge_min_p": 0.8,               # probability of the judge's digit
     "judge_candidates": 4,
-    "judge_timeout_s": 0.8,
+    "judge_min_prompt_tok_s": 600.0,  # skip the judge on a node that reads prompts slower (status prompt_tok_s)
+    "judge_timeout_s": 0.35,          # the judge is ~0.15-0.2 s on an idle node; a busy one-slot node times out
     "cache_hold_s": 0.15,             # a live first token waits at most this long for a lookup still running
     # grounding: no cache hit -> the nearest verified answers go in front of the question as marked references
     "ground": True,
     "ground_floor": 0.80,             # similarity a verified answer needs to be shown as a reference
     "ground_max": 2,
     "ground_max_chars": 1800,         # longer verified answers are not attached (prompt time on the brain fallback)
-    "ground_wait_s": 0.25,            # the embedding is waited for this long before the backend starts; late = none
+    "lookup_wait_s": 0.25,            # when a GPU node will answer, the embedding is waited for this long before it
+                                      # starts (grounding changes the prompt; a one-slot node cannot judge while it
+                                      # answers); late = no grounding, the lookup goes on in parallel
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -701,30 +704,39 @@ class Router:
             # ~400 more prompt tokens cost the brain (~45 tok/s prompt) ~9 s before the first word: GPU nodes only
             ground_q = None
             self.counters["ground_skipped_brain"] += 1
-        # one embedding serves the cache lookup and the grounding; for grounding it is waited for (briefly) before the
-        # backend starts, because the references change the prompt
-        cands_task = asyncio.ensure_future(self.cache_candidates(question or ground_q, context)) \
-            if (question or ground_q) else None
-        ground_hdr = {}
-        if ground_q and cands_task is not None:
-            done, _ = await asyncio.wait({cands_task}, timeout=self.cfg["ground_wait_s"])
+        # one embedding serves the cache lookup and the grounding. When a GPU node will answer, it is waited for
+        # (briefly) and the cache decision (incl. the judge, which needs that node's slot) is made BEFORE the backend
+        # starts; otherwise (brain) the lookup runs in parallel with the backend start as before
+        text = question or ground_q
+        cands_task = asyncio.ensure_future(self.cache_candidates(text, context)) if text else None
+        ground_hdr, decided = {}, False
+        if cands_task is not None and plan and plan[0][0] is not self.brain:
+            done, _ = await asyncio.wait({cands_task}, timeout=self.cfg["lookup_wait_s"])
             if not done:
-                ground_hdr["X-Mesh-Ground"] = "late"
-                self.counters["ground_late"] += 1
+                if ground_q:
+                    ground_hdr["X-Mesh-Ground"] = "late"
+                    self.counters["ground_late"] += 1
             else:
-                cands, ms = cands_task.result()
-                if question and cands and cands[0]["sim"] >= self.cfg["cache_threshold"] and not (
-                        instant.intent_conflict(question, cands[0]["canon"])
-                        or instant.intent_conflict(question, cands[0]["question"])):
-                    row = self.cache.get(cands[0]["id"])
-                    if row is not None and row["expires"] > time.time():
-                        return await self.serve_cached(row, "semantic", cands[0]["sim"], ms, stream, writer, t0)
-                refs = self.ground_refs(ground_q, cands)
-                ground_hdr["X-Mesh-Ground"] = str(len(refs))
-                if refs:
-                    req["messages"] = instant.grounded_messages(req["messages"], refs)
-                    self.counters["ground_used"] += 1
-                    ground_hdr["X-Mesh-Ground-Ids"] = ",".join(str(r["id"]) for r in refs)
+                cands, _ = cands_task.result()
+                if question:
+                    decided = True
+                    row, sim, _, how = await self.cache_semantic(question, context, cands_task)
+                    ms = round((time.monotonic() - t0) * 1000, 1)
+                    if row is not None:
+                        return await self.serve_cached(row, "semantic", sim, ms, stream, writer, t0, how)
+                    self.counters["cache_miss"] += 1
+                    cache_hdr["X-Mesh-Cache-Ms"] = str(ms)
+                    if sim is not None:
+                        cache_hdr["X-Mesh-Cache-Similarity"] = f"{sim:.4f}"
+                    if how:
+                        cache_hdr["X-Mesh-Cache-Stage2"] = how
+                if ground_q:
+                    refs = self.ground_refs(ground_q, cands)
+                    ground_hdr["X-Mesh-Ground"] = str(len(refs))
+                    if refs:
+                        req["messages"] = instant.grounded_messages(req["messages"], refs)
+                        self.counters["ground_used"] += 1
+                        ground_hdr["X-Mesh-Ground-Ids"] = ",".join(str(r["id"]) for r in refs)
 
         def body_for(mid):
             return json.dumps({**req, "model": mid}).encode()
@@ -733,6 +745,9 @@ class Router:
                "candidates": [b.name for b, _, _ in plan], "reason": reason, "errors": []}
         if conv:
             log["conv"], log["affinity"] = conv[:12], self.affinity.get(conv)
+        if decided:
+            log["cache_similarity"] = cache_hdr.get("X-Mesh-Cache-Similarity")
+            log["cache_stage2"] = cache_hdr.get("X-Mesh-Cache-Stage2")
         if ground_hdr:
             log["ground"] = ground_hdr.get("X-Mesh-Ground-Ids") or ground_hdr["X-Mesh-Ground"]
             cache_hdr.update(ground_hdr)
@@ -741,7 +756,7 @@ class Router:
         # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
         race = asyncio.ensure_future(self.race(plan, path, body_for, headers.get("authorization", ""), stream,
                                                bool(hedge), log))
-        if question:
+        if question and not decided:
             lookup = asyncio.ensure_future(self.cache_semantic(question, context, cands_task))
             await asyncio.wait({race, lookup}, return_when=asyncio.FIRST_COMPLETED)
             if not lookup.done():           # the first token is ready: a lookup still running gets a short grace
@@ -762,12 +777,12 @@ class Router:
                     cache_hdr["X-Mesh-Cache-Similarity"] = f"{sim:.4f}"
                     log["cache_similarity"] = round(sim, 4)
                 if how:
-                    log["cache_stage2"] = how
+                    log["cache_stage2"] = cache_hdr["X-Mesh-Cache-Stage2"] = how
             else:
                 lookup.cancel()
                 cache_hdr["X-Mesh-Cache-Ms"] = "late"
             self.counters["cache_miss"] += 1
-        elif cands_task is not None and not cands_task.done():
+        elif not decided and cands_task is not None and not cands_task.done():
             cands_task.cancel()
         if cache_hdr:
             log["cache"] = cache_hdr.get("X-Mesh-Cache")
@@ -1075,9 +1090,14 @@ class Router:
             how = f"intent: {conflict}"                               # scores ~0.97 to "client to server"
             self.counters["cache_intent_blocked"] += 1
         elif not ok and self.cfg["judge"] and best["sim"] >= self.cfg["judge_floor"]:
-            pick = await self.judge(question, [c["canon"] for c in cands])
+            try:
+                pick = await asyncio.wait_for(self.judge(question, [c["canon"] for c in cands]),
+                                              self.cfg["judge_timeout_s"])
+            except asyncio.TimeoutError:
+                pick, how = None, "judge: late"
+                self.counters["judge_late"] += 1
             if pick is None:
-                how = "judge: no idle node"
+                how = how or "judge: no idle node"
             else:
                 k, p = pick
                 chosen = cands[k - 1] if k else None
@@ -1099,8 +1119,9 @@ class Router:
         """Ask the live model on the best idle GPU node which doc asks the same thing as the question: (number 1..n,
         probability) or (0, p); None when no node is idle (the brain is too slow for this) or the call fails/is late."""
         now = time.monotonic()
-        usable = [n for n in self.nodes if self.node_usable(n, now)[0]]
-        if not usable:
+        usable = [n for n in self.nodes if self.node_usable(n, now)[0] and float(
+            n.model(self.cfg["node_fast_models"]).get("prompt_tok_s") or 1e9) >= self.cfg["judge_min_prompt_tok_s"]]
+        if not usable:              # (a node whose VRAM spilled reads prompts at ~200 tok/s: the judge would be late)
             return None
         node = max(usable, key=lambda n: n.score())
         m = node.model(self.cfg["node_fast_models"])

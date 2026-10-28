@@ -186,14 +186,33 @@ def test_no_idle_node_means_no_grey_zone_hit(tmp_path):
     run(go())
 
 
-def test_slow_judge_costs_a_miss_at_most_the_hold_time(tmp_path):
+def test_slow_judge_costs_a_miss_at_most_the_judge_timeout(tmp_path):
     async def go():
         para = "door roblox that opens if you press e"
         r, port, node = await rag_setup(tmp_path, {para: at(0.90)}, pick=(1, 0.99), judge_delay=1.0,
-                                        cache_hold_s=0.15)
+                                        judge_timeout_s=0.2)
         t0 = time.monotonic()
         _, h, data = await post(port, "/v1/chat/completions", chat(para, mesh_ground=False))
-        assert sse_text(data) == "live" and h["X-Mesh-Cache-Ms"] == "late"
+        assert sse_text(data) == "live" and h["X-Mesh-Cache-Stage2"] == "judge: late"
+        assert time.monotonic() - t0 < 0.6 and r.counters["judge_late"] == 1
+    run(go())
+
+
+def test_slow_lookup_on_the_brain_path_costs_at_most_the_hold_time(tmp_path):
+    async def go():
+        para = "door roblox that opens if you press e"
+        r, port, node = await rag_setup(tmp_path, {para: at(0.97)}, cache_hold_s=0.15)
+        node.state = "busy"                                                    # the brain answers: lookup in parallel
+        await r.poll_node(r.nodes[0])
+        fast = r.embed
+
+        async def slow_embed(text):
+            await asyncio.sleep(1.0)
+            return await fast(text)
+        r.embed = slow_embed
+        t0 = time.monotonic()
+        _, h, data = await post(port, "/v1/chat/completions", chat(para))
+        assert h["X-Mesh-Backend"] == r.brain.name and h["X-Mesh-Cache-Ms"] == "late"
         assert time.monotonic() - t0 < 0.6
     run(go())
 
@@ -219,6 +238,8 @@ def test_judge_asks_the_idle_node_for_one_token(tmp_path):
         assert req["max_tokens"] == 1 and req["temperature"] == 0 and req["logprobs"] is True
         assert req["model"] == "litha-fast" and req["messages"] == instant.judge_messages("q", [DOOR, TOUCH])
         assert r.nodes[0].inflight == 0
+        r.nodes[0].status["models"][0]["prompt_tok_s"] = 176.0                 # VRAM spilled: judge would be late
+        assert await r.judge("q", [DOOR]) is None
         node.state = "busy"
         await r.poll_node(r.nodes[0])
         assert await r.judge("q", [DOOR]) is None and not brain.requests        # never the brain
