@@ -8,6 +8,7 @@ from star.stream_observe import ObservationGovernor
 from star.stream_vision_host import StreamVisionHost
 from star.stream_windows_game_capture import (
     WindowState, WindowsGameCaptureHost, grab_windows_window,
+    CapturedVisionFrame, WorkerReport,
 )
 
 HWND, PID = 1234, 2468
@@ -29,7 +30,7 @@ class FakeImage:
 
 
 class Rig:
-    def __init__(self, *, with_telemetry=True, probe=None, grab=None):
+    def __init__(self, *, with_telemetry=True, probe=None, grab=None, worker=None):
         self.now = [1000.]
         self.cpu = [100, 1000]
         self.used = [2000]
@@ -68,6 +69,7 @@ class Rig:
             grab=real_grab if grab is None else grab,
             hud_region=(0, 0, 24, 16),
             focus_regions=((12, 12, 16, 16),),
+            trusted_worker=worker,
         )
 
     def fresh(self):
@@ -306,3 +308,202 @@ def test_capture_preflight_is_only_a_hint_not_an_actual_lease():
     assert admitted.lease is not None
     rig.vision.disable()
     assert not rig.vision.capture_preflight().admitted
+
+
+def test_trusted_worker_is_optional_and_not_invoked_by_plain_capture():
+    calls = []
+
+    def worker(frame):
+        calls.append(frame)
+        return WorkerReport(stopped=True, succeeded=True)
+
+    rig = Rig(worker=worker)
+    rig.enable()
+    plain = rig.capture.capture_once()
+    assert plain.admitted
+    assert calls == []
+    assert rig.vision.status()["inflight"]
+    assert rig.vision.acknowledge_worker_stopped(
+        plain.lease, worker_stopped=True, succeeded=True,
+    )
+
+
+def test_worker_receives_exact_scoped_rgb_then_is_scrubbed_and_released():
+    observed = []
+    retained = []
+
+    def worker(frame):
+        assert isinstance(frame, CapturedVisionFrame)
+        assert frame.width == frame.height == 96
+        assert frame.rgb.readonly
+        assert bytes(frame.rgb[:9]) == bytes(9)
+        with pytest.raises(TypeError):
+            frame.rgb[0] = 2
+        retained.append(frame.rgb)
+        observed.append(frame.captured_ms)
+        return WorkerReport(stopped=True, succeeded=True)
+
+    rig = Rig(worker=worker)
+    rig.enable()
+    outcome = rig.capture.capture_and_process_once()
+    assert outcome.admission.admitted
+    assert outcome.state == "worker_result_accepted"
+    assert outcome.worker_invoked and outcome.worker_accepted
+    assert len(observed) == 1
+    assert all(byte == 0 for byte in retained[0])
+    assert not rig.vision.status()["inflight"]
+    assert rig.capture.status()["worker_accepted"] == 1
+
+
+def test_worker_failure_is_reported_without_crediting_inference():
+    rig = Rig(worker=lambda _frame: WorkerReport(stopped=True, succeeded=False))
+    rig.enable()
+    outcome = rig.capture.capture_and_process_once()
+    assert outcome.admission.admitted
+    assert outcome.state == "worker_result_discarded"
+    assert outcome.worker_invoked and not outcome.worker_accepted
+    assert rig.capture.status()["worker_failed"] == 1
+    assert rig.vision.status()["discarded"] == 1
+    assert not rig.vision.status()["inflight"]
+
+
+def test_worker_without_confirmed_physical_stop_keeps_vision_quarantined():
+    retained = []
+
+    def worker(frame):
+        retained.append(frame.rgb)
+        return WorkerReport(stopped=False, succeeded=False)
+
+    rig = Rig(worker=worker)
+    rig.enable()
+    outcome = rig.capture.capture_and_process_once()
+    assert outcome.state == "worker_stop_unconfirmed"
+    assert outcome.admission.lease is not None
+    assert rig.vision.status()["inflight"]
+    assert not any(retained[0])
+    rig.now[0] += 1000
+    assert rig.capture.capture_and_process_once().admission.reason == "vision_request_already_in_flight"
+    assert rig.vision.acknowledge_worker_stopped(
+        outcome.admission.lease, worker_stopped=True, succeeded=False,
+    ) is False
+    assert not rig.vision.status()["inflight"]
+
+
+def test_worker_exception_is_private_and_does_not_forge_stopped_ack():
+    retained = []
+
+    def broken(frame):
+        retained.append(frame.rgb)
+        raise RuntimeError("SECRET viewer name: should never leave host")
+
+    rig = Rig(worker=broken)
+    rig.enable()
+    outcome = rig.capture.capture_and_process_once()
+    assert outcome.state == "worker_stop_unconfirmed"
+    assert rig.vision.status()["inflight"]
+    assert not any(retained[0])
+    assert "SECRET" not in repr(outcome) + repr(rig.capture.status())
+    assert rig.capture.status()["worker_unconfirmed"] == 1
+    assert not rig.vision.acknowledge_worker_stopped(
+        outcome.admission.lease, worker_stopped=True, succeeded=False,
+    )
+
+
+def test_invalid_worker_return_does_not_forge_stop_confirmation():
+    rig = Rig(worker=lambda _frame: True)
+    rig.enable()
+    outcome = rig.capture.capture_and_process_once()
+    assert outcome.state == "worker_stop_unconfirmed"
+    assert rig.vision.status()["inflight"]
+    assert not rig.vision.acknowledge_worker_stopped(
+        outcome.admission.lease, worker_stopped=True, succeeded=False,
+    )
+
+
+def test_revoked_capture_during_processing_discards_successful_worker_result():
+    rig = None
+
+    def worker(_frame):
+        rig.capture.disable()
+        return WorkerReport(stopped=True, succeeded=True)
+
+    rig = Rig(worker=worker)
+    rig.enable()
+    outcome = rig.capture.capture_and_process_once()
+    assert outcome.state == "worker_result_discarded"
+    assert not outcome.worker_accepted
+    assert not rig.vision.status()["inflight"]
+    assert not rig.capture.status()["enabled"]
+    assert rig.capture.status()["worker_failed"] == 1
+
+
+def test_window_swapped_during_processing_discards_result():
+    rig = None
+
+    def worker(_frame):
+        rig.state = replace(rig.state, pid=PID + 9)
+        return WorkerReport(stopped=True, succeeded=True)
+
+    rig = Rig(worker=worker)
+    rig.enable()
+    outcome = rig.capture.capture_and_process_once()
+    assert outcome.state == "worker_result_discarded"
+    assert not rig.vision.status()["inflight"]
+    assert rig.capture.status()["worker_failed"] == 1
+
+
+def test_worker_never_receives_stale_window_or_busy_hardware_pixels():
+    observed = []
+
+    def worker(frame):
+        observed.append(frame)
+        return WorkerReport(stopped=True, succeeded=True)
+
+    rig = Rig(with_telemetry=False, worker=worker)
+    rig.enable()
+    out = rig.capture.capture_and_process_once()
+    assert not out.admission.admitted
+    assert not out.worker_invoked
+    assert rig.grabs == 0 and observed == []
+    rig.fresh()
+    rig.state = replace(rig.state, pid=PID + 5)
+    out = rig.capture.capture_and_process_once()
+    assert not out.admission.admitted
+    assert rig.grabs == 0 and observed == []
+
+
+def test_missing_configured_worker_rejects_before_screen_capture():
+    rig = Rig()
+    rig.enable()
+    with pytest.raises(RuntimeError, match="trusted"):
+        rig.capture.capture_and_process_once()
+    assert rig.grabs == 0 and not rig.vision.status()["inflight"]
+
+
+@pytest.mark.parametrize(
+    "stopped, succeeded, error",
+    [(1, True, TypeError), (True, "yes", TypeError), (False, True, ValueError)],
+)
+def test_worker_report_rejects_ambiguous_completion(stopped, succeeded, error):
+    with pytest.raises(error):
+        WorkerReport(stopped=stopped, succeeded=succeeded)
+
+def test_revoke_between_admission_and_worker_blocks_dispatch():
+    calls = []
+    rig = Rig(worker=lambda frame: calls.append(frame) or WorkerReport(True, True))
+    original = rig.vision.consider_pixels
+
+    def admit_then_revoke(*args, **kwargs):
+        result = original(*args, **kwargs)
+        rig.capture.disable()
+        return result
+
+    rig.vision.consider_pixels = admit_then_revoke
+    rig.enable()
+    out = rig.capture.capture_and_process_once()
+    assert out.admission.admitted
+    assert out.state == "capture_revoked_before_worker"
+    assert not out.worker_invoked and not out.worker_accepted
+    assert calls == []
+    assert rig.capture.status()["worker_runs"] == 0
+    assert not rig.vision.status()["inflight"]
