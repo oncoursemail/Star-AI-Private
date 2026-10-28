@@ -238,8 +238,6 @@ def test_judge_asks_the_idle_node_for_one_token(tmp_path):
         assert req["max_tokens"] == 1 and req["temperature"] == 0 and req["logprobs"] is True
         assert req["model"] == "litha-fast" and req["messages"] == instant.judge_messages("q", [DOOR, TOUCH])
         assert r.nodes[0].inflight == 0
-        r.nodes[0].status["models"][0]["prompt_tok_s"] = 176.0                 # VRAM spilled: judge would be late
-        assert await r.judge("q", [DOOR]) is None
         node.state = "busy"
         await r.poll_node(r.nodes[0])
         assert await r.judge("q", [DOOR]) is None and not brain.requests        # never the brain

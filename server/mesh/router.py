@@ -77,7 +77,6 @@ DEFAULTS = {
     "judge_floor": 0.86,              # the chosen candidate needs at least this similarity
     "judge_min_p": 0.8,               # probability of the judge's digit
     "judge_candidates": 4,
-    "judge_min_prompt_tok_s": 600.0,  # skip the judge on a node that reads prompts slower (status prompt_tok_s)
     "judge_timeout_s": 0.35,          # the judge is ~0.15-0.2 s on an idle node; a busy one-slot node times out
     "cache_hold_s": 0.15,             # a live first token waits at most this long for a lookup still running
     # grounding: no cache hit -> the nearest verified answers go in front of the question as marked references
@@ -1119,9 +1118,8 @@ class Router:
         """Ask the live model on the best idle GPU node which doc asks the same thing as the question: (number 1..n,
         probability) or (0, p); None when no node is idle (the brain is too slow for this) or the call fails/is late."""
         now = time.monotonic()
-        usable = [n for n in self.nodes if self.node_usable(n, now)[0] and float(
-            n.model(self.cfg["node_fast_models"]).get("prompt_tok_s") or 1e9) >= self.cfg["judge_min_prompt_tok_s"]]
-        if not usable:              # (a node whose VRAM spilled reads prompts at ~200 tok/s: the judge would be late)
+        usable = [n for n in self.nodes if self.node_usable(n, now)[0]]
+        if not usable:
             return None
         node = max(usable, key=lambda n: n.score())
         m = node.model(self.cfg["node_fast_models"])
