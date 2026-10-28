@@ -16,6 +16,8 @@ sys.path.insert(0, str(ROOT / "tests"))
 from mesh import instant  # noqa: E402
 from mesh import router as mesh  # noqa: E402
 from test_mesh_router import KEY, Fake, call, run, sse_text  # noqa: E402
+# `server/` holds a `discord` folder: leaving it on sys.path would shadow the discord package for tests collected later
+sys.path.remove(str(ROOT / "server"))
 
 TOKEN = "mesh-token-for-tests"
 SYSTEM = {"role": "system", "content": "You are Litha."}

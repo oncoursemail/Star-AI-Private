@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server"))
 
 from mesh import router as mesh  # noqa: E402
+# `server/` holds a `discord` folder: leaving it on sys.path would shadow the discord package for tests collected later
+sys.path.remove(str(ROOT / "server"))
 
 KEY = "client-key-for-tests"
 
