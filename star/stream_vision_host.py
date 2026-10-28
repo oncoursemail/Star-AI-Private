@@ -170,6 +170,37 @@ class StreamVisionHost:
             self._counters["admitted"] += 1
             return VisionAdmission(True, decision.reason, decision.target_fps, lease)
 
+    def capture_preflight(self) -> VisionAdmission:
+        """Cheap host-only gate BEFORE acquiring/copying a Windows game frame.
+
+        This is a *hint*, never a reservation or proof a frame was captured.
+        consider_pixels() rechecks all limits after capture. A transient race
+        may still reject the subsequent frame, which is safe.
+        """
+        with self._lock:
+            if not self._enabled:
+                return VisionAdmission(False, "owner_opt_in_missing", 0.0)
+            now = _now_ms(self._clock)
+            sample = self._telemetry.snapshot()
+            if sample is None or sample.qos is None:
+                return VisionAdmission(False, "trusted_hardware_game_audio_missing", 0.0)
+            if self._governor.stats()["quarantined"]:
+                return VisionAdmission(False, "vision_worker_stop_unconfirmed", 0.0)
+            advice = advise_workload("vision", sample.telemetry)
+            if not advice.allowed:
+                return VisionAdmission(False, "realtime_headroom_unavailable", advice.sample_fps)
+            tel = sample.telemetry
+            if (tel.free_vram_mib < 1024
+                    or (tel.game_active and tel.game_fps < 45)
+                    or tel.speech_backlog_ms > 350):
+                return VisionAdmission(False, "insufficient_game_or_voice_headroom", advice.sample_fps)
+            if self._leases:
+                reason = ("vision_worker_stop_unconfirmed"
+                          if any(now >= lease.expires_ms for lease in self._leases.values())
+                          else "vision_request_already_in_flight")
+                return VisionAdmission(False, reason, advice.sample_fps)
+            return VisionAdmission(True, "capture_preflight_ready", advice.sample_fps)
+
     def consider_pixels(
         self, pixels: bytes | bytearray | memoryview, *, captured_ms: float,
         width: int, height: int, pixel_format: str = "BGRA",
