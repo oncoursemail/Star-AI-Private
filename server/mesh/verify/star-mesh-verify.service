@@ -1,0 +1,33 @@
+[Unit]
+Description=STAR Litha code verifier (server/mesh/verify): POST /mesh/verify on :8101, sibling of star-mesh
+After=network-online.target star-mesh.service
+Wants=network-online.target
+
+[Service]
+User=starmesh
+Group=starmesh
+Environment=PYTHONPATH=/opt/star-verify/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/star-verify
+ExecStart=/usr/bin/python3 -m mesh.verify
+Restart=always
+RestartSec=2
+Nice=5
+MemoryMax=200M
+TasksMax=64
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
