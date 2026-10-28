@@ -390,11 +390,11 @@ class LuauChecker:
                 self._add("unknown_api", "error", f"game.{name}", f"game.{name}: names are case-sensitive",
                           _join(s for s in api.services if s.lower() == name.lower()), line)
             elif is_event_use:
-                self._add("unknown_api", "error", f"{t.name}.{name}", f"{t.name} has no event '{name}'",
-                          _join(closest(name, api.members(t.name, "e"), cutoff=0.6)), line)
+                self._unknown(t.name, name, ".", "e", closest(name, api.members(t.name, "e"), cutoff=0.6), line,
+                              f"{t.name} has no event '{name}'")
             elif case_twin or svc_strict or calls:
-                self._add("unknown_api", "error", f"{t.name}.{name}", f"{t.name} has no member '{name}'",
-                          _join(case_twin or twin), line)
+                self._unknown(t.name, name, ".", "f" if calls else "p", case_twin or twin, line,
+                              f"{t.name} has no member '{name}'")
             else:
                 return _T("loose")     # a child object
             return None
@@ -443,8 +443,8 @@ class LuauChecker:
             return None
         found = api.member(t.name, name)
         if found is None:
-            self._add("unknown_api", "error", f"{t.name}:{name}", f"{t.name} has no method '{name}'",
-                      _join(closest(name, api.members(t.name, "f"))), line)
+            self._unknown(t.name, name, ":", "f", closest(name, api.members(t.name, "f")), line,
+                          f"{t.name} has no method '{name}'")
             return None
         owner, m = found
         self._member_flags(t.name, owner, name, m, line, ":")
@@ -500,6 +500,36 @@ class LuauChecker:
                     if others:
                         sugg = f"{others[0]}{':' if api.classes[others[0]]['members'][rep]['k'] == 'f' else '.'}{rep}"
             self._add("deprecated", "warning", full, f"{full} is deprecated", sugg, line)
+
+    def _unknown(self, cls_name, name, sep, shape, cands, line, message):
+        """An unknown member. Suggest only names that fit how the code uses it (event/method/property) and, when the
+        name is a real member of another class (PlayerRemoving is on Players, not Player), its signature too. When
+        the only close names do not fit, nothing is swapped automatically: a warning with the class's real members
+        (`candidates`) and a `hint`, so the fix model picks what the code means."""
+        api = self.api
+        kinds = {"e": "an event", "f": "a method", "p": "a property"}
+        elsewhere = [(c, i["members"][name]) for c, i in api.classes.items()
+                     if name in i["members"] and not i["members"][name].get("dep")]
+
+        def sig(m):
+            return m["k"], tuple(m.get("args") or ()) if m["k"] == "e" else m.get("t")
+        real = {sig(m) for _, m in elsewhere}
+        fit = []
+        for c in cands:
+            found = api.member(cls_name, c)
+            if c.lower() == name.lower() or (found and found[1]["k"] == shape and (not real or sig(found[1]) in real)):
+                fit.append(c)
+        full = f"{cls_name}{sep}{name}"
+        hint = (f"'{name}' is {kinds[elsewhere[0][1]['k']]} of {', '.join(c for c, _ in elsewhere[:3])}, not of "
+                f"{cls_name}" if elsewhere else "")
+        if fit or not (cands or elsewhere):
+            return self._add("unknown_api", "error", full, message, _join(fit), line)
+        if cands:
+            hint = hint or f"close names ({', '.join(cands)}) are not {kinds[shape]} of {cls_name}"
+        p = _p("unknown_api", "warning" if cands else "error", full, f"{message} ({hint})", None, line)
+        p["hint"], p["candidates"] = hint, api.members(cls_name, shape)[:60]
+        if p not in self.problems:
+            self.problems.append(p)
 
     def _event_anywhere(self, name):
         for info in self.api.classes.values():

@@ -27,7 +27,12 @@ Lends this PC's NVIDIA card to the STAR compute mesh while nobody needs it. One 
   looks while the model is not answering); other programs growing video memory by 1200 MB; or not enough free video
   memory to load. Then llama-server is killed at once (the card is free in about a second) and the
   state is `busy`; the model comes back after `resume_seconds` (180) with nothing in the way.
-- States: `idle` (loaded, serving), `busy`, `away` (not loaded: loading, unloaded on request, failed), `off` (file `OFF`).
+- States: `idle` (loaded, serving), `draining`, `busy`, `away` (not loaded: loading, unloaded on request, failed),
+  `off` (file `OFF`). Memory pressure (a lower ngl step, too little free memory, others +1200 MB) while an answer
+  runs -> `draining`: no new requests (503; the router skips it), the answers in flight finish (at most
+  `drain_seconds`, 30), then the reload/unload. Games, stream/VR programs, full screen and FAKE_BUSY still stop the
+  model at once (state `busy` first); a stream cut that way ends with an SSE error event (`node_cut`) and the
+  router continues the answer on the next backend.
 - Test hook: create the file `FAKE_BUSY` in the folder -> busy within one poll; delete it -> reload after `resume_seconds`.
 - Mesh token: `%USERPROFILE%\.star\mesh_token` (created with 32 random bytes if missing). Every node and the router
   must have the SAME token: copy the file, never paste it into chat or a commit.

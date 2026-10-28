@@ -7,7 +7,10 @@ Models: `litha` = the best idle node by measured tok/s and queue, else the brain
 every other model id passes through to the brain. A request is never sent to a node whose state is not `idle` or
 whose status is stale. The client sees nothing until a backend produced its first token, so any failure before that
 moves on to the next backend; with hedging the two best start together and the first token wins (the other is
-cancelled). Stdlib only (asyncio), so the container needs nothing but python3.
+cancelled). A stream that stops without a finish_reason (connection drop, error event, killed model) is a cut: the
+answer goes on on the next backend with the words already sent as an assistant prefix, stitched into the same
+stream; only when no backend can continue does the client get an error event. Stdlib only (asyncio), so the
+container needs nothing but python3.
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ from pathlib import Path
 
 from . import instant
 
-VERSION = "2"
+VERSION = "3"
 FAST, DEEP = "litha", "litha-deep"
 
 DEFAULTS = {
@@ -44,6 +47,7 @@ DEFAULTS = {
     "brain_first_token_s": 900.0,
     "read_idle_s": 120.0,             # silence in the middle of a stream -> the backend failed
     "fail_cooldown_s": 30.0,
+    "max_continuations": 2,           # a cut stream goes on on another backend at most this many times
     "warm_every_s": 60.0,             # at most one POST /load per node per this many seconds
     "hedge": False,                   # default; a request can ask with header X-Mesh-Hedge: 1 or "mesh_hedge": true
     "max_body_mb": 64,
@@ -478,7 +482,14 @@ class Router:
                 if up.status != 200:
                     raise UpstreamError(f"HTTP {up.status}", up.status, await up.body(), up.headers)
                 if not stream:
-                    return up, [], await up.body()
+                    data = await up.body()
+                    try:
+                        whole = isinstance(json.loads(data), dict)
+                    except ValueError:
+                        whole = False
+                    if not whole:
+                        raise UpstreamError("answer cut (incomplete body)")
+                    return up, [], data
                 events, pending = up.events(), []
                 async for ev in events:
                     pending.append(ev)
@@ -718,48 +729,132 @@ class Router:
                 backend.measured(timings.get("predicted_per_second"))
                 log["tok_s"], log["outcome"] = timings.get("predicted_per_second"), "ok"
                 return
-            await self.relay_stream(backend, up, pending, rest, writer, log, cache_hdr)
+            await self.relay_stream(backend, up, pending, rest, writer, log, cache_hdr,
+                                    {"model": model, "req": req, "path": path, "conv": conv,
+                                     "auth": headers.get("authorization", "")})
         finally:
             backend.inflight -= 1
             up.close()
             log["total_ms"] = round((time.monotonic() - t0) * 1000)
             print("mesh", json.dumps(log), flush=True)
 
-    async def relay_stream(self, backend, up, pending, events, writer, log, extra=None):
+    async def relay_stream(self, backend, up, pending, events, writer, log, extra=None, ctx=None):
+        """Relay a stream to the client. A stream that ends without a finish_reason/[DONE], drops, or sends an error
+        event is a cut: it goes on on the next backend (`_continue`), stitched into the same response."""
         more = "".join(f"{k}: {v}\r\n" for k, v in (extra or {}).items()).encode("latin-1")
         writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\n"
                      b"Connection: close\r\nX-Mesh-Backend: " + backend.name.encode() + b"\r\n" + more + b"\r\n")
-        first_at, pieces, timings = time.monotonic(), 0, None
+        sent, used, skip = [], [backend], ""
+        seg, own = (backend, up, pending, events), False     # own: a continuation, closed here (not by complete())
         try:
-            for ev in pending:
-                writer.write(ev + b"\n\n")
-            await writer.drain()
-            async for ev in events:
-                writer.write(ev + b"\n\n")
-                await writer.drain()
-                if b'"timings"' in ev:
-                    obj = _event_json(ev)
-                    if isinstance(obj, dict) and isinstance(obj.get("timings"), dict):
-                        timings = obj["timings"]
-                elif b'"content"' in ev or b'"reasoning_content"' in ev:
-                    pieces += 1
-            tok_s = (timings or {}).get("predicted_per_second")
-            if tok_s is None and pieces > 4:
-                tok_s = pieces / max(1e-3, time.monotonic() - first_at)
-            backend.measured(tok_s)
-            log["tok_s"], log["outcome"] = round(tok_s, 1) if tok_s else None, "ok"
+            while True:
+                b, u, pend, evs = seg
+                first_at, pieces, timings, finished, why = time.monotonic(), 0, None, False, ""
+                try:
+                    async for ev in _chain(pend, evs):
+                        obj = _event_json(ev)
+                        if obj == "DONE":
+                            finished = True
+                            break
+                        if isinstance(obj, dict) and "error" in obj:
+                            why = f"error event: {str(obj['error'])[:160]}"
+                            break
+                        if isinstance(obj, dict):
+                            changed = False
+                            for choice in obj.get("choices") or []:
+                                delta = choice.get("delta") or {}
+                                text = delta.get("content")
+                                if text and skip:           # the continuation repeats the cut word: drop that part
+                                    text, skip = _strip_tail(text, skip)
+                                    delta["content"], changed = text, True
+                                if text:
+                                    sent.append(text)
+                                    pieces += 1
+                                elif delta.get("reasoning_content"):
+                                    pieces += 1
+                                if choice.get("finish_reason"):
+                                    finished = True
+                            if isinstance(obj.get("timings"), dict):
+                                timings = obj["timings"]
+                            if changed:
+                                ev = b"data: " + json.dumps(obj).encode()
+                        writer.write(ev + b"\n\n")
+                        await writer.drain()
+                except (UpstreamError, asyncio.TimeoutError, asyncio.IncompleteReadError) as e:
+                    why = why or f"connection dropped: {str(e) or type(e).__name__}"
+                if finished and not why:
+                    tok_s = (timings or {}).get("predicted_per_second")
+                    if tok_s is None and pieces > 4:
+                        tok_s = pieces / max(1e-3, time.monotonic() - first_at)
+                    b.measured(tok_s)
+                    log["tok_s"] = round(tok_s, 1) if tok_s else None
+                    log["outcome"] = "ok" if b is backend else f"cut, continued on {b.name}: ok"
+                    writer.write(b"data: [DONE]\n\n")
+                    await writer.drain()
+                    return
+                why = why or "stream ended without a finish_reason"
+                self._failed(b, UpstreamError(why))
+                log.setdefault("cuts", []).append({"backend": b.name, "why": why, "sent_chars": sum(map(len, sent))})
+                if own:
+                    b.inflight -= 1
+                    u.close()
+                    own = False
+                nxt = None
+                if ctx and len(log["cuts"]) <= self.cfg["max_continuations"]:
+                    nxt, skip = await self._continue(ctx, "".join(sent), len(sent), used, log)
+                if nxt is None:
+                    log["outcome"] = f"cut: {b.name}: {why}; nobody could continue, error sent"
+                    msg = {"error": {"message": f"mesh: {b.name} stopped in the middle of the answer",
+                                     "type": "server_error"}}
+                    writer.write(b"data: " + json.dumps(msg).encode() + b"\n\ndata: [DONE]\n\n")
+                    await writer.drain()
+                    return
+                seg, own = nxt, True
+                used.append(nxt[0])
         except (ConnectionError, OSError) as e:
             log["outcome"] = f"client went away ({type(e).__name__})"
-        except (UpstreamError, asyncio.TimeoutError, asyncio.IncompleteReadError) as e:
-            self._failed(backend, e)
-            log["outcome"] = f"backend failed mid-stream: {str(e) or type(e).__name__}"
-            try:
-                msg = {"error": {"message": f"mesh: {backend.name} stopped in the middle of the answer",
-                                 "type": "server_error"}}
-                writer.write(b"data: " + json.dumps(msg).encode() + b"\n\ndata: [DONE]\n\n")
-                await writer.drain()
-            except (ConnectionError, OSError):
-                pass
+        finally:
+            if own:
+                seg[0].inflight -= 1
+                seg[1].close()
+
+    async def _continue(self, ctx: dict, partial: str, pieces: int, used: list, log: dict):
+        """Start the next backend for a cut stream: same request, plus the words already sent as an assistant prefix
+        (llama-server continues an assistant message that ends the conversation). The prefix stops before the last
+        word, so the model writes that word whole; `tail` (the part already sent) is dropped from its output.
+        Returns ((backend, upstream, pending, events), tail), or (None, "") when no backend starts."""
+        prefill, tail = _split_prefix(partial)
+        req = dict(ctx["req"])
+        if prefill:
+            if ctx["path"] == "/chat/completions":
+                msgs = list(req.get("messages") or [])
+                last = msgs[-1] if msgs and isinstance(msgs[-1], dict) else {}
+                if last.get("role") == "assistant" and isinstance(last.get("content"), str):
+                    msgs[-1] = {**last, "content": last["content"] + prefill}
+                else:
+                    msgs.append({"role": "assistant", "content": prefill})
+                req["messages"] = msgs
+            else:
+                req["prompt"] = str(req.get("prompt") or "") + prefill
+            for k in ("max_tokens", "n_predict", "max_completion_tokens"):
+                if isinstance(req.get(k), int) and req[k] > 0:
+                    req[k] = max(32, req[k] - pieces)
+        plan, _ = self.plan(ctx["model"], ctx["conv"])
+        plan = [p for p in plan if p[0] not in used]
+        if not plan:
+            return None, ""
+        sub = {"errors": []}
+        try:
+            backend, (up, pending, events) = await self.race(
+                plan, ctx["path"], lambda mid: json.dumps({**req, "model": mid}).encode(), ctx["auth"], True, False,
+                sub)
+        except UpstreamError:
+            log["errors"] += sub["errors"]
+            return None, ""
+        log["errors"] += sub["errors"]
+        log.setdefault("continued_on", []).append(backend.name)
+        self.affinity.set(ctx["conv"], backend.name)
+        return (backend, up, pending, events), tail
 
     # ---- instant answers -----------------------------------------------------------------------------------------
     async def prefetch(self, body: bytes, headers: dict) -> tuple[int, dict]:
@@ -995,6 +1090,35 @@ class Router:
     async def serve(self):
         self.server = await asyncio.start_server(self.handle, self.cfg["listen"], self.cfg["port"], limit=1 << 20)
         return self.server
+
+
+async def _chain(first, rest):
+    for ev in first:
+        yield ev
+    async for ev in rest:
+        yield ev
+
+
+def _split_prefix(partial: str, longest: int = 64) -> tuple[str, str]:
+    """(prefix to continue from, tail already sent). The prefix ends before the last whitespace, so the next model
+    writes the cut word whole (models continue a half word badly: "Ve" + "inus")."""
+    stripped = partial.rstrip()
+    if stripped != partial:
+        return stripped, partial[len(stripped):]
+    i = max(partial.rfind(" "), partial.rfind("\n"), partial.rfind("\t"))
+    if i < 0 or len(partial) - i > longest:
+        return (partial, "") if len(partial) > longest else ("", partial)
+    return partial[:i], partial[i:]
+
+
+def _strip_tail(text: str, tail: str) -> tuple[str, str]:
+    """Drop from `text` what matches the start of `tail` (already sent). Returns (text left, tail left)."""
+    n = 0
+    while n < len(text) and n < len(tail) and text[n] == tail[n]:
+        n += 1
+    if n == len(text) and n < len(tail):
+        return "", tail[n:]
+    return text[n:], ""
 
 
 def err(message: str, kind: str = "invalid_request_error") -> dict:
