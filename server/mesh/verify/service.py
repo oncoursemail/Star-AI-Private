@@ -24,6 +24,7 @@ from pathlib import Path
 
 from ..router import KeyFile
 from .apidump import ApiIndex
+from .batch import RepairBatch
 from .core import Verifier
 
 DEFAULTS = {
@@ -36,6 +37,9 @@ DEFAULTS = {
     "fix_rounds": 2,
     "fix_max_tokens": 2048,
     "fix_timeout_s": 180,
+    "repair_workers": 1,
+    "repair_coalesce": False,
+    "repair_wait_s": 0.25,
     "client_keys_file": "/etc/star-mesh/api_keys",
     "max_body_kb": 512,
 }
@@ -64,6 +68,10 @@ def model_caller(cfg: dict, auth: str):
 
 
 def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_caller):
+    repair_batch = RepairBatch(cfg.get("repair_workers", 1), coalesce=cfg.get("repair_coalesce", False),
+                               wait_s=cfg.get("repair_wait_s", 0.25))
+    if repair_batch.workers == 1 and not repair_batch.coalesce:
+        repair_batch = None      # preserve the original synchronous call/validation order by default
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "star-verify/1"
@@ -108,7 +116,11 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
             if not fix:
                 return self._send(200, verifier.verify(text, lang))
             rounds = max(1, min(int(req.get("rounds") or cfg["fix_rounds"]), cfg["fix_rounds"]))
-            return self._send(200, verifier.fix(text, caller_factory(cfg, auth), lang, rounds))
+            if repair_batch is None:
+                result = verifier.fix(text, caller_factory(cfg, auth), lang, rounds)
+            else:
+                result = verifier.fix(text, caller_factory(cfg, auth), lang, rounds, batch=repair_batch)
+            return self._send(200, result)
 
     return Handler
 

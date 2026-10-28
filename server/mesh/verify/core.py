@@ -13,6 +13,7 @@ import time
 
 from . import csharp, json_code, minecraft, python_code
 from .apidump import ApiIndex
+from .batch import RepairBatch
 from .luau import LuauChecker
 
 FENCE = re.compile(r"^(?P<ind>[ \t]{0,3})(?P<f>`{3,}|~{3,})[ \t]*(?P<info>[^\n`]*)\n(?P<code>.*?)^(?P=ind)(?P=f)[ \t]*$",
@@ -151,11 +152,14 @@ class Verifier:
                 "ms": round((time.perf_counter() - t0) * 1000, 1),
                 "dump": {k: self.api.meta.get(k) for k in ("version", "fetched")}}
 
-    def fix(self, text: str, call_model, language: str | None = None, rounds: int = 2) -> dict:
+    def fix(self, text: str, call_model, language: str | None = None, rounds: int = 2, *,
+            batch: RepairBatch | None = None) -> dict:
         """Repair the blocks that need it with `call_model(messages) -> str`, re-verify, at most `rounds` times."""
         t0 = time.perf_counter()
         first = report = self.verify(text, language)
         changes, done, model_ms = [], 0, 0.0
+        batch_stats = {"model_calls": 0, "coalesced_blocks": 0, "capacity_skipped": 0, "dispatch_skipped": 0,
+                       "budget_skipped": 0}
         if report["problems"]:                 # prose: renamed datapack folders have one exact replacement
             for p in report["problems"]:
                 text = text.replace(p["name"], p["suggestion"])
@@ -169,16 +173,30 @@ class Verifier:
             done = rnd
             spans = extract_blocks(text, language)
             edits = []
-            for b in todo:
+            outcomes = None
+            if batch is not None:
+                messages = [fix_messages(spans[b["index"]]["code"], b["language"], b["problems"]) for b in todo]
+                outcomes, stats = batch.run(messages, call_model)
+                model_ms += stats["model_ms"]
+                for key in batch_stats:
+                    batch_stats[key] += stats[key]
+            for position, b in enumerate(todo):
                 span = spans[b["index"]]
-                t1 = time.perf_counter()
-                try:
-                    reply = call_model(fix_messages(span["code"], b["language"], b["problems"]))
-                except Exception as e:     # model unreachable: keep the answer, report it
-                    changes.append({"round": rnd, "block": b["index"], "error": f"fix call failed: {e}"})
-                    continue
-                finally:
-                    model_ms += (time.perf_counter() - t1) * 1000
+                if outcomes is not None:
+                    outcome = outcomes[position]
+                    if outcome.error:
+                        changes.append({"round": rnd, "block": b["index"], "error": outcome.error})
+                        continue
+                    reply = outcome.reply
+                else:
+                    t1 = time.perf_counter()
+                    try:
+                        reply = call_model(fix_messages(span["code"], b["language"], b["problems"]))
+                    except Exception as e:     # model unreachable: keep the answer, report it
+                        changes.append({"round": rnd, "block": b["index"], "error": f"fix call failed: {e}"})
+                        continue
+                    finally:
+                        model_ms += (time.perf_counter() - t1) * 1000
                 new = code_from_reply(reply, span["code"])
                 if not new or new.strip() == span["code"].strip():
                     continue
@@ -205,9 +223,12 @@ class Verifier:
                                               if p["severity"] != "info"]})
             if not edits and not any(c.get("rejected") and c["round"] == rnd for c in changes):
                 break
-        return {"answer": text, "ok": report["ok"], "rounds": done, "changes": changes,
+        result = {"answer": text, "ok": report["ok"], "rounds": done, "changes": changes,
                 "before": _summary(first), "after": _summary(report), "verify": report,
                 "model_ms": round(model_ms), "ms": round((time.perf_counter() - t0) * 1000)}
+        if batch is not None:
+            result["repair_batch"] = batch_stats
+        return result
 
 
 def _summary(report: dict) -> dict:
