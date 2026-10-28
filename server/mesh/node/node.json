@@ -66,6 +66,6 @@
       5915
     ]
   ],
-  "vram_reserve_mb": 1536,
-  "min_free_loaded_mb": 800
+  "vram_reserve_mb": 150,
+  "min_free_loaded_mb": 100
 }

@@ -83,8 +83,11 @@ measured card memory]; the node loads the highest step that still leaves the res
 | 41 | 6029 MB | 18.5-18.9 |
 | 40 | 5905 MB | 15.7-17.9 |
 
-With the desktop at ~650 MB this lands on -ngl 40 (~17-18 tok/s, 1.6 GB free; brain1 does ~10). While loaded, less
-than `min_free_loaded_mb` (800) free -> the node reloads at a lower step that restores the reserve, or unloads (busy).
+Default on the owner PC: `vram_reserve_mb` 150, `min_free_loaded_mb` 100, so -ngl 99 loads (~46 tok/s, ~200-500 MB
+left free). Decided by screen recordings (2026-10-28, 60 s each, Metallic Launcher window on top, dropout counter):
+node off 0 + 0, -ngl 40 generating 0, -ngl 99 generating 0 + 0 (195 MB free, 95% GPU), -ngl 99 idle 0. While
+loaded, under `min_free_loaded_mb` free or other programs +1200 MB -> lower step or unload. The code defaults
+(1536 / 800) are the cautious setting for a machine nobody has measured yet.
 Other things tried: -np 2 costs ~200 MB more; q8_0 KV ~120 MB more; -c 6144/-ub 128 saves only ~20-40 MB; the output
 layer on the CPU (`-ot token_embd\.weight=CPU`) gives the same tok/s per MB as fewer layers. RTX 4060 (STAR's PC): same
 file and args; measure its ladder (her desktop use differs). A 4 GB card (GTX 1650) cannot hold this model.
