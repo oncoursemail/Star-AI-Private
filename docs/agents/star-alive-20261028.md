@@ -67,3 +67,20 @@ Roblox keep no chat text, so no dated events or promises are stored for them.
 - Nothing run on her PC or real Discord; `deliver()` only proven against a fake desktop.
 - `star lock run --max-minutes 9` did not stop the eval in time on Windows (chunk ran ~60 min, the lock passed to other
   holders meanwhile; exit 124 only at 05:50Z): the child python is probably not killed with the bash wrapper.
+
+## Round 2 (lead's decisions, 10-28 06:00-07:40Z)
+- Leak check: `human_checks._NATURAL` takes "i've been meaning to say/tell you/ask" and "we should <plan>" out before `_META`;
+  "we should respond/keep/answer...", "I should respond with...", "The user wants..." still caught (tests in test_human_evals).
+- 15 more scenarios (alive14-28: follow-up timing incl. two too-early cases, concert, good luck, birthday on the day and NOT
+  before it, missed friend after exams, short gap, two inside jokes, four first messages). 28 total. Wording fixes: "how was
+  the concert?" (place with "a"), a 3-calendar-day gap under 72 h gets "a few days ago". Known-good endings varied (the
+  suite flags > 45 % question endings).
+- A/B on brain 1 (star-fast, 28 x 3, short lock batches: `timeout 300` per batch inside `star lock run`, 2 min gaps):
+  **INCONCLUSIVE**. Blind human_likeness alive 20 / base 23 / ties 35 (p = 0.76, 29 needed); consistency 9/10; warmth 17/23.
+  Code checks: clean 0.75 -> 0.86, memory misses 10 -> 6, safety violations 1 -> 0, emoji rate 36 % -> 26 %.
+  So the time hints make her factually right more often (birthdays, follow-ups after not before, jokes), but the judge does not
+  rate those replies as more human; the felt-time lines may make replies longer/warmer in a way the judge marks down on warmth.
+  Both arms said "happy belated birthday" for a birthday three days AHEAD (alive20): a model date error the hints do not cause.
+- Ops: stopping the background task did NOT kill the first runner's child tree (it kept taking the lock as `claude-star-alive`);
+  killed with taskkill /T and released the lock. `star lock run --max-minutes` does not kill the grandchild on Windows; an inner
+  `timeout` does.
