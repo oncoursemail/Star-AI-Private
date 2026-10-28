@@ -506,6 +506,13 @@ class CallSession:
             reply.metrics.interrupted = True
             reply.metrics.interrupt_reason = reason
             reply.cancel.set()
+        # Cancel a streaming CPU TTS model immediately, independently from
+        # its model lock; otherwise a barge-in wastes audio work and CPU.
+        if hasattr(self.tts, "stop_generation"):
+            try:
+                self.tts.stop_generation()
+            except Exception:
+                pass  # Always reach the physical speaker stop.
         with reply.play_lock:
             reply.heard_seconds = self.speaker.played_seconds() if reply.metrics.first_audio_at is not None else 0.0
             self.speaker.stop()

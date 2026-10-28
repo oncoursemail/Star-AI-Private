@@ -62,8 +62,10 @@ class _Factories:
     @staticmethod
     def tts(settings: VoiceSettings):
         from .engines import make_tts
+        kwargs = ({"pocket_model": settings.pocket_model}
+                  if settings.tts_engine == "pocket" else {})
         return make_tts(settings.tts_engine, settings.voice, settings.speed, settings.device, settings.tts_lang,
-                        settings.sentence_gap_ms, settings.pitch_semitones)
+                        settings.sentence_gap_ms, settings.pitch_semitones, **kwargs)
 
     @staticmethod
     def speaker(sample_rate: int, device):
@@ -93,6 +95,7 @@ class _SpeechJob:
         self.id = request_id
         self.cancel = threading.Event()
         self.speaker: Any = None  # the SoundSpeaker while it plays
+        self.tts: Any = None      # optional cancellable synthesis backend
         self.thread: threading.Thread | None = None
 
 
@@ -128,13 +131,18 @@ class VoiceBridge:
         return base
 
     def _status(self) -> dict:
-        missing = [package for module, package in REQUIRED_PACKAGES.items()
+        settings = self._load_settings()
+        requirements = dict(REQUIRED_PACKAGES)
+        if settings.tts_engine == "pocket":
+            requirements.pop("kokoro_onnx", None)
+            requirements["pocket_tts"] = "pocket-tts"
+        missing = [package for module, package in requirements.items()
                    if importlib.util.find_spec(module) is None]
         models_missing: list[str] = []
         if not missing:
             from .engines import models_dir
-            settings = self._load_settings()
-            wanted = ["kokoro-v1.0.onnx", "voices-v1.0.bin"]
+            wanted = ([] if settings.tts_engine == "pocket"
+                      else ["kokoro-v1.0.onnx", "voices-v1.0.bin"])
             wanted += ["silero_vad.onnx"] if settings.vad == "silero" else []
             wanted += ["smart-turn-v3.2-cpu.onnx"] if settings.endpointer == "smart-turn" else []
             models_missing = [name for name in wanted if not (models_dir() / name).is_file()]
@@ -234,6 +242,11 @@ class VoiceBridge:
         if job is None:
             return False
         job.cancel.set()
+        if job.tts is not None and hasattr(job.tts, "stop_generation"):
+            try:
+                job.tts.stop_generation()
+            except Exception:
+                pass  # Physical output must still be stopped on synthesis failure.
         speaker = job.speaker
         if speaker is not None:
             try:
@@ -293,7 +306,8 @@ class VoiceBridge:
     # -- workers ------------------------------------------------------------------------------
     def _get_engines(self, settings: VoiceSettings, progress):
         key = (settings.tts_engine, settings.asr_engine, settings.asr_model, settings.asr_prompt, settings.device,
-               settings.vad, settings.endpointer)
+               settings.vad, settings.endpointer,
+               settings.pocket_model if settings.tts_engine == "pocket" else "")
         if self._engines is None or self._engines_key != key:
             self._engines = self._factories.engines(settings, progress)
             self._engines_key = key
@@ -381,9 +395,19 @@ class VoiceBridge:
 
     def _speech_tts(self, settings: VoiceSettings):
         """The loaded call engine if there is one, else a read-aloud engine kept for the next reply."""
-        if self._engines is not None:
+        # Cached call engine can be reused only for the *same* backend and
+        # Pocket model. An earlier Kokoro call must not override a newly
+        # selected CPU engine for read-aloud. Tests may inject a call engine.
+        if self._engines is not None and (
+            self._engines_key is None or
+            (self._engines_key[0] == settings.tts_engine and
+             self._engines_key[4] == settings.device and
+             self._engines_key[7] == (settings.pocket_model
+                                     if settings.tts_engine == "pocket" else ""))
+        ):
             return self._engines.tts
-        key = (settings.tts_engine, settings.device)
+        key = (settings.tts_engine, settings.device,
+               settings.pocket_model if settings.tts_engine == "pocket" else "")
         if self._tts is None or self._tts_key != key:
             self._tts = self._factories.tts(settings)
             self._tts_key = key
@@ -399,6 +423,9 @@ class VoiceBridge:
             first_audio = None
             try:
                 tts = self._speech_tts(settings)
+                job.tts = tts
+                if job.cancel.is_set():
+                    return
                 _apply_voice(tts, settings)
                 speaker = self._factories.speaker(int(getattr(tts, "sample_rate", 24000)), settings.output_device)
                 job.speaker = speaker
