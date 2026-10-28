@@ -507,3 +507,77 @@ def test_revoke_between_admission_and_worker_blocks_dispatch():
     assert calls == []
     assert rig.capture.status()["worker_runs"] == 0
     assert not rig.vision.status()["inflight"]
+
+
+# Visual perception is a bounded CATEGORICAL addendum, not a success claim.
+from star.stream_visual_perception import VisualFinding, VisualPacket, parse_visual_packet
+
+
+def test_accepted_worker_packet_is_bound_to_original_frame_and_zeroized():
+    packet_seen = []
+    retained = []
+
+    def worker(frame):
+        retained.append(frame.rgb)
+        packet = parse_visual_packet(
+            {"findings": [{"kind": "hud_change", "region": "hud",
+                           "confidence": 0.91}]},
+            captured_ms=frame.captured_ms, width=frame.width, height=frame.height,
+        )
+        packet_seen.append(packet)
+        return WorkerReport(stopped=True, succeeded=True, perception=packet)
+
+    rig = Rig(worker=worker)
+    rig.enable()
+    outcome = rig.capture.capture_and_process_once()
+    assert outcome.admission.admitted and outcome.worker_accepted
+    assert outcome.perception is packet_seen[0]
+    assert outcome.perception.findings[0].kind == "hud_change"
+    assert rig.capture.status()["perception_accepted"] == 1
+    assert rig.vision.status()["completed"] == 1
+    assert not any(retained[0])
+    assert "rgb" not in repr(outcome)
+
+
+@pytest.mark.parametrize("tamper", [
+    lambda frame: (frame.captured_ms + 1, frame.width, frame.height),
+    lambda frame: (frame.captured_ms, frame.width + 1, frame.height),
+    lambda frame: (frame.captured_ms, frame.width, frame.height + 1),
+])
+def test_wrong_frame_stamp_or_geometry_discards_packet_and_releases_worker(tamper):
+    def worker(frame):
+        stamp, width, height = tamper(frame)
+        packet = VisualPacket(
+            stamp, width, height,
+            (VisualFinding("scene_change", "world", .97),),
+        )
+        return WorkerReport(True, True, packet)
+
+    rig = Rig(worker=worker)
+    rig.enable()
+    result = rig.capture.capture_and_process_once()
+    assert result.admission.admitted
+    assert result.state == "worker_result_discarded"
+    assert not result.worker_accepted
+    assert result.perception is None
+    assert not rig.vision.status()["inflight"]
+    assert rig.capture.status()["perception_rejected"] == 1
+
+
+def test_revoked_session_discards_even_valid_visual_model_packet():
+    rig = None
+
+    def worker(frame):
+        packet = VisualPacket(
+            frame.captured_ms, frame.width, frame.height,
+            (VisualFinding("scene_change", "world", .95),),
+        )
+        rig.capture.disable()
+        return WorkerReport(True, True, packet)
+
+    rig = Rig(worker=worker)
+    rig.enable()
+    result = rig.capture.capture_and_process_once()
+    assert result.perception is None and not result.worker_accepted
+    assert rig.capture.status()["perception_rejected"] == 1
+    assert not rig.vision.status()["inflight"]

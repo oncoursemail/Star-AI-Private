@@ -21,6 +21,7 @@ from typing import Callable
 
 from .frame_fingerprint import Region
 from .stream_vision_host import StreamVisionHost, VisionAdmission
+from .stream_visual_perception import VisualPacket
 
 MAX_CAPTURE_PIXELS = 3840 * 2160
 MAX_CAPTURE_AGE_MS = 1500.0
@@ -57,12 +58,18 @@ class WorkerReport:
 
     stopped: bool
     succeeded: bool
+    perception: VisualPacket | None = None
 
     def __post_init__(self) -> None:
         if type(self.stopped) is not bool or type(self.succeeded) is not bool:
             raise TypeError("worker stop and success must be explicit host booleans")
         if self.succeeded and not self.stopped:
             raise ValueError("unfinished worker cannot report successful completion")
+        if self.perception is not None and (
+            type(self.perception) is not VisualPacket
+            or not self.stopped or not self.succeeded
+        ):
+            raise ValueError("only a successful stopped worker can return a visual packet")
 
 
 @dataclass(frozen=True)
@@ -73,6 +80,7 @@ class CaptureDispatch:
     state: str
     worker_invoked: bool = False
     worker_accepted: bool = False
+    perception: VisualPacket | None = None
 
 
 def probe_windows_window(hwnd: int) -> WindowState:
@@ -191,7 +199,8 @@ class WindowsGameCaptureHost:
             captures=0, admitted=0, deferred=0, capture_failed=0,
             stale_discarded=0, identity_rejected=0, preflight_skipped=0,
             worker_runs=0, worker_accepted=0, worker_failed=0,
-            worker_unconfirmed=0,
+            worker_unconfirmed=0, perception_accepted=0,
+            perception_rejected=0,
         )
 
     def enable(self, *, owner_approved: bool = False, capture_approved: bool = False) -> None:
@@ -356,10 +365,20 @@ class WindowsGameCaptureHost:
                 window_live = self._window_valid(final_window) and final_window == before
             except Exception:
                 window_live = False
+            # The model cannot choose its own frame identity. Even a valid
+            # packet is only a candidate visual observation, not a game win.
+            packet = report.perception
+            packet_matches = (
+                packet is None or (
+                    packet.captured_ms == end and packet.width == width
+                    and packet.height == height
+                )
+            )
             try:
                 accepted = self._vision.acknowledge_worker_stopped(
                     lease, worker_stopped=True,
-                    succeeded=report.succeeded and session_live and window_live,
+                    succeeded=(report.succeeded and session_live and window_live
+                               and packet_matches),
                 )
             except Exception:
                 with self._lock:
@@ -367,9 +386,13 @@ class WindowsGameCaptureHost:
                 return CaptureDispatch(decision, "worker_stop_unconfirmed", True)
             with self._lock:
                 self._counts["worker_accepted" if accepted else "worker_failed"] += 1
+                if packet is not None:
+                    self._counts[
+                        "perception_accepted" if accepted else "perception_rejected"
+                    ] += 1
             return CaptureDispatch(
                 decision, "worker_result_accepted" if accepted else "worker_result_discarded",
-                True, accepted,
+                True, accepted, packet if accepted else None,
             )
         except Exception:
             # Failure details can contain private OS/window information.
