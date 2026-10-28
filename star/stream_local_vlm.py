@@ -14,6 +14,7 @@ not termination of the long-lived llama-server service.
 from __future__ import annotations
 
 import base64
+import hashlib
 from collections import deque
 from dataclasses import dataclass
 from io import BytesIO
@@ -87,9 +88,11 @@ class _ReferenceFrame:
     jpeg: bytearray
     captured_ms: float
     size: tuple[int, int]
+    raw_sha256: bytes | None = None
 
     def erase(self) -> None:
         self.jpeg[:] = b"\x00" * len(self.jpeg)
+        self.raw_sha256 = None
 
 
 class LocalLlamaComparisonWorker:
@@ -111,6 +114,7 @@ class LocalLlamaComparisonWorker:
         max_tokens: int = 180, transport: Transport | None = None,
         focus_box: tuple[int, int, int, int] | None = None,
         skip_identical: bool = False,
+        raw_exact_fast_path: bool = False,
         max_result_latency_ms: int | None = None,
         slow_cooldown_ms: int = 0,
         clock_ns: Callable[[], int] | None = None,
@@ -141,6 +145,8 @@ class LocalLlamaComparisonWorker:
                 raise ValueError("focus_box must be a valid 0..1000 region >=5% wide/high")
         if type(skip_identical) is not bool:
             raise ValueError("skip_identical must be a host boolean")
+        if type(raw_exact_fast_path) is not bool or (raw_exact_fast_path and not skip_identical):
+            raise ValueError("raw_exact_fast_path requires explicit identical-frame gating")
         # Opt-in live-stream freshness: a delayed result describes a past
         # frame, not the game as it exists now. Drop it instead of narrating
         # stale hazards or HUD changes. This does not cancel model compute.
@@ -159,6 +165,7 @@ class LocalLlamaComparisonWorker:
         self._slow_cooldown_ms = slow_cooldown_ms
         self._cooldown_until_ns = 0
         self._skip_identical = skip_identical
+        self._raw_exact_fast_path = raw_exact_fast_path
         self._focus_box = focus_box
         self._model = model
         self._port = port
@@ -182,7 +189,7 @@ class LocalLlamaComparisonWorker:
         self._counts = {
             "baselines": 0, "requests": 0, "accepted": 0,
             "model_rejected": 0, "ambiguous_stop": 0, "invalid_frames": 0,
-            "identical_pairs_skipped": 0, "focused_pairs": 0,
+            "identical_pairs_skipped": 0, "raw_exact_fast_skips": 0, "focused_pairs": 0,
             "busy_rejected": 0, "revoked_results": 0,
             "stale_results_dropped": 0, "cooldown_frames_skipped": 0,
         }
@@ -224,7 +231,8 @@ class LocalLlamaComparisonWorker:
             self._previous.erase()
         self._previous = None
 
-    def _encode(self, frame: CapturedVisionFrame) -> bytearray:
+    @staticmethod
+    def _validate_frame(frame: CapturedVisionFrame) -> None:
         if type(frame) is not CapturedVisionFrame:
             raise TypeError("trusted CapturedVisionFrame required")
         w, h = frame.width, frame.height
@@ -233,8 +241,13 @@ class LocalLlamaComparisonWorker:
                 or w * h > MAX_PIXELS or w > 8192 or h > 8192
                 or not isinstance(frame.rgb, memoryview)
                 or len(frame.rgb) != w * h * 3
-                or frame.rgb.ndim != 1):
+                or frame.rgb.ndim != 1 or frame.rgb.itemsize != 1
+                or not frame.rgb.c_contiguous):
             raise ValueError("invalid RGB frame layout")
+
+    def _encode(self, frame: CapturedVisionFrame) -> bytearray:
+        self._validate_frame(frame)
+        w, h = frame.width, frame.height
         from PIL import Image
         # PIL may create temporary internal copies that cannot be zeroized;
         # no image, transcript or response is written to a file or logged.
@@ -373,8 +386,27 @@ class LocalLlamaComparisonWorker:
                 self._counts["cooldown_frames_skipped"] += 1
                 return WorkerReport(True, False)
             try:
+                raw_sha256 = None
+                if self._raw_exact_fast_path:
+                    # Hash only the exact authorized RGB view. This cannot
+                    # declare near-identical pixels equivalent, and a match
+                    # avoids PIL conversion, JPEG and all model work.
+                    self._validate_frame(frame)
+                    raw_sha256 = hashlib.sha256(frame.rgb).digest()
+                    previous = self._previous
+                    if (previous is not None
+                            and previous.raw_sha256 == raw_sha256
+                            and previous.size == (frame.width, frame.height)
+                            and 0 < frame.captured_ms - previous.captured_ms <= self._gap):
+                        # Advance the baseline's time without retaining the
+                        # new frame or reusing a stale capture timestamp.
+                        previous.captured_ms = frame.captured_ms
+                        self._counts["raw_exact_fast_skips"] += 1
+                        self._counts["identical_pairs_skipped"] += 1
+                        return WorkerReport(True, True)
                 newest = _ReferenceFrame(
-                    self._encode(frame), frame.captured_ms, (frame.width, frame.height),
+                    self._encode(frame), frame.captured_ms,
+                    (frame.width, frame.height), raw_sha256,
                 )
             except (TypeError, ValueError, ImportError, OSError):
                 self._counts["invalid_frames"] += 1
@@ -480,6 +512,7 @@ class LocalLlamaComparisonWorker:
                     "reference_cached": self._previous is not None,
                     "focus_enabled": self._focus_box is not None,
                     "identical_gate_enabled": self._skip_identical,
+                    "raw_exact_gate_enabled": self._raw_exact_fast_path,
                     "freshness_gate_enabled": self._max_result_latency_ms is not None,
                     "cooldown_remaining_ms": max(
                         0, (self._cooldown_until_ns - self._clock_ns() + 999_999)
