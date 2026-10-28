@@ -26,6 +26,7 @@ EXECUTE_SUBS = {"align", "anchored", "as", "at", "facing", "if", "in", "on", "po
 RESLOC = re.compile(r"^#?([a-z0-9_.-]+:)?[a-z0-9_./-]+$")
 COORD = re.compile(r"^([~^]?-?(\d+\.?\d*|\.\d+)?|-?(\d+\.?\d*|\.\d+))$")
 INT = re.compile(r"^-?\d+$")
+PLACEHOLDER = re.compile(r"^<[^<>]+>$")      # <spawn_x>, <player>: a value the reader fills in
 FILL_MODES = {"destroy", "hollow", "keep", "outline", "replace", "strict"}
 SETBLOCK_MODES = {"destroy", "keep", "replace", "strict"}
 
@@ -69,6 +70,8 @@ class Checker:
         if a is None:
             self.add("mc_syntax", f"missing {what}")
             return False
+        if PLACEHOLDER.match(a):
+            return True
         if a.startswith("@"):
             m = re.match(r"^@([parsen])(\[(.*)\])?$", a)
             if not m:
@@ -95,7 +98,7 @@ class Checker:
         if len(triple) < n:
             self.add("mc_syntax", f"expected {n} coordinates, got {len(triple)}")
             return False
-        bad = [c for c in triple if not COORD.match(c) or c in ("-", "")]
+        bad = [c for c in triple if not PLACEHOLDER.match(c) and (not COORD.match(c) or c in ("-", ""))]
         if bad:
             self.add("mc_syntax", f"'{bad[0]}' is not a coordinate", "a number, ~ (relative) or ^ (local)", bad[0])
             return False
@@ -110,7 +113,7 @@ class Checker:
             self.add("mc_syntax", f"missing {what}")
             return False
         base = re.split(r"[\[{]", a, 1)[0]
-        if not RESLOC.match(base):
+        if not RESLOC.match(base) and not PLACEHOLDER.match(a):
             msg = f"'{base}' is not a valid {what} id"
             sugg = base.lower() if RESLOC.match(base.lower()) else None
             if re.search(r"[A-Z]", base):

@@ -221,6 +221,8 @@ def test_minecraft_commands():
     assert sugg[10] == "/gamemode" and sugg[8] == "zombie"
     # chat / command block: a leading slash is fine
     assert minecraft.check_commands("/tp @p 0 64 0") == []
+    # <placeholders> the reader fills in are not errors (a fix must not replace them with made-up values)
+    assert minecraft.check_commands("tp <player> <spawn_x> <spawn_y> <spawn_z>\ngive @s <item> 1") == []
 
 
 def test_datapack_rules_in_answer():
