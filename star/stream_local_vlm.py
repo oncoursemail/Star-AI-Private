@@ -14,11 +14,13 @@ not termination of the long-lived llama-server service.
 from __future__ import annotations
 
 import base64
+from collections import deque
 from dataclasses import dataclass
 from io import BytesIO
 import http.client
 import json
 import math
+import time
 from threading import RLock
 from typing import Callable
 
@@ -147,12 +149,21 @@ class LocalLlamaComparisonWorker:
         self._transport = transport if transport is not None else self._post
         self._enabled = False
         self._quarantined = False
+        # Never hold the state lock over the potentially 30-second HTTP call.
+        # An in-flight request is NOT cancelled by disable(); a late response
+        # is discarded using the session epoch. No second request may start
+        # while the first request's transport state is unresolved.
+        self._inflight = False
+        self._epoch = 0
         self._previous: _ReferenceFrame | None = None
+        # Only metadata: bounded duration samples, no images or prompts.
+        self._request_ms: deque[int] = deque(maxlen=32)
         self._lock = RLock()
         self._counts = {
             "baselines": 0, "requests": 0, "accepted": 0,
             "model_rejected": 0, "ambiguous_stop": 0, "invalid_frames": 0,
             "identical_pairs_skipped": 0, "focused_pairs": 0,
+            "busy_rejected": 0, "revoked_results": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -160,15 +171,17 @@ class LocalLlamaComparisonWorker:
         if owner_approved is not True or local_model_approved is not True:
             raise PermissionError("explicit owner and local inference opt-in required")
         with self._lock:
-            if self._enabled or self._quarantined:
+            if self._enabled or self._quarantined or self._inflight:
                 raise RuntimeError("already active or previous worker stop unconfirmed")
             self._erase()
+            self._epoch += 1
             self._enabled = True
 
     def disable(self) -> None:
         """Prevent future requests and erase cached reference (not server stop)."""
         with self._lock:
             self._enabled = False
+            self._epoch += 1
             self._erase()
 
     def clear_quarantine(self, *, owner_approved: bool = False,
@@ -181,8 +194,8 @@ class LocalLlamaComparisonWorker:
         if owner_approved is not True or physical_request_stopped is not True:
             raise PermissionError("host-verified physical inference stop required")
         with self._lock:
-            if self._enabled:
-                raise RuntimeError("disable the worker before clearing quarantine")
+            if self._enabled or self._inflight:
+                raise RuntimeError("disable and confirm the worker is no longer running")
             self._quarantined = False
 
     def _erase(self) -> None:
@@ -314,15 +327,22 @@ class LocalLlamaComparisonWorker:
         )
 
     def __call__(self, frame: CapturedVisionFrame) -> WorkerReport:
-        """Synchronous, single-flight frame comparison on the capture worker.
+        """Single-flight frame comparison with responsive host revocation.
 
-        A response that ended cleanly releases this *request* (the persistent
-        server may stay alive). Any ambiguous network/timeout status returns
-        stopped=False, quarantining the existing host lease; never silently
-        retry a possibly still-running VLM generation.
+        The lock guards opt-in and memory state, but not slow local HTTP. An
+        owner may disable future visual inference promptly even while the
+        transport is blocked. The already-issued request cannot be unsent:
+        its result is discarded on return, and re-enable is prohibited while
+        its physical completion is still outstanding.
+
+        No model-reported message can acknowledge a physical stop. Unknown
+        connection/timeout failures retain the existing quarantine policy.
         """
         with self._lock:
             if not self._enabled or self._quarantined:
+                return WorkerReport(True, False)
+            if self._inflight:
+                self._counts["busy_rejected"] += 1
                 return WorkerReport(True, False)
             try:
                 newest = _ReferenceFrame(
@@ -340,9 +360,6 @@ class LocalLlamaComparisonWorker:
                 self._previous = newest
                 self._counts["baselines"] += 1
                 return WorkerReport(True, True)
-            # Byte-identical bounded JPEGs cannot provide visual-difference
-            # evidence. Skip the expensive inference while keeping the newest
-            # baseline timestamp; never make up a positive visual finding.
             if self._skip_identical and previous.jpeg == newest.jpeg:
                 previous.erase()
                 self._previous = newest
@@ -352,29 +369,48 @@ class LocalLlamaComparisonWorker:
             try:
                 payload = self._payload(previous.jpeg, newest.jpeg)
             except (ValueError, TypeError):
-                # Local serialization failed before any inference could start.
                 previous.erase()
                 newest.erase()
                 self._counts["model_rejected"] += 1
                 return WorkerReport(True, False)
-            try:
-                self._counts["requests"] += 1
-                if self._focus_box is not None:
-                    self._counts["focused_pairs"] += 1
-                status, raw = self._transport(payload)
-            except ConnectionRefusedError:
-                # No local server accepted a connection; no inference started.
+            self._inflight = True
+            session = self._epoch
+            self._counts["requests"] += 1
+            if self._focus_box is not None:
+                self._counts["focused_pairs"] += 1
+
+        # Critically, never hold _lock during network I/O. A disable() that
+        # races this handoff cannot retract an already-prepared HTTP payload;
+        # the epoch prevents the response from being accepted as fresh.
+        started_ns = time.perf_counter_ns()
+        try:
+            status, raw = self._transport(payload)
+        except ConnectionRefusedError:
+            # No local server accepted the connection; no inference started.
+            with self._lock:
+                self._inflight = False
                 self._counts["model_rejected"] += 1
-                return WorkerReport(True, False)
-            except Exception:
-                # A broken connection, timeout, interrupted body, or a custom
-                # transport exception cannot attest server-side completion.
-                self._counts["ambiguous_stop"] += 1
+            return WorkerReport(True, False)
+        except Exception:
+            # Server-side inference may be continuing. Do not release a host
+            # lease or re-enable without separate physical-stop confirmation.
+            with self._lock:
+                self._inflight = False
                 self._quarantined = True
-                return WorkerReport(False, False)
-            finally:
-                previous.erase()
-                newest.erase()
+                self._counts["ambiguous_stop"] += 1
+            return WorkerReport(False, False)
+        finally:
+            elapsed_ms = max(0, (time.perf_counter_ns() - started_ns) // 1_000_000)
+            with self._lock:
+                self._request_ms.append(elapsed_ms)
+            previous.erase()
+            newest.erase()
+
+        with self._lock:
+            self._inflight = False
+            if not self._enabled or session != self._epoch:
+                self._counts["revoked_results"] += 1
+                return WorkerReport(True, False)
             if type(status) is not int or type(raw) is not bytes or status != 200:
                 self._counts["model_rejected"] += 1
                 return WorkerReport(True, False)
@@ -389,8 +425,14 @@ class LocalLlamaComparisonWorker:
     def metrics(self) -> dict[str, int | bool]:
         """Metadata only: no frame data, prompts, viewer text, URLs or tokens."""
         with self._lock:
+            ordered = sorted(self._request_ms)
+            p95 = ordered[math.ceil(len(ordered) * 0.95) - 1] if ordered else 0
             return {**self._counts, "enabled": self._enabled,
                     "quarantined": self._quarantined,
+                    "inflight": self._inflight,
+                    "transport_ms_last": self._request_ms[-1] if ordered else 0,
+                    "transport_ms_p95": p95,
+                    "transport_samples": len(ordered),
                     "reference_cached": self._previous is not None,
                     "focus_enabled": self._focus_box is not None,
                     "identical_gate_enabled": self._skip_identical}
