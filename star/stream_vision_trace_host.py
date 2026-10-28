@@ -23,6 +23,9 @@ from .stream_vision_eval import (
     VisionEvalCase, VisionEvalPrediction, compare_vision, prediction_from_packet,
 )
 from .stream_visual_perception import VISUAL_KINDS, VISUAL_REGIONS, VisualPacket
+from .stream_vision_truth_receipt import (
+    VisionTruthReceipt, verify_vision_truth_receipt,
+)
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
@@ -109,7 +112,7 @@ class PairedVisionTraceHost:
         self._last_seq = 0
         self._last_captured_ms = 0.0
         self._stats = dict(reserved=0, results=0, failed_workers=0,
-                           truth_labels=0, exports=0)
+                           truth_labels=0, signed_truth_labels=0, exports=0)
 
     def enable(self, *, owner_approved: bool = False,
                offline_capture_approved: bool = False) -> None:
@@ -241,6 +244,48 @@ class PairedVisionTraceHost:
             entry.truth = labels
             entry.truth_source = truth_source
             self._stats["truth_labels"] += 1
+
+    def record_signed_truth(
+        self, ticket: VisionTraceTicket, *,
+        receipt: VisionTruthReceipt, signature: str,
+        verification_key: bytes,
+        owner_approved: bool = False,
+        independent_scorer_approved: bool = False,
+    ) -> None:
+        """Accept signed external truth only after all predictions are frozen.
+
+        This OPTIONAL strict alternative to record_truth() binds the signer
+        receipt to the exact session ticket, sequence, frame pixel digest,
+        trusted capture time, game and version. A MAC authenticates the key
+        holder, NOT the truth of its game observation. The independent host
+        must validate real Studio state and keep its key outside Star's agent.
+        """
+        if owner_approved is not True or independent_scorer_approved is not True:
+            raise PermissionError("owner and independent observer approval required")
+        if type(receipt) is not VisionTruthReceipt:
+            raise TypeError("expected independent categorical truth receipt")
+        with self._lock:
+            entry = self._lookup(ticket)
+            if not self._sealed:
+                raise PermissionError("freeze the entire cohort before accepting truth")
+            if entry.truth is not None:
+                raise ValueError("cannot replace an existing truth label")
+            if (receipt.game_id != self._game_id
+                    or receipt.game_version != self._game_version
+                    or receipt.trace_epoch != ticket.epoch
+                    or receipt.trace_serial != ticket.serial
+                    or receipt.frame_sequence != entry.frame.sequence
+                    or receipt.frame_sha256 != entry.frame.sha256
+                    or receipt.captured_ms != entry.frame.captured_ms):
+                raise PermissionError("receipt does not bind to this exact host frame")
+            verify_vision_truth_receipt(
+                receipt, signature, verification_key=verification_key,
+            )
+            self.record_truth(
+                ticket, labels=receipt.labels, truth_source=receipt.truth_source,
+                independent_scorer=True,
+            )
+            self._stats["signed_truth_labels"] += 1
 
     def _cases(self) -> list[VisionEvalCase]:
         if not self._enabled or not self._sealed:
