@@ -118,6 +118,7 @@ class LocalLlamaComparisonWorker:
         skip_identical: bool = False,
         raw_exact_fast_path: bool = False,
         raw_sparse_prescreen: bool = False,
+        adaptive_sparse_prescreen: bool = False,
         max_result_latency_ms: int | None = None,
         slow_cooldown_ms: int = 0,
         clock_ns: Callable[[], int] | None = None,
@@ -153,6 +154,9 @@ class LocalLlamaComparisonWorker:
         if (type(raw_sparse_prescreen) is not bool
                 or (raw_sparse_prescreen and not raw_exact_fast_path)):
             raise ValueError("raw_sparse_prescreen requires exact RGB gating")
+        if (type(adaptive_sparse_prescreen) is not bool
+                or (adaptive_sparse_prescreen and not raw_sparse_prescreen)):
+            raise ValueError("adaptive_sparse_prescreen requires sparse RGB gating")
         # Opt-in live-stream freshness: a delayed result describes a past
         # frame, not the game as it exists now. Drop it instead of narrating
         # stale hazards or HUD changes. This does not cancel model compute.
@@ -173,6 +177,11 @@ class LocalLlamaComparisonWorker:
         self._skip_identical = skip_identical
         self._raw_exact_fast_path = raw_exact_fast_path
         self._raw_sparse_prescreen = raw_sparse_prescreen
+        self._adaptive_sparse_prescreen = adaptive_sparse_prescreen
+        # Advisory two-observation motion hint: selects a cheap NEGATIVE check,
+        # never decides equality or whether a model request is trustworthy.
+        # Keep across model pairs, but not permission sessions/window changes.
+        self._motion_score = 0
         self._focus_box = focus_box
         self._model = model
         self._port = port
@@ -199,6 +208,7 @@ class LocalLlamaComparisonWorker:
             "identical_pairs_skipped": 0, "raw_exact_fast_skips": 0, "focused_pairs": 0,
             "raw_sha_computations": 0, "sparse_checks": 0,
             "sparse_mismatch_hash_skips": 0,
+            "adaptive_motion_hints": 0, "adaptive_still_hints": 0,
             "busy_rejected": 0, "revoked_results": 0,
             "stale_results_dropped": 0, "cooldown_frames_skipped": 0,
         }
@@ -211,6 +221,7 @@ class LocalLlamaComparisonWorker:
             if self._enabled or self._quarantined or self._inflight:
                 raise RuntimeError("already active or previous worker stop unconfirmed")
             self._erase()
+            self._motion_score = 0
             self._epoch += 1
             self._enabled = True
 
@@ -220,6 +231,7 @@ class LocalLlamaComparisonWorker:
             self._enabled = False
             self._epoch += 1
             self._erase()
+            self._motion_score = 0
 
     def clear_quarantine(self, *, owner_approved: bool = False,
                          physical_request_stopped: bool = False) -> None:
@@ -239,6 +251,22 @@ class LocalLlamaComparisonWorker:
         if self._previous is not None:
             self._previous.erase()
         self._previous = None
+
+    def _note_motion(self, moving: bool) -> None:
+        """Track observed JPEG or exact-RGB changes, not inferred game state.
+
+        The 0..2 score only decides whether sparse NEGATIVE checks are worth
+        trying. It cannot skip SHA on matching samples, JPEG or model work.
+        Requires the lock; never invoked from an untrusted VLM response.
+        """
+        if not self._adaptive_sparse_prescreen:
+            return
+        if moving:
+            self._motion_score = 2
+            self._counts["adaptive_motion_hints"] += 1
+        else:
+            self._motion_score = max(0, self._motion_score - 1)
+            self._counts["adaptive_still_hints"] += 1
 
     @staticmethod
     def _validate_frame(frame: CapturedVisionFrame) -> None:
@@ -424,7 +452,14 @@ class LocalLlamaComparisonWorker:
                     self._validate_frame(frame)
                     previous = self._previous
                     sample_changed = False
-                    if self._raw_sparse_prescreen:
+                    # Stationary runs avoid paying for a sample that cannot
+                    # prove equality. The first changed pair uses full SHA;
+                    # subsequent moving pairs can take the sparse fast path.
+                    # Matching samples ALWAYS fall through to full SHA.
+                    use_sparse = (self._raw_sparse_prescreen
+                                  and (not self._adaptive_sparse_prescreen
+                                       or self._motion_score > 0))
+                    if use_sparse:
                         sparse_digest = self._sparse_digest(frame.rgb)
                         self._counts["sparse_checks"] += 1
                         sample_changed = (
@@ -447,6 +482,7 @@ class LocalLlamaComparisonWorker:
                         # Advance time without reusing a stale capture or
                         # changing the trusted reference image.
                         previous.captured_ms = frame.captured_ms
+                        self._note_motion(False)
                         self._counts["raw_exact_fast_skips"] += 1
                         self._counts["identical_pairs_skipped"] += 1
                         return WorkerReport(True, True)
@@ -462,6 +498,8 @@ class LocalLlamaComparisonWorker:
             if previous is None or previous.size != newest.size or not (
                 0 < newest.captured_ms - previous.captured_ms <= self._gap
             ):
+                if previous is not None:
+                    self._motion_score = 0
                 self._erase()
                 self._previous = newest
                 self._counts["baselines"] += 1
@@ -470,7 +508,12 @@ class LocalLlamaComparisonWorker:
                 previous.erase()
                 self._previous = newest
                 self._counts["identical_pairs_skipped"] += 1
+                self._note_motion(False)
                 return WorkerReport(True, True)
+            # A verified changed JPEG implies a changed image. In adaptive
+            # mode the *next* comparison attempts sparse negative screening;
+            # this callback's dispatch and accepted observations are unchanged.
+            self._note_motion(True)
             self._previous = None
             try:
                 payload = self._payload(previous.jpeg, newest.jpeg)
@@ -560,6 +603,9 @@ class LocalLlamaComparisonWorker:
                     "identical_gate_enabled": self._skip_identical,
                     "raw_exact_gate_enabled": self._raw_exact_fast_path,
                     "raw_sparse_prescreen_enabled": self._raw_sparse_prescreen,
+                    "adaptive_sparse_prescreen_enabled": self._adaptive_sparse_prescreen,
+                    "adaptive_sparse_active": (self._adaptive_sparse_prescreen
+                                               and self._motion_score > 0),
                     "freshness_gate_enabled": self._max_result_latency_ms is not None,
                     "cooldown_remaining_ms": max(
                         0, (self._cooldown_until_ns - self._clock_ns() + 999_999)
