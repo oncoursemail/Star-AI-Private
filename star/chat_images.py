@@ -85,7 +85,7 @@ def _saved_answer(path: Path) -> str:
     return "Image generated locally · original saved in STAR/generated-images"
 
 def generate_chat_image(settings, prompt: str, home: Path, cancel_event=None, *, size: str = "square",
-                        source: Path | None = None, mask: Path | None = None) -> dict:
+                        source: Path | None = None, mask: Path | None = None, place: str | None = None) -> dict:
     """Make or edit a picture for the chat, on the place chosen in Settings.
 
     The built-in path is ComfyUI on this PC with FLUX.2 klein 4B (star/image_gen.py): text to
@@ -94,6 +94,11 @@ def generate_chat_image(settings, prompt: str, home: Path, cancel_event=None, *,
     """
     if not 1 <= len(prompt.strip()) <= 1500:
         raise ValueError("Image prompt must be 1–1500 characters")
+    if place == "servers":      # the servers' image service (star/server_images.py): no ComfyUI workflow, no drafts
+        from .image_gen import generate as generate_built_in
+        made = generate_built_in(settings, prompt, home, size=size, source=source, mask=mask,
+                                 cancel_event=cancel_event, place="servers")
+        return _on_disk(home, {"answer": made["answer"], "image": made["image"], "message": made["message"]})
     if source is None and not settings.comfy_workflow.strip():
         from . import image_quality
         if image_quality.enabled(settings):
@@ -102,7 +107,7 @@ def generate_chat_image(settings, prompt: str, home: Path, cancel_event=None, *,
     if source is not None or not settings.comfy_workflow.strip():
         from .image_gen import generate as generate_built_in
         made = generate_built_in(settings, prompt, home, size=size, source=source, mask=mask,
-                                 cancel_event=cancel_event)
+                                 cancel_event=cancel_event, place=place)
         return _on_disk(home, {"answer": made["answer"], "image": made["image"], "message": made["message"]})
     from . import media_places
     media_places.require(settings, "images", home)

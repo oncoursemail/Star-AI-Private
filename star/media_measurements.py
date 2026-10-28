@@ -23,11 +23,15 @@ MEASUREMENTS = {'images': {'pc': {'date': '2026-10-11',
                    'vram_idle_mb': 1997,
                    'vram_note': 'Whole card, all programs, sampled four times a second; the desktop alone was using '
                                 'about 2.0 GB. Not measured together with a voice call.'},
-            'servers': {'available': False,
-                        'estimate_seconds_1024': [480, 1500],
-                        'estimate_basis': 'docs/research/media-pipeline.md section 3: published CPU timings for this '
-                                          "class of model scaled to the server's processor. Not measured on the "
-                                          'servers.'}},
+            'servers': {'date': '2026-10-28',
+                        'model': 'SANA-Sprint 0.6B',
+                        'machine': 'brain 1 processors (EPYC 7451, no graphics card)',
+                        'seconds_per_image': {'512x512': 5.5, '1024x1024': 14.2},
+                        'llm_slowdown_note': "While a picture is being made, the servers' language models write "
+                                             'about three times slower (11.5 -> 3.3-3.7 tokens/s measured).',
+                        'basis': 'docs/agents/server-image-bench-20261028.md: the live service, called from this PC '
+                                 '(network and PNG included); FLUX.2 klein 4B on the same processors took 150 s '
+                                 'for one 512 picture.'}},
  'voice': {'pc': {'date': '2026-10-10',
                   'asr_gpu_seconds': 0.17,
                   'tts_gpu_seconds': 0.33,
