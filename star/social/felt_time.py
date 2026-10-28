@@ -133,7 +133,7 @@ def dated_event(text: str, now: float) -> Event | None:
             day = found.day
             return Event("your birthday", noun, "happy birthday!", _at(day, 8), _at(day, 0), birthday=True)
         det = (event.group("det") or "").lower()
-        what = ("the " + core) if noun in _PLACE and det in ("", "the") else ("your " + core)
+        what = ("the " + core) if noun in _PLACE and det in ("", "the", "a", "an") else ("your " + core)
         ask = f"how was {what}?" if noun in _PLACE else f"how did {what} go?"
         day = found.day
         ask_after = _at(day + timedelta(days=1), MORNING_HOUR) if found.evening else (
@@ -174,7 +174,7 @@ def gap_note(last_seen: float, now: float, stage: str) -> str:
         return "you last talked yesterday"
     if days == 2:
         return "you last talked two days ago"
-    return ""
+    return "you last talked a few days ago"      # 3 calendar days but under 72 h: lifecycle's reunion line has not started
 
 
 def miss_note(gap_days: float, stage: str) -> str:

@@ -182,9 +182,16 @@ def _norm_number(token: str) -> str:
     return token.rstrip(".,:").replace(",", "")
 
 
+# Things friends really say that look like planning talk: taken out before _META is applied. Narrow on purpose: "we should
+# build a farm" and "i've been meaning to tell you" pass; "we should respond warmly" and "i should respond with" do not.
+_NATURAL = re.compile(r"\b(?:i'?ve|i\s+have)\s+been\s+meaning\s+to\s+(?:say|tell\s+you|ask(?:\s+you)?)\b|"
+                      r"\bwe\s+should\s+(?!(?:\w+\s+)?(?:respond|answer|reply|say|keep|mention|focus|acknowledge|greet|"
+                      r"tell\s+(?:them|him|her)|ask\s+(?:them|him|her)|be\s+(?:warm|brief|careful|short)))(?=\w)", re.I)
+
+
 def check_leak(reply, scn):
     from .persona import leaked_reasoning
-    if leaked_reasoning(reply) or _META.search(reply) or "<think" in reply.lower():
+    if leaked_reasoning(reply) or _META.search(_NATURAL.sub(" ", reply)) or "<think" in reply.lower():
         return "the reply talks about how to answer (reasoning or status block leaked)"
     return None
 
