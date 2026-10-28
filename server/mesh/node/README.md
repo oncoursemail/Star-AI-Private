@@ -71,8 +71,18 @@ the RTX 4060 settings below. Without ssh: copy the same files by hand into `D:\L
 Her games/streams are already in the block list; add others to `block_processes` in her node.json.
 
 ## Model settings (8 GB cards, gemma-4-12b QAT Q4_0, 7.0 GB file)
-Args: `-lm none --fit off -ngl 99 -fa on -ctk q4_0 -ctv q4_0 -np 1 -b 1024 -ub 256 -t 4 --jinja --reasoning off`,
-`ctx 8192`. The owner's apps (Metallic Launcher/QtWebEngine, browser, Discord) need room on the same card, so the node
+Args: `-lm none --fit off -ngl 99 -fa on -ctk q4_0 -ctv q4_0 -np 1 -b 512 -ub 128 -t 4 --jinja --reasoning off`,
+`ctx 8192`.
+
+**Speculative decoding (MTP drafter, 2026-10-28, docs/agents/litha-speed-20261028.md):** the top ladder step
+`[100, 7330, ["--model-draft", "models/mtp-gemma-4-12B-it-qat-Q4_0.gguf", "--spec-type", "draft-mtp",
+"--spec-draft-n-max", "4", "-ngld", "99"]]` adds Google's 12B QAT assistant as a multi-token-prediction drafter
+(GGUF: unsloth/gemma-4-12B-it-qat-GGUF `MTP/mtp-gemma-4-12B-it-Q4_0.gguf`, 254 MB; needs llama.cpp with
+`draft-mtp`, b11936 has it). 20 eval prompts: 45 -> 86 tok/s, 4.5 -> 2.5 s per 200 tokens, 52% of drafted tokens
+accepted; +250 MB on the card (7263 MB loaded at -c 8192 -ub 128). With -ub 256 it does not fit next to the desktop
+and spills into shared memory (38 tok/s, slower than no drafter). `ngl 100` = all layers, ranked above the plain 99
+step, so a busier desktop falls back to plain -ngl 99; a step whose .gguf is missing loads without its extra args.
+Prompt reading is ~900-1100 tok/s with the drafter and -ub 128 (vs ~1300-1450 before). The owner's apps (Metallic Launcher/QtWebEngine, browser, Discord) need room on the same card, so the node
 keeps `vram_reserve_mb` (1536) free as nvidia-smi reports it (memory.free): `ngl_ladder` lists [ngl, the model's
 measured card memory]; the node loads the highest step that still leaves the reserve. Measured on the owner's RTX
 3060 Ti (2026-10-28, -c 8192, q4_0 KV, -np 1):

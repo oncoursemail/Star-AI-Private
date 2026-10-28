@@ -204,9 +204,6 @@ def test_ladder_step_can_add_a_draft_model_and_lower_steps_do_not(tmp_path):
     assert top[top.index("--model-draft") + 1] == str(tmp_path / "models" / "mtp.gguf") and "draft-mtp" in top
     plain = na.llama_argv(cfg, tmp_path, 99)
     assert "--model-draft" not in plain and plain[plain.index("-ngl") + 1] == "99"
-    (tmp_path / "models" / "mtp.gguf").unlink()
-    try:
-        na.llama_argv(cfg, tmp_path, 100)
-        raise AssertionError("missing draft file must fail the load")
-    except ValueError as e:
-        assert "ladder step ngl 100" in str(e)
+    (tmp_path / "models" / "mtp.gguf").unlink()             # no draft file: the step loads plain (all layers)
+    bare = na.llama_argv(cfg, tmp_path, 100)
+    assert "--model-draft" not in bare and "--spec-type" not in bare and bare[bare.index("-ngl") + 1] == "100"

@@ -20,9 +20,9 @@
     "-np",
     "1",
     "-b",
-    "1024",
+    "512",
     "-ub",
-    "256",
+    "128",
     "-t",
     "4",
     "--jinja",
@@ -33,6 +33,20 @@
   "resume_seconds": 180,
   "poll_seconds": 2.5,
   "ngl_ladder": [
+    [
+      100,
+      7330,
+      [
+        "--model-draft",
+        "models/mtp-gemma-4-12B-it-qat-Q4_0.gguf",
+        "--spec-type",
+        "draft-mtp",
+        "--spec-draft-n-max",
+        "4",
+        "-ngld",
+        "99"
+      ]
+    ],
     [
       99,
       7020

@@ -8,6 +8,11 @@ Wall-clock for a 2-part answer is about plan + the longest part instead of the s
 ~1 s before the first word, so it only pays off for long answers; a plan of ONE (or anything unusable) falls back to
 the normal single stream.
 
+Measured 2026-10-28 (docs/agents/litha-speed-20261028.md), owner-PC 3060 Ti, gemma-4-12b + MTP drafter, -np 2 -kvu:
+20 eval prompts took 58.7 s as sections vs 49.1 s as single streams, first word 0.74 s vs 0.22 s, and the plans were
+often unusable (code lines as part titles). With speculative decoding the card has no spare batch capacity for a
+second stream, so this stays OFF (`"sections": false`); kept for nodes with more headroom.
+
 Transport-agnostic: the caller passes `complete(body) -> str` (one non-streamed answer) and
 `stream(body) -> async iterator of text pieces`. Stdlib only.
 """

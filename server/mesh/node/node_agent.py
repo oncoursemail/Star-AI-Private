@@ -342,16 +342,12 @@ def llama_argv(config: dict, home: Path, ngl: int | None = None) -> list[str]:
             args[args.index("-ngl") + 1] = str(ngl)
         else:
             args += ["-ngl", str(ngl)]
-        # a ladder step may carry extra llama-server args (e.g. a speculative draft model): [ngl, own_mb, [args]]
+        # a ladder step may carry extra llama-server args (e.g. a speculative draft model): [ngl, own_mb, [args]];
+        # when a file they name is missing, the step loads without them (all layers, no draft)
         step = next((s for s in config.get("ngl_ladder") or [] if int(s[0]) == ngl and len(s) > 2), None)
-        for extra in (step[2] if step else []):
-            extra = str(extra)
-            if extra.lower().endswith(".gguf"):
-                path = resolve(home, extra)
-                if not path.is_file():
-                    raise ValueError(f"the file of ladder step ngl {ngl} was not found at {path}")
-                extra = str(path)
-            args.append(extra)
+        extras = [str(resolve(home, a)) if str(a).lower().endswith(".gguf") else str(a) for a in (step[2] if step else [])]
+        if all(Path(a).is_file() for a in extras if a.lower().endswith(".gguf")):
+            args += extras
     return [str(exe), "-m", str(model), "--alias", str(config["model_id"]), "--host", "127.0.0.1",
             "--port", str(int(config["internal_port"])), "-c", str(int(config["ctx"])), *args]
 
