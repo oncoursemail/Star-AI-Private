@@ -397,3 +397,23 @@ def test_self_registration_sends_token_and_urls(tmp_path):
     assert json.loads(req.data) == {"node": "test-pc", "status_url": "http://node.test:8099/status",
                                     "model_url": "http://node.test:8098/v1"}
     na.register_loop(make(tmp_path)[0], TOKEN, threading.Event())       # no router_url: returns at once
+
+
+def test_context_per_slot():
+    assert na.slot_ctx({"ctx": 8192, "llama_args": ["-np", "2", "-t", "4"]}) == 4096
+    assert na.slot_ctx({"ctx": 8192, "llama_args": ["-t", "4"]}) == 8192
+
+
+def test_ngl_ladder_uses_fewer_layers_when_memory_is_short(tmp_path):
+    ladder = [[6300, 99], [5900, 47], [5500, 44]]
+    assert [na.pick_ngl({"ngl_ladder": ladder}, f) for f in (7000, 6000, 5600, 5000)] == [99, 47, 44, 0]
+    assert na.pick_ngl({}, 100) is None and na.need_mb({"ngl_ladder": ladder}) == 5500
+    node, gpu, clock, procs = make(tmp_path, ngl_ladder=ladder, llama_args=["-ngl", "99", "-t", "4"])
+    gpu["used"] = 8192 - 6000
+    node.tick()
+    argv = procs[0][0]
+    assert argv[argv.index("-ngl") + 1] == "47" and node.status()["models"][0]["ngl"] == 47
+    node2, gpu2, _, procs2 = make(tmp_path, ngl_ladder=ladder)
+    gpu2["used"] = 8192 - 5000
+    node2.tick()
+    assert node2.state == "busy" and "5500 MB needed" in node2.reason and not procs2

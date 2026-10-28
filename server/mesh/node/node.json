@@ -4,9 +4,46 @@
   "model_path": "models/gemma-4-12b-it-qat-q4_0.gguf",
   "model_id": "litha-fast",
   "ctx": 8192,
-  "llama_args": ["--fit", "off", "-ngl", "46", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-t", "4", "-np", "1", "--jinja"],
-  "need_free_vram_mb": 5800,
+  "llama_args": [
+    "-lm",
+    "none",
+    "--fit",
+    "off",
+    "-ngl",
+    "99",
+    "-fa",
+    "on",
+    "-ctk",
+    "q8_0",
+    "-ctv",
+    "q8_0",
+    "-np",
+    "2",
+    "-b",
+    "1024",
+    "-ub",
+    "256",
+    "-t",
+    "4",
+    "--jinja",
+    "--reasoning",
+    "off"
+  ],
   "autoload": true,
   "resume_seconds": 180,
-  "poll_seconds": 2.5
+  "poll_seconds": 2.5,
+  "ngl_ladder": [
+    [
+      6300,
+      99
+    ],
+    [
+      5900,
+      47
+    ],
+    [
+      5500,
+      44
+    ]
+  ]
 }

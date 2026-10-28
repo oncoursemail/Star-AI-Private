@@ -66,7 +66,11 @@ the RTX 4060 settings below. Without ssh: copy the same files by hand into `D:\L
 Her games/streams are already in the block list; add others to `block_processes` in her node.json.
 
 ## Model settings (8 GB cards, gemma-4-12b QAT Q4_0, 7.0 GB file)
-The file does not fit fully next to a desktop's ~1.5 GB, so the default keeps 46 of 48 layers on the card with a q8_0
-KV cache: `--fit off -ngl 46 -fa on -ctk q8_0 -ctv q8_0 -t 4 -np 1 --jinja`, `ctx 8192`, `need_free_vram_mb 5800`.
-Replace with the bench lane's best settings (docs/agents/litha-engine-bench-20261027.md). A 4 GB card (GTX 1650)
-cannot hold this model; give it a 4B model or leave `autoload` false.
+From the bench lane (docs/agents/litha-engine-bench-20261027.md, owner-PC RTX 3060 Ti: ~43 tok/s, first token ~0.2 s,
+quality 53/60 vs brain1 star-fast 41/60):
+`-lm none --fit off -ngl 99 -fa on -ctk q8_0 -ctv q8_0 -np 2 -b 1024 -ub 256 -t 4 --jinja --reasoning off`, `ctx 8192`
+(4096 per request with 2 slots; `-lm none` keeps system RAM at ~1.5 GB).
+`ngl_ladder` `[[6300, 99], [5900, 47], [5500, 44]]`: with less free video memory the node loads fewer layers
+(~33 tok/s at 47, ~23 at 44); under 5500 MB free it reports busy and the router uses brain1. RTX 4060 (STAR's PC):
+same file and args, estimated ~25-28 tok/s. A 4 GB card (GTX 1650) cannot hold this model; give it a 4B model or set
+`autoload` false.

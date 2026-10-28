@@ -29,6 +29,7 @@ import http.server
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import socket
@@ -61,6 +62,8 @@ DEFAULTS: dict = {
     "retry_seconds": 300,                       # after a failed load
     "load_timeout_seconds": 300,
     "need_free_vram_mb": 0,                     # free video memory needed to load (0 = do not check)
+    "ngl_ladder": [],                           # [[free_mb, ngl], ...] best first: fewer layers on the card when
+                                                # other programs hold memory; below the last step = busy
     "busy_util_percent": 40, "busy_util_looks": 2,   # other programs' GPU load (while the model is not working)
     "other_vram_grow_mb": 1200,                 # other programs grew their video memory this much since the load
     "fullscreen": True,
@@ -297,15 +300,93 @@ def program_reason(config: dict, procs: dict[int, str], own: set[int], exe_path,
 
 
 # ---- the model server ----------------------------------------------------------------------------------------------
-def llama_argv(config: dict, home: Path) -> list[str]:
+def pick_ngl(config: dict, free_mb: int) -> int | None:
+    """-ngl for this much free video memory from `ngl_ladder`; None = no ladder (llama_args as written)."""
+    ladder = config.get("ngl_ladder") or []
+    for need, ngl in ladder:
+        if free_mb >= int(need):
+            return int(ngl)
+    return 0 if ladder else None
+
+
+def need_mb(config: dict) -> int:
+    ladder = config.get("ngl_ladder") or []
+    return min(int(n) for n, _ in ladder) if ladder else int(config.get("need_free_vram_mb") or 0)
+
+
+def llama_argv(config: dict, home: Path, ngl: int | None = None) -> list[str]:
     exe, model = resolve(home, config["llama_server"]), resolve(home, config["model_path"])
     if exe.name.lower() not in ("llama-server.exe", "llama-server") or not exe.is_file():
         raise ValueError(f"llama-server was not found at {exe}")
     if model.suffix.lower() != ".gguf" or not model.is_file():
         raise ValueError(f"the model file was not found at {model}")
+    args = [str(a) for a in config.get("llama_args", [])]
+    if ngl:
+        if "-ngl" in args[:-1]:
+            args[args.index("-ngl") + 1] = str(ngl)
+        else:
+            args += ["-ngl", str(ngl)]
     return [str(exe), "-m", str(model), "--alias", str(config["model_id"]), "--host", "127.0.0.1",
-            "--port", str(int(config["internal_port"])), "-c", str(int(config["ctx"])),
-            *[str(a) for a in config.get("llama_args", [])]]
+            "--port", str(int(config["internal_port"])), "-c", str(int(config["ctx"])), *args]
+
+
+_JOB = None
+
+
+def die_with_me(process) -> None:
+    """Put llama-server in a job that Windows closes when this node process ends (crash, kill, logoff), so a dead
+    node never leaves the model holding the card."""
+    global _JOB
+    handle = getattr(process, "_handle", None)
+    if os.name != "nt" or handle is None:
+        return
+    import ctypes
+    import ctypes.wintypes as wt
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateJobObjectW.restype = wt.HANDLE
+    if _JOB is None:
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wt.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wt.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wt.DWORD), ("SchedulingClass", wt.DWORD)]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("Basic", Basic), ("Io", ctypes.c_uint64 * 6), ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+        job = k32.CreateJobObjectW(None, None)
+        info = Extended()
+        info.Basic.LimitFlags = 0x2000                           # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not job or not k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            return
+        _JOB = job
+    k32.AssignProcessToJobObject(wt.HANDLE(_JOB), wt.HANDLE(int(handle)))
+
+
+def kill_leftover(home: Path) -> None:
+    """A llama-server from an earlier node run (the pid file) that still runs: end it before loading again."""
+    pid_file = home / "logs" / "llama.pid"
+    if os.name != "nt" or not pid_file.is_file():
+        return
+    pid = pid_file.read_text().strip()
+    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], capture_output=True, text=True,
+                         creationflags=NO_WINDOW).stdout.lower()
+    if pid.isdigit() and '"llama-server.exe"' in out:
+        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, creationflags=NO_WINDOW)
+    pid_file.unlink(missing_ok=True)
+
+
+def slot_ctx(config: dict) -> int:
+    """Context per request: llama-server splits -c over its -np slots."""
+    args = [str(a) for a in config.get("llama_args", [])]
+    for flag in ("-np", "--parallel"):
+        if flag in args[:-1]:
+            try:
+                return int(config["ctx"]) // max(1, int(args[args.index(flag) + 1]))
+            except ValueError:
+                break
+    return int(config["ctx"])
 
 
 def http_json(method: str, url: str, body: dict | None = None, timeout: float = 5.0) -> tuple[int, dict]:
@@ -366,6 +447,7 @@ class Node:
         self.prompt_tok_s: float | None = None
         self.last_gpu: dict | None = None
         self.load_started = 0.0
+        self.ngl: int | None = None
 
     # -- logging -----------------------------------------------------------------------------------------------------
     def _file_log(self, text: str) -> None:
@@ -378,7 +460,9 @@ class Node:
             handle.write(time.strftime("%Y-%m-%d %H:%M:%S ") + text + "\n")
 
     def _set(self, state: str, reason: str) -> None:
-        if (state, reason.split(" (free")[0]) != (self.state, self.reason.split(" (free")[0]):
+        def gist(text: str) -> str:                         # "free for 12 of 180 s", "only 389 MB": not every tick
+            return re.sub(r"\d+", "#", text.split(" (free")[0])
+        if (state, gist(reason)) != (self.state, gist(self.reason)):
             self._log(f"{state}: {reason}")
         self.state, self.reason = state, reason
 
@@ -410,7 +494,7 @@ class Node:
             if grown > int(self.config["other_vram_grow_mb"]):
                 return f"other programs took {grown} MB more graphics memory"
         elif not self.loading:
-            need = int(self.config.get("need_free_vram_mb") or 0)
+            need = need_mb(self.config)
             free = gpu["total"] - gpu["used"]
             if need and free < need:
                 return f"only {free} MB of graphics memory is free ({need} MB needed)"
@@ -467,8 +551,10 @@ class Node:
         with self.lock:
             if self.ready or self.loading:
                 return True, "already loaded" if self.ready else "already loading"
+            gpu = gpu if gpu is not None else self._gpu()
+            self.ngl = pick_ngl(self.config, gpu["total"] - gpu["used"]) if gpu else None
             try:
-                argv = llama_argv(self.config, self.home)
+                argv = llama_argv(self.config, self.home, self.ngl)
             except ValueError as exc:
                 self.failed_at = self._clock()
                 self._set("away", f"failed: {exc}")
@@ -478,12 +564,13 @@ class Node:
             log_path = logs / "llama-server.log"
             if log_path.is_file() and log_path.stat().st_size > 20_000_000:
                 log_path.replace(logs / "llama-server.log.1")
-            gpu = gpu if gpu is not None else self._gpu()
             self.others_at_load = gpu["used"] if gpu else 0
             with open(log_path, "ab") as log:
                 try:
                     self.process = self._popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                                creationflags=NO_WINDOW | BELOW_NORMAL)
+                    die_with_me(self.process)
+                    (logs / "llama.pid").write_text(str(self.process.pid), encoding="utf-8")
                 except OSError as exc:
                     self.failed_at = self._clock()
                     self._set("away", f"failed: llama-server could not start ({type(exc).__name__})")
@@ -523,7 +610,7 @@ class Node:
                     self.loading, self.ready = False, True
                     self.quiet_until = self._clock() + 3.0
                     self._set("idle", "model loaded")
-                    self._log(f"loaded in {self._clock() - self.load_started:.0f} s, {self.tok_s} tok/s gen, "
+                    self._log(f"loaded (ngl {self.ngl}) in {self._clock() - self.load_started:.0f} s, {self.tok_s} tok/s gen, "
                               f"{self.prompt_tok_s} tok/s prompt, {self.own_mb} MB on the card")
                 return
             if self._background:
@@ -581,8 +668,9 @@ class Node:
                          "util": gpu["util"]} if gpu else None),
                 "ram_free_mb": self._ram(),
                 "models": [{"id": self.config["model_id"], "url": f"http://{self.host}:{int(self.config['model_port'])}/v1",
-                            "ctx": int(self.config["ctx"]), "loaded": self.ready, "loading": self.loading,
-                            "in_flight": self.in_flight, "tok_s": self.tok_s, "prompt_tok_s": self.prompt_tok_s,
+                            "ctx": slot_ctx(self.config), "loaded": self.ready, "loading": self.loading,
+                            "in_flight": self.in_flight, "ngl": self.ngl, "tok_s": self.tok_s,
+                            "prompt_tok_s": self.prompt_tok_s,
                             "auth": "mesh_token" if self.config.get("model_auth", True) else "none"}],
                 "ts": round(time.time(), 3),
             }
@@ -759,6 +847,7 @@ def serve(home: Path = HERE) -> int:
     node = Node(config, home, probe=WindowsProbe() if os.name == "nt" else None)
     node._log(f"start: node {node.name}, status :{config['status_port']}, model :{config['model_port']}")
     (home / "logs" / "node.pid").write_text(str(os.getpid()), encoding="utf-8")
+    kill_leftover(home)
     bind = config.get("bind", "0.0.0.0")
     control = Server((bind, int(config["status_port"])), make_control_handler(node, token))
     model = Server((bind, int(config["model_port"])), make_model_handler(node, token))
@@ -828,7 +917,7 @@ def install(home: Path = HERE) -> int:
         added = subprocess.run(rule, capture_output=True, text=True, creationflags=NO_WINDOW)
         print("firewall rule:", (added.stdout or added.stderr).strip())
     else:
-        line = " ".join(f'"{p}"' if " " in p else p for p in rule)
+        line = " ".join(p.replace("=", '="', 1) + '"' if " " in p else p for p in rule)
         (home / "OWNER-TODO.txt").write_text(
             "Run once in an administrator command prompt so other machines on the LAN can reach the node:\r\n"
             + line + "\r\n", encoding="utf-8")
