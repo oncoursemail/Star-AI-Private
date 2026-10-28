@@ -10,6 +10,7 @@ import collections
 import hashlib
 import json
 import math
+import operator
 import re
 import sqlite3
 import time
@@ -150,6 +151,15 @@ def cosine(a, b) -> float:
     return dot / (na * nb) if na and nb else 0.0
 
 
+def unit(v) -> list[float]:
+    n = math.sqrt(math.fsum(x * x for x in v))
+    return [x / n for x in v] if n else [float(x) for x in v]
+
+
+# dot product of unit vectors = cosine; math.sumprod (3.12+) runs in C, ~10x faster than the generator in cosine()
+_dot = getattr(math, "sumprod", None) or (lambda a, b: sum(map(operator.mul, a, b)))
+
+
 class AnswerCache:
     """Verified answers keyed by normalized question + page context. Context "" = the question names its own
     platform, so it may answer any page; an entry with a context answers only that page."""
@@ -164,9 +174,11 @@ class AnswerCache:
         self.db = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute(self.SCHEMA)
-        self.vectors: dict[int, tuple[str, list[float], str]] = {}
+        # id -> (context, unit vector, question, platforms of the question): the scan in nearest() stays cheap with
+        # thousands of entries (it runs on the router's event loop)
+        self.vectors: dict[int, tuple[str, list[float], str, frozenset]] = {}
         for rid, ctx, emb, q in self.db.execute("SELECT id, context, emb, question FROM answers WHERE emb IS NOT NULL"):
-            self.vectors[rid] = (ctx, list(array.array("f", emb)), q)
+            self.vectors[rid] = (ctx, unit(array.array("f", emb)), q, platforms(q))
 
     @staticmethod
     def _row(r) -> dict | None:
@@ -190,9 +202,12 @@ class AnswerCache:
     def nearest(self, emb, context: str, question: str | None = None) -> tuple[dict | None, float]:
         """Most similar live entry for this page context (and, given the question, about the same platform)."""
         best, best_sim = None, -1.0
-        for rid, (ctx, vec, q) in self.vectors.items():
-            if ctx in (context, "") and (question is None or same_platform(question, context, q)):
-                sim = cosine(emb, vec)
+        want = None if question is None else (
+            platforms(question) or platforms(context.replace("-", " ").replace("_", " ")))   # = same_platform()
+        emb = unit(emb)
+        for rid, (ctx, vec, q, plat) in self.vectors.items():
+            if ctx in (context, "") and (want is None or plat == want):
+                sim = _dot(emb, vec)
                 if sim > best_sim:
                     best, best_sim = rid, sim
         row = self.get(best) if best is not None else None
@@ -212,7 +227,7 @@ class AnswerCache:
         rid = self.db.execute("SELECT id FROM answers WHERE norm=? AND context=?",
                               (normalize(question), context)).fetchone()[0]
         if emb:
-            self.vectors[rid] = (context, list(emb), question)
+            self.vectors[rid] = (context, unit(emb), question, platforms(question))
         return rid
 
     def hit(self, rid: int):

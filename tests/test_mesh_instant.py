@@ -342,6 +342,27 @@ def test_cache_survives_a_restart(tmp_path):
     assert row["answer"] == DOOR_ANSWER and math.isclose(sim, 1.0, rel_tol=1e-6)
 
 
+def test_nearest_matches_plain_cosine_and_stays_fast_with_thousands_of_entries(tmp_path):
+    import random
+    rnd = random.Random(7)
+    c = instant.AnswerCache(str(tmp_path / "big.db"))
+    vecs = {}
+    for i in range(3000):
+        plat = ("roblox", "unity", "minecraft")[i % 3]
+        v = [rnd.uniform(-1, 1) for _ in range(768)]
+        rid = c.put(f"how do i do thing {i} in {plat}", "a", "", "t", 1.0, v, 3600)
+        vecs[rid] = (v, plat)
+    q = [rnd.uniform(-1, 1) for _ in range(768)]
+    t0 = time.perf_counter()
+    row, sim = c.nearest(q, "", "how do i do a thing in unity")
+    took = time.perf_counter() - t0
+    want = max((instant.cosine(q, v), rid) for rid, (v, plat) in vecs.items() if plat == "unity")
+    assert row["id"] == want[1] and math.isclose(sim, want[0], rel_tol=1e-5)
+    assert took < 1.0                     # ~40-80 ms with math.sumprod; the old generator scan took ~0.4 s
+    reopened = instant.AnswerCache(str(tmp_path / "big.db"))     # float32 round trip keeps the same winner
+    assert reopened.nearest(q, "", "how do i do a thing in unity")[0]["id"] == want[1]
+
+
 # ---- verify forwarding, real embed call, seeding -----------------------------------------------------------------------
 def test_verify_is_forwarded_to_the_verifier_with_query_and_key(tmp_path):
     async def go():
