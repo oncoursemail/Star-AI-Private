@@ -17,6 +17,10 @@ from mesh import instant  # noqa: E402
 from test_mesh_instant import DOOR, DOOR_ANSWER, SYSTEM, add, chat, post, setup  # noqa: E402
 from test_mesh_router import Fake, run, sse_text  # noqa: E402
 
+# `server/` holds a `discord` folder: leaving it on sys.path would shadow the discord package for tests collected later
+if str(ROOT / "server") in sys.path:
+    sys.path.remove(str(ROOT / "server"))
+
 TOUCH = "How do I make a door in Roblox open when a player touches it?"
 TOUCH_ANSWER = "Use **Touched** in a server Script.\n\n```lua\nscript.Parent.Touched:Connect(function(hit) end)\n```"
 
