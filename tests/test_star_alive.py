@@ -357,3 +357,10 @@ def test_discord_writes_first_only_when_nothing_is_unread(memory, clock, store):
     result = desk.step()
     assert result.acted and "wrote first to mira" in result.note and ("key", "ctrl+k") in host.actions
     assert store.db.execute("SELECT state FROM seeds").fetchone()[0] == "sent"
+
+
+def test_a_cued_inside_joke_is_not_crowded_out_by_last_times_topic():
+    from star.social.lifecycle import Touch
+    touch = Touch("friend", "friend", True, 4.0, "friend", topic="finished my essay finally")
+    assert "finished my essay" in touch.hint() and "finished my essay" not in touch.hint(skip_topic=True)
+    assert "glad to see again" in touch.hint(skip_topic=True)

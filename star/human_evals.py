@@ -243,8 +243,9 @@ def alive_notes(scn: dict) -> list[str]:
                 fields = {"name": name, "game": "", "detail": "", "interest": "", "about": "", **scn["initiative"]}
                 return [BRIEF[fields["kind"]].format(**fields), WRITE_FIRST]
             touch = bonds.observe(person, "discord", scn["user"], now=now)
-            out = [touch.hint()] if touch.hint() else []
             joke = bonds.joke_to_bring_back(person, scn["user"], now, fresh=touch.new_conversation)
+            hint = touch.hint(skip_topic=bonds.cued_joke)
+            out = [hint] if hint else []
             if joke:
                 out.append(f'An inside joke you two have: "{joke}" (bring it back only if it fits naturally).')
             return out

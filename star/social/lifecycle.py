@@ -119,14 +119,16 @@ class Touch:
     def changed(self) -> bool:
         return self.stage != self.previous
 
-    def hint(self) -> str:
-        """The note added to her message for this turn ("" when there is nothing to bring up)."""
+    def hint(self, *, skip_topic: bool = False) -> str:
+        """The note added to her message for this turn ("" when there is nothing to bring up). `skip_topic`: they just
+        touched an inside joke, so last time's topic would only compete with it."""
         parts = []
         if self.reunion_days >= REUNION_AFTER_S / 86400.0:
             days = int(round(self.reunion_days))
             who = "a close friend" if self.reunion_stage == "close_friend" else "a friend" if self.reunion_stage == "friend" else "someone you know"
             parts.append(f"you have not talked for {days} days: greet them like {who} you are glad to see again"
-                         + (f', and you could bring up what they said last time ("{self.topic}")' if self.topic else ""))
+                         + (f', and you could bring up what they said last time ("{self.topic}")'
+                            if self.topic and not skip_topic else ""))
         if self.felt:
             parts.append(self.felt)
         if self.followup == BIRTHDAY:
@@ -196,6 +198,7 @@ class Bonds:
         self._sink = _default_sink() if sink is ... else sink
         self._felt = felt               # None: the `inner_felt_time` setting (ON on her PC), read when first needed
         self._rng = rng or random.Random()
+        self.cued_joke = False          # the last joke_to_bring_back() answered something they said
 
     @property
     def felt(self) -> bool:
@@ -548,6 +551,7 @@ class Bonds:
     def joke_to_bring_back(self, person: Person, said: str, now: float, *, fresh: bool) -> str:
         """Shared moments come back the way they do between friends: when something they say touches the joke, or now and
         then at the start of a chat, and then not again for a few days. '' most of the time."""
+        self.cued_joke = False
         rows = self._db.execute("SELECT id, text, state FROM bond_items WHERE person_id = ? AND kind = 'joke' ORDER BY id DESC "
                                 "LIMIT ?", (person.id, MAX_JOKES)).fetchall()
         if not rows:
@@ -557,6 +561,7 @@ class Bonds:
         def rested(state: str) -> bool:
             return not state.startswith("used:") or now - float(state[5:] or 0) >= JOKE_REST_S
         pick = next((r for r in cued if rested(r[2]) or len(words & _salient(r[1])) >= 2), None)
+        self.cued_joke = pick is not None
         if pick is None and fresh:
             resting = [r for r in rows if rested(r[2])]
             if resting and self._rng.random() < JOKE_CHANCE:

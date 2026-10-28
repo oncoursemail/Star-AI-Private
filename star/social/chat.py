@@ -323,7 +323,7 @@ class SocialChat:
             "Recent chat:\n" + "\n".join(lines) if lines else "",
             f"{person.name} says: {text}",
             f"({intent})" if intent else "",
-            touch.hint(),
+            touch.hint(skip_topic=self.bonds.cued_joke),
             ask_back,
             mood_line(self._emotion, person, mode),
             inner.note if inner is not None else "") if part)
