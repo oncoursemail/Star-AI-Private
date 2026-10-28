@@ -64,11 +64,13 @@ DEFAULTS: dict = {
     "busy_util_percent": 40, "busy_util_looks": 2,   # other programs' GPU load (while the model is not working)
     "other_vram_grow_mb": 1200,                 # other programs grew their video memory this much since the load
     "fullscreen": True,
-    "block_processes": ["RobloxPlayerBeta.exe", "RobloxStudioBeta.exe", "obs64.exe", "obs32.exe",
-                        "Minecraft.Windows.exe", "recroom.exe", "recroom_release.exe",
-                        "vrserver.exe", "vrcompositor.exe", "vrmonitor.exe", "OVRServer_x64.exe", "VRChat.exe",
-                        "Streamlabs OBS.exe", "Streamlabs Desktop.exe", "XSplit.Core.exe"],
-    "block_path_parts": ["\\steamapps\\common\\"],     # Steam games (any program under a Steam library)
+    # games: busy while they show a window (a leftover background process with no window does not count)
+    "block_processes": ["RobloxPlayerBeta.exe", "RobloxStudioBeta.exe", "Minecraft.Windows.exe", "recroom.exe",
+                        "recroom_release.exe", "VRChat.exe"],
+    "block_path_parts": ["\\steamapps\\common\\"],     # Steam games (a program under a Steam library, with a window)
+    # stream and VR programs: busy whenever they run (OBS streams from the tray)
+    "always_block": ["obs64.exe", "obs32.exe", "Streamlabs OBS.exe", "Streamlabs Desktop.exe", "XSplit.Core.exe",
+                     "vrserver.exe", "vrcompositor.exe", "vrmonitor.exe", "OVRServer_x64.exe"],
     "ignore_processes": ["wallpaper32.exe", "wallpaper64.exe", "webwallpaper32.exe", "steamwebhelper.exe",
                          "UnityCrashHandler64.exe", "UnityCrashHandler32.exe"],
     "minecraft_java": True,                     # javaw/java with "minecraft" in its path or window title
@@ -209,10 +211,10 @@ class WindowsProbe:
             self.paths[key] = path
         return self.paths[key]
 
-    def window_titles(self, pids: set[int]) -> list[str]:
-        """Titles of the visible top-level windows of these processes."""
+    def windows(self, pids: set[int]) -> dict[int, list[str]]:
+        """{pid: titles} of the visible top-level windows of these processes (a title may be empty)."""
         ctypes, wt, u32 = self.ctypes, self.wt, self.u32
-        titles: list[str] = []
+        found: dict[int, list[str]] = {}
         proto = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
 
         def each(hwnd, _):
@@ -221,22 +223,21 @@ class WindowsProbe:
             if pid.value in pids and u32.IsWindowVisible(hwnd):
                 buf = ctypes.create_unicode_buffer(256)
                 u32.GetWindowTextW(hwnd, buf, 256)
-                if buf.value:
-                    titles.append(buf.value)
+                found.setdefault(pid.value, []).append(buf.value)
             return True
         u32.EnumWindows(proto(each), 0)
-        return titles
+        return found
 
     def fullscreen(self) -> bool:
         """A full-screen program, D3D full-screen game or presentation mode, or a borderless window that covers
-        its whole monitor (the desktop and the taskbar themselves do not count)."""
+        its whole monitor (the desktop, the taskbar and maximized windows do not count)."""
         ctypes, wt, u32 = self.ctypes, self.wt, self.u32
         state = ctypes.c_int(0)
         if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) == 0 and state.value in (2, 3, 4):
             return True
         hwnd = u32.GetForegroundWindow()
-        if not hwnd or u32.IsIconic(hwnd):
-            return False
+        if not hwnd or u32.IsIconic(hwnd) or u32.IsZoomed(hwnd):    # a maximized window overhangs its
+            return False                                                # monitor by 8 px but is not full screen
         cls = ctypes.create_unicode_buffer(64)
         u32.GetClassNameW(hwnd, cls, 64)
         if cls.value in ("Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
@@ -256,30 +257,42 @@ class WindowsProbe:
         return rect.left <= m.left and rect.top <= m.top and rect.right >= m.right and rect.bottom >= m.bottom
 
 
-def program_reason(config: dict, procs: dict[int, str], own: set[int], exe_path, titles, fullscreen: bool) -> str:
-    """Why a program on this machine needs it (game, stream, VR, full screen); '' when none does."""
+def program_reason(config: dict, procs: dict[int, str], own: set[int], exe_path, windows, fullscreen: bool) -> str:
+    """Why a program on this machine needs it (game, stream, VR, full screen); '' when none does.
+    `windows(pids)` -> {pid: [titles of its visible windows]}: games count only while they show a window."""
     if config.get("fullscreen", True) and fullscreen:
         return "a full-screen program or game is in front"
-    blocked = {n.lower() for n in config.get("block_processes", [])}
+    always = {n.lower() for n in config.get("always_block", [])}
+    games = {n.lower() for n in config.get("block_processes", [])}
     ignored = {n.lower() for n in config.get("ignore_processes", [])}
     parts = [p.lower() for p in config.get("block_path_parts", [])]
+    candidates: dict[int, str] = {}                 # pid -> reason, if it shows a window
     java: set[int] = set()
     for pid, name in procs.items():
         low = name.lower()
         if pid in own or low in ignored:
             continue
-        if low in blocked:
+        if low in always:
             return f"{name} is running"
-        if config.get("minecraft_java", True) and low in ("javaw.exe", "java.exe"):
-            if "minecraft" in exe_path(pid, name).lower():
-                return f"Minecraft is running ({name})"
+        if low in games:
+            candidates[pid] = f"{name} is running"
+        elif config.get("minecraft_java", True) and low in ("javaw.exe", "java.exe"):
             java.add(pid)
-        if parts and low.endswith(".exe"):
+            if "minecraft" in exe_path(pid, name).lower():
+                candidates[pid] = f"Minecraft is running ({name})"
+        elif parts and low.endswith(".exe"):
             path = exe_path(pid, name).lower()
             if path and any(p in path for p in parts):
-                return f"a Steam game is running ({name})"
-    if java and any("minecraft" in t.lower() for t in titles(java)):
-        return "Minecraft is running (Java)"
+                candidates[pid] = f"a Steam game is running ({name})"
+    if not candidates and not java:
+        return ""
+    shown = windows(set(candidates) | java)
+    for pid, reason in candidates.items():
+        if pid in shown:
+            return reason
+    for pid in java:
+        if any("minecraft" in t.lower() for t in shown.get(pid, [])):
+            return "Minecraft is running (Java)"
     return ""
 
 
@@ -379,7 +392,7 @@ class Node:
         if self.probe is not None:
             procs = self.probe.processes()
             found = program_reason(self.config, procs, self.own_pids(), self.probe.exe_path,
-                                   self.probe.window_titles, self.probe.fullscreen())
+                                   self.probe.windows, self.probe.fullscreen())
             if found:
                 return found
         if gpu is None:

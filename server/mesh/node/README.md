@@ -20,11 +20,12 @@ Lends this PC's NVIDIA card to the STAR compute mesh while nobody needs it. One 
   node forwards to it, counts requests in flight and answers 503 while the model is not loaded.
 - Self-registers with the mesh router every 30 s (`POST <router_url>/mesh/register`, token, `{"node","status_url","model_url"}`),
   so a PC with an unknown address joins by itself. `router_url` in node.json; empty = no registration.
-- Busy guard every 2.5 s: full-screen program in front, a known game/stream/VR program (Roblox player/Studio, OBS,
-  Streamlabs, Rec Room / Metallic RC, SteamVR, Oculus, VRChat, Minecraft Bedrock), any program under
-  `\steamapps\common\`, Minecraft Java (javaw with "minecraft" in its path or window title), another program's GPU load
-  (>= 40 % on two looks while the model is not answering), other programs growing video memory by 1200 MB, or not
-  enough free video memory to load. Then llama-server is killed at once (the card is free in about a second) and the
+- Busy guard every 2.5 s: full-screen program in front; a stream or VR program running (OBS, Streamlabs, XSplit,
+  SteamVR, Oculus; also from the tray); a game showing a window (Roblox player/Studio, Rec Room / Metallic RC, VRChat,
+  Minecraft Bedrock, any program under `\steamapps\common\`, Minecraft Java = javaw with "minecraft" in its path or
+  window title; a leftover game process with no window does not count); another program's GPU load (>= 40 % on two
+  looks while the model is not answering); other programs growing video memory by 1200 MB; or not enough free video
+  memory to load. Then llama-server is killed at once (the card is free in about a second) and the
   state is `busy`; the model comes back after `resume_seconds` (180) with nothing in the way.
 - States: `idle` (loaded, serving), `busy`, `away` (not loaded: loading, unloaded on request, failed), `off` (file `OFF`).
 - Test hook: create the file `FAKE_BUSY` in the folder -> busy within one poll; delete it -> reload after `resume_seconds`.

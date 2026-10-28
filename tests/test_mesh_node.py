@@ -42,6 +42,7 @@ class Probe:
         self.procs = {4: "System", 100: "explorer.exe", 200: "brave.exe"}
         self.paths = {}
         self.titles = {}
+        self.hidden = set()                    # pids without a visible window
         self.full = False
 
     def processes(self):
@@ -50,8 +51,10 @@ class Probe:
     def exe_path(self, pid, name):
         return self.paths.get(pid, "C:\\Windows\\" + name)
 
-    def window_titles(self, pids):
-        return [t for p, t in self.titles.items() if p in pids]
+    def windows(self, pids):
+        found = {p: [t] for p, t in self.titles.items() if p in pids}
+        found.update({p: [""] for p in pids if p in self.procs and p not in found and p not in self.hidden})
+        return found
 
     def fullscreen(self):
         return self.full
@@ -97,37 +100,52 @@ def loaded(tmp_path, **over):
 
 
 # ---- program rules -------------------------------------------------------------------------------------------------
-@pytest.mark.parametrize("name", ["RobloxPlayerBeta.exe", "robloxstudiobeta.exe", "obs64.exe", "recroom_release.exe",
-                                  "vrserver.exe", "Minecraft.Windows.exe"])
-def test_known_programs_are_busy(name):
-    reason = na.program_reason(na.DEFAULTS, {10: name}, set(), lambda p, n: "", lambda pids: [], False)
-    assert name in reason
+def shown(*pids, titles=None):
+    """windows() fake: these pids show a window (with these titles)."""
+    return lambda want: {p: (titles or {}).get(p, [""]) for p in want if p in pids}
+
+
+def reason(procs, windows=None, paths=None, full=False, config=na.DEFAULTS):
+    path = lambda pid, name: (paths or {}).get(pid, "C:\\Program Files\\x\\" + name)  # noqa: E731
+    return na.program_reason(config, procs, set(), path, windows or shown(*procs), full)
+
+
+@pytest.mark.parametrize("name", ["RobloxPlayerBeta.exe", "robloxstudiobeta.exe", "recroom_release.exe",
+                                  "Minecraft.Windows.exe", "VRChat.exe"])
+def test_games_with_a_window_are_busy(name):
+    assert name in reason({10: name})
+
+
+def test_leftover_game_process_without_a_window_is_not_busy():
+    assert reason({10: "RobloxPlayerBeta.exe"}, windows=shown()) == ""
+
+
+@pytest.mark.parametrize("name", ["obs64.exe", "vrserver.exe", "OVRServer_x64.exe", "Streamlabs Desktop.exe"])
+def test_stream_and_vr_programs_are_busy_even_in_the_tray(name):
+    assert name in reason({10: name}, windows=shown())
 
 
 def test_steam_game_by_path_and_ignored_helpers():
-    procs = {10: "game.exe", 11: "wallpaper32.exe"}
-    paths = {10: "D:\\SteamLibrary\\steamapps\\common\\Some Game\\game.exe",
-             11: "C:\\Steam\\steamapps\\common\\wallpaper_engine\\wallpaper32.exe"}
-    path = lambda pid, name: paths[pid]  # noqa: E731
-    assert "Steam game" in na.program_reason(na.DEFAULTS, procs, set(), path, lambda p: [], False)
-    assert na.program_reason(na.DEFAULTS, {11: "wallpaper32.exe"}, set(), path, lambda p: [], False) == ""
+    paths = {10: r"D:\SteamLibrary\steamapps\common\Some Game\game.exe",
+             11: r"C:\Steam\steamapps\common\wallpaper_engine\wallpaper32.exe"}
+    assert "Steam game" in reason({10: "game.exe", 11: "wallpaper32.exe"}, paths=paths)
+    assert reason({11: "wallpaper32.exe"}, paths=paths) == ""
+    assert reason({10: "game.exe"}, paths=paths, windows=shown()) == ""      # no window: a background helper
 
 
 def test_minecraft_java_by_path_or_window_title():
-    path = lambda pid, name: {1: "C:\\x\\.minecraft\\runtime\\bin\\javaw.exe"}.get(pid, "C:\\jdk\\bin\\javaw.exe")  # noqa: E731
-    assert "Minecraft" in na.program_reason(na.DEFAULTS, {1: "javaw.exe"}, set(), path, lambda p: [], False)
-    assert na.program_reason(na.DEFAULTS, {2: "javaw.exe"}, set(), path, lambda p: ["IntelliJ"], False) == ""
-    assert "Minecraft" in na.program_reason(na.DEFAULTS, {2: "javaw.exe"}, set(), path,
-                                            lambda p: ["Minecraft 1.21.4"], False)
+    paths = {1: r"C:\x\.minecraft\runtime\bin\javaw.exe", 2: r"C:\jdk\bin\javaw.exe"}
+    assert "Minecraft" in reason({1: "javaw.exe"}, paths=paths)
+    assert reason({2: "javaw.exe"}, paths=paths, windows=shown(2, titles={2: ["IntelliJ IDEA"]})) == ""
+    assert "Minecraft" in reason({2: "javaw.exe"}, paths=paths, windows=shown(2, titles={2: ["Minecraft 1.21.4"]}))
 
 
 def test_fullscreen_and_own_process_and_quiet_desktop():
-    assert "full-screen" in na.program_reason(na.DEFAULTS, {}, set(), lambda p, n: "", lambda p: [], True)
-    assert na.program_reason(dict(na.DEFAULTS, fullscreen=False), {}, set(), lambda p, n: "", lambda p: [], True) == ""
-    cfg = dict(na.DEFAULTS, block_processes=["llama-server.exe"])
-    assert na.program_reason(cfg, {7: "llama-server.exe"}, {7}, lambda p, n: "", lambda p: [], False) == ""
-    desktop = {4: "System", 100: "explorer.exe", 200: "brave.exe", 300: "Discord.exe"}
-    assert na.program_reason(na.DEFAULTS, desktop, set(), lambda p, n: "C:\\x\\" + n, lambda p: [], False) == ""
+    assert "full-screen" in reason({}, full=True)
+    assert reason({}, full=True, config=dict(na.DEFAULTS, fullscreen=False)) == ""
+    cfg = dict(na.DEFAULTS, always_block=["llama-server.exe"])
+    assert na.program_reason(cfg, {7: "llama-server.exe"}, {7}, lambda p, n: "", shown(7), False) == ""
+    assert reason({4: "System", 100: "explorer.exe", 200: "brave.exe", 300: "Discord.exe"}) == ""
 
 
 # ---- the guard state machine ---------------------------------------------------------------------------------------
