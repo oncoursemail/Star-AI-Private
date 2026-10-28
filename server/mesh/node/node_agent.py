@@ -65,7 +65,9 @@ DEFAULTS: dict = {
     "load_timeout_seconds": 300,
     "need_free_vram_mb": 0,                     # free video memory needed to load (0 = do not check)
     "ngl_ladder": [],                           # [[ngl, own_mb], ...] best first (own_mb = measured card memory of
-                                                # the model at that -ngl); the first step that leaves
+                                                # the model at that -ngl; a step may add args, [ngl, own_mb,
+                                                # ["--model-draft", "x.gguf"]], ngl 100 = all layers ranked above a
+                                                # plain 99 step); the first step that leaves
     "vram_reserve_mb": 1536,                    # this much free for the owner's apps once loaded; none fits = busy
     "min_free_loaded_mb": 800,                  # loaded and less free than this: step down the ladder or unload
     "drain_seconds": 30,                        # memory-pressure reload/unload waits this long for answers in flight
@@ -315,7 +317,7 @@ def pick_ngl(config: dict, free_mb: int) -> int | None:
     free now; 0 = none fits; None = no ladder (llama_args as written)."""
     ladder = config.get("ngl_ladder") or []
     reserve = int(config.get("vram_reserve_mb") or 0)
-    for ngl, own in ladder:
+    for ngl, own, *_ in ladder:
         if free_mb - int(own) >= reserve:
             return int(ngl)
     return 0 if ladder else None
@@ -324,7 +326,7 @@ def pick_ngl(config: dict, free_mb: int) -> int | None:
 def need_mb(config: dict) -> int:
     ladder = config.get("ngl_ladder") or []
     if ladder:
-        return min(int(own) for _, own in ladder) + int(config.get("vram_reserve_mb") or 0)
+        return min(int(step[1]) for step in ladder) + int(config.get("vram_reserve_mb") or 0)
     return int(config.get("need_free_vram_mb") or 0)
 
 
@@ -340,6 +342,16 @@ def llama_argv(config: dict, home: Path, ngl: int | None = None) -> list[str]:
             args[args.index("-ngl") + 1] = str(ngl)
         else:
             args += ["-ngl", str(ngl)]
+        # a ladder step may carry extra llama-server args (e.g. a speculative draft model): [ngl, own_mb, [args]]
+        step = next((s for s in config.get("ngl_ladder") or [] if int(s[0]) == ngl and len(s) > 2), None)
+        for extra in (step[2] if step else []):
+            extra = str(extra)
+            if extra.lower().endswith(".gguf"):
+                path = resolve(home, extra)
+                if not path.is_file():
+                    raise ValueError(f"the file of ladder step ngl {ngl} was not found at {path}")
+                extra = str(path)
+            args.append(extra)
     return [str(exe), "-m", str(model), "--alias", str(config["model_id"]), "--host", "127.0.0.1",
             "--port", str(int(config["internal_port"])), "-c", str(int(config["ctx"])), *args]
 

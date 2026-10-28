@@ -25,6 +25,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import instant
+from .speed import hook as speed
 
 VERSION = "3"
 FAST, DEEP = "litha", "litha-deep"
@@ -69,6 +70,7 @@ DEFAULTS = {
     "embed_model": "star-embed",
     "embed_prefix": "task: sentence similarity | query: ",
     "embed_timeout_s": 1.0,
+    **speed.DEFAULTS,                 # parallel sections (server/mesh/speed/), off by default
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -672,6 +674,10 @@ class Router:
             req.pop(k, None)
         if model == FAST:
             req.setdefault("cache_prompt", True)
+
+        if model == FAST and stream and await speed.try_sections(self, path, headers, req, conv, writer, t0, question,
+                                                                 context, cache_hdr):
+            return
 
         def body_for(mid):
             return json.dumps({**req, "model": mid}).encode()
