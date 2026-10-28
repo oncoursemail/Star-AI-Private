@@ -14,8 +14,10 @@ instructions in the reply). Every scenario carries a known-good reply (`good`, a
 mini Turing set when `turing` is true) and, where useful, known-bad replies with the check that must catch them.
 
 Arms: `NAME` or `NAME:key=value,...` with keys `emotion` (on/off: star/emotion.py note after the last message),
-`memory` (none | full | retrieved | hook: earlier sessions in the prompt; `hook` calls STAR_HUMAN_RECALL=module:function
-with (sessions, question) -> list[str]). The first --arm is the baseline.
+`memory` (none | full | retrieved | hook | alive: earlier sessions in the prompt; `hook` calls STAR_HUMAN_RECALL=module:function
+with (sessions, question) -> list[str]; `alive` = retrieved plus what her live social code adds after replaying the sessions
+on a fake clock: felt time, dated follow-ups, good luck, promises, inside jokes, and for `initiative` scenarios the
+first-message brief of star/social/initiative.py). The first --arm is the baseline.
 
 Everything the judge sees is blind: positions are swapped and a side only wins when both orders agree. Judge calls are
 cached by prompt hash in DIR/judge-cache.json and replies by arm in DIR/replies-<arm>.json, so a run that stops resumes.
@@ -46,7 +48,7 @@ from .eval_stats import INCONCLUSIVE, PROMOTE, REJECT
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "evals" / "human"
 SCHEMA = "star.human_verdict/1"
-ARM_KEYS = {"emotion": ("on", "off"), "memory": ("none", "full", "retrieved", "hook")}
+ARM_KEYS = {"emotion": ("on", "off"), "memory": ("none", "full", "retrieved", "hook", "alive")}
 MODEL_DEFAULT = "star-fast"
 MAX_TOKENS = {"chat": 220, "voice": 120}
 CODE_REGRESSION = 0.05       # the candidate's clean-reply rate may not fall more than this below the baseline's
@@ -170,6 +172,9 @@ def memory_block(scn: dict, mode: str) -> str:
     if mode == "full":
         lines = [f"[{s['date']}] " + " / ".join(("They: " if r == "user" else "You: ") + t for r, t in s["turns"]) for s in sessions]
         return "(Earlier conversations with this person:\n" + "\n".join(lines) + ")"
+    if mode == "alive":
+        lines = retrieve(sessions, scn["user"]) + alive_notes(scn)
+        return ("(What you remember about this person:\n" + "\n".join(lines) + ")") if lines else ""
     if mode == "hook":
         name = os.environ.get("STAR_HUMAN_RECALL", "")
         if not name:
@@ -178,6 +183,73 @@ def memory_block(scn: dict, mode: str) -> str:
     else:
         lines = retrieve(sessions, scn["user"])
     return ("(What you remember about this person:\n" + "\n".join(lines) + ")") if lines else ""
+
+
+_MONTHS = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november",
+           "december")
+
+
+def _scenario_time(label: str, hhmm: str, year: int | None = None) -> tuple[float, int]:
+    """("Saturday 26 October", "18:00") -> local timestamp; the year is the first from 2024 whose weekday matches."""
+    parts = label.lower().replace(",", " ").split()
+    weekday = parts[0] if parts and parts[0][:3] in [d[:3] for d in ("monday", "tuesday", "wednesday", "thursday", "friday",
+                                                                     "saturday", "sunday")] else ""
+    day = next(int(p) for p in parts if p.isdigit())
+    month = 1 + next(i for i, m in enumerate(_MONTHS) if any(p.startswith(m[:3]) for p in parts))
+    hour, minute = (int(x) for x in (hhmm or "18:00").split(":"))
+    for y in ([year] if year else list(range(2024, 2034))):
+        when = datetime(y, month, day, hour, minute)
+        if not weekday or when.strftime("%A").lower().startswith(weekday[:3]):
+            return time.mktime(when.timetuple()), y
+    when = datetime(year or 2026, month, day, hour, minute)
+    return time.mktime(when.timetuple()), when.year
+
+
+def alive_notes(scn: dict) -> list[str]:
+    """What star/social adds to her prompt for this scenario: the sessions are replayed through FriendMemory + Bonds on a
+    fake clock (felt time on, seeded), then the last message gets the same hint and inside-joke line the live chat gets."""
+    from .social.friends import FriendMemory
+    from .social.initiative import BRIEF, WRITE_FIRST
+    from .social.lifecycle import Bonds
+    clock = _Clock()
+    today, year = _scenario_time(scn.get("today") or "Saturday 26 October", scn.get("now", "18:00"))
+    with tempfile.TemporaryDirectory() as folder:
+        memory = FriendMemory(Path(folder) / "friends.sqlite3", clock=clock)
+        try:
+            bonds = Bonds(memory, sink=None, clock=clock, felt=True, rng=random.Random(scn["id"]))
+            name = scn.get("name", "Sam")
+            person = memory.observe_incoming("discord", name.lower(), name)
+            memory.update(person, relationship="friend", stated_age=scn.get("age", 25))
+            person = memory.known("discord", name.lower()) or person
+            last_said, t = "", today
+            for session in scn.get("sessions") or []:
+                t, _ = _scenario_time(session["date"], session.get("time", "18:00"), year)
+                if t > today:
+                    t, _ = _scenario_time(session["date"], session.get("time", "18:00"), year - 1)
+                for role, text in session["turns"]:
+                    t += 60
+                    clock.now = t
+                    if role == "user":
+                        bonds.observe(person, "discord", text, now=t)
+                        memory.note_moment(person, "discord", f"they: {text}")
+                        last_said = text
+                    else:
+                        bonds.record_exchange(person, "discord", last_said, t)
+                        bonds.record_promise(person, "discord", text, t)
+                        memory.note_moment(person, "discord", f"me: {text}")
+            now = t + 60 * float(scn["minutes_after_last"]) if scn.get("minutes_after_last") else today
+            clock.now = now
+            if scn.get("initiative"):
+                fields = {"name": name, "game": "", "detail": "", "interest": "", "about": "", **scn["initiative"]}
+                return [BRIEF[fields["kind"]].format(**fields), WRITE_FIRST]
+            touch = bonds.observe(person, "discord", scn["user"], now=now)
+            out = [touch.hint()] if touch.hint() else []
+            joke = bonds.joke_to_bring_back(person, scn["user"], now, fresh=touch.new_conversation)
+            if joke:
+                out.append(f'An inside joke you two have: "{joke}" (bring it back only if it fits naturally).')
+            return out
+        finally:
+            memory.close()
 
 
 class _Clock:

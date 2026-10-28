@@ -20,12 +20,13 @@ the brain's memory stream when `star.brain` offers one.
 """
 from __future__ import annotations
 
+import random
 import re
 import time
 from dataclasses import dataclass
 from typing import Any
 
-from . import rules
+from . import felt_time, rules
 from .friends import _INTEREST, _SENSITIVE, FriendMemory, Person, extract_facts
 
 STAGES = ("met", "acquaintance", "friend", "close_friend")
@@ -48,6 +49,13 @@ REUNION_AFTER_S = 3 * 24 * 3600
 FOLLOWUP_MIN_AGE_S = 20 * 60
 FOLLOWUP_MAX_AGE_S = 14 * 24 * 3600
 JOKE_GAP_S = 10 * 60
+JOKE_REST_S = 3 * 24 * 3600      # felt time: an inside joke that came up rests a few days unless they bring it up
+JOKE_CHANCE = 0.2                # felt time: chance that a resting-enough joke comes back at the start of a chat
+LUCK_BEFORE_S = 16 * 3600       # from the morning of the day before
+LUCK_DAY_OF_S = 18 * 3600       # until the evening of the day itself
+LUCK_MIN_AGE_S = 3 * 3600       # not in the chat right after they told her
+PROMISE_MAX_AGE_S = 7 * 24 * 3600
+BIRTHDAY = "happy birthday!"
 MAX_JOKES, MAX_CANDIDATES, MAX_MEMORIES = 8, 12, 30
 
 POSITIVE = re.compile(r"\b(?:thanks?|thank\s+you|thx|ty|gg(?:wp)?|good\s+game|so\s+fun|that\s+was\s+fun|fun\s+(?:game|time)|"
@@ -103,6 +111,9 @@ class Touch:
     reunion_stage: str = "met"
     followup: str = ""            # a question to ask them once (already marked as asked)
     topic: str = ""               # the last thing they talked about, before this message
+    felt: str = ""                # felt time (felt_time.gap_note / miss_note), only with the felt_time setting
+    luck: str = ""                # "your driving test is tomorrow": wish them luck (once)
+    promise: str = ""             # something she said she would do, now due (once)
 
     @property
     def changed(self) -> bool:
@@ -116,8 +127,16 @@ class Touch:
             who = "a close friend" if self.reunion_stage == "close_friend" else "a friend" if self.reunion_stage == "friend" else "someone you know"
             parts.append(f"you have not talked for {days} days: greet them like {who} you are glad to see again"
                          + (f', and you could bring up what they said last time ("{self.topic}")' if self.topic else ""))
-        if self.followup:
+        if self.felt:
+            parts.append(self.felt)
+        if self.followup == BIRTHDAY:
+            parts.append("today is their birthday (they told you): wish them a happy birthday in your own words")
+        elif self.followup:
             parts.append(f'you remember something to ask about, once and lightly, in your own words: "{self.followup}"')
+        if self.luck:
+            parts.append(f"they told you {re.sub(r'^your ', 'their ', self.luck)}: you could wish them luck, lightly")
+        if self.promise:
+            parts.append(f'earlier you told them "{self.promise}": keep your word or bring it up if it fits')
         return f"({'; '.join(parts)})" if parts else ""
 
 
@@ -170,10 +189,23 @@ def followup_from(text: str, *, personal: bool) -> tuple[str, str]:
 
 
 class Bonds:
-    def __init__(self, memory: FriendMemory, *, sink: Any = ..., clock=time.time) -> None:
+    def __init__(self, memory: FriendMemory, *, sink: Any = ..., clock=time.time, felt: bool | None = None,
+                 rng: random.Random | None = None) -> None:
         self.memory = memory
         self._clock = clock
         self._sink = _default_sink() if sink is ... else sink
+        self._felt = felt               # None: the `inner_felt_time` setting (ON on her PC), read when first needed
+        self._rng = rng or random.Random()
+
+    @property
+    def felt(self) -> bool:
+        if self._felt is None:
+            try:
+                from ..inner import settings
+                self._felt = settings.on(settings.load(), "felt_time")
+            except Exception:
+                self._felt = False
+        return bool(self._felt)
 
     @property
     def _db(self):
@@ -318,14 +350,16 @@ class Bonds:
         call = CALL_ME.search(text)
         if call:
             b["nickname"], b["nickname_locked"] = call.group(1).capitalize(), 1
-        followup = ""
+        followup = luck = promise = felt = ""
         if new_convo or reunion:
             followup = self._due_followup(person, now)
+            luck = self._due_once(person, "luck", now - LUCK_DAY_OF_S, now + LUCK_BEFORE_S, now)
+            promise = self._due_once(person, "promise", now - PROMISE_MAX_AGE_S, now, now)
+            if self.felt and gap is not None:
+                felt = felt_time.miss_note(gap / 86400.0, before) if reunion else felt_time.gap_note(now - gap, now, before)
         keep_text = content_ok(person, platform)
         if keep_text:
-            question, evidence = followup_from(text, personal=True)
-            if question:
-                self._add_item(person, "followup", question, evidence, now, state="open", cap=6)
+            self._note_followups(person, text, now)
         topic = self._topic(person, text, game, keep_text)
         if topic:
             b["last_topic"], b["last_topic_ts"] = topic, now
@@ -337,7 +371,47 @@ class Bonds:
             b["nickname"] = suggest_nickname(person.name)
         self._save(person, b)
         return Touch(b["stage"], before, new_convo, (gap or 0) / 86400.0 if reunion else 0.0, before, followup,
-                     topic_before if reunion else "")
+                     topic_before if reunion else "", felt, luck, promise)
+
+    def _note_followups(self, person: Person, text: str, now: float) -> None:
+        """What they said that she can ask about later. A dated event ("my test is on friday") only comes up AFTER it
+        happened (the follow-up's time is when it becomes askable) and gets a good-luck while it is still ahead."""
+        event = felt_time.dated_event(text, now)
+        if event is not None:
+            question, evidence, ts = event.question, _clip(text, 120), event.ask_after
+            if not event.birthday:
+                self._add_item(person, "luck", event.what, evidence, event.day, state=f"open:{int(now)}", cap=4)
+        else:
+            question, evidence = followup_from(text, personal=True)
+            ts = now
+        if question and not self._db.execute("SELECT 1 FROM bond_items WHERE person_id = ? AND kind = 'followup' AND "
+                                             "state = 'open' AND text = ?", (person.id, question)).fetchone():
+            self._add_item(person, "followup", question, evidence, ts, state="open", cap=6)
+
+    def _due_once(self, person: Person, kind: str, start: float, end: float, now: float) -> str:
+        """The oldest open item of `kind` whose time is in [start, end]; marked used so it comes up once."""
+        rows = self._db.execute("SELECT id, text, ts, state FROM bond_items WHERE person_id = ? AND kind = ? AND "
+                                "(state = 'open' OR state LIKE 'open:%') AND ts >= ? AND ts <= ? ORDER BY ts",
+                                (person.id, kind, start, end)).fetchall()
+        # a good luck for something they mentioned a moment ago would be an echo: it waits for a later chat
+        row = next((r for r in rows if not r[3].startswith("open:") or now - float(r[3][5:]) >= LUCK_MIN_AGE_S), None)
+        if row is None:
+            return ""
+        self._db.execute("UPDATE bond_items SET state = 'used' WHERE id = ?", (row[0],))
+        self._db.commit()
+        if kind == "luck":
+            return felt_time.luck_line(felt_time.Event(row[1], "", "", 0.0, row[2]), now)
+        return row[1]
+
+    def record_promise(self, person: Person, platform: str, reply: str, now: float | None = None) -> felt_time.Promise | None:
+        """Something she said she would do later ("i'll show you tomorrow"): it comes back in the next chat once due."""
+        if person.id is None or not content_ok(person, platform):
+            return None
+        now = self._clock() if now is None else now
+        promise = felt_time.promise_from(reply, now)
+        if promise is not None:
+            self._add_item(person, "promise", promise.text, _clip(reply, 160), promise.due, state="open", cap=4)
+        return promise
 
     def _topic(self, person: Person, text: str, game: str, keep_text: bool) -> str:
         question, evidence = followup_from(text, personal=False)
@@ -435,9 +509,11 @@ class Bonds:
             self._add_item(person, "joke_candidate", funny, "", now, cap=MAX_CANDIDATES)
 
     # -- what goes into her prompt ----------------------------------------------------------------------------------
-    def context(self, person: Person, platform: str = "", now: float | None = None, *, short: bool = False) -> str:
+    def context(self, person: Person, platform: str = "", now: float | None = None, *, short: bool = False,
+                said: str = "", fresh: bool = False) -> str:
         """Lines about this friendship for the user message (empty for someone forgotten). Short by design.
-        `short=True` (star.inner's night-written card is already in the message) leaves the card's own content out."""
+        `short=True` (star.inner's night-written card is already in the message) leaves the card's own content out.
+        With felt time, `said` (their message) and `fresh` (a new conversation) decide whether an inside joke comes back."""
         if person.id is None:
             return ""
         now = self._clock() if now is None else now
@@ -453,7 +529,11 @@ class Bonds:
         likes = [f for f in self.memory.facts(person, 40) if _INTEREST.match(f)][-3:]
         if likes:
             lines.append("They like: " + "; ".join(likes) + ".")
-        if safe:
+        if safe and self.felt:
+            joke = self.joke_to_bring_back(person, said, now, fresh=fresh)
+            if joke:
+                lines.append(f'An inside joke you two have: "{_clip(joke, 60)}" (bring it back only if it fits naturally).')
+        elif safe:
             jokes = self.items(person, "joke", 2)
             if jokes:
                 lines.append("Inside jokes: " + "; ".join(f'"{_clip(t, 60)}"' for t, _, _ in jokes) + " (mention only if it fits).")
@@ -464,6 +544,28 @@ class Bonds:
         if b.last_topic and now - b.last_topic_ts < 30 * 86400:
             lines.append(f"Last time you talked about: {b.last_topic}.")
         return "\n".join(lines)
+
+    def joke_to_bring_back(self, person: Person, said: str, now: float, *, fresh: bool) -> str:
+        """Shared moments come back the way they do between friends: when something they say touches the joke, or now and
+        then at the start of a chat, and then not again for a few days. '' most of the time."""
+        rows = self._db.execute("SELECT id, text, state FROM bond_items WHERE person_id = ? AND kind = 'joke' ORDER BY id DESC "
+                                "LIMIT ?", (person.id, MAX_JOKES)).fetchall()
+        if not rows:
+            return ""
+        words = _salient(said)
+        cued = [r for r in rows if len(words & _salient(r[1])) >= 1 and words]
+        def rested(state: str) -> bool:
+            return not state.startswith("used:") or now - float(state[5:] or 0) >= JOKE_REST_S
+        pick = next((r for r in cued if rested(r[2]) or len(words & _salient(r[1])) >= 2), None)
+        if pick is None and fresh:
+            resting = [r for r in rows if rested(r[2])]
+            if resting and self._rng.random() < JOKE_CHANCE:
+                pick = self._rng.choice(resting)
+        if pick is None:
+            return ""
+        self._db.execute("UPDATE bond_items SET state = ? WHERE id = ?", (f"used:{int(now)}", pick[0]))
+        self._db.commit()
+        return pick[1]
 
     # -- star.inner: the same friend cards -------------------------------------------------------------------------
     def card_notes(self, person: Person, platform: str = "") -> str:

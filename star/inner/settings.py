@@ -20,6 +20,8 @@ FLAGS = (
     "consolidation",         # night: replay, facts + lessons, emotional processing, dream fallback, prune/merge
     "self_summary",          # the "who I am right now" line in her STAR Home session prompts
     "model_calls",           # night-time brain calls for insights and facts (JSON-schema constrained)
+    "felt_time",             # social: gap feel (earlier today / yesterday / missed you), inside jokes come back on a cue
+    "initiative",            # social: she writes first on real triggers (promise, missing a friend, a shared interest)
 )
 NUMBERS = {
     "reflection_threshold": 3.0,     # summed importance (0..1 each) of new memories before she reflects

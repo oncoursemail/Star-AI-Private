@@ -37,7 +37,7 @@ class DiscordDesktop:
                  window_title: str = "Discord", reader: Callable | None = None, pace: HumanPace | None = None,
                  pacer: rules.Pacer | None = None, on_invite: Callable[[str, str], Any] | None = None,
                  left_out=None, reactions: ReactionPolicy | None = None,
-                 react: Callable[[str, str, str, str], bool] | None = None) -> None:
+                 react: Callable[[str, str, str, str], bool] | None = None, initiative=...) -> None:
         self.host, self.chat = host, chat
         self.on_invite = on_invite      # (author, text) -> a plan with .intent and .after (star.home.invites), or None
         self.my_names = [n.lower() for n in (my_names or ["Star"])]
@@ -49,6 +49,18 @@ class DiscordDesktop:
         self.left_out = left_out        # star.home.attention.LeftOutWatch, or None (then she never feels left out)
         self.reactions = reactions or ReactionPolicy()
         self.react = react              # (channel, author, text, emoji) -> bool: puts the reaction on the message in the app (not verified)
+        self._initiative = initiative   # social/initiative.Initiative; ...: the chat's (None unless `inner_initiative` is on)
+
+    def _write_first(self) -> StepResult | None:
+        """Nothing unread: maybe she writes first (a promise, a friend she was thinking of); never breaks a step."""
+        initiative = self.chat.initiative if self._initiative is ... else self._initiative
+        if initiative is None:
+            return None
+        try:
+            done = initiative.tick(lambda platform, handle, text: platform == "discord" and self.reach_out(handle, text).ok)
+        except Exception:
+            return None
+        return StepResult(True, done, acted=True) if done else None
 
     def ready(self) -> tuple[bool, str]:
         if self.chat.killed("discord"):
@@ -90,7 +102,7 @@ class DiscordDesktop:
         channel = str(view.get("channel") or "").strip()[:100]
         messages = [m for m in view.get("messages") or [] if isinstance(m, dict) and m.get("author") and m.get("text")]
         if not channel or not messages:
-            return StepResult(True, "nothing new")
+            return self._write_first() or StepResult(True, "nothing new")
         is_dm = bool(view.get("is_dm"))
         if view.get("cannot_message") and is_dm:
             person = self.chat.memory.person("discord", channel)

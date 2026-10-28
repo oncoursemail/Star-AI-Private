@@ -15,6 +15,7 @@ from ..persona import strip_reasoning
 from . import rules, safety, style
 from .convo import GOODBYE, ChatFlow, shape_reply
 from .friends import FriendMemory, Person, extract_facts
+from .initiative import Initiative
 from .lifecycle import CONVO_GAP_S, Bonds
 from .requests import FriendRequests
 from .window import StyleWindow
@@ -149,7 +150,8 @@ class SocialChat:
                  emotion=..., clock: Callable[[], float] = time.time, bonds: Bonds | None = None,
                  requests: FriendRequests | None = None, flow: ChatFlow | None = None,
                  killed: Callable[[str], bool] | None = None, rng=None, my_names: list[str] | None = None,
-                 window: StyleWindow | None = None, busy_state: Callable[[], str] | None = None) -> None:
+                 window: StyleWindow | None = None, busy_state: Callable[[], str] | None = None,
+                 initiative: Initiative | None = ...) -> None:  # type: ignore[assignment]
         import random
         self.memory = memory
         self._rng = rng or random.Random()
@@ -164,6 +166,17 @@ class SocialChat:
         self._emotion = _default_emotion() if emotion is ... else emotion
         self._clock = clock
         self._roleplay: dict[tuple[str, str], float] = {}
+        self._initiative = initiative           # ...: built on first use when `inner_initiative` is on (her PC), else None
+
+    @property
+    def initiative(self) -> Initiative | None:
+        if self._initiative is ...:
+            try:
+                from .initiative import for_chat
+                self._initiative = for_chat(self.memory, self._complete, clock=self._clock)
+            except Exception:
+                self._initiative = None
+        return self._initiative  # type: ignore[return-value]
 
     def killed(self, platform: str) -> bool:
         """The owner's per-platform kill switch (safety.killed): nothing is sent, accepted or requested while it is on."""
@@ -305,7 +318,8 @@ class SocialChat:
         ask_back = "(ask them something short back about what they said)" if self.flow.ask_back_due(channel) else ""
         user = "\n\n".join(part for part in (
             (inner.card if inner is not None else "") or self.memory.context(person),
-            self.bonds.context(person, platform, now, short=bool(inner is not None and inner.card)),
+            self.bonds.context(person, platform, now, short=bool(inner is not None and inner.card), said=text,
+                               fresh=touch.new_conversation),
             "Recent chat:\n" + "\n".join(lines) if lines else "",
             f"{person.name} says: {text}",
             f"({intent})" if intent else "",
@@ -353,6 +367,12 @@ class SocialChat:
         self.window.sent(channel, reply, now)
         self.flow.spoke(channel, handle, reply, now)
         self.bonds.record_exchange(person, platform, text, now)
+        promise = self.bonds.record_promise(person, platform, reply, now)
+        if promise is not None and promise.reach_out and self.initiative is not None:
+            try:
+                self.initiative.on_promise(person, promise)
+            except Exception:
+                pass
         interests_only = mode.age_status in ("minor", "doubt") or platform == "roblox"
         for fact in extract_facts(text):
             self.memory.note_fact(person, fact, interests_only=interests_only)
