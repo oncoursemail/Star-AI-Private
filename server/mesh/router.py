@@ -25,6 +25,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import instant
+from .loop import runner as loop_runner
 
 VERSION = "3"
 FAST, DEEP = "litha", "litha-deep"
@@ -69,6 +70,7 @@ DEFAULTS = {
     "embed_model": "star-embed",
     "embed_prefix": "task: sentence similarity | query: ",
     "embed_timeout_s": 1.0,
+    **loop_runner.LOOP_DEFAULTS,      # best-of-2 + verified pick + hidden tool loop (server/mesh/loop), opt-in per request
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -670,6 +672,7 @@ class Router:
                                                writer, t0)
         for k in instant.MESH_FIELDS:
             req.pop(k, None)
+        loop_on = model == FAST and loop_runner.wanted(req, headers)
         if model == FAST:
             req.setdefault("cache_prompt", True)
 
@@ -717,6 +720,9 @@ class Router:
         log["chosen"] = backend.name
         self.affinity.set(conv, backend.name)
         up, pending, rest = result
+        loop_run = loop_runner.Run(self, req, path, plan, headers.get("authorization", ""), log) if loop_on else None
+        if loop_run:
+            loop_run.start()
         log["ttft_ms"] = round((time.monotonic() - t0) * 1000)
         try:
             if not stream:
@@ -731,8 +737,11 @@ class Router:
                 return
             await self.relay_stream(backend, up, pending, rest, writer, log, cache_hdr,
                                     {"model": model, "req": req, "path": path, "conv": conv,
-                                     "auth": headers.get("authorization", "")})
+                                     "auth": headers.get("authorization", ""),
+                                     "before_done": loop_run.before_done if loop_run else None})
         finally:
+            if loop_run:
+                loop_run.close()
             backend.inflight -= 1
             up.close()
             log["total_ms"] = round((time.monotonic() - t0) * 1000)
@@ -789,6 +798,8 @@ class Router:
                     b.measured(tok_s)
                     log["tok_s"] = round(tok_s, 1) if tok_s else None
                     log["outcome"] = "ok" if b is backend else f"cut, continued on {b.name}: ok"
+                    if ctx and ctx.get("before_done"):      # server/mesh/loop: maybe one mesh.replace event
+                        writer.write(await ctx["before_done"]("".join(sent)))
                     writer.write(b"data: [DONE]\n\n")
                     await writer.drain()
                     return
