@@ -1,7 +1,7 @@
 """Router hook for parallel sections (server/mesh/speed/sections.py).
 
-`try_sections(router, ...)` is called by Router.complete() for a streamed `litha` request after the exact cache
-check. It answers only when sections are switched on (`"sections": true`), the question qualifies
+`try_sections(router, ...)` is called by Router.complete() for a streamed `litha` request after the cache said no
+(and after grounding). It answers only when sections are switched on (`"sections": true`), the question qualifies
 (sections.eligible) and the best backend is a node listed in `sections_nodes` (one that runs `-np 2`). Anything that
 fails before the first word returns False and the normal single-stream path answers instead.
 """
@@ -26,7 +26,7 @@ def _chunk(rid: str, model: str, delta: dict, finish=None) -> bytes:
     return b"data: " + json.dumps(obj).encode() + b"\n\n"
 
 
-async def try_sections(router, path, headers, req, conv, writer, t0, question, context, cache_hdr) -> bool:
+async def try_sections(router, path, headers, req, conv, writer, t0, cache_hdr) -> bool:
     from ..router import FAST, UpstreamError, open_upstream, _event_json   # noqa: PLC0415 (import cycle)
     from .. import instant                                                         # noqa: PLC0415
     cfg = router.cfg
@@ -36,11 +36,6 @@ async def try_sections(router, path, headers, req, conv, writer, t0, question, c
     node, url, mid = plan[0]
     if node is router.brain or node.name not in cfg.get("sections_nodes", []):
         return False
-    if question and router.cache is not None:            # the semantic cache still wins (one embed, ~50 ms)
-        row, sim, ms = await router.cache_semantic(question, context)
-        if row is not None:
-            await router.serve_cached(row, "semantic", sim, ms, True, writer, t0)
-            return True
     hdr = router._headers_for(node, headers.get("authorization", ""))
     target = url + path
 
