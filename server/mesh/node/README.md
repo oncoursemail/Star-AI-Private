@@ -66,11 +66,25 @@ the RTX 4060 settings below. Without ssh: copy the same files by hand into `D:\L
 Her games/streams are already in the block list; add others to `block_processes` in her node.json.
 
 ## Model settings (8 GB cards, gemma-4-12b QAT Q4_0, 7.0 GB file)
-From the bench lane (docs/agents/litha-engine-bench-20261027.md, owner-PC RTX 3060 Ti: ~43 tok/s, first token ~0.2 s,
-quality 53/60 vs brain1 star-fast 41/60):
-`-lm none --fit off -ngl 99 -fa on -ctk q8_0 -ctv q8_0 -np 2 -b 1024 -ub 256 -t 4 --jinja --reasoning off`, `ctx 8192`
-(4096 per request with 2 slots; `-lm none` keeps system RAM at ~1.5 GB).
-`ngl_ladder` `[[6300, 99], [5900, 47], [5500, 44]]`: with less free video memory the node loads fewer layers
-(~33 tok/s at 47, ~23 at 44); under 5500 MB free it reports busy and the router uses brain1. RTX 4060 (STAR's PC):
-same file and args, estimated ~25-28 tok/s. A 4 GB card (GTX 1650) cannot hold this model; give it a 4B model or set
-`autoload` false.
+Args: `-lm none --fit off -ngl 99 -fa on -ctk q4_0 -ctv q4_0 -np 1 -b 1024 -ub 256 -t 4 --jinja --reasoning off`,
+`ctx 8192`. The owner's apps (Metallic Launcher/QtWebEngine, browser, Discord) need room on the same card, so the node
+keeps `vram_reserve_mb` (1536) free as nvidia-smi reports it (memory.free): `ngl_ladder` lists [ngl, the model's
+measured card memory]; the node loads the highest step that still leaves the reserve. Measured on the owner's RTX
+3060 Ti (2026-10-28, -c 8192, q4_0 KV, -np 1):
+
+| -ngl | model's card memory | gen tok/s |
+|---|---|---|
+| 99 | 7011 MB | 46.8 |
+| 47 | 6771 MB | 34.6 |
+| 46 | 6649 MB | 30.3 |
+| 44 | 6403 MB | 25.0 |
+| 43 | 6277 MB | 22.5 |
+| 42 | 6153 MB | 20.3-21.2 |
+| 41 | 6029 MB | 18.5-18.9 |
+| 40 | 5905 MB | 15.7-17.9 |
+
+With the desktop at ~650 MB this lands on -ngl 40 (~17-18 tok/s, 1.6 GB free; brain1 does ~10). While loaded, less
+than `min_free_loaded_mb` (800) free -> the node reloads at a lower step that restores the reserve, or unloads (busy).
+Other things tried: -np 2 costs ~200 MB more; q8_0 KV ~120 MB more; -c 6144/-ub 128 saves only ~20-40 MB; the output
+layer on the CPU (`-ot token_embd\.weight=CPU`) gives the same tok/s per MB as fewer layers. RTX 4060 (STAR's PC): same
+file and args; measure its ladder (her desktop use differs). A 4 GB card (GTX 1650) cannot hold this model.

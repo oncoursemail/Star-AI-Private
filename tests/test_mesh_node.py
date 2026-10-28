@@ -212,7 +212,7 @@ def test_other_gpu_load_needs_two_looks_and_ignores_own_requests(tmp_path):
 
 
 def test_other_programs_growing_video_memory(tmp_path):
-    node, gpu, clock, procs = loaded(tmp_path, other_vram_grow_mb=1000)
+    node, gpu, clock, procs = loaded(tmp_path, other_vram_grow_mb=1000, min_free_loaded_mb=0)
     gpu["used"] = 7300 + 900
     node.tick()
     assert node.state == "idle"
@@ -404,16 +404,46 @@ def test_context_per_slot():
     assert na.slot_ctx({"ctx": 8192, "llama_args": ["-t", "4"]}) == 8192
 
 
-def test_ngl_ladder_uses_fewer_layers_when_memory_is_short(tmp_path):
-    ladder = [[6300, 99], [5900, 47], [5500, 44]]
-    assert [na.pick_ngl({"ngl_ladder": ladder}, f) for f in (7000, 6000, 5600, 5000)] == [99, 47, 44, 0]
-    assert na.pick_ngl({}, 100) is None and na.need_mb({"ngl_ladder": ladder}) == 5500
-    node, gpu, clock, procs = make(tmp_path, ngl_ladder=ladder, llama_args=["-ngl", "99", "-t", "4"])
-    gpu["used"] = 8192 - 6000
+LADDER = [[99, 7040], [47, 6800], [44, 6430], [42, 6180]]
+
+
+def test_ngl_ladder_keeps_the_reserve_free(tmp_path):
+    cfg = {"ngl_ladder": LADDER, "vram_reserve_mb": 1536}
+    assert [na.pick_ngl(cfg, f) for f in (8700, 8400, 8000, 7720, 7000)] == [99, 47, 44, 42, 0]
+    assert na.pick_ngl({}, 100) is None and na.need_mb(cfg) == 6180 + 1536
+    node, gpu, clock, procs = make(tmp_path, ngl_ladder=LADDER, llama_args=["-ngl", "99", "-t", "4"])
+    gpu["used"] = 8192 - 7720                              # the desktop holds 472 MB
     node.tick()
     argv = procs[0][0]
-    assert argv[argv.index("-ngl") + 1] == "47" and node.status()["models"][0]["ngl"] == 47
-    node2, gpu2, _, procs2 = make(tmp_path, ngl_ladder=ladder)
-    gpu2["used"] = 8192 - 5000
+    assert argv[argv.index("-ngl") + 1] == "42" and node.status()["models"][0]["ngl"] == 42
+    node2, gpu2, _, procs2 = make(tmp_path, ngl_ladder=LADDER)
+    gpu2["used"] = 8192 - 7000
     node2.tick()
-    assert node2.state == "busy" and "5500 MB needed" in node2.reason and not procs2
+    assert node2.state == "busy" and "7716 MB needed" in node2.reason and not procs2
+
+
+def test_low_free_memory_while_loaded_steps_down_then_unloads(tmp_path):
+    ladder = [[99, 7040], [47, 6800], [30, 4500]]
+    node, gpu, clock, procs = make(tmp_path, ngl_ladder=ladder, llama_args=["-ngl", "99"], other_vram_grow_mb=99999)
+    gpu["total"] = 9000
+    gpu["used"] = 600                                      # free 8400 -> ngl 47 (8400 - 6800 >= 1536)
+
+    def popen(argv, **kw):
+        procs.append((argv, kw))
+        ngl = int(argv[argv.index("-ngl") + 1])
+        gpu["used"] += dict(ladder)[ngl] - 300             # the model's memory
+        return Proc()
+    node._popen = popen
+    node.tick()
+    assert node.ngl == 47 and node.ready
+    gpu["used"] = 9000 - 700                                # someone took memory: 700 MB free while loaded
+    node.tick()                                             # 700 + 6500 freed - 4500 >= 1536: step to 30
+    assert node.ngl == 30 and node.ready and len(procs) == 2 and procs[0] is not procs[1]
+    gpu["used"] = 9000 - 100                                # still more: no lower step fits -> unload, busy
+    node.tick()
+    assert node.state == "busy" and "while loaded" in node.reason and not node.ready
+
+
+def test_free_memory_is_what_nvidia_smi_shows():
+    assert na.free_of({"total": 8192, "used": 6634, "free": 1391}) == 1391     # memory.free leaves out the reserve
+    assert na.free_of({"total": 8192, "used": 6634}) == 1558

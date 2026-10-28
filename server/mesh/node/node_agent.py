@@ -62,8 +62,10 @@ DEFAULTS: dict = {
     "retry_seconds": 300,                       # after a failed load
     "load_timeout_seconds": 300,
     "need_free_vram_mb": 0,                     # free video memory needed to load (0 = do not check)
-    "ngl_ladder": [],                           # [[free_mb, ngl], ...] best first: fewer layers on the card when
-                                                # other programs hold memory; below the last step = busy
+    "ngl_ladder": [],                           # [[ngl, own_mb], ...] best first (own_mb = measured card memory of
+                                                # the model at that -ngl); the first step that leaves
+    "vram_reserve_mb": 1536,                    # this much free for the owner's apps once loaded; none fits = busy
+    "min_free_loaded_mb": 800,                  # loaded and less free than this: step down the ladder or unload
     "busy_util_percent": 40, "busy_util_looks": 2,   # other programs' GPU load (while the model is not working)
     "other_vram_grow_mb": 1200,                 # other programs grew their video memory this much since the load
     "fullscreen": True,
@@ -134,15 +136,20 @@ def lan_address() -> str:
 
 
 # ---- what the machine is doing (Windows) ---------------------------------------------------------------------------
+def free_of(gpu: dict) -> int:
+    """Free video memory as nvidia-smi shows it (memory.free also leaves out the driver's reserve)."""
+    return int(gpu["free"]) if "free" in gpu else int(gpu["total"]) - int(gpu["used"])
+
+
 def read_gpu() -> dict | None:
-    """{"name","total","used","util"} of the first NVIDIA card (nvidia-smi); None when there is none."""
+    """{"name","total","used","free","util"} of the first NVIDIA card (nvidia-smi); None when there is none."""
     tool = shutil.which("nvidia-smi") or r"C:\Windows\System32\nvidia-smi.exe"
     try:
-        out = subprocess.run([tool, "--query-gpu=name,memory.total,memory.used,utilization.gpu",
+        out = subprocess.run([tool, "--query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu",
                               "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5,
                              creationflags=NO_WINDOW).stdout
-        name, total, used, util = (p.strip() for p in out.splitlines()[0].split(","))
-        return {"name": name, "total": int(total), "used": int(used), "util": int(util)}
+        name, total, used, free, util = (p.strip() for p in out.splitlines()[0].split(","))
+        return {"name": name, "total": int(total), "used": int(used), "free": int(free), "util": int(util)}
     except (OSError, ValueError, IndexError, subprocess.SubprocessError):
         return None
 
@@ -301,17 +308,21 @@ def program_reason(config: dict, procs: dict[int, str], own: set[int], exe_path,
 
 # ---- the model server ----------------------------------------------------------------------------------------------
 def pick_ngl(config: dict, free_mb: int) -> int | None:
-    """-ngl for this much free video memory from `ngl_ladder`; None = no ladder (llama_args as written)."""
+    """The highest -ngl from `ngl_ladder` whose model still leaves `vram_reserve_mb` free on a card with `free_mb`
+    free now; 0 = none fits; None = no ladder (llama_args as written)."""
     ladder = config.get("ngl_ladder") or []
-    for need, ngl in ladder:
-        if free_mb >= int(need):
+    reserve = int(config.get("vram_reserve_mb") or 0)
+    for ngl, own in ladder:
+        if free_mb - int(own) >= reserve:
             return int(ngl)
     return 0 if ladder else None
 
 
 def need_mb(config: dict) -> int:
     ladder = config.get("ngl_ladder") or []
-    return min(int(n) for n, _ in ladder) if ladder else int(config.get("need_free_vram_mb") or 0)
+    if ladder:
+        return min(int(own) for _, own in ladder) + int(config.get("vram_reserve_mb") or 0)
+    return int(config.get("need_free_vram_mb") or 0)
 
 
 def llama_argv(config: dict, home: Path, ngl: int | None = None) -> list[str]:
@@ -448,6 +459,7 @@ class Node:
         self.last_gpu: dict | None = None
         self.load_started = 0.0
         self.ngl: int | None = None
+        self.step_to = 0
 
     # -- logging -----------------------------------------------------------------------------------------------------
     def _file_log(self, text: str) -> None:
@@ -493,9 +505,16 @@ class Node:
             grown = (gpu["used"] - self.own_mb) - self.others_at_load
             if grown > int(self.config["other_vram_grow_mb"]):
                 return f"other programs took {grown} MB more graphics memory"
+            free, low = free_of(gpu), int(self.config.get("min_free_loaded_mb") or 0)
+            if low and free < low:
+                lower = pick_ngl(self.config, free + self.own_mb)
+                if lower and self.ngl and lower < self.ngl:
+                    self.step_to = lower                    # tick reloads with fewer layers at once
+                    return ""
+                return f"only {free} MB of graphics memory is free while loaded (others need it)"
         elif not self.loading:
             need = need_mb(self.config)
-            free = gpu["total"] - gpu["used"]
+            free = free_of(gpu)
             if need and free < need:
                 return f"only {free} MB of graphics memory is free ({need} MB needed)"
         return ""
@@ -517,6 +536,13 @@ class Node:
                     self._stop(reason)
                 self.free_since, self.was_busy = None, True
                 self._set("busy", reason)
+                return
+            if self.step_to and self.ready and gpu:
+                lower, self.step_to = self.step_to, 0
+                self._log(f"step down: ngl {self.ngl} -> {lower} ({free_of(gpu)} MB free while loaded)")
+                freed = dict(gpu, used=gpu["used"] - self.own_mb, free=free_of(gpu) + self.own_mb)
+                self._stop(f"step down to ngl {lower}")
+                self.start_load(freed)
                 return
             if self.was_busy:
                 if self.free_since is None:
@@ -552,7 +578,7 @@ class Node:
             if self.ready or self.loading:
                 return True, "already loaded" if self.ready else "already loading"
             gpu = gpu if gpu is not None else self._gpu()
-            self.ngl = pick_ngl(self.config, gpu["total"] - gpu["used"]) if gpu else None
+            self.ngl = pick_ngl(self.config, free_of(gpu)) if gpu else None
             try:
                 argv = llama_argv(self.config, self.home, self.ngl)
             except ValueError as exc:
@@ -664,7 +690,7 @@ class Node:
             gpu = self.last_gpu
             return {
                 "node": self.name, "state": self.state, "reason": self.reason,
-                "gpu": ({"name": gpu["name"], "vram_total_mb": gpu["total"], "vram_free_mb": gpu["total"] - gpu["used"],
+                "gpu": ({"name": gpu["name"], "vram_total_mb": gpu["total"], "vram_free_mb": free_of(gpu),
                          "util": gpu["util"]} if gpu else None),
                 "ram_free_mb": self._ram(),
                 "models": [{"id": self.config["model_id"], "url": f"http://{self.host}:{int(self.config['model_port'])}/v1",
