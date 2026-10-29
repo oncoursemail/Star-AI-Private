@@ -70,6 +70,9 @@ DEFAULTS: dict = {
                                                 # plain 99 step); the first step that leaves
     "vram_reserve_mb": 1536,                    # this much free for the owner's apps once loaded; none fits = busy
     "min_free_loaded_mb": 800,                  # loaded and less free than this: step down the ladder or unload
+    # idle boost (off when idle_reserve_mb is 0): nobody touched keyboard or mouse for idle_after_seconds -> the ladder
+    # keeps only idle_reserve_mb free (min free while loaded: idle_min_free_mb); the first input steps back down at once
+    "idle_reserve_mb": 0, "idle_min_free_mb": 150, "idle_after_seconds": 600,
     "drain_seconds": 30,                        # memory-pressure reload/unload waits this long for answers in flight
     "busy_util_percent": 40, "busy_util_looks": 2,   # other programs' GPU load (while the model is not working)
     "busy_cpu_percent": 0, "busy_cpu_looks": 8,      # whole-PC CPU load this high this many looks in a row (while
@@ -170,6 +173,22 @@ def read_cpu_times() -> tuple[int, int] | None:
     if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
         return None
     return idle.value, kernel.value + user.value                  # kernel time includes idle time
+
+
+def input_idle_seconds() -> float | None:
+    """Seconds since the last keyboard/mouse input in this desktop session (GetLastInputInfo); None off Windows."""
+    if os.name != "nt":
+        return None
+    import ctypes
+
+    class LastInput(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+    info = LastInput()
+    info.cbSize = ctypes.sizeof(info)
+    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+        return None
+    now = ctypes.windll.kernel32.GetTickCount() & 0xFFFFFFFF
+    return ((now - info.dwTime) & 0xFFFFFFFF) / 1000.0           # both are 32-bit tick counts (wrap every 49 days)
 
 
 def free_ram_mb() -> int | None:
@@ -347,7 +366,10 @@ def step_label(config: dict, step: int | None) -> str:
     if step is None or step < 0:
         return "ngl as written"
     s = config["ngl_ladder"][step]
-    return f"ngl {s[0]}" + (" + draft" if len(s) > 2 and s[2] else "")
+    more = [] if len(s) < 3 or not s[2] else (config.get("step_args") or {}).get(s[2], []) if isinstance(s[2], str) \
+        else s[2]
+    cpu_ffn = next((more[i + 1] for i, a in enumerate(more[:-1]) if a in ("-ncffn", "--n-cpu-ffn")), None)
+    return f"ngl {s[0]}" + (" + draft" if len(s) > 2 and s[2] else "") + (f", {cpu_ffn} FFN on CPU" if cpu_ffn else "")
 
 
 def need_mb(config: dict) -> int:
@@ -479,12 +501,15 @@ class Node:
 
     def __init__(self, config: dict, home: Path = HERE, *, probe=None, gpu=read_gpu, ram=free_ram_mb,
                  popen=subprocess.Popen, healthy=health, measure=warm_measure, clock=time.monotonic,
-                 log=None, background=True, cpu=read_cpu_times):
+                 log=None, background=True, cpu=read_cpu_times, idle=input_idle_seconds):
         self.config, self.home = config, Path(home)
         self.probe = probe
         self._gpu, self._ram, self._popen, self._healthy, self._measure = gpu, ram, popen, healthy, measure
         self._clock, self._background = clock, background
         self._cpu, self.cpu_prev, self.cpu_looks = cpu, None, 0
+        self._idle = idle
+        self.boost_now = False                              # idle boost allowed this tick (nobody at the PC)
+        self.boosted = False                                # the loaded step needs the idle boost (input -> step down)
         self._log = log or self._file_log
         self.lock = threading.RLock()
         self.name = config.get("node") or socket.gethostname().lower()
@@ -528,6 +553,27 @@ class Node:
             self._log(f"{state}: {reason}")
         self.state, self.reason = state, reason
 
+    # -- idle boost ----------------------------------------------------------------------------------------------------
+    def idle_boost(self) -> bool:
+        """Nobody has touched keyboard or mouse for idle_after_seconds (and the boost is configured)."""
+        if not int(self.config.get("idle_reserve_mb") or 0) or (self.home / "FAKE_INPUT").exists():
+            return False                                    # FAKE_INPUT: test hook, counts as someone at the PC
+        idle = self._idle()
+        return idle is not None and idle >= float(self.config.get("idle_after_seconds") or 600)
+
+    def _input_idle(self) -> int | None:
+        idle = self._idle() if int(self.config.get("idle_reserve_mb") or 0) else None
+        return None if idle is None else int(idle)
+
+    def cfg_now(self, boost: bool | None = None) -> dict:
+        """The config the ladder uses now: the idle reserve while boosted, the normal one otherwise."""
+        boost = self.idle_boost() if boost is None else boost
+        if not boost:
+            return self.config
+        return dict(self.config, vram_reserve_mb=int(self.config["idle_reserve_mb"]),
+                    min_free_loaded_mb=min(int(self.config.get("idle_min_free_mb") or 0),
+                                           int(self.config.get("min_free_loaded_mb") or 0)))
+
     # -- the guard ---------------------------------------------------------------------------------------------------
     def own_pids(self) -> set[int]:
         return {self.process.pid} if self.process is not None else set()
@@ -567,15 +613,16 @@ class Node:
             grown = (gpu["used"] - self.own_mb) - self.others_at_load
             if grown > int(self.config["other_vram_grow_mb"]):
                 return f"other programs took {grown} MB more graphics memory"
-            free, low = free_of(gpu), int(self.config.get("min_free_loaded_mb") or 0)
+            cfg = self.cfg_now(self.boost_now and self.boosted)
+            free, low = free_of(gpu), int(cfg.get("min_free_loaded_mb") or 0)
             if low and free < low:
-                lower = pick_step(self.config, free + self.own_mb)
+                lower = pick_step(cfg, free + self.own_mb)
                 if lower is not None and self.step is not None and lower > self.step >= 0:
                     self.step_to = lower                    # tick reloads with a smaller step at once (index > 0)
                     return ""
                 return f"only {free} MB of graphics memory is free while loaded (others need it)"
         elif not self.loading:
-            need = need_mb(self.config)
+            need = need_mb(self.cfg_now(self.boost_now))
             free = free_of(gpu)
             if need and free < need:
                 return f"only {free} MB of graphics memory is free ({need} MB needed)"
@@ -608,6 +655,7 @@ class Node:
                 self.free_since, self.was_busy = None, False
                 self._set("off", "the OFF file exists")
                 return
+            self.boost_now = self.idle_boost()
             reason, hard = self.busy_check(gpu)
             now = self._clock()
             waited = False                                  # drained already: act now, answers or not
@@ -631,6 +679,17 @@ class Node:
                 self.free_since, self.was_busy = None, True
                 self._set("busy", reason)
                 return
+            if self.boosted and self.ready and gpu and not self.boost_now:
+                self.step_to, self.draining = 0, None
+                lower = pick_step(self.config, free_of(gpu) + self.own_mb)
+                if lower is not None and self.step is not None and lower > self.step:
+                    return self._restep(gpu, lower, False, "someone is using the PC")   # at once, answers or not
+                self.boosted = False                        # the step fits the normal reserve too
+            if self.boost_now and self.ready and gpu and not self.boosted and not self.in_flight \
+                    and self.draining is None and not self.step_to:
+                better = pick_step(self.cfg_now(True), free_of(gpu) + self.own_mb)
+                if better is not None and self.step is not None and 0 <= better < self.step:
+                    return self._restep(gpu, better, True, "nobody is at the PC")
             if self.step_to and self.ready and gpu and self.in_flight > 0 and not waited:
                 return self._drain(now, f"step down to {step_label(self.config, self.step_to)}")
             if self.step_to and self.ready and gpu:
@@ -650,7 +709,7 @@ class Node:
                     return
                 self.was_busy, self.free_since = False, None
             if self.ready:
-                self._set("idle", "model loaded")
+                self._set("idle", "model loaded (idle boost: nobody at the PC)" if self.boosted else "model loaded")
             elif self.loading:
                 self._set("away", "loading the model")
             elif self.hold:
@@ -661,6 +720,14 @@ class Node:
                 self._set("away", self.reason if self.reason.startswith("failed") else "failed; retrying later")
             else:
                 self.start_load(gpu)
+
+    def _restep(self, gpu: dict, step: int, boost: bool, why: str) -> None:
+        """Reload at another ladder step now (idle boost on or off)."""
+        self._log(f"step {'up' if boost else 'down'}: {step_label(self.config, self.step)} -> "
+                  f"{step_label(self.config, step)} ({why}; {free_of(gpu)} MB free while loaded)")
+        freed = dict(gpu, used=gpu["used"] - self.own_mb, free=free_of(gpu) + self.own_mb)
+        self._stop(f"step {'up' if boost else 'down'} to {step_label(self.config, step)}")
+        self.start_load(freed, boost=boost)
 
     def _drain(self, now: float, why: str) -> None:
         """Stop taking requests; the next ticks reload/unload once the answers in flight are done (or time is up)."""
@@ -675,13 +742,17 @@ class Node:
             self._set("away", f"failed: llama-server exited (code {code}); see logs\\llama-server.log")
 
     # -- load and unload ---------------------------------------------------------------------------------------------
-    def start_load(self, gpu: dict | None = None) -> tuple[bool, str]:
+    def start_load(self, gpu: dict | None = None, boost: bool | None = None) -> tuple[bool, str]:
         with self.lock:
             if self.ready or self.loading:
                 return True, "already loaded" if self.ready else "already loading"
             gpu = gpu if gpu is not None else self._gpu()
-            self.step = pick_step(self.config, free_of(gpu)) if gpu else None
-            self.ngl = pick_ngl(self.config, free_of(gpu)) if gpu else None
+            cfg = self.cfg_now(boost)
+            self.step = pick_step(cfg, free_of(gpu)) if gpu else None
+            self.ngl = pick_ngl(cfg, free_of(gpu)) if gpu else None
+            normal = pick_step(self.config, free_of(gpu)) if gpu else None
+            self.boosted = cfg is not self.config and self.step is not None and self.step >= 0 \
+                and (normal is None or normal < 0 or self.step < normal)
             try:
                 argv = llama_argv(self.config, self.home, self.ngl, self.step)
             except ValueError as exc:
@@ -797,7 +868,7 @@ class Node:
                 "node": self.name, "state": self.state, "reason": self.reason,
                 "gpu": ({"name": gpu["name"], "vram_total_mb": gpu["total"], "vram_free_mb": free_of(gpu),
                          "util": gpu["util"]} if gpu else None),
-                "ram_free_mb": self._ram(),
+                "ram_free_mb": self._ram(), "idle_boost": self.boosted, "input_idle_s": self._input_idle(),
                 "models": [{"id": self.config["model_id"], "url": f"http://{self.host}:{int(self.config['model_port'])}/v1",
                             "ctx": slot_ctx(self.config), "loaded": self.ready, "loading": self.loading,
                             "in_flight": self.in_flight, "ngl": self.ngl, "tok_s": self.tok_s,
@@ -812,8 +883,21 @@ class Node:
                 self.tick()
             except Exception as exc:                        # noqa: BLE001 - the guard must never die silently
                 self._log(f"guard error: {type(exc).__name__}: {exc}")
-            self.wake.wait(float(self.config["poll_seconds"]))
+            self.wait_poll()
             self.wake.clear()
+
+    def wait_poll(self) -> None:
+        """The poll wait. While the idle boost holds the card, look every 0.25 s for keyboard/mouse input and tick
+        at least every second, so the boost memory is given back within about a second."""
+        poll = float(self.config["poll_seconds"])
+        if not self.boosted:
+            self.wake.wait(poll)
+            return
+        end = time.monotonic() + min(poll, 1.0)
+        while time.monotonic() < end and not self.wake.is_set():
+            if not self.idle_boost():
+                return
+            self.wake.wait(0.25)
 
 
 # ---- HTTP ----------------------------------------------------------------------------------------------------------
