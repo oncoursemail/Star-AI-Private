@@ -23,12 +23,14 @@ import datetime as dt
 import json
 import math
 import os
+import random
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+from training.nightly import correct as C
 from training.nightly import data as D
 from training.nightly import score as S
 from training.nightly.serve import Server, run_many
@@ -96,47 +98,122 @@ def system_prompt(cfg: dict) -> str:
     return Path(cfg["system_prompt"]).read_text(encoding="utf-8").strip()
 
 
-def harvest(cfg: dict, srv: Server, verifier, prompts: list[dict], samples: int, night: Path, say) -> dict:
-    sysp = system_prompt(cfg)
+def pair_row(pid: str, prompt: str, chosen: dict, rejected: dict, kind: str) -> dict:
+    return {"id": pid, "prompt": prompt, "chosen": chosen["answer"], "rejected": rejected["answer"], "kind": kind,
+            "rejected_why": {k: rejected["check"].get(k) for k in ("verify", "rules", "judge")}}
 
-    def one(job):
+
+def harvest(cfg: dict, srv, verifier, prompts: list[dict], samples: int, night: Path, say,
+            files: dict | None = None, corrections: bool = True, should_stop=None, chunk: int = 40,
+            wait_ready=None) -> dict:
+    """Answer -> check -> correct the prompts with no passing answer -> re-check, in chunks (one chunk = one kind of
+    request at a time, so the server's prompt cache keeps the shared system prompt). Every chunk is written at once
+    (bank, pairs, harvest index), so a stopped night keeps what it made. files: {"bank", "pairs", "index"} paths."""
+    sysp = system_prompt(cfg)
+    work = Path(cfg["work_dir"])
+    files = files or {"bank": work / "bank.jsonl", "pairs": work / "pairs.jsonl", "index": work / "harvest_index.jsonl"}
+    should_stop = should_stop or stopping
+    totals: dict = {"answers": 0, "answers_pass": 0, "prompts": 0, "prompts_with_pass": 0, "first_pass_prompts": 0,
+                    "corrections_tried": 0, "corrections_pass": 0, "dpo_pairs": 0, "fail_verify": 0, "fail_rules": 0,
+                    "fail_judge": 0, "cut_off": 0, "errors": 0, "gen_tokens": 0, "gen_s": 0.0, "draft_n": 0,
+                    "draft_ok": 0}
+    t0 = time.time()
+
+    def answer(job):
         p, k = job
         msgs = [{"role": "system", "content": sysp}, {"role": "user", "content": p["prompt"]}]
-        ans = srv.chat(msgs, temperature=0.7, max_tokens=1200, seed=1000 + k)
-        chk = S.full_check(srv, verifier, p["prompt"], ans, reference=p.get("reference", ""))
-        return {"pid": p["pid"], "k": k, "prompt": p["prompt"], "group": p["group"], "source": p["source"],
-                "answer": ans["text"], "finish": ans["finish"], "tokens": ans["tokens"], "check": chk}
+        return p, k, srv.chat(msgs, temperature=0.7, max_tokens=1200, seed=1000 + k)
 
-    jobs = [(p, k) for p in prompts for k in range(samples)]
-    t0 = time.time()
-    rows = [r for r in run_many(one, jobs, srv.parallel, stopping) if r]
-    jl_append(night / "harvest.jsonl", rows)
-    by: dict[str, list[dict]] = {}
-    for r in rows:
-        by.setdefault(r["pid"], []).append(r)
-    bank_rows, pairs = [], []
-    for pid, rs in by.items():
-        good = [r for r in rs if r["check"].get("pass")]
-        bad = [r for r in rs if r["check"].get("finished") and not r["check"].get("pass")]
-        if good:
-            g = good[0]
+    def check(item):
+        p, k, ans = item
+        chk = S.full_check(srv, verifier, p["prompt"], ans, reference=p.get("reference", ""),
+                           safety=p.get("kind") == "safety")
+        return {"pid": p["pid"], "k": k, "prompt": p["prompt"], "group": p["group"], "source": p["source"],
+                "answer": ans["text"], "finish": ans["finish"], "tokens": ans["tokens"], "check": chk,
+                "tok_s": ans.get("tok_s"), "draft_n": ans.get("draft_n"), "draft_ok": ans.get("draft_ok")}
+
+    def account(rows: list[dict]) -> None:
+        for r in rows:
+            c = r["check"]
+            totals["answers"] += 1
+            totals["answers_pass"] += bool(c.get("pass"))
+            totals["fail_verify"] += (c.get("verify") or {}).get("ok") is False
+            totals["fail_rules"] += bool(c.get("rules"))
+            totals["fail_judge"] += (c.get("judge") or {}).get("pass") is False
+            totals["cut_off"] += not c.get("finished")
+            if r.get("tok_s") and r.get("tokens"):
+                totals["gen_tokens"] += r["tokens"]
+                totals["gen_s"] += r["tokens"] / r["tok_s"]
+            totals["draft_n"] += r.get("draft_n") or 0
+            totals["draft_ok"] += r.get("draft_ok") or 0
+
+    for c0 in range(0, len(prompts), chunk):
+        if should_stop():
+            break
+        if wait_ready and not wait_ready():
+            break
+        part = prompts[c0:c0 + chunk]
+        answers = [x for x in run_many(answer, [(p, k) for p in part for k in range(samples)], srv.parallel,
+                                       should_stop) if x]
+        bad_pids = {p["pid"] for p, _, a in answers if a["finish"] == "error"}
+        totals["errors"] += sum(1 for _, _, a in answers if a["finish"] == "error")
+        answers = [x for x in answers if x[0]["pid"] not in bad_pids]      # retried another night
+        rows = [r for r in run_many(check, answers, srv.parallel, should_stop) if r]
+        by: dict[str, list[dict]] = {}
+        for r in rows:
+            by.setdefault(r["pid"], []).append(r)
+        fixes: list[tuple] = []
+        if corrections:
+            for pid, rs in by.items():
+                if not any(r["check"].get("pass") for r in rs):
+                    p = next(x for x in part if x["pid"] == pid)
+                    fixes.append((p, rs[0]))
+
+        def fix(job):
+            p, r = job
+            out = C.correct(srv, p["prompt"], r, sysp, reference=p.get("reference", ""), seed=77)
+            if out is None:
+                return None
+            row = check((p, 99, out))
+            row.update(corrected_from=r["k"], feedback=out["feedback"])
+            return row
+
+        fixed = [r for r in run_many(fix, fixes, srv.parallel, should_stop) if r] if fixes else []
+        totals["corrections_tried"] += len(fixes)
+        account(rows)
+        jl_append(night / "harvest.jsonl", rows + fixed)
+        bank_rows, pairs = [], []
+        for pid, rs in by.items():
+            good = [r for r in rs if r["check"].get("pass")]
+            bad = [r for r in rs if not r["check"].get("pass")]
+            corr = [r for r in fixed if r["pid"] == pid and r["check"].get("pass")]
+            kind = "first" if good else "corrected" if corr else ""
+            if not kind:
+                continue
+            g = (good or corr)[0]
+            totals["first_pass_prompts"] += kind == "first"
+            totals["corrections_pass"] += kind == "corrected"
             bank_rows.append({"id": pid, "group": g["group"], "source": g["source"], "night": night.name,
-                              "messages": [{"role": "system", "content": sysp}, {"role": "user", "content": g["prompt"]},
-                                           {"role": "assistant", "content": g["answer"]}]})
+                              "kind": kind, "messages": [{"role": "system", "content": sysp},
+                                                         {"role": "user", "content": g["prompt"]},
+                                                         {"role": "assistant", "content": g["answer"]}]})
             if bad:
-                pairs.append({"id": pid, "prompt": g["prompt"], "chosen": g["answer"], "rejected": bad[0]["answer"],
-                              "rejected_why": {k: bad[0]["check"].get(k) for k in ("verify", "rules", "judge")}})
-    jl_append(Path(cfg["work_dir"]) / "bank.jsonl", bank_rows)
-    jl_append(Path(cfg["work_dir"]) / "pairs.jsonl", pairs)
-    n_pass = sum(1 for r in rows if r["check"].get("pass"))
-    stats = {"answers": len(rows), "answers_pass": n_pass, "prompts": len(by), "prompts_with_pass": len(bank_rows),
-             "dpo_pairs": len(pairs), "minutes": round((time.time() - t0) / 60, 1),
-             "fail_verify": sum(1 for r in rows if r["check"].get("verify", {}).get("ok") is False),
-             "fail_rules": sum(1 for r in rows if r["check"].get("rules")),
-             "fail_judge": sum(1 for r in rows if r["check"].get("judge", {}).get("pass") is False),
-             "cut_off": sum(1 for r in rows if not r["check"].get("finished"))}
-    say("harvest " + json.dumps(stats))
-    return stats
+                pairs.append(pair_row(pid, g["prompt"], g, bad[0], kind))
+        jl_append(Path(files["bank"]), bank_rows)
+        jl_append(Path(files["pairs"]), pairs)
+        jl_append(Path(files["index"]), [{"pid": p["pid"], "night": night.name} for p in part
+                                         if p["pid"] in by])
+        totals["prompts"] += len(by)
+        totals["prompts_with_pass"] += len(bank_rows)
+        totals["dpo_pairs"] += len(pairs)
+        say(f"chunk {c0 // chunk + 1}: {len(by)} prompts, first-try pass {totals['first_pass_prompts']}, corrected "
+            f"{totals['corrections_pass']}/{totals['corrections_tried']}, pairs {totals['dpo_pairs']}")
+    gen_s = totals.pop("gen_s")
+    totals["gen_tok_s"] = round(totals["gen_tokens"] / gen_s, 1) if gen_s else None
+    totals["draft_accept"] = round(totals["draft_ok"] / totals["draft_n"], 3) if totals["draft_n"] else None
+    totals["minutes"] = round((time.time() - t0) / 60, 1)
+    say("harvest " + json.dumps(totals))
+    return totals
 
 
 def evaluate(cfg: dict, srv: Server, verifier, scale: float, night: Path, tag: str, say) -> tuple[list, list]:
@@ -178,6 +255,68 @@ def write_run_line(cfg: dict, line: str) -> None:
             f.write(line + "\n")
 
 
+def used_pids(work: Path) -> set[str]:
+    return {r["pid"] for f in sorted(work.glob("harvest_index*.jsonl")) for r in jl_read(f)}
+
+
+def read_all(work: Path, pattern: str) -> list[dict]:
+    return [r for f in sorted(work.glob(pattern)) for r in jl_read(f)]
+
+
+def load_pool(work: Path) -> list[dict]:
+    """The clean pool plus the gap-targeted prompts (gaps.py writes pool-gaps.jsonl)."""
+    return jl_read(work / "pool.jsonl") + jl_read(work / "pool-gaps.jsonl")
+
+
+def training_rows(bank: list[dict], upsample_corrected: int = 2) -> list[dict]:
+    """One row per prompt id (the first one banked wins); corrected rows repeat: they carry what the model got wrong."""
+    seen, out = set(), []
+    for r in bank:
+        if r["id"] in seen:
+            continue
+        seen.add(r["id"])
+        out += [r] * (upsample_corrected if r.get("kind") == "corrected" else 1)
+    return out
+
+
+def split_rows(rows: list[dict], seed: int) -> tuple[list[dict], list[dict]]:
+    """Validation = ~5% of the prompt ids (all copies of an id stay on one side)."""
+    rnd = random.Random(seed)
+    ids = sorted({r["id"] for r in rows})
+    rnd.shuffle(ids)
+    val_ids = set(ids[:max(8, len(ids) // 20)])
+    train = [r for r in rows if r["id"] not in val_ids]
+    rnd.shuffle(train)
+    val = list({r["id"]: r for r in rows if r["id"] in val_ids}.values())
+    return train, val
+
+
+def start_server(cfg: dict, night: Path, parallel: int, say) -> Server:
+    """Own harvest server with the node's MTP drafter step when configured (exact decoding, ~1.8x faster on the
+    card); the plain server when that does not start (memory)."""
+    if cfg.get("draft_model"):
+        srv = Server(cfg["llama_server"], cfg["gguf"], parallel=parallel, log=night / "server-harvest.log",
+                     draft=cfg["draft_model"])
+        try:
+            srv.start()
+            return srv
+        except RuntimeError as e:
+            say(f"drafter server did not start ({e}); plain server")
+            srv.stop()
+    srv = Server(cfg["llama_server"], cfg["gguf"], parallel=parallel, log=night / "server-harvest.log")
+    srv.start()
+    return srv
+
+
+def harvest_line(report: dict) -> str:
+    h = report.get("harvest") or {}
+    if not h:
+        return "no harvest"
+    return (f"harvest {h.get('prompts_with_pass')}/{h.get('prompts')} prompts banked (first try "
+            f"{h.get('first_pass_prompts')}, corrected {h.get('corrections_pass')}/{h.get('corrections_tried')}), "
+            f"{h.get('dpo_pairs')} pairs, {h.get('gen_tok_s')} tok/s, drafter accept {h.get('draft_accept')}")
+
+
 def run(a) -> int:
     cfg = load_config(Path(a.config))
     work = Path(cfg["work_dir"])
@@ -201,49 +340,86 @@ def run(a) -> int:
         res = D.build_pool(cfg["distill"], cfg["queries"], cfg.get("kb", ""), cfg["qset"], cfg["eval"])
         pool_p.write_text("\n".join(json.dumps(p, ensure_ascii=False) for p in res["pool"]) + "\n", encoding="utf-8")
         report["pool"] = {"size": len(res["pool"]), "dropped": res["dropped"], "banned_items": len(res["banned_items"])}
-    pool = jl_read(pool_p)
-    used = {r["pid"] for r in jl_read(work / "harvest_index.jsonl")}
-    prompts = D.night_sample(pool, a.prompts, used, seed=int(night.name.replace("-", "")))
+    pool = load_pool(work)
+    used = used_pids(work)
+    prompts = D.night_sample(pool, a.prompts, used, seed=int(night.name.replace("-", "")),
+                             shard=D.parse_shard(a.shard), gap_share=a.gap_share)
     report["prompts"] = len(prompts)
-    say(f"night {night.name}: {len(prompts)} prompts from a pool of {len(pool)} ({len(used)} used before)")
+    report["prompt_groups"] = D.group_counts(prompts)
+    say(f"night {night.name}: {len(prompts)} prompts from a pool of {len(pool)} ({len(used)} used before) "
+        f"{report['prompt_groups']}")
 
-    # 2. harvest with the plain deployed model
+    # 2. harvest with the plain deployed model (+ self-corrections of the prompts with no passing answer)
     if a.prompts > 0:
-        with Server(cfg["llama_server"], cfg["gguf"], parallel=a.parallel, log=night / "server-harvest.log") as srv:
-            report["harvest"] = harvest(cfg, srv, verifier, prompts, a.samples, night, say)
-        jl_append(work / "harvest_index.jsonl", [{"pid": p["pid"], "night": night.name} for p in prompts])
+        srv = start_server(cfg, night, a.parallel, say)
+        try:
+            report["harvest"] = harvest(cfg, srv, verifier, prompts, a.samples, night, say,
+                                        corrections=not a.no_corrections)
+        finally:
+            srv.stop()
         save()
     if stopping():
         report["stopped"] = "stop file after harvest"
         save()
+        write_run_line(cfg, f"- {night.name}: {harvest_line(report)}; stopped after harvest (no training)")
         return 124
 
-    # 3. train on the whole bank
-    bank = jl_read(work / "bank.jsonl")
-    report["bank"] = len(bank)
-    if len(bank) < a.min_bank:
-        report["skipped_training"] = f"bank {len(bank)} < {a.min_bank}"
+    # 3. train on the whole bank (every harvest card), corrected rows weighted; ORPO once there are enough pairs
+    bank = read_all(work, "bank*.jsonl")
+    rows = training_rows(bank, a.upsample_corrected)
+    pairs = {r["id"]: r for r in read_all(work, "pairs*.jsonl")}
+    report["bank"] = len({r["id"] for r in bank})
+    report["bank_corrected"] = len({r["id"] for r in bank if r.get("kind") == "corrected"})
+    report["pairs_total"] = len(pairs)
+    if report["bank"] < a.min_bank:
+        report["skipped_training"] = f"bank {report['bank']} < {a.min_bank}"
         say(report["skipped_training"])
         save()
-        write_run_line(cfg, f"- {night.name}: harvest {report.get('harvest', {}).get('prompts_with_pass')} new, bank "
-                            f"{len(bank)} (< {a.min_bank}, no training)")
+        write_run_line(cfg, f"- {night.name}: {harvest_line(report)}, bank {report['bank']} (< {a.min_bank}, "
+                            f"no training)")
         return 0
-    val_n = max(8, len(bank) // 20)
-    (night / "train.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in bank[val_n:]) + "\n",
+    train_rows, val_rows = split_rows(rows, int(night.name.replace("-", "")))
+    val_ids = {r["id"] for r in val_rows}
+    (night / "train.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in train_rows) + "\n",
                                        encoding="utf-8")
-    (night / "val.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in bank[:val_n]) + "\n",
+    (night / "val.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in val_rows) + "\n",
                                      encoding="utf-8")
     run_dir = night / "run"
     cmd = [cfg["train_python"], "-m", "training.nightly.train", "--model-dir", cfg["hf_dir"],
            "--data", str(night / "train.jsonl"), "--val", str(night / "val.jsonl"), "--out", str(run_dir),
            "--max-minutes", str(a.train_minutes), "--epochs", str(a.epochs), "--vocab-extra", cfg["system_prompt"]]
-    say("train: " + " ".join(cmd[1:4]) + f" ... ({len(bank) - val_n} examples)")
+    sft_cmd = list(cmd)
+    if len(pairs) >= a.orpo_min_pairs:
+        # ORPO trains NLL on every chosen answer too, so a prompt with a pair leaves the SFT list
+        sysp = system_prompt(cfg)
+        pref = [{"id": r["id"], "messages": [{"role": "system", "content": sysp},
+                                             {"role": "user", "content": r["prompt"]}],
+                 "chosen": r["chosen"], "rejected": r["rejected"]} for r in pairs.values() if r["id"] not in val_ids]
+        pref_ids = {r["id"] for r in pref}
+        (night / "pairs.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in pref) + "\n",
+                                           encoding="utf-8")
+        (night / "train-orpo.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in train_rows
+                                                          if r["id"] not in pref_ids) + "\n", encoding="utf-8")
+        cmd[cmd.index("--data") + 1] = str(night / "train-orpo.jsonl")
+        cmd += ["--pairs", str(night / "pairs.jsonl"), "--orpo-beta", str(a.orpo_beta)]
+        report["orpo_pairs"] = len(pref)
+    say("train: " + " ".join(cmd[1:4]) + f" ... ({len(train_rows)} SFT rows, {report.get('orpo_pairs', 0)} "
+        f"ORPO pairs)")
+    t_train = time.time()
     rc = subprocess.run(cmd, cwd=str(HERE.parents[1]),
                         creationflags=0x08000000 | 0x00004000 if os.name == "nt" else 0).returncode
     meta_p = run_dir / "adapter" / "train_meta.json"
+    left = a.train_minutes - (time.time() - t_train) / 60
+    if rc != 0 and report.get("orpo_pairs") and not stopping() and left > 30:   # ORPO failed: plain SFT instead
+        report["orpo_error"] = f"train with pairs exited {rc}; retried SFT only"
+        say(report["orpo_error"])
+        sft_cmd[sft_cmd.index("--max-minutes") + 1] = str(int(left))
+        rc = subprocess.run(sft_cmd, cwd=str(HERE.parents[1]),
+                            creationflags=0x08000000 | 0x00004000 if os.name == "nt" else 0).returncode
     if rc != 0 or not meta_p.exists():
         report["train_error"] = f"train exited {rc}"
         save()
+        write_run_line(cfg, f"- {night.name}: {harvest_line(report)}, bank {report['bank']}, TRAIN FAILED (exit {rc})")
         return 1
     report["train"] = json.loads(meta_p.read_text(encoding="utf-8"))
     gguf = night / "litha-nightly.gguf"
@@ -253,11 +429,66 @@ def run(a) -> int:
     if stopping():          # the card goes back now; `eval-only --adapter <gguf>` measures it in a later window
         report["stopped"] = "stop file after training (adapter kept, not evaluated)"
         save()
-        write_run_line(cfg, f"- {night.name}: harvest {report.get('harvest', {}).get('prompts_with_pass')} new, bank "
-                            f"{len(bank)}, trained {report['train'].get('steps')}/{report['train'].get('planned_steps')} "
+        write_run_line(cfg, f"- {night.name}: {harvest_line(report)}, bank {report['bank']}, trained "
+                            f"{report['train'].get('steps')}/{report['train'].get('planned_steps')} "
                             f"steps, stopped before eval ({report['train'].get('stopped') or 'stop file'})")
         return 124
     return evaluate_and_decide(cfg, gguf, night, report, say, save, a.margin)
+
+
+def remote_harvest(a) -> int:
+    """Harvest on another card through its mesh node (STAR's PC 4060). Runs only while that node is loaded and idle
+    (its own busy guard decides: games, OBS, her own models, CPU), and only while the owner PC has had no input for
+    --min-owner-idle seconds (the owner is not using Litha then, so no request of his waits behind a harvest one). Writes bank-<name>,
+    pairs-<name>, harvest_index-<name>.jsonl; the night's training reads every bank*.jsonl."""
+    from training.nightly import gpu_hold as H
+    from training.nightly.serve import Remote
+    cfg = load_config(Path(a.config))
+    work = Path(cfg["work_dir"])
+    night = work / "nights" / (dt.date.today().isoformat() + "-" + a.name)
+    night.mkdir(parents=True, exist_ok=True)
+    log = (night / "night.log").open("a", encoding="utf-8")
+
+    def say(msg: str) -> None:
+        line = f"{time.strftime('%H:%M:%S')} {msg}"
+        print(line, flush=True)
+        log.write(line + "\n")
+        log.flush()
+
+    node_cfg = (cfg.get("harvest_nodes") or {}).get(a.name, {})        # machine-local: {"url", "status"}
+    srv = Remote(a.node_url or node_cfg["url"], cfg.get("mesh_token_file", "~/.star/mesh_token"),
+                 a.status_url or node_cfg.get("status", ""), parallel=1)
+    verifier = S.Verifier(cfg["verify_url"], cfg["key_file"])
+    end = time.time() + a.max_hours * 3600
+
+    def stop_now() -> bool:
+        return (STOP_DIR / "STOP").exists() or (STOP_DIR / f"STOP-{a.name}").exists() or time.time() > end
+
+    def wait_ready() -> bool:
+        last = ""
+        while not stop_now():
+            ok, why = srv.available()
+            owner_ok = H.idle_seconds() >= a.min_owner_idle
+            if ok and owner_ok:
+                return True
+            msg = f"waiting: node {why}; owner idle {int(H.idle_seconds())} s"
+            if msg.split(";")[0] != last:
+                say(msg)
+                last = msg.split(";")[0]
+            time.sleep(60)
+        return False
+
+    pool = load_pool(work)
+    used = used_pids(work)
+    prompts = D.night_sample(pool, a.prompts, used, seed=int(time.strftime("%Y%m%d%H")),
+                             shard=D.parse_shard(a.shard), gap_share=a.gap_share)
+    say(f"{a.name}: {len(prompts)} prompts ({len(used)} used before) {D.group_counts(prompts)}")
+    files = {"bank": work / f"bank-{a.name}.jsonl", "pairs": work / f"pairs-{a.name}.jsonl",
+             "index": work / f"harvest_index-{a.name}.jsonl"}
+    stats = harvest(cfg, srv, verifier, prompts, a.samples, night, say, files=files, should_stop=stop_now,
+                    chunk=a.chunk, wait_ready=wait_ready)
+    (night / f"report-{time.strftime('%H%M')}.json").write_text(json.dumps(stats, indent=1), encoding="utf-8")
+    return 0
 
 
 def evaluate_and_decide(cfg, gguf: Path, night: Path, report: dict, say, save, margin: int) -> int:
@@ -273,6 +504,10 @@ def evaluate_and_decide(cfg, gguf: Path, night: Path, report: dict, say, save, m
     if differs == 0:
         dec["promote"] = False
         dec["reasons"].append("adapter answers identical to base (LoRA not applied)")
+    prev_dec = (json.loads(current.read_text(encoding="utf-8")).get("decision") or {}) if current.exists() else {}
+    if prev_dec.get("new_pass") is not None and dec["new_pass"] <= prev_dec["new_pass"]:
+        dec["promote"] = False             # each night trains from the base; it must also beat the adapter in use
+        dec["reasons"].append(f"not better than the current adapter ({dec['new_pass']} <= {prev_dec['new_pass']})")
     report["decision"] = dec
     if dec["promote"]:
         dest = Path(cfg["promote_dir"])
@@ -283,18 +518,28 @@ def evaluate_and_decide(cfg, gguf: Path, night: Path, report: dict, say, save, m
         current.write_text(json.dumps({"adapter": str(target), "night": night.name, "decision": dec,
                                        "previous": prev.get("adapter", "")}, indent=1), encoding="utf-8")
         report["promoted"] = str(target)
+        if cfg.get("auto_deploy"):          # behind the gate only: the node answers with the adapter from now on
+            from training.nightly import deploy as DP
+            report["deploy"] = DP.deploy(str(target), Path(os.path.expanduser(cfg.get("node_dir", str(DP.NODE_DIR)))),
+                                         say=say)
     save()
-    write_run_line(cfg, f"- {night.name}: bank {report.get('bank')}, held-out base {dec['base_pass']}/{dec['n']} vs "
+    dep = report.get("deploy") or {}
+    live = (" LIVE on the node" if dep.get("deployed") else f" NOT live ({dep.get('reason')}, rolled back)"
+            if dep else " (auto_deploy off: not live)") if dec["promote"] else ""
+    write_run_line(cfg, f"- {night.name}: {harvest_line(report)}; bank {report.get('bank')} "
+                        f"(corrected {report.get('bank_corrected')}), pairs {report.get('pairs_total')}, ORPO "
+                        f"{report.get('orpo_pairs', 0)}; held-out base {dec['base_pass']}/{dec['n']} vs "
                         f"adapter {dec['new_pass']}/{dec['n']} (wins {dec['wins']}, losses {dec['losses']}, "
-                        f"p={dec['sign_p']}), safety {dec['safety_base']}->{dec['safety_new']}: "
-                        f"{'PROMOTED' if dec['promote'] else 'kept current (' + '; '.join(dec['reasons']) + ')'}")
+                        f"p={dec['sign_p']}), safety {dec['safety_base']}->{dec['safety_new']}, verifier problems "
+                        f"{dec['verify_problems_base']}->{dec['verify_problems_new']}: "
+                        f"{'PROMOTED' + live if dec['promote'] else 'kept current (' + '; '.join(dec['reasons']) + ')'}")
     say("decision " + json.dumps(dec))
     return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["run", "eval-only"])
+    ap.add_argument("mode", choices=["run", "eval-only", "harvest"])
     ap.add_argument("--config", default=str(CONFIG))
     ap.add_argument("--prompts", type=int, default=600)
     ap.add_argument("--samples", type=int, default=2)
@@ -305,7 +550,22 @@ def main(argv=None) -> int:
     ap.add_argument("--margin", type=int, default=3)
     ap.add_argument("--rebuild-pool", action="store_true")
     ap.add_argument("--adapter", default="")
+    ap.add_argument("--shard", default="0/2", help="i/n: only prompts whose id hash mod n == i (two harvest cards)")
+    ap.add_argument("--gap-share", type=float, default=0.3, help="share of gap-targeted prompts (pool-gaps.jsonl)")
+    ap.add_argument("--no-corrections", action="store_true")
+    ap.add_argument("--upsample-corrected", type=int, default=2)
+    ap.add_argument("--orpo-min-pairs", type=int, default=400)
+    ap.add_argument("--orpo-beta", type=float, default=0.1)
+    # harvest mode: another card through its mesh node
+    ap.add_argument("--name", default="starpc")
+    ap.add_argument("--node-url", default="")
+    ap.add_argument("--status-url", default="")
+    ap.add_argument("--chunk", type=int, default=20)
+    ap.add_argument("--max-hours", type=float, default=12)
+    ap.add_argument("--min-owner-idle", type=float, default=600)
     a = ap.parse_args(argv)
+    if a.mode == "harvest":
+        return remote_harvest(a)
     if a.mode == "eval-only":
         cfg = load_config(Path(a.config))
         night = Path(cfg["work_dir"]) / "nights" / (dt.date.today().isoformat() + "-eval")

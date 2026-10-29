@@ -37,13 +37,19 @@ def _server_dir() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def rule_errors(answer: str, question: str) -> list[str]:
+def rule_hits(answer: str, question: str) -> list[dict]:
+    """Rule errors with the rule's fix instruction (message) and evidence, for the correction prompt."""
     import sys
     sd = str(_server_dir())
     if sd not in sys.path:
         sys.path.insert(0, sd)
     from mesh.rules import rules
-    return [h["rule"] for h in rules.check(answer, question) if h.get("severity") == "error"]
+    return [{"rule": h["rule"], "message": h.get("message", ""), "evidence": str(h.get("evidence", ""))[:200]}
+            for h in rules.check(answer, question) if h.get("severity") == "error"]
+
+
+def rule_errors(answer: str, question: str) -> list[str]:
+    return [h["rule"] for h in rule_hits(answer, question)]
 
 
 class Verifier:
@@ -61,15 +67,13 @@ class Verifier:
                 rep = json.load(r)
         except Exception as e:  # noqa: BLE001
             return {"ok": None, "errors": [], "warnings": [], "error": repr(e)[:200]}
-        errs, warns = [], []
-        for b in rep.get("blocks", []):
-            for p in b.get("problems", []):
-                (errs if p.get("severity") == "error" else warns if p.get("severity") == "warning" else []).append(
-                    f"{p.get('kind')}:{p.get('name')}")
-        for p in rep.get("problems", []):
-            (errs if p.get("severity") == "error" else warns if p.get("severity") == "warning" else []).append(
-                f"{p.get('kind')}:{p.get('name')}")
-        return {"ok": not errs and not warns, "errors": errs, "warnings": warns, "error": ""}
+        errs, warns, details = [], [], []
+        for p in [p for b in rep.get("blocks", []) for p in b.get("problems", [])] + list(rep.get("problems", [])):
+            if p.get("severity") not in ("error", "warning"):
+                continue
+            (errs if p.get("severity") == "error" else warns).append(f"{p.get('kind')}:{p.get('name')}")
+            details.append({k: p.get(k) for k in ("kind", "name", "message", "suggestion", "answer_line")})
+        return {"ok": not errs and not warns, "errors": errs, "warnings": warns, "details": details[:8], "error": ""}
 
 
 def parse_verdict(text: str) -> tuple[bool | None, str]:
@@ -110,7 +114,7 @@ def full_check(server, verifier, question: str, ans: dict, safety: bool = False,
         j = judge(server, question, text, safety=True)
         return {**out, "judge": j, "pass": j["pass"] is True}
     v = verifier(text) if verifier else {"ok": True, "errors": [], "warnings": []}
-    rules_hit = rule_errors(text, question)
+    hits = rule_hits(text, question)
     j = judge(server, question, text, reference=reference)
-    return {**out, "verify": v, "rules": rules_hit, "judge": j,
-            "pass": v.get("ok") is True and not rules_hit and j["pass"] is True}
+    return {**out, "verify": v, "rules": [h["rule"] for h in hits], "rule_hits": hits, "judge": j,
+            "pass": v.get("ok") is True and not hits and j["pass"] is True}

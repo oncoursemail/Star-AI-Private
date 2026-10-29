@@ -8,6 +8,11 @@ llama.cpp's convert_lora_to_gguf.py can turn it into a GGUF LoRA for `llama-serv
 
 Data rows (JSONL): {"messages": [{"role": "system"|"user"|"assistant", "content": ...}, ...], "id": ...}; the loss
 covers the LAST assistant message only.
+Preference pairs (--pairs, JSONL): {"messages": [system, user], "chosen": text, "rejected": text}; trained with ORPO
+(odds-ratio preference loss + NLL on the chosen answer, no reference model): one graph on the card at a time
+(chosen with grad, rejected without, then rejected with grad), so a pair fits the same 8 GB as one SFT row.
+The cosine schedule is fitted to the time box: after the first optimizer steps the planned steps shrink to what
+the remaining minutes allow, so a time-boxed run still ends at a low learning rate.
 Stops cleanly (saves the adapter) at --max-minutes, on the STOP-SOFT / STOP file next to --stop-dir, or when free
 host RAM falls below --ram-floor-gb.
 usage: python -m training.nightly.train --model-dir HF_DIR --data sft.jsonl --out RUN_DIR [--val val.jsonl]
@@ -53,6 +58,32 @@ def encode(tok, row: dict, max_len: int) -> tuple[list[int], int] | None:
     if len(ids) > max_len or len(prompt_ids) >= max_len - 16:
         return None                         # never train on a cut answer
     return ids, len(prompt_ids)
+
+
+def orpo_coefficients(lc: float, lr: float, beta: float) -> tuple[float, float, float]:
+    """ORPO on mean answer log-probs lc (chosen) and lr (rejected), both < 0:
+        L = -lc + beta * -log sigmoid(g(lc) - g(lr)),   g(x) = log(p / (1 - p)) = x - log(1 - e^x)
+    Returns (dL/dlc, dL/dlr, L) so the caller can back-propagate each answer separately (one graph at a time)."""
+    lc, lr = min(lc, -1e-6), min(lr, -1e-6)
+
+    def g(x):
+        return x - math.log(-math.expm1(x))
+
+    def dg(x):
+        return 1.0 / -math.expm1(x)
+
+    z = g(lc) - g(lr)
+    sig = 1.0 / (1.0 + math.exp(-z)) if z > -60 else 0.0
+    loss = -lc + beta * (math.log1p(math.exp(-z)) if z > -60 else -z)
+    return -1.0 + beta * (sig - 1.0) * dg(lc), beta * (1.0 - sig) * dg(lr), loss
+
+
+def fit_steps(total: int, step: int, elapsed_s: float, budget_s: float) -> int:
+    """Planned optimizer steps that fit the time left (never below the steps already done + 1)."""
+    if step <= 0 or elapsed_s <= 0:
+        return total
+    per = elapsed_s / step
+    return max(step + 1, min(total, step + int(max(0.0, budget_s - elapsed_s) / per)))
 
 
 def vocab_subset(seqs: list[list[int]], extra: list[int], special: list[int]) -> list[int]:
@@ -171,6 +202,9 @@ def main() -> None:
     ap.add_argument("--ram-floor-gb", type=float, default=2.0)
     ap.add_argument("--stop-dir", default=str(Path.home() / ".star" / "nightly"))
     ap.add_argument("--seed", type=int, default=20261029)
+    ap.add_argument("--pairs", default="", help="preference pairs (ORPO)")
+    ap.add_argument("--orpo-beta", type=float, default=0.1)
+    ap.add_argument("--reserve-minutes", type=float, default=6, help="kept free at the end (val loss + save)")
     a = ap.parse_args()
 
     import torch
@@ -200,12 +234,18 @@ def main() -> None:
         else:
             train.append(enc)
     val = [e for e in (encode(tok, r, a.seq) for r in load_rows(a.val)) if e] if a.val else []
+    pairs = []
+    for r in (load_rows(a.pairs) if a.pairs else []):
+        c = encode(tok, {"messages": r["messages"] + [{"role": "assistant", "content": r["chosen"]}]}, a.seq)
+        j = encode(tok, {"messages": r["messages"] + [{"role": "assistant", "content": r["rejected"]}]}, a.seq)
+        if c and j:
+            pairs.append((c, j))
     extra = tok(open(a.vocab_extra, encoding="utf-8").read())["input_ids"] if a.vocab_extra else []
     special = [i for i in (tok.eos_token_id, tok.pad_token_id, tok.bos_token_id) if i is not None]
     special += tok.convert_tokens_to_ids([t for t in ("<end_of_turn>", "<turn|>", "<|turn>") if t in tok.get_vocab()])
-    subset = vocab_subset([s for s, _ in train + val], extra, special)
+    subset = vocab_subset([s for s, _ in train + val] + [x[0] for pr in pairs for x in pr], extra, special)
     remap = {t: i for i, t in enumerate(subset)}
-    say(f"train {len(train)} (skipped {skipped} too long), val {len(val)}, head ids {len(subset)}")
+    say(f"train {len(train)} (skipped {skipped} too long), val {len(val)}, pairs {len(pairs)}, head ids {len(subset)}")
 
     dev = "cuda"
     model, emb, cfg = build_model(model_dir, dev)
@@ -239,7 +279,9 @@ def main() -> None:
         model.train()
         return round(tot / len(val), 4)
 
-    total_steps = max(1, math.ceil(len(train) * a.epochs / a.accum))
+    items = [("sft", i) for i in range(len(train))] + [("pair", i) for i in range(len(pairs))]
+    total_steps = max(1, math.ceil(len(items) * a.epochs / a.accum))
+    planned_steps = total_steps
     warm = max(1, total_steps // 10)
 
     def lr_at(step: int) -> float:
@@ -250,23 +292,37 @@ def main() -> None:
     v0 = val_loss()
     say(f"val loss before {v0}; {total_steps} optimizer steps")
     stop_dir = Path(a.stop_dir)
-    order: list[int] = []
-    while len(order) < len(train) * a.epochs:
-        perm = list(range(len(train)))
+    order: list[tuple] = []
+    while len(order) < len(items) * a.epochs:
+        perm = list(items)
         random.shuffle(perm)
         order += perm
-    order = order[: int(len(train) * a.epochs)]
-    step, seen, stopped, run_loss, tokens = 0, 0, "", [], 0
+    order = order[: int(len(items) * a.epochs)]
+    step, seen, stopped, run_loss, tokens, pair_loss = 0, 0, "", [], 0, []
     torch.cuda.reset_peak_memory_stats()
     t_train = time.time()
+    budget_s = (a.max_minutes - a.reserve_minutes) * 60 - (t_train - t_start)
     model.train()
-    for n, idx in enumerate(order):
-        ids, start = train[idx]
-        loss = loss_of(ids, start) / a.accum
-        loss.backward()
-        run_loss.append(float(loss.detach()) * a.accum)
+    for n, (kind, idx) in enumerate(order):
+        if kind == "sft":
+            ids, start = train[idx]
+            loss = loss_of(ids, start) / a.accum
+            loss.backward()
+            run_loss.append(float(loss.detach()) * a.accum)
+            tokens += len(ids)
+        else:                                    # ORPO, one graph at a time (see orpo_coefficients)
+            (ci, cs), (ri, rs) = pairs[idx]
+            lc_t = -loss_of(ci, cs)
+            with torch.no_grad():
+                lr_v = float(-loss_of(ri, rs))
+            dc, dr, lval = orpo_coefficients(float(lc_t.detach()), lr_v, a.orpo_beta)
+            (lc_t * (dc / a.accum)).backward()
+            del lc_t
+            (-loss_of(ri, rs) * (dr / a.accum)).backward()
+            run_loss.append(lval)
+            pair_loss.append(lval)
+            tokens += len(ci) + 2 * len(ri)
         seen += 1
-        tokens += len(ids)
         if seen % a.accum == 0 or n == len(order) - 1:
             for g in opt.param_groups:
                 g["lr"] = lr_at(step)
@@ -274,10 +330,18 @@ def main() -> None:
             opt.step()
             opt.zero_grad(set_to_none=True)
             step += 1
+            if step == 10 or (step > 10 and step % 25 == 0):
+                fitted = fit_steps(total_steps, step, time.time() - t_train, budget_s)
+                if fitted < total_steps:
+                    say(f"time box: {total_steps} -> {fitted} planned steps (schedule refitted)")
+                    total_steps = fitted
+                    warm = min(warm, max(1, total_steps // 10))
             if step % 5 == 0 or step == total_steps:
                 say(f"step {step}/{total_steps} loss {sum(run_loss[-a.accum * 5:]) / len(run_loss[-a.accum * 5:]):.4f} "
                     f"{tokens / (time.time() - t_train):.0f} tok/s peak {torch.cuda.max_memory_reserved() / 2**30:.2f} GiB")
-        if (time.time() - t_start) / 60 > a.max_minutes:
+        if step >= total_steps and seen % a.accum == 0 and n < len(order) - 1:
+            stopped = "fitted schedule done"
+        elif (time.time() - t_start) / 60 > a.max_minutes:
             stopped = "time box"
         elif (stop_dir / "STOP-SOFT").exists() or (stop_dir / "STOP").exists():
             stopped = "stop file"
@@ -286,8 +350,11 @@ def main() -> None:
         if stopped:
             say("stopping: " + stopped)
             break
-    v1 = val_loss() if not stopped or stopped == "time box" else None
-    meta = {"examples": len(train), "seen": seen, "steps": step, "planned_steps": total_steps, "stopped": stopped,
+    v1 = val_loss() if not stopped or stopped in ("time box", "fitted schedule done") else None
+    meta = {"examples": len(train), "pairs": len(pairs), "orpo_beta": a.orpo_beta if pairs else None,
+            "pair_loss_mean": round(sum(pair_loss) / len(pair_loss), 4) if pair_loss else None,
+            "seen": seen, "steps": step, "planned_steps": planned_steps, "fitted_steps": total_steps,
+            "stopped": stopped,
             "val_loss_before": v0, "val_loss_after": v1, "rank": a.rank, "lr": a.lr, "seq": a.seq,
             "head_ids": len(subset), "train_minutes": round((time.time() - t_train) / 60, 1),
             "tok_s": round(tokens / max(1e-6, time.time() - t_train), 1),
