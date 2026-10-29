@@ -970,7 +970,8 @@ class LocalIntelligence:
     def _ui_call(self, args: dict) -> dict:
         import time as _time
         from . import roblox_ui_designer as ui
-        plan = ui.parse_plan(args.get("plan") if isinstance(args.get("plan"), dict) else {}, args["brief"])
+        raw_plan = args.get("plan")
+        plan = ui.parse_plan(raw_plan if isinstance(raw_plan, dict) else {}, args["brief"])
         script = ui.emit_luau(plan, ui_id=plan["screen"].title())
         out = Path(self.home) / "ui-make" / _time.strftime("%Y%m%dT%H%M%SZ", _time.gmtime())
         out.mkdir(parents=True, exist_ok=True)
