@@ -589,7 +589,9 @@ class Router:
 
     def _failed(self, backend: Backend, err: Exception):
         backend.last_error = str(err)[:120]
-        if backend is not self.brain:
+        # a 400/413/422 is about this one request (llama-server: prompt longer than the node's context), not the
+        # node: no cooldown, or one long prompt sends every request of the next 30 s to the brain's CPU queue
+        if backend is not self.brain and not (isinstance(err, UpstreamError) and err.status in (400, 413, 422)):
             backend.fail_until = time.monotonic() + self.cfg["fail_cooldown_s"]
 
     async def race(self, plan, path, body_for, client_auth, stream, hedge, log):
