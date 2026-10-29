@@ -816,7 +816,7 @@ class Router:
             if req.pop("mesh_general", None) is not False and \
                     headers.get("x-mesh-general", "").lower() not in ("off", "0", "no"):
                 cache_hdr.update(await general.run(self, req, plan, headers.get("authorization", "")))
-            if req.pop("mesh_mc", None) is not False and self.cfg["mc_facts"]:
+            if req.pop("mesh_mcjava", None) is not False and self.cfg["mc_java_facts"]:
                 cache_hdr.update(mcfacts.apply(req))
 
         def body_for(mid):

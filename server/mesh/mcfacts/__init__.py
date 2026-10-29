@@ -7,13 +7,13 @@ Fabric API 0.141.6, NeoForge 21.11.48). The mc-plugins eval measured the first-t
 (docs/agents/mc-plugins-20261029.md).
 
     platform, note = facts_for(question)        # (None, "") when the question is not about a plugin/mod
-    hdr = apply(req)                            # appends the note to the last user turn -> {"X-Mesh-MC": platform}
+    hdr = apply(req)                            # appends the note to the last user turn -> {"X-Mesh-MCJava": platform}
 """
 from __future__ import annotations
 
 import re
 
-DEFAULTS = {"mc_facts": True}
+DEFAULTS = {"mc_java_facts": True}    # ("mc_facts" is the mc-data lane's vanilla facts block)
 
 COMMON = ("(Facts for Litha, not from the user: checked against the real Minecraft 1.21.11 API jars. Use exactly these "
           "names; never invent classes or methods. Give every file the user needs, each with its path.)\n")
@@ -142,4 +142,4 @@ def apply(req: dict) -> dict:
     if not platform:
         return {}
     msgs[-1] = {**msgs[-1], "content": msgs[-1]["content"] + "\n\n" + note}
-    return {"X-Mesh-MC": platform}
+    return {"X-Mesh-MCJava": platform}

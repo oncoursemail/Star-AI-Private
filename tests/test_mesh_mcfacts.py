@@ -22,7 +22,7 @@ def test_platform_routing():
 
 def test_apply_appends_to_last_user_turn_only():
     req = {"messages": [{"role": "system", "content": "sys"}, {"role": "user", "content": "Paper plugin with /fly"}]}
-    assert mcfacts.apply(req) == {"X-Mesh-MC": "paper"}
+    assert mcfacts.apply(req) == {"X-Mesh-MCJava": "paper"}
     assert req["messages"][0]["content"] == "sys"
     assert req["messages"][1]["content"].startswith("Paper plugin with /fly\n\n(Facts for Litha")
     assert "LifecycleEvents.COMMANDS" in req["messages"][1]["content"]
@@ -32,4 +32,4 @@ def test_apply_appends_to_last_user_turn_only():
 
 def test_router_has_the_hook_on():
     from mesh import router
-    assert router.DEFAULTS["mc_facts"] is True and router.mcfacts is mcfacts
+    assert router.DEFAULTS["mc_java_facts"] is True and router.mcfacts is mcfacts
