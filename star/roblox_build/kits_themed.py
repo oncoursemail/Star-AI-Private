@@ -620,7 +620,7 @@ def striped_tent(ctx, w, h):
 @kit("park_arch_gate", "theme park entrance arch: two towers with finials and flags, curved arch with bulbs, sign with text",
      {"w": (20, 10, 40), "h": (16, 10, 30)}, footprint=(28, 5), tags=("themepark",))
 def park_arch_gate(ctx, w, h):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     w, h = _sn(ctx, w), _sn(ctx, h)
     tw = 3.0
     acc = ctx.color("paint", "accent")
@@ -678,7 +678,7 @@ def park_arch_gate(ctx, w, h):
 @kit("bumper_car", "bumper car (dodgem): rubber bumper ring, glossy shell, seat, wheel, sparking pole (front -Z)", {},
      footprint=(4, 6), tags=("themepark",))
 def bumper_car(ctx):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     L, W = 5.5, 3.6
     rubber = _col(ctx, (30, 30, 32))
     out = []
@@ -774,7 +774,7 @@ def dock(ctx, length, w, rail):
 @kit("rowboat", "wooden rowboat with thwarts and oars, bow at -Z (sits on the floor/water line)",
      {"length": (7, 5, 12)}, footprint=(4, 7), tags=("coast",))
 def rowboat(ctx, length):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     L = _sn(ctx, length)
     W, H = L * 0.42, 1.4
     hull = ctx.color("paint", "primary")
@@ -1289,7 +1289,7 @@ def platform_edge(ctx, length):
 @kit("turnstile", "row of subway tripod turnstiles: cabinets with card readers and three-arm rotors, lanes along X",
      {"n": (3, 1, 6)}, footprint=(10, 4), tags=("urban",))
 def turnstile(ctx, n):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     n = int(n)
     lane = 3.2
     steel = _col(ctx, STEEL)
@@ -1443,7 +1443,7 @@ def checkpoint(ctx):
      {"kind": ("plain", ["plain", "checkpoint", "kill", "spinner", "truss"]), "w": (8, 3, 30), "h": (1, 0.4, 20),
       "tall": (12, 4, 40)}, footprint=(8, 8), tags=("obby",))
 def obby_platform(ctx, kind, w, h, tall):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     red = (255, 40, 40)
     if kind == "truss":
         tall = _sn(ctx, tall)
@@ -1621,7 +1621,7 @@ def spawn_pad(ctx, w):
 @kit("tent", "camping tent (A-frame ridge along Z or dome), door at -Z, groundsheet, guy lines",
      {"kind": ("a_frame", ["a_frame", "dome"]), "size": (6, 4, 12)}, footprint=(6, 8), tags=("camp",))
 def tent(ctx, kind, size):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     s = _sn(ctx, size)
     fab = ctx.color("fabric", "accent")
     dark = (40, 36, 32)
@@ -1677,7 +1677,7 @@ def tent(ctx, kind, size):
 @kit("log_seat", "log bench along X (carved seat top in the round styles), chocks, optional snow cap",
      {"length": (5, 3, 10), "snow": (0, 0, 1)}, footprint=(5, 2), tags=("camp", "nature"))
 def log_seat(ctx, length, snow):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     L = _sn(ctx, length)
     bark = ctx.color("wood", vary=0.05)
     bark = shade(bark, 0.8)
@@ -1799,7 +1799,7 @@ def cabin_porch(ctx, w, d):
 @kit("snow_pine", "snow-laden pine: tiered foliage with snow caps on every tier and a snow mound at the base",
      {"h": (14, 6, 40)}, footprint=(7, 7), tags=("nature", "winter"))
 def snow_pine(ctx, h):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     h = _sn(ctx, h)
     leaf = shade(ctx.color("foliage", vary=0.05), 0.75)
     snow = ctx.color("snow")
@@ -1846,7 +1846,7 @@ def snow_pine(ctx, h):
 @kit("snowman", "snowman: three snowballs, coal eyes and buttons, carrot nose, stick arms, top hat, scarf; melting when abandoned",
      {"h": (6, 3, 10)}, footprint=(3, 3), tags=("winter",))
 def snowman(ctx, h):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     snow = ctx.color("snow")
     coal = (30, 30, 32)
     s1, s2, s3 = h * 0.42, h * 0.32, h * 0.24
@@ -1955,7 +1955,7 @@ def torii_gate(ctx, w, h):
 @kit("stone_lantern", "Japanese stone lantern (toro): base, pillar, platform, light box with glowing windows, wide roof, finial",
      {"h": (5, 3, 9)}, footprint=(3, 3), tags=("japanese", "light"))
 def stone_lantern(ctx, h):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     k = h / 5
     out = _prism(ctx, 2.2 * k, 0.6 * k, (0, 0.3 * k, 0), mat="stone", vary=0.03)
     ph = h * 0.35
@@ -2211,7 +2211,7 @@ def paper_screen(ctx, w, h, lit):
 @kit("hospital_bed", "hospital bed on castors: raised head section at +Z, mattress, blanket, side rails, chart at the foot",
      {}, footprint=(4, 8), tags=("hospital",))
 def hospital_bed(ctx):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     W, Lb = 3.6, 7.5
     metal = _col(ctx, (200, 204, 210))
     out = [part(ctx, "B", (W, 0.3, Lb), (0, 1.6, 0), mat="metal", color=metal),
@@ -2291,7 +2291,7 @@ def curtain_divider(ctx, length, h):
 @kit("iv_stand", "IV drip stand: five-leg castor base, pole, hooks, IV bag with fluid level, tube, pump box",
      {}, footprint=(2, 2), tags=("hospital",))
 def iv_stand(ctx):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     metal = _col(ctx, (210, 214, 220))
     legs = 4 if _stud(ctx) else 5
     out = []
@@ -2451,7 +2451,7 @@ def reading_table(ctx, w):
 @kit("globe", "floor-standing library globe: tripod stand, tilted meridian ring, antique sphere with land patches",
      {"h": (4, 2, 6)}, footprint=(2, 2), tags=("library",))
 def globe(ctx, h):
-    rng, ab = ctx.rng, _abandoned(ctx)
+    ab = _abandoned(ctx)
     R = h * 0.22
     cy = h - R
     wood = ctx.color("wood", "secondary")

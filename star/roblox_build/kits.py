@@ -242,7 +242,7 @@ def stairs(ctx, w, rise, steps, mat, rail):
 
 @kit("railing", "balustrade / railing segment along X", {"len": (12, 2, 60), "h": (3, 2, 5),
      "mat": ("wood", ["wood", "metal", "stone", "marble"])}, footprint=(12, 1))
-def railing(ctx, len, h, mat):
+def railing(ctx, len, h, mat):  # noqa: A002 (kit parameter names the model writes)
     out = [part(ctx, "B", (len, 0.4, 0.6), (0, h, 0), mat=mat), part(ctx, "B", (len, 0.3, 0.4), (0, 0.15, 0), mat=mat)]
     step = 1.2 if ctx.style == "highpoly" else 2.0
     n = max(2, int(len / step))
@@ -257,7 +257,7 @@ def railing(ctx, len, h, mat):
 
 @kit("fence", "wooden or metal fence along X (posts + rails)", {"len": (16, 4, 80), "h": (3, 2, 6),
      "kind": ("picket", ["picket", "rail", "iron", "broken"])}, footprint=(16, 1))
-def fence(ctx, len, h, kind):
+def fence(ctx, len, h, kind):  # noqa: A002 (kit parameter names the model writes)
     mat = "metal" if kind == "iron" else "wood"
     out = []
     posts = max(2, int(len / 6) + 1)
@@ -338,7 +338,7 @@ def cliff(ctx, w, d, h, mat, moss):
 # =========================================================================== furniture
 
 @kit("pew", "church pew / long bench with back", {"len": (10, 4, 20), "broken": (0, 0, 1)}, footprint=(10, 3))
-def pew(ctx, len, broken):
+def pew(ctx, len, broken):  # noqa: A002 (kit parameter names the model writes)
     out = []
     tilt = ctx.rng.uniform(-10, 10) if broken else 0
     out.append(part(ctx, "B", (len, 0.4, 2), (0, 2, 0), rot=(0, 0, tilt * 0.3), mat="wood", vary=0.04))
@@ -355,7 +355,7 @@ def pew(ctx, len, broken):
 
 @kit("bench", "simple bench (park / waiting)", {"len": (6, 3, 14), "mat": ("wood", ["wood", "metal", "stone"])},
      footprint=(6, 2))
-def bench(ctx, len, mat):
+def bench(ctx, len, mat):  # noqa: A002 (kit parameter names the model writes)
     out = [part(ctx, "B", (len, 0.3, 1.8), (0, 1.9, 0), mat=mat if mat != "metal" else "plank", vary=0.04)]
     out.append(part(ctx, "B", (len, 1.5, 0.25), (0, 2.75, 0.8), rot=(-10, 0, 0), mat=mat if mat != "metal" else "plank"))
     for sx in (-1, 1):
@@ -367,7 +367,7 @@ def bench(ctx, len, mat):
 @kit("table", "table (square/long/round) with optional place settings", {"w": (4, 2, 16), "d": (3, 2, 8),
      "round": (0, 0, 1), "setting": (1, 0, 1), "mat": ("wood", ["wood", "metal", "marble", "stone", "plank"])},
      footprint=(5, 4))
-def table(ctx, w, d, round, setting, mat):
+def table(ctx, w, d, round, setting, mat):  # noqa: A002 (kit parameter names the model writes)
     out = []
     top_y = 3.0
     if round and ctx.style != "stud":
@@ -440,7 +440,7 @@ def stool(ctx):
 
 
 @kit("booth", "diner/cafe booth seat (two benches facing a table)", {"len": (6, 4, 10)}, footprint=(6, 9))
-def booth(ctx, len):
+def booth(ctx, len):  # noqa: A002 (kit parameter names the model writes)
     out = []
     for sz in (-1, 1):
         out.append(part(ctx, "B", (len, 2.0, 2.4), (0, 1.0, sz * 3.4), mat="fabric", role="accent"))
@@ -451,7 +451,7 @@ def booth(ctx, len):
 
 
 @kit("sofa", "sofa / couch facing -Z", {"len": (7, 3, 14)}, footprint=(7, 3))
-def sofa(ctx, len):
+def sofa(ctx, len):  # noqa: A002 (kit parameter names the model writes)
     out = [part(ctx, "B", (len, 1.7, 3), (0, 0.85, 0), mat="fabric", role="accent"),
            part(ctx, "B", (len, 2.4, 0.9), (0, 2.6, 1.1), mat="fabric", role="accent", vary=0.03)]
     for sx in (-1, 1):
@@ -478,7 +478,7 @@ def bed(ctx, w):
 
 @kit("counter", "shop/cafe/bar counter along X, with top and clutter", {"len": (12, 4, 40),
      "clutter": (1, 0, 1)}, footprint=(12, 3))
-def counter(ctx, len, clutter):
+def counter(ctx, len, clutter):  # noqa: A002 (kit parameter names the model writes)
     out = [part(ctx, "B", (len, 3.6, 2.4), (0, 1.8, 0), mat="wood", role="secondary"),
            part(ctx, "B", (len + 0.4, 0.3, 2.9), (0, 3.75, -0.1), mat="marble" if ctx.style != "stud" else "plastic",
                 role="primary" if ctx.style == "stud" else "")]
@@ -753,7 +753,7 @@ def lamp_post(ctx, h, color, broken):
 
 @kit("string_lights", "festoon string of bulbs between two points (along X at height y)", {"len": (16, 4, 60),
      "y": (10, 4, 30), "sag": (1.5, 0, 6)}, footprint=(16, 1), tags=("light",))
-def string_lights(ctx, len, y, sag):
+def string_lights(ctx, len, y, sag):  # noqa: A002 (kit parameter names the model writes)
     out = []
     n = max(4, int(len / 2.2))
     for i in range(n + 1):
@@ -793,7 +793,7 @@ def candles(ctx, y, n):
 
 @kit("led_strip", "linear light strip (under shelves / along counters), along X at height y", {"len": (8, 2, 40),
      "y": (6, 1, 30), "color": ("warm", ["warm", "cool", "pink", "cyan"])}, footprint=(8, 1), tags=("light",))
-def led_strip(ctx, len, y, color):
+def led_strip(ctx, len, y, color):  # noqa: A002 (kit parameter names the model writes)
     col = {"warm": (255, 200, 140), "cool": (200, 225, 255), "pink": (255, 110, 190), "cyan": (90, 230, 255)}[color]
     p = part(ctx, "B", (len, 0.15, 0.2), (0, y, 0), mat="neon", color=col, collide=False,
              light=light("surface", col, 0.8, 10, angle=120, face="Bottom", shadows=False))
