@@ -43,6 +43,7 @@ step_install() {
   ct_sh <<SH
 set -e
 rm -rf $APP/new && mkdir -p $APP/new && tar --no-same-owner -xzf /tmp/self.tgz -C $APP/new && rm /tmp/self.tgz
+PYTHONPATH=$APP/new PYTHONDONTWRITEBYTECODE=1 python3 -c 'import mesh.selfmodel.service, mesh.upgrade.watch' || { echo 'new release does not import: live release kept'; rm -rf $APP/new; exit 3; }
 if [ -d $APP/app ]; then rm -rf $APP/previous && mv $APP/app $APP/previous; fi
 mv $APP/new $APP/app
 chown -R root:root $APP/app

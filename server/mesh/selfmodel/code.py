@@ -116,7 +116,10 @@ def build_report(repo_dir: str, branch: str, deployed: dict, gh=run) -> dict:
     dep = {}
     for name, d in (deployed or {}).items():
         if d.get("blob") and d.get("file"):
-            dep[name] = {"file": d["file"], **commit_of_blob(repo_dir, d["blob"], "server/" + d["file"], branch)}
+            got = commit_of_blob(repo_dir, d["blob"], "server/" + d["file"], branch)
+            if not got.get("commit") and d.get("blob_lf") and d["blob_lf"] != d["blob"]:
+                got = commit_of_blob(repo_dir, d["blob_lf"], "server/" + d["file"], branch)
+            dep[name] = {"file": d["file"], **got}
     return {"kind": "code", "branch": branch, "head": head, "prs": prs, "ci": ci_state(runs), "deployed": dep}
 
 

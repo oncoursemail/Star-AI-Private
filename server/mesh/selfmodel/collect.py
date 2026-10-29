@@ -245,7 +245,10 @@ def collect(cfg: dict, key: str | None, fetch: Fetch = http_fetch, read_file=Non
     deployed = {}
     for name, path in (cfg.get("deployed_files") or {}).items():
         try:
-            deployed[name] = {"file": path.split("/app/", 1)[-1], "blob": blob_id(read_file(path))}
+            data = read_file(path)
+            # deploys from a Windows checkout (core.autocrlf) carry CRLF; git stores LF: report the LF id too
+            deployed[name] = {"file": path.split("/app/", 1)[-1], "blob": blob_id(data),
+                              "blob_lf": blob_id(data.replace(b"\r\n", b"\n"))}
         except OSError:
             deployed[name] = {"file": path.split("/app/", 1)[-1], "blob": None}
 

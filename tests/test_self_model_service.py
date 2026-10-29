@@ -105,6 +105,12 @@ def test_collect_builds_one_view_from_existing_endpoints():
     assert s["router"]["recent"]["by_backend"] == {"star-pc": 2, "brain1": 1}
     assert s["router"]["recent"]["median_first_word_ms"] == 1100
     assert s["code"]["deployed"]["router"]["blob"] == collect.blob_id(b"print('hi')\n")
+    FILES["/opt/star-mesh/app/mesh/router.py"] = b"print('hi')\r\n"            # deployed from a CRLF checkout
+    try:
+        crlf = collect.collect(CFG, KEY, fake_fetch([]), read_file)["code"]["deployed"]["router"]
+    finally:
+        FILES["/opt/star-mesh/app/mesh/router.py"] = b"print('hi')\n"
+    assert crlf["blob_lf"] == collect.blob_id(b"print('hi')\n") != crlf["blob"]
     wheres = [e["where"] for e in s["errors"]]
     assert "node owner-pc" in wheres and "service images" in wheres
     # the brain key goes only to the router and the brain, never to Forgejo/knowledge/images
