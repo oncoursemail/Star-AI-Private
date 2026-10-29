@@ -10,6 +10,7 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 def _router() -> str:
     """Mesh router address: env STAR_MESH_URL, else ~/.star/mesh_url (same rule as star.system_view)."""
@@ -65,7 +66,7 @@ def node_chat(body: dict, wait_s: float = 1800.0, timeout: float = 600.0) -> tup
     last = ""
     while True:
         for name, url in usable_nodes():
-            b = dict(body, model="litha-fast")
+            b: dict[str, Any] = dict(body, model="litha-fast")
             b["chat_template_kwargs"] = {"enable_thinking": False}
             req = urllib.request.Request(url + "/chat/completions", json.dumps(b).encode("utf-8"),
                                          {"Authorization": "Bearer " + token, "Content-Type": "application/json"})

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from . import llm
 
@@ -39,11 +40,12 @@ def critique(sheet_path: str, brief: dict, part_ids: list[str], model: str = "st
         _DOWN_UNTIL["t"] = time.time() + DOWN_S
         return {"overall": None, "issues": [], "unavailable": f"{type(e).__name__}: {e}"[:200]}, {"seconds": timeout}
     try:
-        data = llm.extract_json(text)
+        data: dict[str, Any] = llm.extract_json(text)
     except ValueError:
         data = {"overall": None, "issues": [], "raw": text[:500]}
     ov = data.get("overall")
-    sc = data.get("scores") if isinstance(data.get("scores"), dict) else {}
+    sc_raw = data.get("scores")
+    sc = sc_raw if isinstance(sc_raw, dict) else {}
     nums = [v for v in sc.values() if isinstance(v, (int, float))]
     if not isinstance(ov, (int, float)) and nums:
         data["overall"] = round(sum(nums) / len(nums), 1)

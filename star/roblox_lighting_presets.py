@@ -405,7 +405,7 @@ def _clean(section: str, props: dict) -> dict:
     return out
 
 
-def _clean_practical(role: str, recipe: dict) -> dict | None:
+def _clean_practical(role: str, recipe: dict | None) -> dict | None:
     if not recipe or recipe.get("enabled") is False:
         return None
     cls = recipe.get("class", "PointLight")

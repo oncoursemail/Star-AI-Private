@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import math
 import re
+from typing import Any
 
 CATEGORIES = ("weapon", "vehicle", "furniture", "prop", "accessory")
 STYLES = ("pbr", "stylized", "lowpoly", "roblox")
@@ -107,7 +108,7 @@ def validate_part(p, i):
     t = p.get("type")
     if t not in PART_TYPES:
         raise SpecError(f"{where}.type must be one of {PART_TYPES}")
-    out = {"id": str(p.get("id") or f"part{i}")[:40], "type": t,
+    out: dict[str, Any] = {"id": str(p.get("id") or f"part{i}")[:40], "type": t,
            "pos": _vec(p.get("pos", [0, 0, 0]), f"{where}.pos"),
            "rot": _vec(p.get("rot", [0, 0, 0]), f"{where}.rot", lo=-360, hi=360)}
     mat = p.get("mat", "plastic")
@@ -177,7 +178,8 @@ def validate_part(p, i):
             raise SpecError(f"{where}.seams[{k}] needs axis x|y|z and at: [positions]")
         out["seams"].append({"axis": s["axis"], "at": [_num(a, f"{where}.seams[{k}].at") for a in s["at"][:8]]})
     out["mirror_y"] = bool(p.get("mirror_y", False))
-    att = p.get("attach") if isinstance(p.get("attach"), dict) else {}
+    att_raw = p.get("attach")
+    att = att_raw if isinstance(att_raw, dict) else {}
     count = p.get("count", att.get("count", 1))
     out["count"] = count if isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= 24 else 1
     out["step"] = _vec(p.get("step", att.get("step", [0, 0, 0])), f"{where}.step") if out["count"] > 1 else [0, 0, 0]
@@ -188,7 +190,7 @@ def validate(spec) -> dict:
     """Return a cleaned copy of the spec or raise SpecError with a message the model can act on."""
     if not isinstance(spec, dict):
         raise SpecError("spec must be a JSON object")
-    out = {"name": str(spec.get("name") or "asset")[:60]}
+    out: dict[str, Any] = {"name": str(spec.get("name") or "asset")[:60]}
     cat = spec.get("category")
     out["category"] = cat if cat in CATEGORIES else "prop"
     style = spec.get("style")

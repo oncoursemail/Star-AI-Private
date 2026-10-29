@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import math
+from typing import Any
 
 from . import kits
 from . import kits_themed  # noqa: F401  (registers the themed kits)
@@ -120,10 +121,12 @@ def normalize(raw: dict) -> tuple[dict, list[str]]:
     style = raw.get("style") if raw.get("style") in STYLES else "midpoly"
     if raw.get("style") not in STYLES:
         notes.append(f"style {raw.get('style')!r} unknown -> midpoly")
-    size = raw.get("size") if isinstance(raw.get("size"), list) and len(raw.get("size")) == 2 else [80, 80]
+    size_raw = raw.get("size")
+    size = size_raw if isinstance(size_raw, list) and len(size_raw) == 2 else [80, 80]
     w, d = _num(size[0], 80, 20, MAX_SIZE), _num(size[1], 80, 20, MAX_SIZE)
     hw, hd = w / 2, d / 2
-    pal = raw.get("palette") if isinstance(raw.get("palette"), dict) else {}
+    pal_raw = raw.get("palette")
+    pal = pal_raw if isinstance(pal_raw, dict) else {}
     spec = {
         "name": str(raw.get("name") or "Build")[:48], "style": style,
         "state": raw.get("state") if raw.get("state") in STATES else "worn",
@@ -201,7 +204,8 @@ def normalize(raw: dict) -> tuple[dict, list[str]]:
         rep = p.get("repeat")
         if isinstance(rep, dict):
             n = int(_num(rep.get("n"), 1, 1, 24))
-            step = rep.get("step") if isinstance(rep.get("step"), list) and len(rep.get("step")) == 2 else [0, 0]
+            step_raw = rep.get("step")
+            step = step_raw if isinstance(step_raw, list) and len(step_raw) == 2 else [0, 0]
             if n > 1:
                 item["repeat"] = {"n": n, "step": [_num(step[0], 0, -60, 60), _num(step[1], 0, -60, 60)]}
         spec["props"].append(item)
@@ -487,7 +491,7 @@ WALL_KITS = {"shelf", "picture", "sconce", "vines", "cabinet", "fireplace", "cob
 HANGING_KITS = {"chandelier", "pendant_lamp"}
 
 
-def _room_rect(spec: dict, x: float, z: float):
+def _room_rect(spec: dict, x: float, z: float) -> tuple[Any, Any]:
     for room in spec["rooms"]:
         zone = next(zz for zz in spec["zones"] if zz["id"] == room["zone"])
         x0, z0, x1, z1 = zone["rect"]

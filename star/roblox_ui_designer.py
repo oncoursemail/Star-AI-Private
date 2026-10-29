@@ -230,7 +230,7 @@ def parse_plan(text_or_plan: str | dict) -> dict:
             continue
         kind = str(item.get("kind", "gem")).lower()
         rarity = str(item.get("rarity", "common")).lower()
-        clean = {"name": _clean_text(item.get("name", "Item"), 18) or "Item",
+        clean: dict[str, Any] = {"name": _clean_text(item.get("name", "Item"), 18) or "Item",
                  "kind": kind if kind in KINDS else "gem",
                  "rarity": rarity if rarity in RARITIES else "common"}
         for key in ("price", "count", "amount"):

@@ -12,6 +12,7 @@ import json
 import time
 import traceback
 from pathlib import Path
+from typing import Any
 
 from . import author, critic, runner
 from .spec import STYLE
@@ -150,7 +151,7 @@ def rerender(run: Path, where: str, threads: int, workers: int = 2, ids: str = "
                                   render=EVAL_RENDER, final=(cond == "final"))
         for cond, job in jobs.items():
             m = runner.build(job, d / "rr" / cond, where)
-            r = {"metrics": _slim(m)}
+            r: dict[str, Any] = {"metrics": _slim(m)}
             if m.get("ok"):
                 r["sheet"] = str(runner.contact_sheet(m["views"], d / "rr" / cond / "sheet.jpg", tile=512))
                 if cond != "baseline":

@@ -13,6 +13,7 @@ import os
 import sys
 import time
 import traceback
+from typing import Any
 
 import bmesh
 import bpy
@@ -453,7 +454,7 @@ def build_material(name, kind, color_hex, style, size, zrange):
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
     nt.links.new(bsdf.outputs[0], out.inputs[0])
     edge_r = 0.0015 if style == "pbr" else 0.004
-    s = {"emit": None, "normal": None}
+    s: dict[str, Any] = {"emit": None, "normal": None}
     if style == "lowpoly":
         geo = nt.nodes.new("ShaderNodeNewGeometry")
         sep = nt.nodes.new("ShaderNodeSeparateXYZ")
@@ -741,7 +742,7 @@ def mesh_qa(ob, tex):
     zero = sum(1 for f in bm.faces if f.calc_area() < 1e-10)
     loose = sum(1 for v in bm.verts if not v.link_faces)
     bm.free()
-    q = {"tris": tris, "non_manifold_edges": non_manifold, "boundary_edges": boundary, "zero_area_faces": zero,
+    q: dict[str, Any] = {"tris": tris, "non_manifold_edges": non_manifold, "boundary_edges": boundary, "zero_area_faces": zero,
          "loose_verts": loose}
     uvl = me.uv_layers.active
     if uvl is None:
@@ -1081,7 +1082,7 @@ def main():
     threads = int(job.get("threads", 4))
     bpy.context.scene.render.threads_mode = "FIXED"
     bpy.context.scene.render.threads = threads
-    res = {"ok": False}
+    res: dict[str, Any] = {"ok": False}
     try:
         setup_world()
         if job.get("mode") == "baseline":

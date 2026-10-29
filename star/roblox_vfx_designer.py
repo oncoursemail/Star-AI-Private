@@ -20,7 +20,7 @@ import math
 import re
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 from . import roblox_vfx_studio as vfx
 
@@ -181,7 +181,7 @@ def _colour(value) -> tuple[int, int, int] | None:
             return vfx.COLOUR_WORDS[word]
         if re.fullmatch(r"#?[0-9a-f]{6}", word):
             word = word.lstrip("#")
-            return tuple(int(word[i:i + 2], 16) for i in (0, 2, 4))
+            return cast(tuple[int, int, int], tuple(int(word[i:i + 2], 16) for i in (0, 2, 4)))
         for name, rgb in vfx.COLOUR_WORDS.items():      # "electric blue" -> blue
             if re.search(r"\b" + name + r"\b", word):
                 return rgb
@@ -239,7 +239,8 @@ def normalize_plan(raw, brief: str) -> tuple[dict, list[str]]:
         colours = fallback["palette"]
     plan["palette"] = colours
     a, i, f = TIMING[archetype]
-    timing = data.get("timing") if isinstance(data.get("timing"), dict) else {}
+    timing_raw = data.get("timing")
+    timing = timing_raw if isinstance(timing_raw, dict) else {}
     plan["timing"] = {"anticipation": _num(timing.get("anticipation"), 0.0, 1.5, a),
                       "impact": _num(timing.get("impact"), 0.03, 0.5, i),
                       "follow_through": _num(timing.get("follow_through"), 0.2, 4.0, f)}
@@ -249,7 +250,8 @@ def normalize_plan(raw, brief: str) -> tuple[dict, list[str]]:
         plan["timing"]["follow_through"] = max(plan["timing"]["follow_through"], 3.0)
     plan["scale"] = _num(data.get("scale"), 0.5, 2.0, 1.0)
     plan["intensity"] = _num(data.get("intensity"), 0.3, 1.5, 1.0)
-    extras = data.get("extras") if isinstance(data.get("extras"), list) else []
+    extras_raw = data.get("extras")
+    extras = extras_raw if isinstance(extras_raw, list) else []
     plan["extras"] = sorted({str(e).lower() for e in extras if str(e).lower() in EXTRAS})
     return plan, problems
 
