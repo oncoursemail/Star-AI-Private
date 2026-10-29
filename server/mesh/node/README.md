@@ -24,8 +24,9 @@ Lends this PC's NVIDIA card to the STAR compute mesh while nobody needs it. One 
   SteamVR, Oculus; also from the tray); a game showing a window (Roblox player/Studio, Rec Room / Metallic RC, VRChat,
   Minecraft Bedrock, any program under `\steamapps\common\`, Minecraft Java = javaw with "minecraft" in its path or
   window title; a leftover game process with no window does not count); another program's GPU load (>= 40 % on two
-  looks while the model is not answering); other programs growing video memory by 1200 MB; or not enough free video
-  memory to load. Then llama-server is killed at once (the card is free in about a second) and the
+  looks while the model is not answering); optionally the whole PC's CPU load (`busy_cpu_percent` for
+  `busy_cpu_looks` looks in a row while the model is not answering; off by default); other programs growing video
+  memory by 1200 MB; or not enough free video memory to load. Then llama-server is killed at once (the card is free in about a second) and the
   state is `busy`; the model comes back after `resume_seconds` (180) with nothing in the way.
 - States: `idle` (loaded, serving), `draining`, `busy`, `away` (not loaded: loading, unloaded on request, failed),
   `off` (file `OFF`). Memory pressure (a lower ngl step, too little free memory, others +1200 MB) while an answer

@@ -72,6 +72,8 @@ DEFAULTS: dict = {
     "min_free_loaded_mb": 800,                  # loaded and less free than this: step down the ladder or unload
     "drain_seconds": 30,                        # memory-pressure reload/unload waits this long for answers in flight
     "busy_util_percent": 40, "busy_util_looks": 2,   # other programs' GPU load (while the model is not working)
+    "busy_cpu_percent": 0, "busy_cpu_looks": 8,      # whole-PC CPU load this high this many looks in a row (while
+                                                     # the model is not working); 0 = off
     "other_vram_grow_mb": 1200,                 # other programs grew their video memory this much since the load
     "fullscreen": True,
     # games: busy while they show a window (a leftover background process with no window does not count)
@@ -157,6 +159,17 @@ def read_gpu() -> dict | None:
         return {"name": name, "total": int(total), "used": int(used), "free": int(free), "util": int(util)}
     except (OSError, ValueError, IndexError, subprocess.SubprocessError):
         return None
+
+
+def read_cpu_times() -> tuple[int, int] | None:
+    """(idle, total) CPU time of the whole machine since boot (GetSystemTimes); None off Windows."""
+    if os.name != "nt":
+        return None
+    import ctypes
+    idle, kernel, user = (ctypes.c_ulonglong() for _ in range(3))
+    if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+        return None
+    return idle.value, kernel.value + user.value                  # kernel time includes idle time
 
 
 def free_ram_mb() -> int | None:
@@ -466,11 +479,12 @@ class Node:
 
     def __init__(self, config: dict, home: Path = HERE, *, probe=None, gpu=read_gpu, ram=free_ram_mb,
                  popen=subprocess.Popen, healthy=health, measure=warm_measure, clock=time.monotonic,
-                 log=None, background=True):
+                 log=None, background=True, cpu=read_cpu_times):
         self.config, self.home = config, Path(home)
         self.probe = probe
         self._gpu, self._ram, self._popen, self._healthy, self._measure = gpu, ram, popen, healthy, measure
         self._clock, self._background = clock, background
+        self._cpu, self.cpu_prev, self.cpu_looks = cpu, None, 0
         self._log = log or self._file_log
         self.lock = threading.RLock()
         self.name = config.get("node") or socket.gethostname().lower()
@@ -546,6 +560,9 @@ class Node:
                 return f"another program is using the graphics card ({gpu['util']}%)"
         elif not ours:
             self.hot_looks = 0
+        cpu = self._cpu_reason(ours)
+        if cpu:
+            return cpu
         if self.ready:
             grown = (gpu["used"] - self.own_mb) - self.others_at_load
             if grown > int(self.config["other_vram_grow_mb"]):
@@ -562,6 +579,22 @@ class Node:
             free = free_of(gpu)
             if need and free < need:
                 return f"only {free} MB of graphics memory is free ({need} MB needed)"
+        return ""
+
+    def _cpu_reason(self, ours: bool) -> str:
+        """Whole-PC CPU load >= busy_cpu_percent for busy_cpu_looks looks in a row while our model is not working."""
+        limit = int(self.config.get("busy_cpu_percent") or 0)
+        times = self._cpu() if limit else None
+        prev, self.cpu_prev = self.cpu_prev, times
+        if not times or not prev or times[1] <= prev[1]:
+            return ""
+        percent = round(100 * (1 - (times[0] - prev[0]) / (times[1] - prev[1])))
+        if ours or percent < limit:
+            self.cpu_looks = 0
+            return ""
+        self.cpu_looks += 1
+        if self.cpu_looks >= int(self.config.get("busy_cpu_looks") or 1):
+            return f"the computer is busy (CPU {percent}% for {self.cpu_looks} looks)"
         return ""
 
     def tick(self) -> None:
