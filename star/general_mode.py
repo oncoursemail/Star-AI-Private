@@ -109,8 +109,10 @@ GPU_MODEL = "litha"
 # Roblox grounding/loop; mesh_brain False = GPU nodes only (the brain's litha-26b is slower than her own path).
 GPU_EXTRAS = {"mesh_general": False, "mesh_cache": False, "mesh_ground": False, "mesh_loop": False, "mesh_brain": False,
               "chat_template_kwargs": {"enable_thinking": False}}
-GPU_FIRST_TOKEN_S = 8.0
-GPU_TOTAL_S = 45.0
+# The GPU node queues requests on its slot; even a queued node (median 5-10 s, p90 15-23 s on 10-29) beats the brain's
+# CPU path (median 38 s, p90 153 s on 10-29), so the lane waits up to 20 s for the first word before falling back.
+GPU_FIRST_TOKEN_S = 20.0
+GPU_TOTAL_S = 90.0
 
 
 def gpu_endpoint(settings) -> str:
