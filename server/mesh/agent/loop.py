@@ -10,10 +10,15 @@ error output. A new answer is kept only when its check score is strictly better 
 """
 from __future__ import annotations
 
+import re
 import time
 
+from ..verify import core
 from .checks import Checks, clean
 from .route import last_user
+
+TYPE_DECL = re.compile(r"^[ \t]*(?:(?:public|private|protected|abstract|final|static|sealed|export|default)\s+)*"
+                       r"(?:class|interface|enum|record)\s+[A-Za-z_]\w*", re.M)
 
 AGENT_NOTE = ("\n\n(Build mode: reply with complete, working code - every file in full, nothing left out, no questions "
               "back. The code will be compiled, run and loaded for real.)")
@@ -39,8 +44,25 @@ def feedback(problems: list[dict], limit: int = 8) -> str:
         lines.append(f"- [{p['stage']}] {p['message']}")
     if len(problems) > limit:
         lines.append(f"- ... and {len(problems) - limit} more")
+    if any(p["stage"] == "run" for p in problems):
+        lines.append("First trace the failing example through your code step by step (silently) to find the line that "
+                     "goes wrong; the same code again will fail again.")
     lines.append("Fix these problems and reply with the complete corrected answer (every file in full).")
     return "\n".join(lines)
+
+
+def code_size(text: str) -> tuple[int, int]:
+    """(characters of code, Java/C#/TS type declarations) over all fenced blocks."""
+    blocks = core.extract_blocks(text)
+    return (sum(len(b["code"].strip()) for b in blocks),
+            sum(len(TYPE_DECL.findall(b["code"])) for b in blocks))
+
+
+def lost_code(old: str, new: str) -> bool:
+    """A repair that throws code away (a Java block replaced by YAML, a file dropped) is not a fix, even when the
+    checkers then report fewer problems."""
+    (oc, ot), (nc, nt) = code_size(old), code_size(new)
+    return nc < 0.6 * oc or nt < ot
 
 
 def verified_line(ev: dict, rounds: int, seconds: float) -> str:
@@ -95,13 +117,14 @@ class Agent:
                 else:
                     stall_block = True
             unusable = [p for p in best_ev["problems"] if p["rank"] == 4]
-            if new is None and unusable:
-                # cut off / repeating / no code: the broken answer is not worth reading back; write it again with the
-                # reason on the request
-                self.progress(f"Round {rnd}: writing it again ({unusable[0]['message'][:80]})...")
+            if new is None and (unusable or stall_rev % 2 == 1):
+                # cut off / repeating / no code, or a revision that did not help: write it again (a fresh sample) with
+                # the reason on the request instead of patching the same draft once more
+                why = unusable or sorted(best_ev["problems"], key=lambda p: -p["rank"])
+                self.progress(f"Round {rnd}: writing it again ({why[0]['message'][:80]})...")
                 msgs = _with_note(messages)
-                msgs[-1] = {**msgs[-1], "content": msgs[-1]["content"] + "\n(Last try failed: " +
-                            "; ".join(p["message"] for p in unusable[:2]) + ")"}
+                msgs[-1] = {**msgs[-1], "content": msgs[-1]["content"] + "\n(Last try failed the real checks: " +
+                            "; ".join(p["message"].splitlines()[0][:160] for p in why[:3]) + ")"}
                 new, fin = self.call(msgs, min(0.9, temperature + 0.2 + 0.2 * stall_rev), max_tokens)
                 how = "rewrite"
             if new is None:
@@ -113,8 +136,10 @@ class Agent:
                 how = "revise"
             rounds = rnd
             ev = self.checks.evaluate(new, question, fin, build)
-            better = ev["score"] < best_ev["score"]
+            lost = not best_ev["score"][0] and lost_code(best, new)
+            better = ev["score"] < best_ev["score"] and not lost
             trace.append({"round": rnd, "how": how, "score": list(ev["score"]), "kept": better,
+                          **({"rejected": "lost code"} if lost else {}),
                           "s": round(self.clock() - t0, 1), "problems": [p["message"][:200] for p in ev["problems"]]})
             self.progress(_status(rnd, ev) + ("" if better else " (kept the earlier version)"))
             if better:
@@ -125,7 +150,7 @@ class Agent:
                 stall_block = True
             else:
                 stall_rev += 1
-                if stall_rev >= 2:
+                if stall_rev >= 3:
                     break
             last_round_s = self.clock() - rs
         seconds = self.clock() - t0

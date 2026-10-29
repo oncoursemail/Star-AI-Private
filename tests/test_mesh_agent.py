@@ -62,7 +62,9 @@ class FakeChecks:
 
 
 def test_loop_fixes_until_clean():
-    replies = iter([("```py\nBUG BUG\n```", "stop"), ("```py\nBUG\n```", "stop"), ("```py\nok\n```", "stop")])
+    pad = "value = compute(1, 2, 3)  # "
+    replies = iter([(f"```py\n{pad}BUG BUG\n```", "stop"), (f"```py\n{pad}BUG\n```", "stop"),
+                    (f"```py\n{pad}ok\n```", "stop")])
     seen = []
 
     def call(messages, temperature, max_tokens):
@@ -74,14 +76,30 @@ def test_loop_fixes_until_clean():
     assert out["verified"].startswith("> verified: ran the 1 example")
     assert loop.AGENT_NOTE in seen[0][-1]["content"]                 # build note on the first write
     assert "example output differs" in seen[1][-1]["content"]          # the real error goes back to the model
-    assert seen[1][2] == {"role": "assistant", "content": "```py\nBUG BUG\n```"}
+    assert seen[1][2] == {"role": "assistant", "content": f"```py\n{pad}BUG BUG\n```"}
 
 
 def test_loop_never_keeps_a_worse_answer_and_stops_on_stall():
     replies = iter([("```py\nBUG\n```", "stop")] + [("```py\nBUG BUG\n```", "stop")] * 5)
-    out = loop.Agent(lambda m, t, k: next(replies), FakeChecks(), max_rounds=4).run(user("write a program"))
-    assert out["answer"] == "```py\nBUG\n```" and out["rounds"] == 2      # two failed revisions -> stop
+    seen = []
+
+    def call(messages, temperature, max_tokens):
+        seen.append(messages)
+        return next(replies)
+
+    out = loop.Agent(call, FakeChecks(), max_rounds=6).run(user("write a program"))
+    assert out["answer"] == "```py\nBUG\n```" and out["rounds"] == 3      # revise, rewrite, revise failed -> stop
+    assert [t["how"] for t in out["trace"][1:]] == ["revise", "rewrite", "revise"]
+    assert "Last try failed the real checks: example output differs" in seen[2][-1]["content"]   # fresh sample
     assert out["verified"].startswith("> not verified: run problem left")
+
+
+def test_lost_code_guard():
+    java = "```java\npublic class A extends JavaPlugin {\n" + "    void f() { int x = 1; }\n" * 20 + "}\n```"
+    yaml = "```java\nname: A\nmain: a.A\n```"
+    assert loop.lost_code(java, yaml)
+    assert not loop.lost_code(java, java.replace("int x = 1", "int x = 2"))
+    assert loop.lost_code(java + "\n```java\nclass B {}\n```", java)          # a whole file dropped
 
 
 def test_loop_time_budget():
