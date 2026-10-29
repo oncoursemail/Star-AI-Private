@@ -768,13 +768,14 @@ def ground_patches(ctx: Ctx, spec: dict) -> list[dict]:
     rng = ctx.rng
     out = []
     col = ctx.color(spec["ground"])
+    steps = (0.7, 1.3) if ctx.style == "stud" else (0.86, 0.92, 1.08, 1.12)   # stud snaps to BrickColors
     for i in range(int(min(18, max(5, w * d / 1400)))):
         pw, pd = rng.uniform(10, 26), rng.uniform(8, 22)
         x, z = rng.uniform(-w / 2 + pw / 2, w / 2 - pw / 2), rng.uniform(-d / 2 + pd / 2, d / 2 - pd / 2)
         if zone_room(spec, x, z):
             continue
         p = part(ctx, "B", (pw, 0.1 + 0.02 * i, pd), (x, 0.03 + 0.01 * i, z), rot=(0, rng.choice((0, 15, 30, 45, 60)), 0),
-                 mat=spec["ground"], color=shade(col, rng.choice((0.86, 0.92, 1.08, 1.12))), collide=False, cast=False,
+                 mat=spec["ground"], color=shade(col, rng.choice(steps)), collide=False, cast=False,
                  studs=ctx.style == "stud")
         p["kit"] = "ground"
         out.append(p)
