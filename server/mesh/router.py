@@ -27,6 +27,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import instant
+from .agent import route as agent_route
 from .general import inject as general
 from . import mcfacts
 from .loop import runner as loop_runner
@@ -141,6 +142,9 @@ DEFAULTS = {
     "self_timeout_s": 0.3,
     "self_max_chars": 900,
     **speed.DEFAULTS,                 # parallel sections (server/mesh/speed/), off by default
+    # agent mode (server/mesh/agent, :8104): model `litha-agent` = write -> real checks -> fix loop for build/code
+    # tasks; other litha-agent requests are plain `litha`. "" = off (litha-agent is then plain litha)
+    "agent_url": "http://127.0.0.1:8104",
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -818,7 +822,9 @@ class Router:
             except (UpstreamError, ValueError, asyncio.TimeoutError):
                 pass
         own = [{"id": FAST, "object": "model", "owned_by": "star-mesh"},
-               {"id": DEEP, "object": "model", "owned_by": "star-mesh"}]
+               {"id": DEEP, "object": "model", "owned_by": "star-mesh"}] + \
+            ([{"id": agent_route.AGENT_MODEL, "object": "model", "owned_by": "star-mesh"}] if self.cfg.get("agent_url")
+             else [])
         return {"object": "list", "data": own + self.brain_models}
 
     def status(self) -> dict:
@@ -856,6 +862,11 @@ class Router:
         except (ValueError, AssertionError):
             return await send_json(writer, 400, err("body must be a JSON object"))
         model, stream = str(req.get("model") or FAST), bool(req.get("stream"))
+        if model == agent_route.AGENT_MODEL:
+            if self.cfg.get("agent_url") and agent_route.wants_agent(req.get("messages")) and \
+                    await self.agent_forward(path, headers, body, writer):
+                return
+            model = req["model"] = FAST       # chat, or the agent service is down: plain litha
         hedge = req.pop("mesh_hedge", None)
         if hedge is None:
             hedge = headers.get("x-mesh-hedge", "").strip().lower() in ("1", "true", "yes") or self.cfg["hedge"]
@@ -1253,6 +1264,30 @@ class Router:
         except (UpstreamError, asyncio.TimeoutError) as e:
             return await send_json(writer, 502, err(f"verifier: {e}", "server_error"))
         return await send_raw(writer, up.status, up.headers.get("content-type", "application/json"), data)
+
+    async def agent_forward(self, path: str, headers: dict, body: bytes, writer) -> bool:
+        """litha-agent build/code task -> the agent service, relayed as it streams (progress keeps it alive).
+        False = the service did not answer (nothing was sent; the caller serves plain litha)."""
+        try:
+            up = await open_upstream(self.cfg["agent_url"].rstrip("/") + "/v1" + path, "POST", body,
+                                     {"Content-Type": "application/json",
+                                      "Authorization": headers.get("authorization", "")}, idle_s=660)
+        except (UpstreamError, asyncio.TimeoutError):
+            self.counters["agent_down"] += 1
+            return False
+        self.counters["agent"] += 1
+        try:
+            writer.write(f"HTTP/1.1 {up.status} X\r\nContent-Type: "
+                         f"{up.headers.get('content-type', 'application/json')}\r\nX-Mesh-Agent: 1\r\n"
+                         "Connection: close\r\n\r\n".encode())
+            async for piece in up.chunks():
+                writer.write(piece)
+                await writer.drain()
+        except (UpstreamError, asyncio.TimeoutError, ConnectionError, OSError):
+            pass
+        finally:
+            up.close()
+        return True
 
     async def docs_inject(self, req: dict, headers: dict) -> dict:
         """Litha: the docs service's block (exact API entries + maybe one guide passage) goes in front of the user's

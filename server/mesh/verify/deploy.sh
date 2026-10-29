@@ -7,7 +7,7 @@
 # Steps (each is safe to repeat):
 #   tools    luau-analyze from the official Luau release (github.com/luau-lang/luau), sha256 checked against the
 #            digest GitHub publishes for the asset; version pinned by LUAU_VERSION (default below)
-#   install  copy server/mesh/{__init__,router,instant}.py + server/mesh/{loop,rules,verify,mcdata,polyglot} to /opt/star-verify/app, the unit, ufw 8101
+#   install  copy server/mesh/{__init__,router,instant}.py + server/mesh/{loop,rules,verify,mcdata,polyglot,agent,...} to /opt/star-verify/app, the unit, ufw 8101
 #            (LAN + starnat0 only), restart (keeps the previous release for `rollback`)
 #   dump     download the current Roblox Full-API-Dump.json + version.txt (MaximumADHD/Roblox-Client-Tracker),
 #            build the index (/var/lib/star-verify/roblox-api-index.json, with version + fetch date), restart
@@ -47,7 +47,7 @@ SH
 
 step_install() {
   local tarball; tarball="$(mktemp -u).tgz"
-  tar -czf "$tarball" --exclude=__pycache__ --exclude=deploy.sh --exclude=mesh/mcdata/lab -C server mesh/__init__.py mesh/router.py mesh/instant.py mesh/loop mesh/rules mesh/verify mesh/mcdata mesh/polyglot mesh/general mesh/selfmodel mesh/speed mesh/mcfacts
+  tar -czf "$tarball" --exclude=__pycache__ --exclude=deploy.sh --exclude=mesh/mcdata/lab -C server mesh/__init__.py mesh/router.py mesh/instant.py mesh/loop mesh/rules mesh/verify mesh/mcdata mesh/polyglot mesh/general mesh/selfmodel mesh/speed mesh/mcfacts mesh/agent
   scp -q "$tarball" "$B1:/tmp/verify.tgz"
   rm -f "$tarball"
   b1 "lxc file push /tmp/verify.tgz $CT/tmp/verify.tgz --mode 0600 --uid 0 --gid 0; rm -f /tmp/verify.tgz"

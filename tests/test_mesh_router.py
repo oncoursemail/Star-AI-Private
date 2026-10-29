@@ -354,10 +354,30 @@ def test_streaming_passthrough_and_models(tmp_path):
         assert status == 200 and json.loads(data)["data"][0]["embedding"] == [0.1]
         status, _, data = await asyncio.to_thread(call, port, "GET", "/v1/models")
         ids = [m["id"] for m in json.loads(data)["data"]]
-        assert ids == ["litha", "litha-deep", "star-fast", "star-deep"]
+        assert ids == ["litha", "litha-deep", "litha-agent", "star-fast", "star-deep"]
         status, _, data = await asyncio.to_thread(call, port, "GET", "/mesh/status")
         st = json.loads(data)
         assert st["brain"]["healthy"] is True and len(st["decisions"]) == 3 and st["decisions"][0]["model"] == "litha"
+    run(go())
+
+
+def test_litha_agent_build_tasks_go_to_the_agent_chat_stays_litha(tmp_path):
+    async def go():
+        agent = await Fake("agent", words=("Built", " + verified")).start()
+        node = Fake("owner-pc", words=("Plain",))
+        r, port, brain = await setup(tmp_path, [node], agent_url=agent.url)
+        build = {**CHAT, "model": "litha-agent",
+                 "messages": [{"role": "user", "content": "Make me a Paper 1.21.11 plugin with /heal"}]}
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", build)
+        assert status == 200 and headers["X-Mesh-Agent"] == "1" and sse_text(data) == "Built + verified"
+        assert agent.requests[-1]["model"] == "litha-agent" and agent.auth[-1] == f"Bearer {KEY}"
+        chat = {**CHAT, "model": "litha-agent", "messages": [{"role": "user", "content": "What is a RemoteEvent?"}]}
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", chat)
+        assert status == 200 and headers["X-Mesh-Backend"] == "owner-pc" and sse_text(data) == "Plain"
+        assert node.requests[-1]["model"] == "litha-fast" and len(agent.requests) == 1
+        r.cfg["agent_url"] = "http://127.0.0.1:9"            # agent service down: plain litha, never an error
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", build)
+        assert status == 200 and headers["X-Mesh-Backend"] == "owner-pc" and r.counters["agent_down"] == 1
     run(go())
 
 
