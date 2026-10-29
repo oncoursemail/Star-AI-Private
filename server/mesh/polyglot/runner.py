@@ -382,7 +382,26 @@ def unity_member(cls: str, member: str) -> dict | None:
     return p
 
 
+USING_LINE = re.compile(r"^using\s+(?:static\s+)?[\w.]+(?:\s*=\s*[\w.<>,\s]+)?\s*;[ 	]*$", re.M)
+
+
+def hoist_usings(code: str) -> tuple[str, int]:
+    """An answer often shows several files in one block (`// File: A.cs` ... `// File: B.cs`), each with its own using
+    lines: after the first type a using clause is a syntax error, so they move to the top (the line count shifts by 1)."""
+    first = CS_TYPE_DECL.search(code)
+    late = [m for m in USING_LINE.finditer(code) if first and m.start() > first.start()]
+    if not late:
+        return code, 0
+    keep = code
+    for m in reversed(late):
+        keep = keep[:m.start()] + "// " + keep[m.start():m.end()] + keep[m.end():]
+    uniq = list(dict.fromkeys(m.group(0).strip() for m in USING_LINE.finditer(code)))
+    return " ".join(uniq) + "\n" + keep, 1
+
+
 def check_csharp(code: str, context: str) -> dict:
+    code_orig = code
+    code, hoisted = hoist_usings(code)
     src = blank_ellipsis(code, "//")
     unity = bool(UNITY.search(code))
     if not CS_TYPE_DECL.search(code):
@@ -419,6 +438,10 @@ def check_csharp(code: str, context: str) -> dict:
             elif cid == "CS0103" and names and names[0] not in unity_index()["classes"] and \
                     not names[0][:1].isupper() and not elsewhere(names[0], code, context):
                 probs.append(problem("name", f"C# {cid}: {msg}", line, name=names[0]))
+            elif ENGINE is not None:
+                p = ENGINE.unity_diag(cid, msg, names, line, code, context, declared, unity_index())
+                if p:
+                    probs.append(p)
             continue
         if cid in ("CS0246", "CS0234", "CS0012", "CS0400", "CS0122") or (cid == "CS0103" and names and
                                                                        elsewhere(names[0], code, context)):
@@ -427,6 +450,10 @@ def check_csharp(code: str, context: str) -> dict:
             probs.append(problem("deprecated", f"C# {cid}: {msg}", line, severity="warning"))
             continue
         probs.append(problem("compile", f"C# {cid}: {msg}", line))
+    if unity and ENGINE is not None:
+        probs += ENGINE.unity_obsolete(code, hoisted)
+    if hoisted:
+        shift(probs, hoisted, len(code_orig.splitlines()))
     return {"checked": True, "tool": "roslyn" + (" + Unity reference" if unity else ""), "mode": mode,
             "problems": probs, "worker_ms": reply.get("ms")}
 
@@ -495,6 +522,8 @@ CPP_DIAG = re.compile(r"^main\.(?:cpp|c):(\d+):\d+:\s*(error|warning):\s*(.*)$",
 
 def check_cpp(code: str, context: str, lang: str) -> dict:
     if UNREAL.search(code):
+        if ENGINE is not None:
+            return ENGINE.check_unreal(code, context)
         return {"checked": False, "tool": "g++", "mode": "unreal", "problems": [],
                 "note": "Unreal C++ needs the engine headers (not available): not compiled"}
     unknown = [h for h in INCLUDE.findall(code) if h not in STD_HEADERS]
@@ -790,6 +819,44 @@ def check_shell(code: str, context: str) -> dict:
     return {"checked": True, "tool": "bash -n + shellcheck", "mode": "syntax", "problems": probs}
 
 
+def _load_engine():
+    """server/mesh/polyglot/engine.py (Lua 5.4 / LOVE / Unreal checks); the runner runs isolated (-I), so by path."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pg_engine", APP + "/engine.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.init({"problem": problem, "run_limited": run_limited, "Workdir": Workdir, "elsewhere": elsewhere,
+              "closest": closest, "blank_ellipsis": blank_ellipsis, "RUN_LOCK": RUN_LOCK, "RUN_UID": RUN_UID,
+              "CHECK_UID": CHECK_UID, "shift": shift})
+    return mod
+
+
+try:
+    ENGINE = _load_engine()
+except Exception as _e:               # a broken engine module must never take the checker down
+    ENGINE = None
+    print("engine module not loaded:", _e, flush=True)
+
+
+LOVE_API = re.compile(r"\blove\.(?:graphics|keyboard|mouse|audio|filesystem|physics|timer|window|event|math|load|update|"
+                      r"draw|keypressed|mousepressed)\b")
+
+
+def check_lua_engine(code: str, context: str) -> dict:
+    """plain Lua 5.4 against the manual's standard library; LOVE code goes to the LOVE check."""
+    if ENGINE is not None and ENGINE.data("lua54_std.json"):
+        if LOVE_API.search(code):
+            return ENGINE.check_love(code, context)
+        return ENGINE.check_lua_plain(code, context)
+    return check_lua(code, context)
+
+
+def check_love_engine(code: str, context: str) -> dict:
+    if ENGINE is not None and ENGINE.data("love_std.json"):
+        return ENGINE.check_love(code, context)
+    return check_lua(code, context)
+
+
 CHECKS = {
     "python": check_python,
     "javascript": lambda c, x: check_ts(c, x, "javascript"),
@@ -801,7 +868,8 @@ CHECKS = {
     "rust": check_rust,
     "go": check_go,
     "gdscript": check_gdscript,
-    "lua": check_lua,
+    "lua": check_lua_engine,
+    "love": check_love_engine,
     "sql": check_sql,
     "shell": check_shell,
 }
@@ -852,15 +920,17 @@ RUN_RECIPES = {
                             "-r:REF/System.Collections.Concurrent.dll", "-r:REF/netstandard.dll", "*.cs"]],
                "run": ["dotnet", "main.dll"]},
     "lua": {"run": ["lua5.4", "main.lua"]},
+    "love": {"run": ["env", "DISPLAY=:99", "SDL_AUDIODRIVER=dummy", "LIBGL_ALWAYS_SOFTWARE=1", "ALSOFT_DRIVERS=null", "love", "."]},
     "gdscript": {"run": [GODOT, "--headless", "--path", ".", "--script", "test.gd"]},
     "sql": {"run": ["python3", "-I", "test.py"]},
     "shell": {"run": ["bash", "main.sh"]},
 }
 RUN_EXTRA = {
+    "love": {"conf.lua": ENGINE.LOVE_CONF if ENGINE else ""},
     "go": {"go.mod": "module answer\n\ngo 1.22\n"},
     "gdscript": {"project.godot": 'config_version=5\n\n[application]\n\nconfig/name="run"\n'},
 }
-NO_AS = {"csharp", "java", "go", "gdscript", "javascript", "typescript", "rust"}
+NO_AS = {"csharp", "java", "go", "gdscript", "javascript", "typescript", "rust", "love"}
 
 
 def run_job(job: dict) -> dict:
@@ -883,6 +953,8 @@ def run_job(job: dict) -> dict:
         clean["main.runtimeconfig.json"] = json.dumps({"runtimeOptions": {"tfm": "net8.0", "framework": {
             "name": "Microsoft.NETCore.App", "version": os.path.basename(shared[-1]) if shared else "8.0.0"}}})
     run_s = max(1, min(30, int(job.get("run_s") or 10)))
+    if lang == "love" and ENGINE is not None:
+        ENGINE.ensure_x()
     t0 = time.monotonic()
     with Workdir(uid=RUN_UID, files=clean) as d:
         ok = True
@@ -923,6 +995,7 @@ def run_job(job: dict) -> dict:
 # ------------------------------------------------------------------------------------------------------- HTTP
 def tools() -> dict:
     return {"rustc": os.path.isfile(RUSTC), "godot": os.path.basename(GODOT), "ruff": os.path.isfile(RUFF),
+            "love": os.path.exists("/usr/bin/love"), "engine": ENGINE is not None,
             "unity_index": len(unity_index()["now"]), "unity_index_2022": len(unity_index()["old"]),
 }
 

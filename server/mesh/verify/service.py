@@ -76,7 +76,7 @@ def model_caller(cfg: dict, auth: str):
                            "max_tokens": cfg["fix_max_tokens"],
                            "chat_template_kwargs": {"enable_thinking": False},
                            "mesh_docs": False,      # the fix prompt carries its own doc entries
-                           "mesh_polyglot": False}).encode()
+                           "mesh_polyglot": False, "mesh_engine": False}).encode()
         req = urllib.request.Request(cfg["router_url"].rstrip("/") + "/v1/chat/completions", body,
                                      {"Content-Type": "application/json", "Authorization": auth})
         with urllib.request.urlopen(req, timeout=cfg["fix_timeout_s"]) as r:
