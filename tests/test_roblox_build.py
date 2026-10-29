@@ -117,3 +117,84 @@ def test_cameras_stay_out_of_solid_parts():
     boxes = [aabb(p) for p in compiled["parts"] if p.get("t", 0) < 0.6 and p.get("kit") not in ("ground", "fill_light")]
     for cam in compiled["cameras"]:
         assert not any(all(b[0][i] < cam["position"][i] < b[1][i] for i in range(3)) for b in boxes), cam["id"]
+
+
+# --------------------------------------------------------------------------- roblox-scenes fixes (10-29 eval defects)
+
+def test_kit_menu_offers_landmarks_only_when_the_brief_names_them():
+    from star.roblox_build import prompts
+    cozy = [line.split("(")[0] for line in prompts.kit_menu("Cozy bookshop interior: tall bookcases and a reading table.").splitlines()]
+    assert "lighthouse" not in cozy and "subway_car" not in cozy and "bamboo_cluster" not in cozy
+    assert "bookcase_tall" in cozy and "reading_table" in cozy
+    fishing = [line.split("(")[0] for line in prompts.kit_menu("A lake with a wooden dock and a lighthouse.").splitlines()]
+    assert "lighthouse" in fishing and "dock" in fishing
+    # a common word in a kit summary ("the", "car" in "train car") no longer pulls in an unrelated themed kit
+    subway = [line.split("(")[0] for line in prompts.kit_menu("Subway platform with a stopped train car.").splitlines()]
+    assert "bumper_car" not in subway and "subway_car" in subway
+
+
+def test_cohere_drops_off_brief_kits_and_caps_set_pieces():
+    from star.roblox_build import art
+    spec, _ = _spec(props=[["lighthouse", 0, 0], ["subway_car", 5, 5], ["chair", 1, 1]] + [["dock", 0, i * 3] for i in range(6)])
+    out, log = art.cohere(spec, "Cozy fishing cabin on a lake with a dock")
+    kinds = [p["kit"] for p in out["props"]]
+    assert "lighthouse" not in kinds and "subway_car" not in kinds and "chair" in kinds
+    assert kinds.count("dock") == art.BIG_KIT_CAP and log
+
+
+def test_fit_rooms_shrinks_big_empty_rooms_towards_their_furniture():
+    from star.roblox_build import art
+    raw = {"name": "T", "style": "midpoly", "size": [120, 120], "zones": [{"id": "hall", "rect": [-50, -50, 50, 50]}],
+           "rooms": [{"zone": "hall", "h": 14, "openings": [{"side": "S", "at": 0.5, "w": 6, "h": 9, "kind": "door"}]}],
+           "spawn": [0, 40], "focal": [{"id": "f", "at": [0, 0]}], "props": [["table", 0, 0], ["chair", 3, 0], ["shelf", -6, 4]]}
+    spec, _ = scene.normalize(raw)
+    out, log = art.fit_rooms(spec)
+    x0, z0, x1, z1 = out["zones"][0]["rect"]
+    assert (x1 - x0) < 100 and (z1 - z0) < 100 and log
+    assert x0 <= -6 and x1 >= 3 and z0 <= 0 and z1 >= 40   # props, focal and spawn stay inside
+
+
+def test_scatter_frames_outdoor_maps_and_keeps_routes_clear():
+    from star.roblox_build import art
+    raw = {"name": "T", "style": "lowpoly", "size": [120, 120], "ground": "grass", "zones": [],
+           "paths": [{"from": [0, 55], "to": [0, -20], "w": 8}], "spawn": [0, 50], "focal": [{"id": "f", "at": [0, -20]}]}
+    spec, _ = scene.normalize(raw)
+    out, _log = art.scatter(spec, "Forest camp clearing with tents and tall pines")
+    added = out["props"]
+    assert len(added) >= 8
+    assert all(abs(p["at"][0]) > 5 for p in added if p["kit"] != "cliff")   # nothing on the path
+    edge = [p for p in added if p["why"] == "edge framing"]
+    assert edge and all(max(abs(p["at"][0]), abs(p["at"][1])) > 30 for p in edge)   # denser at the edge
+
+
+def test_night_scenes_get_a_measured_preset_path_lights_and_lit_windows():
+    from star.roblox_build import art
+    raw = {"name": "T", "style": "midpoly", "mood": "cold_night", "size": [120, 120], "ground": "snow",
+           "zones": [{"id": "cabin", "rect": [-10, -10, 10, 10]}],
+           "rooms": [{"zone": "cabin", "h": 12, "windows": "plain", "openings": [{"side": "S", "at": 0.5, "kind": "door"}]}],
+           "paths": [{"from": [0, 55], "to": [0, 12], "w": 6}], "spawn": [0, 50], "focal": [{"id": "f", "at": [0, 0]}]}
+    spec, _ = scene.normalize(raw)
+    out, _log = art.apply_all(spec, "Snowy winter cabin at night with lanterns")
+    assert out["preset"] == "moonlit_night_exterior"
+    assert any(p["why"] == "path light at night" for p in out["props"])
+    compiled = scene.compile_spec(out)
+    assert compiled["preset"] == "moonlit_night_exterior"
+    assert any(p.get("kit") == "room" and p.get("sem") == "glass" and p.get("light") for p in compiled["parts"])
+
+
+def test_water_sits_above_a_part_ground():
+    spec, _ = _spec(props=[["water", 20, 20, 0, {"w": 10, "d": 10}]])
+    parts = scene.compile_spec(spec)["parts"]
+    top = max(aabb(p)[1][1] for p in parts if p.get("prop") == 0)
+    assert top > 0.0
+
+
+def test_camera_candidates_cover_every_shot_and_picker_luau_is_bounded():
+    spec, _ = _spec(props=[["table", 0, -8], ["chair", 2, -8]])
+    compiled = scene.compile_spec(spec)
+    cands = compiled["candidates"]
+    assert set(cands) == {"hero", "wide", "detail", "overview"} and all(cands.values())
+    code = luau.pick_cameras_luau("T", cands, (6000, 200, 6000))
+    assert "workspace:Raycast" in code and "GetPartBoundsInRadius" in code and len(code) < 60000
+    with pytest.raises(ValueError):
+        luau.pick_cameras_luau("T", {"bad id!": cands["hero"]}, (0, 0, 0))
