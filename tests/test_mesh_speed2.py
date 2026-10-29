@@ -84,3 +84,11 @@ def test_polyglot_note_still_follows_for_other_languages():
     assert polyglot.apply(r, {}) == {"X-Mesh-Polyglot": "python"}
     text = r["messages"][-1]["content"]
     assert text.index(fullcode.NOTE) < text.index("(Note for Litha")
+
+
+def test_small_client_budget_stays_short():
+    r = req("Write a Python CLI to-do app.", max_tokens=200)
+    assert fullcode.apply(r, CFG) == {} and r["max_tokens"] == 200
+    r = req("Write a Python CLI to-do app.")
+    r.pop("max_tokens")
+    assert fullcode.apply(r, CFG) == {"X-Mesh-Full-Code": ""}      # no budget given: note only, server default

@@ -16,6 +16,7 @@ import re
 DEFAULTS = {
     "full_code": True,              # switch
     "full_code_max_tokens": 1500,   # max_tokens for a build/code request when the client asked for less
+    "full_code_min_client_tokens": 400,  # a smaller client budget is a deliberate short answer (voice, previews): untouched
 }
 
 NOTE = ("(Build note for Litha, not from the user: this is a build request. Give the complete, working code for everything "
@@ -67,13 +68,15 @@ def apply(req: dict, cfg: dict) -> dict:
         return {}
     if any(req.get(k) for k in ("tools", "functions", "response_format", "grammar", "json_schema")):
         return {}
+    mt = req.get("max_tokens")
+    if isinstance(mt, int) and mt < int(cfg.get("full_code_min_client_tokens") or 0):
+        return {}
     msgs = req.get("messages")
     if not is_build(msgs):
         return {}
     msgs[-1] = {**msgs[-1], "content": msgs[-1]["content"] + "\n\n" + NOTE}
     req.setdefault("mesh_general", False)          # a build turn is never a general question
     cap = int(cfg.get("full_code_max_tokens") or 0)
-    mt = req.get("max_tokens")
     if cap and isinstance(mt, int) and 0 < mt < cap:
         req["max_tokens"] = cap
     return {"X-Mesh-Full-Code": str(req.get("max_tokens") or "")}
