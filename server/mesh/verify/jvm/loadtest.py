@@ -108,6 +108,13 @@ def eula_ok(target: str) -> bool:
 
 
 def run_server(target: str, jar: Path | None, commands: list[str], timeout_s: int = 240) -> dict:
+    import fcntl
+    with open(SERVER[target][0] / ".run.lock", "w") as lock:      # one run per server folder at a time
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _run_server(target, jar, commands, timeout_s)
+
+
+def _run_server(target: str, jar: Path | None, commands: list[str], timeout_s: int = 240) -> dict:
     sdir, cmd, sub = SERVER[target]
     plug = sdir / sub
     if plug.exists():

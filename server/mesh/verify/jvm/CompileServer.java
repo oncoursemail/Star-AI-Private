@@ -64,6 +64,9 @@ public class CompileServer {
                     }
                 }
             }
+            // the platform's own API first (Subscribe -> com.velocitypowered..., not Guava; Plugin -> not Maven)
+            for (List<String> l : bySimple.values())
+                l.sort(Comparator.comparingInt((String f) -> rank(name, f)).thenComparingInt(String::length));
         }
     }
 
@@ -272,6 +275,15 @@ public class CompileServer {
         }
         BY_METHOD.put(t.name, idx);
         return idx;
+    }
+
+    static int rank(String target, String fq) {
+        int r = 3;
+        for (String root : ROOTS.getOrDefault(target, "").split(" "))
+            if (!root.isEmpty() && fq.startsWith(root + ".")) r = 0;
+        if (r == 3 && (fq.startsWith("java.") || fq.startsWith("javax."))) r = 1;
+        if (fq.contains(".impl.") || fq.contains(".internal.")) r += 2;
+        return r;
     }
 
     static boolean subtype(Target t, String fq, Class<?> of) {

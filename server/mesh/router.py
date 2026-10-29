@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import instant
 from .general import inject as general
+from . import mcfacts
 from .loop import runner as loop_runner
 from .selfmodel import brief as self_brief
 from .speed import hook as speed
@@ -103,6 +104,7 @@ DEFAULTS = {
                                       # starts (grounding changes the prompt; a one-slot node cannot judge while it
                                       # answers); late = no grounding, the lookup goes on in parallel
     **general.DEFAULTS,              # general questions: general-mode note, exact calculator, safety facts
+    **mcfacts.DEFAULTS,              # Minecraft plugin/mod questions: compile-verified API facts note
     **loop_runner.LOOP_DEFAULTS,      # best-of-2 + verified pick + hidden tool loop (server/mesh/loop), opt-in per request
     # official docs (server/mesh/docs, :8102): a compact block of exact API entries in front of Litha questions
     "docs": True,
@@ -814,6 +816,8 @@ class Router:
             if req.pop("mesh_general", None) is not False and \
                     headers.get("x-mesh-general", "").lower() not in ("off", "0", "no"):
                 cache_hdr.update(await general.run(self, req, plan, headers.get("authorization", "")))
+            if req.pop("mesh_mc", None) is not False and self.cfg["mc_facts"]:
+                cache_hdr.update(mcfacts.apply(req))
 
         def body_for(mid):
             if model == DEEP and mid not in (self.cfg["brain_deep_model"], self.cfg.get("brain_litha_model")):

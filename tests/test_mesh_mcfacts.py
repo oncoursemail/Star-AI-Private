@@ -28,3 +28,8 @@ def test_apply_appends_to_last_user_turn_only():
     assert "LifecycleEvents.COMMANDS" in req["messages"][1]["content"]
     other = {"messages": [{"role": "user", "content": "Roblox door script"}]}
     assert mcfacts.apply(other) == {} and other["messages"][0]["content"] == "Roblox door script"
+
+
+def test_router_has_the_hook_on():
+    from mesh import router
+    assert router.DEFAULTS["mc_facts"] is True and router.mcfacts is mcfacts
