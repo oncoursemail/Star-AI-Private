@@ -280,6 +280,24 @@ VFX_TOOLS = (
            "speed": {"type": "number", "minimum": 0.1, "maximum": 1, "default": 0.25}},
           ("prompt",)),
 )
+# STAR game UI designer (star/roblox_ui_designer.py): offline, applies nothing. Won the blind held-out eval 6.28 vs
+# 1.78 (single-pass Litha script) on 10-29 (docs/agents/roblox-scenes-20261029.md).
+UI_TOOLS = (
+    _tool("star_roblox_ui_make",
+          "Design a Roblox game UI screen from a small plan and get one self-contained LocalScript (8 px grid, "
+          "contrast-checked palettes, phone/tablet/desktop layouts, gamepad focus, part-built item art). plan: "
+          "{screen: shop|inventory|hud|settings|menu|dialog|leaderboard|rewards|quest|results|loading, style: "
+          "scifi|fantasy|cartoon|anime|minimal|horror|survival|pirate|luxury|..., title, subtitle?, accent? '#RRGGBB', "
+          "items?: [{name, kind, rarity, price, stat, owned, count, equipped, amount}], currency?: {name, amount}, "
+          "tabs?, actions?, options?, entries?: [{name, value}], you?, quests?, stats?, hotbar?, health?, stamina?, "
+          "objective?, body?, speaker?, today?, progress?}. Missing content is filled from 'brief'. Returns the "
+          "screen choice, design notes, static checks and the script saved in STAR's own folder (path); nothing is "
+          "applied to any place.",
+          {"brief": _s(400), "plan": {"type": "object"}}, ("brief",)),
+)
+_UI_TRIGGER = re.compile(r"\b(?:ui|gui|hud|shop (?:ui|screen|menu)|inventory|main menu|settings menu|leaderboards?|"
+                         r"daily rewards?|login rewards?|quest log|results screen|loading screen|dialog(?:ue)? (?:box|ui)|"
+                         r"screen ?gui)\b", re.I)
 _VFX_TRIGGER = re.compile(r"\b(?:vfx|visual effects?|particles?|ability effects?|effects? for|spell effects?|explosion "
                           r"effects?|aura|shockwave|energy burst)\b", re.I)
 # Live retrieval from create.roblox.com/docs (star/roblox_docs_live.py). Opt-in: off unless enabled.
@@ -355,7 +373,7 @@ VIDEO_STUDY_TOOLS = (
 ALL_TOOLS = {tool["name"]: tool for tool in (*SKILL_TOOLS, *OBSIDIAN_TOOLS, *GRAPHIFY_TOOLS,
              *ROBLOX_GAME_TOOLS, *ROBLOX_KNOWLEDGE_TOOLS, *DOC_KNOWLEDGE_TOOLS, *ROBLOX_VIDEO_TOOLS,
              *ROBLOX_CLOUD_TOOLS, *ROBLOX_HUB_TOOLS, *CRAFT_TOOLS, *ASSET_TOOLS, *DESIGN_TOOLS, *MAP_PLAN_TOOLS, *STUDIO_LAB_TOOLS, *ROBLOX_DOCS_LIVE_TOOLS, *RUNTIME_TOOLS, *ARCHITECTURE_TOOLS,
-             *VFX_TOOLS, *COMMERCE_TOOLS, *GAME_EXPERIENCE_TOOLS, *VIDEO_STUDY_TOOLS, *GENERAL_KNOWLEDGE_TOOLS, *SELF_TOOLS)}
+             *VFX_TOOLS, *UI_TOOLS, *COMMERCE_TOOLS, *GAME_EXPERIENCE_TOOLS, *VIDEO_STUDY_TOOLS, *GENERAL_KNOWLEDGE_TOOLS, *SELF_TOOLS)}
 _DOC_TOOL_NAMES = frozenset(tool["name"] for tool in DOC_KNOWLEDGE_TOOLS)
 _SHARED_TOOL_NAMES = frozenset(tool["name"] for tool in RUNTIME_TOOLS)
 _LEGACY_GRAPH_READ_NAMES = frozenset({"star_graphify_query", "star_graphify_stats"})
@@ -592,6 +610,8 @@ class LocalIntelligence:
                 result.extend(STUDIO_LAB_TOOLS)
         if self.vfx_studio_enabled and roblox_prompt and _VFX_TRIGGER.search(prompt):
             result.extend(VFX_TOOLS)
+        if self.design_enabled and roblox_prompt and _UI_TRIGGER.search(prompt):
+            result.extend(UI_TOOLS)
         if self.docs_live is not None and roblox_prompt and _DOCS_TRIGGER.search(prompt):
             result.extend(ROBLOX_DOCS_LIVE_TOOLS)
         if self.roblox_hub and roblox_prompt:
@@ -779,6 +799,10 @@ class LocalIntelligence:
             if not self.studio_lab_enabled:
                 raise PermissionError("The Studio lab is off (setting studio_lab_enabled or STAR_STUDIO_LAB=1)")
             return self._studio_lab_call(args)
+        if name == "star_roblox_ui_make":
+            if not self.design_enabled:
+                raise PermissionError("Design tools are disabled")
+            return self._ui_call(args)
         if name == "star_roblox_vfx_make":
             if not self.vfx_studio_enabled:
                 raise PermissionError("STAR VFX Studio is not enabled")
@@ -942,6 +966,21 @@ class LocalIntelligence:
         if not target.is_file() or target.stat().st_size > 8_000_000:
             raise ValueError("Reference image not found or larger than 8 MB")
         return target.read_bytes()
+
+    def _ui_call(self, args: dict) -> dict:
+        import time as _time
+        from . import roblox_ui_designer as ui
+        plan = ui.parse_plan(args.get("plan") if isinstance(args.get("plan"), dict) else {}, args["brief"])
+        script = ui.emit_luau(plan, ui_id=plan["screen"].title())
+        out = Path(self.home) / "ui-make" / _time.strftime("%Y%m%dT%H%M%SZ", _time.gmtime())
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / f"{plan['screen'].title()}UI.client.luau"
+        path.write_text(script, encoding="utf-8")
+        head = script.split("\nlocal T = ", 1)[0]
+        return {"screen": plan["screen"], "style": plan["style"], "title": plan["title"], "design_notes": head,
+                "static_checks": ui.static_check(plan), "script_path": str(path), "script_chars": len(script),
+                "note": "Nothing was applied. Put the script in StarterPlayerScripts (client presentation only: "
+                        "validate purchases and rewards on the server)."}
 
     def _vfx_call(self, args: dict) -> dict:
         from . import roblox_vfx_studio as vfx

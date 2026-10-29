@@ -206,3 +206,19 @@ def test_phone_layout_keeps_the_detail_panel():
     src = D.emit_luau(_plan())
     assert src.count('"Buy", compact)') == 1 and src.count('"Equip", compact)') == 1
     assert "if not compact then\n\t\tlocal _, s = detailPane" not in src
+
+
+def test_ui_tool_is_offered_for_roblox_ui_prompts_and_saves_the_script_in_star_home(tmp_path):
+    from star.intelligence import LocalIntelligence
+    hub = LocalIntelligence(home=tmp_path / "home", skills_enabled=False, graphify_enabled=False)
+    offered = {t["name"] for t in hub.definitions("Make a shop UI for my Roblox simulator game")}
+    assert "star_roblox_ui_make" in offered
+    assert "star_roblox_ui_make" not in {t["name"] for t in hub.definitions("What is the weather today?")}
+    result = hub.call("star_roblox_ui_make", {"brief": "Global leaderboard for a speedrun obby with Daily and All-Time tabs",
+                                              "plan": {"screen": "leaderboard", "style": "cartoon", "title": "Fastest Runs",
+                                                       "entries": [{"name": "Zed", "value": "1:23.45"}]}},
+                      enabled={"star_roblox_ui_make"})
+    from pathlib import Path
+    script = Path(result["script_path"]).read_text(encoding="utf-8")
+    assert result["screen"] == "leaderboard" and "1:23.45" in script and "Nothing was applied" in result["note"]
+    assert Path(result["script_path"]).is_relative_to(tmp_path / "home")
