@@ -6,6 +6,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "server"))
 
 from mesh import mcfacts  # noqa: E402
 
+# `server/` holds a `discord` folder: leaving it on sys.path would shadow the discord package for tests collected later
+sys.path.remove(str(Path(__file__).resolve().parents[1] / "server"))
+
 
 def test_platform_routing():
     f = mcfacts.facts_for

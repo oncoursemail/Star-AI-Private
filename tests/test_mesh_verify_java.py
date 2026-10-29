@@ -9,6 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "server"))
 from mesh.verify import core, javamc  # noqa: E402
 from mesh.verify.apidump import ApiIndex  # noqa: E402
 
+# `server/` holds a `discord` folder: leaving it on sys.path would shadow the discord package for tests collected later
+sys.path.remove(str(Path(__file__).resolve().parents[1] / "server"))
+
 
 class FakeJvm:
     """Compiles nothing: reports `sendActionbar` / `sendMesage` on Player and Vault as a missing package, the way
