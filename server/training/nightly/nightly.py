@@ -250,6 +250,13 @@ def run(a) -> int:
     export_gguf(cfg, run_dir / "adapter", gguf)
     report["adapter"] = str(gguf)
     save()
+    if stopping():          # the card goes back now; `eval-only --adapter <gguf>` measures it in a later window
+        report["stopped"] = "stop file after training (adapter kept, not evaluated)"
+        save()
+        write_run_line(cfg, f"- {night.name}: harvest {report.get('harvest', {}).get('prompts_with_pass')} new, bank "
+                            f"{len(bank)}, trained {report['train'].get('steps')}/{report['train'].get('planned_steps')} "
+                            f"steps, stopped before eval ({report['train'].get('stopped') or 'stop file'})")
+        return 124
     return evaluate_and_decide(cfg, gguf, night, report, say, save, a.margin)
 
 
