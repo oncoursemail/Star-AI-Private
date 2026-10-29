@@ -43,7 +43,13 @@ def rule_hits(answer: str, question: str) -> list[dict]:
     sd = str(_server_dir())
     if sd not in sys.path:
         sys.path.insert(0, sd)
-    from mesh.rules import rules
+        try:
+            from mesh.rules import rules
+        finally:
+            # `server/` holds a `discord` folder: leaving it on sys.path shadows the discord package for later imports
+            sys.path.remove(sd)
+    else:
+        from mesh.rules import rules
     return [{"rule": h["rule"], "message": h.get("message", ""), "evidence": str(h.get("evidence", ""))[:200]}
             for h in rules.check(answer, question) if h.get("severity") == "error"]
 

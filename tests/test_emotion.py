@@ -414,6 +414,7 @@ def test_a_voice_engine_that_takes_no_prosody_still_speaks(tmp_path, clock):
 
 
 def test_kokoro_applies_the_shifts_to_speed_pitch_and_pause():
+    pytest.importorskip("numpy")
     from star.voice.engines import KokoroTTS, pitch_ratio
     asked = []
 

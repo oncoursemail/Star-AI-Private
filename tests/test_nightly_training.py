@@ -10,13 +10,15 @@ from pathlib import Path
 import pytest
 
 SERVER = Path(__file__).resolve().parents[1] / "server"
-if str(SERVER) not in sys.path:
-    sys.path.insert(0, str(SERVER))
+sys.path.insert(0, str(SERVER))
 
 D = importlib.import_module("training.nightly.data")
 H = importlib.import_module("training.nightly.gpu_hold")
 S = importlib.import_module("training.nightly.score")
 N = importlib.import_module("training.nightly.nightly")
+
+# `server/` holds a `discord` folder: leaving it on sys.path would shadow the discord package for tests collected later
+sys.path.remove(str(SERVER))
 
 
 def rows(passes, problems=0):
