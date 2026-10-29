@@ -47,7 +47,8 @@ if [ "$step" = all ] || [ "$step" = servers ]; then
     $M/dl/neoforge-installer.jar 1f14a4bac4aa885a497550fa5a8374451b7014cec27e1bb69ab16742fb689db0
   [ -d $M/servers/neoforge/libraries ] || (cd $M/servers/neoforge && $J21/bin/java -jar $M/dl/neoforge-installer.jar --installServer . >install.log 2>&1)
   for s in paper fabric neoforge; do
-    echo "eula=true" > $M/servers/$s/eula.txt
+    # Mojang's EULA: only the owner may accept it (then he writes eula=true himself); load tests skip these until then
+    [ -f $M/servers/$s/eula.txt ] || echo "eula=false" > $M/servers/$s/eula.txt
     cat > $M/servers/$s/server.properties <<'EOF'
 online-mode=false
 level-type=minecraft\:flat

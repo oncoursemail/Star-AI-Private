@@ -96,6 +96,17 @@ def gradle_build(target: str, sources: dict, resources: dict, work: Path) -> tup
     return (jars[0] if jars else None), (r.stdout + r.stderr)[-4000:]
 
 
+def eula_ok(target: str) -> bool:
+    """Velocity has no EULA. Paper/Fabric/NeoForge run Mojang's server: only when the OWNER accepted the EULA
+    himself (eula.txt = eula=true, written by hand after his OK; setup.sh writes eula=false)."""
+    if target == "velocity":
+        return True
+    try:
+        return "eula=true" in (SERVER[target][0] / "eula.txt").read_text().replace(" ", "").lower()
+    except OSError:
+        return False
+
+
 def run_server(target: str, jar: Path | None, commands: list[str], timeout_s: int = 240) -> dict:
     sdir, cmd, sub = SERVER[target]
     plug = sdir / sub
@@ -219,6 +230,10 @@ def job(j: dict) -> dict:
         if jar is None:
             res["stage"], res["errors"] = "build", [ln for ln in log.splitlines() if ln.strip()][-25:]
             return res
+    if not eula_ok(target):
+        res["stage"], res["ok"] = "built", None
+        res["note"] = "not loaded: running a Minecraft server needs the owner's own OK to Mojang's EULA (eula.txt)"
+        return res
     run = run_server(target, jar, j.get("commands", []))
     res["ms"]["server_start"] = run["start_s"] * 1000
     loaded, errs = analyse(target, run, ids)
@@ -234,6 +249,9 @@ def job(j: dict) -> dict:
 def main(argv: list[str]) -> int:
     if argv and argv[0] == "--warm":
         for t in ("paper", "velocity", "fabric", "neoforge"):
+            if not eula_ok(t):
+                print(t, "skipped: Mojang EULA not accepted by the owner (eula.txt)")
+                continue
             r = run_server(t, None, [], timeout_s=600)
             print(t, "done" if r["done"] else "NOT done", r["start_s"], "s", flush=True)
             noise = sorted({norm(ln) for ln in r["lines"] if LOAD_FAIL.search(ln) or "ERROR" in ln or "Exception" in ln})

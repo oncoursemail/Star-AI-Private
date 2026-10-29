@@ -45,7 +45,7 @@ SH
 
 step_install() {
   local tarball; tarball="$(mktemp -u).tgz"
-  tar -czf "$tarball" --exclude=__pycache__ --exclude=deploy.sh -C server mesh/__init__.py mesh/router.py mesh/instant.py mesh/loop mesh/rules mesh/verify
+  tar -czf "$tarball" --exclude=__pycache__ --exclude=deploy.sh -C server mesh/__init__.py mesh/router.py mesh/instant.py mesh/loop mesh/rules mesh/verify mesh/general mesh/selfmodel mesh/speed
   scp -q "$tarball" "$B1:/tmp/verify.tgz"
   rm -f "$tarball"
   b1 "lxc file push /tmp/verify.tgz $CT/tmp/verify.tgz --mode 0600 --uid 0 --gid 0; rm -f /tmp/verify.tgz"
