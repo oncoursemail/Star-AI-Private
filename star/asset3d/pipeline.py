@@ -127,6 +127,43 @@ def run_brief(brief, outroot: Path, conditions, where, threads, model, critic_mo
     return result
 
 
+def rerender(run: Path, where: str, threads: int, workers: int = 2):
+    """Rebuild every condition of a finished run from its saved specs with the current builder (same settings for
+    all conditions; no model calls). Writes <id>/rr/<condition>/ and <id>/rr.json."""
+    from .spec import ground, prepare, validate_baseline
+
+    def one(rp: Path):
+        res = json.loads(rp.read_text(encoding="utf-8"))
+        b, d = res["brief"], rp.parent
+        out = {}
+        jobs = {}
+        if (d / "baseline" / "spec.json").exists():
+            jobs["baseline"] = _job("baseline", validate_baseline(json.loads((d / "baseline" / "spec.json").read_text(
+                encoding="utf-8"))), threads, render=EVAL_RENDER)
+        tex = STYLE[b["style"]]["tex"]
+        for cond, src in (("round0", d / "pipeline" / "round0" / "spec.json"),
+                          ("final", d / "pipeline" / "final" / "spec.json")):
+            if src.exists():
+                raw = json.loads(src.read_text(encoding="utf-8"))
+                raw["style"], raw["category"] = b["style"], b["category"]
+                jobs[cond] = _job("pipeline", ground(prepare(raw)), threads, tex=tex, bake_samples=16,
+                                  render=EVAL_RENDER, final=(cond == "final"))
+        for cond, job in jobs.items():
+            m = runner.build(job, d / "rr" / cond, where)
+            r = {"metrics": _slim(m)}
+            if m.get("ok"):
+                r["sheet"] = str(runner.contact_sheet(m["views"], d / "rr" / cond / "sheet.jpg", tile=512))
+                if cond != "baseline":
+                    r["checks"] = critic.deterministic_pass(m, job["spec"], job["tex"])
+            out[cond] = r
+        (d / "rr.json").write_text(json.dumps(out, indent=1, default=str), encoding="utf-8")
+        print(f"[{b['id']}] rerender: " + ", ".join(f"{k}={'ok' if v.get('sheet') else 'FAIL'}" for k, v in out.items()),
+              flush=True)
+
+    with cf.ThreadPoolExecutor(workers) as ex:
+        list(ex.map(one, sorted(Path(run).glob("*/result.json"))))
+
+
 def make_asset(brief_text: str, category: str, style: str, out: str, where: str = "remote", rounds: int = 3) -> dict:
     """Entry point for STAR: one brief -> final game-ready asset folder (GLB/FBX/OBJ, maps, LODs, renders)."""
     brief = {"id": "asset", "brief": brief_text, "category": category, "style": style}
@@ -146,7 +183,11 @@ def main(argv=None):
     ap.add_argument("--where", default="remote", choices=("remote", "local"))
     ap.add_argument("--model", default="litha")
     ap.add_argument("--critic", default="star-fast")
+    ap.add_argument("--rerender", action="store_true", help="rebuild all conditions of --out from saved specs")
     a = ap.parse_args(argv)
+    if a.rerender:
+        rerender(Path(a.out), a.where, a.threads, a.workers)
+        return
     briefs = json.loads(Path(a.briefs).read_text(encoding="utf-8"))[a.set]
     if a.ids:
         want = set(a.ids.split(","))

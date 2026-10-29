@@ -18,6 +18,7 @@ LOCAL_BLENDER = os.environ.get("STAR_BLENDER_EXE", r"C:\Program Files\Blender Fo
 REMOTE_HOST = os.environ.get("STAR_ASSET3D_HOST", "star-pc")
 REMOTE_ROOT = os.environ.get("STAR_ASSET3D_ROOT", r"D:\StarBlender")
 REMOTE_BLENDER = REMOTE_ROOT + r"\Blender 5.2\blender.exe"
+REMOTE_BUILDER = os.environ.get("STAR_ASSET3D_BUILDER", "build_bpy.py")  # another name keeps a running eval's copy
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
 _pushed = False
 
@@ -28,7 +29,7 @@ def _run(cmd, timeout):
 
 def push_builder():
     global _pushed
-    r = _run(["scp", "-q", "-o", "BatchMode=yes", str(BUILD), f"{REMOTE_HOST}:{REMOTE_ROOT}/build_bpy.py".replace("\\", "/")],
+    r = _run(["scp", "-q", "-o", "BatchMode=yes", str(BUILD), f"{REMOTE_HOST}:{REMOTE_ROOT}/{REMOTE_BUILDER}".replace("\\", "/")],
              120)
     if r.returncode:
         raise RuntimeError("scp builder failed: " + r.stderr[-300:])
@@ -57,7 +58,7 @@ def build(job: dict, outdir: Path, where: str = "remote", timeout: int = 1800) -
         if r.returncode:
             raise RuntimeError("scp job failed: " + r.stderr[-300:])
         run = (f'cd /d "{rdir}" && start "" /low /wait /b "{REMOTE_BLENDER}" -b --factory-startup -noaudio '
-               f'--python "{REMOTE_ROOT}\\build_bpy.py" -- job.json out > blender.log 2>&1')
+               f'--python "{REMOTE_ROOT}\\{REMOTE_BUILDER}" -- job.json out > blender.log 2>&1')
         r = _run(SSH + [REMOTE_HOST, run], timeout)
         tmp = outdir / "_pull"
         if tmp.exists():

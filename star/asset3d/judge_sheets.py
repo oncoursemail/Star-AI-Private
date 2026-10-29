@@ -15,6 +15,9 @@ CONDITIONS = {"baseline": ("baseline", "sheet"), "round0": ("pipeline", "round0"
 
 
 def sheet_for(result: dict, cond: str) -> str | None:
+    rr = result.get("_rr")
+    if rr is not None:
+        return (rr.get(cond) or {}).get("sheet")
     if cond == "baseline":
         return (result.get("baseline") or {}).get("sheet")
     p = result.get("pipeline") or {}
@@ -34,6 +37,10 @@ def main(argv=None):
     key, briefs = {}, {}
     for rp in sorted(Path(a.run).glob("*/result.json")):
         res = json.loads(rp.read_text(encoding="utf-8"))
+        if (rp.parent / "rr.json").exists():
+            res["_rr"] = json.loads((rp.parent / "rr.json").read_text(encoding="utf-8"))
+        if res.get("pipeline", {}).get("best_round") == 0:
+            res.setdefault("pipeline", {}).setdefault("round0", {})["same_as"] = "final"
         b = res["brief"]
         conds = [c for c in CONDITIONS if sheet_for(res, c)]
         if res.get("pipeline", {}).get("round0", {}).get("same_as") == "final":

@@ -106,3 +106,12 @@ def test_eval_briefs_cover_categories_and_styles():
     assert {b["category"] for b in held} == set(S.CATEGORIES)
     assert {b["style"] for b in held} == set(S.STYLES)
     assert not {b["id"] for b in held} & {b["id"] for b in d["dev"]}
+
+
+def test_array_on_parent_is_squeezed_onto_it():
+    raw = {"parts": [_box("body", [0.4, 0.2, 0.1]),
+                     _box("slot", [0.02, 0.1, 0.01], count=4, step=[0.3, 0, 0],
+                          attach={"to": "body", "side": "top"})]}
+    xs = [p["pos"][0] for p in S.prepare(raw)["parts"][1:]]
+    assert len(xs) == 4 and min(xs) >= -0.2 + 0.01 - 1e-9 and max(xs) <= 0.2 - 0.01 + 1e-9
+    assert abs(sum(xs) / 4) < 1e-9  # centred on the attach point

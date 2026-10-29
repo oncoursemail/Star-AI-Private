@@ -864,9 +864,10 @@ def render_views(asset, outdir, size, samples, views, threads, hero=False):
     fov = 2 * math.atan(36 / 2 / cam_d.lens)
     dist = radius / math.sin(fov / 2) * 1.08
     R = radius
-    area_light("Key", (-R * 2.2, -R * 2.6, R * 2.8), target, 260 * R * R + 40, R * 1.6, (1.0, 0.95, 0.88))
-    area_light("Fill", (R * 2.8, -R * 1.8, R * 1.0), target, 90 * R * R + 15, R * 2.2, (0.85, 0.92, 1.0))
-    area_light("Rim", (R * 0.8, R * 3.0, R * 2.4), target, 340 * R * R + 50, R * 1.2, (1.0, 1.0, 1.0))
+    # light power scales with the square of the size only: same exposure for a pistol and a truck
+    area_light("Key", (-R * 2.2, -R * 2.6, R * 2.8), target, 260 * R * R, R * 1.6, (1.0, 0.95, 0.88))
+    area_light("Fill", (R * 2.8, -R * 1.8, R * 1.0), target, 90 * R * R, R * 2.2, (0.85, 0.92, 1.0))
+    area_light("Rim", (R * 0.8, R * 3.0, R * 2.4), target, 340 * R * R, R * 1.2, (1.0, 1.0, 1.0))
     paths = {}
     for v in views:
         yaw, el = VIEWS[v]

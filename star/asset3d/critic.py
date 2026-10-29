@@ -1,7 +1,13 @@
 """Render critique (vision model vs a written rubric) and deterministic QA notes from the builder metrics."""
 from __future__ import annotations
 
+import time
+
 from . import llm
+
+# circuit breaker: after the vision model timed out, skip it for a while instead of waiting minutes per round
+_DOWN_UNTIL = {"t": 0.0}
+DOWN_S = 1200.0
 from .spec import budget, local_aabb
 
 RUBRIC = """You are a strict senior 3D art director reviewing a game-ready prop for a portfolio.
@@ -25,9 +31,12 @@ def critique(sheet_path: str, brief: dict, part_ids: list[str], model: str = "st
              timeout: float = 420.0) -> tuple[dict, dict]:
     prompt = RUBRIC.format(brief=brief["brief"], style=brief["style"], parts=", ".join(part_ids[:60]))
     msgs = [{"role": "user", "content": [{"type": "text", "text": prompt}, llm.image_part(sheet_path)]}]
+    if time.time() < _DOWN_UNTIL["t"]:
+        return {"overall": None, "issues": [], "unavailable": "skipped (vision model timed out recently)"},             {"seconds": 0.0}
     try:
         text, meta = llm.chat(model, msgs, max_tokens=700, temperature=0.1, json_mode=True, timeout=timeout)
     except OSError as e:  # vision model busy or too slow: the loop continues on the automatic checks only
+        _DOWN_UNTIL["t"] = time.time() + DOWN_S
         return {"overall": None, "issues": [], "unavailable": f"{type(e).__name__}: {e}"[:200]}, {"seconds": timeout}
     try:
         data = llm.extract_json(text)

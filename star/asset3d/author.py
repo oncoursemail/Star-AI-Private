@@ -101,9 +101,18 @@ def _ask_spec(msgs, brief, model, tries, max_tokens=2300, patch_base=None):
     last = ""
     for _ in range(tries):
         # the GPU nodes have a 4096-token context: prompt + answer must fit or the router falls back to the brain
-        est = int(sum(len(m["content"]) for m in msgs if isinstance(m["content"], str)) / 2.6)
-        text, meta = llm.chat(model, msgs, max_tokens=max(500, min(max_tokens, 4040 - est)), temperature=0.4,
-                              json_mode=True)
+        est = sum(llm.estimate_tokens(m["content"]) for m in msgs if isinstance(m["content"], str)) + 40
+        if est > 3500:  # keep only the first and the last exchange
+            msgs = msgs[:2] + msgs[-2:] if len(msgs) > 4 else msgs[:2]
+            est = sum(llm.estimate_tokens(m["content"]) for m in msgs if isinstance(m["content"], str)) + 40
+        try:
+            text, meta = llm.chat(model, msgs, max_tokens=max(400, min(max_tokens, 4000 - est)), temperature=0.4,
+                                  json_mode=True)
+        except ValueError as e:  # HTTP 400 from the node: too long
+            info["calls"].append({"error": str(e)[:200]})
+            last = str(e)
+            msgs = msgs[:2]
+            continue
         info["calls"].append(meta)
         try:
             raw = llm.extract_json(text)
@@ -121,7 +130,7 @@ def _ask_spec(msgs, brief, model, tries, max_tokens=2300, patch_base=None):
 def compact(raw: dict) -> str:
     def r(v):
         if isinstance(v, float):
-            return round(v, 4)
+            return round(v, 3)
         if isinstance(v, list):
             return [r(x) for x in v]
         if isinstance(v, dict):

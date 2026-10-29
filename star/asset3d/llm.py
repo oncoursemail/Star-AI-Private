@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import urllib.error
 import json
 import os
 import re
@@ -71,7 +72,11 @@ def node_chat(body: dict, wait_s: float = 1800.0, timeout: float = 600.0) -> tup
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as r:
                     return json.load(r), name
-            except OSError as e:  # busy / unloading / HTTP error: try the next node or wait
+            except urllib.error.HTTPError as e:
+                if e.code == 400:  # the request itself is wrong (too long for the context): do not retry it
+                    raise ValueError(f"{name}: HTTP 400 {e.read()[:200]!r}") from e
+                last = f"{name}: HTTP {e.code}"
+            except OSError as e:  # busy / unloading: try the next node or wait
                 last = f"{name}: {type(e).__name__} {str(e)[:120]}"
         if time.time() > deadline:
             raise RuntimeError("no GPU node answered: " + last)
@@ -108,6 +113,12 @@ def image_part(path: str | Path) -> dict:
     b = base64.b64encode(Path(path).read_bytes()).decode("ascii")
     mime = "image/jpeg" if str(path).lower().endswith((".jpg", ".jpeg")) else "image/png"
     return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b}"}}
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token count for gemma: digits are about one token each, other text about 3.2 chars per token."""
+    digits = sum(c.isdigit() for c in text)
+    return int(digits * 0.95 + (len(text) - digits) / 3.2) + 8
 
 
 def extract_json(text: str):

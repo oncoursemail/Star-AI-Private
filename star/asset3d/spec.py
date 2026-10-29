@@ -385,6 +385,28 @@ def _frac(x):
     return max(-1.0, min(1.0, float(x))) if isinstance(x, (int, float)) and not isinstance(x, bool) else 0.0
 
 
+def _fit_array(p, lo_c, hi_c, plo, phi):
+    """A repeated part (count/step) attached to a parent: centre the row on the attach point and squeeze the step so
+    every copy stays on the parent (models often overshoot the step)."""
+    n = p["count"]
+    for i in range(3):
+        st = p["step"][i]
+        if abs(st) < 1e-9:
+            continue
+        room = max(0.0, (phi[i] - plo[i]) - (hi_c[i] - lo_c[i]))
+        if abs(st) * (n - 1) > room:
+            st = math.copysign(room / (n - 1), st)
+            p["step"][i] = st
+        start = p["pos"][i] - st * (n - 1) / 2
+        lo_first = start + min(0.0, st * (n - 1)) + lo_c[i]
+        hi_last = start + max(0.0, st * (n - 1)) + hi_c[i]
+        if lo_first < plo[i]:
+            start += plo[i] - lo_first
+        elif hi_last > phi[i]:
+            start -= hi_last - phi[i]
+        p["pos"][i] = start
+
+
 def resolve_layout(raw_parts: list, parts: list) -> list:
     """Turn attach/side-relative fields of the raw model parts into world coordinates on the validated parts."""
     boxes = {}
@@ -401,6 +423,8 @@ def resolve_layout(raw_parts: list, parts: list) -> list:
             if isinstance(off, list) and len(off) == 3 and all(isinstance(o, (int, float)) for o in off):
                 pos = [pos[i] + max(-2.0, min(2.0, off[i])) for i in range(3)]
             p["pos"] = pos
+            if p.get("count", 1) > 1:
+                _fit_array(p, lo_c, hi_c, plo, phi)
         lo = [p["pos"][i] + lo_c[i] for i in range(3)]
         hi = [p["pos"][i] + hi_c[i] for i in range(3)]
         boxes[p["id"]] = (lo, hi)
