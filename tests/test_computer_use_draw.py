@@ -3,8 +3,10 @@ shows the same UI Automation controls Win11 Paint shows (measured on the dev PC)
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 import star.computer as star_computer
@@ -252,6 +254,10 @@ def test_register_home_activities_adds_draw_and_use_app():
     assert {"drawing", "use_apps"} <= registry.interests()
 
 
+# draw_activity stops before planning anywhere but Windows
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="drawing in Paint needs Windows")
+
+
 def ctx_for(tmp_path, chat, dry=True, goal=None):
     home = tmp_path / "home"
     executor = Executor(home, type("B", (), {})(), dry_run=dry)
@@ -259,6 +265,7 @@ def ctx_for(tmp_path, chat, dry=True, goal=None):
                               goal=goal, practice_topic="")
 
 
+@windows_only
 def test_draw_activity_dry_run_plans_but_paints_nothing(tmp_path):
     chat = Script({"title": "Hut", "strokes": [{"color": "Red", "points": [[10, 10], [90, 90]]}]})
     ctx = ctx_for(tmp_path, chat, goal={"id": "g1", "text": "Draw a hut"})
@@ -268,6 +275,7 @@ def test_draw_activity_dry_run_plans_but_paints_nothing(tmp_path):
     assert "Subject: Draw a hut" in chat.prompts[0]
 
 
+@windows_only
 def test_draw_activity_picks_a_subject_when_there_is_no_goal_and_reports_a_rejected_plan(tmp_path):
     seen = []
 

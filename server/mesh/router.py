@@ -29,6 +29,7 @@ from pathlib import Path
 from . import instant
 from .general import inject as general
 from .loop import runner as loop_runner
+from .polyglot import note as polyglot_note
 from .selfmodel import brief as self_brief
 from .speed import hook as speed
 
@@ -103,6 +104,7 @@ DEFAULTS = {
                                       # starts (grounding changes the prompt; a one-slot node cannot judge while it
                                       # answers); late = no grounding, the lookup goes on in parallel
     **general.DEFAULTS,              # general questions: general-mode note, exact calculator, safety facts
+    **polyglot_note.DEFAULTS,        # coding questions in other languages/engines: "answer fully" note + version facts
     **loop_runner.LOOP_DEFAULTS,      # best-of-2 + verified pick + hidden tool loop (server/mesh/loop), opt-in per request
     # official docs (server/mesh/docs, :8102): a compact block of exact API entries in front of Litha questions
     "docs": True,
@@ -586,7 +588,9 @@ class Router:
 
     def _failed(self, backend: Backend, err: Exception):
         backend.last_error = str(err)[:120]
-        if backend is not self.brain:
+        # a 400/413/422 is about this one request (llama-server: prompt longer than the node's context), not the
+        # node: no cooldown, or one long prompt sends every request of the next 30 s to the brain's CPU queue
+        if backend is not self.brain and not (isinstance(err, UpstreamError) and err.status in (400, 413, 422)):
             backend.fail_until = time.monotonic() + self.cfg["fail_cooldown_s"]
 
     async def race(self, plan, path, body_for, client_auth, stream, hedge, log):
@@ -811,6 +815,7 @@ class Router:
             cache_hdr.update(await self.self_inject(req, plan[0][0].name if plan else None))
         elif model == FAST:
             cache_hdr.update(await self.docs_inject(req, headers))
+            cache_hdr.update(polyglot_note.apply(req, self.cfg))     # before general: its note then stays out
             if req.pop("mesh_general", None) is not False and \
                     headers.get("x-mesh-general", "").lower() not in ("off", "0", "no"):
                 cache_hdr.update(await general.run(self, req, plan, headers.get("authorization", "")))
