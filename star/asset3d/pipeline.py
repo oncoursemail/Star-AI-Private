@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 
 from . import author, critic, runner
-from .spec import STYLE, budget
+from .spec import STYLE
 
 HERE = Path(__file__).resolve().parent
 PREVIEW = {"tex": 512, "bake_samples": 8, "render": {"size": 384, "samples": 16}, "final": False}
