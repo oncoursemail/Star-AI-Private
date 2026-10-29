@@ -430,6 +430,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         definitions.append({"type": "function", "function": {"name": CLOCK_TOOL["name"],
                             "description": CLOCK_TOOL["description"],
                             "parameters": CLOCK_TOOL["inputSchema"]}})
+    # Like the clock: offered only to a prompt about her own machines, speed, code or learning (star/system_view.py).
+    from .system_view import TOOL as SYSTEM_TOOL, wants_system
+    system_enabled = any(wants_system(text) for text in (prompt, *pinned))
+    if system_enabled:
+        definitions.append({"type": "function", "function": {"name": SYSTEM_TOOL["name"],
+                            "description": SYSTEM_TOOL["description"],
+                            "parameters": SYSTEM_TOOL["inputSchema"]}})
     if github_enabled:
         definitions.extend([
             {"type": "function", "function": {
@@ -643,7 +650,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         # This classifies effects only to PAUSE actions. Existing authorization
         # above dispatch remains authoritative; this never grants a capability.
         read_only = ((TOOL_NAMES - WORKSPACE_WRITE_TOOLS) | STUDIO_READ_TOOLS | {
-            'star_self_state', 'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
+            'star_self_state', 'star_evidence_read', 'star_calculate', 'star_clock', 'star_system', 'star_web_fetch',
             'star_web_search', 'star_github_tree', 'star_github_read', 'star_delegate',
             'star_mcp_registry_search', 'star_candidate_code_team',
             'star_self_capabilities', 'star_self_improvement_plan',
@@ -925,6 +932,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif name == 'star_clock':
                         if not clock_enabled or not isinstance(args, dict):
                             raise PermissionError('Clock not authorized for this task')
+                    elif name == 'star_system':
+                        if not system_enabled or not isinstance(args, dict):
+                            raise PermissionError('System self-model not authorized for this task')
                     elif name == 'star_web_fetch':
                         if not web_search_enabled or not isinstance(args, dict) or set(args) != {'url'}:
                             raise PermissionError('Web page reading is not authorized')
@@ -1050,6 +1060,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 raise
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Clock tool failed: {type(exc).__name__}"}]}
+                    elif name == 'star_system':
+                        from .system_view import tool_result as system_result
+                        data = await system_result(args)   # never raises: an unreachable self-model is an isError result
                     elif name == 'star_web_fetch':
                         try:
                             from .web_fetch import tool_result as fetch_result

@@ -626,3 +626,102 @@ def test_proxy_marks_a_cut_stream_and_refuses_while_draining(tmp_path):
         _FakeStream.finish = True
         proxy.shutdown()
         upstream.shutdown()
+
+
+# ---- idle boost: nobody at the PC -> smaller reserve, full speed; the first input gives the memory back -----------
+def _boost_node(tmp_path, **over):
+    ladder = [[99, 7250], [46, 6960]]
+    idle = {"s": 0.0}
+    cfg = dict(ngl_ladder=ladder, llama_args=["-ngl", "99"], other_vram_grow_mb=99999, vram_reserve_mb=600,
+               min_free_loaded_mb=500, idle_reserve_mb=250, idle_min_free_mb=150, idle_after_seconds=600)
+    cfg.update(over)
+    node, gpu, clock, procs = make(tmp_path, **cfg)
+    node._idle = lambda: idle["s"]
+    gpu["total"], gpu["used"] = 8188, 567                  # 7621 MB free: the normal reserve allows only ngl 46
+
+    def popen(argv, **kw):
+        procs.append((argv, kw))
+        gpu["used"] = 567 + dict(ladder)[int(argv[argv.index("-ngl") + 1])]
+        return Proc()
+    node._popen = popen
+    return node, gpu, clock, procs, idle
+
+
+def test_idle_boost_steps_up_when_nobody_is_at_the_pc_and_down_at_the_first_input(tmp_path):
+    node, gpu, clock, procs, idle = _boost_node(tmp_path)
+    node.tick()
+    assert node.ngl == 46 and node.ready and not node.boosted and not node.status()["idle_boost"]
+    idle["s"] = 599
+    node.tick()
+    assert node.ngl == 46 and len(procs) == 1
+    idle["s"] = 600                                         # 10 minutes without input: 7621 - 7250 >= 250
+    first = node.process
+    node.tick()
+    assert first.killed and node.ngl == 99 and node.boosted and len(procs) == 2
+    node.tick()
+    assert node.state == "idle" and "idle boost" in node.reason and node.status()["idle_boost"]
+    node.tick()                                             # 371 MB free >= idle_min_free_mb: stays
+    assert node.ngl == 99 and len(procs) == 2
+    assert node.begin_request()                             # an answer is streaming when someone moves the mouse
+    idle["s"] = 0.3
+    boosted = node.process
+    node.tick()                                             # at once: no drain, the memory goes back now
+    assert boosted.killed and node.ngl == 46 and node.ready and not node.boosted and len(procs) == 3
+    assert node.reason == "model loaded" or node.state == "idle"
+
+
+def test_idle_boost_waits_for_answers_and_is_off_by_default(tmp_path):
+    node, gpu, clock, procs, idle = _boost_node(tmp_path)
+    node.tick()
+    assert node.begin_request()
+    idle["s"] = 9999
+    node.tick()
+    assert node.ngl == 46 and len(procs) == 1               # no step up while an answer streams
+    node.end_request()
+    node.tick()
+    assert node.ngl == 99 and node.boosted
+    off, gpu2, _, procs2, idle2 = _boost_node(tmp_path, idle_reserve_mb=0)
+    idle2["s"] = 9999
+    off.tick()
+    off.tick()
+    assert off.ngl == 46 and not off.boosted and len(procs2) == 1
+
+
+def test_idle_boost_does_not_flag_a_step_that_fits_anyway(tmp_path):
+    node, gpu, clock, procs, idle = _boost_node(tmp_path)
+    gpu["used"] = 167                                       # light desktop: 8021 free, ngl 99 fits the normal reserve
+    idle["s"] = 9999
+    node.tick()
+    assert node.ngl == 99 and not node.boosted
+    idle["s"] = 0
+    node.tick()
+    assert node.ngl == 99 and len(procs) == 1
+
+
+def test_idle_boost_poll_wait_returns_at_the_first_input(tmp_path):
+    import time as _t
+    node, gpu, clock, procs, idle = _boost_node(tmp_path, poll_seconds=2.5)
+    node.boosted = True
+    idle["s"] = 9999
+    t0 = _t.monotonic()
+    node.wait_poll()                                        # boosted: ticks at least every second
+    assert _t.monotonic() - t0 < 1.5
+    idle["s"] = 0
+    t0 = _t.monotonic()
+    node.wait_poll()                                        # input: no wait
+    assert _t.monotonic() - t0 < 0.2
+
+
+def test_input_idle_seconds_reads_windows_or_none():
+    value = na.input_idle_seconds()
+    assert value is None or value >= 0
+
+
+def test_idle_boost_fake_input_file_is_the_test_hook(tmp_path):
+    node, gpu, clock, procs, idle = _boost_node(tmp_path)
+    idle["s"] = 9999
+    node.tick()
+    assert node.ngl == 99 and node.boosted and node.status()["input_idle_s"] == 9999
+    (tmp_path / "FAKE_INPUT").write_text("")
+    node.tick()
+    assert node.ngl == 46 and not node.boosted and len(procs) == 2
