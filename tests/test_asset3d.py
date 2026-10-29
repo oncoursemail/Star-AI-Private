@@ -100,7 +100,7 @@ def test_qa_notes_flags_floating_budget_and_size():
 
 
 def test_eval_briefs_cover_categories_and_styles():
-    d = json.loads((Path(S.__file__).parent / "eval_briefs.json").read_text(encoding="utf-8"))
+    d = json.loads((Path(__file__).resolve().parents[1] / "evals" / "asset3d" / "briefs.json").read_text(encoding="utf-8"))
     held = d["heldout"]
     assert len(held) >= 15
     assert {b["category"] for b in held} == set(S.CATEGORIES)

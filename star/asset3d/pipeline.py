@@ -174,7 +174,7 @@ def make_asset(brief_text: str, category: str, style: str, out: str, where: str 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--briefs", default=str(HERE / "eval_briefs.json"))
+    ap.add_argument("--briefs", default=str(HERE.parents[1] / "evals" / "asset3d" / "briefs.json"))
     ap.add_argument("--set", default="dev", choices=("dev", "heldout"))
     ap.add_argument("--ids", default="")
     ap.add_argument("--out", required=True)
