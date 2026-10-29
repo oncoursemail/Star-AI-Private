@@ -143,7 +143,7 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
 
 def serve(cfg: dict, caller_factory=model_caller) -> ThreadingHTTPServer:
     api = ApiIndex.load(cfg["index"])
-    verifier = Verifier(api, cfg.get("luau_analyze"), Polyglot.from_config(cfg))
+    verifier = Verifier(api, cfg.get("luau_analyze"), polyglot=Polyglot.from_config(cfg))
     srv = ThreadingHTTPServer((cfg["listen"], cfg["port"]),
                               make_handler(cfg, verifier, KeyFile(cfg["client_keys_file"]), caller_factory))
     srv.daemon_threads = True

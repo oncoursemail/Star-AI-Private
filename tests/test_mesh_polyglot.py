@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server"))
 from mesh.polyglot import client as pg_client  # noqa: E402
-from mesh.polyglot import runner  # noqa: E402
+from mesh.polyglot import note, runner  # noqa: E402,F401
 from mesh.verify import core  # noqa: E402
 from mesh.verify.apidump import ApiIndex  # noqa: E402
 sys.path.remove(str(ROOT / "server"))
@@ -40,7 +40,7 @@ class FakePolyglot:
 
 
 def verifier(fake=None):
-    return core.Verifier(API, None, fake if fake is not None else FakePolyglot())
+    return core.Verifier(API, None, polyglot=fake if fake is not None else FakePolyglot())
 
 
 def test_python_block_checked_and_flagged():
@@ -59,7 +59,7 @@ def test_clean_rust_ok_and_down_checker_means_unchecked():
 
 
 def test_no_polyglot_keeps_old_behaviour():
-    rep = core.Verifier(API, None, None).verify("```python\nprint(undefined_thing)\n```\n")
+    rep = core.Verifier(API, None, polyglot=None).verify("```python\nprint(undefined_thing)\n```\n")
     assert not rep["blocks"][0]["checked"] and rep["ok"]
 
 
@@ -166,3 +166,35 @@ def test_check_never_raises(monkeypatch):
     monkeypatch.setitem(runner.CHECKS, "python", boom)
     out = runner.check("python", "print(1)")
     assert out["checked"] is False and out["problems"] == []
+
+
+def test_plugin_java_left_to_the_mc_plugins_checker():
+    fake = FakePolyglot()
+    v = verifier(fake)
+    v.verify("```java\nimport org.bukkit.plugin.java.JavaPlugin;\npublic class P extends JavaPlugin {}\n```\n")
+    v.verify("```java\nimport java.util.List;\npublic class Main {}\n```\n")
+    assert fake.calls == ["java"]
+
+
+# ---------------------------------------------------------------------------------------------- the router note
+def test_note_detects_other_languages_only():
+    from mesh.polyglot import note
+    assert note.detect("Write a complete Python program that reads n numbers and prints the sum") == "python"
+    assert note.detect("Write a Node.js program that counts words from stdin") == "javascript"
+    assert note.detect("In Godot 4, make a CharacterBody2D jump") == "gdscript"
+    assert note.detect("Write a C++ program for shortest paths; each node has edges") == "cpp"
+    assert note.detect("Make a single HTML page with a to-do list in JavaScript") == "web"
+    assert note.detect("make my roblox door open with a lua script") is None
+    assert note.detect("write a unity C# script for a jump") is None
+    assert note.detect("python script for my minecraft server") is None
+    assert note.detect("what is a python?") is None                      # no coding ask
+
+
+def test_note_apply_once():
+    from mesh.polyglot import note
+    req = {"messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "Write a Rust function to parse a list"}]}
+    assert note.apply(req) == {"X-Mesh-Polyglot": "rust"}
+    assert "Rust 2021" in req["messages"][-1]["content"] and req["messages"][0]["content"] == "s"
+    assert note.apply(req) == {}                                           # already has a note
+    off = {"messages": [{"role": "user", "content": "Write a Rust function"}]}
+    assert note.apply(off, {"polyglot_note": False}) == {} and "Note" not in off["messages"][-1]["content"]

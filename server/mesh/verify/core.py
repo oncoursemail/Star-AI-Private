@@ -89,15 +89,15 @@ def extract_blocks(text: str, language: str | None = None) -> list[dict]:
 
 
 class Verifier:
-    def __init__(self, api: ApiIndex, analyzer: str | None = None, polyglot=None):
+    def __init__(self, api: ApiIndex, analyzer: str | None = None, *, polyglot=None):
         self.api = api
         self.luau = LuauChecker(api, analyzer)
         self.polyglot = polyglot           # server/mesh/polyglot client (None = those languages stay unchecked)
         self._pg: dict = {}
 
     def _poly(self, code: str, lang: str, prose: str) -> dict | None:
-        if not self.polyglot or lang not in COMPILED:
-            return None
+        if not self.polyglot or lang not in COMPILED or (lang == "java" and JAVA_PLUGIN.search(code)):
+            return None                    # Paper/Fabric/NeoForge/Velocity Java belongs to the mc-plugins checker
         key = (lang, code)
         if key not in self._pg:
             self._pg[key] = self.polyglot.check(lang, code, prose)
@@ -107,7 +107,8 @@ class Verifier:
         """Compile the blocks of one answer in parallel (the per-block results are then read from the cache)."""
         self._pg = {}
         if self.polyglot:
-            todo = [(b["language"], b["code"]) for b in blocks if b["language"] in COMPILED]
+            todo = [(b["language"], b["code"]) for b in blocks if b["language"] in COMPILED
+                    and not (b["language"] == "java" and JAVA_PLUGIN.search(b["code"]))]
             if len(todo) > 1:
                 self._pg.update(self.polyglot.check_many(todo, prose))
 
@@ -237,6 +238,7 @@ FIX_SYSTEM = ("You repair code. You get one code block and a list of problems fo
 FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction", "shell": "bash"}
 POLYGLOT = {"python", "javascript", "typescript", "java", "cpp", "c", "rust", "go", "gdscript", "lua", "sql", "shell"}
 COMPILED = POLYGLOT | {"csharp"}                   # sent to the star-polyglot compilers
+JAVA_PLUGIN = re.compile(r"^\s*import\s+(?:static\s+)?(?!java\.|javax\.)[\w.]+", re.M)   # any non-JDK import
 COMPILE_FIX_SYSTEM = ("You repair code. You get one code block and the errors the real compiler / type checker / engine "
                       "reported for it. Fix exactly those errors and keep everything else unchanged (same structure, "
                       "names, comments, behaviour). Placeholders the reader fills in ([X], <x>, X_POS) stay exactly as "
