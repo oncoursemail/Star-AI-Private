@@ -63,14 +63,14 @@ def run_pipeline(brief, out: Path, where, threads, model, critic_model, rounds):
         sheet = runner.contact_sheet(m["views"], rd / "sheet.jpg")
         notes, pen = critic.qa_notes(m, spec)
         crit, cmeta = critic.critique(str(sheet), brief, [p["id"] for p in spec["parts"]], model=critic_model)
-        ov = crit.get("overall") if isinstance(crit.get("overall"), (int, float)) else 0
-        score = ov - 0.5 * pen
+        ov = crit.get("overall") if isinstance(crit.get("overall"), (int, float)) else None
+        score = (ov if ov is not None else 5.0) - 0.5 * pen
         entry.update({"critic": crit, "critic_s": cmeta["seconds"], "qa_notes": notes, "penalty": pen,
                       "score": score, "tris": m["qa"]["tris"], "sheet": str(sheet)})
         hist.append(entry)
         if best is None or score > best["score"]:
             best = {"score": score, "spec": spec, "raw": raw, "round": r}
-        if r == rounds or (ov >= 8.5 and pen == 0):
+        if r == rounds or (ov is not None and ov >= 8.5 and pen == 0) or (ov is None and not notes):
             break
         try:
             spec, info = author.revise_spec(brief, raw, notes, crit, model=model)

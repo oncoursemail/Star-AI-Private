@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from . import llm
-from .spec import budget
+from .spec import budget, local_aabb
 
 RUBRIC = """You are a strict senior 3D art director reviewing a game-ready prop for a portfolio.
 Four studio renders of ONE asset: top-left 3/4 front, top-right side, bottom-left 3/4 back, bottom-right from above.
@@ -21,10 +21,14 @@ Answer JSON only: {{"scores": {{"silhouette": n, "proportion": n, "edges": n, "d
 "style": n}}, "overall": n, "issues": [{{"part": "...", "problem": "...", "fix": "..."}}]}}"""
 
 
-def critique(sheet_path: str, brief: dict, part_ids: list[str], model: str = "star-fast") -> tuple[dict, dict]:
+def critique(sheet_path: str, brief: dict, part_ids: list[str], model: str = "star-fast",
+             timeout: float = 420.0) -> tuple[dict, dict]:
     prompt = RUBRIC.format(brief=brief["brief"], style=brief["style"], parts=", ".join(part_ids[:60]))
     msgs = [{"role": "user", "content": [{"type": "text", "text": prompt}, llm.image_part(sheet_path)]}]
-    text, meta = llm.chat(model, msgs, max_tokens=900, temperature=0.1, json_mode=True)
+    try:
+        text, meta = llm.chat(model, msgs, max_tokens=700, temperature=0.1, json_mode=True, timeout=timeout)
+    except OSError as e:  # vision model busy or too slow: the loop continues on the automatic checks only
+        return {"overall": None, "issues": [], "unavailable": f"{type(e).__name__}: {e}"[:200]}, {"seconds": timeout}
     try:
         data = llm.extract_json(text)
     except ValueError:
@@ -65,6 +69,26 @@ def qa_notes(metrics: dict, spec: dict) -> tuple[list[str], int]:
     sd = spec.get("dims")
     if sd and longest > 0 and not 0.7 <= longest / max(sd) <= 1.4:
         notes.append(f"built size {[round(d, 2) for d in dims]} differs from your dims {sd}")
+        pen += 1
+    # geometry sanity from the resolved spec (cheap, no vision needed)
+    boxes = {}
+    for p in spec["parts"]:
+        lo, hi = local_aabb(p)
+        boxes[p["id"]] = [hi[i] - lo[i] for i in range(3)]
+    if spec["category"] in ("weapon", "vehicle") and dims[0] < max(dims[1], dims[2]) * 0.95:
+        notes.append(f"the {spec['category']} should be longest along X (front/back) but is {[round(d, 2) for d in dims]}"
+                     " (x, y, z): check orientation (axis) and sizes")
+        pen += 1
+    if longest > 0:
+        big = [i for i, e in boxes.items() if max(e) > 0.98 * longest and len(boxes) > 3 and
+               sorted((max(x) for x in boxes.values()), reverse=True)[1] < 0.5 * max(e)]
+        for i in big[:2]:
+            notes.append(f"part {i} is far bigger than every other part ({[round(x, 3) for x in boxes[i]]} m): "
+                         "check its size/radius/points (lathe points are [position, radius])")
+            pen += 1
+    min_parts = {"pbr": 12, "stylized": 8, "roblox": 8, "lowpoly": 5}[spec["style"]]
+    if len(spec["parts"]) < min_parts:
+        notes.append(f"only {len(spec['parts'])} parts: add secondary and detail parts (aim for {min_parts * 2})")
         pen += 1
     nm = qa.get("non_manifold_edges", 0)
     if tris and nm > 0.05 * tris:
