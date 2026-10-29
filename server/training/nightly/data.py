@@ -106,22 +106,55 @@ def build_pool(distill_path: str, queries_path: str, kb_path: str, qset_path: st
     return {"pool": pool, "dropped": dropped, "heldout_texts": len(held), "banned_items": sorted(banned)}
 
 
-def night_sample(pool: list[dict], n: int, used: set[str], seed: int, distill_share: float = 0.5) -> list[dict]:
-    """n prompts not used on earlier nights: half distill paraphrases (max 2 per item), half docs prompts."""
+def parse_shard(text: str) -> tuple[int, int]:
+    i, n = (int(x) for x in (text or "0/1").split("/"))
+    return i, max(1, n)
+
+
+def in_shard(pid: str, shard: tuple[int, int]) -> bool:
+    if shard[1] <= 1:
+        return True
+    return int(hashlib.sha256(pid.encode()).hexdigest()[:8], 16) % shard[1] == shard[0]
+
+
+def group_counts(prompts: list[dict]) -> dict:
+    out: dict[str, int] = {}
+    for p in prompts:
+        k = p["group"].split(":")[0] + (":" + p["group"].split(":")[1] if p["group"].startswith("g:") else "")
+        out[k] = out.get(k, 0) + 1
+    return out
+
+
+def night_sample(pool: list[dict], n: int, used: set[str], seed: int, distill_share: float = 0.5,
+                 shard: tuple[int, int] = (0, 1), gap_share: float = 0.0) -> list[dict]:
+    """n prompts not used before (and in this card's shard): gap-targeted prompts first (gap_share, spread evenly
+    over the gap classes), then distill paraphrases (max 2 per item) and docs prompts sharing the rest."""
     rnd = random.Random(seed)
-    fresh = [p for p in pool if p["pid"] not in used]
+    fresh = [p for p in pool if p["pid"] not in used and in_shard(p["pid"], shard)]
+    g = [p for p in fresh if p["group"].startswith("g:")]
     d = [p for p in fresh if p["group"].startswith("d:")]
     q = [p for p in fresh if p["group"].startswith("q:")]
-    rnd.shuffle(d)
-    rnd.shuffle(q)
+    for x in (g, d, q):
+        rnd.shuffle(x)
+    picked: list[dict] = []
+    classes: dict[str, list[dict]] = {}
+    for p in g:
+        classes.setdefault(p["group"], []).append(p)
+    want_g = int(n * gap_share)
+    while len(picked) < want_g and any(classes.values()):
+        for k in sorted(classes):
+            if classes[k] and len(picked) < want_g:
+                picked.append(classes[k].pop())
+    rest = n - len(picked)
     per: dict[str, int] = {}
-    picked = []
+    n_d = 0
     for p in d:
-        if len(picked) >= int(n * distill_share):
+        if n_d >= int(rest * distill_share):
             break
         if per.get(p["group"], 0) < 2:
             per[p["group"]] = per.get(p["group"], 0) + 1
             picked.append(p)
+            n_d += 1
     picked += q[: n - len(picked)]
     return picked
 

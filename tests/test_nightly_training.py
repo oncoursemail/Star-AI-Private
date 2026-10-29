@@ -170,3 +170,135 @@ def test_open_hold_ignores_holds_on_star_pc_card(tmp_path, monkeypatch):
     sched.write_text(f"HOLD gpu-pool {t} star-pc 4060 only, planned end +20 min\n", encoding="utf-8")
     monkeypatch.setenv("STAR_GPU_SCHEDULE", str(sched))
     assert H.open_hold("nightly-training") == ""
+
+
+# ---- nightly v2: corrections, gap prompts, shards, ORPO, fitted schedule, node wiring -----------------------------
+C = importlib.import_module("training.nightly.correct")
+T = importlib.import_module("training.nightly.train")
+DP = importlib.import_module("training.nightly.deploy")
+
+
+def test_feedback_lines_use_only_our_checks():
+    chk = {"verify": {"ok": False, "details": [{"kind": "mc_function", "name": None, "answer_line": 4,
+                                                "message": "commands in a .mcfunction file have no leading '/'",
+                                                "suggestion": "give"}]},
+           "rule_hits": [{"rule": "touched-no-debounce", "message": "Add a debounce.", "evidence": "Touched:Connect"}],
+           "judge": {"pass": False, "reason": "No cooldown on the remote."}}
+    lines = C.feedback_lines(chk)
+    assert lines[0].startswith("commands in a .mcfunction") and "(use: give)" in lines[0] and "[line 4]" in lines[0]
+    assert "Add a debounce. (seen here: Touched:Connect)" in lines
+    assert lines[-1] == "A reviewer said: No cooldown on the remote."
+    assert C.feedback_lines({"finished": False}, finish="length")[0].startswith("The answer was too long")
+    assert C.feedback_lines({"verify": {"ok": True}, "judge": {"pass": True}}) == []
+
+
+@pytest.mark.parametrize("text,out", [("Here's the fixed version:\n\nUse task.wait()", "Use task.wait()"),
+                                      ("Sure! Here is the answer\nUse task.wait()", "Use task.wait()"),
+                                      ("I fixed the problems listed by the checker: ...", None),
+                                      ("Use task.wait() instead of wait().", "Use task.wait() instead of wait().")])
+def test_clean_rewrite(text, out):
+    assert C.clean(text) == out
+
+
+class FakeSrv:
+    parallel = 1
+
+    def __init__(self, fact='{"false_claims": [], "answers_question": true}'):
+        self.calls = []
+        self.fact = fact
+
+    def chat(self, messages, temperature=0.3, max_tokens=1200, seed=-1, **kw):
+        self.calls.append(messages)
+        if messages[0]["content"] == S.FACT_SYSTEM:
+            return {"text": self.fact, "finish": "stop", "tokens": 5}
+        last = messages[-1]["content"]
+        text = "GOOD rewrite" if last.startswith(C.ASK) else ("GOOD first" if "easy" in last else "bad first")
+        return {"text": text, "finish": "stop", "tokens": 10, "tok_s": 50.0, "draft_n": 8, "draft_ok": 6}
+
+
+def test_harvest_banks_first_try_and_corrected_answers(tmp_path, monkeypatch):
+    def fake_check(srv, verifier, q, ans, safety=False, reference=""):
+        ok = ans["text"].startswith("GOOD")
+        return {"finished": True, "verify": {"ok": ok}, "rules": [], "rule_hits": [],
+                "judge": {"pass": ok, "reason": "" if ok else "Uses a deprecated API."}, "pass": ok}
+    monkeypatch.setattr(N.S, "full_check", fake_check)
+    sysf = tmp_path / "sys.txt"
+    sysf.write_text("You are Litha.", encoding="utf-8")
+    cfg = {"system_prompt": str(sysf), "work_dir": str(tmp_path)}
+    prompts = [{"pid": "a1", "prompt": "an easy one", "group": "q:1", "source": "s"},
+               {"pid": "b2", "prompt": "a hard one", "group": "g:mc-commands", "source": "s"}]
+    srv = FakeSrv()
+    st = N.harvest(cfg, srv, None, prompts, 2, tmp_path, lambda m: None, should_stop=lambda: False)
+    bank = N.jl_read(tmp_path / "bank.jsonl")
+    assert {(r["id"], r["kind"]) for r in bank} == {("a1", "first"), ("b2", "corrected")}
+    assert next(r for r in bank if r["id"] == "b2")["messages"][-1]["content"] == "GOOD rewrite"
+    pairs = N.jl_read(tmp_path / "pairs.jsonl")
+    assert [(p["id"], p["chosen"], p["rejected"]) for p in pairs] == [("b2", "GOOD rewrite", "bad first")]
+    assert st["corrections_tried"] == 1 and st["corrections_pass"] == 1 and st["draft_accept"] == 0.75
+    fix_call = [c for c in srv.calls if c[-1]["content"].startswith(C.ASK)][0]
+    assert "A reviewer said: Uses a deprecated API." in fix_call[-1]["content"]
+    assert {r["pid"] for r in N.jl_read(tmp_path / "harvest_index.jsonl")} == {"a1", "b2"}
+
+
+def test_training_rows_dedupe_and_upsample_corrected():
+    bank = [{"id": "a", "kind": "first"}, {"id": "b", "kind": "corrected"}, {"id": "a", "kind": "corrected"}]
+    rows = N.training_rows(bank, 2)
+    assert [r["id"] for r in rows] == ["a", "b", "b"]
+    tr, va = N.split_rows([{"id": str(i), "kind": "first"} for i in range(200)] + [{"id": "0", "kind": "x"}], 1)
+    assert not {r["id"] for r in tr} & {r["id"] for r in va} and len(va) == 10
+
+
+def test_night_sample_gap_share_and_disjoint_shards():
+    pool = [{"pid": f"g{c}{i}", "group": f"g:{c}", "prompt": f"{c}{i}"} for c in "xy" for i in range(20)] + \
+           [{"pid": f"q{i}", "group": f"q:{i}", "prompt": f"q{i}"} for i in range(40)]
+    s = D.night_sample(pool, 10, set(), seed=3, gap_share=0.4)
+    groups = [p["group"] for p in s]
+    assert len(s) == 10 and groups.count("g:x") == 2 and groups.count("g:y") == 2
+    a = D.night_sample(pool, 30, set(), 3, shard=(0, 2), gap_share=0.3)
+    b = D.night_sample(pool, 30, set(), 3, shard=(1, 2), gap_share=0.3)
+    assert a and b and not {p["pid"] for p in a} & {p["pid"] for p in b}
+    assert D.parse_shard("1/2") == (1, 2)
+
+
+def test_orpo_coefficients_match_numeric_gradient():
+    lc, lr, beta, h = -0.4, -1.3, 0.1, 1e-6
+    dc, dr, loss = T.orpo_coefficients(lc, lr, beta)
+    assert abs(dc - (T.orpo_coefficients(lc + h, lr, beta)[2] - T.orpo_coefficients(lc - h, lr, beta)[2]) / (2 * h)) < 1e-4
+    assert abs(dr - (T.orpo_coefficients(lc, lr + h, beta)[2] - T.orpo_coefficients(lc, lr - h, beta)[2]) / (2 * h)) < 1e-4
+    assert dc < -1 and dr > 0            # push the chosen answer up, the rejected one down
+    assert T.orpo_coefficients(-0.1, -9.0, 0.1)[2] < T.orpo_coefficients(-0.1, -0.11, 0.1)[2]
+
+
+def test_fit_steps_shrinks_to_the_time_box():
+    assert T.fit_steps(100, 10, 600, 3000) == 50          # 60 s/step, 2400 s left -> 40 more
+    assert T.fit_steps(100, 10, 60, 30000) == 100
+    assert T.fit_steps(100, 10, 600, 300) == 11
+
+
+def test_deploy_config_roundtrip():
+    cfg = {"llama_args": ["-ngl", "99", "--lora", "old.gguf", "-t", "4"], "ngl_ladder": [[100, 7300, "mtp"], [99, 7130]]}
+    new = DP.with_adapter(cfg, "C:/x/litha-nightly.gguf", 1.0, mb=140)
+    assert new["llama_args"] == ["-ngl", "99", "-t", "4", "--lora-scaled", "C:/x/litha-nightly.gguf", "1.0"]
+    assert [s[1] for s in new["ngl_ladder"]] == [7440, 7270]
+    again = DP.with_adapter(new, "C:/x/next.gguf", 1.0, mb=100)
+    assert [s[1] for s in again["ngl_ladder"]] == [7400, 7230] and again["llama_args"].count("--lora-scaled") == 1
+    back = DP.without_adapter(again)
+    assert back["llama_args"] == ["-ngl", "99", "-t", "4"] and [s[1] for s in back["ngl_ladder"]] == [7300, 7130]
+    assert "nightly_lora" not in back
+
+
+def test_fact_check_blocks_a_corrected_answer_with_a_false_claim(tmp_path, monkeypatch):
+    def fake_check(srv, verifier, q, ans, safety=False, reference=""):
+        ok = ans["text"].startswith("GOOD")
+        return {"finished": True, "verify": {"ok": ok}, "rules": [], "rule_hits": [],
+                "judge": {"pass": ok, "reason": "" if ok else "Wrong."}, "pass": ok}
+    monkeypatch.setattr(N.S, "full_check", fake_check)
+    sysf = tmp_path / "sys.txt"
+    sysf.write_text("You are Litha.", encoding="utf-8")
+    srv = FakeSrv(fact='{"false_claims": ["Minecraft has no loot tables"], "answers_question": true}')
+    st = N.harvest({"system_prompt": str(sysf), "work_dir": str(tmp_path)}, srv, None,
+                   [{"pid": "b2", "prompt": "a hard one", "group": "g:mc-datapack", "source": "s"}], 2, tmp_path,
+                   lambda m: None, should_stop=lambda: False)
+    assert st["corrections_pass"] == 0 and N.jl_read(tmp_path / "bank.jsonl") == []
+    second = [c for c in srv.calls if c[-1]["content"].startswith(C.ASK)][-1][-1]["content"]
+    assert "A fact checker says this is false: Minecraft has no loot tables" in second
