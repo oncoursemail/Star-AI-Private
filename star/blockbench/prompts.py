@@ -71,7 +71,7 @@ Score 1-10 each (10 = best marketplace quality, 5 = acceptable amateur, 1 = brok
 silhouette (reads as the brief at a glance), proportion, detail (enough well-placed detail, not cluttered),
 texture (pixel art clean, shading consistent, materials readable), palette (harmonious, limited),
 style (fits Minecraft), overall.
-Then list up to 4 concrete problems, each tied to a part name and a fix in model terms
+Then list up to 3 concrete problems, each tied to a part name and a fix in model terms
 (move/resize/recolour/add part/remove part/change material), most important first, one short sentence each.
 Reply with JSON only: {{"scores": {{"silhouette": n, "proportion": n, "detail": n, "texture": n, "palette": n,
 "style": n, "overall": n}}, "issues": [{{"part": "name", "problem": "...", "fix": "..."}}]}}"""

@@ -104,7 +104,7 @@ def main():
         keep = set(args.only.split(","))
         briefs = [b for b in briefs if b["id"] in keep]
     planner = PL.default_llm(args.planner, args.base_url, args.key_file, timeout=300, retries=3)
-    critic = Serial(PL.default_llm(args.critic, args.base_url, args.key_file))
+    critic = Serial(PL.default_llm(args.critic, args.base_url, args.key_file, timeout=1200, retries=2))
     t = time.time()
     with ThreadPoolExecutor(args.workers) as ex:
         reps = list(ex.map(lambda b: one(b, args, planner, critic), briefs))

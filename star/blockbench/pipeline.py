@@ -131,7 +131,11 @@ def critique(llm: LLM, brief: str, rec: dict) -> dict:
            {"role": "user", "content": [
                {"type": "text", "text": P.CRITIC_TEMPLATE.format(brief=brief, category=spec["category"], parts=parts)},
                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + _png_b64(rec["sheet"])}}]}]
-    text, secs, usage = llm.chat(msg, max_tokens=600, temperature=0.2)
+    try:
+        text, secs, usage = llm.chat(msg, max_tokens=450, temperature=0.2)
+    except Exception as exc:  # noqa: BLE001 - a busy critic must not lose the whole run
+        return {"scores": {}, "issues": [], "overall": None, "failed": f"{type(exc).__name__}: {exc}"[:200],
+                "seconds": None}
     try:
         out = extract_json(text)
     except (ValueError, json.JSONDecodeError):
@@ -182,7 +186,7 @@ def plan(llm: LLM, brief: str, category: str | None = None, *, seed: int = 7) ->
 
 
 def combined(rec) -> float:
-    vis = (rec.get("critique") or {}).get("overall", 0.0)
+    vis = (rec.get("critique") or {}).get("overall") or 0.0
     return round(0.4 * rec["checks"]["score"] / 10.0 + 0.6 * vis, 2)
 
 
@@ -209,7 +213,7 @@ def run(brief: str, *, category: str | None = None, rounds: int = 2, planner: LL
         rec["combined"] = combined(rec)
         history.append(rec)
         log.append({"step": f"round{r}", "checks": rec["checks"]["score"], "combined": rec["combined"]})
-        if r == rounds or (rec["checks"]["score"] >= 95 and (rec.get("critique") or {}).get("overall", 0) >= 9):
+        if r == rounds or (rec["checks"]["score"] >= 95 and ((rec.get("critique") or {}).get("overall") or 0) >= 9):
             break
         prompt = P.REVISE_TEMPLATE.format(brief=brief, spec=json.dumps(rec["spec"], separators=(",", ":")),
                                           findings=_findings_text(rec), critique=_critique_text(rec.get("critique")))
@@ -223,6 +227,11 @@ def run(brief: str, *, category: str | None = None, rounds: int = 2, planner: LL
         except (ValueError, json.JSONDecodeError, S.SpecError) as exc:
             log.append({"step": f"revise{r}", "error": str(exc)[:300]})
             break
+    if any((h.get("critique") or {}).get("failed") for h in history):
+        # without a critic score for every round, compare on the deterministic checks only
+        for h in history:
+            h["combined"] = round(h["checks"]["score"] / 10.0, 2)
+        log.append({"step": "select", "note": "critic failed in a round; selected on checks only"})
     best = max(history, key=lambda h: (h["combined"], -history.index(h)))
     best_i = history.index(best)
     final = out / "final"
