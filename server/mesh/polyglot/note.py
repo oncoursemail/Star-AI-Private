@@ -93,8 +93,9 @@ def note(lang: str) -> str:
 
 
 def apply(req: dict, cfg: dict | None = None) -> dict:
-    """Add the note to the last user turn when the question is one of these; returns the header for the log."""
-    if cfg is not None and not cfg.get("polyglot_note", True):
+    """Add the note to the last user turn when the question is one of these; returns the header for the log.
+    `"mesh_polyglot": false` in the request (internal calls such as the verifier's fix prompt) skips it."""
+    if req.pop("mesh_polyglot", None) is False or (cfg is not None and not cfg.get("polyglot_note", True)):
         return {}
     msgs = req.get("messages")
     if not isinstance(msgs, list) or not msgs or not isinstance(msgs[-1], dict) or msgs[-1].get("role") != "user":

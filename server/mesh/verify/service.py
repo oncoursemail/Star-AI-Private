@@ -64,7 +64,8 @@ def model_caller(cfg: dict, auth: str):
         body = json.dumps({"model": cfg["fix_model"], "messages": messages, "temperature": 0.2, "stream": False,
                            "max_tokens": cfg["fix_max_tokens"],
                            "chat_template_kwargs": {"enable_thinking": False},
-                           "mesh_docs": False}).encode()      # the fix prompt carries its own doc entries
+                           "mesh_docs": False,      # the fix prompt carries its own doc entries
+                           "mesh_polyglot": False}).encode()
         req = urllib.request.Request(cfg["router_url"].rstrip("/") + "/v1/chat/completions", body,
                                      {"Content-Type": "application/json", "Authorization": auth})
         with urllib.request.urlopen(req, timeout=cfg["fix_timeout_s"]) as r:

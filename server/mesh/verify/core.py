@@ -128,7 +128,8 @@ class Verifier:
             if pg is None:
                 return light, True
             # Roslyn is the authority on syntax; the light pass still knows Unity message names and `using`
-            return [p for p in light if p["kind"] != "syntax" or "using UnityEngine" in (p.get("suggestion") or "")]                 + pg["problems"], True
+            return [p for p in light if p["kind"] != "syntax" or "using UnityEngine" in (p.get("suggestion") or "")] \
+                + pg["problems"], True
         if lang in POLYGLOT:
             pg = self._poly(code, lang, prose)
             return (pg["problems"], True) if pg is not None else ([], False)

@@ -206,3 +206,8 @@ def test_lua_luau_only_functions(monkeypatch):
     assert [p["name"] for p in out["problems"]] == ["string.split", "math.clamp"]
     assert out["problems"][0]["line"] == 1 and out["problems"][1]["line"] == 3
     assert runner.check_lua('print(("a b"):gmatch("%S+"))\n', "")["problems"] == []
+
+
+def test_note_opt_out_for_internal_calls():
+    req = {"mesh_polyglot": False, "messages": [{"role": "user", "content": "Language: python\n\nCode:\n```python\nx\n```"}]}
+    assert note.apply(req) == {} and "mesh_polyglot" not in req and "Note" not in req["messages"][-1]["content"]
