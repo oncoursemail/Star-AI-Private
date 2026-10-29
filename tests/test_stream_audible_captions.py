@@ -182,7 +182,11 @@ class AudibleCaptionTests(unittest.TestCase):
             plan, epoch, (CaptionSegment("Short.", 1000, 3000),),
             text_approved_for_broadcast=True,
         ))
-        clock.advance(.5)
+        # Establish a fresh played-sample cursor before advancing the clock.
+        self.assertTrue(device.report_played(
+            epoch, played_samples=2400, sampled_at=clock.now,
+        ))
+        clock.advance(.35)
         self.assertTrue(device.report_played(
             epoch, played_samples=24000, sampled_at=clock.now,
         ))
