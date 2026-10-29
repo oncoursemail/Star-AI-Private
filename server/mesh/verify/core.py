@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import time
 
-from . import csharp, minecraft
+from . import csharp, javamc, minecraft
 from .apidump import ApiIndex
 from .luau import LuauChecker
 
@@ -76,16 +76,29 @@ def extract_blocks(text: str, language: str | None = None) -> list[dict]:
 
 
 class Verifier:
-    def __init__(self, api: ApiIndex, analyzer: str | None = None):
+    def __init__(self, api: ApiIndex, analyzer: str | None = None, jvm: "javamc.JvmClient | None" = None):
         self.api = api
         self.luau = LuauChecker(api, analyzer)
+        self.jvm = jvm                          # warm javac service for Minecraft plugins/mods (None = static only)
 
     def check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
         problems, checked = self._check_block(code, lang, prose)
+        return self._placeholders_info(problems), checked
+
+    @staticmethod
+    def _placeholders_info(problems: list[dict]) -> list[dict]:
         for p in problems:                      # a placeholder is for the reader, not a mistake to fix
             if p["severity"] != "info" and is_placeholder(p.get("name")):
                 p["severity"] = "info"
-        return problems, checked
+        return problems
+
+    def recheck(self, text: str, span: dict, new: str, b: dict) -> list[dict]:
+        """Problems of block b after replacing it with `new`; Java/descriptor blocks are checked in context."""
+        if b.get("in_context"):
+            t2 = text[:span["start"]] + new + text[span["end"]:]
+            rep = self.verify(t2)
+            return rep["blocks"][b["index"]]["problems"] if b["index"] < len(rep["blocks"]) else []
+        return self.check_block(new, b["language"], text)[0]
 
     def _check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
         if lang == "luau":
@@ -103,9 +116,15 @@ class Verifier:
     def verify(self, text: str, language: str | None = None) -> dict:
         t0 = time.perf_counter()
         blocks = extract_blocks(text, language)
+        jctx = javamc.check_answer(blocks, text, self.jvm)   # Java + plugin.yml etc.: checked together
+        jmeta, jroles = jctx.pop("_meta", None), jctx.pop("_roles", {})
         out = []
         for k, b in enumerate(blocks):
-            problems, checked = self.check_block(b["code"], b["language"], text)
+            if k in jctx:
+                problems, checked = self._placeholders_info(jctx[k]), True
+                b["language"] = b["language"] or jroles.get(k, "")
+            else:
+                problems, checked = self.check_block(b["code"], b["language"], text)
             for p in problems:
                 if p.get("line"):
                     p["answer_line"] = b["line"] + p["line"] - 1
@@ -113,12 +132,17 @@ class Verifier:
                         "ok": not any(p["severity"] == "error" for p in problems),
                         "needs_fix": any(p["severity"] in ("error", "warning") for p in problems),
                         "problems": problems})
+            if k in jctx:
+                out[-1]["in_context"] = True
         prose_problems = minecraft.check_datapack_paths(text) if "data/" in text else []
-        return {"ok": all(b["ok"] for b in out) and not prose_problems,
-                "needs_fix": any(b["needs_fix"] for b in out),
-                "blocks": out, "problems": prose_problems,
-                "ms": round((time.perf_counter() - t0) * 1000, 1),
-                "dump": {k: self.api.meta.get(k) for k in ("version", "fetched")}}
+        rep = {"ok": all(b["ok"] for b in out) and not prose_problems,
+               "needs_fix": any(b["needs_fix"] for b in out),
+               "blocks": out, "problems": prose_problems,
+               "ms": round((time.perf_counter() - t0) * 1000, 1),
+               "dump": {k: self.api.meta.get(k) for k in ("version", "fetched")}}
+        if jmeta:
+            rep["java"] = jmeta
+        return rep
 
     def fix(self, text: str, call_model, language: str | None = None, rounds: int = 2, docs=None) -> dict:
         """Repair the blocks that need it with `call_model(messages) -> str`, re-verify, at most `rounds` times.
@@ -158,7 +182,7 @@ class Verifier:
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": f"the fix rewrote the placeholder {lost[0]}; kept as written"})
                     continue
-                if _bad(self.check_block(new, b["language"], text)[0]) >= _bad(b["problems"]):
+                if _bad(self.recheck(text, span, new, b)) >= _bad(b["problems"]):
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": "the fix did not remove problems; kept as written"})
                     continue
@@ -194,7 +218,9 @@ FIX_SYSTEM = ("You repair code. You get one code block and a list of problems fo
               "code means, which may need that other object; never just take the closest-sounding name. Never invent "
               "an API: if a call does not exist and there is no suggestion, rewrite that part with APIs you are sure "
               "exist. Reply with only the corrected code in one fenced code block, nothing else.")
-FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction"}
+FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction",
+             "plugin.yml": "yaml", "paper-plugin.yml": "yaml", "fabric.mod.json": "json",
+             "neoforge.mods.toml": "toml", "mods.toml": "toml"}
 
 
 HINT_OWNER = re.compile(r"'(\w+)' is an? (?:event|method|property) of ([\w, ]+?), not of")

@@ -25,6 +25,7 @@ from pathlib import Path
 from ..router import KeyFile
 from .apidump import ApiIndex
 from .core import Verifier
+from .javamc import JvmClient
 
 DEFAULTS = {
     "listen": "0.0.0.0",
@@ -40,6 +41,9 @@ DEFAULTS = {
     "max_body_kb": 512,
     "docs_url": "http://127.0.0.1:8102",      # official docs entries for the fix loop ("" = off)
     "docs_timeout_s": 1.0,
+    "jvm_url": "",                            # warm javac for Minecraft plugins/mods (jvm/CompileServer.java; "" = off)
+    "jvm_token_file": "/var/lib/star-verify/jvm_token",
+    "jvm_timeout_s": 4.0,
 }
 
 
@@ -102,7 +106,7 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
         def do_GET(self):
             if urllib.parse.urlsplit(self.path).path == "/health":
                 return self._send(200, {"status": "ok", "dump": verifier.api.meta,
-                                        "luau_analyze": bool(verifier.luau.analyzer)})
+                                        "luau_analyze": bool(verifier.luau.analyzer), "jvm": bool(verifier.jvm)})
             return self._send(404, {"error": {"message": "not found"}})
 
         def do_POST(self):
@@ -135,7 +139,7 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
 
 def serve(cfg: dict, caller_factory=model_caller) -> ThreadingHTTPServer:
     api = ApiIndex.load(cfg["index"])
-    verifier = Verifier(api, cfg.get("luau_analyze"))
+    verifier = Verifier(api, cfg.get("luau_analyze"), JvmClient.from_config(cfg))
     srv = ThreadingHTTPServer((cfg["listen"], cfg["port"]),
                               make_handler(cfg, verifier, KeyFile(cfg["client_keys_file"]), caller_factory))
     srv.daemon_threads = True
