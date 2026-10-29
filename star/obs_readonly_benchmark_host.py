@@ -21,6 +21,7 @@ from threading import Lock
 from typing import Callable
 
 from .clips_obs import _obs_client
+from .obs_stream_event_witness import ObsStreamContinuityWitness
 from .stream_network_qos_gate import ObsStreamStatus, ObsTransportWindow
 from .stream_obs_qos_gate import ObsFrameWindow, ObsStatsCounters, _id
 
@@ -238,6 +239,7 @@ class ObsReadOnlyProbe:
         self, *, pair_id: str, variant: str, game_id: str, game_version: str,
         duration_s: int = 10, poll_interval_s: float = 1.0,
         continuity_guard: Callable[[], bool] | None = None,
+        event_witness: ObsStreamContinuityWitness | None = None,
     ) -> CapturedObsEvidence:
         """Non-reentrant measurement entry; host disconnect remains available."""
         if not self._capture_lock.acquire(blocking=False):
@@ -247,6 +249,7 @@ class ObsReadOnlyProbe:
                 pair_id=pair_id, variant=variant, game_id=game_id,
                 game_version=game_version, duration_s=duration_s,
                 poll_interval_s=poll_interval_s, continuity_guard=continuity_guard,
+                event_witness=event_witness,
             )
         finally:
             self._capture_lock.release()
@@ -255,6 +258,7 @@ class ObsReadOnlyProbe:
         self, *, pair_id: str, variant: str, game_id: str, game_version: str,
         duration_s: int, poll_interval_s: float,
         continuity_guard: Callable[[], bool] | None,
+        event_witness: ObsStreamContinuityWitness | None,
     ) -> CapturedObsEvidence:
         """Capture a bounded, already-running OBS stream; never start output.
 
@@ -277,10 +281,21 @@ class ObsReadOnlyProbe:
             raise ValueError("poll interval must be 0.25..2 seconds")
         if continuity_guard is not None and not callable(continuity_guard):
             raise TypeError("continuity guard must be an independent host callback")
+        if event_witness is not None and not isinstance(
+            event_witness, ObsStreamContinuityWitness
+        ):
+            raise TypeError("event witness must use the verified OBS event protocol")
+        if event_witness is not None and continuity_guard is not None:
+            raise ValueError("choose one continuity source, not both")
         if self._client is None or self._process is None or self._session is None:
             raise PermissionError("connect an owner-approved OBS host first")
         session = self._session
         try:
+            # Start the authenticated output-event interval BEFORE the first
+            # telemetry sample and retain it past the final sample.
+            if event_witness is not None:
+                event_witness.begin(self._process)
+
             def observed() -> tuple[ObsStatsCounters, ObsStreamStatus]:
                 if self._identity() != self._process or self._session != session:
                     raise ObsProbeError("OBS session changed during measurement")
@@ -304,6 +319,8 @@ class ObsReadOnlyProbe:
                     raise ObsProbeError("capture clock stalled or sampling interval too large")
                 last_clock = now
                 end_frames, end_transport = observed()
+                if event_witness is not None:
+                    event_witness.checkpoint(self._process)
                 ticks += 1
                 if ticks > 1200:
                     raise ObsProbeError("OBS polling limit exceeded")
@@ -311,7 +328,12 @@ class ObsReadOnlyProbe:
             # A slow sample can make invalid A/B windows; fail before export.
             if not 2000 <= end - start <= 600000:
                 raise ObsProbeError("OBS capture interval outside benchmark limits")
-            attested = continuity_guard is not None and continuity_guard() is True
+            if event_witness is not None:
+                attested = event_witness.finish(self._process)
+            else:
+                # Legacy callback is for trusted host test plumbing only;
+                # production comparisons should use the event witness.
+                attested = continuity_guard is not None and continuity_guard() is True
             if self._session != session or self._client is None:
                 raise ObsProbeError("OBS connection changed during measurement")
             # Polling alone cannot attest events between probes: pessimistic.
@@ -326,7 +348,9 @@ class ObsReadOnlyProbe:
             )
             return CapturedObsEvidence(frames, transport, attested)
         except Exception:
-            # A failed acquisition invalidates the connection's identity.
+            # A failed acquisition invalidates both OBS observation channels.
+            if event_witness is not None:
+                event_witness.disconnect()
             self.disconnect()
             raise ObsProbeError("OBS capture interrupted or unverifiable") from None
 
