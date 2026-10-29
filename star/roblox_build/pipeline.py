@@ -403,7 +403,14 @@ def redo_zone(brief: str, style: str, spec: dict, report: dict, crit: dict | Non
 def render(home: Path, spec: dict, compiled: dict, folder: Path, label: str) -> dict:
     from . import studio_run
     with STUDIO_LOCK:
-        result = studio_run.render_sync(home, spec["name"].replace(" ", "_")[:30] or "Build", compiled, folder, label)
+        for attempt in range(4):   # the place pin can fail transiently while another client talks to Studio
+            try:
+                result = studio_run.render_sync(home, spec["name"].replace(" ", "_")[:30] or "Build", compiled, folder, label)
+                break
+            except RuntimeError:
+                if attempt == 3:
+                    raise
+                time.sleep(20 + 20 * attempt)
     shots = [s["file"] for s in result["shots"] if s.get("ok")]
     order = {"hero": 0, "wide": 1, "detail": 2, "overview": 3}
     shots.sort(key=lambda f: order.get(Path(f).stem.split("-")[-1], 9))
@@ -462,7 +469,12 @@ def build(brief: str, style: str, out: Path, *, arm: str = "pipeline", home: Pat
             result[f"revise_{r + 1}"] = {"ops": oplog, "autofix": fixlog2, "meta": rmeta}
             label = f"v{r + 2}"
             _record(out, f"spec-{label}.json", new_spec)
-            rendered2 = render(home, new_spec, compiled2, out, label)
+            try:
+                rendered2 = render(home, new_spec, compiled2, out, label)
+            except RuntimeError as error:   # Studio refused the revision render: keep the rendered v1
+                result[label] = {"error": repr(error)[:300]}
+                log(f"[{arm}] {label}: render failed, keeping {final['label']}")
+                break
             result[label] = {"metrics": report2["metrics"], "defects": [d["detail"] for d in report2["defects"]][:20],
                              "severity": report2["severity_sum"], "sheet": rendered2.get("sheet")}
             # keep the revision when the same critic rates it at least as well and nothing measurable got worse
