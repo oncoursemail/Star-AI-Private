@@ -149,11 +149,50 @@ class DisjointParts:
 
 
 @dataclass(frozen=True)
+class NavigableRoute:
+    """Curated walking/jumping navmesh probe between two platform top faces.
+
+    This checks that Roblox's pathfinder reports a bounded route for an
+    agent profile. It does not drive a character or prove an obby is beatable.
+    Endpoints must be explicit primitive Part or SpawnLocation scene checks.
+    """
+
+    start_path: tuple[str, ...]
+    goal_path: tuple[str, ...]
+    agent_radius: int = 2
+    agent_height: int = 5
+    allow_jump: bool = True
+    allow_climb: bool = False
+    max_path_studs: float = 300.0
+
+    def __post_init__(self) -> None:
+        for name in ("start_path", "goal_path"):
+            path = getattr(self, name)
+            if (type(path) is not tuple or not 2 <= len(path) <= 8
+                    or path[0] != "Workspace"
+                    or any(type(seg) is not str or not _SEGMENT.fullmatch(seg)
+                           for seg in path[1:])):
+                raise ValueError(f"{name} must be a safe Workspace part path")
+        if self.start_path == self.goal_path:
+            raise ValueError("navigation endpoints must be distinct")
+        if (type(self.agent_radius) is not int or not 1 <= self.agent_radius <= 8
+                or type(self.agent_height) is not int or not 3 <= self.agent_height <= 16):
+            raise ValueError("navigation agent must have bounded integer dimensions")
+        if type(self.allow_jump) is not bool or type(self.allow_climb) is not bool:
+            raise ValueError("navigation ability flags must be booleans")
+        if (type(self.max_path_studs) not in (int, float)
+                or not 8 <= self.max_path_studs <= 1000
+                or not math.isfinite(self.max_path_studs)):
+            raise ValueError("navigation route length must be 8..1000 studs")
+
+
+@dataclass(frozen=True)
 class StudioSceneTest:
     suite_id: str
     checks: tuple[SceneCheck, ...]
     simulated_clients: int = 1
     disjoint_pairs: tuple[DisjointParts, ...] = ()
+    navigable_routes: tuple[NavigableRoute, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.suite_id) is not str or not _ID.fullmatch(self.suite_id):
@@ -175,6 +214,21 @@ class StudioSceneTest:
             if key in seen or pair.first_path not in part_paths or pair.second_path not in part_paths:
                 raise ValueError("disjoint pairs must be distinct, referenced Part checks")
             seen.add(key)
+        routes = self.navigable_routes
+        if (type(routes) is not tuple or len(routes) > 8
+                or any(type(r) is not NavigableRoute for r in routes)):
+            raise ValueError("up to 8 curated navigation routes are allowed")
+        route_parts = {
+            check.path for check in self.checks
+            if check.class_name in {"Part", "SpawnLocation"}
+        }
+        route_seen: set[tuple[tuple[str, ...], tuple[str, ...]]] = set()
+        for route in routes:
+            route_key = (route.start_path, route.goal_path)
+            if (route.start_path not in route_parts or route.goal_path not in route_parts
+                    or route_key in route_seen):
+                raise ValueError("routes need unique, checked primitive part endpoints")
+            route_seen.add(route_key)
 
 
 @dataclass(frozen=True)
@@ -222,6 +276,12 @@ def compile_scene_integrity(test: StudioSceneTest) -> StudioSceneBundle:
             "first": p.first_path, "second": p.second_path,
             "penetration_tolerance": p.penetration_tolerance_studs,
         } for p in test.disjoint_pairs],
+        "navigable_routes": [{
+            "start": r.start_path, "goal": r.goal_path,
+            "radius": r.agent_radius, "height": r.agent_height,
+            "jump": r.allow_jump, "climb": r.allow_climb,
+            "max_path": r.max_path_studs,
+        } for r in test.navigable_routes],
     }
     fingerprint = sha256(json.dumps(
         canonical, sort_keys=True, separators=(",", ":"), allow_nan=False,
@@ -366,10 +426,62 @@ def compile_scene_integrity(test: StudioSceneTest) -> StudioSceneBundle:
             f"    if blocksOverlap(object{a}, object{b}, {float(pair.penetration_tolerance_studs)!r}) "
             f"then return false, 'unwanted_overlap_{idx}' end",
         ]
+    for idx, route in enumerate(test.navigable_routes, start=1):
+        start_idx = part_indices[route.start_path]
+        goal_idx = part_indices[route.goal_path]
+        jump = "true" if route.allow_jump else "false"
+        climb = "true" if route.allow_climb else "false"
+        lines += [
+            f"    -- Route {idx}: bounded Roblox navmesh probe, not a player playtest.",
+            f"    local from{idx} = object{start_idx}.Position + "
+            f"object{start_idx}.CFrame.UpVector * (object{start_idx}.Size.Y * 0.5 + 2)",
+            f"    local to{idx} = object{goal_idx}.Position + "
+            f"object{goal_idx}.CFrame.UpVector * (object{goal_idx}.Size.Y * 0.5 + 2)",
+            f"    if (from{idx} - to{idx}).Magnitude > 3000 "
+            f"then return false, 'route_out_of_range_{idx}' end",
+            f"    local created{idx}, path{idx} = pcall(function()",
+            '        return game:GetService("PathfindingService"):CreatePath({',
+            f"            AgentRadius = {route.agent_radius},",
+            f"            AgentHeight = {route.agent_height},",
+            f"            AgentCanJump = {jump},",
+            f"            AgentCanClimb = {climb},",
+            "            WaypointSpacing = 4,",
+            "        })",
+            "    end)",
+            f"    if not created{idx} then return false, 'route_parameters_{idx}' end",
+            f"    local computed{idx} = pcall(function() "
+            f"path{idx}:ComputeAsync(from{idx}, to{idx}) end)",
+            f"    if not computed{idx} then return false, 'route_compute_{idx}' end",
+            f"    if path{idx}.Status ~= Enum.PathStatus.Success "
+            f"then return false, 'route_blocked_{idx}' end",
+            f"    local waypoints{idx} = path{idx}:GetWaypoints()",
+            f"    if #waypoints{idx} < 2 or #waypoints{idx} > 512 "
+            f"then return false, 'route_waypoints_{idx}' end",
+            f"    if (waypoints{idx}[1].Position - from{idx}).Magnitude > 12 "
+            f"or (waypoints{idx}[#waypoints{idx}].Position - to{idx}).Magnitude > 12 "
+            f"then return false, 'route_endpoint_{idx}' end",
+            f"    local distance{idx} = 0",
+            f"    for point{idx} = 2, #waypoints{idx} do",
+            f"        distance{idx} += (waypoints{idx}[point{idx}].Position - "
+            f"waypoints{idx}[point{idx} - 1].Position).Magnitude",
+            f"        if distance{idx} > {float(route.max_path_studs)!r} "
+            f"then return false, 'route_detour_{idx}' end",
+            "    end",
+        ]
     lines += [
         "    return true, 'ok'",
         "end",
+        "-- An async path computation may stall; never claim a hung test passed.",
+        "local ended = false",
+        "task.delay(45, function()",
+        "    if not ended then",
+        "        ended = true",
+        "        sts:EndTest('FAIL:time_budget')",
+        "    end",
+        "end)",
         "local worked, passed, detail = pcall(verify)",
+        "if ended then return end",
+        "ended = true",
         "if not worked then",
         "    sts:EndTest('FAIL:verifier_error')",
         "elseif not passed then",
@@ -398,4 +510,7 @@ def compile_scene_integrity(test: StudioSceneTest) -> StudioSceneBundle:
     )
 
 
-__all__ = ["SceneCheck", "DisjointParts", "StudioSceneTest", "StudioSceneBundle", "compile_scene_integrity"]
+__all__ = [
+    "SceneCheck", "DisjointParts", "NavigableRoute", "StudioSceneTest",
+    "StudioSceneBundle", "compile_scene_integrity",
+]
