@@ -359,7 +359,7 @@ def test_general_question_on_the_gpu_lane_is_saved_once(monkeypatch, desk):
     assert [e["event"] for e in desk.events].count("assistant_delta") == 2
 
 
-def test_gpu_lane_failure_falls_back_to_the_brain_with_the_note(monkeypatch, desk):
+def test_gpu_lane_failure_falls_back_to_the_brain_without_the_note(monkeypatch, desk):
     from star import general_mode
     desk.settings.instant_route_enabled = False
     monkeypatch.setattr(general_mode, "gpu_endpoint", lambda settings: "http://10.1.2.3:8100/v1")  # star:allow
@@ -378,5 +378,5 @@ def test_gpu_lane_failure_falls_back_to_the_brain_with_the_note(monkeypatch, des
     answer, rows, artifact = run_saved_turn(desk, "Who was the third person to walk on the Moon?")
     assert answer == "Server answer." and len(server_calls) == 1 and len(rows) == 2
     assert artifact["answer_stats"]["brain"] == "server"
-    assert general_mode.NOTE in json.dumps(server_calls[0]["messages"])
+    assert general_mode.NOTE not in json.dumps(server_calls[0]["messages"])   # the note is for the GPU lane only
     assert [e["event"] for e in desk.events].count("general_gpu_fallback") == 1

@@ -84,19 +84,27 @@ CALC_SYS = ("You solve math word problems by writing a tiny calculation program.
             "lines (no units, no words, no functions). The last line must be `answer = ...`.")
 
 
-def sections(question: str) -> list[tuple[str, str]]:
+def sections(question: str, *, gpu: bool = True) -> list[tuple[str, str]]:
     """The synchronous part: (heading, text) pairs for the end of the user turn; [] for chat/code questions and for
-    maths (maths gets `calc_section` instead)."""
+    maths (maths gets `calc_section` instead). gpu=False (the brain's own path): only the safety facts; the key-facts
+    note made the brain's quick model write longer answers with MORE false claims (truth-20261029, 24 blind-judged
+    questions: 7 -> 10), while on the GPU lane it is part of the measured winner."""
     k = kind(question)
-    if k in ("chat", "code", "math"):
+    if k in ("chat", "code", "math") or (not gpu and k != "safety"):
         return []
-    text = NOTE + ("\n" + SAFETY_CARD if k == "safety" else "")
-    return [(HEADING, text)]
+    text = (NOTE + "\n" if gpu else "") + (SAFETY_CARD if k == "safety" else "")
+    return [(HEADING, text.strip())]
 
 
 def render(secs: list[tuple[str, str]]) -> str:
     """Sections as plain text for a channel that appends one block (Discord's `live`)."""
     return "\n\n".join(f"{h}:\n{t}" for h, t in secs if t)
+
+
+def block(secs: list[tuple[str, str]]) -> str:
+    """render() with its separator, '' when there is nothing to add."""
+    text = render(secs)
+    return "\n\n" + text if text else ""
 
 
 # --- the GPU lane: general questions answered by the mesh router's GPU nodes ----------------------------------------

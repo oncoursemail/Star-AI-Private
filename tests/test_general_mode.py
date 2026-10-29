@@ -66,6 +66,9 @@ def test_sections_by_kind():
     assert head == G.HEADING and "never guess" in text and "911" not in text
     (_, text), = G.sections("i found some pills at the park, can i take one?")
     assert "Poison Control" in text and "988" in text
+    assert G.sections("Who was the third person to walk on the moon?", gpu=False) == []      # brain path: no note
+    (_, text), = G.sections("i found some pills at the park, can i take one?", gpu=False)
+    assert "Poison Control" in text and G.NOTE not in text                                    # safety facts stay
 
 
 def test_calc_section_from_a_program_reply():
@@ -146,7 +149,7 @@ def test_discord_gpu_lane_failure_before_a_word_falls_back_to_the_brain(monkeypa
     async def down(on_delta):
         raise TimeoutError
     answer, brain, lane, shown = _discord(monkeypatch, down, "Who was the third person to walk on the Moon?")
-    assert answer == "from the brain" and len(brain) == 1 and G.NOTE in brain[0][-1]["content"]
+    assert answer == "from the brain" and len(brain) == 1 and G.NOTE not in brain[0][-1]["content"]   # note: GPU lane only
 
 
 def test_discord_maths_gets_the_exact_calculation_and_chat_stays_on_the_brain(monkeypatch):

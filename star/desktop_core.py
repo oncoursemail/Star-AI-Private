@@ -1699,21 +1699,20 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 if web_text:
                     turn_sections.append(('WEB SEARCH', web_text))
                 audited_event({'event': 'search_finished'})
-            # General questions (star/general_mode.py, truth-20261029): a hidden key-facts note, the exact
-            # calculation for maths, safety facts; answered on the mesh router's GPU nodes when one is configured
-            # (seconds instead of the brain's CPU), else by the brain as before with the note.
+            # General questions (star/general_mode.py, truth-20261029): answered on the mesh router's GPU nodes when
+            # one is configured (seconds instead of the brain's CPU) with a hidden key-facts note, the exact calculation
+            # for maths and safety facts; the brain's own path gets only the safety facts (the note did not help it).
             general_kind = (general_mode.kind(prompt) if settings.general_help is True and kind == 'lan'
                             and mode in ('fast', 'auto') and not use_tools and not images and not documents
                             and not attachment_count and document_tools is None and not github_enabled
                             and not research and not wants_deep and not strata_plan.active else 'chat')
             if general_kind in general_mode.GENERAL_KINDS:
                 gpu = general_mode.gpu_endpoint(settings)
-                general_secs = general_mode.sections(prompt)
-                if general_kind == 'math' and gpu:
-                    calc = await general_mode.gpu_calc(settings, gpu, prompt)
-                    general_secs = [calc] if calc else []
-                turn_sections.extend(general_secs)
                 if gpu:
+                    general_secs = general_mode.sections(prompt)
+                    if general_kind == 'math':
+                        calc = await general_mode.gpu_calc(settings, gpu, prompt)
+                        general_secs = [calc] if calc else []
                     shown: list[str] = []
 
                     async def show(text):
@@ -1722,7 +1721,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     try:
                         text = await general_mode.gpu_answer(
                             settings, gpu, general_mode.desktop_messages(
-                                prompt, history, learning.guard_sections(turn_sections),
+                                prompt, history, learning.guard_sections([*turn_sections, *general_secs]),
                                 current_turn_line(conversation_records)),
                             max_tokens=route.response_tokens, temperature=0.3, on_delta=show)
                     except Exception as exc:
@@ -1733,6 +1732,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                         audited_event({'event': 'model_answered', 'model': general_mode.GPU_MODEL})
                         audited_event({'event': 'finished', 'model_calls': 1, 'tool_calls': 0})
                         return (text, [{'role': 'user', 'content': prompt}, {'role': 'assistant', 'content': text}], [])
+                turn_sections.extend(general_mode.sections(prompt, gpu=False))
             # One client per task.  When Strata is selected, keep the ordinary
             # resident local brain open as a no-replay fallback for transport/model
             # failures that happen before Strata produces output.
