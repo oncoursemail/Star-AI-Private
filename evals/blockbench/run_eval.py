@@ -103,7 +103,7 @@ def main():
     if args.only:
         keep = set(args.only.split(","))
         briefs = [b for b in briefs if b["id"] in keep]
-    planner = PL.default_llm(args.planner, args.base_url, args.key_file)
+    planner = PL.default_llm(args.planner, args.base_url, args.key_file, timeout=300, retries=3)
     critic = Serial(PL.default_llm(args.critic, args.base_url, args.key_file))
     t = time.time()
     with ThreadPoolExecutor(args.workers) as ex:

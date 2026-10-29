@@ -26,7 +26,8 @@ from . import spec as S
 
 
 class LLM:
-    def __init__(self, base_url: str, key: str, model: str, *, timeout: float = 900.0):
+    def __init__(self, base_url: str, key: str, model: str, *, timeout: float = 900.0, retries: int = 0):
+        self.retries = retries
         self.base = base_url.rstrip("/")
         if not self.base.endswith("/v1"):
             self.base += "/v1"
@@ -40,21 +41,30 @@ class LLM:
         if json_mode:
             body["response_format"] = {"type": "json_object"}
         t = time.time()
-        r = httpx.post(self.base + "/chat/completions", json=body, timeout=self.timeout,
-                       headers={"Authorization": f"Bearer {self.key}"})
-        r.raise_for_status()
+        for attempt in range(self.retries + 1):
+            try:
+                r = httpx.post(self.base + "/chat/completions", json=body, timeout=self.timeout,
+                               headers={"Authorization": f"Bearer {self.key}"})
+                r.raise_for_status()
+                break
+            except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.TransportError):
+                # a busy router can hand a request to a slow CPU fallback; a retry is ranked again
+                if attempt == self.retries:
+                    raise
+                time.sleep(5)
         data = r.json()
         text = data["choices"][0]["message"].get("content") or ""
         return text, time.time() - t, data.get("usage", {})
 
 
-def default_llm(model: str, base_url: str | None = None, key_file: str | None = None) -> LLM:
+def default_llm(model: str, base_url: str | None = None, key_file: str | None = None, *,
+                timeout: float = 900.0, retries: int = 0) -> LLM:
     home = Path.home() / ".star"
     if not base_url:
         base_url = os.environ.get("STAR_MESH_URL") or (home / "mesh_url").read_text(encoding="utf-8").strip()
     kf = Path(key_file or os.environ.get("STAR_API_KEY_FILE") or home / "server_api_key")
     key = kf.read_text(encoding="utf-8").strip().splitlines()[0]
-    return LLM(base_url, key, model)
+    return LLM(base_url, key, model, timeout=timeout, retries=retries)
 
 
 def extract_json(text: str) -> dict:
@@ -250,7 +260,7 @@ def main(argv=None):
         return 0
     if not a.brief:
         ap.error("give a brief or --spec")
-    planner = default_llm(a.planner, a.base_url, a.key_file)
+    planner = default_llm(a.planner, a.base_url, a.key_file, timeout=300, retries=3)
     critic = None if a.no_critic else default_llm(a.critic, a.base_url, a.key_file)
     name = S._ident(a.brief, "model")[:40]
     res = run(a.brief, category=a.category, rounds=a.rounds, planner=planner, critic=critic,
