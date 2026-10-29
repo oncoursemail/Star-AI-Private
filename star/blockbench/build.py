@@ -12,6 +12,7 @@ import io
 import json
 import uuid
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
 
@@ -282,7 +283,7 @@ def _bedrock_anim(spec):
                     conv[f"{float(t):.4g}" if float(t) % 1 else f"{float(t):.1f}"] = [_num(x) for x in vv]
                 b[ch] = conv
             bones[bone] = b
-        entry = {"loop": True} if a["loop"] else {}
+        entry: dict[str, Any] = {"loop": True} if a["loop"] else {}
         entry["animation_length"] = _num(a["length"])
         entry["bones"] = bones
         out[f"animation.{spec['name']}.{a['name']}"] = entry
@@ -312,7 +313,7 @@ def write_outputs(spec: dict, built: dict, out_dir, *, pack_version: str | None 
             from ..minecraft_assets import RESOURCE_FORMATS
             fmt = RESOURCE_FORMATS[pack_version]
             folder = "item" if spec["category"] == "item" else "block"
-            pack = {"pack": {"description": f"STAR model: {name}"}}
+            pack: dict[str, dict[str, Any]] = {"pack": {"description": f"STAR model: {name}"}}
             if fmt[0] >= 65:
                 pack["pack"]["min_format"] = list(fmt)
                 pack["pack"]["max_format"] = list(fmt)

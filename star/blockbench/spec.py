@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import re
+from typing import Any
 
 from .paint import DECALS, KINDS
 from .palette import parse_hex
@@ -91,7 +92,7 @@ def normalize(raw: dict) -> tuple[dict, list[str]]:
             parse_hex(m.get("color", ""))
         except ValueError as exc:
             raise SpecError(f"material {k}: {exc}") from None
-        entry = {"kind": kind, "color": "#" + str(m["color"]).lstrip("#").lower()}
+        entry: dict[str, Any] = {"kind": kind, "color": "#" + str(m["color"]).lstrip("#").lower()}
         if "contrast" in m:
             try:
                 entry["contrast"] = max(0.5, min(1.6, float(m["contrast"])))

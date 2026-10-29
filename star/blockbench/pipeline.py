@@ -53,6 +53,9 @@ class LLM:
         text = data["text"]
         return text, time.time() - t, data.get("usage") or {}
 
+    def _stream(self, httpx, body):
+        return _stream_impl(self, httpx, body)
+
 
 def _stream_impl(self, httpx, body):
     """Stream the answer (the mesh router serves long non-streamed answers badly) and join it."""
@@ -71,8 +74,6 @@ def _stream_impl(self, httpx, body):
                 parts.append((ch.get("delta") or {}).get("content") or "")
     return {"text": "".join(parts), "usage": usage}
 
-
-LLM._stream = _stream_impl
 
 
 def default_llm(model: str, base_url: str | None = None, key_file: str | None = None, *,
