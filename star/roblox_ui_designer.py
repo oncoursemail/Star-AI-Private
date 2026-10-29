@@ -33,7 +33,21 @@ SCREENS = {
     "loading": "loading screen with title, progress bar and tip",
 }
 KINDS = ["sword", "shield", "potion", "gem", "coin", "chest", "bow", "staff", "helmet", "pet", "crown", "key",
-         "scroll", "bomb", "food", "heart", "boots", "lightning"]
+         "scroll", "bomb", "food", "heart", "boots", "lightning", "car", "gun"]
+# Words the model uses for kinds outside the list, and item-name words that say what an item is when the kind
+# fell back to a placeholder (a car sold as a "gem" or a laser drawn as a sword reads wrong).
+KIND_ALIASES = {"vehicle": "car", "truck": "car", "sedan": "car", "coupe": "car", "suv": "car", "supercar": "car",
+                "rifle": "gun", "pistol": "gun", "shotgun": "gun", "smg": "gun", "blaster": "gun", "laser": "gun",
+                "railgun": "gun", "cannon": "gun", "firearm": "gun", "melee": "sword", "knife": "sword",
+                "dagger": "sword", "axe": "sword", "machete": "sword", "katana": "sword", "blade": "sword",
+                "armor": "shield", "armour": "shield", "egg": "pet", "treat": "food", "xp": "lightning",
+                "credits": "coin", "cash": "coin", "money": "coin", "currency": "coin"}
+_NAME_KINDS = [
+    (re.compile(r"\b(sword|blade|katana|dagger)\b", re.I), "sword"),
+    (re.compile(r"\b(car|cars|coupe|sedan|truck|rover|suv|roadster|gt|jeep|van|limo|racer|hatchback)\b", re.I), "car"),
+    (re.compile(r"(laser|beam|rail ?gun|blaster|rifle|pistol|shotgun|cannon|smg|revolver|\bgun\b)", re.I), "gun"),
+]
+_NAME_COIN = re.compile(r"\b(coins?|credits?|cash|gold|money|bucks)\b", re.I)
 RARITIES = ["common", "uncommon", "rare", "epic", "legendary", "mythic"]
 
 # Each style: palette (hex), fonts (Roblox font family file + weight), shape language and effects. Text pairs are
@@ -116,6 +130,20 @@ STYLES: dict[str, dict[str, Any]] = {
               "gold": "#C9B07A", "silver": "#B9B4AE", "bronze": "#9C6B4C"},
         "radius": 2, "strokeWidth": 1, "strokeAlpha": 0.1, "surfaceAlpha": 0.08, "surface2Alpha": 0.15,
         "panelGradient": False, "doubleStroke": False, "textOutline": False, "button": "outline", "shadow": "drop",
+    },
+    "survival": {
+        "about": "zombie / survival: gritty desaturated olive and rust, worn scuffed edges, condensed type, hazard-orange accent",
+        "fonts": {"display": ("Oswald", "Bold"), "label": ("RobotoCondensed", "Bold"),
+                  "body": ("RobotoCondensed", "Regular"), "numeric": ("RobotoMono", "Bold")},
+        "c": {"surface": "#1B1C17", "gradientTo": "#8A8578", "surface2": "#26271F", "stroke": "#6B5B45",
+              "strokeSoft": "#4A4638", "text": "#E6E1D3", "textDim": "#A39E8F", "outline": "#000000",
+              "accent": "#D97A1E", "accentText": "#140C04", "secondary": "#3A3A2E", "secondaryText": "#E6E1D3",
+              "good": "#8DB255", "bad": "#C8372D", "currency": "#C9A84A", "track": "#121310", "focus": "#F0A040",
+              "vignette": "#070806", "bannerTop": "#EDE6D3", "bannerBottom": "#B5651D", "loadingTop": "#1E2018",
+              "gold": "#C9A84A", "silver": "#B8B6AE", "bronze": "#A0683F"},
+        "radius": 3, "strokeWidth": 2, "strokeAlpha": 0.1, "surfaceAlpha": 0.08, "surface2Alpha": 0.12,
+        "panelGradient": True, "doubleStroke": False, "textOutline": False, "button": "chunky", "shadow": "drop",
+        "worn": True,
     },
     "minimal": {
         "about": "clean modern: light surfaces, one strong accent, geometric sans, soft depth",
@@ -208,30 +236,76 @@ _EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿️]")
 
 def _clean_text(value: Any, limit: int) -> str:
     text = _EMOJI.sub("", str(value or "")).strip()
-    return text[:limit].rstrip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit + 1].rsplit(" ", 1)[0]  # never end on half a word ("Return to Lobb")
+    return (cut if len(cut) >= limit // 2 else text[:limit]).rstrip(" ,;:-")
 
 
-def parse_plan(text_or_plan: str | dict) -> dict:
-    """Validate and clamp a plan from the model. Unknown values fall back to safe defaults, never raise on content."""
+def _kind(value: Any, name: str = "") -> str:
+    kind = str(value or "gem").lower().strip()
+    kind = kind if kind in KINDS else KIND_ALIASES.get(kind, "gem")
+    for pattern, named in _NAME_KINDS:
+        if pattern.search(name or ""):
+            return named if kind in ("gem", "sword", "lightning") or named == "car" else kind
+    if kind == "gem" and _NAME_COIN.search(name or ""):
+        return "coin"
+    return kind
+
+
+def _score_value(value: Any) -> int | str:
+    """Leaderboard values: numbers stay numbers; times and other text ("1:23.45", "Lvl 40") are kept as text."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return int(value)
+    text = _clean_text(value, 12)
+    return int(text.replace(",", "")) if text.replace(",", "").isdigit() else (text or 0)
+
+
+_NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+              "ten": 10}
+
+
+def _brief_count(brief: str, nouns: str) -> int | None:
+    """'three answer choices' -> 3, '(7 days' -> 7: how many of something the brief asks for."""
+    m = re.search(r"\b(\d+|" + "|".join(_NUM_WORDS) + r")[\s-]+(?:[a-z]+[\s-]+)?(?:" + nouns + r")\b", brief or "", re.I)
+    if not m:
+        return None
+    word = m.group(1).lower()
+    return int(word) if word.isdigit() else _NUM_WORDS[word]
+
+
+_SURVIVAL_WORDS = re.compile(r"zombie|undead|apocalyp|survival|outbreak|infected|wasteland", re.I)
+_HORROR_WORDS = re.compile(r"horror|haunted|creepy|scary|asylum|abandoned|ghost", re.I)
+
+
+def parse_plan(text_or_plan: str | dict, brief: str = "") -> dict:
+    """Validate and clamp a plan from the model. Unknown values fall back to safe defaults, never raise on content.
+    With the brief, counts it names (days, answer choices) and its genre (survival/horror style) are respected."""
     raw = _json_object(text_or_plan) if isinstance(text_or_plan, str) else dict(text_or_plan)
     plan: dict[str, Any] = {}
     screen = str(raw.get("screen", "menu")).lower().strip()
     plan["screen"] = screen if screen in SCREENS else _nearest_screen(screen)
     style = str(raw.get("style", "cartoon")).lower().strip()
     plan["style"] = style if style in STYLES else "cartoon"
-    if isinstance(raw.get("accent"), str) and _HEX.match(raw["accent"]):
+    chosen = plan["style"]
+    if _SURVIVAL_WORDS.search(brief) and plan["style"] not in ("survival", "horror"):
+        plan["style"] = "survival"
+    elif _HORROR_WORDS.search(brief) and plan["style"] not in ("survival", "horror"):
+        plan["style"] = "horror"
+    restyled = plan["style"] != chosen  # colours the model picked for the rejected style are dropped below
+    if isinstance(raw.get("accent"), str) and _HEX.match(raw["accent"]) and not restyled:
         plan["accent"] = raw["accent"].upper()
     plan["title"] = _clean_text(raw.get("title") or plan["screen"].title(), 28) or "Menu"
     if raw.get("subtitle"):
         plan["subtitle"] = _clean_text(raw["subtitle"], 64)
     items = []
-    for item in (raw.get("items") or [])[:14]:
+    raw_items = raw.get("items") or (raw.get("rewards") if plan["screen"] == "results" else None) or []
+    for item in raw_items[:14]:
         if not isinstance(item, dict):
             continue
-        kind = str(item.get("kind", "gem")).lower()
         rarity = str(item.get("rarity", "common")).lower()
-        clean: dict[str, Any] = {"name": _clean_text(item.get("name", "Item"), 18) or "Item",
-                 "kind": kind if kind in KINDS else "gem",
+        name = _clean_text(item.get("name", "Item"), 18) or "Item"
+        clean: dict[str, Any] = {"name": name, "kind": _kind(item.get("kind"), name),
                  "rarity": rarity if rarity in RARITIES else "common"}
         for key in ("price", "count", "amount"):
             if isinstance(item.get(key), (int, float)) and not isinstance(item.get(key), bool):
@@ -249,12 +323,15 @@ def parse_plan(text_or_plan: str | dict) -> dict:
                             "amount": _int(raw["currency"].get("amount"), 0)}
     if isinstance(raw.get("currencies"), list):
         plan["currencies"] = [{"name": _clean_text(c.get("name", ""), 14), "amount": _int(c.get("amount"), 0),
-                               **({"color": c["color"].upper()} if isinstance(c.get("color"), str) and _HEX.match(c["color"]) else {})}
+                               **({"color": c["color"].upper()} if isinstance(c.get("color"), str) and _HEX.match(c["color"])
+                                  and not restyled else {})}
                               for c in raw["currencies"][:3] if isinstance(c, dict)]
-    for key, limit, count in (("tabs", 12, 5), ("actions", 14, 4)):
+    for key, limit, count in (("tabs", 12, 5), ("actions", 28 if plan["screen"] == "dialog" else 18, 4)):
         if isinstance(raw.get(key), list):
             plan[key] = [_clean_text(v, limit) for v in raw[key][:count] if _clean_text(v, limit)]
-    if isinstance(raw.get("options"), list):
+    if plan["screen"] == "dialog":
+        _dialog_choices(plan, raw, brief)
+    elif isinstance(raw.get("options"), list):
         opts = []
         for o in raw["options"][:8]:
             if not isinstance(o, dict):
@@ -273,10 +350,11 @@ def parse_plan(text_or_plan: str | dict) -> dict:
             opts.append(opt)
         plan["options"] = opts
     if isinstance(raw.get("entries"), list):
-        plan["entries"] = [{"name": _clean_text(e.get("name", "Player"), 18), "value": _int(e.get("value"), 0)}
+        plan["entries"] = [{"name": _clean_text(e.get("name", "Player"), 18), "value": _score_value(e.get("value"))}
                            for e in raw["entries"][:12] if isinstance(e, dict)]
     if isinstance(raw.get("you"), dict):
-        plan["you"] = {"name": _clean_text(raw["you"].get("name", "You"), 18), "value": _int(raw["you"].get("value"), 0),
+        plan["you"] = {"name": _clean_text(raw["you"].get("name", "You"), 18),
+                       "value": _score_value(raw["you"].get("value")),
                        "rank": max(1, _int(raw["you"].get("rank"), 42))}
     if isinstance(raw.get("quests"), list):
         quests = []
@@ -292,7 +370,7 @@ def parse_plan(text_or_plan: str | dict) -> dict:
         plan["stats"] = [{"label": _clean_text(s.get("label", ""), 16), "value": _clean_text(s.get("value", ""), 12)}
                          for s in raw["stats"][:6] if isinstance(s, dict)]
     if isinstance(raw.get("hotbar"), list):
-        plan["hotbar"] = [{"kind": h.get("kind") if h.get("kind") in KINDS else "gem",
+        plan["hotbar"] = [{"kind": _kind(h.get("kind"), str(h.get("name") or "")),
                            "rarity": h.get("rarity") if h.get("rarity") in RARITIES else "common",
                            "key": _clean_text(h.get("key", str(i + 1)), 3) or str(i + 1),
                            "cooldown": _frac(h.get("cooldown"), 0.0)}
@@ -313,7 +391,50 @@ def parse_plan(text_or_plan: str | dict) -> dict:
         plan["today"] = max(1, _int(raw.get("today"), 1))
     if raw.get("progress") is not None:
         plan["progress"] = _frac(raw.get("progress"), 0.6)
-    return _fill_defaults(plan)
+    plan = _fill_defaults(plan)
+    if plan["screen"] == "rewards":
+        _reward_days(plan, _brief_count(brief, "days?") or 7)
+    return plan
+
+
+def _dialog_choices(plan: dict, raw: dict, brief: str) -> None:
+    """Dialog answers: the model may put them in options (as strings); fill up to the count the brief asks for."""
+    choices = list(plan.get("actions") or [])
+    for o in raw.get("options") or []:
+        label = _clean_text(o.get("label", "") if isinstance(o, dict) else o, 28)
+        if label and label not in choices:
+            choices.append(label)
+    asked = _brief_count(brief, "choices?|options?|answers?|replies|responses")
+    if not asked and not choices:
+        return  # nothing asked for: the screen default ("Continue") applies
+    want = min(4, asked or len(choices))
+    price = re.search(r"(\d[\d,]*)\s*(gold|coins?|gems?|cash|credits?|bucks)", brief or "", re.I)
+    fill = [f"Deal! ({price.group(1)} {price.group(2)})" if price else "Yes, let's do it", "No thanks",
+            "Tell me more", "Goodbye"]
+    for label in fill:
+        if len(choices) >= want:
+            break
+        if label not in choices:
+            choices.append(label)
+    if choices:
+        plan["actions"] = choices[:want]
+
+
+def _reward_days(plan: dict, days: int) -> None:
+    """Login calendar: exactly `days` days (2-10), every day shows an amount, the last day is the special one."""
+    days = max(2, min(days, 10))
+    items = plan["items"][:days]
+    while len(items) < days:
+        last = RARITIES.index(items[-1]["rarity"]) if items else 2
+        final = len(items) == days - 1
+        items.append({"name": "Grand Prize" if final else "Bonus Coins", "kind": "chest" if final else "coin",
+                      "rarity": RARITIES[min(last + 1, len(RARITIES) - 1)]})
+    for i, item in enumerate(items):
+        if not item.get("amount"):
+            item["amount"] = item.get("price") or ((i + 1) * 100 if item["kind"] in ("coin", "gem") else 1)
+        item.pop("special", None)
+    items[-1]["special"] = True
+    plan["items"] = items
 
 
 def _int(value: Any, default: int) -> int:
@@ -351,9 +472,6 @@ def _fill_defaults(plan: dict) -> dict:
         plan["items"] = [{"name": n, "kind": k, "rarity": r, "price": p} for n, k, r, p in
                          (("Iron Blade", "sword", "common", 120), ("Oak Shield", "shield", "uncommon", 260),
                           ("Swift Tonic", "potion", "rare", 75), ("Star Gem", "gem", "epic", 900))]
-    if s == "rewards" and plan.get("items"):
-        for i, item in enumerate(plan["items"]):
-            item.setdefault("amount", item.get("price") or (i + 1) * 100)
     if s in ("menu", "results", "rewards", "settings", "quest") and not plan.get("actions"):
         plan["actions"] = {"menu": ["Play", "Settings", "Credits"], "results": ["Play Again", "Lobby"],
                            "rewards": ["Claim"], "settings": ["Apply", "Reset"], "quest": ["Track"]}[s]
@@ -417,6 +535,7 @@ def design(plan: dict) -> dict:
     for key in ("radius", "strokeWidth", "strokeAlpha", "surfaceAlpha", "surface2Alpha", "panelGradient",
                 "doubleStroke", "textOutline", "button", "shadow"):
         tokens[key] = style[key]
+    tokens["worn"] = style.get("worn", False)
     return tokens
 
 
