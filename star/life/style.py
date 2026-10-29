@@ -493,7 +493,6 @@ def design_outfit_idea(store: LifeStore, *, complete=None, generate=None, now: f
 def style_activity(registry):
     """Her "personal style" activity: one refresh pass on her own PC through the Executor."""
     def run(ctx) -> dict:
-        runtime = getattr(registry, "runtime", None)
         store = default_store(ctx.home)
         complete = None
         if ctx.chat is not None:

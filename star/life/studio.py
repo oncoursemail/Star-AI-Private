@@ -24,7 +24,7 @@ import re
 import time
 from pathlib import Path
 
-from .store import LifeStore, day_of, default_store, flag
+from .store import LifeStore, day_of
 
 KINDS = ("drawing", "story", "journal", "song", "roblox")
 PER_DAY = 2
