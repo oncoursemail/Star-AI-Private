@@ -286,12 +286,23 @@ def _check_data_json(rest: str, data, ts: list[McVersion]) -> list[dict]:
                 out.append(_p("mc_recipe", "before 1.21.2 an ingredient is {\"item\": \"minecraft:x\"} or "
                                            "{\"tag\": \"minecraft:y\"}", None, ing))
                 break
+        for ing in ings:
+            if ing in ("minecraft:air", "air") or ing == "" or ing == []:
+                out.append(_p("mc_recipe", "an ingredient cannot be air or empty (the game rejects the recipe); to "
+                                           "disable a vanilla recipe use the pack.mcmeta filter", None, str(ing)))
+                break
         res = data.get("result")
         if isinstance(res, dict) and "item" in res and "id" not in res:
             out.append(_p("mc_recipe", "since 1.20.5 the recipe result uses \"id\", not \"item\"", None, "item"))
         if data.get("type") in ("minecraft:shaped", "shaped", "minecraft:shapeless", "shapeless"):
             out.append(_p("mc_recipe", f"unknown recipe type {data['type']}",
                           "minecraft:crafting_" + short(data["type"]), data["type"]))
+    if rest.startswith("jukebox_song/") and isinstance(data, dict):
+        se = data.get("sound_event")
+        if isinstance(se, str) and ":" in se and not se.startswith("minecraft:"):
+            out.append(_p("mc_jukebox", f"'{se}' is not a registered sound event (resource pack sounds are not "
+                                        "registered on the server): use an inline sound event",
+                          f'"sound_event": {{"sound_id": "{se}"}}', se))
     if rest.startswith("tags/") and isinstance(data, dict) and not isinstance(data.get("values"), list):
         out.append(_p("mc_tag", "a tag file is {\"values\": [ ... ]}", None, "values"))
     return out

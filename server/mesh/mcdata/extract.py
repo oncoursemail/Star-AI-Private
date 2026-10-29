@@ -56,7 +56,14 @@ def block_path(before: str, code: str) -> tuple[str | None, bool]:
     if cm:
         return norm_path(cm.group("p")), True
     found = PATH.findall(before[-300:])
-    return (norm_path(found[-1]), False) if found else (None, False)
+    if not found:
+        return None, False
+    path, body = norm_path(found[-1]), code.lstrip()
+    if path.endswith((".json", ".mcmeta")) and not body.startswith(("{", "[", "//")):
+        return None, False                     # the prose names a JSON file, but this block is commands or text
+    if path.endswith(".mcfunction") and body.startswith(("{", "[")):
+        return None, False
+    return path, False
 
 
 def looks_like_commands(code: str) -> bool:
