@@ -100,8 +100,10 @@ class Settings:
     comfy_workflow: str = ''
     comfy_prompt_node: str = '6'
     comfy_port: int = 8188
-    # Where media runs (star/media_places.py): 'pc' = this PC's graphics card, 'servers' = the STAR Brains.
+    # Where media runs (star/media_places.py): 'pc' = this PC's graphics card, 'servers' = the STAR Brains;
+    # images also 'auto' (this PC while its graphics card is free, else the servers).
     media_images: str = 'pc'
+    media_images_server: str = ''         # the servers' image service, e.g. http://<address>:8095 (server/imagegen)
     media_voice: str = 'pc'
     media_video: str = 'servers'
     media_chat_auto: bool = True
@@ -365,9 +367,13 @@ class Settings:
             raise ValueError('Choose a disposable Studio instance before editing')
         if not 1 <= self.comfy_port <= 65535 or not re.fullmatch(r'[A-Za-z0-9_-]{1,40}', self.comfy_prompt_node):
             raise ValueError('Invalid local image generation configuration')
-        if any(getattr(self, key) not in ('pc', 'servers')
-               for key in ('media_images', 'media_voice', 'media_video')):
+        if (self.media_images not in ('pc', 'servers', 'auto')
+                or any(getattr(self, key) not in ('pc', 'servers') for key in ('media_voice', 'media_video'))):
             raise ValueError('Choose STAR Brains (servers) or This PC for each media capability')
+        if not isinstance(self.media_images_server, str) or not (
+                self.media_images_server == '' or re.fullmatch(r'https?://[A-Za-z0-9.\-\[\]:]{1,253}(:\d{1,5})?/?',
+                                                               self.media_images_server)):
+            raise ValueError('The image service address must look like http://<address>:8095')
         for key, label in (('comfy_home', 'ComfyUI folder'), ('ffmpeg_dir', 'FFmpeg folder')):
             value = getattr(self, key)
             if (not isinstance(value, str) or len(value) > 1024 or '\x00' in value

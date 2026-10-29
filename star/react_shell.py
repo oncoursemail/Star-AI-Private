@@ -167,7 +167,7 @@ PERMITTED_SETTINGS = frozenset({
     'instant_route_enabled','web_auto_search',
     'knowledge_endpoint','luau_run_before_answer',
     'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','deep_research_enabled','scholarly_research_enabled','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'presolve_enabled',
-    'media_images','media_voice','media_video','media_chat_auto','session_capabilities_prompt','media_use_references','comfy_home','ffmpeg_dir',
+    'media_images','media_images_server','media_voice','media_video','media_chat_auto','session_capabilities_prompt','media_use_references','comfy_home','ffmpeg_dir',
     'picture_max_side','image_quality','image_drafts','image_engine',
     'best_of_n','best_of_n_max',
     # Use my GPU: where its files are and when it unloads. The switch itself is `gpuHelperSet`, saved at once.
@@ -1189,11 +1189,15 @@ def launch():
                 if source is None:
                     raise ValueError('The previous picture is no longer available to edit.')
             # The chosen place first: a choice that cannot make pictures fails here, before ComfyUI is started.
-            media_places.require(settings,'images',home)
-            if settings.media_images=='pc':
+            # 'auto' = this PC while its graphics card is free, else the servers; changing a picture stays on this PC.
+            chosen=media_places.require(settings,'images',home)
+            place='pc' if chosen=='auto' and source is not None else media_places.resolve(settings,'images',home)
+            if place=='servers':
+                self._emit(request_id,'progress',{'phase':'Creating your image on the STAR Brains (servers)...'})
+            else:
                 # Never two big models on the card: Use my GPU unloads before the picture is made.
                 gpu_helper.HELPER.yield_to('the image engine is making a picture')
-            if not image_gen.status(settings)['running']:
+            if place=='pc' and not image_gen.status(settings)['running']:
                 if not effective_comfy_home(settings):
                     raise ComfyError('not_running', 'No image engine is set up: pictures are made by ComfyUI on this PC, it is not '
                                      'running, and STAR found no ComfyUI folder to start it from. Choose that folder in Settings → '
@@ -1205,7 +1209,7 @@ def launch():
                 self._emit(request_id,'progress',{'phase':'Creating your image on this PC...'})
             result=generate_chat_image(settings,prompt,home,cancel_event=self.cancel_chat,size=size,
                                        source=source,
-                                       mask=files[1] if len(files)>1 else None)
+                                       mask=files[1] if len(files)>1 else None,place=place)
             chats=Conversations(home/'conversations.sqlite3')
             try:
                 chats.add(settings.project,'assistant',result['message'],chat_id=chat_id)
