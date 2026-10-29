@@ -39,6 +39,11 @@ def feedback_lines(check: dict, finish: str = "", reference: str = "") -> list[s
         lines.append(h["message"] + (f" (seen here: {h['evidence']})" if h.get("evidence") else ""))
     if not check.get("rule_hits"):
         lines += [f"Rule broken: {r}" for r in check.get("rules") or []]
+    f = check.get("fact") or {}
+    for c in f.get("false_claims") or []:
+        lines.append("A fact checker says this is false: " + c)
+    if f and f.get("answers_question") is False:
+        lines.append("A fact checker says the answer does not answer the question.")
     j = check.get("judge") or {}
     if j.get("pass") is False and j.get("reason"):
         lines.append("A reviewer said: " + j["reason"].strip())

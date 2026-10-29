@@ -179,6 +179,9 @@ def harvest(cfg: dict, srv, verifier, prompts: list[dict], samples: int, night: 
                     break
                 row = check((p, 99, out))
                 row.update(corrected_from=r["k"], feedback=out["feedback"], round=rnd + 1)
+                if row["check"].get("pass") and p.get("kind") != "safety":
+                    row["check"]["fact"] = S.fact_check(srv, p["prompt"], row["answer"])
+                    row["check"]["pass"] = row["check"]["fact"]["ok"]
                 if row["check"].get("pass"):
                     break
                 r = row
@@ -559,7 +562,7 @@ def main(argv=None) -> int:
     ap.add_argument("--shard", default="0/2", help="i/n: only prompts whose id hash mod n == i (two harvest cards)")
     ap.add_argument("--gap-share", type=float, default=0.3, help="share of gap-targeted prompts (pool-gaps.jsonl)")
     ap.add_argument("--no-corrections", action="store_true")
-    ap.add_argument("--upsample-corrected", type=int, default=2)
+    ap.add_argument("--upsample-corrected", type=int, default=1)
     ap.add_argument("--orpo-min-pairs", type=int, default=400)
     ap.add_argument("--orpo-beta", type=float, default=0.1)
     # harvest mode: another card through its mesh node

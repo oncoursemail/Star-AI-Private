@@ -201,11 +201,14 @@ def test_clean_rewrite(text, out):
 class FakeSrv:
     parallel = 1
 
-    def __init__(self):
+    def __init__(self, fact='{"false_claims": [], "answers_question": true}'):
         self.calls = []
+        self.fact = fact
 
     def chat(self, messages, temperature=0.3, max_tokens=1200, seed=-1, **kw):
         self.calls.append(messages)
+        if messages[0]["content"] == S.FACT_SYSTEM:
+            return {"text": self.fact, "finish": "stop", "tokens": 5}
         last = messages[-1]["content"]
         text = "GOOD rewrite" if last.startswith(C.ASK) else ("GOOD first" if "easy" in last else "bad first")
         return {"text": text, "finish": "stop", "tokens": 10, "tok_s": 50.0, "draft_n": 8, "draft_ok": 6}
@@ -280,3 +283,20 @@ def test_deploy_config_roundtrip():
     back = DP.without_adapter(again)
     assert back["llama_args"] == ["-ngl", "99", "-t", "4"] and [s[1] for s in back["ngl_ladder"]] == [7300, 7130]
     assert "nightly_lora" not in back
+
+
+def test_fact_check_blocks_a_corrected_answer_with_a_false_claim(tmp_path, monkeypatch):
+    def fake_check(srv, verifier, q, ans, safety=False, reference=""):
+        ok = ans["text"].startswith("GOOD")
+        return {"finished": True, "verify": {"ok": ok}, "rules": [], "rule_hits": [],
+                "judge": {"pass": ok, "reason": "" if ok else "Wrong."}, "pass": ok}
+    monkeypatch.setattr(N.S, "full_check", fake_check)
+    sysf = tmp_path / "sys.txt"
+    sysf.write_text("You are Litha.", encoding="utf-8")
+    srv = FakeSrv(fact='{"false_claims": ["Minecraft has no loot tables"], "answers_question": true}')
+    st = N.harvest({"system_prompt": str(sysf), "work_dir": str(tmp_path)}, srv, None,
+                   [{"pid": "b2", "prompt": "a hard one", "group": "g:mc-datapack", "source": "s"}], 2, tmp_path,
+                   lambda m: None, should_stop=lambda: False)
+    assert st["corrections_pass"] == 0 and N.jl_read(tmp_path / "bank.jsonl") == []
+    second = [c for c in srv.calls if c[-1]["content"].startswith(C.ASK)][-1][-1]["content"]
+    assert "A fact checker says this is false: Minecraft has no loot tables" in second

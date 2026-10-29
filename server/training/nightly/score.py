@@ -94,6 +94,29 @@ def parse_verdict(text: str) -> tuple[bool | None, str]:
     return None, (text or "")[:200]
 
 
+FACT_SYSTEM = (
+    "You are a fact checker for answers given to kids who build games (Roblox, Unity, Minecraft Java 1.21). Read the "
+    "question and the answer. List every statement in the answer that is false, made up, or about a different game or "
+    "edition than the question, and say whether the answer actually answers the question. Reply with JSON only: "
+    '{"false_claims": ["..."], "answers_question": true or false}')
+
+
+def fact_check(server, question: str, answer: str) -> dict:
+    """Second, differently-asked check by the same base model (used on self-corrected answers, which were rewritten
+    to satisfy the judge: 10-29 a rewrite claimed Minecraft has no loot tables and the judge passed it)."""
+    r = server.chat([{"role": "system", "content": FACT_SYSTEM},
+                     {"role": "user", "content": f"QUESTION:\n{question}\n\nANSWER:\n{answer}"}],
+                    temperature=0.0, max_tokens=300)
+    m = re.search(r"\{.*\}", r.get("text") or "", re.S)
+    try:
+        d = json.loads(m.group(0)) if m else {}
+    except ValueError:
+        d = {}
+    claims = [str(c)[:200] for c in d.get("false_claims") or [] if str(c).strip()]
+    ok = bool(d) and not claims and d.get("answers_question") is not False
+    return {"ok": ok, "false_claims": claims[:5], "answers_question": d.get("answers_question"), "error": r.get("error", "")}
+
+
 def judge(server, question: str, answer: str, safety: bool = False, reference: str = "") -> dict:
     user = f"QUESTION:\n{question}\n\nANSWER:\n{answer}"
     if reference:
