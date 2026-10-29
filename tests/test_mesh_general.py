@@ -88,3 +88,9 @@ def test_router_adds_general_note_calc_and_safety_card(tmp_path):
         assert sent["messages"][-1]["content"] == "Tom has 3 bags with 4 apples each. How many apples in total?"
 
     asyncio.run(asyncio.wait_for(go(), 30))
+
+
+def test_general_note_asks_for_only_what_the_model_is_sure_of():
+    """truth-20261029: the measured note (false claims 20 -> 10 of 72, correct 38 -> 40)."""
+    assert "Say only what you are sure of" in inject.GENERAL_NOTE and "never guess" in inject.GENERAL_NOTE
+    assert "correct it first" in inject.GENERAL_NOTE and "outside your expertise" in inject.GENERAL_NOTE
