@@ -204,6 +204,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=20261029)
     ap.add_argument("--pairs", default="", help="preference pairs (ORPO)")
     ap.add_argument("--orpo-beta", type=float, default=0.1)
+    ap.add_argument("--max-gib", type=float, default=7.6, help="ORPO: stop when the reserved peak passes this")
     ap.add_argument("--reserve-minutes", type=float, default=6, help="kept free at the end (val loss + save)")
     a = ap.parse_args()
 
@@ -312,9 +313,9 @@ def main() -> None:
             tokens += len(ids)
         else:                                    # ORPO, one graph at a time (see orpo_coefficients)
             (ci, cs), (ri, rs) = pairs[idx]
-            lc_t = -loss_of(ci, cs)
-            with torch.no_grad():
+            with torch.no_grad():                # first, while no graph is alive: peak stays at one SFT row
                 lr_v = float(-loss_of(ri, rs))
+            lc_t = -loss_of(ci, cs)
             dc, dr, lval = orpo_coefficients(float(lc_t.detach()), lr_v, a.orpo_beta)
             (lc_t * (dc / a.accum)).backward()
             del lc_t
@@ -322,6 +323,10 @@ def main() -> None:
             run_loss.append(lval)
             pair_loss.append(lval)
             tokens += len(ci) + 2 * len(ri)
+            peak = torch.cuda.max_memory_reserved() / 2**30
+            if peak > a.max_gib:                 # would spill into shared memory (8 GB card): let the caller fall back
+                say(f"ORPO peak {peak:.2f} GiB > {a.max_gib}: stopping (exit 3, the night retries SFT only)")
+                raise SystemExit(3)
         seen += 1
         if seen % a.accum == 0 or n == len(order) - 1:
             for g in opt.param_groups:

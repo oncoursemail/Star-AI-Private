@@ -104,7 +104,7 @@ def pair_row(pid: str, prompt: str, chosen: dict, rejected: dict, kind: str) -> 
 
 
 def harvest(cfg: dict, srv, verifier, prompts: list[dict], samples: int, night: Path, say,
-            files: dict | None = None, corrections: bool = True, should_stop=None, chunk: int = 40,
+            files: dict | None = None, corrections: bool = True, should_stop=None, chunk: int = 40, rounds: int = 2,
             wait_ready=None) -> dict:
     """Answer -> check -> correct the prompts with no passing answer -> re-check, in chunks (one chunk = one kind of
     request at a time, so the server's prompt cache keeps the shared system prompt). Every chunk is written at once
@@ -170,12 +170,18 @@ def harvest(cfg: dict, srv, verifier, prompts: list[dict], samples: int, night: 
                     fixes.append((p, rs[0]))
 
         def fix(job):
+            """Up to `rounds` rewrites: a rewrite that still fails gets the new findings and one more try."""
             p, r = job
-            out = C.correct(srv, p["prompt"], r, sysp, reference=p.get("reference", ""), seed=77)
-            if out is None:
-                return None
-            row = check((p, 99, out))
-            row.update(corrected_from=r["k"], feedback=out["feedback"])
+            row = None
+            for rnd in range(rounds):
+                out = C.correct(srv, p["prompt"], r, sysp, reference=p.get("reference", ""), seed=77 + rnd)
+                if out is None:
+                    break
+                row = check((p, 99, out))
+                row.update(corrected_from=r["k"], feedback=out["feedback"], round=rnd + 1)
+                if row["check"].get("pass"):
+                    break
+                r = row
             return row
 
         fixed = [r for r in run_many(fix, fixes, srv.parallel, should_stop) if r] if fixes else []
