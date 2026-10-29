@@ -112,7 +112,11 @@ def build_model(model_dir: Path, dev: str):
     for i, layer in enumerate(model.layers):
         materialize(layer, f"layers.{i}.")
     materialize(model.norm, "norm.")
-    emb = tensor("embed_tokens.weight").to(torch.bfloat16)               # host RAM
+    emb = tensor("embed_tokens.weight").to(torch.bfloat16).clone()       # host RAM, own copy
+    where.clear()
+    del handles                         # unmap the 24 GB file: its pages counted against free RAM (stopped a run)
+    import gc
+    gc.collect()
     model.embed_tokens = nn.Embedding(1, cfg.hidden_size, device=dev, dtype=torch.bfloat16)  # bypassed
     model.rotary_emb = M.Gemma4UnifiedTextRotaryEmbedding(cfg, device=dev)
     # buffers that are computed, not stored (layer scalars etc. are parameters and were loaded above)
@@ -164,7 +168,7 @@ def main() -> None:
     ap.add_argument("--epochs", type=float, default=1.0)
     ap.add_argument("--accum", type=int, default=8)
     ap.add_argument("--max-minutes", type=float, default=120)
-    ap.add_argument("--ram-floor-gb", type=float, default=3.0)
+    ap.add_argument("--ram-floor-gb", type=float, default=2.0)
     ap.add_argument("--stop-dir", default=str(Path.home() / ".star" / "nightly"))
     ap.add_argument("--seed", type=int, default=20261029)
     a = ap.parse_args()
@@ -260,7 +264,7 @@ def main() -> None:
         ids, start = train[idx]
         loss = loss_of(ids, start) / a.accum
         loss.backward()
-        run_loss.append(float(loss) * a.accum)
+        run_loss.append(float(loss.detach()) * a.accum)
         seen += 1
         tokens += len(ids)
         if seen % a.accum == 0 or n == len(order) - 1:

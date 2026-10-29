@@ -14,7 +14,7 @@ NO_WINDOW, BELOW_NORMAL = 0x08000000, 0x00004000
 
 
 class Server:
-    def __init__(self, exe: str, model: str, port: int = 8197, lora: str = "", parallel: int = 4, ctx: int = 16384,
+    def __init__(self, exe: str, model: str, port: int = 8197, lora: str = "", parallel: int = 4, ctx: int = 12288,
                  log: str | Path = "server.log"):
         self.exe, self.model, self.port, self.lora = exe, model, port, lora
         self.parallel, self.ctx, self.log = parallel, ctx, Path(log)

@@ -167,6 +167,9 @@ def open_hold(holder: str, hours: float = 6) -> str:
         parts = line.split()
         if len(parts) < 3 or parts[0] not in ("HOLD", "FREE") or parts[1] == holder:
             continue
+        low = line.lower()
+        if ("star-pc" in low or "4060" in low) and not ("owner-pc" in low or "3060" in low):
+            continue                                # a line about STAR's PC card only, not this one
         try:
             when = dt.datetime.strptime(parts[2][:17], "%Y-%m-%dT%H:%MZ").replace(tzinfo=dt.timezone.utc)
         except ValueError:

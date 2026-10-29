@@ -289,7 +289,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["run", "eval-only"])
     ap.add_argument("--config", default=str(CONFIG))
-    ap.add_argument("--prompts", type=int, default=400)
+    ap.add_argument("--prompts", type=int, default=600)
     ap.add_argument("--samples", type=int, default=2)
     ap.add_argument("--parallel", type=int, default=4)
     ap.add_argument("--train-minutes", type=float, default=150)

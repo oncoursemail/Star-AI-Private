@@ -160,3 +160,11 @@ def test_open_hold_of_another_lane_blocks(tmp_path, monkeypatch):
     assert "gpu-pool" in H.open_hold("nightly-training")
     sched.write_text(sched.read_text(encoding="utf-8") + f"FREE gpu-pool {t} done\n", encoding="utf-8")
     assert H.open_hold("nightly-training") == ""
+
+
+def test_open_hold_ignores_holds_on_star_pc_card(tmp_path, monkeypatch):
+    sched = tmp_path / "gpu-lab-schedule.md"
+    t = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+    sched.write_text(f"HOLD gpu-pool {t} star-pc 4060 only, planned end +20 min\n", encoding="utf-8")
+    monkeypatch.setenv("STAR_GPU_SCHEDULE", str(sched))
+    assert H.open_hold("nightly-training") == ""
