@@ -449,6 +449,9 @@ def check_java(code: str, context: str) -> dict:
     elif JAVA_STD.search(code):
         mode = "syntax"                  # Bukkit/Paper/LWJGL/libGDX imports: no jars here (mc-plugins lane has them)
     reply = WORKERS["java"].ask({"code": src, "mode": mode})
+    if reply and any("unnamed classes" in d.get("message", "") for d in reply.get("diags") or []):
+        src, offset, mode = wrap("class Main {\n", blank_ellipsis(code, "//"), "\n}\n")[0], 1, "syntax"
+        reply = WORKERS["java"].ask({"code": src, "mode": mode})     # methods outside a class: a fragment
     if not reply or "diags" not in reply:
         return {"checked": False, "tool": "javac", "error": (reply or {}).get("error", "worker down")}
     probs = []
@@ -762,6 +765,12 @@ def check(language: str, code: str, context: str = "") -> dict:
             except Exception as e:          # a checker bug must never become a reported problem
                 out = {"checked": False, "problems": [], "error": f"{type(e).__name__}: {e}"[:300]}
     out.setdefault("problems", [])
+    seen, uniq = set(), []
+    for p in out["problems"]:                # rb.velocity = new Vector2(rb.velocity.x, ...): one problem, not two
+        if (p["message"], p.get("line")) not in seen:
+            seen.add((p["message"], p.get("line")))
+            uniq.append(p)
+    out["problems"] = uniq
     syn = [p for p in out["problems"] if p["kind"] == "syntax"]
     if len(syn) > 2:                         # one typo makes parsers report a cascade: the first ones are the cause
         out["problems"] = [p for p in out["problems"] if p["kind"] != "syntax" or p in syn[:2]]

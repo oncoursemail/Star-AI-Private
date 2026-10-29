@@ -238,7 +238,10 @@ FIX_SYSTEM = ("You repair code. You get one code block and a list of problems fo
 FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction", "shell": "bash"}
 POLYGLOT = {"python", "javascript", "typescript", "java", "cpp", "c", "rust", "go", "gdscript", "lua", "sql", "shell"}
 COMPILED = POLYGLOT | {"csharp"}                   # sent to the star-polyglot compilers
-JAVA_PLUGIN = re.compile(r"^\s*import\s+(?:static\s+)?(?!java\.|javax\.)[\w.]+", re.M)   # any non-JDK import
+# any non-JDK import, or a Bukkit/Paper/Fabric fragment without imports: the mc-plugins checker's job
+JAVA_PLUGIN = re.compile(r"^\s*import\s+(?:static\s+)?(?!java\.|javax\.)[\w.]+|\b(?:JavaPlugin|CommandSender|"
+                         r"CommandExecutor|Bukkit\.|@EventHandler|PlayerJoinEvent|ModInitializer|ServerPlayerEntity|"
+                         r"MinecraftServer|getServer\(\))", re.M)
 COMPILE_FIX_SYSTEM = ("You repair code. You get one code block and the errors the real compiler / type checker / engine "
                       "reported for it. Fix exactly those errors and keep everything else unchanged (same structure, "
                       "names, comments, behaviour). Placeholders the reader fills in ([X], <x>, X_POS) stay exactly as "
