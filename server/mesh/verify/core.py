@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import time
 
-from . import csharp, minecraft
+from . import csharp, javamc, minecraft
 from .apidump import ApiIndex
 from .luau import LuauChecker
 
@@ -94,9 +94,11 @@ def extract_blocks(text: str, language: str | None = None) -> list[dict]:
 
 
 class Verifier:
-    def __init__(self, api: ApiIndex, analyzer: str | None = None, mc=None, *, polyglot=None):
+    def __init__(self, api: ApiIndex, analyzer: str | None = None, jvm: "javamc.JvmClient | None" = None, mc=None, *,
+                 polyglot=None):
         self.api = api
         self.luau = LuauChecker(api, analyzer)
+        self.jvm = jvm                          # warm javac service for Minecraft plugins/mods (None = static only)
         self.mc = mc if mc else None             # McIndex (server/mesh/mcdata) or None
         self.polyglot = polyglot           # server/mesh/polyglot client (None = those languages stay unchecked)
         self._pg: dict = {}
@@ -120,10 +122,24 @@ class Verifier:
 
     def check_block(self, code: str, lang: str, prose: str = "", path: str | None = None) -> tuple[list[dict], bool]:
         problems, checked = self._check_block(code, lang, prose, path)
+        return self._placeholders_info(problems), checked
+
+    @staticmethod
+    def _placeholders_info(problems: list[dict]) -> list[dict]:
         for p in problems:                      # a placeholder is for the reader, not a mistake to fix
             if p["severity"] != "info" and is_placeholder(p.get("name")):
                 p["severity"] = "info"
-        return problems, checked
+        return problems
+
+    def recheck(self, text: str, span: dict, new: str, b: dict, question: str | None = None) -> list[dict]:
+        """Problems of block b after replacing it with `new`; Java/descriptor blocks are checked in context."""
+        if b.get("in_context"):
+            t2 = text[:span["start"]] + new + text[span["end"]:]
+            rep = self.verify(t2, None, question)
+            return rep["blocks"][b["index"]]["problems"] if b["index"] < len(rep["blocks"]) else []
+        scope = question if question and mc_index and self.mc is not None and mc_index.VERSION_RE.search(question) \
+            else text
+        return self.check_block(new, b["language"], scope, b.get("path"))[0]
 
     def _check_block(self, code: str, lang: str, prose: str = "", path: str | None = None) -> tuple[list[dict], bool]:
         if lang == "luau":
@@ -162,6 +178,8 @@ class Verifier:
         t0 = time.perf_counter()
         scope = question if question and self.mc is not None and mc_index.VERSION_RE.search(question) else text
         blocks = extract_blocks(text, language)
+        jctx = javamc.check_answer(blocks, text, self.jvm)   # Java + plugin.yml etc.: checked together
+        jmeta, jroles = jctx.pop("_meta", None), jctx.pop("_roles", {})
         self.prefetch(blocks, text)
         out = []
         prev = 0
@@ -173,7 +191,11 @@ class Verifier:
                 if path and path.endswith(".mcfunction"):
                     b["language"] = "mcfunction"
                 b["path"] = path
-            problems, checked = self.check_block(b["code"], b["language"], scope, path)
+            if k in jctx:
+                problems, checked = self._placeholders_info(jctx[k]), True
+                b["language"] = b["language"] or jroles.get(k, "")
+            else:
+                problems, checked = self.check_block(b["code"], b["language"], scope, path)
             for p in problems:
                 if p.get("line"):
                     p["answer_line"] = b["line"] + p["line"] - 1
@@ -182,14 +204,19 @@ class Verifier:
                         "ok": not any(p["severity"] == "error" for p in problems),
                         "needs_fix": any(p["severity"] in ("error", "warning") for p in problems),
                         "problems": problems})
+            if k in jctx:
+                out[-1]["in_context"] = True
         prose_problems = minecraft.check_datapack_paths(text) if "data/" in text else []
         if self.mc is not None:
             prose_problems += self._mc_prose(text, scope)
-        return {"ok": all(b["ok"] for b in out) and not prose_problems,
-                "needs_fix": any(b["needs_fix"] for b in out),
-                "blocks": out, "problems": prose_problems,
-                "ms": round((time.perf_counter() - t0) * 1000, 1),
-                "dump": {k: self.api.meta.get(k) for k in ("version", "fetched")}}
+        rep = {"ok": all(b["ok"] for b in out) and not prose_problems,
+               "needs_fix": any(b["needs_fix"] for b in out),
+               "blocks": out, "problems": prose_problems,
+               "ms": round((time.perf_counter() - t0) * 1000, 1),
+               "dump": {k: self.api.meta.get(k) for k in ("version", "fetched")}}
+        if jmeta:
+            rep["java"] = jmeta
+        return rep
 
     def _mc_prose(self, text: str, scope: str | None = None) -> list[dict]:
         """Minecraft problems outside checked code blocks: inline `/commands` in the prose and folder-tree blocks."""
@@ -248,7 +275,7 @@ class Verifier:
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": f"the fix rewrote the placeholder {lost[0]}; kept as written"})
                     continue
-                if _bad(self.check_block(new, b["language"], question if question and mc_index and mc_index.VERSION_RE.search(question) else text, b.get("path"))[0]) >= _bad(b["problems"]):
+                if _bad(self.recheck(text, span, new, b, question)) >= _bad(b["problems"]):
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": "the fix did not remove problems; kept as written"})
                     continue
@@ -284,7 +311,9 @@ FIX_SYSTEM = ("You repair code. You get one code block and a list of problems fo
               "code means, which may need that other object; never just take the closest-sounding name. Never invent "
               "an API: if a call does not exist and there is no suggestion, rewrite that part with APIs you are sure "
               "exist. Reply with only the corrected code in one fenced code block, nothing else.")
-FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction", "shell": "bash"}
+FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction",
+             "plugin.yml": "yaml", "paper-plugin.yml": "yaml", "fabric.mod.json": "json",
+             "neoforge.mods.toml": "toml", "mods.toml": "toml", "shell": "bash"}
 POLYGLOT = {"python", "javascript", "typescript", "java", "cpp", "c", "rust", "go", "gdscript", "lua", "sql", "shell"}
 COMPILED = POLYGLOT | {"csharp"}                   # sent to the star-polyglot compilers
 # any non-JDK import, or a Bukkit/Paper/Fabric fragment without imports: the mc-plugins checker's job

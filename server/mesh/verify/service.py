@@ -31,6 +31,7 @@ from ..mcdata.index import McIndex
 from ..polyglot.client import Polyglot
 from .apidump import ApiIndex
 from .core import Verifier
+from .javamc import JvmClient
 
 DEFAULTS = {
     "listen": "0.0.0.0",
@@ -48,6 +49,9 @@ DEFAULTS = {
     "docs_timeout_s": 1.0,
     "mc_index": "/var/lib/star-verify/mc",   # Minecraft data from the game itself (mesh.mcdata.build); missing = old checks
     "mc_facts_chars": 3200,                  # size cap of the Minecraft facts block
+    "jvm_url": "",                            # warm javac for Minecraft plugins/mods (jvm/CompileServer.java; "" = off)
+    "jvm_token_file": "/var/lib/star-verify/jvm_token",
+    "jvm_timeout_s": 4.0,
     # star-polyglot compilers (server/mesh/polyglot, own no-network container); the URL is written by its deploy.sh
     # into polyglot_url_file; no URL or no token file = off
     "polyglot_url": "",
@@ -118,9 +122,9 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
         def do_GET(self):
             if urllib.parse.urlsplit(self.path).path == "/health":
                 return self._send(200, {"status": "ok", "dump": verifier.api.meta,
-                                        "luau_analyze": bool(verifier.luau.analyzer),
-                                        "polyglot": bool(verifier.polyglot),
-                                        "minecraft": list(verifier.mc.versions) if verifier.mc else []})
+                                        "luau_analyze": bool(verifier.luau.analyzer), "jvm": bool(verifier.jvm),
+                                        "minecraft": list(verifier.mc.versions) if verifier.mc else [],
+                                        "polyglot": bool(verifier.polyglot)})
             return self._send(404, {"error": {"message": "not found"}})
 
         def do_POST(self):
@@ -167,7 +171,8 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
 def serve(cfg: dict, caller_factory=model_caller) -> ThreadingHTTPServer:
     api = ApiIndex.load(cfg["index"])
     mc = McIndex.load(cfg.get("mc_index"))
-    verifier = Verifier(api, cfg.get("luau_analyze"), mc=mc, polyglot=Polyglot.from_config(cfg))
+    verifier = Verifier(api, cfg.get("luau_analyze"), JvmClient.from_config(cfg), mc=mc,
+                        polyglot=Polyglot.from_config(cfg))
     facts = Facts(mc, cfg.get("mc_index")) if mc else None
     srv = ThreadingHTTPServer((cfg["listen"], cfg["port"]),
                               make_handler(cfg, verifier, KeyFile(cfg["client_keys_file"]), caller_factory,
