@@ -34,6 +34,8 @@ from .speed import hook as speed
 
 VERSION = "3"
 FAST, DEEP = "litha", "litha-deep"
+MC_QUESTION = re.compile(r"\bminecraft\b|\bmcfunction\b|\bdata ?packs?\b|\bresource ?packs?\b|pack\.mcmeta|"
+                         r"\bcommand block\b|(?:^|\s)/(?:give|tp|execute|summon|tellraw|scoreboard|gamerule)\b", re.I)
 
 DEFAULTS = {
     "listen": "0.0.0.0",
@@ -110,6 +112,10 @@ DEFAULTS = {
     "docs_timeout_s": 0.15,           # late = no docs (the answer never waits longer than this for them)
     "docs_budget": 500,               # tokens
     "context_budget": 900,            # docs + verified-answer grounding together; docs get what grounding leaves
+    # Minecraft facts (server/mesh/mcdata via the verifier :8101): exact ids/syntax/pack formats from the game's own
+    # data in front of Minecraft questions (measured in docs/agents/mc-data-20261029.md)
+    "mc_facts": True,
+    "mc_facts_timeout_s": 0.3,        # late = no facts
     # system self-model (server/mesh/selfmodel, :8103): a question about Litha herself ("what GPU are you on", "why so
     # slow") skips the answer cache/grounding/docs and gets short live facts in front of it instead
     "self": True,
@@ -684,6 +690,8 @@ class Router:
             return await send_json(writer, *await self.prefetch(body, headers))
         if path == "/mesh/verify":
             return await self.forward(self.cfg["verify_url"], method, path, headers, body, writer)
+        if path == "/mesh/mc/facts":
+            return await self.forward(self.cfg["verify_url"], method, path, headers, body, writer)
         if path in ("/mesh/docs", "/mesh/docs/block", "/mesh/docs/entries"):
             return await self.forward(self.cfg["docs_url"], method, path, headers, body, writer)
         if path == "/mesh/self" or path.startswith("/mesh/self/"):
@@ -811,6 +819,7 @@ class Router:
             cache_hdr.update(await self.self_inject(req, plan[0][0].name if plan else None))
         elif model == FAST:
             cache_hdr.update(await self.docs_inject(req, headers))
+            cache_hdr.update(await self.mc_inject(req, headers))
             if req.pop("mesh_general", None) is not False and \
                     headers.get("x-mesh-general", "").lower() not in ("off", "0", "no"):
                 cache_hdr.update(await general.run(self, req, plan, headers.get("authorization", "")))
@@ -1175,6 +1184,48 @@ class Router:
         self.counters["docs_used"] += 1
         return {"X-Mesh-Docs": f"{len(block.get('entries') or [])}e{len(block.get('passages') or [])}p "
                                f"{round((time.monotonic() - t0) * 1000)}ms"}
+
+    async def mc_inject(self, req: dict, headers: dict) -> dict:
+        """Litha + a Minecraft question: the facts block (exact ids, command syntax, pack formats, game-checked
+        templates and vanilla examples of the version asked) goes at the very top of the last user message, before
+        any docs/grounding text. Returns the X-Mesh-Mc header ({} = not Minecraft, off, or late)."""
+        asked = req.pop("mesh_mc", None)
+        if not self.cfg["mc_facts"] or asked is False or headers.get("x-mesh-mc", "").lower() in ("off", "0", "no"):
+            return {}
+        msgs = req.get("messages")
+        if not isinstance(msgs, list) or not msgs or not isinstance(msgs[-1], dict) or \
+                msgs[-1].get("role") != "user" or not isinstance(msgs[-1].get("content"), str) or \
+                any(req.get(k) for k in ("tools", "functions", "response_format", "grammar", "json_schema")):
+            return {}
+        content = msgs[-1]["content"]
+        question = content.rsplit("\n---\n", 1)[-1]
+        question = question[len("Question: "):] if question.startswith("Question: ") else question
+        if not MC_QUESTION.search(question):
+            return {}
+        extra = "\n".join(m["content"] for m in msgs[:-1] if isinstance(m, dict) and m.get("role") == "user" and
+                          isinstance(m.get("content"), str))[-1500:]
+        t0 = time.monotonic()
+        try:
+            up = await open_upstream(self.cfg["verify_url"].rstrip("/") + "/mesh/mc/facts", "POST",
+                                     json.dumps({"question": question, "extra": extra}).encode(),
+                                     {"Content-Type": "application/json",
+                                      "Authorization": f"Bearer {self.keys.first()}"},
+                                     connect_s=self.cfg["mc_facts_timeout_s"], idle_s=self.cfg["mc_facts_timeout_s"])
+            try:
+                raw = await asyncio.wait_for(up.body(), self.cfg["mc_facts_timeout_s"])
+            finally:
+                up.close()
+            block = json.loads(raw) if up.status == 200 else {}
+        except (UpstreamError, asyncio.TimeoutError, ValueError):
+            self.counters["mc_facts_failed"] += 1
+            return {"X-Mesh-Mc": "late"}
+        text = block.get("text") or ""
+        if not text:
+            return {}
+        msgs[-1] = {**msgs[-1], "content": f"{text}\n\n---\n{content}"}
+        self.counters["mc_facts_used"] += 1
+        return {"X-Mesh-Mc": f"{block.get('version')} {'+'.join(block.get('parts') or [])} "
+                             f"{round((time.monotonic() - t0) * 1000)}ms"}
 
     def self_question(self, req: dict, headers: dict) -> bool:
         """The last user message asks about Litha herself (her GPU, servers, speed, code, learning): plain chat only."""

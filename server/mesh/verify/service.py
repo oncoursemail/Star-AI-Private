@@ -5,6 +5,8 @@
          body {"code": "...", "language"?: "luau|csharp|minecraft|mcfunction"} or {"answer": "<markdown>"}
          -> {"ok", "needs_fix", "blocks": [{index, language, ok, needs_fix, problems: [{kind, severity, name,
              message, suggestion, line}]}], "problems": [...prose...], "ms", "dump"}
+    POST /mesh/mc/facts               Bearer key; body {"question", "extra"?, "budget"?} -> {"text", "version", "parts",
+                                      "ms"}: the Minecraft facts block (exact ids/syntax/pack formats from the game)
     POST /mesh/verify?fix=1           also repairs failing blocks through the router's `litha` (max 2 rounds; the
                                       client's Authorization header is forwarded) -> {"answer", "ok", "rounds",
                                       "changes", "before", "after", "verify", "model_ms", "ms"}
@@ -16,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,6 +26,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from ..router import KeyFile
+from ..mcdata.facts import Facts
+from ..mcdata.index import McIndex
 from .apidump import ApiIndex
 from .core import Verifier
 
@@ -40,6 +45,8 @@ DEFAULTS = {
     "max_body_kb": 512,
     "docs_url": "http://127.0.0.1:8102",      # official docs entries for the fix loop ("" = off)
     "docs_timeout_s": 1.0,
+    "mc_index": "/var/lib/star-verify/mc",   # Minecraft data from the game itself (mesh.mcdata.build); missing = old checks
+    "mc_facts_chars": 3200,                  # size cap of the Minecraft facts block
 }
 
 
@@ -82,7 +89,8 @@ def docs_lookup(cfg: dict, auth: str):
     return docs
 
 
-def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_caller, docs_factory=docs_lookup):
+def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_caller, docs_factory=docs_lookup,
+                 facts: Facts | None = None):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "star-verify/1"
@@ -102,12 +110,13 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
         def do_GET(self):
             if urllib.parse.urlsplit(self.path).path == "/health":
                 return self._send(200, {"status": "ok", "dump": verifier.api.meta,
-                                        "luau_analyze": bool(verifier.luau.analyzer)})
+                                        "luau_analyze": bool(verifier.luau.analyzer),
+                                        "minecraft": list(verifier.mc.versions) if verifier.mc else []})
             return self._send(404, {"error": {"message": "not found"}})
 
         def do_POST(self):
             url = urllib.parse.urlsplit(self.path)
-            if url.path != "/mesh/verify":
+            if url.path not in ("/mesh/verify", "/mesh/mc/facts"):
                 return self._send(404, {"error": {"message": "not found"}})
             auth = self.headers.get("Authorization", "")
             token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
@@ -116,6 +125,18 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
             n = int(self.headers.get("Content-Length") or 0)
             if n > cfg["max_body_kb"] << 10:
                 return self._send(413, {"error": {"message": "request too large"}})
+            if url.path == "/mesh/mc/facts":
+                try:
+                    req = json.loads(self.rfile.read(n) or b"{}")
+                    q = req.get("question")
+                    assert isinstance(q, str)
+                except (ValueError, AssertionError, AttributeError):
+                    return self._send(400, {"error": {"message": "send {\"question\": ...}"}})
+                if facts is None:
+                    return self._send(200, {"text": "", "version": None, "parts": [], "ms": 0})
+                t0 = time.perf_counter()
+                out = facts.block(q, str(req.get("extra") or ""), int(req.get("budget") or cfg["mc_facts_chars"]))
+                return self._send(200, {**out, "ms": round((time.perf_counter() - t0) * 1000, 1)})
             try:
                 req = json.loads(self.rfile.read(n) or b"{}")
                 text = req.get("answer") or req.get("code") or ""
@@ -124,20 +145,24 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
                 return self._send(400, {"error": {"message": "send {\"code\": ...} or {\"answer\": ...}"}})
             lang = req.get("language") or ("auto" if not req.get("answer") else None)
             fix = urllib.parse.parse_qs(url.query).get("fix", ["0"])[0] in ("1", "true", "yes")
+            question = req.get("question") if isinstance(req.get("question"), str) else None
             if not fix:
-                return self._send(200, verifier.verify(text, lang))
+                return self._send(200, verifier.verify(text, lang, question))
             rounds = max(1, min(int(req.get("rounds") or cfg["fix_rounds"]), cfg["fix_rounds"]))
             docs = docs_factory(cfg, auth) if req.get("docs") is not False else None
-            return self._send(200, verifier.fix(text, caller_factory(cfg, auth), lang, rounds, docs))
+            return self._send(200, verifier.fix(text, caller_factory(cfg, auth), lang, rounds, docs, question))
 
     return Handler
 
 
 def serve(cfg: dict, caller_factory=model_caller) -> ThreadingHTTPServer:
     api = ApiIndex.load(cfg["index"])
-    verifier = Verifier(api, cfg.get("luau_analyze"))
+    mc = McIndex.load(cfg.get("mc_index"))
+    verifier = Verifier(api, cfg.get("luau_analyze"), mc=mc)
+    facts = Facts(mc, cfg.get("mc_index")) if mc else None
     srv = ThreadingHTTPServer((cfg["listen"], cfg["port"]),
-                              make_handler(cfg, verifier, KeyFile(cfg["client_keys_file"]), caller_factory))
+                              make_handler(cfg, verifier, KeyFile(cfg["client_keys_file"]), caller_factory,
+                                           facts=facts))
     srv.daemon_threads = True
     return srv
 

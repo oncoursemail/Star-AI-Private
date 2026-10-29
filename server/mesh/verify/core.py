@@ -15,6 +15,11 @@ from . import csharp, minecraft
 from .apidump import ApiIndex
 from .luau import LuauChecker
 
+try:                                    # the game's own data (server/mesh/mcdata); without an index: hand-written checks
+    from ..mcdata import commands as mc_commands, extract as mc_extract, index as mc_index, packs as mc_packs
+except ImportError:                     # pragma: no cover
+    mc_commands = mc_extract = mc_index = mc_packs = None
+
 FENCE = re.compile(r"^(?P<ind>[ \t]{0,3})(?P<f>`{3,}|~{3,})[ \t]*(?P<info>[^\n`]*)\n(?P<code>.*?)^(?P=ind)(?P=f)[ \t]*$",
                    re.M | re.S)
 OPEN_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?P<info>[^\n`]*)\n", re.M)
@@ -76,22 +81,33 @@ def extract_blocks(text: str, language: str | None = None) -> list[dict]:
 
 
 class Verifier:
-    def __init__(self, api: ApiIndex, analyzer: str | None = None):
+    def __init__(self, api: ApiIndex, analyzer: str | None = None, mc=None):
         self.api = api
         self.luau = LuauChecker(api, analyzer)
+        self.mc = mc if mc else None             # McIndex (server/mesh/mcdata) or None
 
-    def check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
-        problems, checked = self._check_block(code, lang, prose)
+    def check_block(self, code: str, lang: str, prose: str = "", path: str | None = None) -> tuple[list[dict], bool]:
+        problems, checked = self._check_block(code, lang, prose, path)
         for p in problems:                      # a placeholder is for the reader, not a mistake to fix
             if p["severity"] != "info" and is_placeholder(p.get("name")):
                 p["severity"] = "info"
         return problems, checked
 
-    def _check_block(self, code: str, lang: str, prose: str = "") -> tuple[list[dict], bool]:
+    def _check_block(self, code: str, lang: str, prose: str = "", path: str | None = None) -> tuple[list[dict], bool]:
         if lang == "luau":
             return self.luau.check(code), True
         if lang == "csharp":
             return csharp.check_csharp(code), True
+        if self.mc is not None:
+            if path and (path.startswith(("data/", "assets/")) or path.endswith("pack.mcmeta")):
+                return mc_packs.check_file(path, code, self.mc, prose, lang), True
+            if lang in ("minecraft", "mcfunction"):
+                # a block only tagged mcfunction (no .mcfunction path) is often chat commands: a slash is a warning
+                return mc_commands.check_commands(code, self.mc, prose, in_function=lang == "mcfunction",
+                                                  slash="warning"), True
+            if lang == "json" and ("pack_format" in code or re.search(r'^\s*\{\s*"pack"\s*:', code)):
+                return mc_packs.check_file("pack.mcmeta", code, self.mc, prose, lang), True
+            return [], False
         if lang in ("minecraft", "mcfunction"):
             return minecraft.check_commands(code, in_function=lang == "mcfunction"), True
         # only a block that looks like pack.mcmeta: an answer that names pack.mcmeta also shows other JSON files
@@ -100,37 +116,69 @@ class Verifier:
             return minecraft.check_pack_mcmeta(code), True
         return [], False
 
-    def verify(self, text: str, language: str | None = None) -> dict:
+    def verify(self, text: str, language: str | None = None, question: str | None = None) -> dict:
+        """`question` (optional): the user's question; a Minecraft version it names decides the target version."""
         t0 = time.perf_counter()
+        scope = question if question and self.mc is not None and mc_index.VERSION_RE.search(question) else text
         blocks = extract_blocks(text, language)
         out = []
+        prev = 0
         for k, b in enumerate(blocks):
-            problems, checked = self.check_block(b["code"], b["language"], text)
+            path = None
+            if self.mc is not None:
+                path, _ = mc_extract.block_path(text[prev:b["start"]], b["code"])
+                prev = b["end"]
+                if path and path.endswith(".mcfunction"):
+                    b["language"] = "mcfunction"
+                b["path"] = path
+            problems, checked = self.check_block(b["code"], b["language"], scope, path)
             for p in problems:
                 if p.get("line"):
                     p["answer_line"] = b["line"] + p["line"] - 1
             out.append({"index": k, "language": b["language"] or None, "checked": checked, "line": b["line"],
+                        **({"path": path} if path else {}),
                         "ok": not any(p["severity"] == "error" for p in problems),
                         "needs_fix": any(p["severity"] in ("error", "warning") for p in problems),
                         "problems": problems})
         prose_problems = minecraft.check_datapack_paths(text) if "data/" in text else []
+        if self.mc is not None:
+            prose_problems += self._mc_prose(text, scope)
         return {"ok": all(b["ok"] for b in out) and not prose_problems,
                 "needs_fix": any(b["needs_fix"] for b in out),
                 "blocks": out, "problems": prose_problems,
                 "ms": round((time.perf_counter() - t0) * 1000, 1),
                 "dump": {k: self.api.meta.get(k) for k in ("version", "fetched")}}
 
-    def fix(self, text: str, call_model, language: str | None = None, rounds: int = 2, docs=None) -> dict:
+    def _mc_prose(self, text: str, scope: str | None = None) -> list[dict]:
+        """Minecraft problems outside checked code blocks: inline `/commands` in the prose and folder-tree blocks."""
+        out = []
+        cmds, _, tree = mc_extract.extract(text)
+        for b, n, cmd in cmds:
+            if b != -1:
+                continue
+            for p in mc_commands.check_commands(cmd, self.mc, scope or text):
+                if p["severity"] == "error":
+                    out.append({**p, "kind": "mc_inline", "name": p.get("name") or cmd[:40],
+                                "message": f"inline command '/{cmd[:60]}': {p['message']}", "line": n})
+        seen = {p["name"] for p in minecraft.check_datapack_paths(text)}
+        for p in mc_packs.check_tree(tree, self.mc, scope or text):
+            if p.get("name") not in seen:
+                out.append({**p, "kind": p["kind"] + "_tree"})
+        return out
+
+    def fix(self, text: str, call_model, language: str | None = None, rounds: int = 2, docs=None,
+            question: str | None = None) -> dict:
         """Repair the blocks that need it with `call_model(messages) -> str`, re-verify, at most `rounds` times.
         `docs(names) -> str` (optional): the official docs entries for the flagged names, given to the model."""
         t0 = time.perf_counter()
-        first = report = self.verify(text, language)
+        first = report = self.verify(text, language, question)
         changes, done, model_ms = [], 0, 0.0
-        if report["problems"]:                 # prose: renamed datapack folders have one exact replacement
-            for p in report["problems"]:
+        renames = [p for p in report["problems"] if p["kind"] == "mc_datapack" and p.get("suggestion")]
+        if renames:                            # prose: renamed datapack folders have one exact replacement
+            for p in renames:
                 text = text.replace(p["name"], p["suggestion"])
-            changes.append({"round": 0, "block": None, "fixed": [p["message"] for p in report["problems"]]})
-            report = self.verify(text, language)
+            changes.append({"round": 0, "block": None, "fixed": [p["message"] for p in renames]})
+            report = self.verify(text, language, question)
         for rnd in range(1, rounds + 1):
             todo = [b for b in report["blocks"] if b["needs_fix"]]
             if not todo:
@@ -158,14 +206,14 @@ class Verifier:
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": f"the fix rewrote the placeholder {lost[0]}; kept as written"})
                     continue
-                if _bad(self.check_block(new, b["language"], text)[0]) >= _bad(b["problems"]):
+                if _bad(self.check_block(new, b["language"], question if question and mc_index and mc_index.VERSION_RE.search(question) else text, b.get("path"))[0]) >= _bad(b["problems"]):
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": "the fix did not remove problems; kept as written"})
                     continue
                 edits.append((span, new, b))
             for span, new, b in sorted(edits, key=lambda e: -e[0]["start"]):
                 text = text[:span["start"]] + new + text[span["end"]:]
-            report = self.verify(text, language)
+            report = self.verify(text, language, question)
             for span, new, b in edits:
                 after = report["blocks"][b["index"]] if b["index"] < len(report["blocks"]) else None
                 changes.append({"round": rnd, "block": b["index"], "fixed": [p["message"] for p in b["problems"]
