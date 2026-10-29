@@ -460,6 +460,11 @@ def test_queue_lowers_a_busy_nodes_rank():
     assert [b.name for b, _, _ in r.plan("litha")[0]] == ["b", "a", "brain1", "brain1"]
     r.nodes[0].inflight, r.nodes[1].inflight = 3, 3   # 7.5 and 5 < brain 10
     assert [b.name for b, _, _ in r.plan("litha")[0]][0] == "brain1"
+    # nodes only (mesh_brain: false / X-Mesh-Brain: off, STAR's GPU lane): the brain is never planned
+    assert [b.name for b, _, _ in r.plan("litha", None, "only")[0]] == ["a", "b"]
+    for n in r.nodes:
+        n.state = "busy"
+    assert r.plan("litha", None, "only")[0] == []
 
 
 def test_self_registration_routes_expires_and_needs_mesh_token(tmp_path):

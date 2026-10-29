@@ -30,10 +30,14 @@ DEFAULTS = {
     "knowledge_timeout_s": 1.5,
 }
 
+# truth-20261029: "say only what you are sure of" + "correct a wrong idea first" (blind 72 cited questions: false
+# claims 20 -> 10, correct 38 -> 40, same latency; docs/agents/truth-20261029.md)
 GENERAL_NOTE = ("(Note for Litha, not from the kid: this is a general question, not a game-building one. Litha also "
                 "helps with school subjects, science, history, maths, everyday how-to, writing and feelings. Answer it "
-                "fully and accurately like a kind tutor in about 120-180 words, with the key facts; never say it is "
-                "outside your expertise. Keep the kid safe: no dangerous instructions, no personal data.)")
+                "accurately like a kind tutor in about 100-160 words, with the key facts; never say it is outside your "
+                "expertise. Say only what you are sure of: if you are not sure of an exact number, date or name, say so "
+                "plainly or leave it out; never guess. If the question contains a wrong idea, gently correct it first. "
+                "Keep the kid safe: no dangerous instructions, no personal data.)")
 SAFETY_CARD = ("(Safety facts Litha can use, from official sources: in danger right now -> call 911 (US), 999 (UK) or 112 "
                "(Europe). Thinking about not wanting to live -> call or text 988 (US Suicide & Crisis Lifeline, free, "
                "24/7) or Childline 0800 1111 (UK), and tell a trusted adult now. Swallowed something or found pills -> "
