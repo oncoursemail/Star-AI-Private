@@ -134,6 +134,9 @@ def render(snap: dict, topic: str = "all", backend: str | None = None, max_chars
         lines.append(f"- Nightly self-training: {t.get('state')} ({_age(t.get('ts'))})" + (f", {t.get('result')}" if t.get("result") else "")
                      if t else "- Nightly self-training: no report yet.")
         for a in (rep.get("autotune") or [])[-2:]:
+            if a.get("tok_s") is None:
+                lines.append(f"- Autotuner {_age(a.get('ts'))}: {a.get('node')} {a.get('decision')}: {str(a.get('why') or '')[:90]}")
+                continue
             lines.append(f"- Autotuner {_age(a.get('ts'))}: {a.get('node')} {a.get('decision')} {a.get('candidate')} "
                          f"({a.get('tok_s')} vs {a.get('baseline_tok_s')} tok/s, quality {a.get('quality')}/{a.get('baseline_quality')})")
         for u in (rep.get("upgrade") or [])[-2:]:

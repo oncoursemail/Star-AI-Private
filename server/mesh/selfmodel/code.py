@@ -37,7 +37,8 @@ def services_of(paths: list[str]) -> list[str]:
 
 def run(cmd: list[str], cwd: str | None = None, timeout: float = 60) -> str:
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=True,
-                          encoding="utf-8", errors="replace").stdout
+                          encoding="utf-8", errors="replace",   # no console window flashing from the hourly task
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
 
 
 def repo_slug(repo_dir: str) -> str:
@@ -104,7 +105,7 @@ def _http(url: str, key: str, body: dict | None = None, timeout: float = 10) -> 
 
 def build_report(repo_dir: str, branch: str, deployed: dict, gh=run) -> dict:
     slug = repo_slug(repo_dir)
-    run(["git", "fetch", "-q", "origin", branch], repo_dir, timeout=120)
+    run(["git", "fetch", "-q", "origin"], repo_dir, timeout=180)   # all branches: deploys from unmerged ones too
     head = run(["git", "rev-parse", f"origin/{branch}"], repo_dir).strip()
     prs_raw = json.loads(gh(["gh", "pr", "list", "-R", slug, "--base", branch, "--state", "open", "--limit", "50",
                              "--json", "number,title,isDraft,headRefName,files,updatedAt"]))

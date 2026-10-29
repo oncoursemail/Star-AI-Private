@@ -360,3 +360,10 @@ def test_night_window_is_chicago_time():
     t = datetime.datetime(2026, 10, 29, 3, 30, tzinfo=datetime.timezone.utc).timestamp()
     assert collect.local_hour("America/Chicago", t) == 22     # 22:30 CDT: not night, although the UTC hour is 3
     assert collect.local_hour("UTC", t) == 3
+
+
+def test_brief_shows_why_for_skipped_runs():
+    s, _ = snap()
+    s["reports"] = {"autotune": [{"node": "star-pc", "decision": "skip", "why": "outside the night window 01-06h",
+                                  "ts": time.time()}]}
+    assert "star-pc skip: outside the night window 01-06h" in brief.render(s, "learning")
