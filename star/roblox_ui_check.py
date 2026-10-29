@@ -518,7 +518,6 @@ class UiLab:
                 parsed = parse_console(text[len(before):] if text.startswith(before) else text, run)
                 for device in parsed["ready"]:
                     if device not in shots and device in parsed["measures"]:
-                        from .studio_loop import result_text as _rt
                         shot = await self._call("screen_capture", capture_id=f"StarUi_{run}_{device}")
                         data = _image(shot)
                         if data:

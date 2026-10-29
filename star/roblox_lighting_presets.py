@@ -677,8 +677,8 @@ _TIMES = {"dawn": 6.2, "sunrise": 6.5, "morning": 9, "noon": 12, "midday": 12, "
           "sunset": 17.9, "dusk": 18.3, "evening": 20, "night": 22, "midnight": 0}
 
 
-_COLOUR_WORDS = re.compile(r"(red|orange|amber|yellow|gold|golden|green|teal|cyan|blue|purple|violet|magenta|"
-                           r"pink|white|neon|warm|cool|cold)", re.I)
+_COLOUR_WORDS = re.compile(r"\b(red|orange|amber|yellow|gold|golden|green|teal|cyan|blue|purple|violet|magenta|"
+                           r"pink|white|neon|warm|cool|cold)\b", re.I)
 
 
 def _hex_color(value: Any) -> list[int] | None:
