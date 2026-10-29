@@ -15,8 +15,8 @@ NO_WINDOW, BELOW_NORMAL = 0x08000000, 0x00004000
 
 class Server:
     def __init__(self, exe: str, model: str, port: int = 8197, lora: str = "", parallel: int = 2, ctx: int = 6144,
-                 log: str | Path = "server.log"):
-        self.exe, self.model, self.port, self.lora = exe, model, port, lora
+                 log: str | Path = "server.log", draft: str = ""):
+        self.exe, self.model, self.port, self.lora, self.draft = exe, model, port, lora, draft
         self.parallel, self.ctx, self.log = parallel, ctx, Path(log)
         self.proc: subprocess.Popen | None = None
         self.url = f"http://127.0.0.1:{port}"
@@ -32,6 +32,8 @@ class Server:
              "--no-webui"]
         if self.lora:
             a += ["--lora", self.lora, "--lora-init-without-apply"]
+        if self.draft:                      # the node's MTP drafter step (exact: same answers, ~1.8x faster on the card)
+            a += ["--model-draft", self.draft, "--spec-type", "draft-mtp", "--spec-draft-n-max", "4", "-ngld", "99"]
         return a
 
     def start(self, timeout: float = 240) -> None:
@@ -71,18 +73,60 @@ class Server:
                 "seed": seed, "chat_template_kwargs": {"enable_thinking": False}}
         if self.lora:                       # one server answers as base (scale 0) and as the adapter (scale 1)
             body["lora"] = [{"id": 0, "scale": float(lora_scale or 0.0)}]
-        req = urllib.request.Request(self.url + "/v1/chat/completions", json.dumps(body).encode(),
-                                     {"Content-Type": "application/json"})
-        t0 = time.time()
+        return post_chat(self.url + "/v1/chat/completions", body, {}, timeout)
+
+
+def post_chat(url: str, body: dict, headers: dict, timeout: float) -> dict:
+    req = urllib.request.Request(url, json.dumps(body).encode(), {"Content-Type": "application/json", **headers})
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            d = json.load(r)
+        ch = d["choices"][0]
+        tm = d.get("timings") or {}
+        return {"text": (ch["message"].get("content") or "").strip(), "finish": ch.get("finish_reason"),
+                "tokens": d.get("usage", {}).get("completion_tokens"), "s": round(time.time() - t0, 2),
+                "error": "", "tok_s": tm.get("predicted_per_second"), "draft_n": tm.get("draft_n"),
+                "draft_ok": tm.get("draft_n_accepted")}
+    except Exception as e:  # noqa: BLE001
+        return {"text": "", "finish": "error", "tokens": 0, "s": round(time.time() - t0, 2), "error": repr(e)[:300]}
+
+
+class Remote:
+    """A mesh node's model port used as the harvest server (e.g. STAR's PC 4060 through its node proxy :8098).
+    The node keeps its own busy guard: when its owner is busy it unloads and refuses, so this client never forces
+    anything; `available()` asks the node's /status first and the caller waits or stops."""
+
+    def __init__(self, url: str, token_file: str, status_url: str = "", parallel: int = 1):
+        self.url = url.rstrip("/")
+        self.status_url = status_url
+        self.parallel = parallel
+        self.lora = ""
+        self.token = Path(os.path.expanduser(token_file)).read_text(encoding="utf-8").split()[0]
+
+    def available(self) -> tuple[bool, str]:
+        if not self.status_url:
+            return True, ""
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                d = json.load(r)
-            ch = d["choices"][0]
-            return {"text": (ch["message"].get("content") or "").strip(), "finish": ch.get("finish_reason"),
-                    "tokens": d.get("usage", {}).get("completion_tokens"), "s": round(time.time() - t0, 2),
-                    "error": ""}
+            with urllib.request.urlopen(self.status_url, timeout=5) as r:
+                st = json.load(r)
         except Exception as e:  # noqa: BLE001
-            return {"text": "", "finish": "error", "tokens": 0, "s": round(time.time() - t0, 2), "error": repr(e)[:300]}
+            return False, f"status unreachable: {e!r}"[:200]
+        m = (st.get("models") or [{}])[0]
+        ok = st.get("state") == "idle" and bool(m.get("loaded"))
+        return ok, f"{st.get('state')}: {st.get('reason', '')}"[:200]
+
+    def chat(self, messages: list[dict], temperature: float = 0.3, max_tokens: int = 1200, seed: int = -1,
+             timeout: float = 300, lora_scale: float | None = None) -> dict:
+        body = {"model": "litha", "messages": messages, "temperature": temperature, "max_tokens": max_tokens,
+                "seed": seed, "chat_template_kwargs": {"enable_thinking": False}}
+        return post_chat(self.url + "/v1/chat/completions", body, {"Authorization": "Bearer " + self.token}, timeout)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return None
 
 
 def run_many(fn, items: list, workers: int, should_stop=lambda: False) -> list:
