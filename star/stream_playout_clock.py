@@ -174,6 +174,32 @@ class StarPlayoutClock:
             self._counts["armed"] += 1
             return True
 
+    def arm_pcm16(
+        self, plan: StagePlan, *, pcm16le: bytes, sample_rate_hz: int,
+        channels: int = 1, fps: int = 30, seed: int = 7,
+        gain: float = 4.0, noise_floor: float = 0.012,
+    ) -> bool:
+        """Arm motion from real TTS PCM rather than model-invented RMS values.
+
+        This does NOT mark queued audio as audible. The stage must already
+        acknowledge real audio output, and observe_playhead() still requires
+        independently measured CONSUMED device samples before any rig frame
+        can be emitted. Never pass viewer/microphone audio or expose this as
+        a model-callable tool.
+        """
+        if not self._stage.current(plan):
+            return False
+        from .stream_pcm_envelope import pcm16_to_envelope
+
+        envelope = pcm16_to_envelope(
+            pcm16le, sample_rate_hz=sample_rate_hz, channels=channels,
+            gain=gain, noise_floor=noise_floor,
+        )
+        return self.arm(
+            plan, duration_s=envelope.duration_s,
+            audio_levels=envelope.audio_levels, fps=fps, seed=seed,
+        )
+
     def observe_playhead(
         self, plan: StagePlan, *, position_s: float,
         sampled_at: float, playing: bool = True,
