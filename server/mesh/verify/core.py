@@ -26,7 +26,17 @@ OPEN_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?P<info>[^\n`]*)\n", re
 LANGS = {"lua": "luau", "luau": "luau", "rbxlua": "luau", "roblox": "luau",
          "cs": "csharp", "csharp": "csharp", "c#": "csharp", "unity": "csharp",
          "mcfunction": "mcfunction", "minecraft": "minecraft", "mcf": "mcfunction", "mc": "minecraft",
-         "json": "json", "java": "java", "kotlin": "java"}
+         "json": "json", "java": "java", "kotlin": "kotlin",
+         # checked by the star-polyglot compilers (server/mesh/polyglot) when it is configured
+         "python": "python", "py": "python", "python3": "python",
+         "javascript": "javascript", "js": "javascript", "jsx": "javascript", "node": "javascript", "mjs": "javascript",
+         "typescript": "typescript", "ts": "typescript", "tsx": "typescript",
+         "cpp": "cpp", "c++": "cpp", "cc": "cpp", "cxx": "cpp", "hpp": "cpp", "c": "c",
+         "rust": "rust", "rs": "rust", "go": "go", "golang": "go",
+         "gdscript": "gdscript", "gd": "gdscript", "godot": "gdscript",
+         "sql": "sql", "sqlite": "sql", "bash": "shell", "sh": "shell", "shell": "shell"}
+LOVE_HINT = re.compile(r"\blove\.\w+|\bio\.write\(|\bio\.read\(|\bio\.lines\(|\bos\.exit\(")
+ROBLOX_HINT = re.compile(r"game:GetService|Instance\.new|\bworkspace\b|:Connect\(|script\.Parent|\btask\.wait|\bEnum\.")
 # what a reader fills in: <spawn_x>, [X], X_POS, ~ ~ ~ (the fix loop never rewrites these)
 PLACEHOLDER = re.compile(r"(?<![\w>])<[A-Za-z_][\w -]{0,30}>|(?<![\w\])}])\[[A-Za-z_][\w ]{0,30}\]"
                          r"|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|(?<!\S)[~^][-\d.]*[ \t]+[~^][-\d.]*[ \t]+[~^][-\d.]*(?!\S)")
@@ -36,6 +46,9 @@ CS_HINT = re.compile(r"using\s+UnityEngine|:\s*MonoBehaviour|\bvoid\s+Update\s*\
 
 def _detect(code: str, info: str) -> str:
     lang = LANGS.get(info.strip().split(" ")[0].lower(), "") if info.strip() else ""
+    if lang == "luau" and info.strip().split(" ")[0].lower() == "lua" and LOVE_HINT.search(code) \
+            and not ROBLOX_HINT.search(code):
+        return "lua"                       # plain Lua (LÖVE / scripts), not Roblox
     if lang:
         return lang
     if CS_HINT.search(code):
@@ -81,10 +94,29 @@ def extract_blocks(text: str, language: str | None = None) -> list[dict]:
 
 
 class Verifier:
-    def __init__(self, api: ApiIndex, analyzer: str | None = None, mc=None):
+    def __init__(self, api: ApiIndex, analyzer: str | None = None, mc=None, *, polyglot=None):
         self.api = api
         self.luau = LuauChecker(api, analyzer)
         self.mc = mc if mc else None             # McIndex (server/mesh/mcdata) or None
+        self.polyglot = polyglot           # server/mesh/polyglot client (None = those languages stay unchecked)
+        self._pg: dict = {}
+
+    def _poly(self, code: str, lang: str, prose: str) -> dict | None:
+        if not self.polyglot or lang not in COMPILED or (lang == "java" and JAVA_PLUGIN.search(code)):
+            return None                    # Paper/Fabric/NeoForge/Velocity Java belongs to the mc-plugins checker
+        key = (lang, code)
+        if key not in self._pg:
+            self._pg[key] = self.polyglot.check(lang, code, prose)
+        return self._pg[key]
+
+    def prefetch(self, blocks: list[dict], prose: str):
+        """Compile the blocks of one answer in parallel (the per-block results are then read from the cache)."""
+        self._pg = {}
+        if self.polyglot:
+            todo = [(b["language"], b["code"]) for b in blocks if b["language"] in COMPILED
+                    and not (b["language"] == "java" and JAVA_PLUGIN.search(b["code"]))]
+            if len(todo) > 1:
+                self._pg.update(self.polyglot.check_many(todo, prose))
 
     def check_block(self, code: str, lang: str, prose: str = "", path: str | None = None) -> tuple[list[dict], bool]:
         problems, checked = self._check_block(code, lang, prose, path)
@@ -97,7 +129,16 @@ class Verifier:
         if lang == "luau":
             return self.luau.check(code), True
         if lang == "csharp":
-            return csharp.check_csharp(code), True
+            light = csharp.check_csharp(code)
+            pg = self._poly(code, lang, prose)
+            if pg is None:
+                return light, True
+            # Roslyn is the authority on syntax; the light pass still knows Unity message names and `using`
+            return [p for p in light if p["kind"] != "syntax" or "using UnityEngine" in (p.get("suggestion") or "")] \
+                + pg["problems"], True
+        if lang in POLYGLOT:
+            pg = self._poly(code, lang, prose)
+            return (pg["problems"], True) if pg is not None else ([], False)
         if self.mc is not None:
             if path and (path.startswith(("data/", "assets/")) or path.endswith("pack.mcmeta")):
                 return mc_packs.check_file(path, code, self.mc, prose, lang), True
@@ -121,6 +162,7 @@ class Verifier:
         t0 = time.perf_counter()
         scope = question if question and self.mc is not None and mc_index.VERSION_RE.search(question) else text
         blocks = extract_blocks(text, language)
+        self.prefetch(blocks, text)
         out = []
         prev = 0
         for k, b in enumerate(blocks):
@@ -242,7 +284,21 @@ FIX_SYSTEM = ("You repair code. You get one code block and a list of problems fo
               "code means, which may need that other object; never just take the closest-sounding name. Never invent "
               "an API: if a call does not exist and there is no suggestion, rewrite that part with APIs you are sure "
               "exist. Reply with only the corrected code in one fenced code block, nothing else.")
-FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction"}
+FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction", "shell": "bash"}
+POLYGLOT = {"python", "javascript", "typescript", "java", "cpp", "c", "rust", "go", "gdscript", "lua", "sql", "shell"}
+COMPILED = POLYGLOT | {"csharp"}                   # sent to the star-polyglot compilers
+# any non-JDK import, or a Bukkit/Paper/Fabric fragment without imports: the mc-plugins checker's job
+JAVA_PLUGIN = re.compile(r"^\s*import\s+(?:static\s+)?(?!java\.|javax\.)[\w.]+|\b(?:JavaPlugin|CommandSender|"
+                         r"CommandExecutor|Bukkit\.|@EventHandler|PlayerJoinEvent|ModInitializer|ServerPlayerEntity|"
+                         r"MinecraftServer|getServer\(\))", re.M)
+COMPILE_FIX_SYSTEM = ("You repair code. You get one code block and the errors the real compiler / type checker / engine "
+                      "reported for it. Fix exactly those errors and keep everything else unchanged (same structure, "
+                      "names, comments, behaviour). Placeholders the reader fills in ([X], <x>, X_POS) stay exactly as "
+                      "written. When an error gives a suggestion, use it. When it lists real members of a class instead, use "
+                      "the one that does what the code means (or rewrite that part with other real APIs); never just take "
+                      "the closest-sounding name. Never invent an API: use only functions and "
+                      "members you are sure exist in that language/engine version. Reply with only the corrected code in "
+                      "one fenced code block, nothing else.")
 
 
 HINT_OWNER = re.compile(r"'(\w+)' is an? (?:event|method|property) of ([\w, ]+?), not of")
@@ -279,7 +335,7 @@ def fix_messages(code: str, language: str, problems: list[dict], docs: str = "")
         lines.append(s)
     tag = FENCE_TAG.get(language, language or "")
     ref = ("\n\nOfficial docs for these names (exact signatures; follow them):\n" + docs) if docs else ""
-    return [{"role": "system", "content": FIX_SYSTEM},
+    return [{"role": "system", "content": COMPILE_FIX_SYSTEM if language in POLYGLOT else FIX_SYSTEM},
             {"role": "user", "content": f"Language: {language}\n\nCode:\n```{tag}\n{code.rstrip()}\n```\n\n"
                                         "Problems:\n" + "\n".join(lines) + ref}]
 

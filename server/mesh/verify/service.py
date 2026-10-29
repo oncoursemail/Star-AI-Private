@@ -28,6 +28,7 @@ from pathlib import Path
 from ..router import KeyFile
 from ..mcdata.facts import Facts
 from ..mcdata.index import McIndex
+from ..polyglot.client import Polyglot
 from .apidump import ApiIndex
 from .core import Verifier
 
@@ -47,6 +48,12 @@ DEFAULTS = {
     "docs_timeout_s": 1.0,
     "mc_index": "/var/lib/star-verify/mc",   # Minecraft data from the game itself (mesh.mcdata.build); missing = old checks
     "mc_facts_chars": 3200,                  # size cap of the Minecraft facts block
+    # star-polyglot compilers (server/mesh/polyglot, own no-network container); the URL is written by its deploy.sh
+    # into polyglot_url_file; no URL or no token file = off
+    "polyglot_url": "",
+    "polyglot_url_file": "/etc/star-mesh/polyglot_url",
+    "polyglot_token_file": "/etc/star-mesh/polyglot_token",
+    "polyglot_timeout_s": 3.0,
 }
 
 
@@ -64,7 +71,8 @@ def model_caller(cfg: dict, auth: str):
         body = json.dumps({"model": cfg["fix_model"], "messages": messages, "temperature": 0.2, "stream": False,
                            "max_tokens": cfg["fix_max_tokens"],
                            "chat_template_kwargs": {"enable_thinking": False},
-                           "mesh_docs": False}).encode()      # the fix prompt carries its own doc entries
+                           "mesh_docs": False,      # the fix prompt carries its own doc entries
+                           "mesh_polyglot": False}).encode()
         req = urllib.request.Request(cfg["router_url"].rstrip("/") + "/v1/chat/completions", body,
                                      {"Content-Type": "application/json", "Authorization": auth})
         with urllib.request.urlopen(req, timeout=cfg["fix_timeout_s"]) as r:
@@ -111,6 +119,7 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
             if urllib.parse.urlsplit(self.path).path == "/health":
                 return self._send(200, {"status": "ok", "dump": verifier.api.meta,
                                         "luau_analyze": bool(verifier.luau.analyzer),
+                                        "polyglot": bool(verifier.polyglot),
                                         "minecraft": list(verifier.mc.versions) if verifier.mc else []})
             return self._send(404, {"error": {"message": "not found"}})
 
@@ -158,7 +167,7 @@ def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_calle
 def serve(cfg: dict, caller_factory=model_caller) -> ThreadingHTTPServer:
     api = ApiIndex.load(cfg["index"])
     mc = McIndex.load(cfg.get("mc_index"))
-    verifier = Verifier(api, cfg.get("luau_analyze"), mc=mc)
+    verifier = Verifier(api, cfg.get("luau_analyze"), mc=mc, polyglot=Polyglot.from_config(cfg))
     facts = Facts(mc, cfg.get("mc_index")) if mc else None
     srv = ThreadingHTTPServer((cfg["listen"], cfg["port"]),
                               make_handler(cfg, verifier, KeyFile(cfg["client_keys_file"]), caller_factory,
