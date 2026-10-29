@@ -154,7 +154,11 @@ public class CompileServer {
                 String kind = s.group(1), name = s.group(2);
                 o.addProperty("symbol", name);
                 String owner = null;
-                if (l.find()) owner = l.group(3) != null ? l.group(3) : ("package".equals(l.group(1)) ? null : l.group(2));
+                String inPkg = null;
+                if (l.find()) {
+                    owner = l.group(3) != null ? l.group(3) : ("package".equals(l.group(1)) ? null : l.group(2));
+                    if ("package".equals(l.group(1))) inPkg = l.group(2);
+                }
                 if (owner != null) owner = owner.replaceAll("<.*>", "");
                 if (owner != null) o.addProperty("location", owner);
                 JsonArray cands = new JsonArray();
@@ -163,7 +167,16 @@ public class CompileServer {
                     if (fq != null) {
                         for (String f : fq.subList(0, Math.min(6, fq.size()))) cands.add(f);
                         o.addProperty("note", "class exists: import " + fq.get(0));
-                    } else for (String c : closest(name, t.bySimple.keySet(), 6)) cands.add(String.join(" | ", t.bySimple.get(c).subList(0, 1)));
+                    } else {                        // same package first (org.bukkit.event.block.SignEvent -> SignChangeEvent)
+                        if (inPkg != null) {
+                            List<String> here = new ArrayList<>();
+                            for (Map.Entry<String, List<String>> e : t.bySimple.entrySet())
+                                for (String f : e.getValue()) if (f.equals(inPkg + "." + e.getKey())) here.add(e.getKey());
+                            for (String c : closest(name, here, 4)) cands.add(inPkg + "." + c);
+                        }
+                        for (String c : closest(name, t.bySimple.keySet(), 6))
+                            if (cands.size() < 6 && !cands.contains(new JsonPrimitive(t.bySimple.get(c).get(0)))) cands.add(t.bySimple.get(c).get(0));
+                    }
                 } else if (owner != null) {
                     Class<?> c = load(t, owner);
                     if (c != null) {
@@ -317,7 +330,7 @@ public class CompileServer {
             double s = lev(low, pl) / (double) Math.max(low.length(), pl.length());
             if ((pl.contains(low) || low.contains(pl)) && 3 * Math.min(pl.length(), low.length()) >= 2 * Math.max(pl.length(), low.length()))
                 s -= 0.25;                                   // getKiller is not "get"
-            if (s <= 0.5) scored.add(Map.entry(p, s));
+            if (s <= 0.5 || (s <= 0.6 && pl.startsWith(low.substring(0, Math.min(4, low.length()))))) scored.add(Map.entry(p, s));
         }
         scored.sort(Map.Entry.comparingByValue());
         List<String> out = new ArrayList<>();

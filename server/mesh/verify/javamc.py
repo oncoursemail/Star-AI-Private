@@ -44,13 +44,17 @@ MOD_ID = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 FABRIC_ID = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 VELOCITY_ID_OK = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 
-TARGET_HINTS = [("velocity", re.compile(r"\bcom\.velocitypowered\.")),
+TARGET_HINTS = [("velocity", re.compile(r"\bcom\.velocity(?:powered)?\.")),     # com.velocity.* is invented
                 ("neoforge", re.compile(r"\bnet\.neoforged\.")),
                 ("forge", re.compile(r"\bnet\.minecraftforge\.")),
                 ("fabric", re.compile(r"\bnet\.fabricmc\.")),
                 ("paper", re.compile(r"\b(org\.bukkit|io\.papermc\.paper|com\.destroystokyo\.paper|org\.spigotmc|"
                                      r"net\.md_5\.bungee\.api\.chat)\.")),
                 ("bungee", re.compile(r"\bnet\.md_5\.bungee\.api\.plugin\."))]
+PLUGIN_SHAPE = re.compile(r"\b(onEnable|onInitialize|JavaPlugin|ModInitializer|@Mod\b|@Plugin\b|@Subscribe\b|"
+                          r"@EventHandler\b|\(\s*\w+Event\s+\w+\s*\))")
+PROSE_PLATFORM = [("velocity", re.compile(r"\bvelocity\b", re.I)), ("neoforge", re.compile(r"\bneo\s?forge\b", re.I)),
+                  ("fabric", re.compile(r"\bfabric\b", re.I)), ("paper", re.compile(r"\b(paper|spigot|bukkit)\b", re.I))]
 # Fabric: Yarn names (Loom default for years) vs official Mojang names (Fabric example mod since 1.21)
 MOJMAP = re.compile(r"\bnet\.minecraft\.(world\.|network\.chat\.|resources\.|core\.|server\.level\.|commands\.Commands\b)")
 YARN = re.compile(r"\bnet\.minecraft\.(entity\.|text\.|util\.Identifier\b|server\.network\.ServerPlayerEntity\b|"
@@ -155,6 +159,10 @@ def detect_target(java_text: str, prose: str = "") -> str | None:
             break
     else:                                   # only vanilla classes: the question says which loader
         if not re.search(r"\bnet\.minecraft\.", java_text):
+            if PLUGIN_SHAPE.search(java_text):  # invented packages only: the answer's own words name the platform
+                for name, rx in PROSE_PLATFORM:
+                    if rx.search(prose):
+                        return name
             return None
         if re.search(r"neoforge", prose, re.I):
             return "neoforge"
