@@ -14,7 +14,7 @@ NO_WINDOW, BELOW_NORMAL = 0x08000000, 0x00004000
 
 
 class Server:
-    def __init__(self, exe: str, model: str, port: int = 8197, lora: str = "", parallel: int = 4, ctx: int = 12288,
+    def __init__(self, exe: str, model: str, port: int = 8197, lora: str = "", parallel: int = 2, ctx: int = 6144,
                  log: str | Path = "server.log"):
         self.exe, self.model, self.port, self.lora = exe, model, port, lora
         self.parallel, self.ctx, self.log = parallel, ctx, Path(log)
@@ -23,8 +23,12 @@ class Server:
 
     def args(self) -> list[str]:
         a = [self.exe, "-m", self.model, "--alias", "litha", "--host", "127.0.0.1", "--port", str(self.port),
-             "-c", str(self.ctx), "-np", str(self.parallel), "-lm", "none", "--fit", "off", "-ngl", "99", "-fa", "on",
-             "-ctk", "q8_0", "-ctv", "q8_0", "-b", "1024", "-ub", "256", "-t", "4", "--jinja", "--reasoning", "off",
+             # the node's measured fit (8 GB card, desktop ~0.6 GB): 2 slots, unified q4_0 KV, small micro-batch.
+             # 10-29: 4 slots with q8_0 KV (sliding-window cache per slot ~670 MB) spilled into shared memory:
+             # prompt 45 tok/s, 5-11 tok/s per slot.
+             "-c", str(self.ctx), "-np", str(self.parallel), "-kvu", "-lm", "none", "--fit", "off", "-ngl", "99",
+             "-fa", "on", "-ctk", "q4_0", "-ctv", "q4_0", "-b", "512", "-ub", "128", "-t", "4", "--jinja",
+             "--reasoning", "off",
              "--no-webui"]
         if self.lora:
             a += ["--lora", self.lora, "--lora-init-without-apply"]

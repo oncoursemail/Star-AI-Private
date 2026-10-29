@@ -255,7 +255,7 @@ def run(a) -> int:
 
 def evaluate_and_decide(cfg, gguf: Path, night: Path, report: dict, say, save, margin: int) -> int:
     verifier = S.Verifier(cfg["verify_url"], cfg["key_file"])
-    with Server(cfg["llama_server"], cfg["gguf"], lora=str(gguf), parallel=4, log=night / "server-eval.log") as srv:
+    with Server(cfg["llama_server"], cfg["gguf"], lora=str(gguf), parallel=2, log=night / "server-eval.log") as srv:
         bq, bs = evaluate(cfg, srv, verifier, 0.0, night, "base", say)
         nq, ns = evaluate(cfg, srv, verifier, 1.0, night, "adapter", say)
     differs = sum(1 for b, n in zip(bq, nq) if b["answer"] != n["answer"])
@@ -291,7 +291,7 @@ def main(argv=None) -> int:
     ap.add_argument("--config", default=str(CONFIG))
     ap.add_argument("--prompts", type=int, default=600)
     ap.add_argument("--samples", type=int, default=2)
-    ap.add_argument("--parallel", type=int, default=4)
+    ap.add_argument("--parallel", type=int, default=2)
     ap.add_argument("--train-minutes", type=float, default=150)
     ap.add_argument("--epochs", type=float, default=2.0)
     ap.add_argument("--min-bank", type=int, default=100)
