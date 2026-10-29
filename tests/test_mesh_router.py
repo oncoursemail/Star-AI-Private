@@ -220,6 +220,10 @@ def test_failure_before_first_token_retries_next_backend(tmp_path):
         r.nodes[0].fail_until = 0
         status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
         assert headers["X-Mesh-Backend"] == "brain1"
+        node.http_status = 400                # this request is too long for the node: fall back, no cooldown
+        r.nodes[0].fail_until = 0
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
+        assert headers["X-Mesh-Backend"] == "brain1" and r.node_usable(r.nodes[0], time.monotonic())[0]
     run(go())
 
 

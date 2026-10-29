@@ -94,7 +94,9 @@ async def run(router, req: dict, plan: list, auth: str) -> dict:
     t0 = time.monotonic()
     add, info = [], [kind]
     head = ""
-    if kind == "math" and cfg.get("general_calc", True) and plan:
+    if kind == "math" and plan and plan[0][0] is getattr(router, "brain", None):
+        info.append("calc skipped (brain: too slow for the extra call)")
+    elif kind == "math" and cfg.get("general_calc", True) and plan:
         reply = await _model(router, plan, auth, {"messages": [{"role": "system", "content": CALC_SYS},
                                                                {"role": "user", "content": text}],
                                                   "max_tokens": 400, "temperature": 0.1, "stream": False,
