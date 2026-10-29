@@ -90,6 +90,9 @@ cp "$BC/Microsoft.CodeAnalysis.dll" "$BC/Microsoft.CodeAnalysis.CSharp.dll" .
 printf '{"runtimeOptions":{"tfm":"net8.0","framework":{"name":"Microsoft.NETCore.App","version":"%s"}}}' "$RT" > CsCheck.runtimeconfig.json
 # Java checker
 mkdir -p /opt/pg/javacheck && /opt/jdk/bin/javac -d /opt/pg/javacheck /opt/pg/app/workers/JavaCheck.java
+# Godot's own API list (classes, builtin types, members) for the GDScript fix hints
+G=$(ls /opt/pg/godot/Godot_v4*_linux.x86_64 | tail -1)
+(cd /opt/pg/data && GODOT_SILENCE_ROOT_WARNING=1 timeout 60 "$G" --headless --dump-extension-api >/dev/null 2>&1 || true)
 chmod -R a+rX /opt/pg/cscheck /opt/pg/javacheck
 mkdir -p /etc/star-polyglot && [ -s /etc/star-polyglot/token ] || python3 -c 'import secrets;print(secrets.token_hex(24))' > /etc/star-polyglot/token
 chmod 600 /etc/star-polyglot/token

@@ -30,7 +30,7 @@ LANGS = {"lua": "luau", "luau": "luau", "rbxlua": "luau", "roblox": "luau",
          "rust": "rust", "rs": "rust", "go": "go", "golang": "go",
          "gdscript": "gdscript", "gd": "gdscript", "godot": "gdscript",
          "sql": "sql", "sqlite": "sql", "bash": "shell", "sh": "shell", "shell": "shell"}
-LOVE_HINT = re.compile(r"\blove\.\w+|\bio\.write\(|\bio\.read\(|\bos\.exit\(")
+LOVE_HINT = re.compile(r"\blove\.\w+|\bio\.write\(|\bio\.read\(|\bio\.lines\(|\bos\.exit\(")
 ROBLOX_HINT = re.compile(r"game:GetService|Instance\.new|\bworkspace\b|:Connect\(|script\.Parent|\btask\.wait|\bEnum\.")
 # what a reader fills in: <spawn_x>, [X], X_POS, ~ ~ ~ (the fix loop never rewrites these)
 PLACEHOLDER = re.compile(r"(?<![\w>])<[A-Za-z_][\w -]{0,30}>|(?<![\w\])}])\[[A-Za-z_][\w ]{0,30}\]"
@@ -245,7 +245,9 @@ JAVA_PLUGIN = re.compile(r"^\s*import\s+(?:static\s+)?(?!java\.|javax\.)[\w.]+|\
 COMPILE_FIX_SYSTEM = ("You repair code. You get one code block and the errors the real compiler / type checker / engine "
                       "reported for it. Fix exactly those errors and keep everything else unchanged (same structure, "
                       "names, comments, behaviour). Placeholders the reader fills in ([X], <x>, X_POS) stay exactly as "
-                      "written. When an error gives a suggestion, use it. Never invent an API: use only functions and "
+                      "written. When an error gives a suggestion, use it. When it lists real members of a class instead, use "
+                      "the one that does what the code means (or rewrite that part with other real APIs); never just take "
+                      "the closest-sounding name. Never invent an API: use only functions and "
                       "members you are sure exist in that language/engine version. Reply with only the corrected code in "
                       "one fenced code block, nothing else.")
 

@@ -377,8 +377,9 @@ def unity_member(cls: str, member: str) -> dict | None:
         sugg = UNITY_RENAMES.get(f"{old}.{member}") or closest(member, real)
         return problem("deprecated", f"{cls}.{member} is obsolete in Unity 6 (removed from the current scripting "
                                      f"reference)", severity="warning", name=f"{cls}.{member}", suggestion=sugg)
-    return problem("api", f"'{cls}' has no member '{member}' in the Unity scripting reference", name=f"{cls}.{member}",
-                   suggestion=closest(member, real))
+    p = problem("api", f"'{cls}' has no member '{member}' in the Unity scripting reference", name=f"{cls}.{member}")
+    p["candidates"] = difflib.get_close_matches(member, real, n=8, cutoff=0.4)
+    return p
 
 
 def check_csharp(code: str, context: str) -> dict:
@@ -625,6 +626,33 @@ GD_TOP = re.compile(r"^(?:extends|class_name|func|var|const|signal|enum|@|static
 GODOT3 = re.compile(r"Godot 3|Godot 3\.\d|\bonready var\b|\bexport\(|\byield\(|KinematicBody2D|\.instance\(\)")
 
 
+_GODOT_API: dict = {}
+GD_MEMBER = re.compile(r'(?:Cannot find member|Function|Cannot find property|Static function) "(\w+)(?:\(\))?" '
+                       r'(?:not found )?in base "?(\w+(?:\.\w+)*)"?')
+
+
+def godot_members(cls: str) -> set[str]:
+    """Methods, properties, signals and constants of an engine class (with its bases) from Godot's own
+    extension_api.json (`godot --headless --dump-extension-api`, written at deploy)."""
+    if not _GODOT_API:
+        try:
+            api = json.load(open(PG + "/data/extension_api.json", encoding="utf-8"))
+        except (OSError, ValueError):
+            _GODOT_API["_"] = {}
+            return set()
+        table = {}
+        for c in api.get("builtin_classes", []) + api.get("classes", []):
+            names = {m["name"] for k in ("methods", "properties", "signals", "constants", "members")
+                     for m in c.get(k) or [] if isinstance(m, dict) and "name" in m}
+            table[c["name"]] = (names, c.get("inherits"))
+        _GODOT_API["_"] = table
+    table, out, c = _GODOT_API["_"], set(), cls
+    while c in table and len(out) < 5000:
+        names, c = table[c]
+        out |= names
+    return out
+
+
 def check_gdscript(code: str, context: str) -> dict:
     if re.search(r"\bGodot\s*3(?:\.\d+)?\b", context or ""):
         return {"checked": False, "tool": "godot", "mode": "godot3", "problems": [], "note": "Godot 3 answer"}
@@ -657,18 +685,44 @@ def check_gdscript(code: str, context: str) -> dict:
         if re.search(r"Cannot assign a value of type .* as|to variable .* with specified type", msg) and \
                 any(p["line"] == line - offset for p in probs):
             continue
+        mem = GD_MEMBER.search(msg)
+        if mem:                              # the engine's real members of that class are the fix's best hint
+            member, base = mem.group(1), mem.group(2).split(".")[-1]
+            if any(p.get("name") == f"{base}.{member}" and p["line"] == line for p in probs):
+                continue                     # Godot reports "Cannot find member" and "Function not found" per call
+            real = godot_members(base)
+            p = problem("api", "GDScript (Godot 4): " + msg, line, name=f"{base}.{member}")
+            if real:
+                p["candidates"] = difflib.get_close_matches(member, sorted(real), n=8, cutoff=0.4)
+            probs.append(p)
+            continue
         probs.append(problem("compile", "GDScript (Godot 4): " + msg, line, name=name))
     return {"checked": True, "tool": "godot " + os.path.basename(GODOT).split("_")[1],
             "mode": "fragment" if fragment else "file", "problems": shift(probs, offset, len(code.splitlines()))[:12]}
 
 
 # ----------------------------------------------------------------------------------------------------------- Lua
+LUAU_ONLY = [("string.split", r"(?:\bstring\.split|[.:]split)\s*\(", "a loop with string.gmatch(s, \"[^ ]+\")"),
+             ("table.find", r"\btable\.find\s*\(", "a for loop comparing each element"),
+             ("table.clear", r"\btable\.clear\s*\(", "for k in pairs(t) do t[k] = nil end"),
+             ("math.clamp", r"\bmath\.clamp\s*\(", "math.max(lo, math.min(hi, x))"),
+             ("math.round", r"\bmath\.round\s*\(", "math.floor(x + 0.5)"),
+             ("task library", r"\btask\.(?:wait|spawn|delay|defer)\s*\(", "plain Lua has no scheduler (LOVE: use dt in love.update)")]
+
+
 def check_lua(code: str, context: str) -> dict:
     with Workdir(files={"main.lua": blank_ellipsis(code, "--")}) as d:
         r = run_limited(["luacheck", "--codes", "--formatter=plain", "--no-color", "--std=max+love", "main.lua"], d)
     probs = []
     for m in re.finditer(r"^main\.lua:(\d+):\d+: \(E(\d+)\) (.*)$", r["stdout"], re.M):
         probs.append(problem("syntax", "Lua: " + m.group(3), int(m.group(1))))
+    clean = re.sub(r"--[^\n]*|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'", '""', code)    # no comments/strings
+    for name, rx, fix in LUAU_ONLY:          # Roblox Luau library functions that plain Lua 5.4 / LuaJIT lack
+        for m in re.finditer(rx, clean):
+            probs.append(problem("api", f"Lua: {name} exists only in Roblox Luau, not in Lua 5.4/LOVE (runtime "
+                                        f"error: attempt to call a nil value)", clean.count("\n", 0, m.start()) + 1,
+                                 name=name, suggestion=fix))
+            break
     return {"checked": True, "tool": "luacheck", "mode": "syntax", "problems": probs}
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server"))
 from mesh.polyglot import client as pg_client  # noqa: E402
-from mesh.polyglot import note, runner  # noqa: E402,F401
+from mesh.polyglot import note, runner  # noqa: E402
 from mesh.verify import core  # noqa: E402
 from mesh.verify.apidump import ApiIndex  # noqa: E402
 sys.path.remove(str(ROOT / "server"))
@@ -157,7 +157,7 @@ def test_unity_member_truth(monkeypatch):
     dep = runner.unity_member("Rigidbody", "velocity")
     assert dep["severity"] == "warning" and dep["suggestion"] == "linearVelocity"
     bad = runner.unity_member("Rigidbody", "AddForceNow")
-    assert bad["severity"] == "error" and bad["suggestion"] == "AddForce"
+    assert bad["severity"] == "error" and bad["suggestion"] is None and bad["candidates"][0] == "AddForce"
 
 
 def test_check_never_raises(monkeypatch):
@@ -178,7 +178,6 @@ def test_plugin_java_left_to_the_mc_plugins_checker():
 
 # ---------------------------------------------------------------------------------------------- the router note
 def test_note_detects_other_languages_only():
-    from mesh.polyglot import note
     assert note.detect("Write a complete Python program that reads n numbers and prints the sum") == "python"
     assert note.detect("Write a Node.js program that counts words from stdin") == "javascript"
     assert note.detect("In Godot 4, make a CharacterBody2D jump") == "gdscript"
@@ -191,10 +190,19 @@ def test_note_detects_other_languages_only():
 
 
 def test_note_apply_once():
-    from mesh.polyglot import note
     req = {"messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "Write a Rust function to parse a list"}]}
     assert note.apply(req) == {"X-Mesh-Polyglot": "rust"}
     assert "Rust 2021" in req["messages"][-1]["content"] and req["messages"][0]["content"] == "s"
     assert note.apply(req) == {}                                           # already has a note
     off = {"messages": [{"role": "user", "content": "Write a Rust function"}]}
     assert note.apply(off, {"polyglot_note": False}) == {} and "Note" not in off["messages"][-1]["content"]
+
+
+def test_lua_luau_only_functions(monkeypatch):
+    import contextlib
+    monkeypatch.setattr(runner, "run_limited", lambda *a, **k: {"stdout": "", "stderr": "", "rc": 0})
+    monkeypatch.setattr(runner, "Workdir", lambda *a, **k: contextlib.nullcontext("."))
+    out = runner.check_lua('local parts = io.read():split(" ")\n-- table.find(x) in a comment\nprint(math.clamp(1, 0, 2))\n', "")
+    assert [p["name"] for p in out["problems"]] == ["string.split", "math.clamp"]
+    assert out["problems"][0]["line"] == 1 and out["problems"][1]["line"] == 3
+    assert runner.check_lua('print(("a b"):gmatch("%S+"))\n', "")["problems"] == []
