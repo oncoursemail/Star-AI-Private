@@ -195,6 +195,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--port", type=int, default=8092)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--preload", action="store_true", help="load the model at start instead of on first use")
+    ap.add_argument("--pause-file", default="", help="exit at once while this file exists (busy_guard.py writes it "
+                    "while the owner games; this process runs in another logon session than the guard, so it cannot be killed from there)")
     args = ap.parse_args(argv)
     key = Path(args.key_file).read_text(encoding="utf-8").splitlines()[0].strip()
     reranker = Reranker(args.model_dir, args.kind, args.device)
@@ -207,6 +209,13 @@ def main(argv: list[str] | None = None) -> None:
             reranker.unload_if_idle(time.monotonic())
 
     threading.Thread(target=reaper, daemon=True).start()
+    if args.pause_file:
+        def watch_pause():
+            while True:
+                if os.path.exists(args.pause_file):
+                    os._exit(0)                      # frees the GPU at once; the supervisor waits for the file to go
+                time.sleep(0.5)
+        threading.Thread(target=watch_pause, daemon=True).start()
     server = ThreadingHTTPServer((args.host, args.port), make_handler(reranker, key))
     server.daemon_threads = True
     server.serve_forever()
