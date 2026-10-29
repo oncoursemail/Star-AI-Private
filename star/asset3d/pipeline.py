@@ -127,7 +127,7 @@ def run_brief(brief, outroot: Path, conditions, where, threads, model, critic_mo
     return result
 
 
-def rerender(run: Path, where: str, threads: int, workers: int = 2):
+def rerender(run: Path, where: str, threads: int, workers: int = 2, ids: str = ""):
     """Rebuild every condition of a finished run from its saved specs with the current builder (same settings for
     all conditions; no model calls). Writes <id>/rr/<condition>/ and <id>/rr.json."""
     from .spec import ground, prepare, validate_baseline
@@ -161,7 +161,8 @@ def rerender(run: Path, where: str, threads: int, workers: int = 2):
               flush=True)
 
     with cf.ThreadPoolExecutor(workers) as ex:
-        list(ex.map(one, sorted(Path(run).glob("*/result.json"))))
+        want = set(ids.split(",")) if ids else None
+        list(ex.map(one, [p for p in sorted(Path(run).glob("*/result.json")) if want is None or p.parent.name in want]))
 
 
 def make_asset(brief_text: str, category: str, style: str, out: str, where: str = "remote", rounds: int = 3) -> dict:
@@ -186,7 +187,7 @@ def main(argv=None):
     ap.add_argument("--rerender", action="store_true", help="rebuild all conditions of --out from saved specs")
     a = ap.parse_args(argv)
     if a.rerender:
-        rerender(Path(a.out), a.where, a.threads, a.workers)
+        rerender(Path(a.out), a.where, a.threads, a.workers, a.ids)
         return
     briefs = json.loads(Path(a.briefs).read_text(encoding="utf-8"))[a.set]
     if a.ids:

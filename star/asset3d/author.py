@@ -122,6 +122,11 @@ def _ask_spec(msgs, brief, model, tries, max_tokens=2300, patch_base=None):
             return ground(prepare(raw)), {**info, "raw": raw}
         except (ValueError, SpecError) as e:
             last = str(e)
+            if meta.get("finish") == "length":  # cut off: a shorter design fits the 4096-token context
+                last = "the answer was cut off (too long)"
+                msgs = msgs[:2] + [{"role": "user", "content": "Your last answer was too long and got cut off. Send a "
+                                    "shorter design: at most 22 parts, numbers with at most 3 decimals."}]
+                continue
             msgs = msgs + [{"role": "assistant", "content": text[:6000]},
                            {"role": "user", "content": f"That JSON was rejected: {last}. Send the corrected full JSON."}]
     raise SpecError(f"model could not write a valid spec: {last}")

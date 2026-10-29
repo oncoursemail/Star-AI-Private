@@ -233,6 +233,43 @@ def cutter_object(name, c, segs):
     return ob
 
 
+def carve_seams(me, seams, width, depth):
+    """Panel lines without booleans: cut an edge loop with a plane, bevel it into a thin strip and push the strip in.
+    (The old slab-minus-shrunk-copy boolean left inner shells that turned bakes black.)"""
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    lo = [min(v.co[i] for v in bm.verts) for i in range(3)]
+    hi = [max(v.co[i] for v in bm.verts) for i in range(3)]
+    for s in seams:
+        ai = "xyz".index(s["axis"])
+        for at in s["at"]:
+            if not lo[ai] + 2 * width < at < hi[ai] - 2 * width:
+                continue
+            no = [0.0, 0.0, 0.0]
+            no[ai] = 1.0
+            co = [0.0, 0.0, 0.0]
+            co[ai] = at
+            geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+            res = bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no, dist=1e-6)
+            edges = [e for e in res["geom_cut"] if isinstance(e, bmesh.types.BMEdge)]
+            if not edges:
+                continue
+            out = bmesh.ops.bevel(bm, geom=edges, offset=width / 2, offset_type="OFFSET", segments=1,
+                                  profile=0.5, affect="EDGES", clamp_overlap=True)
+            bm.normal_update()
+            push = {}
+            for f in out.get("faces", []):  # move along the strip's own face normals (flat sides stay flat)
+                for v in f.verts:
+                    push.setdefault(v, Vector((0, 0, 0)))
+                    push[v] += f.normal
+            for v, n in push.items():
+                if n.length > 1e-9:
+                    v.co -= n.normalized() * depth
+    bm.normal_update()
+    bm.to_mesh(me)
+    bm.free()
+
+
 def seam_cutter(name, base_me, axis, at, width, depth):
     """A thin ring that hugs the part's outside: slab minus the part shrunk by `depth` along vertex normals."""
     co = np.empty(len(base_me.vertices) * 3, dtype=np.float32)
@@ -278,16 +315,8 @@ def build_part(p, style, st):
         mod.object = cu
         mod.solver = "EXACT"
     md = min_dim(me)
-    if style != "lowpoly":
-        width = max(0.0008, md * 0.012)
-        for k, s in enumerate(p["seams"]):
-            for j, at in enumerate(s["at"]):
-                sc = seam_cutter(f"{p['id']}_seam{k}_{j}", me, s["axis"], at, width, max(0.0006, md * 0.02))
-                temps.append(sc)
-                mod = ob.modifiers.new(f"seam{k}_{j}", "BOOLEAN")
-                mod.operation = "DIFFERENCE"
-                mod.object = sc
-                mod.solver = "EXACT"
+    if style != "lowpoly" and p["seams"]:
+        carve_seams(me, p["seams"], min(0.003, max(0.0008, md * 0.008)), min(0.002, max(0.0005, md * 0.008)))
     bevel = p.get("bevel", st["bevel"])
     if st["shade"] == "smooth" and p["type"] not in ("tube",):
         me.shade_smooth()

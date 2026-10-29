@@ -106,7 +106,8 @@ def chat(model: str, messages: list, max_tokens: int = 3000, temperature: float 
                 data = json.load(r)
                 backend = r.headers.get("X-Mesh-Backend", "")
     text = data["choices"][0]["message"].get("content") or ""
-    return text, {"seconds": round(time.time() - t, 1), "usage": data.get("usage", {}), "backend": backend}
+    return text, {"seconds": round(time.time() - t, 1), "usage": data.get("usage", {}), "backend": backend,
+                  "finish": data["choices"][0].get("finish_reason")}
 
 
 def image_part(path: str | Path) -> dict:
