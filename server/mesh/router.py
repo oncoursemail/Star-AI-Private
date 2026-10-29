@@ -60,9 +60,23 @@ DEFAULTS = {
     "stale_s": 10.0,                  # a node status older than this is not used
     "node_first_token_s": 45.0,       # no first token from a node within this -> next backend
     "brain_first_token_s": 900.0,
+    # litha / litha-deep on the brain: no queue there any more (brain_litha_max_inflight), so a first word this late
+    # means an overloaded CPU; give the slot back (10-29: a short question had no first word after 120 s)
+    "brain_litha_first_token_s": 240.0,
     "read_idle_s": 120.0,             # silence in the middle of a stream -> the backend failed
     "fail_cooldown_s": 30.0,
-    "max_continuations": 2,           # a cut stream goes on on another backend at most this many times
+    # admission for litha / litha-deep (docs/agents/router-spill-20261029.md): brain1 runs litha-26b with ONE slot on
+    # a shared CPU (0.6-2 tok/s under load), so extra requests used to wait there up to brain_first_token_s (10-29: 88
+    # in flight, 128 failures after 900 s, STAR's star-voice starved). Now: at most node_max_inflight requests per GPU
+    # node (more wait in the router for a slot, never spill while a GPU node is just busy); the brain only when no
+    # node is usable, after up to gpu_wait_s for a node that is cooling down, and at most brain_litha_max_inflight at
+    # once (-1 = no cap); a request that finds no slot within queue_max_s gets a 503 "mesh busy" at once
+    "node_max_inflight": 2,           # one answering + one queued in the node's llama-server (no gap between answers)
+    "brain_litha_max_inflight": 1,
+    "gpu_wait_s": 10.0,
+    "queue_max_s": 120.0,
+    "admit_poll_s": 0.2,
+    "max_continuations": 2,          # a cut stream goes on on another backend at most this many times
     "warm_every_s": 60.0,             # at most one POST /load per node per this many seconds
     "hedge": False,                   # default; a request can ask with header X-Mesh-Hedge: 1 or "mesh_hedge": true
     "max_body_mb": 64,
@@ -359,6 +373,9 @@ class Router:
         self.keys = KeyFile(cfg["client_keys_file"])
         self.mesh_token = KeyFile(cfg["mesh_token_file"])
         self.brain = Backend("brain1", float(cfg["brain_tok_s"]))
+        # other model ids passed through to the brain (star-fast, star-voice...): same brain, own count, so they never
+        # take litha's brain slot (brain_litha_max_inflight counts self.brain only)
+        self.brain_pass = Backend("brain1", float(cfg["brain_tok_s"]))
         self.brain_ok, self.brain_models, self.brain_models_at = None, [], 0.0
         self.nodes = [Node(n["name"], n["status_url"]) for n in cfg["nodes"]]
         self.decisions = collections.deque(maxlen=50)
@@ -367,6 +384,7 @@ class Router:
         self.affinity = instant.Affinity(cfg["affinity_ttl_s"])
         self.prefetching: dict[str, dict] = {}
         self.counters = collections.Counter()
+        self.waiting: list[object] = []           # litha requests waiting for a slot, oldest first
         self.cache = instant.AnswerCache(cfg["cache_db"]) if cfg.get("cache_db") else None
 
     # ---- node status ---------------------------------------------------------------------------------------------
@@ -508,7 +526,7 @@ class Router:
                 return brain_deep, f"litha-deep -> {deep_names} (no usable node" +                     (": " + "; ".join(skipped) if skipped else "") + ")"
             return [(b, url, mid) for _, b, url, mid in ranked] + brain_deep,                 "litha-deep -> " + " > ".join(f"{b.name} (thinking)" for _, b, _, _ in ranked) + " > " + deep_names
         if model != FAST:
-            return [(self.brain, brain_url, model)], "pass-through to brain"
+            return [(self.brain_pass, brain_url, model)], "pass-through to brain"
         now, ranked, skipped = time.monotonic(), [], []
         sticky = self.affinity.get(conv)
 
@@ -534,20 +552,75 @@ class Router:
             out += brain_fast if mid is None else [(b, url, mid)]
         return out, reason
 
+    def _brain_room(self) -> bool:
+        cap = int(self.cfg["brain_litha_max_inflight"])
+        return cap < 0 or self.brain.inflight < cap
+
+    def admission(self, plan: list, waited: float, nodes) -> tuple[list | None, str, float]:
+        """Which entries of a litha / litha-deep plan may start now: (entries, "", 0), or (None, why, limit) = wait
+        until `limit` seconds have passed in total (limit 0 = fail now)."""
+        node_entries = [p for p in plan if p[0] is not self.brain]
+        brain_entries = [p for p in plan if p[0] is self.brain] if self._brain_room() and nodes != "only" else []
+        free = [p for p in node_entries if p[0].inflight < self.cfg["node_max_inflight"]]
+        if free:                       # a GPU slot: GPU first, the brain (if it has room) only as the fallback
+            return free + brain_entries, "", 0.0
+        if node_entries:               # GPU node(s) usable but full: their queue beats the brain's CPU
+            return None, "every GPU slot is busy", \
+                self.cfg["gpu_wait_s"] if nodes == "only" else self.cfg["queue_max_s"]
+        now = time.monotonic()
+        cooling = nodes is not False and any(n.state == "idle" and now < n.fail_until for n in self.nodes)
+        if cooling and waited < self.cfg["gpu_wait_s"]:
+            return None, "a GPU node is cooling down after a failure", self.cfg["gpu_wait_s"]
+        if brain_entries:
+            return brain_entries, "", 0.0
+        if nodes == "only" or not any(p[0] is self.brain for p in plan):
+            return None, "no usable GPU node", 0.0
+        return None, "no usable GPU node and brain1's litha slot is busy", self.cfg["queue_max_s"]
+
+    async def admit(self, model: str, conv: str | None, nodes, log: dict) -> list:
+        """Wait (oldest first) until a litha / litha-deep request may start; the plan to race, or UpstreamError 503."""
+        t0, me = time.monotonic(), object()
+        self.waiting.append(me)
+        try:
+            while True:
+                plan, _ = self.plan(model, conv, nodes)
+                waited = time.monotonic() - t0
+                go, why, limit = self.admission(plan, waited, nodes)
+                if go is not None and self.waiting.index(me) == 0:
+                    if waited >= 0.05:
+                        log["admit"] = {"wait_ms": round(waited * 1000), "to": go[0][0].name}
+                        self.counters["admit_waited"] += 1
+                    return go
+                if go is None and waited >= limit:
+                    self.counters["admit_busy"] += 1
+                    msg = f"mesh busy: {why} (waited {waited:.1f} s; litha never queues on brain1's CPU)"
+                    log["admit"] = {"wait_ms": round(waited * 1000), "busy": why}
+                    raise UpstreamError(msg, 503, json.dumps(err(msg + "; try again shortly", "server_error")).encode(),
+                                        {"content-type": "application/json", "retry-after": "5"})
+                await asyncio.sleep(self.cfg["admit_poll_s"])
+        finally:
+            self.waiting.remove(me)
+
     def _headers_for(self, backend: Backend, client_auth: str) -> dict:
         h = {"Content-Type": "application/json"}
-        if backend is self.brain:
+        if backend in (self.brain, self.brain_pass):
             if client_auth:
                 h["Authorization"] = client_auth     # the brain checks the same key file
         else:
             h.update(self._node_headers())
         return h
 
-    async def _attempt(self, backend, url, path, body, client_auth, stream):
-        """Start one backend; return once it produced its first token (stream) or its whole answer."""
-        is_node = backend is not self.brain
-        limit = self.cfg["node_first_token_s" if is_node else "brain_first_token_s"]
-        backend.inflight += 1
+    async def _attempt(self, backend, url, path, body, client_auth, stream, held=None):
+        """Start one backend; return once it produced its first token (stream) or its whole answer. held: the caller
+        counted this attempt in backend.inflight already (race: no gap for a second admission) and frees it itself
+        if the task is cancelled before it ran."""
+        is_node = backend not in (self.brain, self.brain_pass)
+        limit = self.cfg["node_first_token_s" if is_node else
+                         "brain_litha_first_token_s" if backend is self.brain else "brain_first_token_s"]
+        if held is None:
+            backend.inflight += 1
+        else:
+            held["started"] = True
         up = None
         try:
             async def start():
@@ -589,16 +662,38 @@ class Router:
         if backend is not self.brain:
             backend.fail_until = time.monotonic() + self.cfg["fail_cooldown_s"]
 
-    async def race(self, plan, path, body_for, client_auth, stream, hedge, log):
-        """Try backends best first (two at a time when hedging); the first one to produce a token wins."""
+    def _start(self, b, url, path, body, client_auth, stream):
+        b.inflight += 1                      # counted now: the next admission check already sees it
+        held = {"started": False}
+        task = asyncio.ensure_future(self._attempt(b, url, path, body, client_auth, stream, held))
+
+        def unheld(_t):
+            if not held["started"]:          # cancelled before its first step: _attempt never freed it
+                b.inflight -= 1
+        task.add_done_callback(unheld)
+        return task
+
+    async def race(self, plan, path, body_for, client_auth, stream, hedge, log, admit=None):
+        """Try backends best first (two at a time when hedging); the first one to produce a token wins. admit: a
+        litha / litha-deep request ((model, conv, nodes)): wait for a slot first (`admit`), and a fallback to the brain
+        only while it has room (brain_litha_max_inflight)."""
+        if admit is not None:
+            plan = await self.admit(*admit, log)
         remaining = list(plan)
         last_err: UpstreamError | None = None
         while remaining:
+            if admit is not None and remaining[0][0] is self.brain and not self._brain_room():
+                b = remaining.pop(0)[0]
+                log["errors"].append(f"{b.name}: litha slot busy (fallback skipped)")
+                self.counters["brain_full_skipped"] += 1
+                msg = "mesh busy: brain1's litha slot is busy (litha never queues on brain1's CPU)"
+                last_err = last_err or UpstreamError(msg, 503, json.dumps({"error": {"message": msg, "type": "server_error"}}).encode(),
+                                                     {"content-type": "application/json", "retry-after": "5"})
+                continue
             # never two brain models at once (one CPU): a hedge needs two different backends
             n = 2 if hedge and len(remaining) >= 2 and remaining[0][0] is not remaining[1][0] else 1
             batch, remaining = remaining[:n], remaining[n:]
-            tasks = {asyncio.ensure_future(self._attempt(b, url, path, body_for(mid), client_auth, stream)): b
-                     for b, url, mid in batch}
+            tasks = {self._start(b, url, path, body_for(mid), client_auth, stream): b for b, url, mid in batch}
             winner = None
             try:
                 while tasks and winner is None:
@@ -725,7 +820,11 @@ class Router:
         return {"router": {"version": VERSION, "uptime_s": round(time.time() - self.started),
                            "hedge_default": self.cfg["hedge"], "poll_s": self.cfg["poll_s"]},
                 "brain": {"name": self.brain.name, "healthy": self.brain_ok, "tok_s": round(self.brain.tok_s, 1),
-                          "inflight": self.brain.inflight, "served": self.brain.served},
+                          "inflight": self.brain.inflight, "served": self.brain.served,
+                          "pass_through_inflight": self.brain_pass.inflight},
+                "admission": {"waiting": len(self.waiting),
+                              **{k: self.cfg[k] for k in ("node_max_inflight", "brain_litha_max_inflight",
+                                                          "gpu_wait_s", "queue_max_s")}},
                 "instant": {"affinity_conversations": len(self.affinity), "counters": dict(self.counters),
                             "cache": self.cache.stats() if self.cache else None,
                             "cache_threshold": self.cfg["cache_threshold"],
@@ -842,7 +941,8 @@ class Router:
         # the semantic cache lookup (an embedding round trip) runs while the backend starts: a hit before the first
         # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
         race = asyncio.ensure_future(self.race(plan, path, body_for, headers.get("authorization", ""), stream,
-                                               bool(hedge), log))
+                                               bool(hedge), log,
+                                               (model, conv, nodes) if model in (FAST, DEEP) else None))
         if question and not decided:
             lookup = asyncio.ensure_future(self.cache_semantic(question, context, cands_task))
             await asyncio.wait({race, lookup}, return_when=asyncio.FIRST_COMPLETED)
@@ -879,7 +979,8 @@ class Router:
             log.update(chosen=None, outcome=f"failed: {e}")
             print("mesh", json.dumps(log), flush=True)
             if e.body:
-                return await send_raw(writer, e.status, e.headers.get("content-type", "application/json"), e.body)
+                return await send_raw(writer, e.status, e.headers.get("content-type", "application/json"), e.body,
+                                      {"Retry-After": e.headers["retry-after"]} if "retry-after" in e.headers else None)
             return await send_json(writer, 502, err(f"no backend answered: {e}", "server_error"))
         log["chosen"] = backend.name
         self.affinity.set(conv, backend.name)
