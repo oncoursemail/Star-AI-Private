@@ -892,8 +892,9 @@ def bait_shop_stall(ctx, w):
            part(ctx, "B", (w, 8, 0.3), (0, 4, d / 2), mat="plank", vary=0.05)]
     for sx in (-1, 1):
         out.append(part(ctx, "B", (0.3, 3.4, d), (sx * (w / 2 - 0.15), 1.7, 0), mat="plank", vary=0.05))
-        out.append(part(ctx, "B", (0.4, 7.4, 0.4), (sx * (w / 2 - 0.2), 3.7, -d / 2 + 0.2), mat="wood", role="trim"))
-        out.append(part(ctx, "B", (0.4, 8.4, 0.4), (sx * (w / 2 - 0.2), 4.2, d / 2 - 0.2), mat="wood", role="trim"))
+        # corner posts 0.05 proud of the walls on the outside so no faces are coplanar
+        out.append(part(ctx, "B", (0.5, 7.4, 0.5), (sx * (w / 2 - 0.2), 3.7, -d / 2 + 0.2), mat="wood", role="trim"))
+        out.append(part(ctx, "B", (0.5, 8.4, 0.5), (sx * (w / 2 - 0.2), 4.2, d / 2 - 0.2), mat="wood", role="trim"))
     out.append(part(ctx, "B", (w + 0.6, 0.3, d + 0.8), (0, 8.0, 0), rot=(math.degrees(math.atan2(-1.0, d)), 0, 0), mat="roof", role="trim"))
     k = {"stud": 4, "lowpoly": 6, "midpoly": 8, "highpoly": 10}[ctx.style]
     cols = [ctx.color("fabric", "accent"), ctx.color("fabric", "primary")]
@@ -1411,7 +1412,7 @@ def _obby_base(ctx, w, h):
     if ctx.style == "lowpoly":
         out.append(part(ctx, "B", (w - 0.6, 0.3, w - 0.6), (0, h + 0.15, 0), mat="plastic", color=shade(ctx.color("plastic", "primary"), 1.12)))
     elif _round(ctx):
-        out.append(part(ctx, "B", (w + 0.2, 0.2, w + 0.2), (0, h - 0.1, 0), mat="plastic", color=ctx.color("plastic", "trim")))
+        out.append(part(ctx, "B", (w + 0.2, 0.2, w + 0.2), (0, h - 0.07, 0), mat="plastic", color=ctx.color("plastic", "trim")))   # lip 0.03 above the top
     return out
 
 

@@ -71,9 +71,32 @@ def wait_for_node(max_wait_s: float = 4 * 3600, poll_s: float = 20) -> float:
     return round(time.monotonic() - started, 1)
 
 
-def _stream_once(body: dict, first_token_s: float, timeout: float) -> tuple[str, dict]:
-    req = urllib.request.Request(ROUTER.rstrip("/") + "/v1/chat/completions", data=json.dumps({**body, "stream": True}).encode(),
-                                 headers={"Authorization": "Bearer " + _key(), "Content-Type": "application/json", **PLAIN})
+def node_endpoint() -> tuple[str, str] | None:
+    """(chat URL, mesh token) of an idle GPU node, to queue on its own slot instead of letting the router fall back to
+    the overloaded brain. Same model the router would use (litha-fast). STAR_BUILD_DIRECT=0 turns this off."""
+    if os.environ.get("STAR_BUILD_DIRECT", "1") == "0":
+        return None
+    try:
+        token = (Path.home() / ".star" / "mesh_token").read_text(encoding="utf-8").splitlines()[0].strip()
+        req = urllib.request.Request(ROUTER.rstrip("/") + "/mesh/status", headers={"Authorization": "Bearer " + _key()})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            nodes = json.load(resp).get("nodes", [])
+    except Exception:
+        return None
+    for n in sorted(nodes, key=lambda n: -(n.get("tok_s") or 0)):
+        if n.get("state") == "idle" and n.get("status_url"):
+            base = n["status_url"].rsplit(":", 1)[0]
+            return base + ":8098/v1/chat/completions", token
+    return None
+
+
+def _stream_once(body: dict, first_token_s: float, timeout: float, endpoint: tuple[str, str] | None = None) -> tuple[str, dict]:
+    url, auth, extra = ROUTER.rstrip("/") + "/v1/chat/completions", _key(), PLAIN
+    if endpoint:
+        url, auth, extra = endpoint[0], endpoint[1], {}
+        body = {**body, "model": "litha-fast"}
+    req = urllib.request.Request(url, data=json.dumps({**body, "stream": True}).encode(),
+                                 headers={"Authorization": "Bearer " + auth, "Content-Type": "application/json", **extra})
     started = time.monotonic()
     chunks, first = [], None
     with urllib.request.urlopen(req, timeout=first_token_s) as resp:
@@ -108,7 +131,7 @@ def _stream_once(body: dict, first_token_s: float, timeout: float) -> tuple[str,
 
 
 def chat(messages: list[dict], *, model: str = TEXT_MODEL, max_tokens: int = 3000, temperature: float = 0.4,
-         json_mode: bool = True, timeout: float = 900.0, first_token_s: float = 75.0) -> tuple[str, dict]:
+         json_mode: bool = True, timeout: float = 1500.0, first_token_s: float = 420.0) -> tuple[str, dict]:
     """Streamed call; when no token comes within first_token_s (e.g. the router picked the overloaded brain),
     give up on that attempt and ask again (the router re-plans)."""
     body = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
@@ -117,10 +140,13 @@ def chat(messages: list[dict], *, model: str = TEXT_MODEL, max_tokens: int = 300
     last = None
     waited = 0.0
     for attempt in range(8):
+        endpoint = None
         if model == TEXT_MODEL:
             waited += wait_for_node()
+            endpoint = node_endpoint()
         try:
-            text, meta = _stream_once(body, first_token_s, timeout)
+            text, meta = _stream_once(body, first_token_s if not endpoint else 1200, timeout, endpoint)
+            meta["direct"] = bool(endpoint)
             meta.update({"model": model, "attempts": attempt + 1, "waited_for_node_s": waited})
             return text, meta
         except (urllib.error.URLError, TimeoutError, OSError, RuntimeError, ValueError) as error:
@@ -129,37 +155,68 @@ def chat(messages: list[dict], *, model: str = TEXT_MODEL, max_tokens: int = 300
     raise RuntimeError(f"router call failed: {type(last).__name__}")
 
 
+def _scan(raw: str):
+    """Yield (index, char, in_string) over raw, tracking JSON strings."""
+    in_str = esc = False
+    for i, ch in enumerate(raw):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            yield i, ch, True
+            continue
+        if ch == '"':
+            in_str = True
+            yield i, ch, True
+            continue
+        yield i, ch, False
+
+
+def _repair(raw: str) -> str:
+    """Close a truncated JSON text: cut back to the last complete value, then close open brackets."""
+    stack, last_ok = [], 0
+    for i, ch, quoted in _scan(raw):
+        if quoted:
+            continue
+        if ch in "{[":
+            stack.append(ch)
+        elif ch in "}]":
+            if stack:
+                stack.pop()
+            last_ok = i + 1
+            if not stack:
+                return raw[:i + 1]
+        elif ch == ",":
+            last_ok = i
+    cut = raw[:last_ok].rstrip().rstrip(",")
+    stack = []
+    for _i, ch, quoted in _scan(cut):
+        if quoted:
+            continue
+        if ch in "{[":
+            stack.append(ch)
+        elif ch in "}]" and stack:
+            stack.pop()
+    return cut + "".join("}" if b == "{" else "]" for b in reversed(stack))
+
+
+_COMMENT = re.compile(r"(?m)//[^\n\"]*$")
+_TRAILING = re.compile(r",\s*([}\]])")
+
+
 def parse_json(text: str) -> dict | None:
-    """The first JSON object in a reply (tolerates ``` fences, thinking text, trailing commas)."""
+    """The first JSON object in a reply (tolerates fences, thinking text, comments, trailing commas, truncation)."""
     text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S)
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
-    candidates = [fence.group(1)] if fence else []
+    text = text.replace("```json", "").replace("```", "")
     start = text.find("{")
-    if start >= 0:
-        depth, in_str, esc = 0, False, False
-        for i in range(start, len(text)):
-            ch = text[i]
-            if in_str:
-                if esc:
-                    esc = False
-                elif ch == "\\":
-                    esc = True
-                elif ch == '"':
-                    in_str = False
-                continue
-            if ch == '"':
-                in_str = True
-            elif ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    candidates.append(text[start:i + 1])
-                    break
-        else:
-            candidates.append(text[start:] + "}" * max(1, depth))
-    for raw in candidates:
-        for attempt in (raw, re.sub(r",\s*([}\]])", r"\1", raw)):
+    if start < 0:
+        return None
+    body = _COMMENT.sub("", text[start:])
+    for raw in (body, _repair(body)):
+        for attempt in (raw, _TRAILING.sub(r"\1", raw)):
             try:
                 value = json.loads(attempt)
                 if isinstance(value, dict):

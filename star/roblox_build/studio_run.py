@@ -59,10 +59,13 @@ class StudioBuilder:
         return {"ok": ok, "made": made, "seconds": round(time.monotonic() - started, 1),
                 "detail": "" if ok else text[-300:]}
 
-    async def shoot(self, compiled: dict, folder: Path, label: str, origin=ORIGIN) -> list[dict]:
+    async def shoot(self, compiled: dict, folder: Path, label: str, origin=ORIGIN, name: str = "") -> list[dict]:
         folder.mkdir(parents=True, exist_ok=True)
         shots = []
+        cut = any(p.get("roof") for p in compiled["parts"])
         for cam in compiled["cameras"]:
+            if cam["id"] == "overview" and cut and name:
+                await self.luau(luau.roofs_luau(name, True))
             pos = [cam["position"][i] + origin[i] for i in range(3)]
             look = [cam["look_at"][i] + origin[i] for i in range(3)]
             result = await self.guarded.call_tool("screen_capture", {"studio_id": self.guarded.studio_id,
@@ -112,7 +115,7 @@ async def render(home: Path, name: str, compiled: dict, folder: Path, label: str
         try:
             await sb.luau(luau.save_lighting_luau())
             applied = await sb.apply(name, compiled)
-            shots = await sb.shoot(compiled, folder, label) if applied["ok"] else []
+            shots = await sb.shoot(compiled, folder, label, name=name) if applied["ok"] else []
             if not keep:
                 await sb.remove(name)
         finally:

@@ -37,12 +37,12 @@ LIGHTING = {
                     "Atmosphere": {"Density": 0.35, "Offset": 0.15, "Color": (255, 206, 160), "Decay": (190, 120, 90), "Glare": 0.6, "Haze": 1.8},
                     "CC": {"Brightness": 0.0, "Contrast": 0.12, "Saturation": 0.15, "Tint": (255, 236, 214)},
                     "Bloom": {"Intensity": 0.8, "Size": 28, "Threshold": 1.2}, "SunRays": {"Intensity": 0.12, "Spread": 0.7}},
-    "warm_evening": {"ClockTime": 19.2, "Brightness": 1.2, "Ambient": (70, 58, 56), "OutdoorAmbient": (96, 80, 90),
+    "warm_evening": {"ClockTime": 18.6, "Brightness": 1.5, "Ambient": (90, 76, 72), "OutdoorAmbient": (112, 96, 104),
                      "ShadowSoftness": 0.35, "EnvDiffuse": 0.7, "EnvSpecular": 0.8,
                      "Atmosphere": {"Density": 0.38, "Offset": 0.2, "Color": (220, 160, 140), "Decay": (110, 70, 90), "Glare": 0.4, "Haze": 2.0},
                      "CC": {"Brightness": 0.0, "Contrast": 0.15, "Saturation": 0.1, "Tint": (255, 232, 210)},
                      "Bloom": {"Intensity": 0.9, "Size": 28, "Threshold": 1.0}, "SunRays": {"Intensity": 0.08, "Spread": 0.6}},
-    "cozy_interior": {"ClockTime": 18.4, "Brightness": 1.4, "Ambient": (78, 64, 54), "OutdoorAmbient": (110, 92, 80),
+    "cozy_interior": {"ClockTime": 16.8, "Brightness": 1.8, "Ambient": (104, 90, 78), "OutdoorAmbient": (128, 112, 100),
                       "ShadowSoftness": 0.4, "EnvDiffuse": 0.6, "EnvSpecular": 0.6,
                       "Atmosphere": {"Density": 0.3, "Offset": 0.1, "Color": (240, 200, 160), "Decay": (140, 100, 80), "Glare": 0.2, "Haze": 1.0},
                       "CC": {"Brightness": 0.03, "Contrast": 0.12, "Saturation": 0.08, "Tint": (255, 236, 214)},
@@ -98,6 +98,21 @@ def _xz(value, half_w, half_d):
     return [round(x, 2), round(z, 2)]
 
 
+def prop_from_list(row: list) -> dict | None:
+    """[kit, x, z, rot, {params}, n, dx, dz] -> prop dict (the compact form the prompts ask for)."""
+    if not row or not isinstance(row[0], str):
+        return None
+    out = {"kit": row[0], "at": list(row[1:3]) if len(row) >= 3 else None, "rot": row[3] if len(row) > 3 else 0}
+    params = row[4] if len(row) > 4 and isinstance(row[4], dict) else {}
+    if "y" in params:
+        params = dict(params)
+        out["y"] = params.pop("y")
+    out["params"] = params
+    if len(row) > 7:
+        out["repeat"] = {"n": row[5], "step": [row[6], row[7]]}
+    return out
+
+
 def normalize(raw: dict) -> tuple[dict, list[str]]:
     """Clamp and clean an LLM-written spec. Returns (spec, notes about what was dropped or changed)."""
     notes: list[str] = []
@@ -117,6 +132,7 @@ def normalize(raw: dict) -> tuple[dict, list[str]]:
         "size": [w, d], "ground": raw.get("ground") if raw.get("ground") in MATERIALS else "grass",
         "sign_text": str(raw.get("sign_text") or "")[:40], "seed": int(_num(raw.get("seed"), 7, 0, 10 ** 6)),
         "zones": [], "rooms": [], "props": [], "paths": [], "focal": [], "spawn": [0, hd - 6],
+        "budget": bool(raw.get("budget")),
     }
     if raw.get("mood") not in MOODS:
         notes.append(f"mood {raw.get('mood')!r} unknown -> sunny_day")
@@ -130,6 +146,19 @@ def normalize(raw: dict) -> tuple[dict, list[str]]:
         z0, z1 = sorted((clamp(z0, -hd, hd), clamp(z1, -hd, hd)))
         if x1 - x0 < 4 or z1 - z0 < 4:
             notes.append(f"zone {z.get('id')} too small dropped")
+            continue
+        for prev in spec["zones"]:
+            px0, pz0, px1, pz1 = prev["rect"]
+            ox, oz = min(x1, px1) - max(x0, px0), min(z1, pz1) - max(z0, pz0)
+            inside = (px0 <= x0 and x1 <= px1 and pz0 <= z0 and z1 <= pz1) or (x0 <= px0 and px1 <= x1 and z0 <= pz0 and pz1 <= z1)
+            if ox > 0.5 and oz > 0.5 and not inside:   # nested zones (a house in a garden) are fine
+                # cut along the axis with the smaller overlap, on the side that keeps the most area
+                if ox <= oz:
+                    x0, x1 = (px1, x1) if (x1 - px1) >= (px0 - x0) else (x0, px0)
+                else:
+                    z0, z1 = (pz1, z1) if (z1 - pz1) >= (pz0 - z0) else (z0, pz0)
+        if x1 - x0 < 4 or z1 - z0 < 4:
+            notes.append(f"zone {z.get('id')} overlapped another zone and was dropped")
             continue
         zid = str(z.get("id") or f"zone{len(spec['zones'])}")[:24]
         zone_ids.add(zid)
@@ -147,12 +176,17 @@ def normalize(raw: dict) -> tuple[dict, list[str]]:
             openings.append({"side": o["side"], "at": _num(o.get("at"), 0.5, 0.05, 0.95),
                              "w": _num(o.get("w"), 6, 3, 40), "h": _num(o.get("h"), 9, 3, 60),
                              "kind": o.get("kind") if o.get("kind") in OPENINGS else "door"})
+        zone_row = next(z for z in spec["zones"] if z["id"] == r["zone"])
+        if not zone_row["floor"]:   # an indoor room never shows the outdoor ground
+            zone_row["floor"] = "plank" if r.get("wall") in ("wood", "plank", "plaster") else "stone"
         spec["rooms"].append({"zone": r["zone"], "h": _num(r.get("h"), 14, 8, 80),
                               "wall": r.get("wall") if r.get("wall") in MATERIALS else "plaster",
                               "roof": r.get("roof") if r.get("roof") in ROOFS else "flat",
                               "windows": r.get("windows") if r.get("windows") in WINDOWS else "plain",
                               "openings": openings})
     for p in (raw.get("props") or [])[:MAX_PROPS]:
+        if isinstance(p, list):
+            p = prop_from_list(p)
         if not isinstance(p, dict) or p.get("kit") not in kits.KITS:
             notes.append(f"unknown kit {p.get('kit') if isinstance(p, dict) else p!r} dropped")
             continue
@@ -194,11 +228,18 @@ def normalize(raw: dict) -> tuple[dict, list[str]]:
 # --------------------------------------------------------------------------- compile
 
 def zone_at(spec: dict, x: float, z: float) -> dict | None:
+    """The innermost zone at (x, z)."""
+    best = None
     for zone in spec["zones"]:
         x0, z0, x1, z1 = zone["rect"]
-        if x0 <= x <= x1 and z0 <= z <= z1:
-            return zone
-    return None
+        if x0 <= x <= x1 and z0 <= z <= z1 and (best is None or (x1 - x0) * (z1 - z0) < _area(best)):
+            best = zone
+    return best
+
+
+def _area(zone: dict) -> float:
+    x0, z0, x1, z1 = zone["rect"]
+    return (x1 - x0) * (z1 - z0)
 
 
 def floor_y(spec: dict, x: float, z: float) -> float:
@@ -337,7 +378,9 @@ def room_parts(ctx: Ctx, spec: dict, room: dict) -> list[dict]:
             for cz in (z0 + t / 2, z1 - t / 2):
                 out.append(part(ctx, "B", (t * 1.8, h + 0.6, t * 1.8), (cx, h / 2 + 0.3, cz), mat=room["wall"],
                                 color=shade(ctx.color(room["wall"]), 0.85)))
-    out += roof_parts(ctx, room, (x0, z0, x1, z1), h, t)
+    for rp in roof_parts(ctx, room, (x0, z0, x1, z1), h, t):
+        rp["roof"] = True
+        out.append(rp)
     return out
 
 
@@ -498,7 +541,8 @@ def compile_spec(spec: dict) -> dict:
     for zone in spec["zones"]:
         if zone["floor"]:
             x0, z0, x1, z1 = zone["rect"]
-            f = part(ctx, "B", (x1 - x0 - 0.1, 0.4, z1 - z0 - 0.1), ((x0 + x1) / 2, FLOOR - 0.2, (z0 + z1) / 2), mat=zone["floor"],
+            lift = 0.02 * sum(1 for other in spec["zones"] if other is not zone and other["floor"] and _area(other) > _area(zone))
+            f = part(ctx, "B", (x1 - x0 - 0.1, 0.4, z1 - z0 - 0.1), ((x0 + x1) / 2, FLOOR - 0.2 + lift, (z0 + z1) / 2), mat=zone["floor"],
                      name=f"Floor_{zone['id']}", cast=False)
             f["kit"] = "floor"
             parts.append(f)
@@ -545,6 +589,13 @@ def compile_spec(spec: dict) -> dict:
         if len(parts) > MAX_PARTS:
             break
     parts += fill_lights(ctx, spec)
+    if spec.get("budget"):   # performance pass: shadows on the 20 brightest lights only, at most 44 lights
+        lit = sorted((p for p in parts if p.get("light")), key=lambda p: -p["light"]["b"] * p["light"]["r"])
+        for k, p in enumerate(lit):
+            if k >= 20:
+                p["light"]["sh"] = False
+            if k >= 44:
+                p.pop("light")
     if spec["sign_text"]:
         for p in parts:
             if p.get("text"):
@@ -570,7 +621,7 @@ def fill_lights(ctx: Ctx, spec: dict) -> list[dict]:
             for k in range(nz):
                 p = part(ctx, "B", (0.5, 0.5, 0.5), (x0 + (i + 0.5) * (x1 - x0) / nx, room["h"] * 0.6, z0 + (k + 0.5) * (z1 - z0) / nz),
                          mat="plastic", color=(255, 255, 255), t=1, collide=False, cast=False,
-                         light=light("point", col, 0.9, min(60, 28 + room["h"] * 0.6), shadows=False))
+                         light=light("point", col, 1.25, min(60, 30 + room["h"] * 0.7), shadows=False))
                 p["kit"] = "fill_light"
                 out.append(p)
     return out
@@ -680,7 +731,10 @@ def cameras(spec: dict) -> list[dict]:
         out.append({"id": "detail", "position": [px, floor_y(spec, px, pz) + 6, pz], "look_at": [sx, 4, sz]})
     # overview: 3/4 from outside, high
     span = max(w, d)
-    out.append({"id": "overview", "position": [w * 0.55, span * 0.55, d * 0.75], "look_at": [0, 0, 0]})
+    if spec["rooms"]:   # roofs are hidden for this shot: look down into the rooms (cut-away)
+        out.append({"id": "overview", "position": [w * 0.3, span * 0.85, d * 0.62], "look_at": [0, 0, 0]})
+    else:
+        out.append({"id": "overview", "position": [w * 0.55, span * 0.55, d * 0.75], "look_at": [0, 0, 0]})
     for c in out:
         c["position"] = [round(v, 2) for v in c["position"]]
         c["look_at"] = [round(v, 2) for v in c["look_at"]]

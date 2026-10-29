@@ -47,7 +47,8 @@ def _row(p: dict, lights: list, texts: list, meshes: dict | None = None) -> str:
     x, y, z = p["p"]
     rx, ry, rz = p.get("r", (0, 0, 0))
     r, g, b = p["c"]
-    flags = (1 if p.get("cc", True) else 0) | (0 if p.get("cast", True) is False else 2) | (4 if p.get("studs") else 0)
+    flags = ((1 if p.get("cc", True) else 0) | (0 if p.get("cast", True) is False else 2) | (4 if p.get("studs") else 0)
+             | (8 if p.get("roof") else 0))
     li = 0
     if p.get("light"):
         lights.append(p["light"])
@@ -125,6 +126,7 @@ for _, e in ipairs(D) do
 	p.Material = okm and mat or Enum.Material.SmoothPlastic
 	p.Transparency = e[15]
 	p.Anchored = true
+	if bit32.band(e[16], 8) ~= 0 then p.Name = "Roof" end
 	p.CanCollide = bit32.band(e[16], 1) ~= 0
 	p.CastShadow = bit32.band(e[16], 2) ~= 0
 	if bit32.band(e[16], 4) ~= 0 then
@@ -316,4 +318,23 @@ if st then for _, c in ipairs(st:GetChildren()) do c.Parent = L end; st:Destroy(
 f:Destroy()
 pcall(function() game:GetService("StarterGui").ShowDevelopmentGui = true end)
 return "{MARK}restored"
+"""
+
+
+def roofs_luau(name: str, hide: bool) -> str:
+    """Hide (or show again) the roof parts of a draft for a cut-away overview shot."""
+    name = safe_name(name)
+    return f"""local R = workspace:FindFirstChild("{ROOT}")
+local m = R and R:FindFirstChild("{name}")
+local n = 0
+if m then
+	for _, d in ipairs(m:GetChildren()) do
+		if d.Name == "Roof" and d:IsA("BasePart") then
+			if {"true" if hide else "false"} then d:SetAttribute("T0", d.Transparency); d.Transparency = 1
+			else d.Transparency = d:GetAttribute("T0") or 0 end
+			n += 1
+		end
+	end
+end
+return "{MARK}" .. n
 """

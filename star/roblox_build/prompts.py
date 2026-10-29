@@ -1,144 +1,156 @@
-"""Prompts for the builder stages. Written for STAR's own models (litha); they return JSON only."""
+"""Prompts for the builder stages, sized for STAR's GPU nodes (litha: 4096 tokens of context for prompt + answer).
+
+Props use a compact array form: [kit, x, z, rot, {params}, n, dx, dz] (n/dx/dz = repeat count and step, optional).
+"""
 from __future__ import annotations
 
 import json
+import re
 
 from . import kits
-from .geom import MATERIALS
-from .scene import MOODS, ROOFS, WINDOWS
+from .scene import MOODS
 
 STYLE_GUIDE = {
-    "stud": "STUD (classic Roblox): chunky blocks on a whole-stud grid, studded tops, a LIMITED palette of 4-6 classic "
-            "BrickColors, bold readable silhouettes, terraced/stacked masses (staggered blocks, two-tone layers, moss "
-            "drips), toy-like scale exaggeration is fine. No realistic materials.",
-    "lowpoly": "LOW-POLY: faceted shapes from wedges and rotated blocks, flat smooth colours, soft saturated palette "
-               "with clear value contrast, simple bold forms, fewer but larger props, gradients through colour steps.",
-    "midpoly": "MID-POLY: believable proportions, real materials (wood, brick, plaster, metal, fabric), round shapes, "
-               "trims and frames, moderate prop density, coherent warm/cool lighting.",
-    "highpoly": "HIGH-POLY: dense detail - trims, bevels, fluting, many small props with intent, layered lighting "
-                "(practical lamps + fill), atmosphere and post effects, realistic materials, cinematic composition.",
+    "stud": "STUD: chunky whole-stud blocks, studded tops, 4-6 classic BrickColors, bold silhouettes, terraced stacked masses.",
+    "lowpoly": "LOW-POLY: faceted wedges, flat colours, soft saturated palette with value contrast, fewer bigger props.",
+    "midpoly": "MID-POLY: believable proportions, real materials (wood, brick, plaster, metal, fabric), trims, moderate detail.",
+    "highpoly": "HIGH-POLY: dense purposeful detail, trims, smooth round props, layered practical lighting, cinematic.",
 }
 
-RULES = """Roblox scale: a character is 5 studs tall and 2 wide. Doors >= 5 wide x 8 high. Corridors >= 6 wide.
-Ceilings 12-16 for homes/shops, 24-40 for halls/cathedrals. Seats 2 high, tables 3 high, counters 3.9 high.
-Coordinates: the map is centred on (0,0); x across, z deep; size [W, D]. Sides: N = -z edge, S = +z edge,
-W = -x edge, E = +x edge. Kits face -z (front) unless rotated by "rot" (degrees about up).
-Composition: one clear focal point the eye lands on; a path / row of repeated props leading to it (leading lines);
-frame it (columns, trees, arches); layered depth (foreground, middle, background); leave breathing room (negative
-space) around the focal point; asymmetry with balance; a clear walkable route from spawn to every focal point.
-Storytelling: 2-4 small story moments placed with intent (e.g. an overturned chair by a door, papers trailing to a
-desk, rubble under a hole in the roof); clutter goes in corners, along walls and near story moments - never as
-uniform noise spread everywhere.
-Lighting: light pools at the focal point and along the route; warm vs cool contrast; practical lamps placed where
-they would really be (pendants over tables/counters, sconces on walls, lamp posts along paths).
-Colour/material discipline: a palette of primary/secondary/accent/trim (hex) that fits the mood; few materials;
-one accent colour used sparingly on things that matter.
-Automatic helpers: wall kits (shelf, picture, sconce, vines, cabinet, fireplace, cobweb, bookcase_tall, aquarium_tank,
-vending_machine, paper_screen, info_plaque, planks, trash) snap to the nearest wall of their room if placed within 8
-studs of it; chandelier/pendant_lamp inside a room attach to its ceiling; invisible fill light is added to rooms."""
+RULES = """Scale: character 5 tall. Doors >=5x8. Paths >=6 wide. Ceilings 12-16 (homes/shops), 24-40 (halls).
+Sizes: a small room/shop/cafe is 24-40 wide, a hall 40-80; outdoor maps 80-200. Keep spaces tight enough to fill.
+Map centred on (0,0): x across, z deep. Sides: N=-z, S=+z, W=-x, E=+x. Kits face -z unless rot (deg).
+Composition: one clear focal point; leading lines (paths, rows) toward it; framing; foreground/middle/background;
+space around the focal point; clear walkable route spawn->focal. Story: 2-4 small story moments with clutter
+clustered at walls/corners/story spots, never spread evenly. Lights: pools at focal point and along the route,
+lamps where they really hang. Palette: primary/secondary/accent/trim hex; accent used sparingly.
+Wall kits snap to the nearest wall within 8 studs; ceiling lamps attach to the ceiling."""
 
-SCHEMA = {
-    "name": "short name", "style": "stud|lowpoly|midpoly|highpoly", "state": "new|worn|abandoned",
-    "mood": "|".join(MOODS), "palette": {"primary": "#hex", "secondary": "#hex", "accent": "#hex", "trim": "#hex"},
-    "size": [100, 80], "ground": "one of the materials", "sign_text": "text for sign kits (optional)",
-    "zones": [{"id": "hall", "rect": [-30, -30, 30, 20], "floor": "material or empty for outdoor ground",
-               "purpose": "what happens here"}],
-    "rooms": [{"zone": "hall", "h": 16, "wall": "material", "roof": "|".join(ROOFS), "windows": "|".join(WINDOWS),
-               "openings": [{"side": "S", "at": 0.5, "w": 6, "h": 9, "kind": "door|window|arch|open"}]}],
-    "spawn": [0, 35], "focal": [{"id": "altar", "at": [0, -25], "why": "..."}],
-    "paths": [{"from": [0, 40], "to": [0, 20], "w": 6, "mat": "cobble"}],
-    "props": [{"kit": "pew", "at": [-6, -10], "rot": 0, "params": {"len": 10}, "repeat": {"n": 6, "step": [0, 5]},
-               "why": "rows lead to the altar"}, {"kit": "candles", "at": [3, -24], "y": 1.5, "params": {"n": 6}}],
-}
+MATS = ("stone cobble brick wood plank metal rust glass fabric plaster tile marble concrete grass sand water foliage "
+        "snow rock carpet roof clay asphalt ground pebble granite sandstone ice mud")
+
+CORE = ("column", "platform", "stairs", "railing", "fence", "table", "chair", "bench", "shelf", "rug", "cabinet",
+        "potted_plant", "pendant_lamp", "chandelier", "sconce", "floor_lamp", "lamp_post", "candles", "lantern",
+        "string_lights", "tree", "bush", "rocks", "grass_tufts", "crate", "barrel", "rubble", "papers", "sign",
+        "picture", "counter", "water", "cliff", "puddle", "cobweb", "vines", "planks", "trash")
 
 
-def _base(style: str) -> str:
-    return (f"STYLE: {STYLE_GUIDE[style]}\n\nRULES:\n{RULES}\n\nMaterials: {', '.join(MATERIALS)}\n"
-            f"Moods: {', '.join(MOODS)}")
+def kit_menu(brief: str, limit: int = 46) -> str:
+    """The kits worth showing for this brief: theme matches first, then the core set. One short line each."""
+    words = set(re.findall(r"[a-z]{3,}", brief.lower()))
+    words |= {w.rstrip("s") for w in words}
+    scored = []
+    for name, info in kits.KITS.items():
+        text = (name.replace("_", " ") + " " + info["summary"]).lower()
+        hits = sum(1 for w in words if w in text)
+        scored.append((-(hits * 10) - (3 if name in CORE else 0), name))
+    chosen = [n for _, n in sorted(scored)][:limit]
+    lines = []
+    for name in sorted(chosen):
+        info = kits.KITS[name]
+        ps = []
+        for key, rule in info["params"].items():
+            ps.append(f"{key}:{'|'.join(rule[1])}" if isinstance(rule[1], list) else f"{key}:{rule[0]:g}")
+        summary = info["summary"].split("(")[0].split(",")[0][:38]
+        lines.append(f"{name}({' '.join(ps)}) {summary}")
+    return "\n".join(lines)
+
+
+PROP_FORMAT = ('props: [[kit, x, z, rot, {params}, n, dx, dz], ...]  (n,dx,dz optional: n copies stepping dx,dz; '
+               'optional "y" in params = base height, e.g. on a table)')
+
+PLAN_SHAPE = ('{"name":"..","state":"new|worn|abandoned","mood":"' + "|".join(MOODS) + '",'
+              '"palette":{"primary":"#hex","secondary":"#hex","accent":"#hex","trim":"#hex"},"size":[W,D],"ground":"mat",'
+              '"sign_text":"..","zones":[{"id":"hall","rect":[x0,z0,x1,z1],"floor":"mat or empty","purpose":".."}],'
+              '"rooms":[{"zone":"hall","h":16,"wall":"mat","roof":"flat|gable|vault|broken|none","windows":"plain|stained|none",'
+              '"openings":[{"side":"S","at":0.5,"w":6,"h":9,"kind":"door|window|arch|open"}]}],'
+              '"spawn":[x,z],"focal":[{"id":"..","at":[x,z]}],"paths":[{"from":[x,z],"to":[x,z],"w":6,"mat":"cobble"}],'
+              '"story":[{"at":[x,z],"what":".."}]}')
+
+
+def _sys() -> dict:
+    return {"role": "system", "content": "You are STAR, a senior Roblox environment artist. Reply with one compact JSON object only."}
 
 
 def plan_messages(brief: str, style: str) -> list[dict]:
-    schema = {k: SCHEMA[k] for k in ("name", "style", "state", "mood", "palette", "size", "ground", "sign_text", "zones",
-                                      "rooms", "spawn", "focal", "paths")}
-    return [{"role": "system", "content": "You are STAR, a senior Roblox environment artist. You plan levels like a "
-             "professional: layout first, then detail. Answer with one JSON object only."},
-            {"role": "user", "content": f"{_base(style)}\n\nBRIEF: {brief}\nART STYLE: {style}\n\nStep 1 - LAYOUT PLAN. "
-             "Decide the footprint, zones (rectangles that do not overlap), rooms (walls/roof per indoor zone, with doors "
-             "facing the route), spawn, 1-3 focal points, paths, palette and mood. Also add \"story\": a list of 2-4 "
-             "story moments {\"at\": [x, z], \"what\": \"...\"} and \"sightline\": one sentence on what the player sees "
-             "first from the spawn. JSON shape:\n" + json.dumps(schema)}]
+    return [_sys(), {"role": "user", "content":
+            f"{STYLE_GUIDE[style]}\n{RULES}\nMaterials: {MATS}\n\nBRIEF: {brief}\n\nSTEP 1 LAYOUT PLAN only (no props yet): "
+            "footprint, non-overlapping zones, rooms for indoor zones (doors facing the route), spawn, 1-3 focal points, "
+            f"paths, palette, mood, 2-4 story moments. JSON:\n{PLAN_SHAPE}"}]
 
 
-def detail_messages(brief: str, style: str, plan: dict) -> list[dict]:
-    return [{"role": "system", "content": "You are STAR, a senior Roblox environment artist. Answer with one JSON object only."},
-            {"role": "user", "content": f"{_base(style)}\n\nKIT CATALOG (kit(params): what it is):\n{kits.catalog()}\n\n"
-             f"BRIEF: {brief}\nART STYLE: {style}\nLAYOUT PLAN (fixed):\n{json.dumps(plan)}\n\nStep 2 - DETAIL PASS. Dress "
-             "the plan with props from the catalog: structure first (columns, stairs, platforms), then hero props at "
-             "the focal points, then furniture/sets per zone, then lights, then story props at the story moments, then "
-             "nature/dressing. Use \"repeat\" for rows. Keep the route from spawn to each focal point clear (6 studs). "
-             "Aim for 35-80 prop entries; every zone gets props that match its purpose. Answer {\"props\": [...]} "
-             "with entries shaped like " + json.dumps(SCHEMA["props"])}]
+def _plan_text(plan: dict) -> str:
+    keep = {k: plan.get(k) for k in ("size", "mood", "state", "zones", "rooms", "spawn", "focal", "paths", "story") if plan.get(k)}
+    return json.dumps(keep, separators=(",", ":"))
+
+
+def detail_messages(brief: str, style: str, plan: dict, zone: dict | None = None, notes: str = "") -> list[dict]:
+    if zone:
+        x0, z0, x1, z1 = zone["rect"]
+        n = int(max(8, min(30, (x1 - x0) * (z1 - z0) / 45)))
+        focus = (f"Dress ONLY zone '{zone['id']}' x {x0:g}..{x1:g}, z {z0:g}..{z1:g} ({zone.get('purpose', '')}): about {n} "
+                 "entries, all inside it, spread over its whole area (sets of furniture, not one pile). ")
+    else:
+        focus = "Dress all zones: 25-60 entries. "
+    return [_sys(), {"role": "user", "content":
+            f"{STYLE_GUIDE[style]}\n{RULES}\n\nKITS:\n{kit_menu(brief)}\n\nBRIEF: {brief}\nPLAN: {_plan_text(plan)}\n\n"
+            + ("ART-LEAD NOTES ON THE LAST RENDER (fix these): " + notes + "\n" if notes else "") +
+            f"STEP 2 DETAIL PASS. {focus}Order: structure, hero props at focal points, furniture/sets, lights, story "
+            "props at the story moments, dressing. Use repeats for rows. Keep 6 studs clear on the route. JSON: "
+            f'{{"props": [...]}} with {PROP_FORMAT}'}]
 
 
 def baseline_messages(brief: str, style: str) -> list[dict]:
-    return [{"role": "system", "content": "You are STAR, a senior Roblox environment artist. Answer with one JSON object only."},
-            {"role": "user", "content": f"{_base(style)}\n\nKIT CATALOG (kit(params): what it is):\n{kits.catalog()}\n\n"
-             f"BRIEF: {brief}\nART STYLE: {style}\n\nWrite the complete build spec in one go (zones, rooms, spawn, focal, "
-             "paths and 35-80 prop entries). JSON shape:\n" + json.dumps(SCHEMA)}]
+    shape = PLAN_SHAPE[:-1] + ',"props":[[kit,x,z,rot,{params},n,dx,dz]]}'
+    return [_sys(), {"role": "user", "content":
+            f"{STYLE_GUIDE[style]}\n{RULES}\nMaterials: {MATS}\n\nKITS:\n{kit_menu(brief)}\n\nBRIEF: {brief}\n\n"
+            f"Write the complete build in one JSON (zones, rooms, spawn, focal, paths and 25-60 props). {PROP_FORMAT}\n{shape}"}]
 
 
-CRITIC_RUBRIC = """Score this Roblox environment (4 camera shots: eye-level hero view from the spawn, wide view, detail
-view, overview) like a strict senior environment-art lead. Scores 1-10 (10 = portfolio quality):
-composition (clear focal point, leading lines, framing, depth, negative space), scale (believable vs a 5-stud
-character), lighting (mood, light pools, contrast; not flat, not murky), detail (density right for the style; not empty,
-not noisy), story (intentional details that tell what happened here), style (one consistent art style), color (palette
-and material discipline), cleanliness (no floating/clipping/overlapping parts, no z-fighting, no 'AI slop': random
-clutter, uniform noise, mismatched pieces)."""
+CRITIC_RUBRIC = ("Score this Roblox environment like a strict senior environment-art lead, 1-10 each (10 = portfolio): "
+                 "composition (focal point, leading lines, framing, depth), scale (vs 5-stud character), lighting (mood, light "
+                 "pools, contrast; not flat or murky), detail (density right; not empty, not noisy), story (intentional "
+                 "details), style (consistent), color (palette/material discipline), cleanliness (no floating/clipping, no "
+                 "random clutter or mismatched pieces).")
+
+CRITIC_SHAPE = ('{"scores":{"composition":n,"scale":n,"lighting":n,"detail":n,"story":n,"style":n,"color":n,'
+                '"cleanliness":n},"overall":n,"problems":[".."],"fixes":["concrete change naming prop index or position"]}')
 
 
 def critic_messages(brief: str, style: str, sheet_part: dict, props_text: str, metrics: dict) -> list[dict]:
     return [{"role": "user", "content": [
-        {"type": "text", "text": f"{CRITIC_RUBRIC}\n\nBRIEF: {brief}\nTARGET STYLE: {style}\nMEASURED: {json.dumps(metrics)}\n"
-         f"PROPS (index: kit at [x,z]):\n{props_text}\n\nReturn JSON: {{\"scores\": {{\"composition\": n, \"scale\": n, "
-         "\"lighting\": n, \"detail\": n, \"story\": n, \"style\": n, \"color\": n, \"cleanliness\": n}}, \"overall\": n, "
-         "\"problems\": [\"...\"], \"fixes\": [\"concrete change, naming props by index or position, e.g. 'add 3 "
-         "pendant_lamp over the counter at x=-6..6, z=-10' or 'remove prop 14' or 'mood warm_evening'\"]}. At most 6 fixes, "
-         "most impactful first."},
+        {"type": "text", "text": f"{CRITIC_RUBRIC}\n4 shots: hero (eye level from spawn), wide, detail, overview.\nBRIEF: {brief}\n"
+         f"STYLE: {style}\nMEASURED: {json.dumps(metrics)}\nPROPS:\n{props_text}\nReturn JSON {CRITIC_SHAPE}, at most 6 fixes."},
         sheet_part]}]
 
 
-OPS_HELP = """Edit operations (JSON list "ops"):
-{"op":"add","prop":{"kit":...,"at":[x,z],"rot":0,"params":{...},"repeat":{...},"y":optional}}
-{"op":"move","index":i,"at":[x,z]}            {"op":"rotate","index":i,"rot":deg}
-{"op":"remove","index":i}                      {"op":"params","index":i,"params":{...}}
-{"op":"set","field":"mood|state|ground|palette","value":...}
-{"op":"room","zone":"id","field":"h|roof|windows|wall","value":...}
-{"op":"opening","zone":"id","opening":{"side":"S","at":0.5,"w":6,"h":9,"kind":"door"}}"""
+def metric_critic_messages(brief: str, style: str, spec: dict, props_text: str, metrics: dict, facts: dict) -> list[dict]:
+    head = {k: spec[k] for k in ("mood", "state", "size", "spawn", "focal")}
+    head["zones"] = [[z["id"], z["rect"]] for z in spec["zones"]]
+    head["rooms"] = [[r["zone"], r["h"], r["roof"], [o["side"] + ":" + o["kind"] for o in r["openings"]]] for r in spec["rooms"]]
+    shots = {k: v["notes"] or ["ok exposure/contrast"] for k, v in facts.items()}
+    return [_sys(), {"role": "user", "content":
+            f"{CRITIC_RUBRIC}\nYou cannot see the renders; judge from the spec, the props and measured shot facts.\n"
+            f"BRIEF: {brief}\nSTYLE: {style}\nSPEC: {json.dumps(head, separators=(',', ':'))}\nPROPS:\n{props_text}\n"
+            f"METRICS: {json.dumps(metrics, separators=(',', ':'))}\nSHOTS: {json.dumps(shots)}\n"
+            f"Return JSON {CRITIC_SHAPE}. At most 6 fixes, most impactful first: missing brief elements, empty zones, "
+            "weak focal point, missing lights, clutter without intent."}]
+
+
+OPS_HELP = ('ops: ["add",kit,x,z,rot,{params}] ["move",i,x,z] ["remove",i] ["params",i,{..}] ["rotate",i,deg] '
+            '["mood",name] ["room",zone,"h|roof|windows|wall",value] ["door",zone,side]')
 
 
 def revise_messages(brief: str, style: str, spec: dict, defects: list[str], critique: dict | None) -> list[dict]:
-    props = [{"i": i, "kit": p["kit"], "at": p["at"], "rot": p["rot"], "params": p["params"],
-              **({"repeat": p["repeat"]} if p.get("repeat") else {})} for i, p in enumerate(spec["props"])]
-    head = {k: spec[k] for k in ("style", "state", "mood", "palette", "size", "ground", "zones", "rooms", "spawn", "focal")}
-    crit = json.dumps({k: critique.get(k) for k in ("scores", "problems", "fixes")}) if critique else "none"
-    return [{"role": "system", "content": "You are STAR, a senior Roblox environment artist fixing your own build. "
-             "Answer with one JSON object only."},
-            {"role": "user", "content": f"{_base(style)}\n\nKIT CATALOG:\n{kits.catalog()}\n\nBRIEF: {brief}\n"
-             f"CURRENT SPEC (head): {json.dumps(head)}\nPROPS: {json.dumps(props)}\n\nMEASURED DEFECTS:\n"
-             + ("\n".join(f"- {d}" for d in defects) or "- none") + f"\n\nART-LEAD CRITIQUE OF THE RENDER: {crit}\n\n"
-             f"{OPS_HELP}\n\nFix the defects and apply the critique's fixes (only the ones that make the build better "
-             "for the brief). Prefer few strong changes over many small ones. Answer {\"ops\": [...]}."}]
+    head = {k: spec[k] for k in ("mood", "state", "size", "spawn", "focal")}
+    head["zones"] = [[z["id"], z["rect"]] for z in spec["zones"]]
+    crit = {k: critique.get(k) for k in ("problems", "fixes")} if critique else {}
+    return [_sys(), {"role": "user", "content":
+            f"{STYLE_GUIDE[style]}\n\nKITS:\n{kit_menu(brief, 34)}\n\nBRIEF: {brief}\nSPEC: {json.dumps(head, separators=(',', ':'))}\n"
+            f"PROPS:\n{props_line(spec)}\nDEFECTS: {json.dumps(defects[:10])}\nCRITIQUE: {json.dumps(crit)}\n\n"
+            f"Fix the defects and apply the useful critique fixes with few strong edits. {OPS_HELP}\nJSON: {{\"ops\": [...]}}"}]
 
 
-def metric_critic_messages(brief: str, style: str, spec: dict, props_text: str, metrics: dict, facts: dict) -> list[dict]:
-    head = {k: spec[k] for k in ("style", "state", "mood", "palette", "size", "zones", "rooms", "spawn", "focal", "paths")}
-    text = (f"{CRITIC_RUBRIC}\n\nYou cannot see the images; you get measured facts of the 4 rendered shots (hero, wide, "
-            "detail, overview) and the full build spec. Judge the layout, composition, lighting choices, density and "
-            f"storytelling from them.\n\nRULES:\n{RULES}\n\nBRIEF: {brief}\nTARGET STYLE: {style}\nSPEC: {json.dumps(head)}\n"
-            f"PROPS (index: kit at [x,z]):\n{props_text}\nSCENE METRICS: {json.dumps(metrics)}\nSHOT FACTS: {json.dumps(facts)}\n\n"
-            'Return JSON: {"scores": {"composition": n, "scale": n, "lighting": n, "detail": n, "story": n, "style": n, '
-            '"color": n, "cleanliness": n}, "overall": n, "problems": ["..."], "fixes": ["concrete change naming props by '
-            'index or position"]}. At most 6 fixes, most impactful first: missing brief elements, empty zones, weak focal '
-            "point, lights.")
-    return [{"role": "system", "content": "You are STAR's strict senior environment-art lead. Answer with one JSON object only."},
-            {"role": "user", "content": text}]
+def props_line(spec: dict, limit: int = 70) -> str:
+    return " ".join(f"{i}:{p['kit']}@{p['at'][0]:g},{p['at'][1]:g}" + (f"x{p['repeat']['n']}" if p.get("repeat") else "")
+                    for i, p in enumerate(spec["props"][:limit]))

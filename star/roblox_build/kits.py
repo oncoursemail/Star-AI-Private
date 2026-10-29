@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 
-from .geom import Ctx, lathe, light, part, shade, transform
+from .geom import Ctx, aabb, axis_aligned, lathe, light, part, rot_matrix, shade, transform
 
 KITS: dict[str, dict] = {}
 
@@ -47,9 +47,70 @@ def build_kit(ctx: Ctx, name: str, params: dict | None = None) -> list[dict]:
     if name not in KITS:
         raise KeyError(name)
     parts = KITS[name]["fn"](ctx, **clean_params(name, params))
+    _settle_faces(parts)
     for p in parts:
         p.setdefault("kit", name)
     return parts
+
+
+def _settle_faces(parts: list[dict], step: float = 0.04, passes: int = 6) -> None:
+    """Remove z-fighting inside one kit: where two axis-aligned opaque blocks have coplanar, same-facing, overlapping
+    faces (same rule as checks.z_fighting), pull the smaller face 0.04 studs inward by trimming that part (or nudging
+    it when it is too thin to trim). Invisible at play distance; the floating contact tolerance (0.08) is kept."""
+    done: set[tuple] = set()          # (part, axis, sign): each face is pulled at most once
+    for _ in range(passes):
+        faces: dict[tuple, list[int]] = {}
+        boxes = {}
+        for i, p in enumerate(parts):
+            if p["s"] != "B" or not axis_aligned(p) or p.get("t", 0) >= 0.95:
+                continue
+            boxes[i] = aabb(p)
+            lo, hi = boxes[i]
+            for axis in range(3):
+                for sign, coord in ((-1, lo[axis]), (1, hi[axis])):
+                    if axis == 1 and sign == -1:
+                        continue
+                    faces.setdefault((axis, sign, round(coord * 50)), []).append(i)
+        touched: set[int] = set()     # parts changed in this pass (their boxes are stale until the next pass)
+        for (axis, sign, _), members in faces.items():
+            if len(members) < 2 or len(members) > 400:
+                continue
+            others = [a for a in range(3) if a != axis]
+            for x in range(len(members)):
+                for y in range(x + 1, len(members)):
+                    i, j = members[x], members[y]
+                    if i in touched or j in touched:
+                        continue
+                    a, b = boxes[i], boxes[j]
+                    area = 1.0
+                    for o in others:
+                        area *= max(0.0, min(a[1][o], b[1][o]) - max(a[0][o], b[0][o]))
+                    pi, pj = parts[i], parts[j]
+                    close = pi["m"] == pj["m"] and sum(abs(pi["c"][k] - pj["c"][k]) for k in range(3)) < 40
+                    if area <= 0.25 or close:
+                        continue
+                    fa = math.prod(a[1][o] - a[0][o] for o in others)
+                    fb = math.prod(b[1][o] - b[0][o] for o in others)
+                    order = (i, j) if fa <= fb else (j, i)   # the smaller face (the detail) gives way
+                    k = next((c for c in order if (c, axis, sign) not in done), None)
+                    if k is None:
+                        continue
+                    _pull_face(parts[k], axis, sign, step)
+                    done.add((k, axis, sign))
+                    touched.add(k)
+        if not touched:
+            return
+
+
+def _pull_face(p: dict, axis: int, sign: int, step: float) -> None:
+    """Move the face of block p on world `axis` / `sign` inward by `step` (trim, or shift if the block is thin)."""
+    m = rot_matrix(*p.get("r", (0, 0, 0)))
+    local = max(range(3), key=lambda j: abs(m[axis][j]))
+    if p["z"][local] - step >= 0.1:
+        p["z"][local] = round(p["z"][local] - step, 3)
+        p["p"][axis] = round(p["p"][axis] - sign * step / 2, 3)
+    else:
+        p["p"][axis] = round(p["p"][axis] - sign * step, 3)
 
 
 def catalog() -> str:
@@ -248,7 +309,7 @@ def cliff(ctx, w, d, h, mat, moss):
         x = -cw / 2
         # upper layers start below the top of the layer beneath so every block rests on it (stud rounding included)
         sink = 0 if li == 0 else lh * 0.2 + (0.5 if ctx.style == "stud" else 0)
-        layer_top = 0.0
+        layer_top = prev_top = -1.0
         for bi in range(blocks):
             bw = cw / blocks * rng.uniform(0.85, 1.25)
             bh = ctx.snap(lh * rng.uniform(0.9, 1.35) + sink)
@@ -256,9 +317,12 @@ def cliff(ctx, w, d, h, mat, moss):
             off = rng.uniform(-1.5, 1.5)
             colr = alt_c if (bi + li) % 3 == 0 else base_c
             y0 = li * lh - sink
+            if abs(y0 + bh - prev_top) < 0.05:   # snapped neighbours of equal height would z-fight on top
+                bh += 1 if ctx.style == "stud" else 0.15
             out.append(part(ctx, "B", (ctx.snap(bw), bh, ctx.snap(bd)),
                             (x + bw / 2, y0 + bh / 2, off * (1 if li else 0.3)), mat=mat, color=colr))
             layer_top = max(layer_top, y0 + bh)
+            prev_top = y0 + bh
             x += bw * 0.95
         if moss:
             top_y = layer_top   # the moss slab sits on the tallest block of this layer
@@ -407,7 +471,7 @@ def bed(ctx, w):
     out = [part(ctx, "B", (w, 1.4, 7.5), (0, 0.9, 0), mat="wood"),
            part(ctx, "B", (w - 0.2, 0.8, 7.2), (0, 2.0, 0), mat="fabric", color=(236, 232, 222)),
            part(ctx, "B", (w + 0.1, 0.35, 5), (0, 2.5, -1.2), mat="fabric", role="accent"),
-           part(ctx, "B", (w * 0.7, 0.6, 1.4), (0, 2.6, 2.9), mat="fabric", color=(240, 238, 232)),
+           part(ctx, "B", (w * 0.7, 0.6, 1.4), (0, 2.6, 2.85), mat="fabric", color=(240, 238, 232)),
            part(ctx, "B", (w + 0.4, 4.5, 0.5), (0, 2.25, 3.9), mat="wood", color=shade(ctx.color("wood"), 0.85))]
     return out
 
@@ -549,7 +613,7 @@ def pedestal(ctx, h, statue):
 def fireplace(ctx, w):
     out = [part(ctx, "B", (w, 7, 2.2), (0, 3.5, 0.6), mat="brick" if ctx.style != "stud" else "stone"),
            part(ctx, "B", (w * 0.55, 3.4, 1.2), (0, 1.7, -0.3), mat="stone", color=(30, 26, 24)),
-           part(ctx, "B", (w + 0.8, 0.5, 2.8), (0, 4.6, 0.3), mat="wood", role="secondary"),
+           part(ctx, "B", (w + 0.8, 0.5, 2.7), (0, 4.6, 0.25), mat="wood", role="secondary"),   # back 0.1 short of the wall face
            part(ctx, "B", (w * 0.4, 0.6, 0.8), (0, 0.5, -0.3), mat="neon", color=(255, 130, 50), collide=False,
                 light=light("point", (255, 150, 80), 2.2, 20)),
            part(ctx, "B", (w * 0.45, 0.4, 0.5), (0, 0.25, -0.4), rot=(0, 10, 0), mat="wood")]
@@ -563,9 +627,9 @@ def fireplace(ctx, w):
 def rug(ctx, w, d):
     out = [part(ctx, "B", (w, 0.08, d), (0, 0.04, 0), mat="carpet", role="accent", collide=False)]
     if ctx.style != "stud":
-        out.append(part(ctx, "B", (w - 1.2, 0.1, d - 1.2), (0, 0.06, 0), mat="carpet", color=shade(ctx.palette["accent"], 0.7),
+        out.append(part(ctx, "B", (w - 1.2, 0.12, d - 1.2), (0, 0.06, 0), mat="carpet", color=shade(ctx.palette["accent"], 0.7),
                         collide=False))
-        out.append(part(ctx, "B", (w - 2.0, 0.12, d - 2.0), (0, 0.07, 0), mat="carpet", role="accent", collide=False))
+        out.append(part(ctx, "B", (w - 2.0, 0.16, d - 2.0), (0, 0.08, 0), mat="carpet", role="accent", collide=False))
     return out
 
 

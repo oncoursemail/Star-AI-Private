@@ -49,6 +49,7 @@ def _move_prop(spec: dict, index: int, dx: float, dz: float) -> None:
 def autofix(spec: dict, rounds: int = 3) -> tuple[dict, dict, dict, list[str]]:
     """Compile, check, fix what code can fix; returns (spec, compiled, report, log)."""
     spec = copy.deepcopy(spec)
+    spec["budget"] = True
     log: list[str] = []
     compiled = scene.compile_spec(spec)
     report = checks.run(spec, compiled)
@@ -143,12 +144,50 @@ def autofix(spec: dict, rounds: int = 3) -> tuple[dict, dict, dict, list[str]]:
     return spec, compiled, report, log
 
 
+LIGHT_KITS = {name for name, info in kits.KITS.items() if "light" in info.get("tags", ())}
+
+
+def dress(spec: dict) -> tuple[dict, list[str]]:
+    """Art-direction rules STAR applies after the detail pass: a light pool at every focal point, and for abandoned
+    rooms a little intentional decay in the corners (cobwebs) - never spread everywhere."""
+    spec = copy.deepcopy(spec)
+    log = []
+    lights = [p for p in spec["props"] if p["kit"] in LIGHT_KITS]
+    for f in spec["focal"]:
+        fx, fz = f["at"]
+        if any(math.hypot(p["at"][0] - fx, p["at"][1] - fz) < 12 for p in lights):
+            continue
+        room, _rect = scene._room_rect(spec, fx, fz)
+        if room and room["roof"] != "none":
+            kit_name = "candles" if spec["state"] == "abandoned" else "pendant_lamp"
+            prop = {"kit": kit_name, "at": [fx + 2.5, fz + 2.5], "params": {"y": room["h"]} if kit_name == "pendant_lamp" else {}}
+        else:
+            prop = {"kit": "lamp_post", "at": [fx + 5, fz + 3], "params": {"color": "warm"}}
+        spec["props"].append({**prop, "rot": 0, "why": f"light pool at {f['id']}"})
+        log.append(f"added {prop['kit']} at focal {f['id']}")
+    if spec["state"] == "abandoned":
+        t = scene.WALL_T[spec["style"]]
+        for room in spec["rooms"][:3]:
+            if room["roof"] == "none":
+                continue
+            zone = next(z for z in spec["zones"] if z["id"] == room["zone"])
+            x0, z0, x1, z1 = zone["rect"]
+            for cx, cz in ((x0 + t + 1.5, z0 + t + 1.5), (x1 - t - 1.5, z0 + t + 1.5)):
+                spec["props"].append({"kit": "cobweb", "at": [cx, cz], "rot": 0, "params": {"y": room["h"] - 1, "s": 4},
+                                      "why": "decay in the corner"})
+            log.append(f"cobwebs in {room['zone']}")
+    norm, _notes = scene.normalize(spec)
+    return norm, log
+
+
 # --------------------------------------------------------------------------- model stages
 
 def _ask(messages, **kw) -> tuple[dict | None, dict]:
     text, meta = llm.chat(messages, **kw)
     value = llm.parse_json(text)
     meta["chars"] = len(text)
+    if value is None:
+        meta["bad_text"] = text[:600] + " ... " + text[-400:]
     if value is None:
         text, meta2 = llm.chat(messages + [{"role": "assistant", "content": text[:2000]},
                                            {"role": "user", "content": "That was not valid JSON. Answer again with one valid JSON object only."}], **kw)
@@ -158,17 +197,38 @@ def _ask(messages, **kw) -> tuple[dict | None, dict]:
 
 
 def plan_and_detail(brief: str, style: str) -> tuple[dict, dict]:
-    plan, m1 = _ask(prompts.plan_messages(brief, style), max_tokens=2500)
+    """Layout plan first, then one detail call per zone (each fits the node's 4k context)."""
+    plan, m1 = _ask(prompts.plan_messages(brief, style), max_tokens=1400)
     plan = plan or {}
     plan["style"] = style
-    detail, m2 = _ask(prompts.detail_messages(brief, style, plan), max_tokens=6000)
+    norm, _ = scene.normalize(dict(plan, props=[]))
+    metas = {"plan": m1, "story": plan.get("story"), "detail": []}
+    props: list = []
+    zones = norm["zones"] or [None]
+    for zone in zones[:6]:
+        detail, m2 = _ask(prompts.detail_messages(brief, style, plan, zone), max_tokens=1800)
+        got = (detail or {}).get("props") or []
+        if zone:   # keep entries inside (or within 2 studs of) the zone they were asked for
+            x0, z0, x1, z1 = zone["rect"]
+            kept = []
+            for row in got:
+                p = scene.prop_from_list(row) if isinstance(row, list) else row
+                at = p.get("at") if isinstance(p, dict) else None
+                try:
+                    if at and x0 - 2 <= float(at[0]) <= x1 + 2 and z0 - 2 <= float(at[1]) <= z1 + 2:
+                        kept.append(p)
+                except (TypeError, ValueError, IndexError):
+                    continue
+            got = kept
+        props += got
+        metas["detail"].append({"zone": zone["id"] if zone else None, "n": len(got), **m2})
     raw = dict(plan)
-    raw["props"] = (detail or {}).get("props") or []
-    return raw, {"plan": m1, "detail": m2, "story": plan.get("story"), "sightline": plan.get("sightline")}
+    raw["props"] = props
+    return raw, metas
 
 
 def baseline_spec(brief: str, style: str) -> tuple[dict, dict]:
-    raw, meta = _ask(prompts.baseline_messages(brief, style), max_tokens=7000)
+    raw, meta = _ask(prompts.baseline_messages(brief, style), max_tokens=2400)
     raw = raw or {}
     raw["style"] = style
     return raw, {"single": meta}
@@ -200,11 +260,67 @@ def critique(brief: str, style: str, spec: dict, report: dict, sheet_path: Path,
         meta["critic"] = "vision"
     else:
         msgs = prompts.metric_critic_messages(brief, style, spec, props_text(spec), metrics, facts)
-        value, meta = _ask(msgs, max_tokens=1500, temperature=0.2)
+        value, meta = _ask(msgs, max_tokens=900, temperature=0.2)
         meta["critic"] = f"metrics (brain load {load})"
     if value is not None:
         value["shot_facts"] = facts
     return value, meta
+
+
+def _op_from_keyed(op: dict) -> dict | None:
+    """Model variants like {"move": 3, "x": 1, "z": 2}, {"remove": 4}, {"add": "table", "x": .., "z": .., "params": {}}."""
+    def at():
+        if "at" in op:
+            return op["at"]
+        return [op.get("x"), op.get("z")]
+    try:
+        if "add" in op:
+            kit = op["add"] if isinstance(op["add"], str) else op.get("kit")
+            prop = {"kit": kit, "at": at(), "rot": op.get("rot", 0), "params": dict(op.get("params") or {})}
+            if "y" in op:
+                prop["y"] = op["y"]
+            return {"op": "add", "prop": prop}
+        if "move" in op:
+            return {"op": "move", "index": int(op["move"]), "at": at()}
+        if "remove" in op:
+            return {"op": "remove", "index": int(op["remove"])}
+        if "rotate" in op:
+            return {"op": "rotate", "index": int(op["rotate"]), "rot": op.get("rot", op.get("deg", 0))}
+        if "params" in op and isinstance(op.get("index"), int):
+            return {"op": "params", "index": op["index"], "params": op["params"]}
+        for field in ("mood", "state", "ground"):
+            if field in op:
+                return {"op": "set", "field": field, "value": op[field]}
+        if "door" in op:
+            return {"op": "opening", "zone": op["door"], "opening": {"side": op.get("side", "S"), "at": 0.5, "w": 6, "h": 9,
+                                                                    "kind": "door"}}
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _op_from_list(op: list) -> dict | None:
+    kind, a = op[0], op[1:]
+    try:
+        if kind == "add":
+            return {"op": "add", "prop": scene.prop_from_list(a)}
+        if kind == "move":
+            return {"op": "move", "index": int(a[0]), "at": [a[1], a[2]]}
+        if kind in ("remove",):
+            return {"op": "remove", "index": int(a[0])}
+        if kind == "params":
+            return {"op": "params", "index": int(a[0]), "params": a[1]}
+        if kind == "rotate":
+            return {"op": "rotate", "index": int(a[0]), "rot": a[1]}
+        if kind in ("mood", "state", "ground"):
+            return {"op": "set", "field": kind, "value": a[0]}
+        if kind == "room":
+            return {"op": "room", "zone": a[0], "field": a[1], "value": a[2]}
+        if kind == "door":
+            return {"op": "opening", "zone": a[0], "opening": {"side": a[1], "at": 0.5, "w": 6, "h": 9, "kind": "door"}}
+    except (IndexError, TypeError, ValueError):
+        return None
+    return None
 
 
 def apply_ops(spec: dict, ops: list) -> tuple[dict, list[str]]:
@@ -213,6 +329,10 @@ def apply_ops(spec: dict, ops: list) -> tuple[dict, list[str]]:
     removed = set()
     added = []
     for op in ops if isinstance(ops, list) else []:
+        if isinstance(op, list) and op and isinstance(op[0], str):
+            op = _op_from_list(op)
+        elif isinstance(op, dict) and "op" not in op:
+            op = _op_from_keyed(op)
         if not isinstance(op, dict):
             continue
         kind, idx = op.get("op"), op.get("index")
@@ -249,6 +369,35 @@ def apply_ops(spec: dict, ops: list) -> tuple[dict, list[str]]:
     return norm, log + [f"note: {n}" for n in notes]
 
 
+def redo_zone(brief: str, style: str, spec: dict, report: dict, crit: dict | None, defects: list[str]):
+    """Revision step: re-dress the weakest zone (the one the critique names, else the emptiest) with the critique's
+    problems and fixes as notes; the other zones stay as they are."""
+    zones = spec["zones"]
+    if not zones:
+        return spec, [], {}
+    text = json.dumps(crit or {}).lower()
+    named = [z for z in zones if z["id"].lower() in text]
+    density = report["metrics"].get("density", {})
+    target = (named or sorted(zones, key=lambda z: density.get(z["id"], 0)))[0]
+    notes = "; ".join([str(x) for x in ((crit or {}).get("problems") or [])[:4] + ((crit or {}).get("fixes") or [])[:4]]
+                      + [d for d in defects if target["id"] in d][:3])[:900]
+    plan = {k: spec.get(k) for k in ("size", "mood", "state", "zones", "rooms", "spawn", "focal", "paths")}
+    detail, meta = _ask(prompts.detail_messages(brief, style, plan, target, notes), max_tokens=1800)
+    rows = (detail or {}).get("props") or []
+    new_props = []
+    for row in rows:
+        p = scene.prop_from_list(row) if isinstance(row, list) else row
+        if isinstance(p, dict) and p.get("at") is not None:
+            new_props.append(p)
+    if not new_props:
+        return spec, [], meta
+    keep = [p for p in spec["props"] if (scene.zone_at(spec, *p["at"]) or {}).get("id") != target["id"]]
+    new = copy.deepcopy(spec)
+    new["props"] = keep + new_props
+    norm, notes2 = scene.normalize(new)
+    return norm, [f"re-dressed zone {target['id']}: {len(spec['props']) - len(keep)} -> {len(new_props)} props"], meta
+
+
 # --------------------------------------------------------------------------- orchestration
 
 def render(home: Path, spec: dict, compiled: dict, folder: Path, label: str) -> dict:
@@ -283,7 +432,9 @@ def build(brief: str, style: str, out: Path, *, arm: str = "pipeline", home: Pat
         report = checks.run(spec, compiled)
         fixlog: list[str] = []
     else:
+        spec, dresslog = dress(spec)
         spec, compiled, report, fixlog = autofix(spec)
+        fixlog = dresslog + fixlog
     result["autofix"] = fixlog
     _record(out, "spec-v1.json", spec)
     t = time.monotonic()
@@ -297,25 +448,35 @@ def build(brief: str, style: str, out: Path, *, arm: str = "pipeline", home: Pat
     if arm == "pipeline":
         for r in range(rounds):
             t = time.monotonic()
-            crit, cmeta = critique(brief, style, final["spec"], final["report"], Path(final["sheet"])) if final["sheet"] \
-                else (None, {})
+            crit, cmeta = critique(brief, style, final["spec"], final["report"], Path(final["sheet"]),
+                                   final.get("shots")) if final["sheet"] else (None, {})
+            result[f"critic_meta_{r + 1}"] = cmeta
             result["timings"][f"critique_{r + 1}"] = round(time.monotonic() - t, 1)
             result[f"critique_{r + 1}"] = crit
             log(f"[{arm}] critique {r + 1}: overall {crit.get('overall') if crit else None}")
             t = time.monotonic()
             defects = [d["detail"] for d in final["report"]["defects"]][:15]
-            ops_obj, rmeta = _ask(prompts.revise_messages(brief, style, final["spec"], defects, crit), max_tokens=3000)
-            new_spec, oplog = apply_ops(final["spec"], (ops_obj or {}).get("ops") or [])
+            new_spec, oplog, rmeta = redo_zone(brief, style, final["spec"], final["report"], crit, defects)
             new_spec, compiled2, report2, fixlog2 = autofix(new_spec)
             result["timings"][f"revise_{r + 1}"] = round(time.monotonic() - t, 1)
-            result[f"revise_{r + 1}"] = {"ops": oplog, "autofix": fixlog2}
+            result[f"revise_{r + 1}"] = {"ops": oplog, "autofix": fixlog2, "meta": rmeta}
             label = f"v{r + 2}"
             _record(out, f"spec-{label}.json", new_spec)
             rendered2 = render(home, new_spec, compiled2, out, label)
             result[label] = {"metrics": report2["metrics"], "defects": [d["detail"] for d in report2["defects"]][:20],
                              "severity": report2["severity_sum"], "sheet": rendered2.get("sheet")}
-            # keep the revision unless it broke something measurable
-            if rendered2.get("sheet") and report2["severity_sum"] <= final["report"]["severity_sum"] + 2 and oplog:
+            # keep the revision when the same critic rates it at least as well and nothing measurable got worse
+            shots2 = [s_["file"] for s_ in rendered2["shots"] if s_.get("ok")]
+            crit2, _m = critique(brief, style, new_spec, report2, Path(rendered2["sheet"]), shots2) if rendered2.get("sheet")                 else (None, {})
+            result[f"critique_{label}"] = crit2
+
+            def _overall(c):
+                try:
+                    return float((c or {}).get("overall") or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+            better_eye = _overall(crit2) >= _overall(crit)
+            if rendered2.get("sheet") and better_eye and report2["severity_sum"] <= final["report"]["severity_sum"] + 2:
                 final = {"spec": new_spec, "report": report2, "sheet": rendered2.get("sheet"), "label": label,
                          "shots": [s["file"] for s in rendered2["shots"] if s.get("ok")]}
             log(f"[{arm}] {label}: {len(oplog)} ops, severity {report2['severity_sum']}, kept={final['label'] == label}")
