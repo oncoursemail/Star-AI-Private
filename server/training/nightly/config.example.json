@@ -1,0 +1,19 @@
+{
+ "about": "Copy to ~/.star/nightly/config.json and fill in. Machine-local: never commit real paths, hosts or keys.",
+ "llama_server": "~/models/llama.cpp/llama-server.exe",
+ "gguf": "~/models/litha/gemma-4-12b-it-qat-q4_0.gguf",
+ "hf_dir": "~/models/hf/gemma-4-12B-it-qat-q4_0-unquantized",
+ "train_python": "<path to the training venv python (torch cu128, transformers 5.19, peft, bitsandbytes)>",
+ "convert_lora": "<llama.cpp source>/convert_lora_to_gguf.py",
+ "verify_url": "http://<router LAN address>:8100",
+ "key_file": "~/.star/server_api_key",
+ "system_prompt": "<workspace>/docs/agents/litha-eval/distill-20261028/system_prompt.txt",
+ "distill": "<workspace>/docs/agents/litha-eval/distill-20261028/questions.json",
+ "queries": "<workspace>/work/gpu/train/data/queries-q9.jsonl",
+ "kb": "<workspace>/work/gpu/train/data/kb.sqlite3",
+ "qset": "<workspace>/docs/agents/litha-eval/nightly-heldout.json",
+ "eval": "<workspace>/docs/agents/litha-eval/questions.json",
+ "work_dir": "~/.star/nightly/work",
+ "promote_dir": "~/models/litha/lora",
+ "runs_log": "<workspace>/docs/agents/nightly-training-runs.md"
+}
