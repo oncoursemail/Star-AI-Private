@@ -121,6 +121,22 @@ left free). Decided by screen recordings (2026-10-28, 60 s each, Metallic Launch
 node off 0 + 0, -ngl 40 generating 0, -ngl 99 generating 0 + 0 (195 MB free, 95% GPU), -ngl 99 idle 0. While
 loaded, under `min_free_loaded_mb` free or other programs +1200 MB -> lower step or unload. The code defaults
 (1536 / 800) are the cautious setting for a machine nobody has measured yet.
+
+**RTX 4060 ladder (STAR's PC, 2026-10-29, docs/agents/star-pc-speed-20261029.md):** keeping whole layers on the CPU
+is a cliff with the MTP drafter (its head reads the KV of layers 46/47), so the lower steps keep ALL layers on the card
+and move only the dense FFN weights of the first N layers to RAM (`-ncffn N`, ~96 MB each), with `-t 6` and draft
+length 3 (CPU work in every verify step makes shorter drafts pay). `-np 1` (~94 MB less than 2 slots, same speed).
+Measured (10 eval prompts; own = peak card memory): full + drafter n4 7210 MB 77 tok/s | ffn1 7140 62 | ffn2 7040
+57 | ffn3 6945 51 | ffn4 6850 ~45 | ffn6 6660 38 | ffn9 6380 31 | ffn12 6090 25 | ffn16 5710 21. The old whole-layer
+steps were 44 (ngl 47 + drafter, 7070 MB) / 36 (ngl 46, 6950) / 27 (ngl 44, 6700).
+
+**Idle boost** (off unless `idle_reserve_mb` > 0; STAR's PC, docs/agents/star-pc-speed-20261029.md): when nobody has
+touched keyboard or mouse for `idle_after_seconds` (GetLastInputInfo of the node's desktop session; the node runs
+in the user's session), the ladder keeps only `idle_reserve_mb` free (`idle_min_free_mb` while loaded) and the node
+reloads at the better step once no answer is streaming. The first input (or a full-screen program, game, stream, VR,
+another model server: those unload as before) reloads at the normal step at once, without waiting for answers in
+flight (the proxy marks the cut stream; the router continues it elsewhere). While boosted the guard looks for input
+every 0.25 s and ticks every second. Status: `"idle_boost": true` and reason "model loaded (idle boost: ...)".
 Other things tried: -np 2 costs ~200 MB more; q8_0 KV ~120 MB more; -c 6144/-ub 128 saves only ~20-40 MB; the output
 layer on the CPU (`-ot token_embd\.weight=CPU`) gives the same tok/s per MB as fewer layers. RTX 4060 (STAR's PC): same
 file and args; measure its ladder (her desktop use differs). A 4 GB card (GTX 1650) cannot hold this model.
