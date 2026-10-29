@@ -42,7 +42,13 @@ def rule_errors(answer: str, question: str) -> list[str]:
     sd = str(_server_dir())
     if sd not in sys.path:
         sys.path.insert(0, sd)
-    from mesh.rules import rules
+        try:
+            from mesh.rules import rules
+        finally:
+            # `server/` holds a `discord` folder: leaving it on sys.path shadows the discord package for later imports
+            sys.path.remove(sd)
+    else:
+        from mesh.rules import rules
     return [h["rule"] for h in rules.check(answer, question) if h.get("severity") == "error"]
 
 
