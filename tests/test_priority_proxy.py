@@ -370,8 +370,8 @@ class FakeLlama:
 def stack(tmp_path):
     made = []
 
-    def build(slots=2, solo=False, bg_cap=0, keys=None, grace=0.2):
-        fake = FakeLlama(slots)
+    def build(slots=2, solo=False, bg_cap=0, keys=None, grace=0.2, delay=0.02):
+        fake = FakeLlama(slots, delay=delay)
         cfg = pp.Config(upstream=fake.url, host="127.0.0.1", port=0, solo_p0=solo, grace_s=grace,
                         log=str(tmp_path / "proxy.jsonl"),
                         models={"m": pp.ModelPolicy("m", slots, bg_cap, ("alias",))})
@@ -458,7 +458,8 @@ def test_p0_pauses_background_and_both_background_answers_come_back_whole(stack)
 
 
 def test_solo_p0_pauses_every_background_stream(stack):
-    fake, server, port = stack(slots=3, solo=True)
+    # 2 s answers: at 0.8 s the first one could finish before the chat on a loaded runner (1 pause, not 2)
+    fake, server, port = stack(slots=3, solo=True, delay=0.05)
     results: dict = {}
     bg = [threading.Thread(target=run_bg, args=(port, "/p3/v1/chat/completions", chat(), results, f"bg{i}"))
           for i in range(2)]
