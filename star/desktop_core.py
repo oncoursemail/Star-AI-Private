@@ -38,6 +38,7 @@ from . import server_roles, turn_memory
 from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
+from . import general_mode
 from . import edit_format
 from . import studio_loop, studio_tool_examples, thinking_budget, verify_ladder
 from . import project_rules
@@ -170,6 +171,10 @@ class Settings:
     gold_examples_enabled: bool = False     # verified licence-recorded examples (star/gold_bank.py), opt-in
     studio_atlas: bool = True               # tested reference systems by capability (star/studio_atlas.py); retrieval only
     presolve_enabled: bool = False          # overnight pre-solved answers (star/presolve.py), off until owner opts in
+    # General questions (star/general_mode.py, truth-20261029): hidden key-facts note, exact calculator, safety facts;
+    # general_gpu answers them on the mesh router's GPU nodes (STAR_MESH_URL / ~/.star/mesh_url) instead of the brain.
+    general_help: bool = True
+    general_gpu: bool = True
     # Owner default (O1): night school's text lessons that won the paired gate go live for 14 days, visibly, with undo
     # (star/learned_week.py). False = bundles only add candidates that wait for review.
     learning_auto_live: bool = True
@@ -301,7 +306,7 @@ class Settings:
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
                             'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
                             'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'emotion_enabled', 'studio_inspect', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
-                            'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
+                            'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled', 'general_help', 'general_gpu')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -1694,6 +1699,40 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 if web_text:
                     turn_sections.append(('WEB SEARCH', web_text))
                 audited_event({'event': 'search_finished'})
+            # General questions (star/general_mode.py, truth-20261029): a hidden key-facts note, the exact
+            # calculation for maths, safety facts; answered on the mesh router's GPU nodes when one is configured
+            # (seconds instead of the brain's CPU), else by the brain as before with the note.
+            general_kind = (general_mode.kind(prompt) if settings.general_help is True and kind == 'lan'
+                            and mode in ('fast', 'auto') and not use_tools and not images and not documents
+                            and not attachment_count and document_tools is None and not github_enabled
+                            and not research and not wants_deep and not strata_plan.active else 'chat')
+            if general_kind in general_mode.GENERAL_KINDS:
+                gpu = general_mode.gpu_endpoint(settings)
+                general_secs = general_mode.sections(prompt)
+                if general_kind == 'math' and gpu:
+                    calc = await general_mode.gpu_calc(settings, gpu, prompt)
+                    general_secs = [calc] if calc else []
+                turn_sections.extend(general_secs)
+                if gpu:
+                    shown: list[str] = []
+
+                    async def show(text):
+                        shown.append(text)
+                        audited_event({'event': 'assistant_delta', 'text': text})
+                    try:
+                        text = await general_mode.gpu_answer(
+                            settings, gpu, general_mode.desktop_messages(
+                                prompt, history, learning.guard_sections(turn_sections),
+                                current_turn_line(conversation_records)),
+                            max_tokens=route.response_tokens, temperature=0.3, on_delta=show)
+                    except Exception as exc:
+                        audited_event({'event': 'general_gpu_fallback', 'reason': type(exc).__name__})
+                        text = ''.join(shown)
+                    if text:
+                        first_visible_token = True
+                        audited_event({'event': 'model_answered', 'model': general_mode.GPU_MODEL})
+                        audited_event({'event': 'finished', 'model_calls': 1, 'tool_calls': 0})
+                        return (text, [{'role': 'user', 'content': prompt}, {'role': 'assistant', 'content': text}], [])
             # One client per task.  When Strata is selected, keep the ordinary
             # resident local brain open as a no-replay fallback for transport/model
             # failures that happen before Strata produces output.
@@ -2018,6 +2057,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         throughput = (instant_answer.tokens_per_second if instant_answer is not None else
                       model_stats.get('tokens_per_second'))
         brain = ('pc' if instant_answer is not None or kind == 'local'
+                 else 'gpu' if kind == 'lan' and answered_by == general_mode.GPU_MODEL
                  else 'server' if kind == 'lan' else 'cloud')
         stats = {'brain': brain, 'model': answered_by or route.model,
                  'first_token_ms': measured_first, 'tokens_per_second': throughput,

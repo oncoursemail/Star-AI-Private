@@ -532,6 +532,9 @@ class Router:
         out = []
         for _, _, b, url, mid in ranked:        # the brain's place in the ranking holds its whole chain
             out += brain_fast if mid is None else [(b, url, mid)]
+        if nodes == "only":
+            out = [p for p in out if p[0] is not self.brain]
+            reason += "; brain skipped by request"
         return out, reason
 
     def _headers_for(self, backend: Backend, client_auth: str) -> dict:
@@ -765,6 +768,10 @@ class Router:
             req.setdefault("cache_prompt", True)
 
         nodes = headers.get("x-mesh-nodes", "").strip().lower() not in ("off", "0", "no")
+        # GPU nodes only (STAR's own chat, star/general_mode.py): never the brain; no usable node = an error at once,
+        # the client then answers on its own path
+        if req.pop("mesh_brain", None) is False or headers.get("x-mesh-brain", "").lower() in ("off", "0", "no"):
+            nodes = "only"
         plan, reason = self.plan(model, conv, nodes)
         if ground_q and plan and plan[0][0] is self.brain:
             # ~400 more prompt tokens cost the brain (~45 tok/s prompt) ~9 s before the first word: GPU nodes only
