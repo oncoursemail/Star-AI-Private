@@ -51,8 +51,8 @@ TARGET_HINTS = [("velocity", re.compile(r"\bcom\.velocity(?:powered)?\.")),     
                 ("paper", re.compile(r"\b(org\.bukkit|io\.papermc\.paper|com\.destroystokyo\.paper|org\.spigotmc|"
                                      r"net\.md_5\.bungee\.api\.chat)\.")),
                 ("bungee", re.compile(r"\bnet\.md_5\.bungee\.api\.plugin\."))]
-PLUGIN_SHAPE = re.compile(r"\b(onEnable|onInitialize|JavaPlugin|ModInitializer|@Mod\b|@Plugin\b|@Subscribe\b|"
-                          r"@EventHandler\b|\(\s*\w+Event\s+\w+\s*\))")
+PLUGIN_SHAPE = re.compile(r"\b(?:onEnable|onInitialize|JavaPlugin|ModInitializer)\b|@(?:Mod|Plugin|Subscribe|"
+                          r"SubscribeEvent|EventHandler|EventBusSubscriber)\b|\(\s*[\w.]+Event\s+\w+\s*\)")
 PROSE_PLATFORM = [("velocity", re.compile(r"\bvelocity\b", re.I)), ("neoforge", re.compile(r"\bneo\s?forge\b", re.I)),
                   ("fabric", re.compile(r"\bfabric\b", re.I)), ("paper", re.compile(r"\b(paper|spigot|bukkit)\b", re.I))]
 # Fabric: Yarn names (Loom default for years) vs official Mojang names (Fabric example mod since 1.21)

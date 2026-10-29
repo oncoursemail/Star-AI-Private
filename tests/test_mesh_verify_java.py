@@ -161,3 +161,14 @@ def test_service_down_keeps_static_checks():
     rep = v.verify(answer(yml="name: Heal\nversion: 1\nmain: com.ex.Nope\napi-version: '1.21'\ncommands:\n  heal:\n"))
     assert rep["java"]["compiled"] is False and problems(rep, 0) == []
     assert any("com.ex.Nope" in p["message"] for p in problems(rep, 1))
+
+
+def test_platform_from_prose_when_imports_are_missing_or_invented():
+    nf = ("For NeoForge 1.21 use this:\n\n```java\n@Mod(\"kit\")\npublic class Kit {\n    public Kit(IEventBus bus) {}\n}\n"
+          "```\n")
+    vl = ("A Velocity plugin:\n\n```java\nimport com.velocity.api.plugin.Plugin;\npublic class Hub implements Plugin {\n"
+          "    public void onEnable() {}\n}\n```\n")
+    assert javamc.detect_target(core.extract_blocks(nf)[0]["code"], nf) == "neoforge"
+    assert javamc.detect_target(core.extract_blocks(vl)[0]["code"], vl) == "velocity"
+    plain = "Java basics:\n\n```java\npublic class A { void f() {} }\n```\n"
+    assert javamc.detect_target(core.extract_blocks(plain)[0]["code"], plain) is None
