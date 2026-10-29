@@ -33,6 +33,7 @@ IMPORT = re.compile(r"^\s*import\s+(static\s+)?([\w.]+)(\.\*)?\s*;", re.M)
 METHOD_DECL = re.compile(r"^[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|protected|private|static|final|synchronized|"
                          r"abstract|default)\s+)*(?:<[^>]+>\s+)?[\w.$<>\[\], ?]+\s+\w+\s*\([^;{]*\)\s*(?:throws\s+[\w., ]+)?"
                          r"\s*\{", re.M)
+SAVE_RESOURCE = re.compile(r"saveDefaultConfig\(\s*\)|saveResource\(\s*\"([^\"]+)\"")
 GET_COMMAND = re.compile(r"getCommand\(\s*\"([^\"]+)\"\s*\)")
 MOD_ANN = re.compile(r"@Mod\(\s*(?:value\s*=\s*)?(\"[^\"]*\"|[\w.]+)\s*\)")
 VELOCITY_ID = re.compile(r"@Plugin\s*\((?:[^)]|\n)*?\bid\s*=\s*\"([^\"]*)\"")
@@ -426,7 +427,19 @@ def check_answer(blocks: list[dict], text: str, jvm: JvmClient | None) -> dict:
             out[k] += check_fabric_mod_json(code, classes)
         elif r in ("neoforge.mods.toml", "mods.toml"):
             out[k] += check_mods_toml(code, r, classes)
+    shown = {m.group(1) for k, b in enumerate(blocks) if roles[k] == "other"
+             for m in re.finditer(r"([\w-]+\.ya?ml)", b["code"].lstrip()[:80] + " " + text[max(0, b["start"] - 200):b["start"]])}
     for k in java:
+        for m in SAVE_RESOURCE.finditer(blocks[k]["code"]):
+            res = m.group(1) or "config.yml"
+            if target in ("paper", "spigot") and res not in shown:
+                line = blocks[k]["code"].count("\n", 0, m.start()) + 1
+                out[k].append(_p("resource", f"{m.group(0)} copies {res} from the plugin jar, but the answer has no "
+                                             f"{res}: the plugin fails to enable (IllegalArgumentException: embedded "
+                                             f"resource '{res}' cannot be found). Show {res} (src/main/resources) or "
+                                             "set defaults in code: getConfig().addDefault(...); "
+                                             "getConfig().options().copyDefaults(true); saveConfig();",
+                                 "warning", name=m.group(0), line=line))
         for m in VELOCITY_ID.finditer(blocks[k]["code"]):
             if not VELOCITY_ID_OK.match(m.group(1)):
                 out[k].append(_p("descriptor", f"Velocity plugin id '{m.group(1)}' must be lowercase a-z, 0-9, '-' or "

@@ -136,6 +136,7 @@ public class CompileServer {
     static final Pattern LOCATION = Pattern.compile("location:\\s+(?:(class|interface|enum|package|variable|record|@interface)\\s+)?([\\w.$<>]+)(?:\\s+of type\\s+([\\w.$<>]+))?");
     static final Pattern NO_PKG = Pattern.compile("package ([\\w.]+) does not exist");
     static final Pattern DEPREC = Pattern.compile("([\\w$<>]+)\\(([^)]*)\\) in ([\\w.$]+) has been deprecated");
+    static final Pattern CONVERT = Pattern.compile("cannot be converted to ([\\w.$]+)");
     static final Pattern DEPREC_CLS = Pattern.compile("^([\\w.$]+) in ([\\w.$]+) has been deprecated");
 
     static JsonObject describe(Target t, Diagnostic<? extends JavaFileObject> d) {
@@ -172,10 +173,23 @@ public class CompileServer {
                         if (kind.equals("method")) {        // also say when the name is a field or vice versa
                             Set<String> other = members(c, false);
                             if (other.contains(name)) o.addProperty("note", name + " is a field of " + owner + ", not a method");
+                            else {                          // the method exists, but on another type (a subtype?)
+                                List<String> on = declaredOn(t, name, c);
+                                if (!on.isEmpty()) o.addProperty("note", name + "() is not on " + owner + "; it exists on "
+                                        + String.join(", ", on) + (subtype(t, on.get(0), c) ? " (a subtype: check/cast to it, or use the event method that returns it)" : ""));
+                            }
                         }
                     }
                 }
                 if (cands.size() > 0) o.add("candidates", cands);
+            } else if (d.getCode() != null && d.getCode().equals("compiler.err.prob.found.req") && CONVERT.matcher(msg).find()) {
+                Matcher cm = CONVERT.matcher(msg);
+                cm.find();
+                Class<?> want = load(t, cm.group(1));
+                if (want != null) {
+                    List<String> ways = makers(want);
+                    if (!ways.isEmpty()) o.addProperty("note", "make a " + want.getSimpleName() + " with: " + String.join(", ", ways));
+                }
             } else if (np.find()) {
                 String pkg = np.group(1);
                 JsonArray cands = new JsonArray();
@@ -218,6 +232,67 @@ public class CompileServer {
         return null;
     }
 
+    // method name -> API classes that declare it publicly (built lazily per target, API packages only)
+    static final Map<String, Map<String, List<String>>> BY_METHOD = new HashMap<>();
+    static final Map<String, String> ROOTS = Map.of("paper", "org.bukkit io.papermc com.destroystokyo net.kyori",
+            "spigot", "org.bukkit org.spigotmc net.md_5", "velocity", "com.velocitypowered",
+            "fabric", "net.minecraft net.fabricmc", "fabric-mojmap", "net.minecraft net.fabricmc",
+            "neoforge", "net.minecraft net.neoforged");
+
+    static synchronized Map<String, List<String>> methodIndex(Target t) {
+        Map<String, List<String>> idx = BY_METHOD.get(t.name);
+        if (idx != null) return idx;
+        idx = new HashMap<>();
+        String[] roots = ROOTS.getOrDefault(t.name, "").split(" ");
+        for (List<String> fqs : t.bySimple.values()) for (String fq : fqs) {
+            boolean api = false;
+            for (String r : roots) if (!r.isEmpty() && fq.startsWith(r + ".")) api = true;
+            if (!api) continue;
+            try {
+                Class<?> c = Class.forName(fq, false, t.loader);
+                for (Method m : c.getDeclaredMethods())
+                    if (Modifier.isPublic(m.getModifiers())) {
+                        List<String> l = idx.computeIfAbsent(m.getName(), k -> new ArrayList<>());
+                        if (!l.contains(fq)) l.add(fq);
+                    }
+            } catch (Throwable ignored) { }
+        }
+        BY_METHOD.put(t.name, idx);
+        return idx;
+    }
+
+    static boolean subtype(Target t, String fq, Class<?> of) {
+        try { return of.isAssignableFrom(Class.forName(fq, false, t.loader)); } catch (Throwable e) { return false; }
+    }
+
+    static List<String> declaredOn(Target t, String method, Class<?> from) {
+        List<String> on = new ArrayList<>(methodIndex(t).getOrDefault(method, List.of()));
+        on.sort(Comparator.comparing((String fq) -> !subtype(t, fq, from)).thenComparing(String::length));
+        return on.subList(0, Math.min(4, on.size()));
+    }
+
+    static List<String> makers(Class<?> c) {             // public constructors + static factories returning c
+        List<String> out = new ArrayList<>();
+        try {
+            for (Constructor<?> k : c.getConstructors()) {
+                if (k.isAnnotationPresent(Deprecated.class)) continue;
+                StringBuilder sb = new StringBuilder("new " + c.getSimpleName() + "(");
+                Class<?>[] ps = k.getParameterTypes();
+                for (int i = 0; i < ps.length; i++) sb.append(i > 0 ? ", " : "").append(ps[i].getSimpleName());
+                out.add(sb.append(')').toString());
+            }
+            for (Method m : c.getMethods())
+                if (Modifier.isStatic(m.getModifiers()) && m.getReturnType() == c && !m.isAnnotationPresent(Deprecated.class)) {
+                    StringBuilder sb = new StringBuilder(c.getSimpleName() + "." + m.getName() + "(");
+                    Class<?>[] ps = m.getParameterTypes();
+                    for (int i = 0; i < ps.length; i++) sb.append(i > 0 ? ", " : "").append(ps[i].getSimpleName());
+                    String sig = sb.append(')').toString();
+                    if (!out.contains(sig)) out.add(sig);
+                }
+        } catch (Throwable ignored) { }
+        return out.subList(0, Math.min(6, out.size()));
+    }
+
     static Set<String> members(Class<?> c, boolean methods) {
         Set<String> out = new TreeSet<>();
         try {
@@ -240,7 +315,8 @@ public class CompileServer {
         for (String p : pool) {
             String pl = p.toLowerCase(Locale.ROOT);
             double s = lev(low, pl) / (double) Math.max(low.length(), pl.length());
-            if (pl.contains(low) || low.contains(pl)) s -= 0.25;
+            if ((pl.contains(low) || low.contains(pl)) && 3 * Math.min(pl.length(), low.length()) >= 2 * Math.max(pl.length(), low.length()))
+                s -= 0.25;                                   // getKiller is not "get"
             if (s <= 0.5) scored.add(Map.entry(p, s));
         }
         scored.sort(Map.Entry.comparingByValue());
@@ -341,6 +417,9 @@ public class CompileServer {
                 compile(t, Map.of("w/W.java", "package w; public class W { java.util.List<String> l = new java.util.ArrayList<>(); }"), null);
             System.out.printf("target %s: %d jars, %d classes, warm %d ms%n", t.name, jars.length, t.bySimple.size(), (System.nanoTime() - t0) / 1_000_000);
         }
+        Thread idx = new Thread(() -> { for (Target t : TARGETS.values()) methodIndex(t); System.out.println("method index ready"); });
+        idx.setDaemon(true);
+        idx.start();
         HttpServer srv = HttpServer.create(new InetSocketAddress(port), 32);
         srv.setExecutor(Executors.newFixedThreadPool(4));
         srv.createContext("/health", ex -> {
