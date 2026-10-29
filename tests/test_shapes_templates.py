@@ -127,3 +127,33 @@ def test_make_bb_writes_valid_files(tmp_path):
     bbm = json.loads(next(tmp_path.glob("*.bbmodel")).read_text(encoding="utf-8"))
     assert bbm["meta"]["model_format"] == "java_block" and len(bbm["elements"]) == len(pl["spec"]["parts"])
     assert next(tmp_path.glob("*_views.png")).stat().st_size > 1000
+
+
+def test_minecraft_tools_template_build_and_check(tmp_path):
+    from star.minecraft_tools import TOOL_NAMES, MinecraftTools
+    from star.workspace import Workspace
+    ws = Workspace(tmp_path)
+    tools = MinecraftTools(ws, enabled=True, allow_write=True)
+    names = {t["name"] for t in tools.definitions("make me a minecraft lantern model")}
+    assert {"workspace_minecraft_model_build", "workspace_minecraft_model_check"} <= names
+    args = {"output_dir": "models/lantern", "template": "lantern", "name": "chain_lantern",
+            "params": {"hanging": True, "light": "candle", "bogus": 3}, "colors": {"metal": "#3a3a40"}}
+    res = tools.call("workspace_minecraft_model_build", args, enabled=TOOL_NAMES)
+    assert res["format"] == "java_block" and res["checks"]["score"] >= 80 and "hanging" in res["parameters"]
+    assert any("ignored" in n for n in res["clamped"])
+    assert (tmp_path / "models" / "lantern" / "chain_lantern_views.png").exists()
+    chk = tools.call("workspace_minecraft_model_check", {"path": res["files"]["bbmodel"]}, enabled=TOOL_NAMES)
+    assert chk["score"] == res["checks"]["score"]
+    with pytest.raises(FileExistsError):
+        tools.call("workspace_minecraft_model_build", args, enabled=TOOL_NAMES)
+    with pytest.raises(ValueError):
+        tools.call("workspace_minecraft_model_build", {"output_dir": "m3", "template": "spaceship"}, enabled=TOOL_NAMES)
+    reader = MinecraftTools(ws, enabled=True, allow_write=False)
+    with pytest.raises(PermissionError):
+        reader.call("workspace_minecraft_model_build", {"output_dir": "m2", "template": "chair"}, enabled=TOOL_NAMES)
+    (tmp_path.parent / "outside.bbmodel").write_text("{}")
+    with pytest.raises(PermissionError):
+        tools.call("workspace_minecraft_model_check", {"path": "../outside.bbmodel"}, enabled=TOOL_NAMES)
+    mob = tools.call("workspace_minecraft_model_build", {"output_dir": "models/fox", "template": "quadruped",
+                                                         "params": {"tail": "bushy"}}, enabled=TOOL_NAMES)
+    assert mob["format"] == "bedrock" and "animation" in " ".join(mob["files"])
