@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import instant
 from .loop import runner as loop_runner
+from .selfmodel import brief as self_brief
 from .speed import hook as speed
 
 VERSION = "3"
@@ -107,6 +108,12 @@ DEFAULTS = {
     "docs_timeout_s": 0.15,           # late = no docs (the answer never waits longer than this for them)
     "docs_budget": 500,               # tokens
     "context_budget": 900,            # docs + verified-answer grounding together; docs get what grounding leaves
+    # system self-model (server/mesh/selfmodel, :8103): a question about Litha herself ("what GPU are you on", "why so
+    # slow") skips the answer cache/grounding/docs and gets short live facts in front of it instead
+    "self": True,
+    "self_url": "http://127.0.0.1:8103",
+    "self_timeout_s": 0.3,
+    "self_max_chars": 900,
     **speed.DEFAULTS,                 # parallel sections (server/mesh/speed/), off by default
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
@@ -675,6 +682,8 @@ class Router:
             return await self.forward(self.cfg["verify_url"], method, path, headers, body, writer)
         if path in ("/mesh/docs", "/mesh/docs/block", "/mesh/docs/entries"):
             return await self.forward(self.cfg["docs_url"], method, path, headers, body, writer)
+        if path == "/mesh/self" or path.startswith("/mesh/self/"):
+            return await self.forward(self.cfg["self_url"], method, path, headers, body, writer)
         if path == "/mesh/cache":
             return await send_json(writer, *await self.cache_api(method, headers, body))
         if method == "POST" and path in ("/v1/chat/completions", "/v1/completions"):
@@ -733,7 +742,8 @@ class Router:
         conv = instant.conversation_key(req, headers) if model == FAST else None
         t0 = time.monotonic()
         cache_hdr, question, context, ground_q = {}, None, "", None
-        if model == FAST and self.cache is not None:
+        selfq = model in (FAST, DEEP) and self.self_question(req, headers)
+        if model == FAST and self.cache is not None and not selfq:
             cache_hdr, question, context = self.cache_check(req, headers)
             row = self.cache.exact(question, context) if question else None
             if row is not None:
@@ -790,10 +800,12 @@ class Router:
                         self.counters["ground_used"] += 1
                         ground_hdr["X-Mesh-Ground-Ids"] = ",".join(str(r["id"]) for r in refs)
         # parallel sections (server/mesh/speed/hook.py): only once the cache has said no (or cannot answer)
-        if model == FAST and stream and (decided or not question) and                 await speed.try_sections(self, path, headers, req, conv, writer, t0, {**cache_hdr, **ground_hdr}):
+        if model == FAST and stream and not selfq and (decided or not question) and                 await speed.try_sections(self, path, headers, req, conv, writer, t0, {**cache_hdr, **ground_hdr}):
             return
 
-        if model == FAST:
+        if selfq:
+            cache_hdr.update(await self.self_inject(req, plan[0][0].name if plan else None))
+        elif model == FAST:
             cache_hdr.update(await self.docs_inject(req, headers))
 
         def body_for(mid):
@@ -817,6 +829,8 @@ class Router:
             cache_hdr.update(ground_hdr)
         if "X-Mesh-Docs" in cache_hdr:
             log["docs"] = cache_hdr["X-Mesh-Docs"]
+        if "X-Mesh-Self" in cache_hdr:
+            log["self"] = cache_hdr["X-Mesh-Self"]
         self.decisions.append(log)
         # the semantic cache lookup (an embedding round trip) runs while the backend starts: a hit before the first
         # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
@@ -1154,6 +1168,43 @@ class Router:
         self.counters["docs_used"] += 1
         return {"X-Mesh-Docs": f"{len(block.get('entries') or [])}e{len(block.get('passages') or [])}p "
                                f"{round((time.monotonic() - t0) * 1000)}ms"}
+
+    def self_question(self, req: dict, headers: dict) -> bool:
+        """The last user message asks about Litha herself (her GPU, servers, speed, code, learning): plain chat only."""
+        if not self.cfg["self"] or headers.get("x-mesh-self", "").lower() in ("off", "0", "no"):
+            return False
+        msgs = req.get("messages")
+        if not isinstance(msgs, list) or not msgs or not isinstance(msgs[-1], dict) or \
+                msgs[-1].get("role") != "user" or not isinstance(msgs[-1].get("content"), str) or \
+                any(req.get(k) for k in ("tools", "functions", "response_format", "grammar", "json_schema")):
+            return False
+        return self_brief.wants_self(msgs[-1]["content"])
+
+    async def self_inject(self, req: dict, backend: str | None) -> dict:
+        """The self-model's live facts (which machine answers, GPU states, speeds, code, learning) go in front of the
+        question; the system prompt stays the cached prefix. Never waits longer than self_timeout_s."""
+        msgs = req["messages"]
+        content = msgs[-1]["content"]
+        body = json.dumps({"q": content[-1500:], "backend": backend, "max": self.cfg["self_max_chars"]}).encode()
+        t = self.cfg["self_timeout_s"]
+        try:
+            up = await open_upstream(self.cfg["self_url"].rstrip("/") + "/mesh/self/brief", "POST", body,
+                                     {"Content-Type": "application/json",
+                                      "Authorization": f"Bearer {self.keys.first()}"}, connect_s=t, idle_s=t)
+            try:
+                raw = await asyncio.wait_for(up.body(), t)
+            finally:
+                up.close()
+            block = json.loads(raw) if up.status == 200 else {}
+        except (UpstreamError, asyncio.TimeoutError, ValueError):
+            self.counters["self_failed"] += 1
+            return {"X-Mesh-Self": "late"}
+        text = (block.get("text") or "") if isinstance(block, dict) else ""
+        if not text:
+            return {}
+        msgs[-1] = {**msgs[-1], "content": f"{text}\n\n---\n{content}"}
+        self.counters["self_used"] += 1
+        return {"X-Mesh-Self": str(block.get("topic") or "all")}
 
     async def embed(self, text: str) -> list[float] | None:
         body = json.dumps({"model": self.cfg["embed_model"], "input": self.cfg["embed_prefix"] + text}).encode()
