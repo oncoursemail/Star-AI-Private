@@ -21,6 +21,9 @@ from mesh.mcdata.index import McIndex  # noqa: E402
 from mesh.verify import core, service  # noqa: E402
 from mesh.verify.apidump import ApiIndex  # noqa: E402
 
+# `server/` holds a `discord` folder: leaving it on sys.path would shadow the discord package for tests collected later
+sys.path.remove(str(ROOT / "server"))
+
 KEY = "test-key-mc"
 
 
