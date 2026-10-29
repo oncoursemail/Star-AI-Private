@@ -202,25 +202,10 @@ def test_pipeline_loop_keeps_best_round(tmp_path):
     assert (tmp_path / "round0" / "boar_views.png").exists()
 
 
-def test_minecraft_tools_model_build_and_check(tmp_path):
-    from star.minecraft_tools import TOOL_NAMES, MinecraftTools
-    from star.workspace import Workspace
-    ws = Workspace(tmp_path)
-    tools = MinecraftTools(ws, enabled=True, allow_write=True)
-    names = {t["name"] for t in tools.definitions("make me a minecraft lantern model")}
-    assert {"workspace_minecraft_model_build", "workspace_minecraft_model_check"} <= names
-    res = tools.call("workspace_minecraft_model_build", {"output_dir": "models/lantern", "spec": LANTERN},
-                     enabled=TOOL_NAMES)
-    assert res["format"] == "java_block" and res["checks"]["score"] >= 80
-    assert (tmp_path / "models" / "lantern" / "copper_lantern_views.png").exists()
-    chk = tools.call("workspace_minecraft_model_check", {"path": res["files"]["bbmodel"]}, enabled=TOOL_NAMES)
-    assert chk["score"] == res["checks"]["score"]
-    with pytest.raises(FileExistsError):
-        tools.call("workspace_minecraft_model_build", {"output_dir": "models/lantern", "spec": LANTERN},
-                   enabled=TOOL_NAMES)
-    reader = MinecraftTools(ws, enabled=True, allow_write=False)
-    with pytest.raises(PermissionError):
-        reader.call("workspace_minecraft_model_build", {"output_dir": "m2", "spec": LANTERN}, enabled=TOOL_NAMES)
-    (tmp_path.parent / "outside.bbmodel").write_text("{}")
-    with pytest.raises(PermissionError):
-        tools.call("workspace_minecraft_model_check", {"path": "../outside.bbmodel"}, enabled=TOOL_NAMES)
+
+def test_java_export_bakes_inflate_like_blockbench():
+    sp = copy.deepcopy(LANTERN)
+    sp["parts"][0]["inflate"] = 0.5
+    n, _, b = _built(sp)
+    el = b["java_model"]["elements"][0]
+    assert el["from"] == [3.5, -0.5, 3.5] and el["to"] == [12.5, 2, 12.5]

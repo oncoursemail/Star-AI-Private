@@ -4,7 +4,8 @@
   python evals/blockbench/run_eval.py --out DIR --packet      # blind A/B judge packet from a finished run
 
 Critic calls are serialised (one star-fast slot) so STAR's live chat keeps the other slot.
-The packet step writes packet/<id>_A.png, <id>_B.png and a separate key.json (arm per letter) that judges never see.
+The packet step writes packet/<id>_A.png, <id>_B.png (round 0 = single-shot baseline vs round 1 = revision, order
+random) and a separate key.json that judges never see; the loop's score per brief is the score of the round it kept.
 """
 from __future__ import annotations
 
@@ -68,13 +69,13 @@ def packet(args):
         rep = json.loads((d / "report.json").read_text(encoding="utf-8")) if (d / "report.json").exists() else {}
         if "error" in rep or not rep:
             continue
-        base = _bbmodel(d / "round0")
-        loop = _bbmodel(d / "final")
-        if base is None or loop is None:
-            continue
-        arms = [("baseline", base), ("loop", loop)]
+        r0 = _bbmodel(d / "round0")
+        r1 = _bbmodel(d / "round1") if (d / "round1").exists() else None
+        if r0 is None or r1 is None:
+            continue  # no revision -> the loop output is the baseline output (tie), nothing to judge
+        arms = [("round0", r0), ("round1", r1)]
         rng.shuffle(arms)
-        key[b["id"]] = {"A": arms[0][0], "B": arms[1][0], "same": rep.get("best_round") == 0}
+        key[b["id"]] = {"A": arms[0][0], "B": arms[1][0], "best_round": rep.get("best_round")}
         for letter, (_, bb) in zip("AB", arms):
             views = R.previews(bb, ("front_left", "front_right", "back_right", "side"), size=320)
             R.sheet(list(views.values()), list(views)).save(pk / f"{b['id']}_{letter}.png")
@@ -93,6 +94,8 @@ def main():
     ap.add_argument("--planner", default="litha")
     ap.add_argument("--critic", default="star-fast")
     ap.add_argument("--base-url")
+    ap.add_argument("--critic-url", help="separate OpenAI-compatible server for the vision critic")
+    ap.add_argument("--critic-key-file")
     ap.add_argument("--key-file")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--packet", action="store_true")
@@ -104,7 +107,8 @@ def main():
         keep = set(args.only.split(","))
         briefs = [b for b in briefs if b["id"] in keep]
     planner = PL.default_llm(args.planner, args.base_url, args.key_file, timeout=300, retries=3)
-    critic = Serial(PL.default_llm(args.critic, args.base_url, args.key_file, timeout=1200, retries=2))
+    critic = Serial(PL.default_llm(args.critic, args.critic_url or args.base_url,
+                                   args.critic_key_file or args.key_file, timeout=1200, retries=2))
     t = time.time()
     with ThreadPoolExecutor(args.workers) as ex:
         reps = list(ex.map(lambda b: one(b, args, planner, critic), briefs))

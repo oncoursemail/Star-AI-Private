@@ -43,18 +43,36 @@ class LLM:
         t = time.time()
         for attempt in range(self.retries + 1):
             try:
-                r = httpx.post(self.base + "/chat/completions", json=body, timeout=self.timeout,
-                               headers={"Authorization": f"Bearer {self.key}"})
-                r.raise_for_status()
+                data = self._stream(httpx, body)
                 break
             except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.TransportError):
                 # a busy router can hand a request to a slow CPU fallback; a retry is ranked again
                 if attempt == self.retries:
                     raise
                 time.sleep(5)
-        data = r.json()
-        text = data["choices"][0]["message"].get("content") or ""
-        return text, time.time() - t, data.get("usage", {})
+        text = data["text"]
+        return text, time.time() - t, data.get("usage") or {}
+
+
+def _stream_impl(self, httpx, body):
+    """Stream the answer (the mesh router serves long non-streamed answers badly) and join it."""
+    body = dict(body, stream=True, stream_options={"include_usage": True})
+    parts, usage = [], {}
+    with httpx.stream("POST", self.base + "/chat/completions", json=body, timeout=self.timeout,
+                      headers={"Authorization": f"Bearer {self.key}"}) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            if not line.startswith("data: ") or line.strip() == "data: [DONE]":
+                continue
+            d = json.loads(line[6:])
+            if d.get("usage"):
+                usage = d["usage"]
+            for ch in d.get("choices") or []:
+                parts.append((ch.get("delta") or {}).get("content") or "")
+    return {"text": "".join(parts), "usage": usage}
+
+
+LLM._stream = _stream_impl
 
 
 def default_llm(model: str, base_url: str | None = None, key_file: str | None = None, *,
@@ -218,15 +236,26 @@ def run(brief: str, *, category: str | None = None, rounds: int = 2, planner: LL
         prompt = P.REVISE_TEMPLATE.format(brief=brief, spec=json.dumps(rec["spec"], separators=(",", ":")),
                                           findings=_findings_text(rec), critique=_critique_text(rec.get("critique")))
         msgs = [{"role": "system", "content": P.PLAN_SYSTEM}, {"role": "user", "content": prompt}]
-        try:
-            text, secs, usage = planner.chat(msgs, max_tokens=6000, temperature=0.4, seed=seed + 10 + r)
-            log.append({"step": f"revise{r}", "seconds": round(secs, 1)})
-            new = extract_json(text)
-            S.normalize(new)
-            raw = new
-        except (ValueError, json.JSONDecodeError, S.SpecError) as exc:
-            log.append({"step": f"revise{r}", "error": str(exc)[:300]})
+        new = None
+        for attempt in range(2):  # one repair turn when the revision is not valid JSON / spec
+            try:
+                text, secs, usage = planner.chat(msgs, max_tokens=6000, temperature=0.4, seed=seed + 10 + r + attempt)
+                log.append({"step": f"revise{r}", "seconds": round(secs, 1)})
+                cand = extract_json(text)
+                S.normalize(cand)
+                new = cand
+                break
+            except (ValueError, json.JSONDecodeError, S.SpecError) as exc:
+                log.append({"step": f"revise{r}", "error": str(exc)[:300]})
+                msgs = msgs + [{"role": "assistant", "content": text[:12000]},
+                               {"role": "user", "content": f"That JSON is not valid: {exc}. Reply with the complete "
+                                                           "corrected JSON only, shorter if needed."}]
+            except Exception as exc:  # noqa: BLE001 - network: keep the rounds we have
+                log.append({"step": f"revise{r}", "error": f"{type(exc).__name__}: {exc}"[:300]})
+                break
+        if new is None:
             break
+        raw = new
     if any((h.get("critique") or {}).get("failed") for h in history):
         # without a critic score for every round, compare on the deterministic checks only
         for h in history:

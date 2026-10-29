@@ -196,8 +196,9 @@ def _java_model(spec, uv, size):
     s = 16.0 / size
     els = []
     for p in spec["parts"]:
-        el = {"name": p["name"], "from": [_num(p["from"][0] + 8), _num(p["from"][1]), _num(p["from"][2] + 8)],
-              "to": [_num(p["to"][0] + 8), _num(p["to"][1]), _num(p["to"][2] + 8)]}
+        g = float(p.get("inflate") or 0)  # Java has no inflate: bake it into the box like Blockbench does
+        el = {"name": p["name"], "from": [_num(p["from"][0] + 8 - g), _num(p["from"][1] - g), _num(p["from"][2] + 8 - g)],
+              "to": [_num(p["to"][0] + 8 + g), _num(p["to"][1] + g), _num(p["to"][2] + 8 + g)]}
         r = p["rotation"]
         if any(r):
             axis = max(range(3), key=lambda j: abs(r[j]))

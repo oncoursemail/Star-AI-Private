@@ -57,8 +57,7 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_roblox_game_image", "search_asset",
     "star_github_tree", "star_github_read", "star_mcp_search", "star_mcp_call", "star_delegate_research",
     "star_debug_report", "star_debug_compare", "star_debug_source",
-    "workspace_minecraft_audit", "workspace_minecraft_inspect", "workspace_minecraft_model_check",
-    "star_identify_song",
+    "workspace_minecraft_audit", "workspace_minecraft_inspect", "star_identify_song",
     "star_game_video_study", "star_game_experience_search", "star_game_episode_analyze",
     "star_api_catalog_search",
 })
