@@ -16,7 +16,9 @@ import wave
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
+import pytest
+
+np = pytest.importorskip("numpy")
 
 from star.stream_stage import _CUES as STAGE_CUES
 from star.stream_motion import CUES

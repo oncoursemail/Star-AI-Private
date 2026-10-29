@@ -144,6 +144,7 @@ def test_session_attempt_judges_by_game_moments():
 
 
 def test_promotion_needs_a_better_candidate():
+    pytest.importorskip("numpy")
     from star.play.learn.improve import better
 
     def r(k, prog):
