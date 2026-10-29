@@ -32,8 +32,10 @@ def _cubes(bb):
             try:
                 a = [float(v) for v in el["from"]]
                 b = [float(v) for v in el["to"]]
+                g = float(el.get("inflate") or 0)  # Blockbench draws inflated cubes bigger on every side
             except (KeyError, TypeError, ValueError):
                 continue
+            a, b = [min(a[j], b[j]) - g for j in range(3)], [max(a[j], b[j]) + g for j in range(3)]
             out.append((el, [min(a[j], b[j]) for j in range(3)], [max(a[j], b[j]) for j in range(3)]))
     return out
 
