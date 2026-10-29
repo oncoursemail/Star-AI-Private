@@ -333,3 +333,50 @@ def test_decision_overhead_benchmark():
     import warnings
     warnings.warn(f"Instant routing decision overhead: {microseconds:.3f} microseconds/call over {count} calls", stacklevel=1)
     assert microseconds >= 0
+
+
+def test_general_question_on_the_gpu_lane_is_saved_once(monkeypatch, desk):
+    """star/general_mode.py: a general question goes to the mesh router's GPU nodes when one is configured."""
+    from star import general_mode
+    desk.settings.instant_route_enabled = False
+    monkeypatch.setattr(general_mode, "gpu_endpoint", lambda settings: "http://10.1.2.3:8100/v1")  # star:allow
+    sent = []
+
+    async def gpu(settings, endpoint, messages, *, max_tokens, temperature, on_delta=None, **_):
+        sent.append(messages)
+        await on_delta("Pete Conrad, ")
+        await on_delta("Apollo 12.")
+        return "Pete Conrad, Apollo 12."
+    monkeypatch.setattr(general_mode, "gpu_answer", gpu)
+    monkeypatch.setattr(core, "open_client", lambda *_: pytest.fail("the brain must not be called"))
+    answer, rows, artifact = run_saved_turn(desk, "Who was the third person to walk on the Moon?")
+    assert answer == "Pete Conrad, Apollo 12."
+    assert [r["role"] for r in rows] == ["user", "assistant"]
+    assert artifact["answer_stats"]["brain"] == "gpu"
+    user = sent[0][-1]["content"]
+    assert user.startswith("Who was the third person") and general_mode.NOTE in user
+    assert sent[0][0]["role"] == "system" and "Star" in sent[0][0]["content"]
+    assert [e["event"] for e in desk.events].count("assistant_delta") == 2
+
+
+def test_gpu_lane_failure_falls_back_to_the_brain_without_the_note(monkeypatch, desk):
+    from star import general_mode
+    desk.settings.instant_route_enabled = False
+    monkeypatch.setattr(general_mode, "gpu_endpoint", lambda settings: "http://10.1.2.3:8100/v1")  # star:allow
+
+    async def down(*_, **__):
+        raise TimeoutError
+    monkeypatch.setattr(general_mode, "gpu_answer", down)
+    server_calls = []
+
+    class Server:
+        async def create(self, **kwargs):
+            server_calls.append(kwargs)
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+                content="Server answer.", tool_calls=None))])
+    monkeypatch.setattr(core, "open_client", lambda *_: Client(Server()))
+    answer, rows, artifact = run_saved_turn(desk, "Who was the third person to walk on the Moon?")
+    assert answer == "Server answer." and len(server_calls) == 1 and len(rows) == 2
+    assert artifact["answer_stats"]["brain"] == "server"
+    assert general_mode.NOTE not in json.dumps(server_calls[0]["messages"])   # the note is for the GPU lane only
+    assert [e["event"] for e in desk.events].count("general_gpu_fallback") == 1

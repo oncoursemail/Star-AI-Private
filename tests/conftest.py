@@ -79,3 +79,10 @@ def pc_clock_is_daytime(monkeypatch):
     """"Automatically turn on at night" (star/gpu_helper.py) must not make a test depend on the hour it runs at."""
     from star import gpu_helper
     monkeypatch.setattr(gpu_helper, "local_hour", lambda: 14)
+
+
+@pytest.fixture(autouse=True)
+def _no_mesh_router(monkeypatch):
+    """No test may send a chat to the real mesh router (star/general_mode.py's GPU lane reads STAR_MESH_URL or
+    ~/.star/mesh_url). Tests of the lane set their own address and fakes."""
+    monkeypatch.setenv("STAR_MESH_URL", "off")

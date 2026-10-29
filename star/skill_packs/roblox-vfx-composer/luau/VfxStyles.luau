@@ -301,6 +301,16 @@ function Styles.custom(baseName: string, name: string, fields: { [string]: any }
 	if type(fields.sizeScale) == "number" then
 		copy.sizeScale = math.clamp(fields.sizeScale, 0.25, 3)
 	end
+	local timing = fields.timing
+	if type(timing) == "table" then -- stage lengths from a design plan (anticipation, hit, follow-through)
+		local t: Timing = table.clone(base.timing)
+		for _, key in { "charge", "impact", "shockwave", "linger", "dissipate" } do
+			if type(timing[key]) == "number" then
+				(t :: any)[key] = math.clamp(timing[key], 0.02, 10)
+			end
+		end
+		copy.timing = t
+	end
 	local screen = fields.screen
 	if type(screen) == "table" then
 		local s: Screen = table.clone(base.screen)

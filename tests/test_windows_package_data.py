@@ -45,6 +45,7 @@ PACKAGE_DATA_SITES = {
     "star/roblox_deprecated.py": "data/roblox_api",  # deprecated list + beta status (missing folder = rung skips)
     "star/roblox_cutscene_studio.py": "star/skill_packs",  # roblox-cutscenes pack luau/ (PR #351)
     "star/roblox_vfx_studio.py": "star/skill_packs",  # roblox-vfx-composer pack luau/ (PR #327)
+    "star/roblox_ui_designer.py": "star/data/roblox_ui",  # game-UI Luau kit (ui-vfx-20261029, rides star/data)
     "star/skill_import.py": "star/skill_packs",  # SkillForge: refuses to shadow a bundled pack name
     "star/skill_packs/__init__.py": "star/skill_packs",
     "star/studio_milestones.py": "evals/studio",
@@ -56,6 +57,8 @@ OTHER_FILE_ANCHORS = {
     "star/architecture_pipeline.py": "opt-in Blender export runs scripts/blender_building.py from a source checkout",
     "star/human_evals.py": "developer-only human-likeness eval suite (evals/human)",
     "star/vtuber/model.py": "mascot faces from frontend/dist (bundled) or the source checkout; STAR_FACES_DIR overrides",
+    "star/asset3d/pipeline.py": "developer-only 3D asset eval pipeline (briefs in evals/asset3d; not wired into STAR.exe)",
+    "star/asset3d/runner.py": "developer-only: runs build_bpy.py in headless Blender from a source checkout",
     "star/breadth_evals.py": "developer-only breadth eval suites (evals/gdscript, evals/instruction-following)",
     "star/best_of_n.py": "developer-only evaluation prelude ('' in the packaged app)",
     "star/cli.py": "source-only CLI",
@@ -183,7 +186,7 @@ def test_runtime_missing_resources_are_recorded_and_not_claimed_bundled():
     assert missing == PENDING_OWNER_REVIEW
     bundled = set(PACKAGE_DATA_SITES.values()) - missing
     assert all(_bundle_has(resource, local_data) for resource in bundled)
-    assert len(bundled) == 12  # five readers share the skill-pack directory; star/data/mistake_memory (S2), star/data/fonts and the Resource Atlas registry ride star/data
+    assert len(bundled) == 13  # five readers share the skill-pack directory; star/data/mistake_memory (S2), star/data/fonts, star/data/roblox_ui and the Resource Atlas registry ride star/data
 
 
 def test_actual_packaged_root_readers_resolve_resources(tmp_path):

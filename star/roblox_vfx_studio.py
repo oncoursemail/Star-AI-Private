@@ -49,7 +49,7 @@ STAGE_ORIGIN = (-300.0, 0.0, 300.0)  # empty baseplate in STAR Test Place, away 
 MAX_FRAMES = 60
 STAGES = ("charge", "impact", "shockwave", "linger", "dissipate")
 FX = ("burst", "sparks", "smoke", "ring", "ringSegments", "dome", "pillar", "slashes", "vortex", "crack", "debris",
-      "spikes", "aura", "light", "flash", "tint", "shake")
+      "spikes", "aura", "light", "flash", "tint", "shake", "particles", "beam", "projectile", "sweep")
 
 # --------------------------------------------------------------------------- style profiles (mirror of VfxStyles)
 
@@ -453,6 +453,12 @@ def generated_module(style: dict, ability: dict, *, intensity: float | None = No
         fields.append("palette = { " + ", ".join(f"{k} = {_luau_value(v)}" for k, v in style["palette"].items()) + " }")
     if intensity is not None:
         fields.append(f"intensity = {_luau_value(float(_clamp(intensity, 0.25, 1.5)))}")
+    if isinstance(style.get("sizeScale"), (int, float)):
+        fields.append(f"sizeScale = {_luau_value(float(_clamp(style['sizeScale'], 0.25, 3)))}")
+    timing = style.get("timing")
+    if isinstance(timing, dict) and timing:      # stage lengths from a design plan (roblox_vfx_designer)
+        fields.append("timing = " + _luau_table({k: float(_clamp(v, 0.02, 10)) for k, v in timing.items()
+                                                  if k in STAGES and isinstance(v, (int, float))}))
     screen = style.get("screen")
     if isinstance(screen, dict) and screen:
         fields.append("screen = " + _luau_table({k: v for k, v in screen.items()
@@ -524,6 +530,10 @@ for cycle = 1, config.cycles do
 	if root and root:IsA("BasePart") then
 		root.Anchored = true
 		character:PivotTo(stage * CFrame.new(0, 3, 0) * CFrame.Angles(0, math.rad(config.facing), 0))
+	end
+	local shield = character:FindFirstChildOfClass("ForceField") -- the spawn bubble would sit over every frame
+	if shield then
+		shield:Destroy()
 	end
 	print("__MARK__ play " .. config.run .. " " .. cycle)
 	VfxService.playAt(config.ability, config.style, stage, player.UserId, config.speed)
@@ -613,7 +623,7 @@ print("__MARK__ client-ready " .. config.run)
 
 def lab_config(spec: dict, run: str) -> str:
     style = spec["style"]
-    length = style_length(style["base"])
+    length = float(spec.get("length") or style_length(style["base"], style.get("timing")))
     cam = spec.get("camera") or [20, 6, 20]
     values = {
         "run": run, "ability": spec["ability"]["name"], "style": style.get("name") or style["base"],
@@ -633,8 +643,8 @@ def lab_config(spec: dict, run: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def style_length(base: str) -> float:
-    t = STYLES[base]["timing"]
+def style_length(base: str, timing: dict | None = None) -> float:
+    t = {**STYLES[base]["timing"], **(timing or {})}
     return t["charge"] + t["impact"] + t["shockwave"] * 0.5 + t["linger"] + t["dissipate"]
 
 
@@ -717,7 +727,8 @@ def plan(prompt: str, **kwargs) -> dict:
     findings = lint_sources(sources)
     return {"spec": spec, "generated_luau": generated, "lint": findings,
             "lint_errors": sum(1 for items in findings.values() for f in items if f["severity"] == "error"),
-            "modules": sorted(sources), "length_seconds": round(style_length(spec["style"]["base"]), 2)}
+            "modules": sorted(sources),
+            "length_seconds": round(style_length(spec["style"]["base"], spec["style"].get("timing")), 2)}
 
 
 # --------------------------------------------------------------------------- frame evidence
@@ -759,9 +770,9 @@ def _diff(a, b) -> float:
     return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3 / 255
 
 
-def stage_times(base: str) -> dict:
-    """Stage start times of a built-in profile (mirror of Styles.stageTimes)."""
-    t = STYLES[base]["timing"]
+def stage_times(base: str, timing: dict | None = None) -> dict:
+    """Stage start times of a built-in profile, or of its plan timing override (mirror of Styles.stageTimes)."""
+    t = {**STYLES[base]["timing"], **(timing or {})}
     impact = t["charge"]
     shockwave = impact + t["impact"]
     linger = shockwave + t["shockwave"] * 0.5
@@ -781,7 +792,7 @@ def critique(frames: list[dict], style: dict) -> dict:
     if len(frames) < 3:
         return {"ok": False, "findings": ["fewer than 3 frames captured"], "scores": {}}
     palette = STYLES[style["base"]]["palette"] if not style.get("palette") else style["palette"]
-    times = stage_times(style["base"])
+    times = stage_times(style["base"], style.get("timing"))
     stats = [frame_stats(f["data"], palette) for f in frames]
     ts = [float(f.get("effect_t", -1)) for f in frames]
     pre = [i for i, t in enumerate(ts) if t < 0] or [0]
@@ -936,7 +947,7 @@ class VfxLab:
 
     async def _playtest(self, spec: dict, run: str) -> dict:
         speed = float(_clamp(spec.get("speed", 0.25), 0.05, 1))
-        length = style_length(spec["style"]["base"])
+        length = float(spec.get("length") or style_length(spec["style"]["base"], spec["style"].get("timing")))
         wall = length / speed
         started = await self.guarded.call_tool("start_stop_play", {"studio_id": self.guarded.studio_id, "is_start": True})
         if _failed(started):

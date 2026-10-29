@@ -1,0 +1,29 @@
+{
+ "note": "Held-out briefs for the blockbench lane (2026-10-29). Written before any prompt tuning on them; the prompt was only tried on a stool brief that is not in this list.",
+ "briefs": [
+  {"id": "b01", "category": "block", "brief": "a hanging iron chain lantern with a warm candle inside"},
+  {"id": "b02", "category": "block", "brief": "a mossy stone birdbath with a small water basin"},
+  {"id": "b03", "category": "block", "brief": "an alchemist's cauldron on three short legs with green bubbling liquid"},
+  {"id": "b04", "category": "block", "brief": "a wooden beehive box with honey dripping from the entrance"},
+  {"id": "b05", "category": "block", "brief": "a small clockwork machine block with copper pipes and a gear"},
+  {"id": "i01", "category": "item", "brief": "a crystal-tipped wizard staff with a wrapped leather grip"},
+  {"id": "i02", "category": "item", "brief": "a stout dwarven war hammer with a gold-banded head"},
+  {"id": "i03", "category": "item", "brief": "a glass potion bottle with a cork stopper and pink liquid"},
+  {"id": "i04", "category": "item", "brief": "a miner's pickaxe with an amethyst head"},
+  {"id": "f01", "category": "furniture", "brief": "a rustic oak dining table with chunky legs"},
+  {"id": "f02", "category": "furniture", "brief": "a royal velvet armchair with gold trim"},
+  {"id": "f03", "category": "furniture", "brief": "a wooden bookshelf cabinet filled with colourful books"},
+  {"id": "f04", "category": "furniture", "brief": "a cozy single bed with a patchwork quilt and a pillow"},
+  {"id": "f05", "category": "furniture", "brief": "a market stand with a striped cloth awning"},
+  {"id": "m01", "category": "mob", "brief": "a round fluffy cloud sheep with stubby legs"},
+  {"id": "m02", "category": "mob", "brief": "a small orange fox with a big bushy tail"},
+  {"id": "m03", "category": "mob", "brief": "a desert scorpion with a raised stinger tail and pincers"},
+  {"id": "m04", "category": "mob", "brief": "a mossy stone golem guardian with glowing eyes"},
+  {"id": "m05", "category": "mob", "brief": "a friendly green frog with big eyes"},
+  {"id": "m06", "category": "mob", "brief": "a waddling penguin with a yellow beak"},
+  {"id": "e01", "category": "entity", "brief": "a small wooden rowboat with two oars"},
+  {"id": "e02", "category": "entity", "brief": "a floating crystal totem that bobs up and down"},
+  {"id": "a01", "category": "armor", "brief": "a knight's iron armor set with a plumed helmet"},
+  {"id": "a02", "category": "armor", "brief": "a druid armor set made of leaves and vines"}
+ ]
+}
