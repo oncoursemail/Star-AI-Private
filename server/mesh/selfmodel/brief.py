@@ -107,8 +107,16 @@ def render(snap: dict, topic: str = "all", backend: str | None = None, max_chars
         commits = rep.get("deployed") or {}
         parts = []
         for name, d in dep.items():
-            c = (commits.get(name) or {}).get("commit")
-            parts.append(f"{name} {c[:8] if c else (d.get('blob') or '?')[:8] + ' (file id)'}")
+            info = commits.get(name) or {}
+            c = info.get("commit")
+            text = f"{name} {c[:8] if c else (d.get('blob') or '?')[:8] + ' (file id)'}"
+            if info.get("branch"):
+                text += f" (from {info['branch']}, not merged)"
+            elif info.get("note") and not c:
+                text += " (not on any pushed branch: local edit)"
+            elif info.get("newer_commits_on_branch"):
+                text += f" ({info['newer_commits_on_branch']} newer commits on {rep.get('branch', 'star/next')})"
+            parts.append(text)
         if parts:
             lines.append("- Deployed code: " + ", ".join(parts) + ".")
         if rep:

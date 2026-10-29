@@ -668,6 +668,8 @@ class Router:
             except (ValueError, AssertionError):
                 return await send_json(writer, 400, err("body must be a JSON object"))
             return await send_json(writer, *self.register(req, peer))
+        if method == "POST" and path == "/mesh/self/report":   # node jobs report with the mesh token (checked there)
+            return await self.forward(self.cfg["self_url"], method, path, headers, body, writer)
         if path == "/mesh/cache" and method != "GET":    # cache changes: mesh token (checked in cache_api)
             return await send_json(writer, *await self.cache_api(method, headers, body))
         if not token or not self.keys.check(token):

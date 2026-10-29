@@ -329,6 +329,14 @@ def test_router_forwards_and_puts_live_facts_in_front_of_a_self_question(tmp_pat
         assert st == 200 and json.loads(data)["best_gpu"] == "star-pc"
         st, _, data = await asyncio.to_thread(call, port, "GET", "/mesh/self/history?n=5")
         assert st == 200 and "points" in json.loads(data)
+        # a node job reports through the router with the mesh token; a wrong token is refused by the self-model
+        st, _, _ = await asyncio.to_thread(call, port, "POST", "/mesh/self/report",
+                                           {"kind": "autotune", "node": "star-pc", "decision": "reject"}, TOKEN)
+        assert st == 200 and srv.self_model.reports.last("autotune")[-1]["node"] == "star-pc"
+        st, _, _ = await asyncio.to_thread(call, port, "POST", "/mesh/self/report", {"kind": "eval"}, "nope")
+        assert st == 401
+        st, _, _ = await asyncio.to_thread(call, port, "GET", "/mesh/self", None, TOKEN)
+        assert st == 401                                                       # the token cannot read
         # self-model down: the answer goes on without facts
         r.cfg["self_url"] = "http://127.0.0.1:9"
         st, headers, _ = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", chat)

@@ -67,7 +67,15 @@ def commit_of_blob(repo_dir: str, blob: str, path: str, branch: str) -> dict:
         except subprocess.CalledProcessError:
             continue
     if not having:
-        return {"commit": None, "note": "deployed file is not on " + branch + " (unmerged branch or local edit)"}
+        try:   # an unmerged branch? name it
+            other = run(["git", "log", "--remotes", "--format=%H", "-1", "--find-object=" + blob], repo_dir).strip()
+            refs = run(["git", "branch", "-r", "--contains", other], repo_dir).split() if other else []
+        except subprocess.CalledProcessError:
+            other, refs = "", []
+        if other:
+            return {"commit": other, "branch": refs[0] if refs else None,
+                    "note": f"deployed from {refs[0] if refs else 'a branch'}, not merged into {branch} yet"}
+        return {"commit": None, "note": "deployed file is not on any pushed branch (local edit)"}
     first = having[-1]   # git log is newest first
     newer = int(run(["git", "rev-list", "--count", f"{first}..origin/{branch}", "--", path], repo_dir).strip() or 0)
     return {"commit": first, "newer_commits_on_branch": newer}
