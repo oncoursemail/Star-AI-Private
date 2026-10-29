@@ -211,6 +211,48 @@ def test_other_gpu_load_needs_two_looks_and_ignores_own_requests(tmp_path):
     assert node.state == "busy" and "95%" in node.reason
 
 
+def test_sustained_cpu_load_is_busy_but_not_while_our_model_works(tmp_path):
+    node, gpu, clock, procs = loaded(tmp_path, busy_cpu_percent=60, busy_cpu_looks=3)
+    times = [0, 0]                                          # (idle, total) since boot
+
+    def load(percent):                                      # one poll interval of 100 ticks at this load
+        times[0] += 100 - percent
+        times[1] += 100
+        return tuple(times)
+    node._cpu = lambda: tuple(times)
+    clock.t += 10
+    node.tick()                                             # first sample: no delta yet
+    for percent in (90, 90):
+        load(percent)
+        node.tick()
+    assert node.state == "idle"                             # two looks
+    load(30)
+    node.tick()                                             # a quiet look resets the count
+    assert node.cpu_looks == 0
+    assert node.begin_request()                             # our own answer: the load is ours
+    for _ in range(4):
+        load(95)
+        node.tick()
+    assert node.state == "idle"
+    node.end_request()
+    clock.t += 5
+    for _ in range(3):
+        load(80)
+        node.tick()
+    assert node.state == "busy" and "CPU 80%" in node.reason and not node.ready
+    load(10)
+    node.tick()                                             # quiet again: comes back after resume_seconds
+    assert node.state == "busy" and "free for" in node.reason
+
+
+def test_cpu_rule_is_off_by_default(tmp_path):
+    node, gpu, clock, procs = loaded(tmp_path)
+    node._cpu = lambda: (_ for _ in ()).throw(AssertionError("not read when off"))
+    clock.t += 10
+    node.tick()
+    assert node.state == "idle"
+
+
 def test_other_programs_growing_video_memory(tmp_path):
     node, gpu, clock, procs = loaded(tmp_path, other_vram_grow_mb=1000, min_free_loaded_mb=0)
     gpu["used"] = 7300 + 900
