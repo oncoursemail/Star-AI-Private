@@ -264,7 +264,7 @@ def test_noncanonical_viewer_ids_cannot_multiply_deferred_question_slots():
                              now=100, moderated=True)
     assert not inbox.capture(question("unicode", speaker="viewеrA", text="Third?"),
                              now=100, moderated=True)
-    assert not inbox.capture(question("control", speaker="viewerA\\x00", text="Fourth?"),
+    assert not inbox.capture(question("control", speaker="viewerA\x00", text="Fourth?"),
                              now=100, moderated=True)
     assert inbox.metrics()["queued"] == 0
     assert inbox.capture(question("canonical", speaker="viewerA", text="Accepted?"),
