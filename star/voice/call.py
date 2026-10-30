@@ -60,6 +60,7 @@ class Speaker(Protocol):
     def reset(self) -> None: ...                                  # new reply: zero played_seconds
     def pending_seconds(self) -> float: ...                       # queued but not yet played
     def played_seconds(self) -> float: ...                        # played since reset()
+    # Optional first_output_callback_at() reports nonzero PCM delivered to PortAudio, not acoustic playback.
     def level(self) -> float: ...                                 # loudest 32 ms played in the last 0.4 s, 0..1
 
 
@@ -582,6 +583,25 @@ class CallSession:
                     reply.error = RuntimeError("speaker playback telemetry unavailable")
         reply.heard_seconds = min(max(0.0, heard), reply.audio_seconds)
         metrics.heard_seconds = reply.heard_seconds
+        # Distinguish PCM queued to the sound device from PCM reaching the
+        # output callback. A callback still does NOT prove OBS or listeners
+        # heard the audio. This optional telemetry must never break speech.
+        callback = getattr(self.speaker, "first_output_callback_at", None)
+        if callable(callback):
+            metrics.output_callback_status = "unplayed" if not reply.heard_seconds else "unobserved"
+            try:
+                stamp = callback()
+                if stamp is not None and reply.heard_seconds:
+                    if (type(stamp) in (int, float)
+                            and math.isfinite(stamp)
+                            and metrics.first_audio_at is not None
+                            and metrics.first_audio_at <= stamp <= metrics.done_at + 0.05):
+                        metrics.first_output_callback_at = float(stamp)
+                        metrics.output_callback_status = "observed"
+                    else:
+                        metrics.output_callback_status = "invalid"
+            except Exception:
+                metrics.output_callback_status = "invalid"
         if not interrupted and reply.error is None and reply.audio_seconds > 0:
             if reply.heard_seconds == 0:
                 reply.error = RuntimeError("speaker reported no played audio")
