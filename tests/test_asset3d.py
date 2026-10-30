@@ -103,8 +103,9 @@ def test_eval_briefs_cover_categories_and_styles():
     d = json.loads((Path(__file__).resolve().parents[1] / "evals" / "asset3d" / "briefs.json").read_text(encoding="utf-8"))
     held = d["heldout"]
     assert len(held) >= 15
-    assert {b["category"] for b in held} == set(S.CATEGORIES)
-    assert {b["style"] for b in held} == set(S.STYLES)
+    # these briefs predate the art-v2 categories/styles (character, creature, building; highpoly): see evals/art_v2
+    assert {b["category"] for b in held} == {"weapon", "vehicle", "furniture", "prop", "accessory"}
+    assert {b["style"] for b in held} == {"pbr", "stylized", "lowpoly", "roblox"}
     assert not {b["id"] for b in held} & {b["id"] for b in d["dev"]}
 
 

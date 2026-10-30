@@ -10,8 +10,8 @@ import math
 import re
 from typing import Any
 
-CATEGORIES = ("weapon", "vehicle", "furniture", "prop", "accessory")
-STYLES = ("pbr", "stylized", "lowpoly", "roblox")
+CATEGORIES = ("weapon", "vehicle", "furniture", "prop", "accessory", "character", "creature", "building")
+STYLES = ("pbr", "stylized", "lowpoly", "roblox", "highpoly")
 PART_TYPES = ("box", "cylinder", "cone", "sphere", "torus", "profile", "lathe", "tube")
 MATERIALS = ("painted_metal", "bare_metal", "gunmetal", "anodized", "chrome", "gold", "brass", "polymer", "plastic",
              "rubber", "wood", "dark_wood", "leather", "fabric", "glass", "emissive", "stone", "ceramic")
@@ -22,12 +22,19 @@ MAX_POINTS = 48
 
 # Real-world size ranges (longest side, metres) per category: a sanity check, not a template.
 SIZE_RANGE = {"weapon": (0.12, 2.2), "vehicle": (1.2, 9.0), "furniture": (0.3, 3.0), "prop": (0.1, 2.5),
-              "accessory": (0.08, 1.2)}
+              "accessory": (0.08, 1.2), "character": (0.3, 3.5), "creature": (0.1, 6.0), "building": (1.5, 30.0)}
 # Triangle budget for LOD0 (the whole asset; Roblox also caps every mesh at 20k).
-TRI_BUDGET = {"pbr": {"weapon": 16000, "vehicle": 30000, "furniture": 12000, "prop": 8000, "accessory": 10000},
-              "stylized": {"weapon": 8000, "vehicle": 16000, "furniture": 6000, "prop": 5000, "accessory": 6000},
-              "lowpoly": {"weapon": 1500, "vehicle": 4000, "furniture": 1500, "prop": 1200, "accessory": 1500},
-              "roblox": {"weapon": 8000, "vehicle": 19000, "furniture": 8000, "prop": 6000, "accessory": 6000}}
+TRI_BUDGET = {"pbr": {"weapon": 16000, "vehicle": 30000, "furniture": 12000, "prop": 8000, "accessory": 10000,
+                      "character": 20000, "creature": 16000, "building": 30000},
+              "stylized": {"weapon": 8000, "vehicle": 16000, "furniture": 6000, "prop": 5000, "accessory": 6000,
+                           "character": 10000, "creature": 8000, "building": 16000},
+              "lowpoly": {"weapon": 1500, "vehicle": 4000, "furniture": 1500, "prop": 1200, "accessory": 1500,
+                          "character": 2000, "creature": 1500, "building": 4000},
+              "roblox": {"weapon": 8000, "vehicle": 19000, "furniture": 8000, "prop": 6000, "accessory": 6000,
+                         "character": 10000, "creature": 8000, "building": 19000},
+              # high-poly source meshes (bevel + subdivision + weighted normals): for baking down / renders
+              "highpoly": {"weapon": 90000, "vehicle": 200000, "furniture": 70000, "prop": 50000, "accessory": 60000,
+                           "character": 120000, "creature": 100000, "building": 200000}}
 ROBLOX_MESH_TRIS = 20000
 ROBLOX_TEX = 1024
 
@@ -37,6 +44,7 @@ STYLE = {
     "stylized": {"bevel": 0.010, "segments": 2, "circle": 16, "tex": 1024, "shade": "smooth", "bake": True},
     "lowpoly": {"bevel": 0.0, "segments": 1, "circle": 8, "tex": 512, "shade": "flat", "bake": True},
     "roblox": {"bevel": 0.006, "segments": 2, "circle": 16, "tex": ROBLOX_TEX, "shade": "smooth", "bake": True},
+    "highpoly": {"bevel": 0.004, "segments": 3, "circle": 48, "tex": 2048, "shade": "smooth", "bake": True},
 }
 
 _HEX = re.compile(r"#[0-9a-fA-F]{6}\Z")

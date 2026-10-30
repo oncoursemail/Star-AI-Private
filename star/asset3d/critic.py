@@ -97,7 +97,7 @@ def qa_notes(metrics: dict, spec: dict) -> tuple[list[str], int]:
             notes.append(f"part {i} is far bigger than every other part ({[round(x, 3) for x in boxes[i]]} m): "
                          "check its size/radius/points (lathe points are [position, radius])")
             pen += 1
-    min_parts = {"pbr": 12, "stylized": 8, "roblox": 8, "lowpoly": 5}[spec["style"]]
+    min_parts = {"pbr": 12, "highpoly": 12, "stylized": 8, "roblox": 8, "lowpoly": 5}[spec["style"]]
     if len(spec["parts"]) < min_parts:
         notes.append(f"only {len(spec['parts'])} parts: add secondary and detail parts (aim for {min_parts * 2})")
         pen += 1
