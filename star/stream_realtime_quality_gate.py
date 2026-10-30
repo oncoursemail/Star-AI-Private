@@ -144,7 +144,8 @@ def assess_quality_gate(
     candidate_new_case_errors = sum(
         seen[(pair, "baseline")].correct and not seen[(pair, "candidate")].correct
         for pair, variant in expected
-        if variant == "baseline" and (pair, "candidate") in seen
+        if variant == "baseline" and (pair, "baseline") in seen
+        and (pair, "candidate") in seen
     )
     ungrounded = sum(not w.grounded for w in candidate)
     obs_missing = sum(not w.obs_audible for w in candidate)
