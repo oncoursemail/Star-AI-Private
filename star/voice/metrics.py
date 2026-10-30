@@ -16,8 +16,6 @@ class TurnMetrics:
     first_token_at: float | None = None  # first text from the brain
     first_sentence_at: float | None = None   # first chunk handed to text-to-speech
     first_audio_at: float | None = None  # first PCM queued, NOT confirmed playback
-    first_output_callback_at: float | None = None  # first nonzero PCM delivered to host output callback
-    output_callback_status: str = "unsupported"  # observed | unobserved | unplayed | invalid | unsupported
     last_token_at: float | None = None   # last text from the brain
     done_at: float | None = None
     end_reason: str = ""            # how the turn ended: model | silence | max_silence | max_turn
@@ -30,6 +28,8 @@ class TurnMetrics:
     interrupt_reason: str = ""
     heard_seconds: float = 0.0      # speaker callback-reported played audio (all turns, including non-interrupted)
     error: str = ""
+    first_output_callback_at: float | None = None  # first nonzero PCM delivered to host output callback
+    output_callback_status: str = "unsupported"  # observed | unobserved | unplayed | invalid | unsupported
 
     @staticmethod
     def _gap(a: float | None, b: float | None) -> float | None:
