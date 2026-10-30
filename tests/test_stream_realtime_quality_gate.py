@@ -1,6 +1,5 @@
 """Synthetic gate tests; neither model quality nor OBS playback was measured."""
 import dataclasses
-import math
 
 import pytest
 
