@@ -27,8 +27,9 @@ DEFAULTS = {
     "key_file": "/etc/star-mesh/api_keys",
     "self_url": "http://127.0.0.1:8103",
     "flaws_dir": hook.DEFAULTS["flaws_dir"],
-    "items": ["/opt/star-mesh/app/evals/flaws/*.jsonl"],
-    "system_prompt": "/opt/star-mesh/app/evals/flaws/system_prompt.txt",
+    # copies of evals/flaws live next to the state (a router redeploy replaces /opt/star-mesh/app wholesale)
+    "items": [hook.DEFAULTS["flaws_dir"] + "/evals/*.jsonl"],
+    "system_prompt": hook.DEFAULTS["flaws_dir"] + "/evals/system_prompt.txt",
     "max_tokens": 900,
     "limit": 20,
     "since": "7 days ago",
@@ -105,6 +106,13 @@ def run_gate(cfg, fix: str, sets: dict, rows: list[dict], do_ship: bool, do_repo
         its = [it for s in sets.values() for it in s]
         rows_ab = gate.ab(client(cfg), fix, its, shipped, int(cfg["max_tokens"]), int(cfg["limit"]))
         ok, tally = gate.decide(fix, rows_ab)
+        if tally["cluster"]["n"] < 3:              # nothing to judge on (no items, or the GPUs never answered)
+            result.update(ab=tally, rows=rows_ab, decision="insufficient",
+                          why=f"only {tally['cluster']['n']} measured cluster items: shipped state unchanged")
+            if do_report:
+                result["report"] = post_report(cfg, {"kind": "eval", "suite": f"flaw-gate:{fix}", "score": None,
+                                                     "why": result["why"]})
+            return result
         result.update(ab=tally, rows=rows_ab, decision="ship" if ok else "reject",
                       why="won its cluster with no control loss" if ok else "no clear win (or a control loss)")
         if ok and do_ship:
