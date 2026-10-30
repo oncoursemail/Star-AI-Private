@@ -24,7 +24,7 @@ def question(ident: str, speaker: str, *, at: float = 10.0,
 
 @pytest.mark.parametrize("speaker", [
     "", " ", "viewerA ", " viewerA", "viewer\tA",
-    "viewer\u0430", "viewer\x00", "user/name", "x" * 81,
+    "viewer\u0430", "viewer\x00", "user/name",
 ])
 def test_direct_chat_path_rejects_missing_or_noncanonical_speaker(speaker: str) -> None:
     stage = director()
@@ -32,6 +32,12 @@ def test_direct_chat_path_rejects_missing_or_noncanonical_speaker(speaker: str) 
     assert stage.propose(now=10.0) is None
     assert stage.metrics()["queued"] == 0
     assert stage.metrics()["rejected"] == 1
+
+
+def test_oversized_speaker_is_rejected_at_signal_construction() -> None:
+    # Length-invalid input cannot become a StreamSignal; admission is never called.
+    with pytest.raises(ValueError, match="invalid speaker identifier"):
+        question("oversized", "x" * 81)
 
 
 def test_direct_chat_fairness_cannot_be_bypassed_by_renamed_event_ids() -> None:
