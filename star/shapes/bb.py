@@ -213,8 +213,17 @@ def build_biped(p, r, name):
     hz = -2 if p["build"] == "golem" else 0
     eyes = EYE[p["eyes"]]
     head = k.cbox("head", hs, top, top + hs, hs, "skin", z=hz, parent=body, pivot=[0, top, 0],
-                  decals=[("north", eyes, r["eye"]["color"])] if eyes else None)
+                  decals=[("north", eyes, r["eye"]["color"])] if eyes and eyes != "glow_eyes" else None)
     face_z = hz - hs / 2
+    if p["eyes"] == "glow":  # a painted 1-px decal in the (dark) eye colour vanished: raised glowing eye blocks
+        glow = r["eye"]["color"] if r["eye"]["color"] != "#1c1a24" else "#7ae0ff"
+        gm = k.mat("eye_glow", "glow", glow)
+        ew = 2 if hs >= 8 else 1
+        ey = top + round(hs * 0.45)
+        k.pair("glow_eye", [1, ey, face_z - 0.5], [1 + ew, ey + (2 if p["build"] == "golem" else 1), face_z], gm,
+               parent=head)
+        if p["build"] == "golem":
+            k.box("brow", [-hs / 2, ey + 2, face_z - 1.5], [hs / 2, ey + 3, face_z], k.tone("skin", 0.8), parent=head)
     if p["nose"]:
         k.box("nose", [-1, top + 1, face_z - (3 if p["build"] == "golem" else 1)], [1, top + 4, face_z], "skin", parent=head)
     if p["beard"]:
@@ -416,8 +425,8 @@ def build_frog(p, r, name):
                   decals=[("up", "spots", r["pattern"]["color"])] if p["spots"] else None)
     k.box("belly", [-w / 2 + 1, lift - 0.0, -d / 2 - 0.0], [w / 2 - 1, lift + 1, d / 2 - 1], "belly", parent=body)
     k.box("mouth", [-w / 2 + 1, lift + 1, -d / 2 - 0.5], [w / 2 - 1, lift + 2, -d / 2], "mouth", parent=body)
-    es = p["eye_size"]
-    ex = w / 2 - es
+    es = min(p["eye_size"], max(2, w / 2 - 1))
+    ex = max(1, w / 2 - es)  # a gap of >= 2 px between the eyes (they merged into one bar)
     ea, eb = k.pair("eye", [ex, lift + h - 1, -d / 2], [ex + es, lift + h + es, -d / 2 + es], "skin", parent=body)
     k.pair("eyeball", [ex + 0.0, lift + h, -d / 2 - 0.5], [ex + es, lift + h + es - 1, -d / 2], "eyeball", parent=ea)
     k.parts[-1]["parent"] = eb
@@ -630,6 +639,8 @@ def build_shelf(p, r, name):
     k.cbox("back", w - 2 * t, 1, h, 1, "back", z=d / 2 - 0.5)
     n = p["shelves"]
     doors = p["doors"]
+    if p["kind"] == "bookshelf" and p["books"] and doors == "full":
+        doors = "lower"  # full doors hid every book (a bookshelf read as a closed cabinet)
     door_top = 0 if doors == "none" else (h if doors == "full" else round(h * 0.4))
     gap = (h - 1) / (n + 1)
     books = ["book_a", "book_b", "book_c"]
@@ -965,15 +976,41 @@ def build_totem(p, r, name):
         if p["base"] == "stepped":
             k.cbox("step", pw + 3, 2, 3, pw + 3, k.tone("stone", 0.85), parent=base)
             y = 3
+    faces = p["faces"]
+    if faces:
+        ph = max(ph, faces * 6)
     root = k.cbox("pillar", pw, y, y + ph, pw, "stone", parent=base,
-                  decals=[("north", "rune", r["glow"]["color"]), ("south", "rune", r["glow"]["color"])] if p["runes"] else None)
-    k.cbox("pillar_cap", pw + 2, y + ph, y + ph + 1, pw + 2, k.tone("stone", 0.85), parent=root)
-    top_y = y + ph + 1
+                  decals=[("north", "rune", r["glow"]["color"]), ("south", "rune", r["glow"]["color"])]
+                  if p["runes"] and not faces else None)
+    for i in range(faces):  # stacked carved faces (tiki / totem pole): brow, eyes, nose, mouth per segment
+        fy = y + ph - (i + 1) * (ph / faces)
+        seg = ph / faces
+        k.box(f"face{i}", [-pw / 2, fy + 0.5, -pw / 2 - 1], [pw / 2, fy + seg - 0.5, -pw / 2], k.tone("stone", 1.1),
+              parent=root)
+        dk = k.mat("carve_dark", "plain", DARK)  # carved eyes/mouth as dark blocks (decals vanished in stone noise)
+        ew = 2 if pw >= 6 else 1
+        k.pair(f"eye{i}", [pw / 2 - 1 - ew, fy + seg - 4, -pw / 2 - 1.5], [pw / 2 - 1, fy + seg - 2, -pw / 2 - 1], dk,
+               parent=root)
+        k.box(f"mouth{i}", [-pw / 2 + 1.5, fy + 1, -pw / 2 - 1.5], [pw / 2 - 1.5, fy + 2, -pw / 2 - 1], dk, parent=root)
+        k.box(f"brow{i}", [-pw / 2 - 1, fy + seg - 2, -pw / 2 - 2], [pw / 2 + 1, fy + seg - 1, -pw / 2 + 1],
+              k.tone("stone", 0.8), parent=root)
+        k.box(f"nose{i}", [-1, fy + seg / 2 - 1, -pw / 2 - 2], [1, fy + seg / 2 + 1, -pw / 2 - 1], k.tone("stone", 0.9),
+              parent=root)
+    if p["cap"] == "pyramid":
+        k.cbox("pillar_cap", pw, y + ph, y + ph + 1, pw, k.tone("stone", 0.9), parent=root)
+        for j, cw in enumerate(range(int(pw) - 2, 0, -2)):
+            k.cbox(f"cap_step{j}", cw, y + ph + 1 + j, y + ph + 2 + j, cw, k.tone("stone", 0.9), parent=root)
+        top_y = y + ph + 1 + max(0, (int(pw) - 2) // 2)
+    else:
+        k.cbox("pillar_cap", pw + 2, y + ph, y + ph + 1, pw + 2, k.tone("stone", 0.85), parent=root)
+        top_y = y + ph + 1
     gap = 2 if p["floating"] else 0
     cy = top_y + gap
-    cs = p["top_size"]
+    cs = min(p["top_size"], pw + 2)  # an oversized crystal on a thin pillar looked top-heavy
     topname = p["top"]
-    if topname == "crystal":
+    if topname == "none":
+        top = root
+    elif topname == "crystal":
         top = k.cbox("crystal", cs, cy, cy + cs * 1.6, cs, "crystal", parent=root, pivot=[0, cy, 0], rot=[0, 45, 0])
         k.cbox("crystal_tip", cs - 2, cy + cs * 1.6, cy + cs * 1.6 + 2, cs - 2, k.tone("crystal", 1.2), parent=top)
         k.cbox("crystal_low", cs - 2, cy - 1.0, cy, cs - 2, k.tone("crystal", 0.85), parent=top)
@@ -987,7 +1024,7 @@ def build_totem(p, r, name):
         top = k.cbox("rune_stone", cs, cy, cy + cs, cs, "stone", parent=root, pivot=[0, cy, 0],
                      decals=[("north", "rune", r["glow"]["color"])])
     shards = []
-    for i in range(p["shards"]):
+    for i in range(p["shards"] if topname != "none" else 0):
         a = 2 * math.pi * i / p["shards"]
         rad = cs / 2 + 3
         x, z = math.cos(a) * rad, math.sin(a) * rad
@@ -1353,10 +1390,12 @@ _t("box_block", "solid box block with features: beehive, machine, crate, furnace
    {"body": ("#b0844a", "wood_planks"), "trim": ("#7a5430", "log"), "accent": ("#c8743a", "metal", "pipes, gears"),
     "detail": ("#f0a830", "glow", "honey, gauge glass"), "dark": ("#2e2420", "plain")},
    build_box_block, ("beehive", "hive", "machine", "crate", "furnace", "generator", "engine", "safe", "clockwork", "box"))
-_t("totem", "standing monument: totem, crystal pillar, obelisk, shrine, floating crystal (can bob)", "entity",
+_t("totem", "standing monument: totem pole (faces), crystal pillar, obelisk (cap=pyramid), shrine, floating crystal", "entity",
    {"base": E("slab", "slab", "stepped", "none"), "pillar_w": P(I, 6, 2, 10), "pillar_h": P(I, 10, 0, 20),
-    "top": E("crystal", "crystal", "orb", "flame", "rune_stone"), "top_size": P(I, 5, 3, 9), "floating": P(B, True),
-    "shards": P(I, 0, 0, 6), "runes": P(B, True), "pillar_rings": P(B, False)},
+    "top": E("crystal", "crystal", "orb", "flame", "rune_stone", "none"), "top_size": P(I, 5, 3, 9), "floating": P(B, True),
+    "shards": P(I, 0, 0, 6), "runes": P(B, True), "pillar_rings": P(B, False),
+    "faces": P(I, 0, 0, 4, doc="stacked carved faces (tiki/totem pole)"),
+    "cap": E("flat", "flat", "pyramid", doc="pyramid = obelisk tip")},
    {"stone": ("#6a6670", "stone"), "crystal": ("#b07ae0", "crystal"), "glow": ("#7ae0ff", "glow")},
    build_totem, ("totem", "obelisk", "pillar", "shrine", "monument", "crystal", "statue", "beacon"))
 _t("plant", "plant: potted plant, flower, bush, sapling, fern", "block",

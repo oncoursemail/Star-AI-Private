@@ -32,6 +32,7 @@ def log(msg):
 
 STYLE = {
     "pbr": {"bevel": 0.003, "segments": 3, "circle": 32, "shade": "smooth"},
+    "highpoly": {"bevel": 0.004, "segments": 3, "circle": 48, "shade": "smooth", "subsurf": 1},
     "stylized": {"bevel": 0.010, "segments": 2, "circle": 16, "shade": "smooth"},
     "lowpoly": {"bevel": 0.0, "segments": 1, "circle": 8, "shade": "flat"},
     "roblox": {"bevel": 0.006, "segments": 2, "circle": 16, "shade": "smooth"},
@@ -53,6 +54,21 @@ def hex_rgb(h):
     h = h.lstrip("#")
     srgb = [int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
     return [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in srgb]
+
+
+METAL_MIN_F0 = 0.2  # darkest plausible metal reflectance (linear luminance); real steel is ~0.55, iron ~0.5
+
+
+def metal_f0(col):
+    """A metal's base colour IS its reflectance: '#1a1a1a steel' reflects 1% and renders black. Lift dark metal
+    colours to a plausible F0 keeping the hue (dark finishes still read as darker steel)."""
+    lum = 0.2126 * col[0] + 0.7152 * col[1] + 0.0722 * col[2]
+    if lum >= METAL_MIN_F0:
+        return col
+    if lum < 1e-4:
+        return [METAL_MIN_F0] * 3
+    k = METAL_MIN_F0 / lum
+    return [min(1.0, c * k) for c in col]
 
 
 AXIS_ROT = {"z": Euler((0, 0, 0)), "x": Euler((0, math.pi / 2, 0)), "y": Euler((math.pi / 2, 0, 0))}
@@ -330,7 +346,14 @@ def build_part(p, style, st):
             mod.limit_method = "ANGLE"
             mod.angle_limit = math.radians(35)
             mod.use_clamp_overlap = True
-            mod.harden_normals = st["shade"] == "smooth"
+            mod.harden_normals = st["shade"] == "smooth" and not st.get("subsurf")
+    if st.get("subsurf"):  # high-poly: bevel as support loops -> subdivision -> weighted normals (flat faces stay flat)
+        if p["type"] in ("box", "profile") and not p["cuts"]:
+            sd = ob.modifiers.new("subd", "SUBSURF")
+            sd.levels = sd.render_levels = st["subsurf"]
+        wn = ob.modifiers.new("wnormals", "WEIGHTED_NORMAL")
+        wn.keep_sharp = True
+        wn.weight = 50
     elif style == "lowpoly" and p["type"] in ("box", "profile"):
         mod = ob.modifiers.new("chamfer", "BEVEL")
         mod.width = min(0.004, md * 0.08)
@@ -346,6 +369,11 @@ def build_part(p, style, st):
     ob.data = final
     bpy.data.meshes.remove(old)
     final.name = p["id"]
+    # an EXACT boolean leaves an empty material slot from the cutter: the material appended later went to slot 1
+    # while every face kept slot 0, so parts with cuts (pistol slides, muzzles) baked black
+    final.materials.clear()
+    if final.polygons:
+        final.polygons.foreach_set("material_index", [0] * len(final.polygons))
     if st["shade"] == "smooth":
         if not final.has_custom_normals:
             final.shade_smooth()
@@ -449,11 +477,13 @@ def build_material(name, kind, color_hex, style, size, zrange):
     """Returns (material, sockets) where sockets = color/rough/metal/emit outputs and the normal source."""
     base_hex, metal, rough = MAT[kind]
     col = hex_rgb(color_hex or base_hex)
+    if kind in METALS and style in ("pbr", "highpoly"):  # only these render metals as metallic
+        col = metal_f0(col)
     m, nt = new_mat(name)
     out = nt.nodes.new("ShaderNodeOutputMaterial")
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
     nt.links.new(bsdf.outputs[0], out.inputs[0])
-    edge_r = 0.0015 if style == "pbr" else 0.004
+    edge_r = {"pbr": 0.0015, "highpoly": 0.0025}.get(style, 0.004)
     s: dict[str, Any] = {"emit": None, "normal": None}
     if style == "lowpoly":
         geo = nt.nodes.new("ShaderNodeNewGeometry")
@@ -586,7 +616,7 @@ def bake_all(ob, mats, tex, outdir, style, samples):
     sc.cycles.device = "CPU"
     sc.cycles.samples = samples
     sc.render.bake.margin = max(4, tex // 128)
-    maps = ["color", "normal"] + (["rough", "metal", "ao"] if style in ("pbr", "roblox") else [])
+    maps = ["color", "normal"] + (["rough", "metal", "ao"] if style in ("pbr", "highpoly", "roblox") else [])
     if any(s.get("emit") for _, s in mats):
         maps.append("emitmask")
     imgs = {}
@@ -802,14 +832,54 @@ def mesh_qa(ob, tex):
 
 
 # ---------------------------------------------------------------- render rig
-def setup_world():
+def _studio_hdri():
+    """Blender's bundled studio HDRI (datafiles/studiolights/world/studio.exr), or None."""
+    try:
+        p = bpy.utils.system_resource("DATAFILES", path=os.path.join("studiolights", "world", "studio.exr"))
+    except Exception:
+        return None
+    return p if p and os.path.exists(p) else None
+
+
+def setup_world(env=True):
+    """Camera rays see a dark studio grey; reflections and bounce light see an environment (the bundled studio HDRI,
+    else a bright-top gradient). A plain dark world left metals near-black: they had nothing to reflect."""
     sc = bpy.context.scene
     w = bpy.data.worlds.new("W")
     sc.world = w
     w.use_nodes = True
-    bg = next(n for n in w.node_tree.nodes if n.type == "BACKGROUND")
+    nt = w.node_tree
+    bg = next(n for n in nt.nodes if n.type == "BACKGROUND")
     bg.inputs[0].default_value = (0.05, 0.055, 0.06, 1)
     bg.inputs[1].default_value = 1.0
+    if not env:
+        return
+    out = next(n for n in nt.nodes if n.type == "OUTPUT_WORLD")
+    envbg = nt.nodes.new("ShaderNodeBackground")
+    hdri = _studio_hdri()
+    if hdri:
+        tex = nt.nodes.new("ShaderNodeTexEnvironment")
+        tex.image = bpy.data.images.load(hdri, check_existing=True)
+        tc = nt.nodes.new("ShaderNodeTexCoord")
+        mp = nt.nodes.new("ShaderNodeMapping")
+        mp.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(200))
+        nt.links.new(tc.outputs["Generated"], mp.inputs[0])
+        nt.links.new(mp.outputs[0], tex.inputs["Vector"])
+        nt.links.new(tex.outputs[0], envbg.inputs[0])
+        envbg.inputs[1].default_value = 0.8
+    else:
+        tc = nt.nodes.new("ShaderNodeTexCoord")
+        sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+        nt.links.new(tc.outputs["Generated"], sep.inputs[0])
+        nt.links.new(mix_rgb(nt, maprange(nt, sep.outputs[2], -0.2, 0.8), (0.04, 0.04, 0.045), (0.9, 0.92, 0.95)),
+                     envbg.inputs[0])
+        envbg.inputs[1].default_value = 0.6
+    lp = nt.nodes.new("ShaderNodeLightPath")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(lp.outputs["Is Camera Ray"], mix.inputs[0])
+    nt.links.new(envbg.outputs[0], mix.inputs[1])
+    nt.links.new(bg.outputs[0], mix.inputs[2])
+    nt.links.new(mix.outputs[0], out.inputs[0])
 
 
 def backdrop(radius):
@@ -850,6 +920,33 @@ def area_light(name, loc, target, power, size, color):
     ob.location = loc
     d = Vector(target) - Vector(loc)
     ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+    return ob
+
+
+def softbox(R):
+    """A big gradient card behind the camera, seen only in glossy reflections: flat metal faces turned to the camera
+    (a pistol slide) reflected the dark area behind the camera and stayed black even with the HDRI."""
+    bm = bmesh.new()
+    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=1.0)
+    bm.transform(Matrix.Diagonal(Vector((R * 6, R * 3.5, 1, 1))))
+    me = mesh_from_bm(bm, "Softbox")
+    ob = link("Softbox", me)
+    ob.location = (0, -R * 9, R * 2.2)
+    ob.rotation_euler = (math.radians(-90), 0, 0)  # faces +Y, towards the object
+    m, nt = new_mat("M_Softbox")
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    em = nt.nodes.new("ShaderNodeEmission")
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["Generated"], sep.inputs[0])
+    nt.links.new(maprange(nt, sep.outputs[1], 0.0, 1.0, 1.2, 0.15), em.inputs["Strength"])
+    em.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    nt.links.new(em.outputs[0], out.inputs[0])
+    me.materials.append(m)
+    for attr in ("visible_camera", "visible_diffuse", "visible_shadow", "visible_transmission",
+                 "visible_volume_scatter"):
+        if hasattr(ob, attr):
+            setattr(ob, attr, False)
     return ob
 
 
@@ -898,6 +995,7 @@ def render_views(asset, outdir, size, samples, views, threads, hero=False):
     area_light("Key", (-R * 2.2, -R * 2.6, R * 2.8), target, 260 * R * R, R * 1.6, (1.0, 0.95, 0.88))
     area_light("Fill", (R * 2.8, -R * 1.8, R * 1.0), target, 90 * R * R, R * 2.2, (0.85, 0.92, 1.0))
     area_light("Rim", (R * 0.8, R * 3.0, R * 2.4), target, 340 * R * R, R * 1.2, (1.0, 1.0, 1.0))
+    softbox(R)
     paths = {}
     for v in views:
         yaw, el = VIEWS[v]

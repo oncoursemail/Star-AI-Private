@@ -479,6 +479,7 @@ export function SettingsPage(props:SettingsPageProps) {
        <Switch label="Analyze debugger reports" hint="Reads test failures and debugger captures in your workspace and suggests focused checks." experimental checked={draft.debug_evidence_enabled===true} onChange={on=>set({debug_evidence_enabled:on})}/>
        <Switch label="Plan live-show episodes" hint="Checks an episode manifest in your workspace offline; nothing is rendered, posted or streamed." experimental checked={draft.live_show_enabled===true} onChange={on=>set({live_show_enabled:on})}/>
       <Switch label="Minecraft pack and server-folder tools" hint="Checks your own packs and server-folder details inside your workspace; nothing is downloaded, run or connected." experimental checked={draft.minecraft_tools_enabled===true} onChange={on=>set({minecraft_tools_enabled:on})}/>
+      <Switch label="3D asset templates" hint="Builds 3D props, characters, creatures and buildings from parametric templates into your workspace (needs workspace editing); renders only with an operator-configured Blender builder." experimental checked={draft.asset3d_tools_enabled===true} onChange={on=>set({asset3d_tools_enabled:on})}/>
        <Switch label="Allow workspace writes" hint="Only inside your selected workspace." checked={draft.workspace_edit} onChange={on=>set({workspace_edit:on})}/>
        <Switch label="Allow Studio edits" hint="Use an unpublished disposable test place first." checked={draft.studio_edit} onChange={on=>set({studio_edit:on})}/>
      </Panel>

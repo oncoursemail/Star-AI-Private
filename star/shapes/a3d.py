@@ -20,8 +20,8 @@ from .core import Param, Role, Template, resolve
 
 KINDS = A.MATERIALS
 
-_BEV = {"pbr": 0.003, "stylized": 0.010, "roblox": 0.006, "lowpoly": 0.0}
-_CHUNK = {"pbr": 1.0, "stylized": 1.3, "roblox": 1.25, "lowpoly": 1.15}
+_BEV = {"pbr": 0.003, "highpoly": 0.004, "stylized": 0.010, "roblox": 0.006, "lowpoly": 0.0}
+_CHUNK = {"pbr": 1.0, "highpoly": 1.0, "stylized": 1.3, "roblox": 1.25, "lowpoly": 1.15}
 
 
 # ------------------------------------------------------------------ helpers
@@ -111,11 +111,12 @@ class Kit:
         self.roles = roles
         self.parts: list = []
         s = self.style
-        self.pbr, self.low, self.rbx, self.sty = s == "pbr", s == "lowpoly", s == "roblox", s == "stylized"
+        # highpoly is pbr detail on a smoother mesh (the builder adds subdivision + weighted normals)
+        self.pbr, self.low, self.rbx, self.sty = s in ("pbr", "highpoly"), s == "lowpoly", s == "roblox", s == "stylized"
         self.chunk = _CHUNK[s]
         self.small = s != "lowpoly"  # secondary parts (pins, buckles, small knobs)
-        self.fine = s == "pbr"  # tertiary detail (screws, seams, vents)
-        self.cuts_ok = s in ("pbr", "stylized")
+        self.fine = self.pbr  # tertiary detail (screws, seams, vents)
+        self.cuts_ok = s in ("pbr", "highpoly", "stylized")
         self.bv = _BEV[s]
         self._ids: set = set()
 
@@ -230,9 +231,10 @@ GUN_ROLES = {
     "glow": Role("#3fe0ff", "emissive", "energy cell and glowing parts (sci-fi)"),
 }
 GUN_PARAMS = {
-    "variant": Param("enum", "assault", choices=("pistol", "rifle", "smg", "assault", "shotgun", "blaster"),
-                     doc="pistol | bolt-action hunting rifle | submachine gun | assault rifle | pump shotgun | "
-                         "sci-fi blaster"),
+    "variant": Param("enum", "assault", choices=("pistol", "revolver", "rifle", "smg", "assault", "shotgun",
+                                                 "blaster"),
+                     doc="pistol | six-shot revolver | bolt-action hunting rifle | submachine gun | assault rifle | "
+                         "pump shotgun | sci-fi blaster"),
     "size": Param("num", 1.0, 0.8, 1.25, doc="overall scale vs the real gun"),
     "barrel": Param("num", 1.0, 0.6, 1.6, doc="barrel and handguard length factor"),
     "optic": Param("enum", "auto", choices=("auto", "none", "irons", "red_dot", "scope")),
@@ -484,6 +486,39 @@ def _g_pistol(k, P, furn, optic, stock, mag):
         k.cyl("suppressor", "barrel", (0.17, 0, 0.008), 0.016 * c, 0.16, "x")
 
 
+def _g_revolver(k, P, furn, optic, stock, mag):
+    """Frame + cylinder with chambers, barrel with top rib and ejector shroud, curved grip."""
+    c = k.chunk
+    bl = 0.06 + 0.05 * P["barrel"]  # barrel length before the 1.3x revolver scale (4-8 in)
+    W = 0.026 * c
+    k.prof("frame", "body", [(-0.05, -0.012), (-0.03, -0.012), (-0.022, 0.006), (0.04, 0.006), (0.042, 0.03),
+                             (-0.024, 0.032), (-0.05, 0.024)], W * 0.82)
+    cyl_r = 0.02 * min(c, 1.2)
+    chambers = None
+    if k.cuts_ok:
+        chambers = [_ccyl(0.0048, 0.01, "x", pos=(0.018, 0.011 * math.cos(math.radians(a)),
+                                                   0.011 * math.sin(math.radians(a)))) for a in range(30, 360, 60)]
+    k.cyl("cylinder", "body", (0.01, 0, 0.012), cyl_r, 0.038, "x", cuts=chambers, bevel=k.bev(1.5))
+    if k.fine:
+        k.cyl("flutes", "accent", (0.01, 0, 0.012), cyl_r * 0.86, 0.04, "x")
+    k.cyl("barrel", "barrel", (0.04 + bl / 2, 0, 0.02), 0.0075 * min(c, 1.2), bl, "x",
+          cuts=[_ccyl(0.0045, 0.01, "x", pos=(bl / 2, 0, 0))] if k.fine else None)
+    k.box("top_rib", "body", (0.04 + bl / 2, 0, 0.0285), (bl, 0.008 * c, 0.006))
+    k.box("ejector_shroud", "body", (0.04 + bl * 0.3, 0, 0.0085), (bl * 0.6, 0.013 * c, 0.012), bevel=k.bev(1))
+    k.box("front_sight", "accent", (0.04 + bl - 0.006, 0, 0.0335), (0.008, 0.004, 0.007))
+    k.box("rear_sight", "body", (-0.03, 0, 0.034), (0.01, 0.01, 0.004))
+    k.prof("hammer", "body", [(-0.046, 0.022), (-0.036, 0.024), (-0.05, 0.042), (-0.058, 0.04)], 0.007 * c)
+    grip = [(-0.05, 0.022), (-0.024, -0.008), (-0.03, -0.04), (-0.042, -0.08), (-0.066, -0.084), (-0.072, -0.06),
+            (-0.064, -0.02), (-0.058, 0.012)]
+    k.prof("grip", furn, grip, W * 1.15)
+    if k.small:
+        k.prof("grip_frame", "body", [(-0.062, -0.084), (-0.04, -0.081), (-0.04, -0.086), (-0.066, -0.089)], W * 1.17)
+        k.cyl("grip_screw", "accent", (-0.052, 0, -0.04), 0.004, W * 1.2, "y")
+    _guard(k, -0.026, 0.004, -0.012, 0.022)
+    if P["suppressor"]:
+        k.cyl("suppressor", "barrel", (0.04 + bl + 0.07, 0, 0.02), 0.014 * c, 0.14, "x")
+
+
 def _g_rifle(k, P, furn, optic, stock, mag):
     bf, c = P["barrel"], k.chunk
     xt = 0.12 + 0.18 * bf
@@ -603,13 +638,13 @@ def _g_blaster(k, P, furn, optic, stock, mag):
 
 
 _GUN_AUTO = {  # variant: (optic, stock, magazine)
-    "pistol": ("irons", "none", "none"), "rifle": ("scope", "fixed", "none"), "smg": ("irons", "adjustable", "straight"),
+    "pistol": ("irons", "none", "none"), "revolver": ("irons", "none", "none"), "rifle": ("scope", "fixed", "none"), "smg": ("irons", "adjustable", "straight"),
     "assault": ("red_dot", "adjustable", "curved"), "shotgun": ("irons", "fixed", "none"),
     "blaster": ("irons", "none", "none"),
 }
-_GUN_FN = {"pistol": _g_pistol, "rifle": _g_rifle, "smg": _g_smg, "assault": _g_assault, "shotgun": _g_shotgun,
+_GUN_FN = {"pistol": _g_pistol, "revolver": _g_revolver, "rifle": _g_rifle, "smg": _g_smg, "assault": _g_assault, "shotgun": _g_shotgun,
            "blaster": _g_blaster}
-_GUN_NAME = {"pistol": "pistol", "rifle": "hunting rifle", "smg": "submachine gun", "assault": "assault rifle",
+_GUN_NAME = {"pistol": "pistol", "revolver": "revolver", "rifle": "hunting rifle", "smg": "submachine gun", "assault": "assault rifle",
              "shotgun": "pump shotgun", "blaster": "sci-fi blaster"}
 
 
@@ -619,7 +654,7 @@ def build_firearm(P, R, style):
     optic = o if P["optic"] == "auto" else P["optic"]
     stock = s if P["stock"] == "auto" else P["stock"]
     mag = m if P["magazine"] == "auto" else P["magazine"]
-    wood = P["furniture"] == "wood" or (P["furniture"] == "auto" and v in ("rifle", "shotgun"))
+    wood = P["furniture"] == "wood" or (P["furniture"] == "auto" and v in ("rifle", "shotgun", "revolver"))
     if wood:
         R = _alt(R, GUN_ROLES, "furniture", "wood", "#7a4b2a")
     if v == "blaster":
@@ -628,7 +663,7 @@ def build_firearm(P, R, style):
         R = _alt(R, GUN_ROLES, "accent", "painted_metal", "#d8762a")
     k = Kit(_GUN_NAME[v], "weapon", style, R)
     _GUN_FN[v](k, P, "furniture", optic, stock, mag)
-    return k.spec(P["size"])
+    return k.spec(P["size"] * (1.3 if v == "revolver" else 1.0))  # revolver parts are drawn small
 
 
 # ------------------------------------------------------------------ sword
@@ -779,8 +814,8 @@ def _bez(p0, p1, p2, n):
 def _axe_bit(k, pid, hx, hz, dirz, hs, beard, crescent=False):
     """Cheek flaring away from the eye plus a curved edge strip; dirz=+1 bit points up, -1 down."""
     c = k.chunk
-    hgt = 0.11 * hs
-    bw = 0.065 * hs
+    hgt = 0.15 * hs  # head height and cheek width sized from real axes (36" fire axe: ~7" edge, ~12" head)
+    bw = 0.085 * hs
     if crescent:  # battle axe: narrow neck, concave sides, wide curved edge with swept horns
         hgt, span, nw = 0.13 * hs, 0.21 * hs, 0.05 * hs
         tip = 0.78 * hgt
@@ -800,7 +835,7 @@ def _axe_bit(k, pid, hx, hz, dirz, hs, beard, crescent=False):
         band = edge + list(reversed(shrink(edge, e_in)))
         k.prof(pid + "_edge", "edge", [(hx + x, hz + dirz * z) for x, z in band], 0.011 * c)
         return
-    k.box(pid, "head", (hx, 0, hz + dirz * hgt / 2), (bw, 0.034 * c, hgt), taper=[1.75, 0.28],
+    k.box(pid, "head", (hx, 0, hz + dirz * hgt / 2), (bw, 0.04 * c, hgt), taper=[1.75, 0.3],
           rot=[0, 0, 0] if dirz > 0 else [180, 0, 0])
     span = bw * 1.75
     ez = hz + dirz * hgt
@@ -833,15 +868,15 @@ def build_axe(P, R, style):
     sway = 0.012 if v in ("wood", "hatchet") else 0.0
     k.tube("handle", "handle", [(0.0, 0, -sway * 0.8), (L * 0.25, 0, sway * 0.3), (L * 0.6, 0, sway * 0.5), (L, 0, 0.0)], hr)
     k.ball("knob", "handle" if v != "battle" else "grip", (0.0, 0, -sway * 0.8), hr * 1.35, scale=[1.0, 0.8, 1.25])
-    hx = L - 0.05 * hs
-    eye_h = 0.045 * hs
-    k.box("eye", "head", (hx, 0, 0), (0.055 * hs, 0.04 * c, eye_h + 0.02))
+    hx = L - 0.06 * hs
+    eye_h = 0.06 * hs
+    k.box("eye", "head", (hx, 0, 0), (0.07 * hs, 0.048 * c, eye_h + 0.02))
     cres = v == "battle"
     _axe_bit(k, "blade", hx, eye_h / 2 - 0.004, 1, hs, P["beard"], cres)
     if bit == "double":
         _axe_bit(k, "blade_b", hx, -eye_h / 2 + 0.004, -1, hs, P["beard"], cres)
     elif back == "pick":
-        k.box("pick", "head", (hx, 0, -eye_h / 2 - 0.05 * hs), (0.04 * hs, 0.028 * c, 0.1 * hs), taper=[0.25, 0.4],
+        k.box("pick", "head", (hx, 0, -eye_h / 2 - 0.068 * hs), (0.055 * hs, 0.034 * c, 0.136 * hs), taper=[0.2, 0.4],
               rot=[180, 0, 0])
     elif back == "spike":
         k.cone("spike", "head", (hx, 0, -eye_h / 2 - 0.03 * hs), 0.016 * hs, 0.0, 0.06 * hs, "z", rot=[180, 0, 0])
@@ -877,8 +912,8 @@ VEH_ROLES = {
     "light": Role("#ffe7b0", "emissive", "headlights"),
 }
 VEH_PARAMS = {
-    "variant": Param("enum", "car", choices=("car", "van", "pickup", "tractor", "atv", "kart"),
-                     doc="sedan car | delivery van | pickup truck | farm tractor | quad bike | go-kart"),
+    "variant": Param("enum", "car", choices=("car", "van", "pickup", "bus", "tractor", "atv", "kart"),
+                     doc="sedan car | delivery van | pickup truck | city bus | farm tractor | quad bike | go-kart"),
     "size": Param("num", 1.0, 0.85, 1.2, doc="overall scale"),
     "wheel_scale": Param("num", 1.0, 0.85, 1.3, doc="wheel size factor"),
     "ride_height": Param("num", 1.0, 0.8, 1.6, doc="ground clearance factor (lifted trucks > 1)"),
@@ -890,7 +925,7 @@ VEH_PARAMS = {
     "racks": Param("bool", True, doc="ATV cargo racks"),
 }
 _VEH_PAINT = {"car": "#b8402f", "van": "#d8d4cb", "pickup": "#2f5f8a", "tractor": "#3f7a3a", "atv": "#5f6b3a",
-              "kart": "#e07a1f"}
+              "kart": "#e07a1f", "bus": "#e8e6e0"}
 _TAIL = "#c8321f"
 
 
@@ -920,8 +955,15 @@ def _wheel(k, pid, x, y, zc, r, w, kind="car", knobby=False):
         if not k.low and kind in ("car", "tractor", "atv"):
             k.ring(pid + "_lip", "rim", (x, yo + 0.002, zc), rim_r * 0.97, 0.012 * k.chunk * max(1.0, r / 0.35), "y",
                    mirror_y=True)
+    # hub: a raised cap with lug nuts (a bare rim disc read as a flat octagon), dark dish ring between rim and cap
+    hub_r = rim_r * (0.34 if kind != "tractor" else 0.3)
+    hub_d = 0.03 * k.chunk * max(1.0, r / 0.35)
+    k.cyl(pid + "_hub", "rim", (x, yo + hub_d / 2, zc), hub_r, hub_d, "y", mirror_y=True, bevel=k.bev(2))
+    if not (kind == "car" and k.fine):
+        k.cyl(pid + "_dish", "trim", (x, yo + 0.002, zc), rim_r * 0.7, 0.012, "y", mirror_y=True)
     if k.small:
-        k.cyl(pid + "_hub", "rim", (x, yo + 0.008, zc), rim_r * 0.3, 0.022, "y", mirror_y=True)
+        k.ring(pid + "_bolts", "trim", (x, yo + hub_d + 0.002, zc), hub_r * 0.7, max(0.005, hub_r * 0.1), "y",
+               mirror_y=True)  # bolt circle (one part: separate lug nuts blew the part budget)
     if knobby and k.rbx and r > 0.6:
         for i in range(6):
             a = math.radians(60 * i + 30)
@@ -1263,8 +1305,46 @@ def _v_kart(k, P):
     _wheel(k, "wheelr", xr, yr, rr, rr, wr, "kart")
 
 
-_VEH_FN = {"car": _v_car, "van": _v_van, "pickup": _v_pickup, "tractor": _v_tractor, "atv": _v_atv, "kart": _v_kart}
-_VEH_NAME = {"car": "car", "van": "van", "pickup": "pickup truck", "tractor": "tractor", "atv": "quad bike",
+def _v_bus(k, P):
+    """City bus: tall box body with wheel arches, a long window band split by pillars, a big windshield, a door on
+    the kerb side (-Y), twin rear tyres, a livery stripe (trim role) and a destination sign."""
+    ws, rh = P["wheel_scale"], P["ride_height"]
+    r, w = 0.48 * ws * (1.0 if k.pbr else 1.06), 0.3
+    zl = (r - 0.48) + 0.12 * (rh - 1)
+    W, xF, xR = 2.5, 4.3, -4.3
+    xf, xr, yw = 2.85, -2.35, 1.0
+    ra = r + 0.07
+    top = [(-4.32, 0.42 + zl), (-4.3, 2.92 + zl), (-4.12, 3.05 + zl), (4.08, 3.05 + zl), (4.3, 2.86 + zl),
+           (4.34, 0.42 + zl)]
+    k.prof("body", "body", _side_profile(xF, xR, 0.32 + zl, [(xf, r, ra), (xr, r, ra)], top), W, bevel=k.bev(16))
+    z0, z1 = 1.55 + zl, 2.62 + zl
+    k.prof("side_glass", "glass", [(-4.0, z0), (-4.0, z1), (3.75, z1), (3.75, z0)], W + 0.014)
+    n = 6 if not k.low else 4
+    for i in range(n):
+        x = -4.0 + (7.75 / n) * (i + 0.5) + 7.75 / n / 2 - 0.06
+        if x < 3.6:
+            k.box(f"pillar{i}", "body", (x, 0, (z0 + z1) / 2), (0.12, W + 0.03, z1 - z0 + 0.02))
+    k.box("windshield", "glass", (4.33, 0, 1.95 + zl), (0.03, W * 0.9, 1.5))
+    k.box("rear_glass", "glass", (-4.33, 0, 2.2 + zl), (0.03, W * 0.8, 0.7))
+    k.box("door", "glass", (3.35, -W / 2 - 0.006, 1.55 + zl), (1.05, 0.02, 2.2))
+    if k.small:
+        k.box("door_split", "trim", (3.35, -W / 2 - 0.012, 1.55 + zl), (0.05, 0.02, 2.2))
+    k.box("stripe", "trim", (0.0, 0, 1.18 + zl), (8.62, W + 0.012, 0.26))
+    k.box("sign", "light", (4.325, 0, 2.8 + zl), (0.02, 1.6, 0.22), mat="emissive", color="#ffb347")
+    _car_common(k, P, 4.36, -4.36, W, zl, 0.32 + zl, [(xf, yw, r, w), (xr, yw, r, w)], 0.5, lights_z=0.9)
+    k.box("headlight", "light", (4.35, 0.95, 0.85 + zl), (0.04, 0.32, 0.16), mirror_y=True)
+    k.box("taillight", "light", (-4.325, 1.1, 1.0 + zl), (0.04, 0.16, 0.4), mirror_y=True, mat="emissive", color=_TAIL)
+    k.box("roof_unit", "trim", (-0.8, 0, 3.12 + zl), (2.2, 1.6, 0.2), bevel=k.bev(4))
+    if k.small:
+        k.box("mirror_arm", "trim", (4.4, W / 2 + 0.05, 2.5 + zl), (0.12, 0.18, 0.04), mirror_y=True)
+        k.box("mirror", "trim", (4.48, W / 2 + 0.14, 2.3 + zl), (0.06, 0.08, 0.36), mirror_y=True)
+    _wheel(k, "wheelf", xf, yw, r, r, w, "car")
+    _wheel(k, "wheelr", xr, yw, r, r, w, "car")
+    k.cyl("wheelr_twin", "tire", (xr, yw - w, r), r * 0.98, w * 0.9, "y", mirror_y=True)
+
+
+_VEH_FN = {"car": _v_car, "van": _v_van, "pickup": _v_pickup, "bus": _v_bus, "tractor": _v_tractor, "atv": _v_atv, "kart": _v_kart}
+_VEH_NAME = {"car": "car", "van": "van", "bus": "bus", "pickup": "pickup truck", "tractor": "tractor", "atv": "quad bike",
              "kart": "go-kart"}
 
 
@@ -1277,7 +1357,7 @@ def build_vehicle(P, R, style):
         R = _alt(R, VEH_ROLES, "rim", "painted_metal", "#3a3c40")
     k = Kit(_VEH_NAME[v], "vehicle", style, R)
     _VEH_FN[v](k, P)
-    return k.spec(P["size"])
+    return k.spec(min(P["size"], 0.97) if v == "bus" else P["size"])  # a bigger bus leaves the 9 m vehicle range
 
 
 # ------------------------------------------------------------------ table / workbench / desk
@@ -1456,8 +1536,10 @@ CHAIR_ROLES = {
     "metal": Role("#9a9da2", "bare_metal", "studs, office base, gas lift"),
 }
 CHAIR_PARAMS = {
-    "variant": Param("enum", "dining", choices=("dining", "tavern", "office", "armchair", "stool"),
-                     doc="dining chair | chunky tavern chair | swivel office chair | upholstered armchair | bar stool"),
+    "variant": Param("enum", "dining", choices=("dining", "tavern", "office", "armchair", "sofa", "stool"),
+                     doc="dining chair | chunky tavern chair | swivel office chair | upholstered armchair | "
+                         "sofa/couch | bar stool"),
+    "seats": Param("int", 2, 2, 4, doc="sofa seat cushions"),
     "seat_height": Param("num", 0.45, 0.35, 0.8),
     "seat_width": Param("num", 0.45, 0.35, 0.8),
     "back_height": Param("num", 0.45, 0.2, 0.8, doc="backrest height above the seat"),
@@ -1580,10 +1662,10 @@ def _chair_office(k, P):
               bevel=k.bev(3))
 
 
-def _chair_arm(k, P):
+def _chair_arm(k, P, seats=1):
     c = k.chunk
     sh = P["seat_height"]
-    sw = max(P["seat_width"], 0.55)
+    sw = max(P["seat_width"], 0.55) if seats == 1 else 0.6 * seats
     aw = 0.16 * (c ** 0.5)
     W = sw + 2 * aw
     D = 0.82
@@ -1592,15 +1674,23 @@ def _chair_arm(k, P):
     for s, x in (("f", D / 2 - 0.06), ("b", -D / 2 + 0.06)):
         k.cone(f"leg_{s}", "frame", (x, W / 2 - 0.06, zb / 2 + 0.002), 0.018, 0.026, zb + 0.004, mirror_y=True)
     k.box("base", "seat", (0, 0, (zb + zs) / 2), (D, W, zs - zb), bevel=k.bev(5))
-    k.box("seat_cushion", "cushion", (0.06, 0, zs + 0.06), (D - 0.22, sw, 0.12), bevel=k.bev(6))
+    cw = sw / seats
+    for i in range(seats):  # one cushion per seat (a sofa reads by its cushions)
+        y = -sw / 2 + cw * (i + 0.5)
+        k.box(f"seat_cushion{i}" if seats > 1 else "seat_cushion", "cushion", (0.06, y, zs + 0.06),
+              (D - 0.22, cw - (0.012 if seats > 1 else 0), 0.12), bevel=k.bev(6))
     za = zs + 0.25
     k.box("arm", "seat", (0, sw / 2 + aw / 2, (zs + za) / 2), (D, aw, za - zs + 0.01), mirror_y=True, bevel=k.bev(5))
     if not k.low:
         k.cyl("arm_roll", "seat", (0.0, sw / 2 + aw / 2, za), aw * 0.55, D, "x", mirror_y=True)
     zt = sh + P["back_height"] + 0.1
     k.box("back", "seat", (-D / 2 + 0.1, 0, (zs + zt) / 2), (0.2, W, zt - zs), rot=[0, -6, 0], bevel=k.bev(5))
-    k.box("back_cushion", "cushion", (-D / 2 + 0.24, 0, zs + 0.12 + (zt - zs - 0.2) / 2), (0.12, sw, zt - zs - 0.2),
-          rot=[0, -8, 0], bevel=k.bev(6))
+    for i in range(seats):
+        y = -sw / 2 + cw * (i + 0.5)
+        k.box(f"back_cushion{i}" if seats > 1 else "back_cushion", "cushion",
+              (-D / 2 + 0.24, y, zs + 0.12 + (zt - zs - 0.2) / 2),
+              (0.14 if seats > 1 else 0.12, cw - (0.012 if seats > 1 else 0), zt - zs - 0.2), rot=[0, -8, 0],
+              bevel=k.bev(6))
     if P["studs"] and k.small:
         n = 6
         k.cyl("stud", "metal", (D / 2 + 0.003, sw / 2 + aw / 2, zs + 0.02), 0.009 * c, 0.008, "x", count=n,
@@ -1633,6 +1723,10 @@ def build_chair(P, R, style):
         R = _alt(R, CHAIR_ROLES, "frame", "polymer", "#2a2b2e")
         R = _alt(R, CHAIR_ROLES, "cushion", "fabric", "#3b3f46")
         R = _alt(R, CHAIR_ROLES, "metal", "chrome", "#c8cacd")
+    if v == "sofa":
+        R = _alt(R, CHAIR_ROLES, "seat", "fabric", "#6a7a8a")
+        R = _alt(R, CHAIR_ROLES, "cushion", "fabric", "#7a8a9a")
+        R = _alt(R, CHAIR_ROLES, "frame", "dark_wood", "#3e2716")
     if v == "armchair":
         R = _alt(R, CHAIR_ROLES, "seat", "leather", "#6b3a24")
         R = _alt(R, CHAIR_ROLES, "cushion", "leather", "#7a4429")
@@ -1643,13 +1737,15 @@ def build_chair(P, R, style):
         R = _alt(R, CHAIR_ROLES, "seat", "wood", "#80532e")
     if v == "stool":
         R = _alt(R, CHAIR_ROLES, "metal", "gunmetal", "#3a3c40")
-    k = Kit(f"{v} chair" if v != "stool" else "bar stool", "furniture", style, R)
+    k = Kit({"stool": "bar stool", "sofa": "sofa"}.get(v, f"{v} chair"), "furniture", style, R)
     if v in ("dining", "tavern"):
         _chair_wood(k, P, v == "tavern")
     elif v == "office":
         _chair_office(k, P)
     elif v == "armchair":
         _chair_arm(k, P)
+    elif v == "sofa":
+        _chair_arm(k, P, P["seats"])
     else:
         _chair_stool(k, P)
     return k.spec()
@@ -2007,6 +2103,7 @@ HELMET_PARAMS = {
     "chin_strap": Param("bool", True),
     "goggles": Param("bool", False, doc="goggles on the brow (combat)"),
     "plume": Param("bool", False, doc="plume on top (knight)"),
+    "crest": Param("bool", False, doc="metal crest fin along the top (knight)"),
 }
 
 
@@ -2039,11 +2136,14 @@ def build_helmet(P, R_, style):
             r, h = _dome(R, Hd, 22)
             tilt = math.degrees(math.atan2(math.sin(math.radians(22)) / Hd, math.cos(math.radians(22)) / R))
             k.box("side_rail", "metal", (-0.005, r + 0.004, h), (0.1, 0.012, 0.022), rot=[tilt, 0, 0], mirror_y=True)
-        if P["chin_strap"]:
-            k.tube("chin_strap", "trim", [(-0.01, 0.112, -0.02), (0.0, 0.106, -0.06), (0.014, 0.095, -0.09)], 0.006 * c,
-                   mirror_y=True)
+        if P["chin_strap"]:  # one closed U-loop (ear -> chin cup -> ear); two loose ends read as stilts
+            loop = [(-0.012, 0.113, -0.024), (0.004, 0.104, -0.062), (0.03, 0.078, -0.092), (0.05, 0.035, -0.104),
+                    (0.056, 0.0, -0.106)]
+            k.tube("chin_strap", "trim", loop + [(x, -y, z) for x, y, z in reversed(loop[:-1])], 0.0055 * c)
             if k.small:
-                k.box("strap_buckle", "metal", (0.016, 0.094, -0.098), (0.02, 0.012, 0.022), mirror_y=True)
+                k.box("chin_cup", "trim", (0.056, 0, -0.104), (0.03, 0.06, 0.016), bevel=k.bev(2))
+                k.box("strap_buckle", "metal", (0.03, 0.079, -0.091), (0.018, 0.01, 0.02), rot=[0, 0, -35],
+                      mirror_y=True)
         if k.small:
             r, h = _dome(R, Hd, 28)
             k.box("counterweight", "accent", (-(r + 0.012), 0, h), (0.028, 0.07, 0.05), rot=[0, 25, 0], mat="fabric",
@@ -2056,20 +2156,32 @@ def build_helmet(P, R_, style):
             k.cyl("goggle_lens", "metal", (r + 0.012, 0.035, h), 0.024 * c, 0.022, "x", mirror_y=True, mat="glass",
                   color="#2a3a44")
     else:
-        R = 0.115
-        pts = [[0, 0], [0, R * 0.97], [0.02, R], [0.17, R], [0.22, R * 0.86], [0.255, R * 0.5], [0.272, 0]]
+        R = 0.115  # great helm: straight barrel, flattened crown, cross-shaped front reinforcement
+        pts = [[0, 0], [0, R * 0.97], [0.02, R], [0.2, R], [0.232, R * 0.93], [0.25, R * 0.62], [0.256, 0]]
         k.lathe("shell", "shell", (0, 0, 0), pts)
-        a = 0.36
-        k.box("eye_slit", "metal", (R * math.cos(a) + 0.001, R * math.sin(a), 0.17), (0.008, 0.06, 0.014),
-              rot=[0, 0, math.degrees(a)], mirror_y=True, mat="gunmetal", color="#141414")
-        ridge = [(R + 0.006, 0.02), (R + 0.006, 0.17), (R * 0.86 + 0.006, 0.22), (R * 0.5 + 0.006, 0.255),
-                 (0.0, 0.279), (0.0, 0.25), (R * 0.5 - 0.01, 0.235), (R * 0.84 - 0.01, 0.2), (R - 0.006, 0.16),
+        for side in (1, -1):  # eye slits either side of the centre strip, with a protruding brow lip above
+            for j, a in enumerate((0.2, 0.42, 0.62)):
+                k.box(f"eye_slit{'l' if side > 0 else 'r'}{j}", "metal",
+                      (R * math.cos(a) + 0.0005, side * R * math.sin(a), 0.165), (0.006, 0.026, 0.013),
+                      rot=[0, 0, side * math.degrees(a)], mat="gunmetal", color="#0e0e0e")
+        k.add("brow_lip", "lathe", "shell", (0, 0, 0), points=[[0.172, R], [0.174, R + 0.007], [0.181, R + 0.007],
+                                                                  [0.183, R]], axis="z")
+        ridge = [(R + 0.006, 0.02), (R + 0.006, 0.2), (R * 0.93 + 0.006, 0.232), (R * 0.62 + 0.006, 0.25),
+                 (0.0, 0.262), (0.0, 0.24), (R * 0.6 - 0.01, 0.238), (R * 0.9 - 0.01, 0.222), (R - 0.006, 0.19),
                  (R - 0.006, 0.02)]
-        k.prof("ridge", "shell", ridge, 0.014 * c)
-        if k.fine:
-            for i, a in enumerate((-0.3, -0.45, -0.6)):
-                k.cyl(f"breath{i}", "metal", (R * math.cos(a), R * math.sin(a), 0.08), 0.0045, 0.008, "x",
-                      rot=[0, 0, math.degrees(a)], mat="gunmetal", color="#141414")
+        k.prof("ridge", "shell", ridge, 0.016 * c)
+        if k.small:  # breathing holes: a grid on both cheeks of the face plate
+            for side in (1, -1):
+                for row in range(3):
+                    for col in range(2 if k.fine else 1):
+                        a = side * (0.3 + 0.16 * col + 0.04 * row)
+                        k.cyl(f"breath{'l' if side > 0 else 'r'}{row}{col}", "metal",
+                              (R * math.cos(a), R * math.sin(a), 0.06 + 0.026 * row), 0.0042 * c, 0.008, "x",
+                              rot=[0, 0, math.degrees(a)], mat="gunmetal", color="#0e0e0e")
+        if P["crest"]:
+            crest = [(-R * 0.8, 0.236), (-R * 0.3, 0.29), (R * 0.35, 0.3), (R * 0.75, 0.268), (R * 0.6, 0.242),
+                     (0.0, 0.252), (-R * 0.55, 0.24)]
+            k.prof("crest", "shell", crest, 0.008 * c)
 
         k.ring("brow_band", "metal", (0, 0, 0.19), R + 0.003, 0.0065 * c, "z")
         if k.fine:
@@ -2080,10 +2192,10 @@ def build_helmet(P, R_, style):
         if P["chin_strap"] and k.small:
             k.ring("neck_band", "metal", (0, 0, 0.012), R + 0.002, 0.006 * c, "z")
         if P["plume"]:
-            k.cyl("plume_holder", "metal", (0, 0, 0.285), 0.012, 0.03)
+            k.cyl("plume_holder", "metal", (0, 0, 0.262), 0.012, 0.03)
             for i, tilt in enumerate((-15, -35, -55)):
                 tr = math.radians(tilt)
-                k.ball(f"plume{i}", "accent", (0.07 * math.sin(tr), 0, 0.29 + 0.07 * math.cos(tr)), 0.05 * c,
+                k.ball(f"plume{i}", "accent", (0.07 * math.sin(tr), 0, 0.268 + 0.07 * math.cos(tr)), 0.05 * c,
                        scale=[0.32, 0.26, 1.5], rot=[0, tilt, 0])
     return k.spec(P["size"])
 
@@ -2288,7 +2400,7 @@ TEMPLATES: dict[str, Template] = {
     "box_prop": _t("box_prop", "generic box-shaped prop: crate-like box, cabinet, machine/console, safe, locker",
                    "prop", BOX_PARAMS, BOX_ROLES, build_box_prop,
                    ("box", "cabinet", "machine", "console", "safe", "locker", "generator", "terminal", "cupboard")),
-    "firearm": _t("firearm", "gun: pistol, hunting/sniper rifle, SMG, assault rifle, pump shotgun, sci-fi blaster",
+    "firearm": _t("firearm", "gun: pistol, revolver, hunting/sniper rifle, SMG, assault rifle, pump shotgun, sci-fi blaster",
                   "weapon", GUN_PARAMS, GUN_ROLES, build_firearm,
                   ("gun", "rifle", "pistol", "handgun", "shotgun", "smg", "blaster", "sniper", "carbine", "firearm",
                    "revolver", "laser")),
@@ -2296,13 +2408,14 @@ TEMPLATES: dict[str, Template] = {
                 build_sword, ("sword", "blade", "katana", "sabre", "saber", "longsword", "claymore", "cutlass")),
     "axe": _t("axe", "axe: wood axe, fire axe with pick, battle axe, hatchet", "weapon", AXE_PARAMS, AXE_ROLES,
               build_axe, ("axe", "hatchet", "tomahawk", "pickaxe")),
-    "vehicle": _t("vehicle", "wheeled vehicle: car, van, pickup truck, tractor, ATV/quad, go-kart", "vehicle",
+    "vehicle": _t("vehicle", "wheeled vehicle: car, van, pickup truck, city bus, tractor, ATV/quad, go-kart", "vehicle",
                   VEH_PARAMS, VEH_ROLES, build_vehicle,
-                  ("car", "van", "truck", "pickup", "tractor", "atv", "quad", "kart", "vehicle", "jeep", "buggy")),
+                  ("car", "van", "truck", "pickup", "tractor", "atv", "quad", "kart", "vehicle", "jeep", "buggy", "bus",
+                   "coach")),
     "table": _t("table", "table, workbench or office desk (legs, top, shelf, drawers, vise, lamp)", "furniture",
                 TABLE_PARAMS, TABLE_ROLES, build_table, ("table", "desk", "workbench", "bench", "counter")),
-    "chair": _t("chair", "seat: dining/tavern chair, office chair, armchair, bar stool", "furniture", CHAIR_PARAMS,
-                CHAIR_ROLES, build_chair, ("chair", "stool", "armchair", "seat", "throne")),
+    "chair": _t("chair", "seat: dining/tavern chair, office chair, armchair, sofa/couch, bar stool", "furniture", CHAIR_PARAMS,
+                CHAIR_ROLES, build_chair, ("chair", "stool", "armchair", "seat", "throne", "sofa", "couch")),
     "crate": _t("crate", "wooden crate or military ammo box (boards, latches, handles, stencil)", "prop", CRATE_PARAMS,
                 CRATE_ROLES, build_crate, ("crate", "ammo", "box", "supply")),
     "chest": _t("chest", "treasure chest with domed or flat lid, metal bands, lock", "prop", CHEST_PARAMS, CHEST_ROLES,
@@ -2331,3 +2444,13 @@ def build_spec(template_name: str, params_answer: dict | None, style: str, categ
     if isinstance(params_answer, dict) and params_answer.get("name"):
         raw["name"] = str(params_answer["name"])[:60]
     return raw, notes
+
+
+def _register_more():
+    """art-v2 templates (characters, creatures, buildings, bookshelf, blunt weapons, two-wheelers, lanterns)."""
+    from . import a3d_more
+    for name, summary, cat, params, roles, build, kw in a3d_more.TEMPLATE_DEFS:
+        TEMPLATES[name] = _t(name, summary, cat, params, roles, build, kw)
+
+
+_register_more()

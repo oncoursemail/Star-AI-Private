@@ -51,7 +51,8 @@ def plan_3d(llm, brief: str, category: str, style: str, *, seed: int = 7, templa
     raw = t.build(pl["params"], pl["roles"], style)
     raw["name"] = pl["name"]
     raw["style"] = style
-    raw["category"] = category if category in ("weapon", "vehicle", "furniture", "prop", "accessory") else t.category
+    from star.asset3d.spec import CATEGORIES
+    raw["category"] = category if category in CATEGORIES else t.category
     pl["spec"] = raw
     return pl
 
