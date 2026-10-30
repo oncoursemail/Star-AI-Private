@@ -59,6 +59,12 @@ IndependentScorer = Callable[
 ]
 
 
+class _StopCycle(Exception):
+    def __init__(self, status: str, reason: str, **_unused: object) -> None:
+        self.status, self.reason = status, reason
+        super().__init__(reason)
+
+
 class StudioPracticeCycle:
     """A SINGLE bounded attempt; a new owner-approved session is needed to retry.
 
@@ -175,34 +181,37 @@ class StudioPracticeCycle:
                 raise ValueError("bounded key hold must be 1..180 milliseconds")
             telemetry = self._headroom()
             if telemetry is None:
-                return PracticeCycleResult("deferred", "offline_compute_or_stream_headroom")
+                raise _StopCycle("deferred", "offline_compute_or_stream_headroom")
             before = await self._observe()
             scope = before.frame.scope
             if (not before.changed or not before.actionable_when_captured
                     or not before.frame.focus_confirmed
                     or not before.frame.playable
                     or before.frame.perception_confidence < 0.75):
-                return PracticeCycleResult("invalid_evidence", "no_fresh_playable_visual_frame")
+                raise _StopCycle("invalid_evidence", "no_fresh_playable_visual_frame")
             if ((scope.game_id, scope.version_id, scope.episode_id)
                     != (forecast.game_id, forecast.game_version, forecast.run_id)):
-                return PracticeCycleResult("invalid_evidence", "game_or_episode_scope_mismatch")
+                raise _StopCycle("invalid_evidence", "game_or_episode_scope_mismatch")
             if self._headroom() is None:
-                return PracticeCycleResult("deferred", "headroom_changed_before_forecast")
+                raise _StopCycle("deferred", "headroom_changed_before_forecast")
             now_s = self._seconds()
             if not self._forecasts.precommit(forecast, now_unix_s=now_s):
-                return PracticeCycleResult("forecast_rejected", "prospective_forecast_not_registered")
+                raise _StopCycle("forecast_rejected", "prospective_forecast_not_registered")
             precommitted = True
             now_ms = self._ms()
             hint = GameActionHint(
                 forecast.action_id, before.frame.sequence, before.frame.evidence_sha256,
                 now_ms, hold_ms,
             )
+            dispatch_telemetry = self._headroom()
+            if dispatch_telemetry is None:
+                raise _StopCycle("deferred", "headroom_changed_before_action")
             permit = self._host.request(
                 before.frame, hint, now_ms=now_ms,
-                host_verified=True, telemetry=self._headroom(),
+                host_verified=True, telemetry=dispatch_telemetry,
             )
             if not permit.offered:
-                return PracticeCycleResult("action_denied", permit.reason)
+                raise _StopCycle("action_denied", permit.reason)
             # dispatch() independently checks Studio identity/focus and a second
             # fresh telemetry snapshot immediately before physical key-down.
             dispatch = self._host.dispatch(
@@ -210,24 +219,24 @@ class StudioPracticeCycle:
                 dispatch_guard=lambda: self._headroom() is not None,
             )
             if not dispatch.sent or not dispatch.input_released:
-                return PracticeCycleResult("input_failed", dispatch.reason)
+                raise _StopCycle("input_failed", dispatch.reason)
             sent = True
             delivery = self._host.inspect_delivery(dispatch)
             if delivery is None or delivery.action_id != forecast.action_id:
-                return PracticeCycleResult("invalid_evidence", "input_delivery_unverified",
+                raise _StopCycle("invalid_evidence", "input_delivery_unverified",
                                            input_delivered=True)
             after = await self._observe()
             if (after.frame.scope != scope or not after.changed
                     or not after.frame.focus_confirmed
                     or after.frame.sequence <= before.frame.sequence
                     or after.frame.perception_confidence < 0.75):
-                return PracticeCycleResult("invalid_evidence", "post_action_frame_unverifiable",
+                raise _StopCycle("invalid_evidence", "post_action_frame_unverifiable",
                                            input_delivered=True)
             verdict = await asyncio.wait_for(
                 self._score(delivery, after), timeout=self._timeout,
             )
             if not isinstance(verdict, SignedPracticeVerdict):
-                return PracticeCycleResult("result_rejected", "independent_scorer_invalid",
+                raise _StopCycle("result_rejected", "independent_scorer_invalid",
                                            input_delivered=True)
             trial = verdict.trial
             if (not isinstance(trial, GameTrial) or trial.split != "practice"
@@ -235,7 +244,7 @@ class StudioPracticeCycle:
                         trial.objective_id, trial.situation_id, trial.action_id)
                     != (forecast.game_id, forecast.game_version, forecast.run_id,
                         forecast.objective_id, forecast.situation_id, forecast.action_id)):
-                return PracticeCycleResult("result_rejected", "scored_trial_scope_mismatch",
+                raise _StopCycle("result_rejected", "scored_trial_scope_mismatch",
                                            input_delivered=True)
             receipt = verdict.receipt_sha256
             now_ms, now_s = self._ms(), self._seconds()
@@ -250,6 +259,8 @@ class StudioPracticeCycle:
             status = "recorded_calibrated" if calibrated else "recorded_uncalibrated"
             reason = ("independently_signed_practice_only"
                       if calibrated else "practice_signed_but_forecast_not_resolved")
+        except _StopCycle as stop:
+            status, reason = stop.status, stop.reason
         except asyncio.CancelledError:
             raise
         except (Exception, asyncio.TimeoutError):
@@ -259,7 +270,11 @@ class StudioPracticeCycle:
                 # If the signed trial was accepted but calibration failed, the
                 # practice ledger remains authoritative; cancellation only
                 # invalidates that forecast, never the practice result.
-                self._forecasts.cancel(forecast.run_id)
+                try:
+                    self._forecasts.cancel(forecast.run_id)
+                except Exception:
+                    # Failed forecast cleanup must never prevent key release.
+                    pass
             try:
                 release_ok = self._host.revoke(port=self._port)
             except Exception:
