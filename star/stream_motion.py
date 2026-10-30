@@ -156,7 +156,7 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
     count = math.floor(duration_s * fps)
     for index in range(count + 1):
         # Revoke obsolete work promptly, not just obsolete output. At most
-        # seven more frames are computed after a successful sampled check.
+        # eight frames are computed between cancellation checks.
         # Never return partially generated frames from a cancelled turn.
         if cancelled is not None and index % 8 == 0 and cancelled():
             return ()
