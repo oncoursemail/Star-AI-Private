@@ -22,11 +22,13 @@ from time import monotonic
 
 from .desktop_core import Settings
 from .inference_benchmark import _SYSTEM, _select_cases, _workload_digest
+from .voice.chunker import SentenceChunker
 
 _MAX_REQUESTS = 8
 _MAX_PARALLEL = 2
 _REQUEST_TIMEOUT_SECONDS = 45.0
 _OUTPUT_BOUND = 256
+_MAX_SPEECH_PROBE_CHARS = 4096  # analysis only; no transcript is persisted
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,7 @@ class StartupProbe:
     complete_ms: float
     status: str
     canary_ok: bool | None = None
+    first_speakable_ms: float | None = None
 
     @property
     def ok(self) -> bool:
@@ -72,6 +75,12 @@ def summarize_stream_startup(
             type(p.first_visible_ms) not in (int, float)
             or not math.isfinite(p.first_visible_ms)
             or p.first_visible_ms < 0 or p.first_visible_ms > p.complete_ms + 1))
+        or (p.first_speakable_ms is not None and (
+            type(p.first_speakable_ms) not in (int, float)
+            or not math.isfinite(p.first_speakable_ms)
+            or p.first_speakable_ms < 0 or p.first_speakable_ms > p.complete_ms + 1
+            or p.first_visible_ms is None
+            or p.first_speakable_ms + 1 < p.first_visible_ms))
         or p.status not in {"ok", "empty", "incomplete", "truncated",
                             "canary_mismatch", "failed", "timeout"}
         for p in probes
@@ -80,6 +89,9 @@ def summarize_stream_startup(
     good = [p for p in probes if p.ok and p.first_visible_ms is not None]
     starts = [float(p.first_visible_ms) for p in good if p.first_visible_ms is not None]
     totals = [float(p.complete_ms) for p in good]
+    # Chunk readiness is not network startup, synthesis start, or audible output.
+    speakable_times = [float(p.first_speakable_ms) for p in good
+                       if p.first_speakable_ms is not None]
     return {
         "workload": workload,
         "workload_sha256": workload_digest,
@@ -90,6 +102,10 @@ def summarize_stream_startup(
         "wall_ms": round(wall_ms, 2),
         "first_visible_p50_ms": round(median(starts), 2) if starts else None,
         "first_visible_p95_ms": _percentile(starts, 0.95),
+        "speakable_ready": len(speakable_times),
+        "speakable_missing": len(good) - len(speakable_times),
+        "first_speakable_p50_ms": round(median(speakable_times), 2) if speakable_times else None,
+        "first_speakable_p95_ms": _percentile(speakable_times, 0.95),
         "complete_p50_ms": round(median(totals), 2) if totals else None,
         "complete_p95_ms": _percentile(totals, 0.95),
         "statuses": {status: sum(p.status == status for p in probes)
@@ -101,13 +117,15 @@ def summarize_stream_startup(
         "canary_mismatches": sum(p.canary_ok is False for p in probes),
         "repeated_prompt_warning": workload == "repeat" and len(probes) > 1,
         "note": (
-            "First-visible-text is NOT time to first audible TTS sample, "
-            "a game FPS measurement, intelligence, factual quality, or a "
-            "deployment recommendation. An early SSE/reasoning/role delta "
-            "does not count. Only fully stopped nonempty text responses "
-            "contribute to latency. Compare identical workloads, model "
-            "hashes, slot counts, temperatures and hardware; test audio "
-            "playout and OBS separately."
+            "First-speakable is when STAR's production SentenceChunker first "
+            "releases a TTS-ready phrase, not the first audible TTS sample. "
+            "First-visible excludes empty/role/reasoning-only deltas. These "
+            "metrics do NOT measure speech synthesis, game FPS, reasoning "
+            "quality, factual accuracy, intelligence or deployment readiness. "
+            "Only fully stopped nonempty responses contribute to latency; "
+            "speakable_missing is reported to prevent optimistic selection. "
+            "Compare identical workloads, model hashes, slot counts, "
+            "temperatures and hardware; test audio playout and OBS separately."
         ),
     }
 
@@ -148,13 +166,16 @@ async def benchmark_stream_startup(
         async with semaphore:
             begin = monotonic()
             first_visible: float | None = None
+            first_speakable: float | None = None
+            speech_chars = 0
+            chunker = SentenceChunker()  # matches STAR's existing voice pipeline
             chars: list[str] = []
             collected = 0
             stopped = False
             truncated = False
 
             async def consume() -> None:
-                nonlocal first_visible, collected, stopped, truncated
+                nonlocal first_visible, first_speakable, speech_chars, collected, stopped, truncated
                 stream = await client.chat.completions.create(
                     model=model,
                     messages=[
@@ -177,12 +198,20 @@ async def benchmark_stream_startup(
                                 continue  # role/reasoning/empty deltas are NOT speech
                             if first_visible is None:
                                 first_visible = (monotonic() - begin) * 1000
+                            if first_speakable is None and speech_chars < _MAX_SPEECH_PROBE_CHARS:
+                                excerpt = content[:_MAX_SPEECH_PROBE_CHARS - speech_chars]
+                                speech_chars += len(excerpt)
+                                if chunker.feed(excerpt):
+                                    first_speakable = (monotonic() - begin) * 1000
+                            # A canary needs its full exact answer, but an ordinary
+                            # response may be longer than our small capture buffer.
+                            piece = ""
                             if collected < _OUTPUT_BOUND:
                                 piece = content[:_OUTPUT_BOUND - collected]
                                 chars.append(piece)
                                 collected += len(piece)
                             if case.expected_token and len(content) > len(piece):
-                                truncated = True  # only exact canaries need full text
+                                truncated = True
                 finally:
                     # The official async stream has close(); fake streams may
                     # not. This also closes on cancellation/failure.
@@ -200,6 +229,10 @@ async def benchmark_stream_startup(
                 # Never expose provider errors: they can include keys/prompts.
                 status = "failed"
             else:
+                # A reply without sentence punctuation becomes speakable only
+                # when the successful stream ends and the chunker flushes.
+                if stopped and first_speakable is None and chunker.flush():
+                    first_speakable = (monotonic() - begin) * 1000
                 if first_visible is None:
                     status = "empty"
                 elif truncated:
@@ -217,6 +250,7 @@ async def benchmark_stream_startup(
                 round(first_visible, 2) if first_visible is not None else None,
                 round((monotonic() - begin) * 1000, 2),
                 status, canary_ok,
+                round(first_speakable, 2) if first_speakable is not None else None,
             )
 
     started = monotonic()

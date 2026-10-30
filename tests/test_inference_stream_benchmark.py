@@ -242,3 +242,95 @@ def test_existing_cli_default_completion_route_remains_intact(monkeypatch, capsy
     monkeypatch.setattr(cli, "benchmark_local_model", fake_completion)
     cli.main(["--model", "model-a", "--parallel", "2"])
     assert '"median_request_ms": 42' in capsys.readouterr().out
+
+
+# The operational voice pipeline waits for a sentence/phrase, NOT merely a
+# first character. Exercise the exact production SentenceChunker with realistic
+# split SSE deltas; none of the fragments are persisted in the report.
+class SegmentedStream:
+    def __init__(self, fragments):
+        self.fragments = fragments
+        self.closed = False
+
+    async def __aiter__(self):
+        yield _packet(reasoning="private internal analysis")
+        for content, delay in self.fragments:
+            await asyncio.sleep(delay)
+            yield _packet(content)
+        yield _packet(finish="stop")
+
+    async def close(self):
+        self.closed = True
+
+
+class SegmentedCompletions:
+    def __init__(self, fragments):
+        self.fragments = fragments
+        self.streams = []
+
+    async def create(self, **kwargs):
+        stream = SegmentedStream(self.fragments)
+        self.streams.append(stream)
+        return stream
+
+
+def test_first_speakable_waits_for_production_phrase_not_first_letter():
+    fake = SegmentedCompletions([
+        ("Hey, ", 0.002),
+        ("we can play", 0.003),
+        (" now!", 0.003),
+    ])
+    report = _run(fake, requests=1)
+    assert report["completed"] == report["speakable_ready"] == 1
+    assert report["speakable_missing"] == 0
+    assert 0 < report["first_visible_p50_ms"] < report["first_speakable_p50_ms"]
+    assert report["first_speakable_p95_ms"] <= report["complete_p95_ms"]
+    assert all(stream.closed for stream in fake.streams)
+    assert "we can play" not in repr(report)
+
+
+def test_punctuation_free_reply_becomes_speakable_at_stream_end():
+    report = _run(SegmentedCompletions([
+        ("We should", 0.002), (" test the checkpoint first", 0.002),
+    ]), requests=1)
+    assert report["completed"] == report["speakable_ready"] == 1
+    assert report["first_visible_p50_ms"] < report["first_speakable_p50_ms"]
+    assert report["first_speakable_p50_ms"] <= report["complete_p50_ms"]
+
+
+def test_hidden_only_reply_reports_missing_speech_without_false_low_latency():
+    report = _run(SegmentedCompletions([
+        ("<think>reasoning only.</think>", 0.001),
+        (" ** ** 🎮", 0.001),
+    ]), requests=1)
+    assert report["completed"] == 1  # a visible nonempty transport response
+    assert report["speakable_ready"] == 0
+    assert report["speakable_missing"] == 1
+    assert report["first_speakable_p50_ms"] is None
+    assert report["first_speakable_p95_ms"] is None
+
+
+def test_long_canary_never_leaks_or_references_unassigned_capture_piece():
+    fake = SegmentedCompletions([
+        ("A" * (mod._OUTPUT_BOUND + 20), 0.001),
+        ("another packet", 0.001),
+    ])
+    report = _run(fake, workload="canary", requests=1)
+    assert report["completed"] == 0
+    assert report["statuses"]["truncated"] == 1
+    assert report["statuses"]["failed"] == 0
+    assert all(stream.closed for stream in fake.streams)
+    assert "another packet" not in repr(report)
+
+
+@pytest.mark.parametrize("invalid", [
+    StartupProbe("case", 8, 20, "ok", first_speakable_ms=2),
+    StartupProbe("case", None, 20, "ok", first_speakable_ms=5),
+    StartupProbe("case", 2, 20, "ok", first_speakable_ms=21.5),
+    StartupProbe("case", 2, 20, "ok", first_speakable_ms=float("nan")),
+    StartupProbe("case", 2, 20, "ok", first_speakable_ms=True),
+])
+def test_speakable_summary_rejects_impossible_or_fabricated_clock_values(invalid):
+    with pytest.raises(ValueError):
+        summarize_stream_startup([invalid], 30, parallel=1,
+                                 workload="mixed", workload_digest="a" * 64)
