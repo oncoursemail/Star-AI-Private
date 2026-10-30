@@ -693,9 +693,10 @@ def _invite(online, members):
 
 
 class FakeNet:
-    """Discord invites answer `online` people (Vanilla 500); Vanilla's manifest answers with a version; Campus is down."""
+    """Discord invites answer `online` people (Vanilla 500); Vanilla's manifest answers with a version; RecFlare publishes
+    `players` in game."""
     def __init__(self):
-        self.calls, self.online, self.down = [], 10, False
+        self.calls, self.online, self.down, self.players = [], 10, False, 395
 
     def __call__(self, url, timeout=6.0):
         self.calls.append(url)
@@ -705,8 +706,8 @@ class FakeNet:
             return 200, _invite(500 if "vanillarec" in url else self.online, 900)
         if "vanillarec.net" in url:
             return 200, json.dumps({"version": "1.0.17"})
-        if "camprec.net" in url:
-            raise OSError("timed out")
+        if "recflare.net/api/stats/online" in url:
+            return 200, json.dumps({"range": "24h", "online": self.players, "peak": 452})
         return 200, "{}"
 
 
@@ -716,20 +717,22 @@ def rv(tmp_path):
     return Rig(tmp_path, {"revival_fetch": net}), net
 
 
-def test_revivals_are_public_sorted_and_say_people_online_not_players(rv):
+def test_revivals_are_public_sorted_and_keep_discord_people_apart_from_players(rv):
     rig, _ = rv
     code, h, out = rig.call("GET", "/v1/revivals")                 # check_response validates the schema
     assert code == 200
     ids = [r["id"] for r in out["revivals"]]
-    assert ids[0] == "vanilla" and {"stella", "meownet", "campus", "studio8", "phoenix"} <= set(ids)
+    assert ids[0] == "vanilla" and {"stella", "meownet", "studio87", "uranium", "phoenix"} <= set(ids)
+    assert "campus" not in ids and "studio8" not in ids
     by = {r["id"]: r for r in out["revivals"]}
     assert by["vanilla"]["status"] == "answering" and by["vanilla"]["version"] == "1.0.17"
-    assert by["campus"]["status"] == "not_answering" and by["campus"]["discord"] is None
-    assert by["radium"]["status"] == "community" and by["studio8"]["status"] == "unknown"
+    assert by["radium"]["status"] == "community" and by["uranium"]["status"] == "unknown" and by["uranium"]["discord"] is None
     assert by["radium"]["discord"]["icon"] == "https://cdn.discordapp.com/icons/42/abc.webp?size=128"
     with_invite = sum(1 for r in out["revivals"] if r["invite"])
     assert out["totals"]["online"] == 500 + 10 * (with_invite - 1) and out["totals"]["answering"] == 2        # Vanilla and RecFlare
-    assert "player" not in json.dumps(out).lower()
+    assert by["recflare"]["players"] == 395 and by["recflare"]["status"] == "answering"
+    assert all(r["players"] is None for r in out["revivals"] if r["id"] != "recflare")   # Discord people are not players
+    assert out["totals"]["in_game"] == 395 and out["totals"]["with_players"] == 1
     assert rig.call("GET", "/v1/revivals/radium")[2]["discord"]["online"] == 10
     assert rig.call("GET", "/v1/revivals/nope")[0] == 404
 
@@ -752,6 +755,13 @@ def test_revivals_ask_discord_at_most_every_two_minutes_and_keep_stale_numbers(r
     assert next(r for r in out["revivals"] if r["id"] == "vanilla")["status"] == "not_answering"
 
 
+def test_player_counts_are_read_by_path_sum_and_length():
+    from metallic.api.revivals import count_at
+    d = {"a": {"n": 7, "f": 3.0, "neg": -1, "b": True}, "rooms": [{"p": 2}, {"p": 5}, {"x": 1}], "list": [1, 2, 3]}
+    assert [count_at(d, x) for x in ("a.n", "a.f", "a.neg", "a.b", "rooms.*.p", "rooms.*", "list", "rooms.1.p", "a.missing")] ==         [7, 3, None, None, 7, 3, 3, 5, None]
+    assert count_at("text", "a") is None
+
+
 def test_revival_samples_give_a_24_hour_trend_and_peak_and_expire_after_a_week(rv):
     rig, net = rv
     for online in (10, 40, 25):
@@ -761,6 +771,8 @@ def test_revival_samples_give_a_24_hour_trend_and_peak_and_expire_after_a_week(r
     r = rig.call("GET", "/v1/revivals/radium")[2]
     assert [p[1] for p in r["trend"]] == [10, 40, 25]
     assert r["peak_24h"] == 40
+    f = rig.call("GET", "/v1/revivals/recflare")[2]
+    assert f["players_peak_24h"] == 395 and len(f["players_trend"]) >= 1
     rig.clock.t += 8 * 86400
     rig.content.revivals.sample()
     assert rig.store.one("SELECT COUNT(*) AS n FROM revival_samples WHERE t < ?", (rig.clock.t - 7 * 86400,))["n"] == 0
