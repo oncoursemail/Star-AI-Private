@@ -1,6 +1,7 @@
 """Blockbench part templates (star/shapes/bb.py) and the shared planner (star/shapes/core.py). No network."""
 import json
 import random
+import zlib
 
 import pytest
 
@@ -51,7 +52,7 @@ def test_template_defaults_build_clean(name):
 @pytest.mark.parametrize("name", NAMES)
 def test_template_survives_random_and_garbage_answers(name):
     t = bb.TEMPLATES[name]
-    for ans in _answers(t, 12, hash(name) & 0xFFFF):
+    for ans in _answers(t, 12, zlib.crc32(name.encode())):  # not hash(): a str hash changes every run
         spec, rep, codes = _build_ok(name, ans)
         assert len(spec["parts"]) <= S.PART_LIMIT[spec["category"]] + 8, name
         assert "uv-out-of-bounds" not in codes
