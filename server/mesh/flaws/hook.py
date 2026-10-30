@@ -36,7 +36,7 @@ ENGINE = classify.CODE
 REFERS = re.compile(r"^\s*(?:now|also|and|but|then|ok(?:ay)?|so|wait|next|what about|how about|instead|can (?:you|u|it)|"
                     r"could (?:you|u)|make (?:it|them|that|this)|add|change|same)\b|"
                     r"\b(?:it|its|it'?s|that|this|these|those|them|they|the (?:script|code|door|part|gui|button|npc|tool|"
-                    r"game|thing|one|same|first|second|last|other|error|line|output))\b|"
+                    r"game|thing|one|same|error|line|output))\b|"
                     r"\b(?:again|instead|too|as well|faster|slower|bigger|smaller|longer|shorter)\b", re.I)
 REASK = re.compile(r"\b(?:doesn'?t|does not|didn'?t|did not|won'?t|wont|isn'?t|is not|not|aint|ain'?t|cant|can'?t)\s+"
                    r"(?:work|working|run|running|do anything|open|close|show|showing|appear|move|spawn|save|load|fire|"
