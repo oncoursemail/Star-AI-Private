@@ -185,8 +185,13 @@ class GameMechanicProbeLab:
                 verdict = "provisional_candidate"
             elif b_low > c_high + margin:
                 verdict = "retain_baseline"
-        if (verdict is None and
-                min(b.trials, c.trials) >= hypothesis.max_trials_per_arm):
+        # The shared planner may have a LOWER per-arm cap than the
+        # hypothesis (defaults: 24 versus 36). Never keep requesting actions
+        # the planner cannot reserve; report a bounded inconclusive screen.
+        effective_cap = min(
+            hypothesis.max_trials_per_arm, self._planner.max_trials_per_action
+        )
+        if verdict is None and min(b.trials, c.trials) >= effective_cap:
             verdict = "inconclusive"
         return _Comparison(hypothesis, b, c, verdict)
 
@@ -206,10 +211,12 @@ class GameMechanicProbeLab:
             if not self._enabled:
                 return defer("owner_opt_in_missing")
             if self._pending_ticket is not None:
-                # ActivePracticePlanner reservations last at most 600s.
-                # After that, re-enter through the planner, which expires its
-                # own ticket before issuing another one. No phantom success.
-                if self._pending_at is None or now - self._pending_at <= 600:
+                # Mirror the actual shared planner's configured TTL,
+                # not the maximum POSSIBLE 600-second lifetime. Otherwise
+                # default 90-second tickets would stall practice for 601s.
+                # The planner itself expires the old ticket before reissuing.
+                if (self._pending_at is None or
+                        now - self._pending_at <= self._planner.reservation_seconds):
                     return defer("signed_practice_pending")
                 self._pending_ticket = self._pending_at = None
             if telemetry is None:
@@ -250,9 +257,12 @@ class GameMechanicProbeLab:
                 min(x.baseline.trials, x.candidate.trials),
                 x.total, x.definition.experiment_id))
             h = selected.definition
-            if selected.baseline.trials >= h.max_trials_per_arm:
+            effective_cap = min(
+                h.max_trials_per_arm, self._planner.max_trials_per_action
+            )
+            if selected.baseline.trials >= effective_cap:
                 arm = h.candidate_action_id
-            elif selected.candidate.trials >= h.max_trials_per_arm:
+            elif selected.candidate.trials >= effective_cap:
                 arm = h.baseline_action_id
             elif selected.baseline.trials <= selected.candidate.trials:
                 arm = h.baseline_action_id
