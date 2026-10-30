@@ -224,3 +224,33 @@ def test_metrics_never_expose_chat_viewer_identity_or_question_text():
     assert "private_viewer_name" not in event.context
     assert "private_viewer_name" not in event.signal_id
     assert "sensitive question" in event.context
+
+
+def test_missing_stable_viewer_identity_cannot_bypass_one_speaker_limit():
+    """Unique event IDs are not a replacement for a stable, moderated speaker."""
+    inbox = ready()
+    assert not inbox.capture(question("anon-1", speaker="", text="First?"),
+                             now=100, moderated=True)
+    assert not inbox.capture(question("anon-2", speaker="", text="Second?"),
+                             now=100, moderated=True)
+    assert not inbox.capture(question("blank", speaker="  \t", text="Third?"),
+                             now=100, moderated=True)
+    assert inbox.metrics()["queued"] == 0
+    assert inbox.metrics()["declined"] == 3
+
+    # The trusted chat host supplies a stable ID (not a display nickname).
+    assert inbox.capture(question("stable-1", speaker="platform-user-17",
+                                  text="First valid question?"),
+                         now=100, moderated=True)
+    assert not inbox.capture(question("stable-2", speaker="platform-user-17",
+                                      text="Another unique question?"),
+                             now=100, moderated=True)
+    assert inbox.metrics()["queued"] == 1
+    stage = director()
+    inbox.update_focus(gameplay_critical=False, now=101)
+    assert inbox.release_one(stage, now=101)
+    proposal = stage.propose(now=101)
+    assert proposal is not None
+    assert "First valid question?" in proposal.context
+    assert "platform-user-17" not in proposal.context
+    assert "platform-user-17" not in proposal.signal_id
