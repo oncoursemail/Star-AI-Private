@@ -28,7 +28,7 @@ NOTE = ("(Build note for Litha, not from the user: this is a build request. Give
 BUILD = re.compile(r"\b(make|making|create|build|write|code|implement|add|give me|show me how|set ?up|"
                    r"fix|change|turn|let|need)\b", re.I)
 # ... that is code: an engine/language word, a code noun, or code in the message
-CODEY = re.compile(r"```|\b(roblox|luau|lua|unity|c#|minecraft|paper|spigot|bukkit|velocity|fabric|neoforge|forge|"
+CODEY = re.compile(r"```|\b(roblox|luau|lua|unity|c#|minecraft|spigot|bukkit|velocity|fabric|neoforge|forge|"
                    r"data ?pack|mcfunction|plugin|mod|godot|gdscript|unreal|python|javascript|typescript|java|rust|"
                    r"html|script|localscript|modulescript|function|class|gui|command|system|tool|npc|leaderboard|"
                    r"leaderstats|datastore|remote ?event|game ?pass|obby|inventory|hotbar|shop|controller|recipe|"

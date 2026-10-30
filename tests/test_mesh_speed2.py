@@ -31,7 +31,8 @@ def test_build_request_gets_note_and_more_tokens():
 
 def test_chat_and_explanations_untouched():
     for q in ("What's the difference between a LocalScript and a Script in Roblox?", "Thanks Litha! My door works now :)",
-              "Should I use Paper or Spigot for my Minecraft server?", "What is a RemoteEvent?", "Why is the sky blue?"):
+              "Should I use Paper or Spigot for my Minecraft server?", "How do I make a paper airplane?",
+              "What is a RemoteEvent?", "Why is the sky blue?"):
         r = req(q)
         assert fullcode.apply(r, CFG) == {}, q
         assert r["max_tokens"] == 600 and "mesh_general" not in r
