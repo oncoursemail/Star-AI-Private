@@ -71,6 +71,8 @@ def parse_feed(body: str) -> list[dict]:
         d = _DATE.search(e)
         yt, img = _YT.search(e), _IMAGE.search(e)
         image = f"https://i.ytimg.com/vi/{yt.group(1)}/hqdefault.jpg" if yt else (_https(text(img.group(1))) if img else None)
+        if image and "avatars.githubusercontent.com" in image:    # a release's author avatar is not a news picture
+            image = None
         out.append({"title": text(t.group(1)), "date": parse_date(text(d.group(1))) if d else None, "link": link, "image": image})
     return out
 
