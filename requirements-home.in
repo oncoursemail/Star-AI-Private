@@ -23,7 +23,7 @@ opencv-python-headless>=5          # dxcam converts frames to RGB with OpenCV (s
 winsdk==1.0.0b10                   # Windows toast notifications (star/home/notifications.py); its last release is a beta
 defusedxml>=0.7.1,<1               # imported by star.rbx_xml, which star.home reaches
 httpx>=0.28.1,<1                   # model downloads (star/voice/setup_models.py)
-yt-dlp[default]==2026.10.21        # star.watch: captions and metadata of videos (text only, never the video file); YouTube changes often, re-pin when it breaks
+yt-dlp[default]==2026.10.26        # star.watch: captions and metadata of videos (text only, never the video file); YouTube changes often, re-pin when it breaks
 
 # star.senses and star.voice: hearing the PC's sound, her voice out through the virtual cable, local speech and voice
 soundcard>=0.4.6,<1
