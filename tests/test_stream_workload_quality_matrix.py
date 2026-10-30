@@ -159,3 +159,16 @@ def test_equal_aggregate_accuracy_does_not_hide_newly_wrong_matched_question():
     assert overall.status == "quality_regressed"
     assert overall.results[1].status == "quality_regressed"
     assert overall.authorized_to_stream is False
+
+
+def test_missing_baseline_quality_witness_fails_closed_without_crashing():
+    group = matrix()
+    knowledge = group[1]
+    # Remove the baseline, leaving only the candidate witness for this pair.
+    group[1] = replace(knowledge, witnesses=knowledge.witnesses[1:])
+    independent = assess_quality_gate(group[1].runs, group[1].witnesses)
+    assert independent.status == "insufficient_evidence"
+    assert independent.candidate_new_case_errors == 0
+    report = assess_workload_matrix(group)
+    assert report.status == "insufficient_evidence"
+    assert report.results[1].status == "insufficient_evidence"
