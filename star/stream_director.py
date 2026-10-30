@@ -122,6 +122,10 @@ class StreamDirector:
         self._session_epoch = 0
         self._next_serial = 0
         self._event_serials: dict[str, int] = {}
+        # Only the exact most recently offered SpeechIntent for an event may
+        # acknowledge playback. Textually identical fabricated/cached plans
+        # must not alter streamer cooldowns or verified-reaction receipts.
+        self._issued_intents: dict[int, SpeechIntent] = {}
         self._events: list[StreamSignal] = []
         self._recent: dict[str, float] = {}
         self._last_speech_at = float("-inf")
@@ -144,6 +148,7 @@ class StreamDirector:
         self.enabled = False
         self._events.clear()
         self._event_serials.clear()
+        self._issued_intents.clear()
         self._recent.clear()
         self._viewer_last_spoken.clear()
         self._game_reactions.clear()
@@ -196,6 +201,12 @@ class StreamDirector:
         self._event_serials = {
             key: seq for key, seq in self._event_serials.items() if key in active_ids
         }
+        # An expired or deduplicated event cannot retain a playback receipt.
+        active_serials = set(self._event_serials.values())
+        self._issued_intents = {
+            serial: intent for serial, intent in self._issued_intents.items()
+            if serial in active_serials
+        }
         self._recent = {key: at for key, at in self._recent.items() if now - at < 40.0}
         self._viewer_last_spoken = {
             key: at for key, at in self._viewer_last_spoken.items()
@@ -244,7 +255,9 @@ class StreamDirector:
                 self._counters["rejected"] += 1
                 return False
             self._events.remove(lowest)
-            self._event_serials.pop(lowest.signal_id, None)
+            evicted_serial = self._event_serials.pop(lowest.signal_id, None)
+            if evicted_serial is not None:
+                self._issued_intents.pop(evicted_serial, None)
             self._counters["evicted"] += 1
         self._events.append(event)
         self._next_serial += 1
@@ -284,7 +297,7 @@ class StreamDirector:
         if not eligible:
             return None
         event = min(eligible, key=lambda item: (-self._priority(item, now), item.timestamp, item.signal_id))
-        return SpeechIntent(
+        intent = SpeechIntent(
             signal_id=event.signal_id, kind=event.kind, context=event.detail,
             evidence=event.evidence,
             deadline_at=event.timestamp + _KINDS[event.kind][1],
@@ -294,6 +307,10 @@ class StreamDirector:
             session_epoch=self._session_epoch,
             event_serial=self._event_serials[event.signal_id],
         )
+        # A later proposal supersedes an earlier plan for this event. This
+        # is an identity check inside the process, not proof of OBS audio.
+        self._issued_intents[intent.event_serial] = intent
+        return intent
 
     def complete(self, intent: SpeechIntent, *, now: float, spoken: bool) -> bool:
         """Consume only an event still in this session. Do not commit a stale plan."""
@@ -301,7 +318,8 @@ class StreamDirector:
         if not isinstance(intent, SpeechIntent) or type(spoken) is not bool:
             raise TypeError("expected SpeechIntent and explicit bool spoken")
         if (not self.enabled or intent.session_epoch != self._session_epoch
-                or intent.event_serial != self._event_serials.get(intent.signal_id)):
+                or intent.event_serial != self._event_serials.get(intent.signal_id)
+                or self._issued_intents.get(intent.event_serial) is not intent):
             return False
         self._expire(now)
         for event in self._events:
@@ -310,6 +328,7 @@ class StreamDirector:
                     and event.timestamp + _KINDS[event.kind][1] == intent.deadline_at):
                 self._events.remove(event)
                 self._event_serials.pop(event.signal_id, None)
+                self._issued_intents.pop(intent.event_serial, None)
                 if spoken:
                     self._last_speech_at = now
                     if event.kind.startswith("viewer") and event.speaker_id:
