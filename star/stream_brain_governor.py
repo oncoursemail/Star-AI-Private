@@ -24,6 +24,7 @@ from .stream_episode import EpisodePacket
 from .stream_continuity import ContinuityPacket
 from .stream_knowledge import KnowledgePacket
 from .stream_hardware_telemetry import LiveHostSample, RealtimeTelemetryHost
+from .memory_stall_guard import MemoryStallGuard
 from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
 from .stream_stage import StagePlan, StarStage
 from .stream_turntaking import TurnAdvice
@@ -79,6 +80,7 @@ class StreamBrainGovernor:
         qos: AdaptiveQoS,
         stage: StarStage,
         clock_ms: Callable[[], float] = lambda: time.monotonic() * 1000,
+        memory_guard: MemoryStallGuard | None = None,
     ) -> None:
         if not isinstance(telemetry, RealtimeTelemetryHost):
             raise TypeError("telemetry must be a RealtimeTelemetryHost")
@@ -86,6 +88,9 @@ class StreamBrainGovernor:
             raise TypeError("expected existing AdaptiveQoS and StarStage")
         if not callable(clock_ms):
             raise TypeError("host clock must be callable")
+        if memory_guard is not None and not isinstance(memory_guard, MemoryStallGuard):
+            raise TypeError("optional memory guard must be MemoryStallGuard")
+        self._memory_guard = memory_guard
         self._telemetry, self._qos, self._stage = telemetry, qos, stage
         self._clock = clock_ms
         self._lock = RLock()
@@ -193,6 +198,15 @@ class StreamBrainGovernor:
                 self._counts["deferred"] += 1
                 return BrainAdmission(False, "trusted_game_gpu_audio_cpu_sample_missing")
             assert sample.qos is not None
+            # Optional Linux PSI observer is sampled on a separate worker.
+            # Do not allocate GPU/CPU leases for new background jobs while
+            # stalls or swap churn are active. Live speech is never vetoed by
+            # this guard; the existing QoS rules still protect its resources.
+            if self._memory_guard is not None:
+                pressure = self._memory_guard.advise(job.kind, now_ms=now)
+                if not pressure.allowed:
+                    self._counts["deferred"] += 1
+                    return BrainAdmission(False, pressure.reason)
             decision: QoSDecision = self._qos.admit(
                 job, sample.qos, now_ms=now
             )
