@@ -238,3 +238,21 @@ def test_server_snapshots_are_mirrored_every_six_hours_and_never_polled_locally(
         raise httpx.ConnectError("server away")
     assert asyncio.run(sync_watched(store, down, now=now + dt.timedelta(days=1))) == 0          # never raises
     store.close()
+
+
+def test_a_snapshot_backs_a_failed_live_read_and_is_found_by_its_title(tmp_path):
+    store = ResearchStore(tmp_path / "mirror.sqlite3")
+    store.import_pages([{"url": ROBLOX_NOTES.format(n=745), "title": "Release Notes for 745",
+                         "text": "Improvements\n\nAdds Class.Widget.Glow for glowing parts.",
+                         "fetched_at": "2026-10-30T08:00:00", "changed_at": "2026-10-30T08:00:00"}])
+
+    async def no_search(query, *, limit):
+        return []
+
+    async def offline(url, *, max_chars=0):
+        raise httpx.ConnectError("offline")
+
+    result = asyncio.run(web_research.research("What did Roblox release notes 745 add?", searcher=no_search,
+                                               fetcher=offline, store=store, year=2026))
+    assert "Widget.Glow" in result.context and "snapshot 2026-10-30" in result.context
+    store.close()

@@ -519,7 +519,7 @@ async def _research(question: str, queries: list[str], official: tuple[str, ...]
         if s.status == "found" or (s.status == "failed" and s.error == "cancelled"):
             s.status, s.error = "failed", "deadline"
     if store is not None:
-        known = {_identity(s.url) for s in ranked}
+        known = {_identity(s.url) for s in ranked if s.status == "read"}   # a failed live read keeps the snapshot
         for url, title, text, fetched in store.snapshots():
             if _identity(url) in known:
                 continue
@@ -530,7 +530,11 @@ async def _research(question: str, queries: list[str], official: tuple[str, ...]
     for s in ranked:
         if s.snippet:
             pool.append(Passage(s.id, -1, f"{s.title}: {s.snippet}"))
-        if s.status == "read":
+        if s.status == "read" and s.published.startswith("snapshot "):
+            # A watched page was never matched by a search: its title ("Release Notes for 745") rides on each
+            # passage so a question naming the page can find the body.
+            pool.extend(Passage(s.id, start, f"[{s.title}]\n{text}") for start, text in split_passages(s.text))
+        elif s.status == "read":
             pool.extend(Passage(s.id, start, text) for start, text in split_passages(s.text))
     ranked_passages = rank_passages(question, pool)
     shown = _choose(ranked, ranked_passages, max_chars)
