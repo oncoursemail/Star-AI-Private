@@ -201,7 +201,8 @@ def _variant_from_brief(t: Template, brief: str, answer: dict) -> dict:
     """When the fill answer gives no variant (a failed or truncated reply), use a variant the brief names, e.g.
     'revolver' -> firearm variant revolver, instead of silently building the default (an assault rifle)."""
     var = t.params.get("variant")
-    raw = answer.get("params") if isinstance(answer.get("params"), dict) else {}
+    params = answer.get("params")
+    raw: dict = params if isinstance(params, dict) else {}
     if var is None or var.kind != "enum" or "variant" in raw:
         return answer
     words = set(re.findall(r"[a-z]+", brief.lower()))

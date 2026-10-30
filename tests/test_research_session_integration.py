@@ -562,10 +562,10 @@ def test_v2_team_cancellation_during_page_read_records_cancelled_and_stops_worke
             web_provider=_v2_search([]), page_provider=fetch,
             research_budget=ResearchBudget(total_seconds=5)))
         try:
-            await asyncio.wait_for(started.wait(), timeout=1)
+            await asyncio.wait_for(started.wait(), timeout=10)  # 1 s timed out on the loaded CI runner
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(task, timeout=1)
+                await asyncio.wait_for(task, timeout=10)
         finally:
             if not task.done():
                 task.cancel()
