@@ -251,7 +251,7 @@ class StarPlayoutClockTests(unittest.TestCase):
         stage.interrupt(now=clock.now)
         clock.advance(3.0)
         signal = StreamSignal("game-2", "viewer_question", clock.now,
-                              "What's happening?", evidence="unknown")
+                              "What's happening?", speaker_id="viewer-test", evidence="unknown")
         self.assertTrue(stage.offer(signal, now=clock.now, moderated=True))
         new = stage.prepare(now=clock.now)
         self.assertIsNotNone(new)
