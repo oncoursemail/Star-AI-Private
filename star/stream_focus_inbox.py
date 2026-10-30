@@ -152,6 +152,9 @@ class StreamFocusInbox:
             if (not self._enabled or not self._focus or not moderated
                     or signal.kind != "viewer_question"
                     or signal.evidence != "reported"
+                    # Per-speaker fairness needs a stable, host-supplied ID.
+                    # signal_id is per-event and must never stand in for it.
+                    or not signal.speaker_id.strip()
                     or not 0 <= now - signal.timestamp <= 5.0
                     or len(signal.detail) > 350):
                 self._counts["declined"] += 1
@@ -161,9 +164,10 @@ class StreamFocusInbox:
             # Secret-keyed within this session, not linkable across broadcasts.
             digest = hmac.new(self._session_salt, normalized.encode("utf-8"),
                               sha256).hexdigest()
-            speaker = signal.speaker_id or signal.signal_id
+            # Host must supply a stable identity after authenticating chat;
+            # hash it immediately to avoid retaining the original identifier.
             speaker_tag = "v" + hmac.new(
-                self._session_salt, speaker.encode("utf-8"), sha256
+                self._session_salt, signal.speaker_id.encode("utf-8"), sha256
             ).hexdigest()[:24]
             if (digest in self._seen_set or
                     any(item.speaker_tag == speaker_tag for item in self._pending)
