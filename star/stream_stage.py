@@ -14,6 +14,7 @@ animate a victory or commit a spoken reaction.
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 import math
 from threading import RLock
@@ -70,6 +71,14 @@ def _time(value: object) -> float:
     return value
 
 
+def _nearest_rank_ms(samples: deque[float], percentile: float) -> float | None:
+    """Summarize at most 64 host-clock samples; no transcripts or identifiers."""
+    if not samples:
+        return None
+    ordered = sorted(samples)
+    return round(ordered[math.ceil(percentile * len(ordered)) - 1], 2)
+
+
 @dataclass(frozen=True)
 class StagePlan:
     """Immutable, one-shot host cue; no actual voice or animation is generated."""
@@ -122,6 +131,13 @@ class StarStage:
         self._plan: StagePlan | None = None
         self._intent: SpeechIntent | None = None
         self._phase = "idle"
+        # These are local host-reported playback-start timings, NOT OBS proof.
+        # Only the 64 most recent samples are retained; never store chat/audio.
+        self._prepared_at: float | None = None
+        self._queued_at: float | None = None
+        self._audible_at: float | None = None
+        self._prepare_to_host_playback_ms: deque[float] = deque(maxlen=64)
+        self._queue_to_host_playback_ms: deque[float] = deque(maxlen=64)
         self._quiet = QuietAttention()
         self._quiet_serial = 0
         self._quiet_frame: QuietStageFrame | None = None
@@ -317,6 +333,7 @@ class StarStage:
             )
             self._quiet_frame = None
             self._plan, self._intent, self._phase = plan, intent, "prepared"
+            self._prepared_at, self._queued_at, self._audible_at = current, None, None
             self._counts["prepared"] += 1
             return plan
 
@@ -332,9 +349,11 @@ class StarStage:
         with self._lock:
             if not self._matches(plan, "prepared"):
                 return False
-            if current > plan.deadline_at:
+            if (current > plan.deadline_at or self._prepared_at is None
+                    or current < self._prepared_at):
                 self._drop(interrupted=False, now=current)
                 return False
+            self._queued_at = current
             self._phase = "queued"
             self._counts["queued"] += 1
             return True
@@ -350,9 +369,18 @@ class StarStage:
         with self._lock:
             if not self._matches(plan, "queued"):
                 return False
-            if current > plan.deadline_at or self._intent is None:
+            if (current > plan.deadline_at or self._intent is None
+                    or self._prepared_at is None or self._queued_at is None
+                    or current < self._queued_at):
                 self._drop(interrupted=False, now=current)
                 return False
+            self._prepare_to_host_playback_ms.append(
+                (current - self._prepared_at) * 1000.0,
+            )
+            self._queue_to_host_playback_ms.append(
+                (current - self._queued_at) * 1000.0,
+            )
+            self._audible_at = current
             # Playback has *started*, but the entire utterance has NOT yet
             # been heard. Do not commit the director's spoken outcome until
             # finish(played_to_end=True) acknowledges completion.
@@ -409,6 +437,7 @@ class StarStage:
         if interrupted:
             self._counts["interrupted"] += 1
         self._intent, self._plan, self._phase = None, None, "idle"
+        self._prepared_at = self._queued_at = self._audible_at = None
 
     def finish(self, plan: StagePlan, *,
                now: float | None = None,
@@ -428,6 +457,10 @@ class StarStage:
                 return False
             if played_to_end:
                 if self._phase != "audible" or self._intent is None:
+                    return False
+                # An out-of-order host clock must not certify a full utterance.
+                if self._audible_at is None or current < self._audible_at:
+                    self._drop(interrupted=False, now=current)
                     return False
                 if not self._director.complete(
                     self._intent, now=current, spoken=True,
@@ -469,7 +502,20 @@ class StarStage:
         with self._lock:
             return {**self._counts, "enabled": self._enabled,
                     "phase": self._phase, "mode": self._mode,
-                    "director": self._director.metrics()}
+                    "director": self._director.metrics(),
+                    "host_playback_latency": {
+                        "samples": len(self._prepare_to_host_playback_ms),
+                        "prepare_to_start_p50_ms": _nearest_rank_ms(
+                            self._prepare_to_host_playback_ms, 0.5,
+                        ),
+                        "prepare_to_start_p95_ms": _nearest_rank_ms(
+                            self._prepare_to_host_playback_ms, 0.95,
+                        ),
+                        "queued_to_start_p95_ms": _nearest_rank_ms(
+                            self._queue_to_host_playback_ms, 0.95,
+                        ),
+                        "source": "trusted_host_playback_start_attestation_not_OBS",
+                    }}
 
 
 __all__ = ["StagePlan", "StarStage", "QuietStageFrame"]
