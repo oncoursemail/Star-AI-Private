@@ -37,3 +37,120 @@ block was checked as Roblox Luau).
   that is why the Lua names come from the manual, not from the binary.
 - LOVE 11.5 still has love.filesystem.exists/isFile/isDirectory/getSize (deprecated, gone in 12): the facts say so; they are
   not flagged. `love.graphics.setColor(255, 0, 0)` is clamped to (1, 0, 0): colours above 1 are flagged, the message says so.
+
+## Eval (files: docs/agents/litha-eval/engine-truth-20261029/)
+51 tasks, first try through the live router (`litha`, launcher Litha prompt, temp 0.3, top_p 0.9, thinking off, max_tokens 1500, GPU
+nodes only: every answer came from star-pc's 4060), the same router conditions in every arm (`mesh_full_code: false` because
+litha-speed2's build note went live in the middle of the work; `mesh_brain: false`).
+- 21 tasks come from the polyglot lane (Unity 6, Godot 4, Unreal 3, LOVE 2, plain Lua 3, gd_func 3), 30 are NEW held-out tasks
+  written by a task-author agent that never saw this code: Lua 5.4 io programs x6 (hidden stdin/stdout tests), GDScript functions x3
+  (hidden `expr`/`expect` tests in the real Godot 4.7), GDScript scenes x3 (a SceneTree test script in the real engine), LOVE x6
+  (`driver.lua` in the real LOVE 11.5: scripted keys/mouse, asserts on the answer's globals), Unity 6 x6 and Unreal 5 x6 (regex
+  rules for obsolete/invented API + the checker; no engine to run). All 30 references pass their tests with 0 checker problems.
+- Arms: B = live first try (generic polyglot note as live), BV = B + the new verifier's fix loop (2 rounds, `litha`),
+  F = engine facts note (what the router hook adds), FV = F + fix loop. Same checker version for every arm.
+- Judges: 3 blind Opus judges (125 distinct answers, labels random, objective evidence beside each answer, they agreed on pass/fail
+  for 118/125; majority pass). Hidden-test tasks (24) got a second sample per arm (B2/F2) because one sample is noisy.
+
+Judged (3 judges, majority), 51 tasks:
+| arm | pass | mean score (1-5) |
+|---|---|---|
+| B | 7 | 2.03 |
+| BV | 8 | 2.24 |
+| F | 11 | 2.27 |
+| FV | 12 | 2.35 |
+
+| family (n) | B | BV | F | FV |
+|---|---|---|---|---|
+| unity (12) | 2 | 2 | 7 | 7 |
+| godot (13) | 4 | 5 | 4 | 5 |
+| unreal (9) | 0 | 0 | 0 | 0 |
+| love (8) | 0 | 0 | 0 | 0 |
+| lua (9) | 1 | 1 | 0 | 0 |
+| held-out NEW only (30) | 2 | 3 | 3 | 4 |
+| polyglot tasks (21) | 5 | 5 | 8 | 8 |
+
+Paired changes of the mean judge score (sign test): fix loop B->BV +0.20 (10 up / 1 down, p=0.012, n=51); facts B->F +0.24
+(23/10, p=0.035); both B->FV +0.32 (25/10, p=0.017). On the 30 new tasks only: BV +0.21 (5/1, p=0.22), F +0.28 (11/4, p=0.12),
+FV +0.36 (13/4, p=0.049). New tasks per family, B->F: unity +0.94 (4 up / 0 down), godot +0.39, unreal 0.00, love +0.22, lua -0.17.
+Strict full-task passes stay tiny (a 12B model on precise multi-rule tasks): 2 -> 4 of 30 new tasks.
+
+Hidden tests (24 tasks, 2 samples pooled = 48 runs; full passes, mean fraction of assertions passed):
+| family (n) | B | B + fix | F | F + fix |
+|---|---|---|---|---|
+| godot (9) | 3/18 (0.56) | 6/18 (0.77) | 2/18 (0.59) | 3/18 (0.66) |
+| love (6) | 0/12 (0.17) | 0/12 (0.17) | 0/12 (0.13) | 0/12 (0.13) |
+| lua (9) | 1/18 (0.06) | 1/18 (0.06) | 0/18 (0.08) | 0/18 (0.08) |
+| all (24) | 4/48 (0.28) | 7/48 (0.35) | 2/48 (0.28) | 3/48 (0.31) |
+The fix loop helps (Godot parse errors and invented members get repaired); the facts note does not move hidden tests.
+
+API mistakes the checker knows, first try (answers with at least one error/warning, of n): unity 4 -> 1 (of 12), unreal 3 -> 0 (of 9),
+godot 2 -> 2 (of 13), love 6 -> 5 (of 8), lua 2 -> 5 (of 9); all 17 -> 13 of 51. Unity/Unreal regex rules satisfied 3 -> 4 of 12.
+Plain Lua got WORSE with the note (it misapplied it, e.g. claimed Lua 5.4 has no bitwise operators).
+
+Checker quality (first sample): of the answers of the 24 hidden-test tasks (2 arms), every flagged answer failed its tests (21/21; flagged 21 of the 43 failing ones, the
+rest are logic bugs); of the 30 flagged answers (all tasks) the judges passed none; fix loop: B flagged 17 -> 15 changed, F flagged 13 -> 8
+changed, every change had fewer problems, none more. 59 Unity blocks of older Litha answers: the same 5 `Rigidbody.velocity` warnings as
+before, no new ones. The 9 Lua, 8 LOVE, 9 Unreal, 6 new Unity and 13 Godot reference solutions: 0 problems.
+
+Latency: facts note +850 prompt tokens (median 637 -> 1,485); first-request prompt time on star-pc 299 -> 898 ms (+0.6 s; an identical
+repeat is served from the prompt cache). Verify p50 121 ms, p95 679 ms over 102 answers; per engine p50: Lua 80, Unity 79,
+Unreal 103, Godot 636 (the real engine starts), LOVE 582 (a 120-frame run in the real engine). Fix loop median 11-19 s on flagged answers
+(GPU shared with other lanes).
+
+## What is live (router-deploy-lock.md: DEPLOY/DONE engine-truth 2026-10-30T00:03Z .. 00:12Z)
+- star-polyglot container (/opt/pg/app, previous in /opt/pg/previous): runner + engine.py + data. LOVE 11.5, Xvfb and Mesa software GL
+  were installed with `deploy.sh engine`-equivalent apt commands (NIC added and removed).
+- Verifier :8101 (previous in /opt/star-verify/previous): verify/core.py (LOVE routing, plain-Lua routing by the question), service.py
+  (fix call sends mesh_engine:false), polyglot/client.py (LOVE timeout 10 s).
+- Router :8100 (previous in /opt/star-mesh/previous): engine facts note for UNITY only (config `engine_facts_families`, default
+  ["unity"]); Godot/Unreal/LOVE/Lua keep the polyglot note. Hot fix 00:10Z: the note reads the user's own question, not the grounding
+  reference answers the router puts in front of it (a grounded "Unity 2022" answer had made a Unity 6 question look old).
+- Live checks: Unity 6 question -> `X-Mesh-Engine: unity core+t7` next to litha-speed2's `X-Mesh-Full-Code`; Unity 2021 -> version note;
+  Roblox, Minecraft, general, Python questions unchanged; `/mesh/verify` flags love/lua/godot/unity/unreal samples in 13-620 ms and leaves
+  Roblox/Minecraft as before; `?fix=1` repaired a LOVE answer in 3.4 s.
+
+## Rejected / not shipped, and why
+- Facts for plain Lua (judged -1 pass / -0.17 score, hidden tests 1/18 -> 0/18, more checker flags), LOVE (hidden 0/12 both, assertion fraction 0.17 ->
+  0.13), Unreal (judged +0.00 although the structural errors went 3 -> 0 of 9) and Godot (judged +0.39 on the new tasks but hidden tests flat:
+  3/18 -> 2/18): code stays in `engine/facts_data.py`, switched off by `engine_facts_families`. Bar used: judged score +0.25 on the new tasks AND
+  no loss on hidden tests / API errors; only Unity passes it.
+- Facts text inside the verifier's fix prompt (`FIXFACTS` in evalrun2): coded in the eval script, not measured, not shipped.
+- A fact-check agent found five definite errors in the first facts text before the final run (two-argument `math.atan` in LuaJIT silently
+  ignores the second argument; `love.data.encode` is not a serializer; Awake would discard Inspector arrays; double ObjectPool Release only
+  throws in the Editor; bare `schedule` needs `root.`; GAS interface owner; Lua version wording); all were fixed and the Unity/LOVE answers
+  regenerated. Lesson: a facts note is a liability when a sentence is wrong; every placeholder signature is generated, the prose is reviewed.
+
+## Honest caveats
+- In-sample parts: the Unity facts were written after I had read the polyglot lane's judge reasons for its six Unity tasks (pool Release type, UnityEvent vs
+  Action, NavMesh line of sight, ...). Five of the Unity gains are on exactly those tasks. On the six unseen Unity tasks the judged score
+  rose +0.94 (4 up / 0 down) but strict passes stayed 1 -> 1. Four Lua pitfall rules (match captures indexed like a table, io.read formats,
+  ipairs(io.lines), 64-bit decimal literals) and the Unreal RPC-return rule were added after reading baseline failures of these tasks:
+  their effect on those tasks is in-sample; their precision was checked on the references and the older corpus.
+- One judged sample per arm and task; the hidden-test tasks have two. Judged passes are single digits: read the score deltas, not the pass counts.
+- Unreal has no engine here (Epic's source needs an account): the structural rules are the ones UHT and the compiler enforce, but nothing is compiled.
+- Unity: no Unity runs; checks are Roslyn + stubs + the docs index. LOVE object methods (`img:getWidth()`) are not checked, only `love.*` functions.
+- Other lanes' load: the shared router returned 502/503 for stretches; arms were generated interleaved, one request at a time.
+
+## Also fixed on the way (existing false alarms of the live checker)
+- GDScript: a `preload("res://...")` of a scene/image that is not in the check folder was reported as an error and stopped the engine's analysis at
+  that line (hiding real errors): `preload` -> `load` before the check.
+- C# (Unity): valid `async Awaitable` code gave CS0161/CS0103 (no Awaitable / destroyCancellationToken in the stubs); several files in one
+  block (`// File: A.cs` ... with their own usings) gave CS1529.
+- Lua: every untagged Lua block was checked as Roblox Luau, so `string.split` / `table.find` in a plain-Lua answer passed.
+- LOVE: stand-ins for assets the answer loads (images, sounds, fonts), so a missing file is not reported as a bug of the code.
+
+## Refresh / repeat
+- Data: `engine/build/` (`love_index.lua`, `love_sigs.py`, `love_std.py`, `lua54_std.py`, `godot_sigs.py`, `verify_unity_facts.py`). Godot data comes from
+  `godot --headless --dump-extension-api`, LOVE data from a dump script run by the engine under Xvfb, Lua from the manual, Unity from the docs index.
+- Eval: tasks, answers, results, verdicts, key in docs/agents/litha-eval/engine-truth-20261029/ (tools `gen2.py` both arms one request at a time,
+  `evalrun2.py` tests/rules/checker/fix, `packets2.py` + `judge_brief.md` + `unblind2.py` blind judging, `summ2.py` tables). Needs a dev
+  runner on another port in star-polyglot (push the worktree's polyglot dir to /opt/pg/app-eng, systemd-run with PG_PORT=8111, proxy device,
+  ssh tunnel); remove it afterwards (done 00:13Z).
+- Switch a family on: router config `engine_facts_families` (or edit `SHIPPED` in `engine/facts.py`).
+
+## Status log
+- 10-29 21:25Z claimed #357; worktree; reading wave docs. 22:10Z task-author agent: 24 tasks validated against real Lua 5.4 / Godot 4.7.2 (+ mutations).
+- 22:30Z LOVE 11.5 + Xvfb into star-polyglot; LOVE task author (6 tasks, drivers validated in the real engine). 22:40Z-23:40Z facts + checks built, baseline and
+  facts answers generated (router shared and busy). 23:15Z fact-check agent. 23:50Z hidden-test sample 2; 00:00Z three blind judges.
+- 00:03Z-00:12Z container, verifier, router deployed (hot fix for grounding), dev runner removed. PR into star/next: see the PR.

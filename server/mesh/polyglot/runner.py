@@ -682,10 +682,20 @@ def godot_members(cls: str) -> set[str]:
     return out
 
 
+GD_CONST_PRELOAD = re.compile(r"^(?P<ind>[ \t]*)const\s+(?P<n>\w+)(?P<t>\s*:\s*[A-Za-z_][A-Za-z0-9_.\[\]]*)?\s*:?=\s*preload\s*\(", re.M)
+
+
+def gd_preload_to_load(src: str) -> str:
+    """The user's own scenes/images are not in the check folder, and a missing preload() stops the engine's analysis at the
+    first error: `const X = preload("res://a.tscn")` becomes `var X = load(...)` (same lines, so no real error is hidden)."""
+    src = GD_CONST_PRELOAD.sub(lambda m: f"{m.group('ind')}var {m.group('n')}{m.group('t') or ''} = load(", src)
+    return re.sub(r"(?<![A-Za-z0-9_.])preload\s*\(", "load(", src)
+
+
 def check_gdscript(code: str, context: str) -> dict:
     if re.search(r"\bGodot\s*3(?:\.\d+)?\b", context or ""):
         return {"checked": False, "tool": "godot", "mode": "godot3", "problems": [], "note": "Godot 3 answer"}
-    src, offset = code.replace("\r", ""), 0
+    src, offset = gd_preload_to_load(code.replace("\r", "")), 0
     fragment = not GD_TOP.search(src)
     if fragment:
         indent = "    " if re.search(r"^ +\S", src, re.M) else "\t"
@@ -704,6 +714,8 @@ def check_gdscript(code: str, context: str) -> dict:
         if (msg, line) in seen:
             continue
         seen.add((msg, line))
+        if re.search(r'Preload file ".*" does not exist', msg):
+            continue                      # the user's own scenes/images are not here: not a bug of the code
         ident = re.search(r'(?:Identifier|type|Could not find type|function|Function) "([^"(]+)', msg)
         name = ident.group(1) if ident else None
         if name and (elsewhere(name, code, context) or (name[:1].isupper() and "not declared" in msg)):
@@ -726,8 +738,12 @@ def check_gdscript(code: str, context: str) -> dict:
             probs.append(p)
             continue
         probs.append(problem("compile", "GDScript (Godot 4): " + msg, line, name=name))
+    probs = shift(probs, offset, len(code.splitlines()))
+    if ENGINE is not None:                   # members the engine's parser lets through but the real classes do not have
+        known = {p.get("name") for p in probs}
+        probs += [p for p in ENGINE.gd_extra(code, context) if p.get("name") not in known]
     return {"checked": True, "tool": "godot " + os.path.basename(GODOT).split("_")[1],
-            "mode": "fragment" if fragment else "file", "problems": shift(probs, offset, len(code.splitlines()))[:12]}
+            "mode": "fragment" if fragment else "file", "problems": probs[:12]}
 
 
 # ----------------------------------------------------------------------------------------------------------- Lua

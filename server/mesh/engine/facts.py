@@ -16,7 +16,11 @@ from pathlib import Path
 
 from .facts_data import FACTS
 
-DEFAULTS = {"engine_facts": True}
+FAMILIES = ["unity", "godot", "unreal", "love", "lua"]          # every engine the module can write a note for
+SHIPPED = ["unity"]               # switched on: the only family where the judged score AND the API-error counts both rose on the
+                                  # held-out tasks (docs/agents/engine-truth-20261029.md). Godot (judged +0.39, hidden tests flat),
+                                  # Unreal (+0.00), LOVE (+0.22) and plain Lua (-0.17) keep the generic polyglot note
+DEFAULTS = {"engine_facts": True, "engine_facts_families": SHIPPED}
 DATA = Path(__file__).with_name("data")
 MAX_CHARS = 3000           # the 4 GB nodes have a 4096-token context; the system prompt, the question and the answer share it
 HEAD = ("(Facts for Litha, not from the user: {what}. Use exactly these names and signatures, never invent an API; "
@@ -155,6 +159,22 @@ def core_text(question: str) -> str:
     return expand(FACTS[fam]["core"])
 
 
+GROUND_MARK = "\n---\nQuestion: "          # server/mesh/instant.grounded_messages: reference answers, then the question
+NOTE_MARKS = ("\n\n(Build note for Litha", "\n\n(Note for Litha", "\n\n(Facts for Litha", "\n\n(Technical details")
+
+
+def question_of(text: str) -> str:
+    """The user's own question of a last user turn: without the reference answers the router put in front of it
+    (they may mention other engines or versions) and without the notes other hooks appended."""
+    i = text.rfind(GROUND_MARK)
+    q = text[i + len(GROUND_MARK):] if i >= 0 else text
+    for mark in NOTE_MARKS:
+        j = q.find(mark)
+        if j >= 0:
+            q = q[:j]
+    return q
+
+
 def apply(req: dict, cfg: dict | None = None) -> dict:
     """Append the note to the last user turn; returns the header for the log. `"mesh_engine": false` in the request
     (internal calls such as the verifier's fix prompt) or `engine_facts: false` in the config skips it."""
@@ -166,8 +186,8 @@ def apply(req: dict, cfg: dict | None = None) -> dict:
     text = msgs[-1].get("content")
     if not isinstance(text, str) or "(Note for Litha" in text or "(Facts for Litha" in text:
         return {}
-    fam, note, used = facts_for(text)
-    if not fam:
+    fam, note, used = facts_for(question_of(text))
+    if not fam or (cfg is not None and fam not in cfg.get("engine_facts_families", SHIPPED)):
         return {}
     msgs[-1] = {**msgs[-1], "content": text + "\n\n" + note}
     return {"X-Mesh-Engine": f"{fam} {'+'.join(used)} {len(note)}"}

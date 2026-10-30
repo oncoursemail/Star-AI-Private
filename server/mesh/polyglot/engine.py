@@ -316,7 +316,7 @@ def check_lua_pitfalls(code: str, label: str) -> list[dict]:
             probs.append(problem("api", f"{label}: `{var}` holds only the FIRST capture of match/find (a string or number), so "
                                         f"`{var}[1]` is nil: string.match returns the captures as separate values",
                                  line_of(m.start()),
-                                 name=var, suggestion=f"local a, b = s:match(pattern)   (one variable per capture)"))
+                                 name=var, suggestion="local a, b = s:match(pattern)   (one variable per capture)"))
     for m in BIG_INT.finditer(clean):
         if int(m.group(1)) > 9223372036854775807:
             probs.append(problem("api", f"{label}: the integer literal {m.group(1)[:24]} does not fit in 64 bits, so Lua reads it as "
@@ -471,6 +471,23 @@ function love.run()
   function sim.click(x, y, b) sim.mousedown(x, y, b); sim.frames(1); sim.mouseup(x, y, b) end
   function sim.text(s) if love.textinput then love.textinput(s) end end
   function sim.size() return love.graphics.getDimensions() end
+
+  -- assets the answer mentions are not here: stand-ins, so a missing file is not reported as a bug of the code
+  local function missing(p) return type(p) == "string" and not love.filesystem.getInfo(p) end
+  local g, au = love.graphics, love.audio
+  local newImage, newFont, newSource = g.newImage, g.newFont, au.newSource
+  g.newImage = function(p, ...)
+    if missing(p) then return newImage(love.image.newImageData(32, 32)) end
+    return newImage(p, ...)
+  end
+  g.newFont = function(p, size, ...)
+    if missing(p) then return newFont(size or 12) end
+    return newFont(p, size, ...)
+  end
+  au.newSource = function(p, ...)
+    if missing(p) then return newSource(love.sound.newSoundData(4410, 44100, 16, 1), "static") end
+    return newSource(p, ...)
+  end
 
   if love.load then love.load({}) end
   local drv = nil
@@ -913,3 +930,119 @@ def unity_diag(cid: str, msg: str, names: list[str], line, code: str, context: s
             p["severity"] = "info"     # may be the user's own class from another file: shown, never "fixed"
         return p
     return None
+
+
+# ----------------------------------------------------------------------------------------------------- Godot 4 (GDScript)
+# `godot --check-only` reports unknown members of builtin types (Vector2, String, Array ...) and unknown `self` functions,
+# but NOT a method or property that does not exist on an Object-derived receiver (`$Sprite2D.foo()`, `var t: Timer`,
+# `t.start_timer()`, `get_tree().change_scene(...)`): that is a runtime error. The engine's own API dump tells which
+# members each class really has.
+_GD: dict = {}
+GD3_NAMES = {
+    "instance": "instantiate()  (PackedScene.instantiate)", "set_pos": "position = v", "get_pos": "position",
+    "set_global_pos": "global_position = v", "get_global_pos": "global_position", "set_rot": "rotation = r",
+    "get_rot": "rotation", "set_rotd": "rotation_degrees = d", "get_rotd": "rotation_degrees",
+    "set_opacity": "modulate.a = a", "get_opacity": "modulate.a", "change_scene": "change_scene_to_file(path)",
+    "set_fixed_process": "set_physics_process(true)", "set_process_fixed": "set_physics_process(true)",
+    "get_ticks_msec": "Time.get_ticks_msec()", "get_unix_time": "Time.get_unix_time_from_system()",
+    "set_text_color": "add_theme_color_override(\"font_color\", c)", "make_dir": "DirAccess.make_dir_absolute(path)",
+    "file_exists": "FileAccess.file_exists(path)  (static)", "set_cell_size": "tile_set / cell size properties",
+    "set_pause": "get_tree().paused = true", "is_pause": "get_tree().paused", "get_viewport_rect_size": "get_viewport_rect().size",
+}
+GD_CHAIN = {"get_tree": "SceneTree", "get_viewport": "Viewport", "get_window": "Window", "create_tween": "Tween",
+            "get_world_2d": "World2D", "get_world_3d": "World3D", "get_camera_2d": "Camera2D"}
+GD_STRIP = re.compile(r"#[^\n]*|\"\"\"(?:.|\n)*?\"\"\"|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'")
+
+
+def gd_tables() -> dict:
+    if not _GD:
+        path = os.path.join(os.environ.get("PG_HOME", "/opt/pg"), "data", "extension_api.json")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                api = json.load(fh)
+        except (OSError, ValueError):
+            _GD["_"] = None
+            return _GD
+        table, objs, allnames = {}, set(), set()
+        for kind in ("classes", "builtin_classes"):
+            for c in api.get(kind, []):
+                names = {m["name"] for k in ("methods", "properties", "signals", "constants", "members", "enums")
+                         for m in c.get(k) or [] if isinstance(m, dict) and "name" in m}
+                for e in c.get("enums") or []:
+                    names |= {v["name"] for v in e.get("values") or []}
+                table[c["name"]] = (names, c.get("inherits"))
+                allnames |= names
+                if kind == "classes":
+                    objs.add(c["name"])
+        for u in api.get("utility_functions", []):
+            allnames.add(u["name"])
+        _GD.update({"_": True, "table": table, "objs": objs, "all": allnames})
+    return _GD
+
+
+def gd_members(cls: str) -> set:
+    t = gd_tables()
+    out, c = set(), cls
+    while c in t["table"] and len(out) < 8000:
+        names, c = t["table"][c]
+        out |= names
+    return out
+
+
+def gd_extra(code: str, context: str = "") -> list[dict]:
+    """Invented / Godot-3 members on Object-derived receivers (typed variables, get_tree() & co, GD3 names)."""
+    t = gd_tables()
+    if not t.get("_"):
+        return []
+    clean = GD_STRIP.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), code)
+    declared = set(re.findall(r"\b(?:func|var|const|signal|enum|class)\s+(\w+)", clean)) | \
+        set(re.findall(r"^\s*(\w+)\s*(?::[^=\n]*)?=", clean, re.M)) | set(re.findall(r"\b(\w+)\s*:\s*[A-Za-z_]", clean))
+    ctx_names = set(re.findall(r"\b(?:func|var|signal)\s+(\w+)", context or ""))
+    probs: list[dict] = []
+    seen: set = set()
+
+    def line_of(pos: int) -> int:
+        return clean.count("\n", 0, pos) + 1
+
+    def report(cls, member, pos, is_call):
+        key = (cls, member)
+        if key in seen:
+            return
+        seen.add(key)
+        real = sorted(n for n in gd_members(cls) if not n.startswith("_"))
+        sugg = GD3_NAMES.get(member) or (difflib.get_close_matches(member, real, n=1, cutoff=0.6) or [None])[0]
+        p = problem("api", f"GDScript (Godot 4): {cls} has no {'method' if is_call else 'property'} '{member}' (a runtime error: "
+                           f"Invalid call / Invalid access)", line_of(pos), name=f"{cls}.{member}", suggestion=sugg)
+        p["candidates"] = difflib.get_close_matches(member, real, n=8, cutoff=0.4)
+        probs.append(p)
+
+    # typed receivers that are exact: initialised from $Path / get_node() / Type.new() with the declared type
+    types: dict[str, set] = {}
+    for rx in (r"\bvar\s+(\w+)\s*:\s*([A-Z]\w*)\s*=\s*(?:\$|%|get_node\s*\(|get_node_or_null\s*\(|\2\.new\s*\()",
+               r"\bvar\s+(\w+)\s*:?=\s*([A-Z]\w*)\.new\s*\("):
+        for m in re.finditer(rx, clean):
+            if m.group(2) in t["objs"]:
+                types.setdefault(m.group(1), set()).add(m.group(2))
+    for name, ts in types.items():
+        if len(ts) != 1:
+            continue
+        cls = next(iter(ts))
+        members = gd_members(cls)
+        for m in re.finditer(r"(?<![\w.])" + re.escape(name) + r"\.(\w+)(\s*\()?", clean):
+            mem = m.group(1)
+            if mem not in members and mem not in ctx_names:
+                report(cls, mem, m.start(), bool(m.group(2)))
+    for fn, cls in GD_CHAIN.items():                      # get_tree().change_scene(...)
+        members = gd_members(cls)
+        for m in re.finditer(r"(?<![\w.])" + fn + r"\s*\(\s*\)\s*\.(\w+)(\s*\()?", clean):
+            if m.group(1) not in members:
+                report(cls, m.group(1), m.start(), bool(m.group(2)))
+    for name, sugg in GD3_NAMES.items():                  # Godot 3 names that exist on no class of Godot 4
+        if name in t["all"] or name in declared or name in ctx_names or                 any((p["name"] or "").endswith("." + name) for p in probs):
+            continue
+        m = re.search(r"\.\s*" + name + r"\s*\(", clean)
+        if m and ("", name) not in seen:
+            seen.add(("", name))
+            probs.append(problem("api", f"GDScript (Godot 4): '{name}()' is a Godot 3 name and does not exist in Godot 4",
+                                 line_of(m.start()), name=name, suggestion=sugg))
+    return probs[:6]

@@ -73,15 +73,40 @@ def test_topics_follow_the_question_and_old_versions_get_a_version_note():
     assert facts.facts_for("Unity 2021 LTS C# script for a door")[2] == ["old"]
 
 
+def test_only_the_shipped_families_get_the_note_by_default():
+    from mesh.router import DEFAULTS as router_defaults
+    assert router_defaults["engine_facts_families"] == ["unity"]
+    q = "Unity 6 pool script"
+    assert facts.apply({"messages": [{"role": "user", "content": q}]}, router_defaults)["X-Mesh-Engine"].startswith("unity")
+    for q in ("Godot 4 spawner script", "Unreal Engine 5 C++ actor", "LÖVE 11 shooter in main.lua", "plain Lua 5.4 program"):
+        assert facts.apply({"messages": [{"role": "user", "content": q}]}, router_defaults) == {}
+
+
+def test_grounding_and_notes_in_the_turn_do_not_decide_the_engine_or_version():
+    ground = ("Reference answers (verified)\n\n[Q] Unity 2022 LTS door\n[A] In Unity 2022 use FindObjectOfType.\n\n---\n"
+              "Question: Unity 6 C# script for a Rigidbody player")
+    turn = ground + "\n\n(Build note for Litha, not from the user: complete code.)"
+    assert facts.question_of(turn) == "Unity 6 C# script for a Rigidbody player"
+    req = {"messages": [{"role": "user", "content": turn}]}
+    hdr = facts.apply(req)
+    assert hdr["X-Mesh-Engine"].startswith("unity core") and "old" not in hdr["X-Mesh-Engine"]
+    assert req["messages"][0]["content"].startswith("Reference answers") and "(Facts for Litha" in req["messages"][0]["content"]
+    roblox = "[Q] Unity vs Roblox\n[A] Unity uses C#.\n\n---\nQuestion: Roblox: give a player coins"
+    assert facts.apply({"messages": [{"role": "user", "content": roblox}]}) == {}
+
+
 def test_apply_replaces_polyglot_note_and_respects_flags():
     req = {"messages": [{"role": "system", "content": "sys"}, {"role": "user", "content": "Godot 4 enemy spawner script"}]}
-    hdr = facts.apply(req)
+    hdr = facts.apply(req)             # no cfg: every family the module knows
     assert hdr["X-Mesh-Engine"].startswith("godot core")
     assert req["messages"][1]["content"].count("(Facts for Litha") == 1 and req["messages"][0]["content"] == "sys"
     assert note.apply(req) == {}                                   # the polyglot note stays out of a facts turn
     off = {"messages": [{"role": "user", "content": "Godot 4 enemy spawner script"}], "mesh_engine": False}
     assert facts.apply(off) == {} and "mesh_engine" not in off and "Facts" not in off["messages"][0]["content"]
     assert facts.apply({"messages": [{"role": "user", "content": "Godot 4 x"}]}, {"engine_facts": False}) == {}
+    only_unity = {"engine_facts": True, "engine_facts_families": ["unity"]}
+    assert facts.apply({"messages": [{"role": "user", "content": "Godot 4 enemy script"}]}, only_unity) == {}
+    assert facts.apply({"messages": [{"role": "user", "content": "Unity 6 enemy script"}]}, only_unity)["X-Mesh-Engine"].startswith("unity")
 
 
 # ---------------------------------------------------------------------------------------------- Lua / LOVE rules
@@ -237,3 +262,35 @@ def test_runner_loads_engine_module_and_checks_are_wired():
     std = engine.luacheck_std("love")
     assert '"graphics"' in std and std.startswith("std = {")
     assert "setColour" not in std
+
+
+# ------------------------------------------------------------------------------------------------- Godot / C# helpers
+def test_gdscript_extra_checks_with_a_small_api_table():
+    engine._GD.clear()
+    engine._GD.update({"_": True, "objs": {"Node", "Timer", "SceneTree", "Sprite2D"},
+                       "all": {"start", "stop", "timeout", "texture", "queue_free", "create_timer", "change_scene_to_file"},
+                       "table": {"Node": ({"queue_free", "name"}, None), "Timer": ({"start", "stop", "timeout"}, "Node"),
+                                 "SceneTree": ({"create_timer", "change_scene_to_file"}, "Object"),
+                                 "Sprite2D": ({"texture"}, "Node")}})
+    code = ('extends Node\n@onready var t: Timer = $Timer\nfunc f():\n\tt.start(2.0)\n\tt.start_timer()\n'
+            '\tget_tree().change_scene("res://a.tscn")\n\tget_tree().create_timer(1.0)\n\tvar e = scn.instance()\n'
+            '\tvar s: Sprite2D = $S\n\ts.texture = null\n\ts.textur = null\n')
+    names = sorted(p["name"] for p in engine.gd_extra(code))
+    assert names == ["SceneTree.change_scene", "Sprite2D.textur", "Timer.start_timer", "instance"]
+    # a typed PARAMETER may hold a subclass with its own methods: never flagged
+    assert not engine.gd_extra("extends Node\nfunc hit(body: Timer):\n\tbody.take_damage(1)\n")
+    assert not engine.gd_extra("extends Node\nfunc instance():\n\tpass\nfunc g():\n\tself.instance()\n")
+    engine._GD.clear()
+
+
+def test_runner_helpers_preload_and_hoisted_usings():
+    from mesh.polyglot import runner
+    src = 'const A = preload("res://a.tscn")\nconst B: Texture2D = preload("res://b.png")\nvar c := preload("res://c.png")\n'
+    out = runner.gd_preload_to_load(src)
+    assert out.splitlines() == ['var A = load("res://a.tscn")', 'var B: Texture2D = load("res://b.png")',
+                                'var c := load("res://c.png")']
+    code, shift = runner.hoist_usings("// File: A.cs\nusing UnityEngine;\nclass A : MonoBehaviour {}\n// File: B.cs\nusing System;\n"
+                                      "using UnityEngine;\nclass B {}\n")
+    assert shift == 1 and code.splitlines()[0] == "using UnityEngine; using System;"
+    assert "// using System;" in code and code.count("using UnityEngine;") == 3   # hoisted + first + commented-out late one
+    assert runner.hoist_usings("using System;\nclass A {}\n") == ("using System;\nclass A {}\n", 0)

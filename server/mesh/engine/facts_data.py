@@ -130,7 +130,7 @@ FACTS = {
              "actionOnDestroy, collectionCheck: true, defaultCapacity: 10, maxSize: 100)`; `pool.Get()`; "
              "`pool.Release(T)` takes the pooled TYPE you created (the Projectile component), never its GameObject; "
              "activate in actionOnGet, deactivate in actionOnRelease; a second Release of the same instance throws "
-             "(guard with a flag). Reset `rb.linearVelocity = Vector3.zero`, `rb.angularVelocity`, position, rotation on "
+             "in the Editor (collectionCheck) but silently duplicates it in a build: guard with a flag. Reset `rb.linearVelocity = Vector3.zero`, `rb.angularVelocity`, position, rotation on "
              "Get. Fire rate: `if (Time.time >= nextShot) { nextShot = Time.time + 1f / rate; }`. Lifetime: a timer "
              "that calls Release, not Destroy."),
             (r"await|async|awaitable|coroutine|delay|wait|cooldown",
@@ -143,7 +143,7 @@ FACTS = {
              "- UI Toolkit: `using UnityEngine.UIElements;` `[SerializeField] UIDocument doc;` "
              "`var root = doc.rootVisualElement;` `root.Q<Label>(\"score\").text = \"1\";` `root.Q<Button>(\"play\").clicked += OnPlay;` "
              "`element.style.display = DisplayStyle.None;` `element.RegisterCallback<ClickEvent>(e => ...)`; query in "
-             "OnEnable (not Awake); `schedule.Execute(() => ...).Every(100)`. uGUI: `using UnityEngine.UI;` (Text, Button, "
+             "OnEnable (not Awake); `root.schedule.Execute(() => ...).Every(100)`. uGUI: `using UnityEngine.UI;` (Text, Button, "
              "Slider, Image: `image.fillAmount`), TextMeshPro `using TMPro;` TMP_Text / TextMeshProUGUI `.text`."),
             (r"navmesh|nav mesh|patrol|agent|chase|enemy|ai\b|waypoint",
              "- NavMeshAgent (`using UnityEngine.AI;`): `agent.SetDestination(p)`, `agent.pathPending`, "
@@ -179,8 +179,9 @@ FACTS = {
             (r"scriptableobject|scriptable|inventory|item|event channel|data",
              "- ScriptableObject: `[CreateAssetMenu(fileName = \"NewItem\", menuName = \"Game/Item\")] public class "
              "ItemDefinition : ScriptableObject`; share by reference (compare references, not names); runtime state "
-             "belongs in the MonoBehaviour/Serializable slot class, not the asset. Initialise Inspector-visible arrays in "
-             "Awake/Reset, never in a field initialiser of a MonoBehaviour constructor."),
+             "belongs in the MonoBehaviour/Serializable slot class, not the asset. An array of a [Serializable] class "
+             "(`new Slot[n]`) holds nulls: create every element (`slots[i] = new Slot()`) in a field initialiser or "
+             "Reset(); do not rebuild in Awake what the Inspector set."),
             (r"scene|load|menu|level|additive",
              "- Scenes: `SceneManager.LoadScene(\"Name\")`, `SceneManager.LoadSceneAsync(name, LoadSceneMode.Additive)` "
              "(returns AsyncOperation; `op.completed`, `op.progress` stops at 0.9 with allowSceneActivation=false); "
@@ -268,9 +269,9 @@ FACTS = {
              "`UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health) FGameplayAttributeData Health;` with "
              "`ATTRIBUTE_ACCESSORS(UMyAttributes, Health)` (macro you define from GAMEPLAYATTRIBUTE_PROPERTY_GETTER / "
              "VALUE_GETTER / VALUE_SETTER / VALUE_INITTER), `GAMEPLAYATTRIBUTE_REPNOTIFY(UMyAttributes, Health, OldHealth)` in "
-             "OnRep, `PreAttributeChange(const FGameplayAttribute&, float& NewValue)` to clamp; the ASC "
-             "`UAbilitySystemComponent` on the character implements IAbilitySystemInterface "
-             "(`GetAbilitySystemComponent()`); `InitAbilityActorInfo(Owner, Avatar)`; `GiveAbility(FGameplayAbilitySpec(Class, 1))`."),
+             "OnRep, `PreAttributeChange(const FGameplayAttribute&, float& NewValue)` to clamp; the "
+             "character (or PlayerState) owns a `UAbilitySystemComponent` and implements IAbilitySystemInterface "
+             "(`GetAbilitySystemComponent()` returns it); `InitAbilityActorInfo(Owner, Avatar)`; `GiveAbility(FGameplayAbilitySpec(Class, 1))`."),
             (r"data ?asset|soft|async|load|stream|primary|asset manager|thread|parallel|task",
              "- Assets/async: `UCLASS() class UWeaponData : public UPrimaryDataAsset` with UPROPERTY(EditAnywhere) "
              "fields; `TSoftObjectPtr<UTexture2D>` / `TSoftClassPtr<AActor>`; async load: `FStreamableManager& SM = "
@@ -300,7 +301,7 @@ FACTS = {
             "Scale every movement by dt; normalise diagonal movement (divide by the length when both axes are pressed). "
             "Remove items from a table while looping backwards: `for i = #t, 1, -1 do ... table.remove(t, i) end`.\n"
             "- Lua here is LuaJIT: no `//` operator, no integer type, no `&`/`|` operators (use the `bit` library: bit.band, "
-            "bit.bor, bit.lshift), `unpack` is a global, math.atan2 exists (math.atan with two arguments also works), "
+            "bit.bor, bit.lshift), `unpack` is a global, math.atan2(y, x) exists (math.atan takes ONE argument: a second one is silently ignored),"
             "`goto` exists. love.filesystem.exists/isFile/isDirectory/getSize are deprecated (gone in LÖVE 12): use {l:filesystem.getInfo}. `utf8` is not a global: `local utf8 = require(\"utf8\")`."),
         "topics": [
             (r"physics|world|body|fixture|box2d|collision|contact|gravity",
@@ -327,7 +328,7 @@ FACTS = {
              "- Files: love.filesystem writes only inside the save directory: {l:filesystem.write}; {l:filesystem.read}; "
              "{l:filesystem.getInfo} (nil when missing, else a table with type and size); love.filesystem.createDirectory; "
              "love.filesystem.load(\"file.lua\")() runs a Lua file; there is no json library built in (write a small "
-             "serializer or use love.data.encode)."),
+             "serializer; love.data.encode only base64/hex-encodes strings)."),
             (r"state|menu|pause|scene|game ?over|machine",
              "- States: a table per state with optional enter/leave/update/draw/keypressed; a `switch(name, ...)` "
              "function calls leave on the old state and enter on the new one, passing arguments; love.update/draw/"
@@ -348,7 +349,7 @@ FACTS = {
             "{lua:summary}\n"
             "- Not in Lua: string.split / trim / startswith, table.find / count / clone / clear / isEmpty, math.clamp / round / sign, "
             "`continue`, `+=`, `!=` (use ~=), `unpack` (use table.unpack), `loadstring` (use load), `bit32`, math.pow / "
-            "atan2 / cosh / log10 / ldexp (removed in 5.4: use x^y, math.atan(y, x), math.log(x, 10)), wait, task, game, "
+            "atan2 / cosh / log10 / ldexp (gone since 5.3: use x^y, math.atan(y, x), math.log(x, 10)), wait, task, game, "
             "Instance, Vector3, typeof. Split with `for w in s:gmatch(\"[^,]+\") do`, trim with `s:match(\"^%s*(.-)%s*$\")`; "
             "skip an iteration with `goto continue` and a `::continue::` label at the end of the loop body.\n"
             "- Numbers: `/` always gives a float (`10 / 2` prints 5.0), `//` is floor division (integers stay integers), "
