@@ -467,8 +467,8 @@ def test_p0_pauses_background_and_both_background_answers_come_back_whole(stack)
 
 
 def test_solo_p0_pauses_every_background_stream(stack):
-    # 2 s answers: at 0.8 s the first one could finish before the chat on a loaded runner (1 pause, not 2)
-    fake, server, port = stack(slots=3, solo=True, delay=0.05)
+    # 4 s answers: with 2 s one could finish before the chat on a loaded runner (1 pause, not 2; seen twice on CI)
+    fake, server, port = stack(slots=3, solo=True, delay=0.1)
     results: dict = {}
     bg = [threading.Thread(target=run_bg, args=(port, "/p3/v1/chat/completions", chat(), results, f"bg{i}"))
           for i in range(2)]
