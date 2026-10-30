@@ -6,6 +6,11 @@ local function itemsOr(default: { any }): { any }
 	return (DATA.items and #DATA.items > 0) and DATA.items or default
 end
 
+local function showValue(value: any): string
+	-- Scores are numbers; times and other text ("1:23.45") are shown as written.
+	return type(value) == "string" and value or formatNumber(value or 0)
+end
+
 local function itemCard(item, w: number, h: number, order: number, onSelect: ((any) -> ())?): Frame
 	local card = panel({ Name = "Card" .. order, Size = UDim2.fromOffset(w, h), LayoutOrder = order }, 2)
 	local tint = rarityColor(item.rarity)
@@ -23,9 +28,9 @@ local function itemCard(item, w: number, h: number, order: number, onSelect: ((a
 		Position = UDim2.new(0.5, 0, 0, 12),
 		Parent = card,
 	})
-	text("label", item.name or "Item", T.type.body, rgb(T.c.text), {
-		Position = UDim2.fromOffset(10, iconSize + 16),
-		Size = UDim2.new(1, -20, 0, 20),
+	text("label", item.name or "Item", w < 140 and T.type.caption + 1 or T.type.body, rgb(T.c.text), {
+		Position = UDim2.fromOffset(6, iconSize + 16),
+		Size = UDim2.new(1, -12, 0, 20),
 		TextXAlignment = Enum.TextXAlignment.Center,
 		Parent = card,
 	})
@@ -86,31 +91,33 @@ local function scrollGrid(parent: Instance, size: UDim2, position: UDim2, cell: 
 	return scroller
 end
 
-local function detailPane(parent: Instance, size: UDim2, position: UDim2, actionLabel: string): (Frame, (any) -> ())
+local function detailPane(parent: Instance, size: UDim2, position: UDim2, actionLabel: string, compact: boolean?): (Frame, (any) -> ())
+	-- compact: the phone version keeps the panel as a narrow side column (smaller art, tighter rhythm).
 	local pane = panel({ Name = "Detail", Size = size, Position = position, Parent = parent }, 2)
-	pad(16).Parent = pane
+	pad(compact and 10 or 16).Parent = pane
 	local holder = new("Frame", { Name = "Content", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = pane })
 	local function show(item)
 		holder:ClearAllChildren()
-		list("Vertical", 10, "Center").Parent = holder
-		iconTile(item.kind, item.rarity, 150, { LayoutOrder = 1, Parent = holder })
-		text("display", item.name or "Item", T.type.h2, rgb(T.c.text), { LayoutOrder = 2, TextXAlignment = Enum.TextXAlignment.Center, Parent = holder })
+		list("Vertical", compact and 6 or 10, "Center").Parent = holder
+		iconTile(item.kind, item.rarity, compact and 64 or 150, { LayoutOrder = 1, Parent = holder })
+		text("display", item.name or "Item", compact and T.type.h3 or T.type.h2, rgb(T.c.text), { LayoutOrder = 2, TextXAlignment = Enum.TextXAlignment.Center, Parent = holder })
 		badge(item.rarity or "common", rarityColor(item.rarity), { LayoutOrder = 3, Parent = holder })
 		text("body", item.stat or item.description or "", T.type.body, rgb(T.c.textDim), {
 			LayoutOrder = 4,
 			TextXAlignment = Enum.TextXAlignment.Center,
 			TextWrapped = true,
 			TextTruncate = Enum.TextTruncate.None,
-			Size = UDim2.new(1, 0, 0, 44),
+			Size = UDim2.new(1, 0, 0, compact and 40 or 44),
 			Parent = holder,
 		})
 		local action = nil
+		local actionH = compact and 44 or 48
 		if actionLabel ~= "Buy" then
-			action = button(item.equipped and "Unequip" or actionLabel, item.equipped and "secondary" or "primary", UDim2.new(1, 0, 0, 48))
+			action = button(item.equipped and "Unequip" or actionLabel, item.equipped and "secondary" or "primary", UDim2.new(1, 0, 0, actionH))
 		elseif item.owned then
-			action = button("Equip", "secondary", UDim2.new(1, 0, 0, 48))
+			action = button("Equip", "secondary", UDim2.new(1, 0, 0, actionH))
 		else
-			action = priceButton(item, UDim2.new(1, 0, 0, 48))
+			action = priceButton(item, UDim2.new(1, 0, 0, actionH))
 		end
 		action.LayoutOrder = 5
 		action.Parent = holder
@@ -139,18 +146,14 @@ SCREENS.shop = function(mode: string)
 		frame:FindFirstChild("Indicator").Position = UDim2.fromOffset(0, y + (compact and 35 or 37))
 		y += compact and 42 or 50
 	end
-	local detailW = compact and 0 or 330
-	local gridW = (compact and 776 or 1060) - detailW - (compact and 0 or 16)
-	local columns = compact and 5 or 4
+	local detailW = compact and 220 or 330
+	local gridW = (compact and 776 or 1060) - detailW - (compact and 12 or 16)
+	local columns = 4
 	local cellW = math.floor((gridW - 12 - (columns - 1) * 12) / columns)
-	local cellH = compact and math.floor(cellW * 1.32) or math.floor(cellW * 1.32)
+	local cellH = math.floor(cellW * 1.32)
 	local grid = scrollGrid(frame, UDim2.new(0, gridW, 1, -y), UDim2.fromOffset(0, y), Vector2.new(cellW, cellH), 12, columns)
-	local show = nil
-	if not compact then
-		local _, s = detailPane(frame, UDim2.new(0, detailW, 1, -y), UDim2.new(1, -detailW, 0, y), "Buy")
-		show = s
-		show(items[1])
-	end
+	local _, show = detailPane(frame, UDim2.new(0, detailW, 1, -y), UDim2.new(1, -detailW, 0, y), "Buy", compact)
+	show(items[1])
 	for i, item in ipairs(items) do
 		itemCard(item, cellW, cellH, i, show).Parent = grid
 	end
@@ -175,16 +178,12 @@ SCREENS.inventory = function(mode: string)
 		Parent = top,
 	})
 	local y = compact and 46 or 66
-	local detailW = compact and 0 or 300
-	local gridW = (compact and 776 or 1020) - detailW - (compact and 0 or 16)
+	local detailW = compact and 220 or 300
+	local gridW = (compact and 776 or 1020) - detailW - (compact and 12 or 16)
 	local slot = compact and 84 or 96
 	local grid = scrollGrid(frame, UDim2.new(0, gridW, 1, -y), UDim2.fromOffset(0, y), Vector2.new(slot, slot), 10)
-	local show = nil
-	if not compact then
-		local _, s = detailPane(frame, UDim2.new(0, detailW, 1, -y), UDim2.new(1, -detailW, 0, y), "Equip")
-		show = s
-		show(items[1])
-	end
+	local _, show = detailPane(frame, UDim2.new(0, detailW, 1, -y), UDim2.new(1, -detailW, 0, y), "Equip", compact)
+	show(items[1])
 	for i, item in ipairs(items) do
 		local cell = new("TextButton", {
 			Name = "Slot" .. i,
@@ -264,7 +263,7 @@ SCREENS.hud = function(mode: string)
 		Parent = hpBar,
 	})
 	if DATA.stamina then
-		local st = bar(DATA.stamina, T.c.secondary, 6, UDim.new(0, 300))
+		local st = bar(DATA.stamina, T.c.currency, 6, UDim.new(0, 300)) -- secondary is a dark button fill in most styles
 		st.AnchorPoint = Vector2.new(0.5, 0)
 		st.Position = UDim2.new(0.5, 0, 0, 22)
 		st.Parent = bc
@@ -306,7 +305,7 @@ SCREENS.hud = function(mode: string)
 				ZIndex = 3,
 				Parent = cell,
 			}, { corner(math.max(4, T.radius - 4)) })
-			text("numeric", string.format("%.0f", slot.cooldown * 10), T.type.h3, Color3.new(1, 1, 1), {
+			text("numeric", tostring(math.ceil(slot.cooldown * 10)), T.type.h3, Color3.new(1, 1, 1), {
 				Size = UDim2.fromScale(1, 1),
 				TextXAlignment = Enum.TextXAlignment.Center,
 				ZIndex = 4,
@@ -539,15 +538,15 @@ end
 
 SCREENS.dialog = function(mode: string)
 	local compact = mode == "compact"
-	local w, h = compact and 800 or 960, compact and 190 or 230
+	local w, h = compact and 800 or 960, compact and 210 or 230
 	local canvas, uiScale = makeCanvas(root, w, h, Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -16))
 	local frame = panel({ Name = "DialogPanel", Position = UDim2.fromOffset(0, 18), Size = UDim2.new(1, 0, 1, -18), Parent = canvas })
-	local plate = new("Frame", { Name = "NamePlate", BackgroundColor3 = rgb(T.c.accent), Position = UDim2.fromOffset(compact and 140 or 170, 0), Size = UDim2.fromOffset(220, 34), ZIndex = 4, Parent = canvas }, { corner(math.max(4, T.radius - 4)) })
+	local plate = new("Frame", { Name = "NamePlate", BackgroundColor3 = rgb(T.c.accent), Position = UDim2.fromOffset(compact and 128 or 170, 0), Size = UDim2.fromOffset(220, 34), ZIndex = 4, Parent = canvas }, { corner(math.max(4, T.radius - 4)) })
 	text("label", DATA.speaker or "Stranger", T.type.label, rgb(T.c.accentText), { Size = UDim2.fromScale(1, 1), TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 5, Parent = plate })
-	local portraitSize = compact and 120 or 150
+	local portraitSize = compact and 96 or 150
 	local portrait = iconTile(DATA.portrait or "pet", "epic", portraitSize, { Position = UDim2.fromOffset(16, 16), Parent = frame })
 	local textX = portraitSize + 32
-	local choicesW = compact and 230 or 280
+	local choicesW = compact and 320 or 340 -- answers up to ~28 characters fit on one line
 	local body = text("body", "", compact and T.type.body or T.type.h3 * 0.9, rgb(T.c.text), {
 		Position = UDim2.fromOffset(textX, 30),
 		Size = UDim2.new(1, -(textX + choicesW + 24), 1, -44),
@@ -570,7 +569,7 @@ SCREENS.dialog = function(mode: string)
 	list("Vertical", 8, "Left", "Center").Parent = choices
 	local first = nil
 	local actions = DATA.actions or { "Continue" }
-	local bh = math.min(compact and 44 or 48, math.floor(((compact and 190 or 230) - 18 - 32 - (#actions - 1) * 8) / math.max(1, #actions)))
+	local bh = math.min(compact and 44 or 48, math.floor(((compact and 210 or 230) - 18 - 32 - (#actions - 1) * 8) / math.max(1, #actions)))
 	for i, label in ipairs(actions) do
 		local b = button(label, i == 1 and "primary" or "secondary", UDim2.new(1, 0, 0, bh))
 		b.LayoutOrder = i
@@ -578,7 +577,7 @@ SCREENS.dialog = function(mode: string)
 		first = first or b:FindFirstChild("Face")
 		local face = b:FindFirstChild("Face")
 		face.TextXAlignment = Enum.TextXAlignment.Left
-		pad(0, 40).Parent = face
+		new("UIPadding", { PaddingLeft = UDim.new(0, 40), PaddingRight = UDim.new(0, 10), Parent = face })
 		badge(tostring(i), shade(rgb(i == 1 and T.c.accent or T.c.secondary), -0.35), { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, -30, 0.5, 0), Parent = face })
 	end
 	openAnimation(canvas, uiScale)
@@ -592,7 +591,9 @@ SCREENS.leaderboard = function(mode: string)
 	local canvas, uiScale = makeCanvas(root, w, h)
 	local frame = panel({ Name = "LeaderboardPanel", Size = UDim2.fromScale(1, 1), Parent = canvas })
 	pad(compact and 12 or 20).Parent = frame
-	header(frame, DATA.title, nil, compact and 38 or 50, true)
+	local top = header(frame, DATA.title, nil, compact and 38 or 50, true)
+	-- Nothing sits right of the title here but the close button: let the title use that width.
+	top:FindFirstChildWhichIsA("TextLabel").Size = UDim2.new(1, -52, 0, compact and 38 or 50)
 	local y = compact and 42 or 58
 	if DATA.tabs and #DATA.tabs > 0 then
 		local row = tabs(frame, DATA.tabs, 38, 110)
@@ -615,7 +616,7 @@ SCREENS.leaderboard = function(mode: string)
 				stroke(rgb(medals[rank]), 2, 0).Parent = card
 				badge("#" .. rank, rgb(medals[rank]), { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 10), Parent = card })
 				text("label", e.name, T.type.body, rgb(T.c.text), { Position = UDim2.new(0, 8, 1, -64), Size = UDim2.new(1, -16, 0, 22), TextXAlignment = Enum.TextXAlignment.Center, Parent = card })
-				text("numeric", formatNumber(e.value or 0), T.type.h3, rgb(medals[rank]), { Position = UDim2.new(0, 8, 1, -38), Size = UDim2.new(1, -16, 0, 26), TextXAlignment = Enum.TextXAlignment.Center, Parent = card })
+				text("numeric", showValue(e.value), T.type.h3, rgb(medals[rank]), { Position = UDim2.new(0, 8, 1, -38), Size = UDim2.new(1, -16, 0, 26), TextXAlignment = Enum.TextXAlignment.Center, Parent = card })
 			end
 		end
 		y += podiumH + 12
@@ -644,7 +645,7 @@ SCREENS.leaderboard = function(mode: string)
 		pad(0, 14).Parent = r
 		text("numeric", tostring(rank), T.type.label, rgb(medals[rank] or T.c.textDim), { Size = UDim2.new(0, 40, 1, 0), Parent = r })
 		text("label", e.name, T.type.body, rgb(T.c.text), { Position = UDim2.fromOffset(44, 0), Size = UDim2.new(1, -164, 1, 0), Parent = r })
-		text("numeric", formatNumber(e.value or 0), T.type.label, rgb(T.c.text), { AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 110, 1, 0), TextXAlignment = Enum.TextXAlignment.Right, Parent = r })
+		text("numeric", showValue(e.value), T.type.label, rgb(T.c.text), { AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 110, 1, 0), TextXAlignment = Enum.TextXAlignment.Right, Parent = r })
 		return r
 	end
 	for rank, e in ipairs(entries) do
@@ -669,26 +670,36 @@ SCREENS.rewards = function(mode: string)
 	local canvas, uiScale = makeCanvas(root, w, h)
 	local frame = panel({ Name = "RewardsPanel", Size = UDim2.fromScale(1, 1), Parent = canvas })
 	pad(compact and 14 or 24).Parent = frame
-	local top = header(frame, DATA.title, DATA.subtitle, compact and 44 or 60, true)
+	local top = header(frame, DATA.title, not compact and DATA.subtitle or nil, compact and 44 or 60, true)
 	local count = math.max(1, #days)
 	local gap = compact and 8 or 12
-	local cardW = math.floor(((compact and 772 or 952) - (count - 1) * gap) / count)
+	-- The special (last) day is a card and a half wide so the big reward reads as the goal of the week.
+	local hasSpecial = days[#days] and days[#days].special
+	local units = count - 1 + (hasSpecial and 1.5 or 1)
+	local cardW = math.floor(((compact and 772 or 952) - (count - 1) * gap) / units)
 	local cardH = compact and 170 or 230
 	local row = new("Frame", { Name = "Days", BackgroundTransparency = 1, Position = UDim2.fromOffset(0, compact and 54 or 78), Size = UDim2.new(1, 0, 0, cardH), Parent = frame })
 	list("Horizontal", gap, "Center").Parent = row
 	local today = DATA.today or 1
 	for i, item in ipairs(days) do
 		local state = i < today and "claimed" or i == today and "today" or "locked"
-		local card = panel({ Name = "Day" .. i, Size = UDim2.fromOffset(cardW, cardH), LayoutOrder = i, Parent = row }, 2)
+		local w = item.special and math.floor(cardW * 1.5) or cardW
+		local card = panel({ Name = "Day" .. i, Size = UDim2.fromOffset(w, cardH), LayoutOrder = i, Parent = row }, 2)
 		if state == "today" then
 			local glow = stroke(rgb(T.c.accent), 2.5, 0)
 			glow.Parent = card
 			TweenService:Create(glow, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = 0.6 }):Play()
+		elseif item.special then
+			stroke(rgb(T.c.gold), 2.5, 0).Parent = card
 		end
-		text("label", "DAY " .. i, T.type.caption, rgb(state == "today" and T.c.accent or T.c.textDim), { Position = UDim2.fromOffset(0, 8), Size = UDim2.new(1, 0, 0, 18), TextXAlignment = Enum.TextXAlignment.Center, Parent = card })
-		local iconSize = math.min(cardW - 20, cardH - 80)
+		local dayColor = state == "today" and T.c.accent or item.special and T.c.gold or T.c.textDim
+		text("label", item.special and ("DAY " .. i .. "  BONUS") or ("DAY " .. i), T.type.caption, rgb(dayColor), { Position = UDim2.fromOffset(0, 8), Size = UDim2.new(1, 0, 0, 18), TextXAlignment = Enum.TextXAlignment.Center, Parent = card })
+		local iconSize = math.min(w - 20, cardH - (compact and 80 or 100))
 		local tile = iconTile(item.kind, item.rarity, iconSize, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 30), Parent = card })
-		text("numeric", item.amount and ("x" .. formatNumber(item.amount)) or (item.name or ""), T.type.label, rgb(T.c.text), { Position = UDim2.new(0, 4, 1, -34), Size = UDim2.new(1, -8, 0, 24), TextXAlignment = Enum.TextXAlignment.Center, Parent = card })
+		if not compact and item.name then
+			text("label", item.name, T.type.caption, rgb(T.c.textDim), { Position = UDim2.new(0, 4, 1, -56), Size = UDim2.new(1, -8, 0, 18), TextXAlignment = Enum.TextXAlignment.Center, Parent = card })
+		end
+		text("numeric", "x" .. formatNumber(item.amount or 1), T.type.label, rgb(item.special and T.c.gold or T.c.text), { Position = UDim2.new(0, 4, 1, -34), Size = UDim2.new(1, -8, 0, 24), TextXAlignment = Enum.TextXAlignment.Center, Parent = card })
 		if state == "claimed" then
 			card.BackgroundTransparency = 0.6
 			tile.BackgroundTransparency = 0.5
@@ -817,13 +828,17 @@ SCREENS.results = function(mode: string)
 		text("body", DATA.subtitle, T.type.body, rgb(T.c.textDim), { Position = UDim2.fromOffset(0, compact and 64 or 98), Size = UDim2.new(1, 0, 0, 22), TextXAlignment = Enum.TextXAlignment.Center, Parent = canvas })
 	end
 	local statsY = compact and 96 or 140
-	local cols = math.min(#stats, compact and 4 or 3)
-	local tileW = compact and 180 or 270
+	-- Columns never leave a lone tile on the last row: up to 4 stats share one row, 5 -> 3 + 2, 6 -> 3 + 3.
+	local shown = compact and math.min(#stats, 4) or #stats
+	local cols = math.max(1, shown <= 4 and shown or math.ceil(shown / 2))
+	local rows = math.max(1, math.ceil(shown / cols))
+	local tileW = math.min(compact and 190 or 270, math.floor((w - (cols - 1) * 12) / cols))
 	local tileH = compact and 66 or 84
-	local statGrid = new("Frame", { Name = "Stats", BackgroundTransparency = 1, Position = UDim2.fromOffset(0, statsY), Size = UDim2.new(1, 0, 0, compact and tileH or tileH * 2 + 12), Parent = canvas })
+	local gridH = rows * tileH + (rows - 1) * 12
+	local statGrid = new("Frame", { Name = "Stats", BackgroundTransparency = 1, Position = UDim2.fromOffset(0, statsY), Size = UDim2.new(1, 0, 0, gridH), Parent = canvas })
 	new("UIGridLayout", { CellSize = UDim2.fromOffset(tileW, tileH), CellPadding = UDim2.fromOffset(12, 12), HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder, Parent = statGrid })
 	for i, s in ipairs(stats) do
-		if compact and i > 4 then
+		if i > shown then
 			break
 		end
 		local tile = panel({ Name = "Stat" .. i, LayoutOrder = i, Parent = statGrid }, 2)
@@ -831,7 +846,7 @@ SCREENS.results = function(mode: string)
 		text("label", string.upper(s.label or ""), T.type.caption, rgb(T.c.textDim), { Size = UDim2.new(1, 0, 0, 16), Parent = tile })
 		text("numeric", tostring(s.value or ""), compact and T.type.h3 or T.type.h2, rgb(T.c.text), { Position = UDim2.fromOffset(0, 18), Size = UDim2.new(1, 0, 1, -18), Parent = tile })
 	end
-	local rewardsY = statsY + (compact and tileH + 10 or tileH * 2 + 28)
+	local rewardsY = statsY + gridH + (compact and 10 or 16)
 	local rewardRow = new("Frame", { Name = "Rewards", BackgroundTransparency = 1, Position = UDim2.fromOffset(0, rewardsY), Size = UDim2.new(1, 0, 0, compact and 70 or 100), Parent = canvas })
 	list("Horizontal", 12, "Center").Parent = rewardRow
 	for i, r in ipairs(rewards) do

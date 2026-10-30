@@ -137,6 +137,10 @@ def normalize(raw: dict) -> tuple[dict, list[str]]:
         "zones": [], "rooms": [], "props": [], "paths": [], "focal": [], "spawn": [0, hd - 6],
         "budget": bool(raw.get("budget")),
     }
+    if raw.get("preset"):
+        from ..roblox_lighting_presets import PRESET_NAMES
+        if raw["preset"] in PRESET_NAMES:
+            spec["preset"] = raw["preset"]
     if raw.get("mood") not in MOODS:
         notes.append(f"mood {raw.get('mood')!r} unknown -> sunny_day")
     zone_ids = set()
@@ -542,6 +546,7 @@ def compile_spec(spec: dict) -> dict:
                  name="Skirt", cast=False)
     skirt["kit"] = "ground"
     parts.append(skirt)
+    parts += ground_patches(ctx, spec)
     for zone in spec["zones"]:
         if zone["floor"]:
             x0, z0, x1, z1 = zone["rect"]
@@ -570,6 +575,8 @@ def compile_spec(spec: dict) -> dict:
                 continue
             y = prop.get("y", floor_y(spec, x, z))
             params, yaw = dict(prop["params"]), prop["rot"]
+            if prop["kit"] == "water" and "y" not in prop and floor_y(spec, x, z) == 0.0:
+                params["y"] = max(params.get("y", -0.5), 0.15)   # a part ground would hide the default -0.5
             snapped = snap_to_wall(spec, x, z) if prop["kit"] in WALL_KITS else None
             if prop["kit"] in HANGING_KITS and "y" in params:
                 top = ceiling_y(spec, x, z)
@@ -593,6 +600,8 @@ def compile_spec(spec: dict) -> dict:
         if len(parts) > MAX_PARTS:
             break
     parts += fill_lights(ctx, spec)
+    if spec.get("preset"):
+        practicals(spec, parts)
     if spec.get("budget"):   # performance pass: shadows on the 20 brightest lights only, at most 44 lights
         lit = sorted((p for p in parts if p.get("light")), key=lambda p: -p["light"]["b"] * p["light"]["r"])
         for k, p in enumerate(lit):
@@ -604,8 +613,9 @@ def compile_spec(spec: dict) -> dict:
         for p in parts:
             if p.get("text"):
                 p["text"] = spec["sign_text"]
-    return {"parts": parts, "lighting": copy.deepcopy(LIGHTING[spec["mood"]]),
-            "cameras": clear_cameras(cameras(spec), parts), "notes": notes}
+    return {"parts": parts, "lighting": copy.deepcopy(LIGHTING[spec["mood"]]), "preset": spec.get("preset"),
+            "cameras": clear_cameras(cameras(spec), parts),
+            "candidates": camera_candidates(spec, parts), "notes": notes}
 
 
 WARM_MOODS = ("cozy_interior", "warm_evening", "golden_hour", "sunny_day")
@@ -742,4 +752,179 @@ def cameras(spec: dict) -> list[dict]:
     for c in out:
         c["position"] = [round(v, 2) for v in c["position"]]
         c["look_at"] = [round(v, 2) for v in c["look_at"]]
+    return out
+
+
+# --------------------------------------------------------------------------- ground variation
+
+def zone_room(spec: dict, x: float, z: float) -> bool:
+    return _room_rect(spec, x, z)[0] is not None
+
+
+def ground_patches(ctx: Ctx, spec: dict) -> list[dict]:
+    """Stud/low-poly part ground: large low-contrast patches of the ground colour (lighter/darker) so the ground
+    does not read as one flat baseplate; worn paths get a dirt margin."""
+    w, d = spec["size"]
+    rng = ctx.rng
+    out = []
+    col = ctx.color(spec["ground"])
+    steps = (0.7, 1.3) if ctx.style == "stud" else (0.86, 0.92, 1.08, 1.12)   # stud snaps to BrickColors
+    for i in range(int(min(18, max(5, w * d / 1400)))):
+        pw, pd = rng.uniform(10, 26), rng.uniform(8, 22)
+        x, z = rng.uniform(-w / 2 + pw / 2, w / 2 - pw / 2), rng.uniform(-d / 2 + pd / 2, d / 2 - pd / 2)
+        if zone_room(spec, x, z):
+            continue
+        p = part(ctx, "B", (pw, 0.1 + 0.02 * i, pd), (x, 0.03 + 0.01 * i, z), rot=(0, rng.choice((0, 15, 30, 45, 60)), 0),
+                 mat=spec["ground"], color=shade(col, rng.choice(steps)), collide=False, cast=False,
+                 studs=ctx.style == "stud")
+        p["kit"] = "ground"
+        out.append(p)
+    if spec["ground"] in ("grass", "foliage"):
+        for pth in spec["paths"]:
+            if pth["mat"] in ("plank", "wood"):
+                continue
+            for q in path_parts(ctx, spec, dict(pth, w=pth["w"] + 3, mat="ground"))[:1]:
+                q["p"][1] -= 0.04
+                q["c"] = list(ctx.tone(shade(ctx.color("ground"), 1.1)))
+                q["kit"] = "ground"
+                out.append(q)
+    return out
+
+
+# --------------------------------------------------------------------------- practical lights from a preset
+
+PRACTICAL_ROLE = {"pendant_lamp": "pendant", "chandelier": "pendant", "sconce": "sconce", "floor_lamp": "lamp",
+                  "candles": "lamp", "reading_table": "lamp", "lamp_post": "street", "string_lights": "street",
+                  "lantern": "lantern", "stone_lantern": "lantern", "campfire": "lantern", "led_strip": "neon",
+                  "sign": "neon", "vending_machine": "neon", "ticket_booth": "neon", "lighthouse": "street"}
+
+
+def practicals(spec: dict, parts: list[dict], max_windows: int = 12) -> None:
+    """Retint the kit lights with the preset's practical recipes (kelvin, brightness, range) and, at night, light
+    the window glass of rooms (warm windows against a cool night)."""
+    from .. import roblox_lighting_presets as presets
+    preset = presets.resolve(spec["preset"])
+    recipes = {role: presets._clean_practical(role, (preset.get("practicals") or {}).get(role)) for role in presets.ROLES}
+    for p in parts:
+        if not p.get("light") or p.get("kit") == "fill_light" or p.get("prop") is None:
+            continue
+        role = PRACTICAL_ROLE.get(spec["props"][p["prop"]]["kit"])
+        r = recipes.get(role) if role else None
+        if not r:
+            continue
+        p["light"]["c"] = list(r["color"])
+        p["light"]["b"] = round(max(p["light"]["b"] * 0.5, r["brightness"]), 2)
+        p["light"]["r"] = round(clamp(max(p["light"]["r"], r["range"]), 2, 60), 1)
+        if p.get("m") == "Neon":
+            p["c"] = list(r["color"])
+    win = recipes.get("window")
+    if win and spec["mood"] in ("cold_night", "neon_night", "foggy_horror", "warm_evening"):
+        n = 0
+        for p in parts:
+            if n >= max_windows:
+                break
+            if p.get("kit") == "room" and p.get("sem") == "glass" and not p.get("light") and p["z"][0] * p["z"][1] > 6:
+                p["light"] = light("surface", win["color"], win["brightness"] * 1.6, win["range"], angle=win.get("angle", 80),
+                                   face="Back", shadows=False)
+                n += 1
+
+
+# --------------------------------------------------------------------------- camera candidates (picked in Studio)
+
+def _inst_box(parts: list[dict], index: int):
+    lo, hi = [1e9] * 3, [-1e9] * 3
+    for p in parts:
+        if p.get("prop") == index and p.get("copy", 0) == 0:
+            a, b = aabb(p)
+            lo = [min(lo[i], a[i]) for i in range(3)]
+            hi = [max(hi[i], b[i]) for i in range(3)]
+    return (lo, hi) if lo[0] < 1e8 else None
+
+
+def hero_prop(spec: dict, parts: list[dict]):
+    """The biggest non-structural prop near the main focal point (the detail shot's subject)."""
+    fx, fz = spec["focal"][0]["at"]
+    best, best_v = None, 0.0
+    for i, prop in enumerate(spec["props"]):
+        if prop["kit"] in ("water", "rug", "grass_tufts", "papers", "puddle", "cobweb", "cliff"):
+            continue
+        dist = math.hypot(prop["at"][0] - fx, prop["at"][1] - fz)
+        if dist > 26:
+            continue
+        box = _inst_box(parts, i)
+        if not box:
+            continue
+        lo, hi = box
+        vol = max(0.5, hi[0] - lo[0]) * max(0.5, hi[1] - lo[1]) * max(0.5, hi[2] - lo[2])
+        score = vol / (1 + dist / 10)
+        if score > best_v:
+            best, best_v = box, score
+    return best
+
+
+def camera_candidates(spec: dict, parts: list[dict]) -> dict:
+    """Several framings per shot; Studio raycasts pick the clearest one (luau.pick_cameras_luau).
+    hero = eye level from the spawn side towards the focal point; wide = establishing view; detail = the hero prop
+    close up at a 3/4 angle; overview = high 3/4 (roofs hidden)."""
+    w, d = spec["size"]
+    sx, sz = spec["spawn"]
+    fx, fz = spec["focal"][0]["at"]
+    fy = floor_y(spec, fx, fz)
+    room = _inside(spec, fx, fz)
+
+    def clampin(x, z, margin=2.5):
+        r = _inside(spec, x, z)
+        if r:
+            x0, z0, x1, z1 = r["rect"]
+            return clamp(x, x0 + margin, x1 - margin), clamp(z, z0 + margin, z1 - margin)
+        return clamp(x, -w / 2 + 1, w / 2 - 1), clamp(z, -d / 2 + 1, d / 2 - 1)
+
+    out: dict[str, list[dict]] = {"hero": [], "wide": [], "detail": [], "overview": []}
+    base_ang = math.atan2(sx - fx, sz - fz)
+    dist0 = clamp(math.hypot(sx - fx, sz - fz) + 4, 12, 70)
+    for dang in (0, 15, -15, 30, -30, 50, -50, 75, -75):
+        for k in (1.0, 0.7, 0.45):
+            a = base_ang + math.radians(dang)
+            x, z = clampin(fx + math.sin(a) * dist0 * k, fz + math.cos(a) * dist0 * k)
+            for eye in (5.5, 9.0):
+                out["hero"].append({"position": [x, floor_y(spec, x, z) + eye, z], "look_at": [fx, fy + 4.0, fz]})
+    if room:
+        x0, z0, x1, z1 = room["rect"]
+        h = room["h"]
+        cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
+        for px, pz in ((x0, z0), (x0, z1), (x1, z0), (x1, z1), (cx, z0), (cx, z1), (x0, cz), (x1, cz)):
+            x, z = clampin(px, pz, 3)
+            out["wide"].append({"position": [x, min(h * 0.72, h - 2), z], "look_at": [cx, h * 0.22, cz]})
+    else:
+        span = max(w, d)
+        for k in range(8):
+            a = base_ang + k * math.pi / 4
+            r = span * 0.5
+            out["wide"].append({"position": [math.sin(a) * r, span * 0.22 + 6, math.cos(a) * r],
+                                "look_at": [fx * 0.5, 2, fz * 0.5]})
+    box = hero_prop(spec, parts)
+    if box:
+        lo, hi = box
+        c = [(lo[i] + hi[i]) / 2 for i in range(3)]
+        size = max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2])
+        r = clamp(size * 1.5 + 5, 8, 34)
+        for k in range(8):
+            a = base_ang + math.radians(35) + k * math.pi / 4
+            for elev in (0.35, 0.7):
+                x, z = clampin(c[0] + math.sin(a) * r, c[2] + math.cos(a) * r)
+                out["detail"].append({"position": [x, max(floor_y(spec, x, z) + 3.5, c[1] + r * elev * 0.5), z],
+                                      "look_at": [c[0], c[1], c[2]]})
+    else:
+        for c in cameras(spec):
+            if c["id"] == "detail":
+                out["detail"].append({"position": c["position"], "look_at": c["look_at"]})
+    span = max(w, d)
+    for sxn, szn in ((0.3, 0.62), (-0.3, 0.62), (0.3, -0.62), (-0.3, -0.62)):
+        h = span * (0.85 if spec["rooms"] else 0.55)
+        out["overview"].append({"position": [w * sxn * (1 if spec["rooms"] else 1.8), h, d * szn * (1 if spec["rooms"] else 1.2)],
+                                "look_at": [0, 0, 0]})
+    for shots in out.values():
+        for c in shots:
+            c["position"] = [round(v, 2) for v in c["position"]]
+            c["look_at"] = [round(v, 2) for v in c["look_at"]]
     return out

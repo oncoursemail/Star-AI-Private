@@ -154,7 +154,24 @@ local function panel(props: { [string]: any }, level: number?): Frame
 	if T.panelGradient and not isInner then
 		vgradient(Color3.new(1, 1, 1), rgb(T.c.gradientTo)).Parent = frame
 	end
-	stroke(rgb(isInner and T.c.strokeSoft or T.c.stroke), isInner and 1 or T.strokeWidth, isInner and 0.35 or T.strokeAlpha).Parent = frame
+	local edge = stroke(rgb(isInner and T.c.strokeSoft or T.c.stroke), isInner and 1 or T.strokeWidth, isInner and 0.35 or T.strokeAlpha)
+	edge.Parent = frame
+	if T.worn then
+		-- Worn, scuffed edge without a texture: the border fades in and out along its length.
+		new("UIGradient", {
+			Rotation = 35,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0),
+				NumberSequenceKeypoint.new(0.17, 0.7),
+				NumberSequenceKeypoint.new(0.33, 0.1),
+				NumberSequenceKeypoint.new(0.52, 0.75),
+				NumberSequenceKeypoint.new(0.7, 0.15),
+				NumberSequenceKeypoint.new(0.86, 0.6),
+				NumberSequenceKeypoint.new(1, 0.05),
+			}),
+			Parent = edge,
+		})
+	end
 	if T.doubleStroke and not isInner then
 		local inset = new("Frame", {
 			Name = "Inlay",
@@ -494,6 +511,39 @@ MODELS.lightning = function(m, tint)
 	return CFrame.new()
 end
 
+MODELS.car = function(m, tint)
+	-- Side-on car read in 3/4 view: body, cabin with glass, four wheels with hubs, head and tail lights.
+	local glass, tyre, dark = Color3.fromRGB(34, 52, 72), Color3.fromRGB(24, 24, 28), Color3.fromRGB(30, 30, 34)
+	part(m, "Block", Vector3.new(4.2, 0.75, 1.9), CFrame.new(0, 0, 0), tint)
+	part(m, "Block", Vector3.new(2.2, 0.7, 1.7), CFrame.new(-0.35, 0.72, 0), shade(tint, -0.12))
+	part(m, "Block", Vector3.new(1.85, 0.48, 1.74), CFrame.new(-0.35, 0.76, 0), glass, "Glass")
+	part(m, "Block", Vector3.new(0.06, 0.5, 1.5), CFrame.new(0.78, 0.74, 0) * CFrame.Angles(0, 0, math.rad(-28)), glass, "Glass")
+	part(m, "Block", Vector3.new(0.08, 0.26, 0.9), CFrame.new(2.1, -0.12, 0), dark)
+	for _, z in ipairs({ -0.62, 0.62 }) do
+		part(m, "Block", Vector3.new(0.1, 0.2, 0.42), CFrame.new(2.11, 0.14, z), Color3.fromRGB(255, 246, 214), "Neon")
+		part(m, "Block", Vector3.new(0.1, 0.18, 0.42), CFrame.new(-2.11, 0.14, z), Color3.fromRGB(230, 40, 40), "Neon")
+	end
+	for _, x in ipairs({ -1.35, 1.35 }) do
+		for _, z in ipairs({ -0.86, 0.86 }) do
+			part(m, "Cylinder", Vector3.new(0.5, 0.95, 0.95), CFrame.new(x, -0.38, z) * CFrame.Angles(0, math.rad(90), 0), tyre)
+			part(m, "Cylinder", Vector3.new(0.54, 0.5, 0.5), CFrame.new(x, -0.38, z) * CFrame.Angles(0, math.rad(90), 0), STEEL)
+		end
+	end
+	return CFrame.Angles(math.rad(-12), math.rad(28), 0)
+end
+MODELS.gun = function(m, tint)
+	local metal = Color3.fromRGB(104, 110, 122)
+	-- Compact, chunky proportions so the silhouette still reads in a 50 px hotbar slot.
+	part(m, "Block", Vector3.new(1.8, 0.62, 0.3), CFrame.new(0, 0, 0), metal, "Metal")
+	part(m, "Cylinder", Vector3.new(0.9, 0.24, 0.24), CFrame.new(1.3, 0.1, 0), STEEL)
+	part(m, "Block", Vector3.new(0.8, 0.55, 0.26), CFrame.new(-1.2, -0.1, 0), shade(tint, -0.35))
+	part(m, "Block", Vector3.new(0.36, 0.8, 0.26), CFrame.new(-0.3, -0.62, 0) * CFrame.Angles(0, 0, math.rad(-14)), shade(metal, -0.3))
+	part(m, "Block", Vector3.new(0.38, 0.75, 0.24), CFrame.new(0.42, -0.62, 0) * CFrame.Angles(0, 0, math.rad(10)), shade(metal, -0.2))
+	part(m, "Block", Vector3.new(0.6, 0.22, 0.2), CFrame.new(0.05, 0.42, 0), shade(metal, -0.4))
+	part(m, "Block", Vector3.new(1.2, 0.12, 0.32), CFrame.new(0.1, 0.12, 0), tint, "Neon")
+	return CFrame.Angles(0, math.rad(18), math.rad(8))
+end
+
 local function iconTile(kind: string?, rarity: string?, size: number, props: { [string]: any }?): Frame
 	local tint = rarityColor(rarity)
 	local tile = new("Frame", {
@@ -697,9 +747,10 @@ local function priceButton(item: { [string]: any }, size: UDim2): Frame
 	local face = b:FindFirstChild("Face")
 	if face then
 		face.TextXAlignment = Enum.TextXAlignment.Center
+		new("UIPadding", { PaddingLeft = UDim.new(0, 30), PaddingRight = UDim.new(0, 6), Parent = face }) -- keep the price clear of the coin
 		local c = coin(16)
 		c.AnchorPoint = Vector2.new(0, 0.5)
-		c.Position = UDim2.new(0, 10, 0.5, 0)
+		c.Position = UDim2.new(0, -20, 0.5, 0)
 		c.Parent = face
 	end
 	return b
