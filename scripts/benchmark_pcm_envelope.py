@@ -1,6 +1,6 @@
 """Reproducible CPU-only benchmark of Star's PCM16->rig envelope path.
 
-Run from repo root: python scripts/benchmark_pcm_envelope.py
+Run from repo root: python3 -m scripts.benchmark_pcm_envelope
 Reports synthetic audio-processing speed, NOT TTS inference latency or OBS FPS.
 """
 from __future__ import annotations
