@@ -26,7 +26,7 @@ class TurnMetrics:
     tts_seconds: float = 0.0        # compute time spent synthesising
     interrupted: bool = False
     interrupt_reason: str = ""
-    heard_seconds: float = 0.0      # reply audio played before the interruption
+    heard_seconds: float = 0.0      # speaker callback-reported played audio (all turns, including non-interrupted)
     error: str = ""
 
     @staticmethod
