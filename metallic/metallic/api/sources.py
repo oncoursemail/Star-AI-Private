@@ -57,6 +57,9 @@ class Content:
         self.cache = _Cache()
         from .revivals import Revivals
         self.revivals = Revivals(store, clock, **({"fetch": conf["revival_fetch"]} if "revival_fetch" in conf else {}))
+        from .revival_news import RevivalNews
+        from .revivals import _get
+        self.revival_news = RevivalNews(clock, conf.get("revival_fetch", _get), conf.get("revival_news_sources"))
         self.channels = tuple(conf.get("channels", ("stable", "beta")))
 
     # ---------- roadmap / progress ----------

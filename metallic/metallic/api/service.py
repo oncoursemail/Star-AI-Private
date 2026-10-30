@@ -174,6 +174,9 @@ class Api:
     def op_listRevivals(self, ctx):
         return 200, self.content.revivals.list()
 
+    def op_listRevivalNews(self, ctx):
+        return 200, self.content.revival_news.list()
+
     def op_getRevival(self, ctx):
         return 200, self.content.revivals.get(ctx["path"]["revival"])
 
