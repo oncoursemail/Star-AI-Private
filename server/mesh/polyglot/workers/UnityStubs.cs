@@ -48,6 +48,7 @@ namespace UnityEngine
     public class Behaviour : Component { public bool enabled; public bool isActiveAndEnabled; }
     public class MonoBehaviour : Behaviour
     {
+        public System.Threading.CancellationToken destroyCancellationToken => default;
         public Coroutine StartCoroutine(IEnumerator routine) => default;
         public void StopCoroutine(Coroutine routine) { }
         public void StopCoroutine(IEnumerator routine) { }
@@ -529,6 +530,91 @@ namespace UnityEngine
         public class ScrollRect : Behaviour { public Vector2 normalizedPosition; public float verticalNormalizedPosition; }
         public class LayoutRebuilder { public static void ForceRebuildLayoutImmediate(RectTransform r) { } }
     }
+}
+
+namespace UnityEngine
+{
+    // Unity 6 Awaitable (UnityEngine.Awaitable): shells with the async method builder, so `async Awaitable` compiles
+    [System.Runtime.CompilerServices.AsyncMethodBuilder(typeof(AwaitableAsyncMethodBuilder))]
+    public class Awaitable
+    {
+        public struct Awaiter : System.Runtime.CompilerServices.ICriticalNotifyCompletion
+        {
+            public bool IsCompleted => true;
+            public void OnCompleted(Action a) { }
+            public void UnsafeOnCompleted(Action a) { }
+            public void GetResult() { }
+        }
+        public Awaiter GetAwaiter() => default;
+        public bool IsCompleted => true;
+        public void Cancel() { }
+        public static Awaitable NextFrameAsync(System.Threading.CancellationToken cancellationToken = default) => null;
+        public static Awaitable EndOfFrameAsync(System.Threading.CancellationToken cancellationToken = default) => null;
+        public static Awaitable FixedUpdateAsync(System.Threading.CancellationToken cancellationToken = default) => null;
+        public static Awaitable WaitForSecondsAsync(float seconds, System.Threading.CancellationToken cancellationToken = default) => null;
+        public static Awaitable BackgroundThreadAsync() => null;
+        public static Awaitable MainThreadAsync() => null;
+        public static Awaitable FromAsyncOperation(AsyncOperation op, System.Threading.CancellationToken cancellationToken = default) => null;
+    }
+    [System.Runtime.CompilerServices.AsyncMethodBuilder(typeof(AwaitableAsyncMethodBuilder<>))]
+    public class Awaitable<T> : Awaitable
+    {
+        public new struct Awaiter : System.Runtime.CompilerServices.ICriticalNotifyCompletion
+        {
+            public bool IsCompleted => true;
+            public void OnCompleted(Action a) { }
+            public void UnsafeOnCompleted(Action a) { }
+            public T GetResult() => default;
+        }
+        public new Awaiter GetAwaiter() => default;
+    }
+    public struct AwaitableAsyncMethodBuilder
+    {
+        public static AwaitableAsyncMethodBuilder Create() => default;
+        public Awaitable Task => null;
+        public void Start<TSM>(ref TSM sm) where TSM : System.Runtime.CompilerServices.IAsyncStateMachine { }
+        public void SetStateMachine(System.Runtime.CompilerServices.IAsyncStateMachine sm) { }
+        public void SetResult() { }
+        public void SetException(Exception e) { }
+        public void AwaitOnCompleted<TA, TSM>(ref TA a, ref TSM sm) where TA : System.Runtime.CompilerServices.INotifyCompletion where TSM : System.Runtime.CompilerServices.IAsyncStateMachine { }
+        public void AwaitUnsafeOnCompleted<TA, TSM>(ref TA a, ref TSM sm) where TA : System.Runtime.CompilerServices.ICriticalNotifyCompletion where TSM : System.Runtime.CompilerServices.IAsyncStateMachine { }
+    }
+    public struct AwaitableAsyncMethodBuilder<T>
+    {
+        public static AwaitableAsyncMethodBuilder<T> Create() => default;
+        public Awaitable<T> Task => null;
+        public void Start<TSM>(ref TSM sm) where TSM : System.Runtime.CompilerServices.IAsyncStateMachine { }
+        public void SetStateMachine(System.Runtime.CompilerServices.IAsyncStateMachine sm) { }
+        public void SetResult(T result) { }
+        public void SetException(Exception e) { }
+        public void AwaitOnCompleted<TA, TSM>(ref TA a, ref TSM sm) where TA : System.Runtime.CompilerServices.INotifyCompletion where TSM : System.Runtime.CompilerServices.IAsyncStateMachine { }
+        public void AwaitUnsafeOnCompleted<TA, TSM>(ref TA a, ref TSM sm) where TA : System.Runtime.CompilerServices.ICriticalNotifyCompletion where TSM : System.Runtime.CompilerServices.IAsyncStateMachine { }
+    }
+}
+
+namespace UnityEngine.Pool
+{
+    public interface IObjectPool<T> where T : class
+    {
+        int CountInactive { get; }
+        T Get();
+        PooledObject<T> Get(out T v);
+        void Release(T element);
+        void Clear();
+    }
+    public class ObjectPool<T> : IObjectPool<T>, IDisposable where T : class
+    {
+        public ObjectPool(Func<T> createFunc, Action<T> actionOnGet = null, Action<T> actionOnRelease = null, Action<T> actionOnDestroy = null, bool collectionCheck = true, int defaultCapacity = 10, int maxSize = 10000) { }
+        public int CountAll => 0;
+        public int CountActive => 0;
+        public int CountInactive => 0;
+        public T Get() => null;
+        public PooledObject<T> Get(out T v) { v = null; return default; }
+        public void Release(T element) { }
+        public void Clear() { }
+        public void Dispose() { }
+    }
+    public struct PooledObject<T> : IDisposable where T : class { public void Dispose() { } }
 }
 
 namespace TMPro

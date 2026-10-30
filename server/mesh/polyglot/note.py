@@ -101,7 +101,7 @@ def apply(req: dict, cfg: dict | None = None) -> dict:
     if not isinstance(msgs, list) or not msgs or not isinstance(msgs[-1], dict) or msgs[-1].get("role") != "user":
         return {}
     text = msgs[-1].get("content")
-    if not isinstance(text, str) or "(Note for Litha" in text:
+    if not isinstance(text, str) or "(Note for Litha" in text or "(Facts for Litha" in text:
         return {}
     lang = detect(text)
     if not lang:

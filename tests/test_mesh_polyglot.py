@@ -72,7 +72,7 @@ def test_blocks_compiled_in_parallel_once():
 def test_lua_block_routing_love_vs_roblox():
     love = "```lua\nfunction love.draw()\n  love.graphics.print('hi', 1, 1)\nend\n```\n"
     roblox = "```lua\nlocal Players = game:GetService('Players')\nprint(love)\n```\n"
-    assert core.extract_blocks(love)[0]["language"] == "lua"
+    assert core.extract_blocks(love)[0]["language"] == "love"
     assert core.extract_blocks(roblox)[0]["language"] == "luau"
     assert core.extract_blocks("```lua\nlocal x = 1\nprint(x)\nend\n```\n")[0]["language"] == "luau"
 
