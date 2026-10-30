@@ -97,7 +97,8 @@ class _Reply:
         self.cancel = threading.Event()
         self.done = threading.Event()
         self.play_lock = threading.Lock()
-        self.stream = None
+        # The streaming iterator is replaceable/cancellable, and is absent until generation starts.
+        self.stream: Iterator[str] | None = None
         self.user_text = ""
         self.raw_text = ""
         self.sentences: list[_Sentence] = []
@@ -515,9 +516,10 @@ class CallSession:
     @staticmethod
     def _close_stream(reply: _Reply) -> None:
         stream = reply.stream
-        if stream is not None and hasattr(stream, "close"):
+        closer = getattr(stream, "close", None) if stream is not None else None
+        if callable(closer):
             try:
-                stream.close()
+                closer()
             except Exception:
                 pass
 
@@ -532,9 +534,10 @@ class CallSession:
             reply.cancel.set()
         # Cancel a streaming CPU TTS model immediately, independently from
         # its model lock; otherwise a barge-in wastes audio work and CPU.
-        if hasattr(self.tts, "stop_generation"):
+        stop_generation = getattr(self.tts, "stop_generation", None)
+        if callable(stop_generation):
             try:
-                self.tts.stop_generation()
+                stop_generation()
             except Exception:
                 pass  # Always reach the physical speaker stop.
         with reply.play_lock:
@@ -592,7 +595,7 @@ class CallSession:
             try:
                 stamp = callback()
                 if stamp is not None and reply.heard_seconds:
-                    if (type(stamp) in (int, float)
+                    if (isinstance(stamp, (int, float)) and not isinstance(stamp, bool)
                             and math.isfinite(stamp)
                             and metrics.first_audio_at is not None
                             and metrics.first_audio_at <= stamp <= metrics.done_at + 0.05):
