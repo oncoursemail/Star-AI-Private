@@ -51,9 +51,9 @@ class QualityWitness:
             raise ValueError("witness flags must be booleans")
         offset = self.av_offset_ms
         if self.obs_audible:
-            if (type(offset) not in (float, int)
-                    or not -5000 <= offset <= 5000
-                    or not math.isfinite(float(offset))):
+            if offset is None or type(offset) not in (float, int):
+                raise ValueError("captured audio requires numeric A/V offset")
+            if not -5000 <= offset <= 5000 or not math.isfinite(float(offset)):
                 raise ValueError("captured audio requires bounded measured A/V offset")
         elif offset is not None:
             raise ValueError("uncaptured audio cannot have an A/V offset")
