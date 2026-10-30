@@ -33,10 +33,13 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
 _EVIDENCE = frozenset({"observed", "reported", "unknown"})
 
 
-def _reaction_digest(detail: str) -> str:
-    # Store only a digest, never gameplay narration or spectator text.
+def _reaction_digest(detail: str, game_scope: str = "") -> str:
+    # Separate independent games/levels. Never retain raw scope or narration
+    # in the reaction cache: the trusted host supplies this stable scope.
     normalized = " ".join(detail.casefold().split())
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        (game_scope + "\x00" + normalized).encode("utf-8")
+    ).hexdigest()
 
 
 def _clock(value: float) -> float:
@@ -56,6 +59,9 @@ class StreamSignal:
     detail: str
     speaker_id: str = ""
     evidence: str = "unknown"
+    # Optional host-stable game/level identity. An empty value preserves legacy
+    # behavior; the host MUST NOT derive this from untrusted viewer text.
+    game_scope: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.signal_id, str) or not _ID.fullmatch(self.signal_id):
@@ -71,6 +77,11 @@ class StreamSignal:
             raise ValueError("invalid speaker identifier")
         if self.evidence not in _EVIDENCE:
             raise ValueError("evidence must be observed, reported, or unknown")
+        if (not isinstance(self.game_scope, str)
+                or (self.game_scope and (
+                    _ID.fullmatch(self.game_scope) is None
+                    or not self.kind.startswith("game_")))):
+            raise ValueError("game_scope must be a host-stable game identifier")
 
 
 @dataclass(frozen=True)
@@ -174,7 +185,7 @@ class StreamDirector:
         if self._game_reactions:
             remaining = []
             for event in self._events:
-                last = (self._game_reactions.get(_reaction_digest(event.detail))
+                last = (self._game_reactions.get(_reaction_digest(event.detail, event.game_scope))
                         if event.kind == "game_success" else None)
                 if last is not None and event.signal_id != last[1] and 0 <= now - last[0] < self.success_repeat_gap_seconds:
                     self._counters["suppressed_reactions"] += 1
@@ -201,8 +212,15 @@ class StreamDirector:
         if not self.enabled or event.timestamp > now + 0.5 or now - event.timestamp > ttl:
             self._counters["rejected"] += 1
             return False
+        # A stable canonical platform account ID is required for ALL direct
+        # viewer events, not only deferred inbox questions. Event IDs and
+        # nicknames do not provide meaningful per-viewer speech fairness.
+        # Account authentication/normalization remains a host responsibility.
+        if event.kind.startswith("viewer") and _ID.fullmatch(event.speaker_id) is None:
+            self._counters["rejected"] += 1
+            return False
         if event.kind == "game_success":
-            last = self._game_reactions.get(_reaction_digest(event.detail))
+            last = self._game_reactions.get(_reaction_digest(event.detail, event.game_scope))
             if last is not None and event.signal_id != last[1] and 0 <= now - last[0] < self.success_repeat_gap_seconds:
                 self._counters["suppressed_reactions"] += 1
                 self._counters["rejected"] += 1
@@ -247,6 +265,10 @@ class StreamDirector:
             return None
         eligible = []
         for event in self._events:
+            # offer() tolerates up to 500 ms of source clock skew; that does
+            # not make a not-yet-observed event safe to narrate immediately.
+            if event.timestamp > now:
+                continue
             if voice_speaking and event.kind != "owner_interrupt":
                 continue
             if gameplay_critical and event.kind not in {"owner_interrupt", "game_danger"}:
@@ -292,8 +314,13 @@ class StreamDirector:
                     self._last_speech_at = now
                     if event.kind.startswith("viewer") and event.speaker_id:
                         self._viewer_last_spoken[event.speaker_id] = now
-                    if event.kind == "game_success":
-                        self._game_reactions[_reaction_digest(event.detail)] = (now, event.signal_id)
+                    # Only a genuinely observed success can suppress later
+                    # reactions. A reported/unknown victory may have been wrong;
+                    # it must never silence the later witnessed achievement.
+                    if event.kind == "game_success" and event.evidence == "observed":
+                        self._game_reactions[
+                            _reaction_digest(event.detail, event.game_scope)
+                        ] = (now, event.signal_id)
                     self._counters["completed"] += 1
                 else:
                     self._counters["abandoned"] += 1

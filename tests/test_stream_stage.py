@@ -14,7 +14,8 @@ def signal(ident="s1", kind="game_success", evidence="observed",
            timestamp=100.0, detail="Won a round", speaker_id=""):
     return StreamSignal(
         signal_id=ident, kind=kind, timestamp=timestamp,
-        detail=detail, evidence=evidence, speaker_id=speaker_id,
+        detail=detail, evidence=evidence,
+        speaker_id=speaker_id or ("viewer-test" if kind.startswith("viewer_") else ""),
     )
 
 
