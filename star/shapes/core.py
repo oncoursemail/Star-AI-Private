@@ -197,6 +197,20 @@ def extract_json(text: str) -> dict:
     raise ValueError("unterminated JSON object in reply")
 
 
+def _variant_from_brief(t: Template, brief: str, answer: dict) -> dict:
+    """When the fill answer gives no variant (a failed or truncated reply), use a variant the brief names, e.g.
+    'revolver' -> firearm variant revolver, instead of silently building the default (an assault rifle)."""
+    var = t.params.get("variant")
+    raw = answer.get("params") if isinstance(answer.get("params"), dict) else {}
+    if var is None or var.kind != "enum" or "variant" in raw:
+        return answer
+    words = set(re.findall(r"[a-z]+", brief.lower()))
+    hit = next((c for c in var.choices if c in words), None)
+    if hit is None:
+        return answer
+    return dict(answer, params=dict(raw, variant=hit))
+
+
 def plan(llm, brief: str, templates: dict, kinds: tuple, *, extra: str = "", template: str | None = None,
          seed: int = 7) -> dict:
     """Two small calls: pick a template, then fill it. Network or parse failures fall back to keywords/defaults.
@@ -223,6 +237,7 @@ def plan(llm, brief: str, templates: dict, kinds: tuple, *, extra: str = "", tem
         log.append({"step": "fill", "seconds": round(secs, 1)})
     except Exception as exc:  # noqa: BLE001
         log.append({"step": "fill", "error": f"{type(exc).__name__}: {exc}"[:200]})
+    answer = _variant_from_brief(t, brief, answer)
     params, roles, notes = resolve(t, answer, kinds)
     nm = re.sub(r"[^a-z0-9_]+", "_", str(answer.get("name") or name).lower()).strip("_")[:40] or name
     return {"template": name, "name": nm, "params": params, "roles": roles, "notes": notes, "log": log,

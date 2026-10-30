@@ -129,3 +129,18 @@ def test_agent_builds_through_the_registry(ws, monkeypatch):
     _, requests = _run_agent([reply(calls=[call("workspace_asset3d_build", dict(args, output_dir="h2"))]),
                               reply(text="done")], workspace=ws, tools=None, prompt="make a low poly 3D house model")
     assert not T.TOOL_NAMES & offered(requests[0]) and not (ws.root / "h2").exists()
+
+
+def test_failed_fill_still_builds_the_variant_the_brief_names():
+    from star.shapes import core
+
+    class Broken:
+        def chat(self, messages, **kw):
+            if "template" in messages[-1]["content"].lower() and len(messages[-1]["content"]) < 900:
+                return '{"template": "firearm"}', 0.1, {}
+            raise ValueError("unterminated JSON object in reply")
+    pl = core.plan(Broken(), "Realistic stainless steel revolver with a long barrel", a3d.TEMPLATES, a3d.KINDS,
+                   template="firearm")
+    assert pl["params"]["variant"] == "revolver"
+    assert core._variant_from_brief(a3d.TEMPLATES["firearm"], "a revolver", {"params": {"variant": "pistol"}}) \
+        == {"params": {"variant": "pistol"}}
