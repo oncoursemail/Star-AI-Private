@@ -41,13 +41,14 @@ These numbers are **proposed acceptance thresholds** only, not achieved results.
 
 ## Primary technical references (checked during this research)
 
-- Roblox Studio MCP and automated testing, 2026-03-05: https://create.roblox.com/docs/assistant/overview
+- Roblox Studio built-in MCP and input-simulated playtesting, 2026-03-05: https://devforum.roblox.com/t/assistant-updates-studio-built-in-mcp-server-and-playtest-automation/4474643
 - Roblox's agentic Studio announcement, 2026-04-15: https://about.roblox.com/en-nz/newsroom/2026/04/roblox-studio-going-agentic
+- Roblox dedicated Playtest Agent beta, 2026-04-09: https://devforum.roblox.com/t/studio-beta-studio-assistant-mcp-playtest-agent/4566767
 - Roblox Studio test modes: https://create.roblox.com/docs/studio/testing-modes
 - Roblox StudioTestService: https://robloxapi.github.io/ref/class/StudioTestService.html
 - LiveKit turn detector / v1-mini: https://docs.livekit.io/agents/logic/turns/turn-detector/
 - llama.cpp server KV/prefix cache and timings: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md
-- llama.cpp speculative-decoding benchmark: https://github.com/ggml-org/llama.cpp/tree/master/tools/speed-bench
+- llama.cpp server speculative-decoding benchmark: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/bench/speed-bench/README.md
 - OBS WebSocket protocol: https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md
 
 ## Privacy and deployability
