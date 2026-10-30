@@ -478,8 +478,25 @@ def test_solo_p0_pauses_every_background_stream(stack):
     first_slots = {r["id_slot"] for r in fake.requests[:2]}
     assert {r["id_slot"] for r in cont} == first_slots == {0, 1}    # each answer resumed on its own slot
     assert [r["id_slot"] for r in fake.requests if r.get("max_tokens") == 8] == [2]   # the chat took the spare one
-    rows = [json.loads(line) for line in open(server.RequestHandlerClass.proxy.cfg.log)]
-    assert {r["class"] for r in rows} == {"P0", "P3"} and all(r["status"] == "ok" for r in rows)
+    # The HTTP client can read its complete reply before the handler's finally
+    # block has written its JSONL audit row. Await both background audit rows
+    # instead of racing the handler threads after client-side join().
+    proxy = server.RequestHandlerClass.proxy
+
+    def logged_rows():
+        with proxy._log_lock:
+            try:
+                with open(proxy.cfg.log, encoding="utf-8") as handle:
+                    return [json.loads(line) for line in handle]
+            except FileNotFoundError:
+                return []
+
+    assert wait_for(lambda: len(logged_rows()) == 3), "one P0 and two completed P3 audit rows are required"
+    rows = logged_rows()
+    assert len(rows) == 3
+    assert sum(r["class"] == "P0" for r in rows) == 1
+    assert sum(r["class"] == "P3" for r in rows) == 2
+    assert all(r["status"] == "ok" for r in rows)
     assert sum(r["pauses"] for r in rows if r["class"] == "P3") == 2
 
 
