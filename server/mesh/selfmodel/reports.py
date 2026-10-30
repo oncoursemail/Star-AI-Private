@@ -77,6 +77,7 @@ class Reports:
             "upgrade": self.last("upgrade", 12),
             "code": (self.last("code", 1) or [None])[0],
             "job_errors": self.last("error", 5),
+            "flaws": next((e for e in reversed(evals) if e.get("suite") == "flaws"), None),
         }
 
 
