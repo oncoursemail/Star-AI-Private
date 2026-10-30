@@ -1,27 +1,46 @@
-"""Opt-in real local model speed test. Example:
+"""Explicit local STAR model benchmark (never launched automatically).
 
-python -m scripts.benchmark_star --model 'your-installed-model' --parallel 2
+python -m scripts.benchmark_star --model your-model --stream-startup
+python -m scripts.benchmark_star --model your-model --workload canary --requests 4
+# Test only an idle/authorized endpoint; NOT during gameplay or an OBS stream.
 """
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
 
 from star.inference_benchmark import benchmark_local_model
+from star.inference_stream_benchmark import benchmark_stream_startup
 
 
-def main():
-    parser=argparse.ArgumentParser(description="Measure actual STAR localhost chat throughput")
-    parser.add_argument("--endpoint",default="http://127.0.0.1:8080/v1",
-                        help="Local loopback OpenAI-compatible endpoint only")
-    parser.add_argument("--model",required=True,help="Model ID currently reported by the local engine")
-    parser.add_argument("--parallel",type=int,choices=[1,2,3,4],default=1,
-                        help="Concurrent request limit; start at 1 on smaller GPUs")
-    parser.add_argument("--requests",type=int,choices=list(range(1,13)),default=4)
-    args=parser.parse_args()
-    result=asyncio.run(benchmark_local_model(
-        args.endpoint,args.model,parallel=args.parallel,requests=args.requests))
-    print(json.dumps(result,indent=2))
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Measure synthetic local model completion or streaming startup"
+    )
+    parser.add_argument(
+        "--endpoint", default="http://127.0.0.1:8080/v1",
+        help="Loopback endpoint, or validated private STAR Server with --star-server",
+    )
+    parser.add_argument("--model", required=True, help="Installed model ID")
+    parser.add_argument("--parallel", type=int, default=1,
+                        help="Concurrency: max 4 completions or 2 streams")
+    parser.add_argument("--requests", type=int, default=4,
+                        help="Request count: max 12 completions or 8 streams")
+    parser.add_argument("--workload", choices=("mixed", "repeat", "canary"),
+                        default="mixed", help="Canary must be sequential")
+    parser.add_argument("--stream-startup", action="store_true",
+                        help="Measure time until first visible text delta and completed response")
+    parser.add_argument("--star-server", action="store_true",
+                        help="Use existing private-LAN and keyring authorization checks")
+    args = parser.parse_args(argv)
+    bench = benchmark_stream_startup if args.stream_startup else benchmark_local_model
+    report = asyncio.run(bench(
+        args.endpoint, args.model, requests=args.requests,
+        parallel=args.parallel, workload=args.workload, server=args.star_server,
+    ))
+    print(json.dumps(report, indent=2))
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
