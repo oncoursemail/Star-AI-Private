@@ -20,13 +20,14 @@ actually played stay in the conversation history, so Star knows what the user di
 """
 from __future__ import annotations
 
+import math
 import queue
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Iterator, Protocol
 
-from .chunker import SentenceChunker, speakable
+from .chunker import SentenceChunker
 from .metrics import TurnMetrics
 from .pcm import FRAME_MS, rms
 from .persona import system_message
@@ -79,6 +80,7 @@ class CallConfig:
     push_to_talk: bool = False            # True: turns are opened and closed by push_to_talk(), not by the VAD
     ptt_tail_ms: int = 160                # keep recording this long after the key is released (trailing words)
     ptt_voice_barge_in: bool = True       # push-to-talk: talking over Star (without the key) still silences her
+    playback_stall_seconds: float | None = None  # opt-in audio-drain watchdog; default preserves current behavior
 
 
 @dataclass
@@ -111,6 +113,10 @@ class CallSession:
                  on_event: Callable[[dict], None] | None = None,
                  clock: Callable[[], float] = time.monotonic) -> None:
         self.config = config or CallConfig()
+        stall = self.config.playback_stall_seconds
+        if stall is not None and (type(stall) not in (int, float)
+                                  or not math.isfinite(stall) or not 0.05 <= stall <= 30.0):
+            raise ValueError("playback_stall_seconds must be finite and within 0.05..30")
         self.vad, self.asr, self.brain, self.tts, self.speaker = vad, asr, brain, tts, speaker
         self.detector = TurnDetector(self.config.turn, endpointer)
         self.echo_gate = EchoGate(self.config.echo_margin_db) if self.config.use_echo_gate else None
@@ -456,8 +462,25 @@ class CallSession:
             sentences.put(None)
             self._close_stream(reply)
             speech.join()
-        while not reply.cancel.is_set() and self.speaker.pending_seconds() > 0:
-            time.sleep(0.01)                    # let the last sentence finish playing
+            # Drain already-queued speech EVEN IF the model fails mid-stream.
+            # Text generation and TTS do not prove audio was played. A stalled
+            # output queue is stopped so this worker cannot hang forever.
+            last_pending = float("inf")
+            last_progress = self.clock()
+            while not reply.cancel.is_set():
+                pending = self.speaker.pending_seconds()
+                if pending <= 0:
+                    break
+                now = self.clock()
+                if pending < last_pending - 1e-4:
+                    last_progress = now
+                    last_pending = pending
+                elif (self.config.playback_stall_seconds is not None
+                      and now - last_progress >= self.config.playback_stall_seconds):
+                    reply.error = TimeoutError("audio output queue stopped advancing")
+                    self._cancel_reply("playout_stalled")
+                    break
+                time.sleep(0.01)
 
     def _speak(self, reply: _Reply, sentences: queue.Queue) -> None:
         metrics = reply.metrics
@@ -541,12 +564,30 @@ class CallSession:
         metrics.done_at = self.clock()
         metrics.audio_seconds = reply.audio_seconds
         interrupted = reply.cancel.is_set()
-        cut_mid_sentence = False
         if interrupted:
-            metrics.heard_seconds = reply.heard_seconds or 0.0
-            spoken, cut_mid_sentence = self._heard_text(reply)
+            # _cancel_reply() snapped the device playhead before stop() dropped
+            # unplayed PCM. Never infer words from the generated model text.
+            heard = reply.heard_seconds or 0.0
         else:
-            spoken = " ".join(s.text for s in reply.sentences) or speakable(reply.raw_text)
+            try:
+                heard = float(self.speaker.played_seconds())
+                if (not math.isfinite(heard) or heard < 0
+                        or heard > reply.audio_seconds + 0.05):
+                    raise ValueError("invalid output playhead")
+            except Exception:
+                # Broken/missing callback telemetry is NOT evidence of speech.
+                # Preserve the existing generation error if there was one.
+                heard = 0.0
+                if reply.error is None:
+                    reply.error = RuntimeError("speaker playback telemetry unavailable")
+        reply.heard_seconds = min(max(0.0, heard), reply.audio_seconds)
+        metrics.heard_seconds = reply.heard_seconds
+        if not interrupted and reply.error is None and reply.audio_seconds > 0:
+            if reply.heard_seconds == 0:
+                reply.error = RuntimeError("speaker reported no played audio")
+            elif reply.audio_seconds - reply.heard_seconds > max(0.1, 0.03 * reply.audio_seconds):
+                reply.error = RuntimeError("speaker output incomplete")
+        spoken, cut_mid_sentence = self._heard_text(reply)
         # History gets the heard words with no "..." marker: with a marker the brain copies the trailing-off
         # style into its next reply (seen against the live server). The marker is for captions only.
         metrics.reply_text = spoken
