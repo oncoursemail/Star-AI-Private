@@ -424,6 +424,10 @@ class StarStage:
             duration_s=duration_s, audio_levels=list(audio_levels),
             cues=cues, mode=plan.mode, fps=fps,
             reduced_motion=plan.reduced_motion, seed=seed,
+            # Recheck the identical audible plan every eight frames. The
+            # expensive worker can then stop spending CPU on revoked speech,
+            # not merely drop its completed frames at the output boundary.
+            cancelled=lambda: not self.current(plan),
         )
 
         # Rendering may overlap an owner interruption, a finished utterance,
