@@ -254,3 +254,21 @@ def test_missing_stable_viewer_identity_cannot_bypass_one_speaker_limit():
     assert "First valid question?" in proposal.context
     assert "platform-user-17" not in proposal.context
     assert "platform-user-17" not in proposal.signal_id
+
+
+def test_noncanonical_viewer_ids_cannot_multiply_deferred_question_slots():
+    inbox = ready()
+    assert not inbox.capture(question("space-leading", speaker=" viewerA", text="First?"),
+                             now=100, moderated=True)
+    assert not inbox.capture(question("space-trailing", speaker="viewerA ", text="Second?"),
+                             now=100, moderated=True)
+    assert not inbox.capture(question("unicode", speaker="viewеrA", text="Third?"),
+                             now=100, moderated=True)
+    assert not inbox.capture(question("control", speaker="viewerA\\x00", text="Fourth?"),
+                             now=100, moderated=True)
+    assert inbox.metrics()["queued"] == 0
+    assert inbox.capture(question("canonical", speaker="viewerA", text="Accepted?"),
+                         now=100, moderated=True)
+    assert not inbox.capture(question("duplicate", speaker="viewerA", text="More?"),
+                             now=100, moderated=True)
+    assert inbox.metrics()["queued"] == 1
