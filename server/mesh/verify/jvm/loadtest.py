@@ -42,7 +42,8 @@ STOP = {"velocity": "shutdown"}
 DONE = re.compile(r"Done \(\d+[.,]\d+s\)!")
 UNKNOWN = re.compile(r"Unknown or incomplete command|Unknown command|Incorrect argument for command", re.I)
 INTERNAL = re.compile(r"An internal error occurred|Unhandled exception executing command|"
-                      r"Exception while executing command|threw an exception", re.I)
+                      r"Exception while executing command|threw an exception|CommandException|"
+                      r"Cannot execute command", re.I)
 LOAD_FAIL = re.compile(r"Could not load '|Could not load plugin|Error occurred while enabling|InvalidPluginException|"
                        r"InvalidDescriptionException|UnknownDependencyException|UnsupportedClassVersionError|"
                        r"Can't create plugin|Unable to load plugin|Mod resolution failed|Incompatible mods? found|"
@@ -249,6 +250,14 @@ def job(j: dict) -> dict:
     res["stage"] = "ok" if res["ok"] else "load"
     if not run["done"]:
         res["log_tail"] = run["lines"][-30:]
+    if not res["ok"]:                                   # the lines around the first error, to see WHY (not only that)
+        lines = run["lines"]
+        first = next((i for i, ln in enumerate(lines) if LOAD_FAIL.search(ln) or "ERROR" in ln or "Exception" in ln
+                      if norm(ln) not in baseline(target)), None)
+        if first is not None:
+            res["log_excerpt"] = [x[:300] for x in lines[first:first + 40]]
+    if not j.get("sources"):
+        res["vacuous"] = True                           # nothing but descriptors: "loaded" proves nothing
     res["ms"]["total"] = round((time.monotonic() - t0) * 1000)
     return res
 
