@@ -1,0 +1,900 @@
+{
+ "name": "web_research_bench",
+ "version": 1,
+ "as_of": "2026-10-29",
+ "notes": "Fresh facts (pages dated 2026, after the models' training) + STAR-domain (Roblox release notes, Minecraft drops, engines). answers: case-insensitive regexes, or {date: YYYY-MM-DD} (any common spelling of that day). dev = tuning; test = held out, scored only for the baseline and the final run.",
+ "questions": [
+  {
+   "id": "wr001",
+   "split": "test",
+   "domain": "software",
+   "question": "On what date was Rust 1.99.0 released?",
+   "answers": [
+    {
+     "date": "2026-10-01"
+    }
+   ],
+   "gold_url": "https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/",
+   "gold_quote": "Oct. 1, 2026 · The Rust Release Team"
+  },
+  {
+   "id": "wr002",
+   "split": "test",
+   "domain": "software",
+   "question": "Which Rust release stabilized defining C-variadic functions in Rust itself (extern \"C\" fn with `...` args)?",
+   "answers": [
+    "1\\.99"
+   ],
+   "gold_url": "https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/",
+   "gold_quote": "Rust 1.99.0 stabilizes defining C-ABI variadic functions"
+  },
+  {
+   "id": "wr003",
+   "split": "test",
+   "domain": "software",
+   "question": "Rust 1.99 stabilized three functions for size/alignment from raw pointers. Name the mem:: function for the size.",
+   "answers": [
+    "size_of_val_raw"
+   ],
+   "gold_url": "https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/",
+   "gold_quote": "mem::size_of_val_raw"
+  },
+  {
+   "id": "wr004",
+   "split": "test",
+   "domain": "software",
+   "question": "When was Python 3.15.0 released?",
+   "answers": [
+    {
+     "date": "2026-10-09"
+    }
+   ],
+   "gold_url": "https://www.python.org/downloads/",
+   "gold_quote": "Python 3.15.0 Oct. 9, 2026"
+  },
+  {
+   "id": "wr005",
+   "split": "test",
+   "domain": "software",
+   "question": "What new built-in immutable mapping type does Python 3.15 add?",
+   "answers": [
+    "frozendict"
+   ],
+   "gold_url": "https://docs.python.org/3.15/whatsnew/3.15.html",
+   "gold_quote": "PEP 814: Add frozendict built-in type"
+  },
+  {
+   "id": "wr006",
+   "split": "test",
+   "domain": "software",
+   "question": "Which PEP adds explicit lazy imports in Python 3.15?",
+   "answers": [
+    "pep\\s*-?\\s*810",
+    "\\b810\\b"
+   ],
+   "gold_url": "https://docs.python.org/3.15/whatsnew/3.15.html",
+   "gold_quote": "PEP 810: Explicit lazy imports"
+  },
+  {
+   "id": "wr007",
+   "split": "test",
+   "domain": "software",
+   "question": "What is the name of the new high-frequency statistical sampling profiler in Python 3.15?",
+   "answers": [
+    "tachyon"
+   ],
+   "gold_url": "https://docs.python.org/3.15/whatsnew/3.15.html",
+   "gold_quote": "Tachyon: High-frequency statistical sampling profiler"
+  },
+  {
+   "id": "wr008",
+   "split": "dev",
+   "domain": "software",
+   "question": "What new math submodule for integer functions does Python 3.15 add?",
+   "answers": [
+    "math\\.integer"
+   ],
+   "gold_url": "https://docs.python.org/3.15/whatsnew/3.15.html",
+   "gold_quote": "## math.integer"
+  },
+  {
+   "id": "wr009",
+   "split": "test",
+   "domain": "software",
+   "question": "On what date was Go 1.27.0 released?",
+   "answers": [
+    {
+     "date": "2026-08-19"
+    }
+   ],
+   "gold_url": "https://go.dev/doc/devel/release",
+   "gold_quote": "go1.27.0 (released 2026-08-19)"
+  },
+  {
+   "id": "wr010",
+   "split": "test",
+   "domain": "software",
+   "question": "What major language feature did Go 1.27 add?",
+   "answers": [
+    "generic methods?",
+    "methods? (?:may|can) (?:now )?declare (?:their|its) own type parameters",
+    "type parameters (?:on|for) methods"
+   ],
+   "gold_url": "https://go.dev/doc/go1.27",
+   "gold_quote": "Go 1.27 now supports generic methods"
+  },
+  {
+   "id": "wr011",
+   "split": "test",
+   "domain": "software",
+   "question": "What is the minimum macOS version required by Go 1.27?",
+   "answers": [
+    "macos 13",
+    "ventura"
+   ],
+   "gold_url": "https://go.dev/doc/go1.27",
+   "gold_quote": "Go 1.27 requires macOS 13 Ventura or later"
+  },
+  {
+   "id": "wr012",
+   "split": "dev",
+   "domain": "software",
+   "question": "Which new post-quantum signature package was added to Go 1.27's standard library?",
+   "answers": [
+    "mldsa",
+    "ml-dsa"
+   ],
+   "gold_url": "https://go.dev/doc/go1.27",
+   "gold_quote": "New crypto/mldsa package"
+  },
+  {
+   "id": "wr013",
+   "split": "test",
+   "domain": "software",
+   "question": "When was Blender 5.2 LTS released?",
+   "answers": [
+    {
+     "date": "2026-07-14"
+    }
+   ],
+   "gold_url": "https://www.blender.org/download/releases/",
+   "gold_quote": "Blender 5.2 LTS Released July 14th, 2026"
+  },
+  {
+   "id": "wr014",
+   "split": "dev",
+   "domain": "software",
+   "question": "When was Blender 5.1 released?",
+   "answers": [
+    {
+     "date": "2026-03-17"
+    }
+   ],
+   "gold_url": "https://www.blender.org/download/releases/",
+   "gold_quote": "Blender 5.1 Released on March 17th, 2026"
+  },
+  {
+   "id": "wr015",
+   "split": "test",
+   "domain": "software",
+   "question": "Which new Geometry Nodes node in Blender 5.2 LTS brings audio-reactive animation?",
+   "answers": [
+    "sample sound frequenc"
+   ],
+   "gold_url": "https://www.blender.org/download/releases/5-2/",
+   "gold_quote": "The Sample Sound Frequencies node, coupled with the new Sound socket"
+  },
+  {
+   "id": "wr016",
+   "split": "test",
+   "domain": "software",
+   "question": "Starting with Node.js 27, how often are major Node.js releases made?",
+   "answers": [
+    "annual",
+    "once (?:a|per|every) year",
+    "every year",
+    "yearly",
+    "one major (?:release|version) (?:a|per) year"
+   ],
+   "gold_url": "https://nodejs.org/en/about/previous-releases",
+   "gold_quote": "Starting with Node.js 27, the release cycle will be annual"
+  },
+  {
+   "id": "wr017",
+   "split": "test",
+   "domain": "software",
+   "question": "When was Node.js 26 first released?",
+   "answers": [
+    {
+     "date": "2026-05-05"
+    }
+   ],
+   "gold_url": "https://nodejs.org/en/about/previous-releases",
+   "gold_quote": "v26-May 05, 2026"
+  },
+  {
+   "id": "wr018",
+   "split": "dev",
+   "domain": "software",
+   "question": "Which rustup version was announced on October 20, 2026?",
+   "answers": [
+    "1\\.29\\.2"
+   ],
+   "gold_url": "https://blog.rust-lang.org/",
+   "gold_quote": "Oct. 20 Announcing rustup 1.29.2"
+  },
+  {
+   "id": "wr019",
+   "split": "test",
+   "domain": "software",
+   "question": "On what date was Rust 1.98.0 released?",
+   "answers": [
+    {
+     "date": "2026-08-20"
+    }
+   ],
+   "gold_url": "https://blog.rust-lang.org/",
+   "gold_quote": "Aug. 20 Announcing Rust 1.98.0"
+  },
+  {
+   "id": "wr020",
+   "split": "test",
+   "domain": "software",
+   "question": "Which Linux kernel version was released on 14 June 2026?",
+   "answers": [
+    "\\b7\\.1\\b"
+   ],
+   "gold_url": "https://endoflife.date/linux",
+   "gold_quote": "7.1 ... (14 Jun 2026)"
+  },
+  {
+   "id": "wr021",
+   "split": "test",
+   "domain": "engines",
+   "question": "On what date was Godot 4.7 (stable) released?",
+   "answers": [
+    {
+     "date": "2026-06-18"
+    }
+   ],
+   "gold_url": "https://godotawesome.com/godot-versions/",
+   "gold_quote": "4.7 18 June 2026"
+  },
+  {
+   "id": "wr022",
+   "split": "test",
+   "domain": "engines",
+   "question": "What new Godot 4.7 node renders real-time light from a rectangle in 3D?",
+   "answers": [
+    "arealight3d",
+    "area ?light ?3d"
+   ],
+   "gold_url": "https://godotengine.org/releases/4.7/",
+   "gold_quote": "AreaLight3D, a new node for rectangular light sources"
+  },
+  {
+   "id": "wr023",
+   "split": "test",
+   "domain": "engines",
+   "question": "In Godot 4.7, what replaced the Asset Library?",
+   "answers": [
+    "asset store"
+   ],
+   "gold_url": "https://godotengine.org/releases/4.7/",
+   "gold_quote": "make way for the new Asset Store"
+  },
+  {
+   "id": "wr024",
+   "split": "test",
+   "domain": "engines",
+   "question": "What is the latest stable Godot release as of late October 2026?",
+   "answers": [
+    "4\\.7\\.2"
+   ],
+   "gold_url": "https://github.com/godotengine/godot/releases",
+   "gold_quote": "4.7.2-stable"
+  },
+  {
+   "id": "wr025",
+   "split": "test",
+   "domain": "engines",
+   "question": "Which Godot 4.8 development snapshot was published on 29 October 2026?",
+   "answers": [
+    "beta ?2"
+   ],
+   "gold_url": "https://godotengine.org/blog/",
+   "gold_quote": "29 October 2026 ## Dev snapshot: Godot 4.8 beta 2"
+  },
+  {
+   "id": "wr026",
+   "split": "test",
+   "domain": "engines",
+   "question": "In which month and year was Unreal Engine 5.8 released?",
+   "answers": [
+    "june,? 2026",
+    "jun\\.? 2026",
+    "2026-06",
+    "\\d{1,2}(?:st|nd|rd|th)? june,? 2026",
+    "june \\d{1,2}(?:st|nd|rd|th)?,? 2026"
+   ],
+   "gold_url": "https://forums.unrealengine.com/t/unreal-engine-5-8-released/2729274",
+   "gold_quote": "Jun 17, 2026 ... Unreal Engine 5.8 Released"
+  },
+  {
+   "id": "wr027",
+   "split": "test",
+   "domain": "engines",
+   "question": "In which month and year did Unity 6.4 become available?",
+   "answers": [
+    "march,? 2026",
+    "mar\\.? 2026",
+    "2026-03",
+    "\\d{1,2}(?:st|nd|rd|th)? march,? 2026",
+    "march \\d{1,2}(?:st|nd|rd|th)?,? 2026"
+   ],
+   "gold_url": "https://discussions.unity.com/t/unity-6-4-is-now-available/1713245",
+   "gold_quote": "Mar 17, 2026 ... Unity 6.4 is a Supported release"
+  },
+  {
+   "id": "wr028",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "What is the name of the Minecraft Java Edition 26.3 game drop?",
+   "answers": [
+    "wilderness bound"
+   ],
+   "gold_url": "https://www.minecraft.net/en-us/article/minecraft-java-edition-26-3",
+   "gold_quote": "Wilderness Bound is out now in Minecraft Java Edition!"
+  },
+  {
+   "id": "wr029",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "What new mob did Minecraft Java Edition 26.2 (the Chaos Cubed drop) add?",
+   "answers": [
+    "sulfur cube",
+    "sulphur cube"
+   ],
+   "gold_url": "https://shockbyte.com/blog/minecraft-chaos-cubed-update",
+   "gold_quote": "That mob is the sulfur cube"
+  },
+  {
+   "id": "wr030",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "What is the main new cave biome in Minecraft's Chaos Cubed drop?",
+   "answers": [
+    "sulfur cave",
+    "sulphur cave"
+   ],
+   "gold_url": "https://shockbyte.com/blog/minecraft-chaos-cubed-update",
+   "gold_quote": "Sulfur caves are the main new biome in Minecraft Chaos Cubed"
+  },
+  {
+   "id": "wr031",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "Which Bedrock Edition version shipped the Chaos Cubed drop alongside Java Edition 26.2?",
+   "answers": [
+    "26\\.30"
+   ],
+   "gold_url": "https://shockbyte.com/blog/minecraft-chaos-cubed-update",
+   "gold_quote": "Java Edition 26.2 and Bedrock Edition 26.30"
+  },
+  {
+   "id": "wr032",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "On what date was Minecraft Bedrock Edition 26.60 released?",
+   "answers": [
+    {
+     "date": "2026-10-27"
+    }
+   ],
+   "gold_url": "https://gamerant.com/minecraft-update-patch-notes-october-2026/",
+   "gold_quote": "having officially rolled out on October 27"
+  },
+  {
+   "id": "wr033",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "Roughly how many bug fixes are in Minecraft Bedrock 26.60's patch notes?",
+   "answers": [
+    "600"
+   ],
+   "gold_url": "https://gamerant.com/minecraft-update-patch-notes-october-2026/",
+   "gold_quote": "more than 600 bug fixes"
+  },
+  {
+   "id": "wr034",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "Which new cave biome is in experimental testing in Minecraft Bedrock 26.60 (first seen in Preview 26.60.29)?",
+   "answers": [
+    "ice cave"
+   ],
+   "gold_url": "https://gamerant.com/minecraft-update-patch-notes-october-2026/",
+   "gold_quote": "The update also adds Ice Caves, Frostbites, Ice Crystals"
+  },
+  {
+   "id": "wr035",
+   "split": "dev",
+   "domain": "minecraft",
+   "question": "Which music disc was added in Minecraft's Chaos Cubed drop?",
+   "answers": [
+    "bounce"
+   ],
+   "gold_url": "https://shockbyte.com/blog/minecraft-chaos-cubed-update",
+   "gold_quote": "the Bounce music disc"
+  },
+  {
+   "id": "wr036",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "On what date was Minecraft's Chaos Cubed drop released?",
+   "answers": [
+    {
+     "date": "2026-06-16"
+    }
+   ],
+   "gold_url": "https://shockbyte.com/blog/minecraft-chaos-cubed-update",
+   "gold_quote": "Minecraft's June 16, 2026 game drop"
+  },
+  {
+   "id": "wr037",
+   "split": "dev",
+   "domain": "minecraft",
+   "question": "Which Minecraft Bedrock Edition version is the Wilderness Bound drop?",
+   "answers": [
+    "26\\.50"
+   ],
+   "gold_url": "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs",
+   "gold_quote": "Minecraft: Bedrock Edition 26.50 Changelog - Wilderness Bound"
+  },
+  {
+   "id": "wr038",
+   "split": "test",
+   "domain": "minecraft",
+   "question": "What was the name of the Minecraft Bedrock Edition 26.10 drop?",
+   "answers": [
+    "tiny takeover"
+   ],
+   "gold_url": "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs",
+   "gold_quote": "Minecraft: Bedrock Edition 26.10 - Tiny Takeover"
+  },
+  {
+   "id": "wr039",
+   "split": "dev",
+   "domain": "minecraft",
+   "question": "Which new status effect is in Minecraft Bedrock 26.60's experimental features?",
+   "answers": [
+    "freezing"
+   ],
+   "gold_url": "https://gamerant.com/minecraft-update-patch-notes-october-2026/",
+   "gold_quote": "the Freezing effect"
+  },
+  {
+   "id": "wr040",
+   "split": "test",
+   "domain": "roblox",
+   "question": "In which Roblox release notes version was CollectionService:GetCollections(Instance) added?",
+   "answers": [
+    "\\b744\\b"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-744",
+   "gold_quote": "Adds `{Collections} = CollectionService:GetCollections(Instance)`"
+  },
+  {
+   "id": "wr041",
+   "split": "test",
+   "domain": "roblox",
+   "question": "According to Roblox release notes 743, how much faster did table.find get when searching for an element with no __eq metamethod?",
+   "answers": [
+    "2\\s*(?:-|–|to)\\s*3\\s*(?:x|×|times)",
+    "two to three times"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-743",
+   "gold_quote": "Improves performance of searching for an element (with no `__eq` metamethod) using `table.find` by 2-3x."
+  },
+  {
+   "id": "wr042",
+   "split": "test",
+   "domain": "roblox",
+   "question": "Which new Luau coroutine function was added in Roblox release notes 742?",
+   "answers": [
+    "coroutine\\.finally"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-742",
+   "gold_quote": "Added `coroutine.finally` function"
+  },
+  {
+   "id": "wr043",
+   "split": "test",
+   "domain": "roblox",
+   "question": "In Roblox release 742, collections returned by CollectionService:CreateCollection() provide which method in place of GetSize()?",
+   "answers": [
+    "getcount"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-742",
+   "gold_quote": "now provide GetCount() in place of GetSize()"
+  },
+  {
+   "id": "wr044",
+   "split": "test",
+   "domain": "roblox",
+   "question": "Which RunService method was added in Roblox release notes 738 for fixed-frequency callbacks before animation updates?",
+   "answers": [
+    "bindtoanimation"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-738",
+   "gold_quote": "Adds `Class.RunService:BindToAnimation()`"
+  },
+  {
+   "id": "wr045",
+   "split": "test",
+   "domain": "roblox",
+   "question": "Which property was added to AudioTextToSpeech in Roblox release notes 740?",
+   "answers": [
+    "autolocalize"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-740",
+   "gold_quote": "Adds the `AutoLocalize` property to `Class.AudioTextToSpeech`"
+  },
+  {
+   "id": "wr046",
+   "split": "dev",
+   "domain": "roblox",
+   "question": "Which property did Roblox release notes 740 add to InputAction for a localized UI name?",
+   "answers": [
+    "displayname"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-740",
+   "gold_quote": "Adds `Class.InputAction.DisplayName`"
+  },
+  {
+   "id": "wr047",
+   "split": "test",
+   "domain": "roblox",
+   "question": "In Roblox release notes 743, which Workspace property moved to the AirProperties category in the Properties window?",
+   "answers": [
+    "globalwind"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-743",
+   "gold_quote": "Moved `Class.Workspace.GlobalWind|GlobalWind` from the Behavior category to the AirProperties category"
+  },
+  {
+   "id": "wr048",
+   "split": "test",
+   "domain": "roblox",
+   "question": "Roblox release notes 738 fixed a Studio bug where repeated Play Solo runs capped Edit-mode frame rate near what value?",
+   "answers": [
+    "\\b64\\s*fps",
+    "\\b64\\b"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-738",
+   "gold_quote": "capping the frame rate near 64 FPS until Studio was restarted"
+  },
+  {
+   "id": "wr049",
+   "split": "test",
+   "domain": "roblox",
+   "question": "On which dates was the Roblox Developers Conference (RDC) 2026 held?",
+   "answers": [
+    "september 10",
+    "sept?\\.? 10",
+    "10(?:th)?\\s*(?:-|–|to)\\s*12(?:th)? september"
+   ],
+   "gold_url": "https://devforum.roblox.com/t/save-the-date-rdc26/4556064",
+   "gold_quote": "RDC 2026 is happening on September 10 - 12 in San Jose!"
+  },
+  {
+   "id": "wr050",
+   "split": "dev",
+   "domain": "roblox",
+   "question": "In which city was RDC 2026 held?",
+   "answers": [
+    "san jose"
+   ],
+   "gold_url": "https://devforum.roblox.com/t/save-the-date-rdc26/4556064",
+   "gold_quote": "September 10 - 12 in San Jose"
+  },
+  {
+   "id": "wr051",
+   "split": "test",
+   "domain": "roblox",
+   "question": "Roblox release notes 744 add a Studio beta feature to generate an avatar from what kind of input?",
+   "answers": [
+    "text prompt",
+    "from (?:a )?text",
+    "text description",
+    "text input"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-744",
+   "gold_quote": "Adds a Studio beta feature to generate an avatar from a text prompt"
+  },
+  {
+   "id": "wr052",
+   "split": "dev",
+   "domain": "roblox",
+   "question": "Which UIDragDetector property was added in Roblox release notes 743?",
+   "answers": [
+    "selectable"
+   ],
+   "gold_url": "https://create.roblox.com/docs/release-notes/release-notes-743",
+   "gold_quote": "Adds `Class.UIDragDetector.Selectable|Selectable`"
+  },
+  {
+   "id": "wr053",
+   "split": "test",
+   "domain": "news",
+   "question": "Which team won the 2026 World Series?",
+   "answers": [
+    "brewers"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "the Milwaukee Brewers defeat the Tampa Bay Rays in five games to win their first World Series championship"
+  },
+  {
+   "id": "wr054",
+   "split": "test",
+   "domain": "news",
+   "question": "Which team won the 2026 Japan Series?",
+   "answers": [
+    "softbank hawks",
+    "fukuoka softbank",
+    "softbank"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "the Fukuoka SoftBank Hawks defeat the Yokohama DeNA BayStars in four games to win their 13th Japan Series"
+  },
+  {
+   "id": "wr055",
+   "split": "test",
+   "domain": "news",
+   "question": "What did the Bank of Canada raise its policy interest rate to in its late-October 2026 decision?",
+   "answers": [
+    "2\\.5\\s*(?:%|per ?cent)",
+    "2\\.50\\s*%"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "The Bank of Canada raises its policy interest rate by 25 basis points to 2.5%"
+  },
+  {
+   "id": "wr056",
+   "split": "test",
+   "domain": "news",
+   "question": "What is Dictionary.com's Word of the Year for 2026?",
+   "answers": [
+    "maxxing"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "Dictionary.com says maxxing has been named its Word of the Year for 2026"
+  },
+  {
+   "id": "wr057",
+   "split": "test",
+   "domain": "news",
+   "question": "For how much did DoorDash announce it intends to acquire Instacart (October 2026)?",
+   "answers": [
+    "\\$?\\s*17\\s*(?:billion|bn|b\\b)"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "an acquisition of grocery delivery company Instacart for $17 billion"
+  },
+  {
+   "id": "wr058",
+   "split": "test",
+   "domain": "news",
+   "question": "How much did Jio Platforms raise in its October 2026 IPO?",
+   "answers": [
+    "3\\.2\\s*(?:billion|bn|b\\b)"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "Jio Platforms raises US$3.2 billion in India's largest-ever initial public offering"
+  },
+  {
+   "id": "wr059",
+   "split": "test",
+   "domain": "news",
+   "question": "According to the WMO's October 2026 report, what was the average global carbon dioxide concentration in 2025?",
+   "answers": [
+    "426\\.8"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "carbon dioxide averaging 426.8 parts per million"
+  },
+  {
+   "id": "wr060",
+   "split": "test",
+   "domain": "news",
+   "question": "After announcing her resignation in October 2026, when will Christine Lagarde step down as ECB president?",
+   "answers": [
+    "february 2027",
+    "feb\\.? 2027"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "She will step down from office in February 2027"
+  },
+  {
+   "id": "wr061",
+   "split": "test",
+   "domain": "news",
+   "question": "What was the vote count for the October 2026 UN General Assembly resolution calling for an end to the US embargo against Cuba?",
+   "answers": [
+    "130\\s*(?:votes?)?\\s*(?:to|-|–|against)\\s*17",
+    "\\b130\\b"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "by 130 votes to 17, with 25 abstentions"
+  },
+  {
+   "id": "wr062",
+   "split": "dev",
+   "domain": "news",
+   "question": "Which country's broadcaster withdrew it from the 2027 Eurovision Song Contest in October 2026?",
+   "answers": [
+    "netherlands",
+    "dutch"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "NPO withdraws the Netherlands from the 2027 Eurovision Song Contest"
+  },
+  {
+   "id": "wr063",
+   "split": "dev",
+   "domain": "news",
+   "question": "Who won Brazil's 2026 presidential election runoff?",
+   "answers": [
+    "lula"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "his defeat in the presidential election runoffs to incumbent president Luiz Inácio Lula da Silva"
+  },
+  {
+   "id": "wr064",
+   "split": "test",
+   "domain": "games",
+   "question": "For how much did Paramount Skydance complete its acquisition of Warner Bros. Discovery in October 2026?",
+   "answers": [
+    "\\$?\\s*110\\s*(?:billion|bn|b\\b)"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/2026_in_video_games",
+   "gold_quote": "Paramount Skydance completed its acquisition of Warner Bros. Discovery for $110 billion"
+  },
+  {
+   "id": "wr065",
+   "split": "test",
+   "domain": "games",
+   "question": "Which studio did Electronic Arts shut down on October 21, 2026?",
+   "answers": [
+    "bioware"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/2026_in_video_games",
+   "gold_quote": "Electronic Arts lays off 400 people and shuts down BioWare"
+  },
+  {
+   "id": "wr066",
+   "split": "test",
+   "domain": "games",
+   "question": "At which venue is The Game Awards 2026 scheduled to be held?",
+   "answers": [
+    "peacock theater",
+    "peacock theatre"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/2026_in_video_games",
+   "gold_quote": "The Game Awards 2026 is scheduled to be held at the Peacock Theater in Los Angeles"
+  },
+  {
+   "id": "wr067",
+   "split": "dev",
+   "domain": "games",
+   "question": "In which city are the 2026 Esports Awards scheduled to be held?",
+   "answers": [
+    "miami"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/2026_in_video_games",
+   "gold_quote": "The 2026 Esports Awards are scheduled to be held in Miami, Florida"
+  },
+  {
+   "id": "wr068",
+   "split": "dev",
+   "domain": "games",
+   "question": "What was the value of the leveraged buyout of Electronic Arts that closed in 2026?",
+   "answers": [
+    "\\$?\\s*55\\s*(?:billion|bn|b\\b)"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/2026_in_video_games",
+   "gold_quote": "Electronic Arts closed its $55 billion leveraged buyout"
+  },
+  {
+   "id": "wr069",
+   "split": "test",
+   "domain": "games",
+   "question": "Where was BlizzCon 2026 held?",
+   "answers": [
+    "anaheim"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/2026_in_video_games",
+   "gold_quote": "BlizzCon 2026 at Anaheim Convention Center in Anaheim, California"
+  },
+  {
+   "id": "wr070",
+   "split": "test",
+   "domain": "software",
+   "question": "What does Python 3.15 use as the default text encoding (PEP 686)?",
+   "answers": [
+    "utf-?8"
+   ],
+   "gold_url": "https://docs.python.org/3.15/whatsnew/3.15.html",
+   "gold_quote": "PEP 686: Python now uses UTF-8 as the default encoding"
+  },
+  {
+   "id": "wr071",
+   "split": "test",
+   "domain": "software",
+   "question": "What is the name of the new Go 1.27 standard library package that generates and parses UUIDs?",
+   "answers": [
+    "\\buuid\\b"
+   ],
+   "gold_url": "https://go.dev/doc/go1.27",
+   "gold_quote": "The new uuid package generates and parses UUIDs."
+  },
+  {
+   "id": "wr072",
+   "split": "test",
+   "domain": "software",
+   "question": "Which Rust version was released on April 16, 2026?",
+   "answers": [
+    "1\\.95"
+   ],
+   "gold_url": "https://blog.rust-lang.org/",
+   "gold_quote": "Apr. 16 Announcing Rust 1.95.0"
+  },
+  {
+   "id": "wr073",
+   "split": "test",
+   "domain": "games",
+   "question": "Which typhoon caused the cancellation of the planned final day of Tokyo Game Show 2026?",
+   "answers": [
+    "dujuan"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/2026_in_video_games",
+   "gold_quote": "cancelled due to the anticipated arrival of Typhoon Dujuan"
+  },
+  {
+   "id": "wr074",
+   "split": "test",
+   "domain": "news",
+   "question": "What magnitude was the late-October 2026 earthquake in northern Tibet?",
+   "answers": [
+    "7\\.0",
+    "\\b7\\b"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "a magnitude-7.0 earthquake in northern Tibet"
+  },
+  {
+   "id": "wr075",
+   "split": "test",
+   "domain": "news",
+   "question": "Which party won a majority in Serbia's October 2026 parliamentary election?",
+   "answers": [
+    "student list"
+   ],
+   "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
+   "gold_quote": "the Student List wins a majority of seats"
+  },
+  {
+   "id": "wr076",
+   "split": "test",
+   "domain": "software",
+   "question": "Which Python 3.15 PEP adds a sentinel built-in type?",
+   "answers": [
+    "pep\\s*-?\\s*661",
+    "\\b661\\b"
+   ],
+   "gold_url": "https://docs.python.org/3.15/whatsnew/3.15.html",
+   "gold_quote": "PEP 661: Add sentinel built-in type"
+  }
+ ]
+}

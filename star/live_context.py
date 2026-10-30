@@ -34,17 +34,67 @@ _FRESH_WEB = re.compile(
     r"\b(?:search|look)\s+(?:it|this|that)\s+up\b|\bon\s+the\s+(?:web|internet)\b|\bhttps?://",
     re.IGNORECASE)
 
+# Facts newer than the model (web-research-20261029: 0 of 62 fresh-fact benchmark questions such as "Which team won
+# the 2026 World Series?" or "What new built-in type does Python 3.15 add?" triggered the search above, so chat
+# answered them from memory): release notes / changelogs, "who/which team won", "when was X released/held",
+# "latest stable", "as of <month/year>", a product with a version number plus a what-changed word, or this or last
+# year named in the question.
+_RECENT_FACT = re.compile(
+    r"\b(?:release|patch)\s+notes?\b|\bchange\s?logs?\b|\brelease\s+date\b|"
+    r"\b(?:who|which\s+(?:team|party|country|player|club|company|studio|film|game))\s+won\b|"
+    r"\bwhen\s+(?:was|were|did|is|will)\b.{0,80}?\b(?:release[sd]?|launch(?:ed)?|announced?|ship(?:ped)?|"
+    r"come\s+out|held|available)\b|"
+    r"\blatest\s+stable\b|"
+    r"\bas\s+of\s+(?:(?:late|early|mid)[-\s])?(?:january|february|march|april|may|june|july|august|september|"
+    r"october|november|december|20\d\d)\b",
+    re.IGNORECASE)
+_VERSIONED = re.compile(r"\b[A-Z][A-Za-z.]+(?:\s+[A-Z][A-Za-z]+)?\s+v?\d+\.\d+(?:\.\d+)?\b")
+_CHANGED = re.compile(r"\b(?:add(?:s|ed)?|introduc\w*|new|stabili[sz]\w*|requir\w*|replac\w*|deprecat\w*|remov\w*|"
+                      r"chang\w*|released?)\b", re.IGNORECASE)
+# A year named on its own ("the 2026 World Series", "in 2026"), not inside a written date or a timestamp.
+_YEAR = re.compile(r"(?<![\d/:-])(?<!\d,\s)(?<!\d\s)\b(20\d\d)\b(?![-/:]\d)")
+
 _last_probe = {"at": 0.0}
 
 
 def wants_fresh_web(prompt: str) -> bool:
-    return bool(_FRESH_WEB.search(prompt or ""))
+    text = prompt or ""
+    if _FRESH_WEB.search(text) or _RECENT_FACT.search(text):
+        return True
+    if _VERSIONED.search(text) and _CHANGED.search(text):
+        return True
+    this_year = time.gmtime().tm_year
+    return any(this_year - 1 <= int(year) <= this_year + 1 for year in _YEAR.findall(text))
 
 
-async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int = 5) -> tuple[str, list[dict]]:
+async def _read_pages(prompt: str, settings, searcher) -> tuple[str, list[dict]]:
+    """star.web_research for a chat turn: 3 searches in parallel, the best pages read, ranked passages (6k
+    characters). ('', []) on any failure or when nothing was found, so the snippet path answers instead."""
+    from .web_research import research
+    from .web_search import search_web
+
+    async def search(query: str, *, limit: int) -> list[dict]:
+        if searcher is not None:
+            return await searcher(query, limit=limit)
+        return await search_web(query, limit=limit, settings=settings)
+    try:
+        result = await asyncio.wait_for(research(prompt, searcher=search, max_chars=6000, max_pages=4,
+                                                 deadline_s=AUTO_SEARCH_TIMEOUT - 5), timeout=AUTO_SEARCH_TIMEOUT)
+    except Exception:
+        return "", []
+    shown = [s for s in result.sources if s.chosen]
+    if not shown:
+        return "", []
+    sources = [{"title": s.title, "url": s.url, "snippet": (s.snippet or s.chosen[0].text)[:300]} for s in shown]
+    return result.context, sources
+
+
+async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int = 5,
+                      read_pages: bool | None = None) -> tuple[str, list[dict]]:
     """(context text, sources) for a fresh-information question. Never raises.
 
-    The text is the untrusted, cited search block (web_search.source_context), or one line saying the
+    The text is the untrusted, cited evidence block: ranked passages from the pages read (star.web_research,
+    web-research-20261029), else the search snippets (web_search.source_context), or one line saying the
     search failed. Returns ("", []) when the question does not need the web or no provider is set up.
     """
     from .web_search import search_web, source_context, web_search_available
@@ -54,6 +104,12 @@ async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int =
         return ("Web search is not set up (no STAR search server or search key), so no live results were "
                 "retrieved for this question; say so briefly if the answer depends on them."), []
     query = " ".join(prompt.split())[:600]
+    if read_pages is None:
+        read_pages = searcher is None          # injected searchers are test adapters: snippets only
+    if read_pages:
+        text, sources = await _read_pages(prompt, settings, searcher)
+        if text:
+            return text, sources
     try:
         search = searcher or (lambda q, limit: search_web(q, limit=limit, settings=settings))
         sources = await asyncio.wait_for(search(query, limit=limit), timeout=AUTO_SEARCH_TIMEOUT)
