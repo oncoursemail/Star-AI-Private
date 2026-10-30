@@ -20,9 +20,8 @@ import json
 from pathlib import Path
 import re
 import sqlite3
-from typing import Awaitable, Callable
 
-from .web_research import anchors, key_terms, robots_allowed
+from .web_research import Fetcher, anchors, key_terms, robots_allowed
 
 NEWS_DAYS, DEFAULT_DAYS = 7, 30
 _NEWSY = re.compile(r"\b(?:news|won|wins|election|raise[sd]?|resign\w*|acquir\w*|ipo|vote|killed|earthquake|today|"
@@ -41,7 +40,6 @@ DEFAULT_WATCH = (
     ("minecraft-changelogs", "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs", 24),
 )
 
-Fetcher = Callable[..., Awaitable[object]]
 
 
 def _now() -> dt.datetime:
