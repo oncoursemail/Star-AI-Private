@@ -1,5 +1,8 @@
-"""STAR's environment builder: brief + style -> layout plan -> detail pass -> checks + automatic fixes -> Studio
-render -> vision critique -> revision -> final render. `baseline` is the single-pass arm used by the eval.
+"""STAR's environment builder: brief + style -> layout plan -> detail pass -> art pass (kit coherence, rooms fitted
+to furniture, edge framing, night practicals, measured lighting presets) -> checks + automatic fixes -> Studio render
+(cameras picked by raycasts) [-> critique -> revision when rounds > 0]. Arms: `pipeline` (plan + per-zone detail),
+`single` (one model call + the same art pass and renderer), `baseline` (one model call, no art pass: the 10-29 eval
+baseline).
 
 CLI:  python -m star.roblox_build.pipeline build --brief "..." --style lowpoly --out DIR [--arm pipeline|baseline]
       python -m star.roblox_build.pipeline check SPEC.json
@@ -15,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import checks, kits, llm, prompts, scene, sheet
+from . import art, checks, kits, llm, prompts, scene, sheet
 
 STUDIO_LOCK = threading.Lock()
 DEFAULT_HOME = Path.home() / ".star" / "roblox-lab-home"
@@ -422,13 +425,13 @@ def _record(folder: Path, name: str, data) -> None:
     (folder / name).write_text(json.dumps(data, indent=1, default=str), encoding="utf-8")
 
 
-def build(brief: str, style: str, out: Path, *, arm: str = "pipeline", home: Path = DEFAULT_HOME, rounds: int = 1,
+def build(brief: str, style: str, out: Path, *, arm: str = "pipeline", home: Path = DEFAULT_HOME, rounds: int = 0,
           log=print) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     result: dict = {"brief": brief, "style": style, "arm": arm, "timings": {}}
     t = time.monotonic()
-    raw, meta = baseline_spec(brief, style) if arm == "baseline" else plan_and_detail(brief, style)
+    raw, meta = baseline_spec(brief, style) if arm in ("baseline", "single") else plan_and_detail(brief, style)
     result["timings"]["generate"] = round(time.monotonic() - t, 1)
     result["gen_meta"] = meta
     _record(out, "raw.json", raw)
@@ -440,8 +443,9 @@ def build(brief: str, style: str, out: Path, *, arm: str = "pipeline", home: Pat
         fixlog: list[str] = []
     else:
         spec, dresslog = dress(spec)
+        spec, artlog = art.apply_all(spec, brief)
         spec, compiled, report, fixlog = autofix(spec)
-        fixlog = dresslog + fixlog
+        fixlog = dresslog + artlog + fixlog
     result["autofix"] = fixlog
     _record(out, "spec-v1.json", spec)
     t = time.monotonic()
@@ -506,8 +510,8 @@ def main(argv=None) -> int:
     b.add_argument("--brief", required=True)
     b.add_argument("--style", required=True, choices=["stud", "lowpoly", "midpoly", "highpoly"])
     b.add_argument("--out", required=True)
-    b.add_argument("--arm", default="pipeline", choices=["pipeline", "baseline"])
-    b.add_argument("--rounds", type=int, default=1)
+    b.add_argument("--arm", default="pipeline", choices=["pipeline", "single", "baseline"])
+    b.add_argument("--rounds", type=int, default=0, help="critique + revision rounds (0: no critic)")
     b.add_argument("--home", default=str(DEFAULT_HOME))
     c = sub.add_parser("check")
     c.add_argument("spec")

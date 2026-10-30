@@ -338,3 +338,73 @@ if m then
 end
 return "{MARK}" .. n
 """
+
+
+def pick_cameras_luau(name: str, candidates: dict, origin, aspect: float = 1452 / 795, fov: float = 70.0) -> str:
+    """Score every candidate camera with raycasts against the draft (and terrain) and return the best per shot:
+    'RB_DONE {"hero": [index, score, near, content, sky], ...}'. A frame loses for rays that hit something closer
+    than 5 studs (lens in a wall or a tree), for a blocked centre line to the subject and for a lens inside a part;
+    it wins for rays that land on the build's content (not ground, not sky)."""
+    name = safe_name(name)
+    rows = []
+    for shot, cands in candidates.items():
+        if not re.fullmatch(r"[a-z]{2,16}", shot):
+            raise ValueError("bad shot id")
+        items = ",".join("{" + ",".join(_n(v) for v in c["position"] + c["look_at"]) + "}" for c in cands[:60])
+        rows.append(f'{{"{shot}", {{{items}}}}}')
+    return f"""local O = Vector3.new({_n(origin[0])}, {_n(origin[1])}, {_n(origin[2])})
+local R = workspace:FindFirstChild("{ROOT}")
+local M = R and R:FindFirstChild("{name}")
+if not M then return "{MARK}" .. "{{}}" end
+local rp = RaycastParams.new()
+rp.FilterType = Enum.RaycastFilterType.Include
+rp.FilterDescendantsInstances = {{M, workspace.Terrain}}
+local op = OverlapParams.new()
+op.FilterType = Enum.RaycastFilterType.Include
+op.FilterDescendantsInstances = {{M}}
+local SHOTS = {{{",".join(rows)}}}
+local tv = math.tan(math.rad({_n(fov)}) / 2)
+local th = tv * {_n(aspect)}
+local function ground(inst)
+	if inst == workspace.Terrain then return true end
+	local n = inst.Name
+	return n == "Ground" or n == "Skirt" or string.sub(n, 1, 6) == "Floor_"
+end
+local function score(c)
+	local pos, look = O + Vector3.new(c[1], c[2], c[3]), O + Vector3.new(c[4], c[5], c[6])
+	local cf = CFrame.lookAt(pos, look)
+	local near, content, sky, gnd, total = 0, 0, 0, 0, 0
+	for i = 0, 6 do
+		for j = 0, 4 do
+			local u, v = (i / 6 * 2 - 1) * th * 0.92, (j / 4 * 2 - 1) * tv * 0.92
+			local dir = (cf.LookVector + cf.RightVector * u + cf.UpVector * v).Unit * 600
+			local hit = workspace:Raycast(pos, dir, rp)
+			total += 1
+			if not hit then sky += 1
+			elseif hit.Distance < 5 then near += 1
+			elseif ground(hit.Instance) then gnd += 1
+			else content += 1 end
+		end
+	end
+	local inside = 0
+	for _, p in ipairs(workspace:GetPartBoundsInRadius(pos, 0.7, op)) do
+		if p.Transparency < 0.6 and not ground(p) then inside = 1 break end
+	end
+	local toLook = look - pos
+	local blocked = 0
+	local hit = workspace:Raycast(pos, toLook * 0.97, rp)
+	if hit and hit.Distance < math.max(4, toLook.Magnitude * 0.55) and not ground(hit.Instance) then blocked = 1 end
+	local s = content / total - 2.2 * near / total - 0.9 * blocked - 3 * inside - math.max(0, sky / total - 0.45)
+	return s, near / total, content / total, sky / total
+end
+local out = {{}}
+for _, sh in ipairs(SHOTS) do
+	local best, bi, bn, bc, bs = -1e9, 1, 0, 0, 0
+	for i, c in ipairs(sh[2]) do
+		local s, n, ct, sk = score(c)
+		if s > best + 0.02 then best, bi, bn, bc, bs = s, i, n, ct, sk end
+	end
+	table.insert(out, string.format('"%s":[%d,%.3f,%.3f,%.3f,%.3f]', sh[1], bi - 1, best, bn, bc, bs))
+end
+return "{MARK}" .. "{{" .. table.concat(out, ",") .. "}}"
+"""

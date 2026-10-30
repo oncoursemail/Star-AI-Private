@@ -5,7 +5,6 @@ Props use a compact array form: [kit, x, z, rot, {params}, n, dx, dz] (n/dx/dz =
 from __future__ import annotations
 
 import json
-import re
 
 from . import kits
 from .scene import MOODS
@@ -36,14 +35,15 @@ CORE = ("column", "platform", "stairs", "railing", "fence", "table", "chair", "b
 
 
 def kit_menu(brief: str, limit: int = 46) -> str:
-    """The kits worth showing for this brief: theme matches first, then the core set. One short line each."""
-    words = set(re.findall(r"[a-z]{3,}", brief.lower()))
-    words |= {w.rstrip("s") for w in words}
+    """The kits worth showing for this brief: whole-word brief matches first, then the core set; off-theme kits and
+    landmarks the brief does not name are never offered (substring matching put a lighthouse in every scene)."""
+    from . import art
+    on = art.themes_on(brief)
     scored = []
-    for name, info in kits.KITS.items():
-        text = (name.replace("_", " ") + " " + info["summary"]).lower()
-        hits = sum(1 for w in words if w in text)
-        scored.append((-(hits * 10) - (3 if name in CORE else 0), name))
+    for name in kits.KITS:
+        if not art.kit_allowed(name, brief, on):
+            continue
+        scored.append((-art.kit_score(name, brief) - (3 if name in CORE else 0), name))
     chosen = [n for _, n in sorted(scored)][:limit]
     lines = []
     for name in sorted(chosen):
