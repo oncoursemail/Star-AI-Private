@@ -253,32 +253,3 @@ def test_chat_searches_for_facts_newer_than_the_model(prompt):
 def test_dates_inside_tasks_and_code_do_not_search(prompt):
     from star.live_context import wants_fresh_web
     assert not wants_fresh_web(prompt)
-
-
-def test_auto_search_reads_pages_and_falls_back_to_snippets(monkeypatch):
-    from star import live_context
-
-    async def searcher(query, limit):
-        return [{"title": "Rust 1.99", "url": "https://blog.example.org/rust-1.99", "snippet": "Rust 1.99 is out"}]
-
-    async def fetcher(url, *, max_chars, **_):
-        if url.endswith("robots.txt"):
-            raise httpx.ConnectError("none")
-        return _page(url, "Announcing Rust 1.99.0\nOct. 1, 2026 - The Rust Release Team", title="Announcing Rust 1.99.0")
-
-    monkeypatch.setattr(wr, "fetch_page", fetcher)
-    monkeypatch.setattr(wr.research, "__kwdefaults__", {**wr.research.__kwdefaults__, "fetcher": fetcher})
-    text, sources = asyncio.run(live_context.auto_search("When was Rust 1.99.0 released?", searcher=searcher,
-                                                         read_pages=True))
-    assert "Oct. 1, 2026" in text and "untrusted" in text and sources[0]["url"].endswith("rust-1.99")
-
-    async def broken_fetch(url, *, max_chars, **_):
-        raise httpx.ConnectError("offline")
-
-    async def empty(query, limit):
-        return []
-
-    monkeypatch.setattr(wr.research, "__kwdefaults__", {**wr.research.__kwdefaults__, "fetcher": broken_fetch})
-    text, sources = asyncio.run(live_context.auto_search("Which team won the 2026 World Series?", searcher=empty,
-                                                         read_pages=True))
-    assert "found no usable results" in text and sources == []

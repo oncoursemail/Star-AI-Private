@@ -67,35 +67,12 @@ def wants_fresh_web(prompt: str) -> bool:
     return any(this_year - 1 <= int(year) <= this_year + 1 for year in _YEAR.findall(text))
 
 
-async def _read_pages(prompt: str, settings, searcher) -> tuple[str, list[dict]]:
-    """star.web_research for a chat turn: 3 searches in parallel, the best pages read, ranked passages (6k
-    characters). ('', []) on any failure or when nothing was found, so the snippet path answers instead."""
-    from .web_research import research
-    from .web_search import search_web
-
-    async def search(query: str, *, limit: int) -> list[dict]:
-        if searcher is not None:
-            return await searcher(query, limit=limit)
-        return await search_web(query, limit=limit, settings=settings)
-    try:
-        result = await asyncio.wait_for(research(prompt, searcher=search, max_chars=6000, max_pages=4,
-                                                 deadline_s=AUTO_SEARCH_TIMEOUT - 5), timeout=AUTO_SEARCH_TIMEOUT)
-    except Exception:
-        return "", []
-    shown = [s for s in result.sources if s.chosen]
-    if not shown:
-        return "", []
-    sources = [{"title": s.title, "url": s.url, "snippet": (s.snippet or s.chosen[0].text)[:300]} for s in shown]
-    return result.context, sources
-
-
-async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int = 5,
-                      read_pages: bool | None = None) -> tuple[str, list[dict]]:
+async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int = 5) -> tuple[str, list[dict]]:
     """(context text, sources) for a fresh-information question. Never raises.
 
-    The text is the untrusted, cited evidence block: ranked passages from the pages read (star.web_research,
-    web-research-20261029), else the search snippets (web_search.source_context), or one line saying the
+    The text is the untrusted, cited search block (web_search.source_context), or one line saying the
     search failed. Returns ("", []) when the question does not need the web or no provider is set up.
+    (Reading the pages through star.web_research here was measured: 60/62 vs 59/62 correct for +4 s, not shipped.)
     """
     from .web_search import search_web, source_context, web_search_available
     if not wants_fresh_web(prompt):
@@ -104,12 +81,6 @@ async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int =
         return ("Web search is not set up (no STAR search server or search key), so no live results were "
                 "retrieved for this question; say so briefly if the answer depends on them."), []
     query = " ".join(prompt.split())[:600]
-    if read_pages is None:
-        read_pages = searcher is None          # injected searchers are test adapters: snippets only
-    if read_pages:
-        text, sources = await _read_pages(prompt, settings, searcher)
-        if text:
-            return text, sources
     try:
         search = searcher or (lambda q, limit: search_web(q, limit=limit, settings=settings))
         sources = await asyncio.wait_for(search(query, limit=limit), timeout=AUTO_SEARCH_TIMEOUT)
