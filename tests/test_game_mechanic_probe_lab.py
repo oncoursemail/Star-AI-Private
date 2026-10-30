@@ -289,6 +289,73 @@ class GameMechanicProbeTests(unittest.TestCase):
         self.assertEqual(sum(r.status == "practice_candidate" for r in results), 1)
         self.assertTrue(lab.metrics()["pending"])
 
+    def test_default_pending_reservation_recovers_at_actual_planner_ttl(self):
+        self.enable()
+        self.assertEqual(self.planner.reservation_seconds, 90)
+        self.assertEqual(self.planner.max_trials_per_action, 24)
+        first = self.suggest()
+        self.assertEqual(self.suggest(now=NOW + 90).reason,
+                         "signed_practice_pending")
+        # Default host ticket expires after 90s, NOT after 600s.
+        second = self.suggest(now=NOW + 91)
+        self.assertEqual(second.status, "practice_candidate")
+        self.assertNotEqual(second.ticket, first.ticket)
+        self.assertEqual(self.planner.metrics()["expired"], 1)
+        self.assertFalse(self.lab.finish(first.ticket, now_unix_s=NOW + 91,
+                                         host_reports_recorded=True))
+
+    def test_custom_short_reservation_recovers_on_configured_deadline(self):
+        planner = ActivePracticePlanner(
+            self.bank, reservation_seconds=10, spacing_seconds=1
+        )
+        lab = self.make_lab(planner=planner)
+        planner.enable(owner_approved=True)
+        lab.enable(owner_approved=True)
+        first = self.suggest(lab=lab)
+        self.assertEqual(self.suggest(now=NOW + 10, lab=lab).reason,
+                         "signed_practice_pending")
+        next_probe = self.suggest(now=NOW + 11, lab=lab)
+        self.assertEqual(next_probe.status, "practice_candidate")
+        self.assertNotEqual(next_probe.ticket, first.ticket)
+        self.assertEqual(planner.metrics()["expired"], 1)
+
+    def test_default_host_arm_budget_ends_inconclusive_without_stalling(self):
+        self.enable()
+        # Hypothesis allows 36 attempts, but the default planner only
+        # permits 24 per action. A flat comparison must terminate at 24.
+        for i in range(24):
+            result = "success" if i % 2 else "failure"
+            self.add(action="short", outcome=result)
+            self.add(action="long", outcome=result)
+        screened = self.suggest()
+        self.assertEqual(screened.status, "inconclusive")
+        self.assertEqual(screened.baseline_trials, 24)
+        self.assertEqual(screened.candidate_trials, 24)
+        self.assertIsNone(screened.ticket)
+        self.assertFalse(self.planner.metrics()["pending"])
+
+    def test_smaller_host_budget_never_bypasses_minimum_evidence(self):
+        planner = ActivePracticePlanner(
+            self.bank, max_trials_per_action=8, spacing_seconds=1
+        )
+        hypothesis = MechanicHypothesis(
+            "hard_cap", "pit1", "short", "long",
+            min_trials_per_arm=12, max_trials_per_arm=36,
+        )
+        lab = self.make_lab((hypothesis,), planner=planner)
+        planner.enable(owner_approved=True)
+        lab.enable(owner_approved=True)
+        # Strong practice imbalance is STILL insufficient for a preferred
+        # arm: the hypothesis requires at least twelve trials per arm.
+        for _ in range(8):
+            self.add(action="short", outcome="failure")
+            self.add(action="long", outcome="success")
+        screened = self.suggest(lab=lab)
+        self.assertEqual(screened.status, "inconclusive")
+        self.assertIsNone(screened.provisional_preference)
+        self.assertFalse(screened.authorized_to_play)
+        self.assertFalse(planner.metrics()["pending"])
+
     def test_expired_ticket_eventually_allows_new_probe(self):
         self.enable()
         first = self.suggest()
