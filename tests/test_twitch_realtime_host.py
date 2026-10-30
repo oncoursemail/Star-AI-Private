@@ -652,3 +652,14 @@ def test_rejected_moderation_releases_id_for_legitimate_twitch_retry():
         assert host.metrics()["duplicate_drops"] == 0
         assert director.metrics()["queued"] == 1
     asyncio.run(run())
+
+
+def test_pre_moderation_admission_rejects_non_string_chat_ids_without_crashing():
+    """Malformed untrusted Twitch EventSub data must not reach moderation."""
+    host, _, _ = make_host([], asyncio.Event())
+    packet = json.loads(envelope("notification"))
+    session_id = "welcomeSessionABCD"
+    assert host._admission_key(packet, session_id, time.time()) is not None
+    for bad in (None, 0, True, {}, ["chat-valid-1234"], "with_underscore_1234", "abc"):
+        packet["payload"]["event"]["message_id"] = bad
+        assert host._admission_key(packet, session_id, time.time()) is None

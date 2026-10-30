@@ -294,7 +294,7 @@ class TwitchRealtimeHost:
         chat_id = event.get("message_id")
         viewer = event.get("chatter_user_id")
         if (
-            not _bounded_id(chat_id)
+            type(chat_id) is not str or not _bounded_id(chat_id)
             or "_" in chat_id  # Match the downstream bridge's ID grammar.
             or type(viewer) is not str or not 1 <= len(viewer) <= 32
             or not viewer.isascii() or not viewer.isdigit()

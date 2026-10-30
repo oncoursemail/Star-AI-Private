@@ -581,3 +581,21 @@ def test_revoked_session_discards_even_valid_visual_model_packet():
     assert result.perception is None and not result.worker_accepted
     assert rig.capture.status()["perception_rejected"] == 1
     assert not rig.vision.status()["inflight"]
+
+
+def test_missing_pixel_bytes_fail_closed_without_claiming_visual_observation():
+    """An unexpected image backend result cannot be treated as a valid RGB frame."""
+    class MissingBytesImage(FakeImage):
+        def tobytes(self):
+            return None
+
+    rig = Rig()
+    rig.image = MissingBytesImage()
+    rig.enable()
+    outcome = rig.capture.capture_once()
+    assert outcome.reason == "window_capture_backend_failed"
+    assert rig.image.converted
+    assert rig.vision.status()["pixel_fingerprinted"] == 0
+    assert not rig.vision.status()["inflight"]
+    assert rig.capture.status()["capture_failed"] == 1
+    assert not rig.capture.status()["capture_busy"]

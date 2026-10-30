@@ -296,7 +296,7 @@ class WindowsGameCaptureHost:
             rgb = getattr(image, "convert")("RGB")
             width, height = rgb.size
             pixels = bytearray(rgb.tobytes()) if process else rgb.tobytes()
-            if len(pixels) != width * height * 3:
+            if pixels is None or len(pixels) != width * height * 3:
                 raise ValueError("window screenshot layout invalid")
             end = _clock_ms(self._clock)
             after = self._probe(self._hwnd)
