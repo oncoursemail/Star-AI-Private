@@ -116,25 +116,29 @@ class PcmEnvelopeBuilder:
         pcm.frombytes(data[:complete])
         if sys.byteorder != "little":
             pcm.byteswap()
-        if self.channels == 1:
-            for sample in pcm:
-                self._sum_squares += sample * sample
-                self._count += 1
-                self._frame_count += 1
-                if self._frame_count == self._next_frame:
-                    self._emit()
-                    self._window_index += 1
-                    self._next_frame = self._boundary(self._window_index + 1)
-        else:
-            for index in range(0, len(pcm), 2):
-                left, right = pcm[index], pcm[index + 1]
-                self._sum_squares += left * left + right * right
-                self._count += 2
-                self._frame_count += 1
-                if self._frame_count == self._next_frame:
-                    self._emit()
-                    self._window_index += 1
-                    self._next_frame = self._boundary(self._window_index + 1)
+        # Aggregate whole *frame-aligned* RMS windows instead of dispatching
+        # a Python branch and attribute writes for every individual sample.
+        # math.sumprod (Python 3.12+) performs exact integer multiplication in
+        # C; keep an exact, dependency-free fallback for earlier Python.
+        # The view is borrowed only for this feed() call: no PCM is retained.
+        samples = memoryview(pcm)
+        sumprod = getattr(math, "sumprod", None)
+        cursor = 0
+        while cursor < count_frames:
+            remaining = self._next_frame - self._frame_count
+            window_frames = min(count_frames - cursor, remaining)
+            start = cursor * self.channels
+            window = samples[start:start + window_frames * self.channels]
+            energy = (sumprod(window, window) if sumprod is not None
+                      else sum(value * value for value in window))
+            self._sum_squares += energy
+            self._count += len(window)
+            self._frame_count += window_frames
+            cursor += window_frames
+            if self._frame_count == self._next_frame:
+                self._emit()
+                self._window_index += 1
+                self._next_frame = self._boundary(self._window_index + 1)
         return count_frames
 
     def finish(self) -> PcmEnvelope:
