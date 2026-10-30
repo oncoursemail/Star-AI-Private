@@ -107,12 +107,15 @@ def test_disable_revokes_receipts_across_restarted_session() -> None:
 def test_issued_receipts_remain_bounded_by_queued_events() -> None:
     stage = director(max_events=2)
     for n in range(10):
-        assert stage.offer(
-            StreamSignal(f"q{n}", "viewer_question", float(n + 10),
-                         f"Question {n}", speaker_id=f"viewer{n}"), now=float(n + 10)
-        ) if n < 2 else True
-        if n < 2:
-            assert stage.propose(now=float(n + 10)) is not None
-    assert len(stage._issued_intents) <= stage.max_events
+        now = float(10 + 40 * n)
+        event = StreamSignal(
+            f"q{n}", "viewer_question", now,
+            f"Question {n}", speaker_id=f"viewer{n}",
+        )
+        assert stage.offer(event, now=now)
+        assert stage.propose(now=now) is not None
+        # Prior offers have aged out; obsolete proposals are not retained.
+        assert len(stage._issued_intents) <= stage.max_events
+    assert len(stage._issued_intents) == 1
     stage.disable()
     assert stage._issued_intents == {}
