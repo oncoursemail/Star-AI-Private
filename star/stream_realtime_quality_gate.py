@@ -76,6 +76,7 @@ class QualityGateReport:
     candidate_av_max_ms: float | None
     speed_verdict: str
     authorized_to_stream: bool = False
+    candidate_new_case_errors: int = 0
     note: str = ("Operator-attested review and recording metrics only; "
                  "not independently authenticated, live-tested or deployment authority.")
 
@@ -137,6 +138,15 @@ def assess_quality_gate(
     candidate = [v for (pair, variant), v in seen.items() if variant == "candidate"]
     base_correct = sum(w.correct for w in baseline)
     candidate_correct = sum(w.correct for w in candidate)
+    # Equal aggregate accuracy can conceal a newly wrong factual/gameplay
+    # answer on a previously correct matched case. Count matched regressions
+    # rather than allowing improvements on easy cases to hide new failures.
+    candidate_new_case_errors = sum(
+        seen[(pair, "baseline")].correct and not seen[(pair, "candidate")].correct
+        for pair, variant in expected
+        if variant == "baseline" and (pair, "baseline") in seen
+        and (pair, "candidate") in seen
+    )
     ungrounded = sum(not w.grounded for w in candidate)
     obs_missing = sum(not w.obs_audible for w in candidate)
     offsets = [abs(float(w.av_offset_ms)) for w in candidate
@@ -148,13 +158,15 @@ def assess_quality_gate(
         return QualityGateReport(
             status, reason, pairs, len(seen), len(expected), base_correct,
             candidate_correct, ungrounded, obs_missing, av_p95, av_max, speed.verdict,
+            candidate_new_case_errors=candidate_new_case_errors,
         )
 
     if not complete or pairs < minimum_pairs or speed.incomplete_pairs:
         return report("insufficient_evidence", "missing_or_unpaired_quality_witness")
     if any(not w.obs_audible for w in baseline):
         return report("insufficient_evidence", "baseline_obs_audio_not_verified")
-    if (ungrounded or obs_missing or candidate_correct < base_correct
+    if (ungrounded or obs_missing or candidate_new_case_errors
+            or candidate_correct < base_correct
             or candidate_correct / pairs < float(minimum_correct_ratio)
             or av_p95 is None or av_p95 > float(max_av_p95_ms)
             or av_max is None or av_max > 2 * float(max_av_p95_ms)):

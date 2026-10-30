@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 
 from star.stream_realtime_benchmark import RealtimeRun
-from star.stream_realtime_quality_gate import QualityWitness
+from star.stream_realtime_quality_gate import QualityWitness, assess_quality_gate
 from star.stream_workload_quality_matrix import (
     REQUIRED_WORKLOADS, WorkloadEvidence, assess_workload_matrix,
 )
@@ -139,3 +139,36 @@ def test_input_boundaries_and_no_private_case_ids_in_report():
         WorkloadEvidence("live_dialogue", (), ())
     text = str(assess_workload_matrix(group))
     assert "pair0" not in text and "scenario_" not in text
+
+
+def test_equal_aggregate_accuracy_does_not_hide_newly_wrong_matched_question():
+    # Both variants score 23/24, above the 95% floor. But the candidate gets
+    # one *previously correct* question wrong while fixing another; this is a
+    # real paired regression that a simple aggregate-accuracy gate would miss.
+    group = matrix()
+    knowledge = group[1]
+    witnesses = list(knowledge.witnesses)
+    witnesses[0] = replace(witnesses[0], correct=False)  # baseline case 0
+    witnesses[3] = replace(witnesses[3], correct=False)  # candidate case 1
+    group[1] = replace(knowledge, witnesses=tuple(witnesses))
+    independent = assess_quality_gate(group[1].runs, group[1].witnesses)
+    assert independent.baseline_correct == independent.candidate_correct == 23
+    assert independent.candidate_new_case_errors == 1
+    assert independent.status == "quality_regressed"
+    overall = assess_workload_matrix(group)
+    assert overall.status == "quality_regressed"
+    assert overall.results[1].status == "quality_regressed"
+    assert overall.authorized_to_stream is False
+
+
+def test_missing_baseline_quality_witness_fails_closed_without_crashing():
+    group = matrix()
+    knowledge = group[1]
+    # Remove the baseline, leaving only the candidate witness for this pair.
+    group[1] = replace(knowledge, witnesses=knowledge.witnesses[1:])
+    independent = assess_quality_gate(group[1].runs, group[1].witnesses)
+    assert independent.status == "insufficient_evidence"
+    assert independent.candidate_new_case_errors == 0
+    report = assess_workload_matrix(group)
+    assert report.status == "insufficient_evidence"
+    assert report.results[1].status == "insufficient_evidence"
