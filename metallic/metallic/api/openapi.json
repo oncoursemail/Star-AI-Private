@@ -10,7 +10,7 @@
  "servers": [{"url": "https://{host}:8476", "variables": {"host": {"default": "metallic-api.local"}}}],
  "tags": [
   {"name": "account", "description": "The signed-in player: profile, friends, presence, invites."},
-  {"name": "content", "description": "Public: news, games, releases, progress, project status."},
+  {"name": "content", "description": "Public: news, games, Rec Room revivals, releases, progress, project status."},
   {"name": "auth", "description": "Scoped tokens."},
   {"name": "servers", "description": "Game servers and backends (server keys)."},
   {"name": "webhooks", "description": "Signed event deliveries."},
@@ -146,6 +146,26 @@
    "get": {"operationId": "getGame", "tags": ["content"], "summary": "One game's status", "security": [],
     "parameters": [{"name": "game", "in": "path", "required": true, "schema": {"$ref": "#/components/schemas/GameId"}}],
     "responses": {"200": {"description": "Game", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Game"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/revivals": {
+   "get": {
+    "operationId": "listRevivals",
+    "tags": ["content"],
+    "summary": "Every Rec Room revival: status and people online",
+    "description": "Online counts are people online in each revival's Discord (no revival publishes players in game). Refreshed at most every 2 minutes; servers every minute.",
+    "security": [],
+    "responses": {"200": {"description": "Revivals, most online first", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RevivalList"}}}}}
+   }
+  },
+  "/v1/revivals/{revival}": {
+   "get": {
+    "operationId": "getRevival",
+    "tags": ["content"],
+    "summary": "One revival's status and people online",
+    "security": [],
+    "parameters": [{"name": "revival", "in": "path", "required": true, "schema": {"$ref": "#/components/schemas/RevivalId"}}],
+    "responses": {"200": {"description": "Revival", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Revival"}}}}, "404": {"$ref": "#/components/responses/Error"}}
+   }
   },
   "/v1/releases": {
    "get": {"operationId": "listReleases", "tags": ["content"], "summary": "Release channels", "security": [],
@@ -314,6 +334,20 @@
      "status": {"type": "string", "enum": ["up", "down", "unknown"]}, "checked": {"type": ["number", "null"]}}},
     "release": {"type": ["object", "null"], "properties": {"channel": {"type": "string"}, "component": {"type": "string"}, "version": {"type": "string"}}}}},
    "GameList": {"type": "object", "required": ["games"], "properties": {"games": {"type": "array", "items": {"$ref": "#/components/schemas/Game"}}}},
+   "RevivalId": {
+    "type": "string",
+    "pattern": "^[a-z0-9]{2,20}$"
+   },
+   "Revival": {
+    "type": "object",
+    "required": ["id", "name", "blurb", "era", "platforms", "invite", "website", "status", "version", "discord", "trend", "peak_24h"],
+    "properties": {"id": {"$ref": "#/components/schemas/RevivalId"}, "name": {"type": "string"}, "blurb": {"type": "string"}, "era": {"type": "string", "description": "Rec Room years it runs, when known; empty otherwise."}, "platforms": {"type": "string"}, "invite": {"type": ["string", "null"], "format": "uri"}, "website": {"type": ["string", "null"], "format": "uri"}, "status": {"type": "string", "enum": ["answering", "not_answering", "community", "invite_gone", "unknown"], "description": "answering / not_answering: the revival's own public address was checked in the last minute. community: no server check, its Discord is live. invite_gone: its Discord invite was deleted. unknown: nothing public to check."}, "version": {"type": ["string", "null"], "description": "Version its server reports, when it publishes one."}, "discord": {"type": ["object", "null"], "description": "From Discord's public invite data: people in its Discord, not players in game.", "required": ["online", "members"], "properties": {"online": {"type": "integer"}, "members": {"type": "integer"}, "guild": {"type": ["string", "null"]}, "description": {"type": ["string", "null"]}, "icon": {"type": ["string", "null"]}, "banner": {"type": ["string", "null"]}, "splash": {"type": ["string", "null"]}, "stale": {"type": "boolean"}}}, "trend": {"type": "array", "description": "Online in its Discord over the last 24 hours: [unix time, online], highest per half hour.", "items": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "integer"}], "minItems": 2, "maxItems": 2}}, "peak_24h": {"type": ["integer", "null"]}}
+   },
+   "RevivalList": {
+    "type": "object",
+    "required": ["checked_at", "revivals", "totals"],
+    "properties": {"checked_at": {"type": "integer"}, "revivals": {"type": "array", "items": {"$ref": "#/components/schemas/Revival"}}, "totals": {"type": "object", "required": ["revivals", "with_numbers", "online", "members", "answering"], "properties": {"revivals": {"type": "integer"}, "with_numbers": {"type": "integer"}, "online": {"type": "integer"}, "members": {"type": "integer"}, "answering": {"type": "integer"}}}}
+   },
    "ChannelComponent": {"type": "object", "required": ["name", "version"], "properties": {
     "name": {"type": "string"}, "version": {"type": "string"}, "platform": {"type": "string"}, "released": {"type": "string"},
     "notes": {"type": "string"}, "min_launcher": {"type": "string"}, "size": {"type": "integer", "description": "Installed size in bytes"},

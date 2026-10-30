@@ -82,6 +82,16 @@ def run(config_path: str) -> int:
     except Exception:                                     # noqa: BLE001
         pass
     threading.Thread(target=watch, daemon=True, name="release-watch").start()
+
+    def revivals():
+        while True:
+            try:
+                api.content.revivals.sample()
+            except Exception as exc:          # noqa: BLE001
+                print(f"revival sample: {type(exc).__name__}", file=sys.stderr, flush=True)
+            if done.wait(float(conf.get("revival_sample_seconds", 300))):
+                return
+    threading.Thread(target=revivals, daemon=True, name="revival-sample").start()
     print(f"metallic api: listening on {host}:{port} ({'https' if tls else 'http'})", file=sys.stderr, flush=True)
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: done.set())

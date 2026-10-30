@@ -684,3 +684,84 @@ def test_website_downloads_asks_the_api_first_then_the_channel_file(live):
     code, h, body = live.call("GET", "/v1/releases/beta", origin="https://metallic.club")
     assert code == 200 and h["Access-Control-Allow-Origin"] == "*"
     assert body["components"][0]["size"] == len(b"MZ fake launcher 1.0.0")
+
+
+# ---------------------------------------------------------------- Rec Room revivals
+def _invite(online, members):
+    return json.dumps({"approximate_presence_count": online, "approximate_member_count": members,
+                       "guild": {"id": "42", "name": "G", "icon": "abc", "banner": None, "splash": "sp", "description": "d"}})
+
+
+class FakeNet:
+    """Discord invites answer `online` people (Vanilla 500); Vanilla's manifest answers with a version; Campus is down."""
+    def __init__(self):
+        self.calls, self.online, self.down = [], 10, False
+
+    def __call__(self, url, timeout=6.0):
+        self.calls.append(url)
+        if self.down:
+            raise OSError("offline")
+        if "discord.com" in url:
+            return 200, _invite(500 if "vanillarec" in url else self.online, 900)
+        if "vanillarec.net" in url:
+            return 200, json.dumps({"version": "1.0.17"})
+        if "camprec.net" in url:
+            raise OSError("timed out")
+        return 200, "{}"
+
+
+@pytest.fixture
+def rv(tmp_path):
+    net = FakeNet()
+    return Rig(tmp_path, {"revival_fetch": net}), net
+
+
+def test_revivals_are_public_sorted_and_say_people_online_not_players(rv):
+    rig, _ = rv
+    code, h, out = rig.call("GET", "/v1/revivals")                 # check_response validates the schema
+    assert code == 200
+    ids = [r["id"] for r in out["revivals"]]
+    assert ids[0] == "vanilla" and {"stella", "meownet", "campus", "studio8", "phoenix"} <= set(ids)
+    by = {r["id"]: r for r in out["revivals"]}
+    assert by["vanilla"]["status"] == "answering" and by["vanilla"]["version"] == "1.0.17"
+    assert by["campus"]["status"] == "not_answering" and by["campus"]["discord"] is None
+    assert by["radium"]["status"] == "community" and by["studio8"]["status"] == "unknown"
+    assert by["radium"]["discord"]["icon"] == "https://cdn.discordapp.com/icons/42/abc.webp?size=128"
+    with_invite = sum(1 for r in out["revivals"] if r["invite"])
+    assert out["totals"]["online"] == 500 + 10 * (with_invite - 1) and out["totals"]["answering"] == 2        # Vanilla and RecFlare
+    assert "player" not in json.dumps(out).lower()
+    assert rig.call("GET", "/v1/revivals/radium")[2]["discord"]["online"] == 10
+    assert rig.call("GET", "/v1/revivals/nope")[0] == 404
+
+
+def test_revivals_ask_discord_at_most_every_two_minutes_and_keep_stale_numbers(rv):
+    rig, net = rv
+    rig.call("GET", "/v1/revivals")
+    first = len(net.calls)
+    rig.clock.t += 30
+    rig.call("GET", "/v1/revivals")
+    assert len(net.calls) == first                                  # nothing is due yet
+    rig.clock.t += 31
+    rig.call("GET", "/v1/revivals")
+    assert all("discord.com" not in u for u in net.calls[first:])  # servers again after 1 min, Discord not yet
+    net.down = True
+    rig.clock.t += 120
+    out = rig.call("GET", "/v1/revivals")[2]
+    radium = next(r for r in out["revivals"] if r["id"] == "radium")
+    assert radium["discord"]["online"] == 10 and radium["discord"]["stale"] is True
+    assert next(r for r in out["revivals"] if r["id"] == "vanilla")["status"] == "not_answering"
+
+
+def test_revival_samples_give_a_24_hour_trend_and_peak_and_expire_after_a_week(rv):
+    rig, net = rv
+    for online in (10, 40, 25):
+        net.online = online
+        rig.content.revivals.sample()
+        rig.clock.t += 1800
+    r = rig.call("GET", "/v1/revivals/radium")[2]
+    assert [p[1] for p in r["trend"]] == [10, 40, 25]
+    assert r["peak_24h"] == 40
+    rig.clock.t += 8 * 86400
+    rig.content.revivals.sample()
+    assert rig.store.one("SELECT COUNT(*) AS n FROM revival_samples WHERE t < ?", (rig.clock.t - 7 * 86400,))["n"] == 0
+    assert rig.call("GET", "/v1/revivals/radium")[2]["peak_24h"] == 25   # only the newest sample is within a day

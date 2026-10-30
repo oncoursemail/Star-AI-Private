@@ -55,6 +55,8 @@ class Content:
     def __init__(self, store, clock, conf: dict, probe=_probe):
         self.s, self.clock, self.conf, self.probe = store, clock, conf, probe
         self.cache = _Cache()
+        from .revivals import Revivals
+        self.revivals = Revivals(store, clock, **({"fetch": conf["revival_fetch"]} if "revival_fetch" in conf else {}))
         self.channels = tuple(conf.get("channels", ("stable", "beta")))
 
     # ---------- roadmap / progress ----------
