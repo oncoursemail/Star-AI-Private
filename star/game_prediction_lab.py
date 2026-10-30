@@ -371,7 +371,8 @@ class GamePredictionLab:
         ]
         if all(v is not None for v in selected):
             query += " AND objective_id=? AND situation_id=? AND action_id=?"
-            args.extend(selected)
+            # all(...) does not narrow each tuple element for static checking.
+            args.extend(v for v in selected if v is not None)
         query += " ORDER BY verified_unix_s DESC, run_id DESC LIMIT ?"
         args.append(_CONTEXT_MAX_ROWS)
         return list(self._db.execute(query, args))

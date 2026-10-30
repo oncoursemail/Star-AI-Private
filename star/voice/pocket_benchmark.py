@@ -45,7 +45,7 @@ def probe_generation(
     total_samples = 0
     count = 0
     sample_rate: int | None = None
-    for pcm, rate in tts.synthesize(text):
+    for pcm, rate in getattr(tts, "synthesize")(text):
         if type(pcm) is not bytes or type(rate) is not int or not 8000 <= rate <= 96000:
             raise ValueError("invalid PCM chunk")
         if not pcm or len(pcm) % 2:

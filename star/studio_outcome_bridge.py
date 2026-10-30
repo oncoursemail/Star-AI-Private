@@ -14,6 +14,8 @@ Important trust boundaries:
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import hashlib
 import json
@@ -32,7 +34,7 @@ _MAX_MONOTONIC_MS = 1e13
 def _ms(value: object, label: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{label}: finite monotonic milliseconds required")
-    num = float(value)
+    num = float(cast(int | float, value))
     if not math.isfinite(num) or not 0 <= num <= _MAX_MONOTONIC_MS:
         raise ValueError(f"{label}: finite monotonic milliseconds required")
     return num

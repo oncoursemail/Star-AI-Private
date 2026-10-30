@@ -72,8 +72,8 @@ def _snapshot(client: object) -> tuple[ObsStatsCounters, ObsStreamStatus]:
     Never retain/log any other response attributes, websocket error text,
     stream key, endpoint, window title, chat, scene name or media.
     """
-    stats = client.get_stats()
-    status = client.get_stream_status()
+    stats = getattr(client, "get_stats")()
+    status = getattr(client, "get_stream_status")()
     return (
         ObsStatsCounters(
             getattr(stats, "render_total_frames"),
@@ -202,7 +202,7 @@ class ObsReadOnlyProbe:
             client = self._client_factory(
                 host="127.0.0.1", port=4455, password=password, timeout=3
             )
-            client.get_version()  # Does not alter OBS settings.
+            getattr(client, "get_version")()  # Does not alter OBS settings.
             if self._identity() != identity:
                 raise ValueError("OBS restarted during connection")
         except Exception:

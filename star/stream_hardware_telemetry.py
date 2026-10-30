@@ -16,6 +16,8 @@ model inference. The corresponding consumers remain responsible for policy.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from collections import deque
 from dataclasses import dataclass
 import math
@@ -57,7 +59,7 @@ def _ms(value: object, name: str) -> float:
     if type(value) not in (float, int):
         raise ValueError(f"{name} must be numeric")
     try:
-        number = float(value)
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} is invalid") from exc
     if not math.isfinite(number) or not 0 <= number <= 1e13:

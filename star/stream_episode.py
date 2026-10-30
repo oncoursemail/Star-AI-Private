@@ -11,6 +11,8 @@ authorization to control games, a live broadcaster, or a claim of model learning
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 from hashlib import sha256
 import json
@@ -205,7 +207,7 @@ class StreamEpisode:
             if len(record) > _MAX_PACKET:
                 return None
             self._counts["packets"] += 1
-            return EpisodePacket(tuple(f["action_id"] for f in facts), record)
+            return EpisodePacket(tuple(cast(str, f["action_id"]) for f in facts), record)
 
     def metrics(self) -> dict[str, int | bool]:
         """No raw IDs, receipts, on-air text, players, screenshots or timestamps."""

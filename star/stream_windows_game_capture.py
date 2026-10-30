@@ -293,7 +293,7 @@ class WindowsGameCaptureHost:
                     or size[0] * size[1] > MAX_CAPTURE_PIXELS
                     or size[0] > 8192 or size[1] > 8192):
                 raise ValueError("window screenshot dimensions invalid")
-            rgb = image.convert("RGB")
+            rgb = getattr(image, "convert")("RGB")
             width, height = rgb.size
             pixels = bytearray(rgb.tobytes()) if process else rgb.tobytes()
             if len(pixels) != width * height * 3:

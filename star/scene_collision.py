@@ -11,6 +11,8 @@ no GPU dependency, engine writes, network calls, or additional packages.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import math
 
@@ -31,8 +33,8 @@ class OrientedBox:
 
 def from_pose(position, size, rotation=(0, 0, 0)) -> OrientedBox:
     """Bounds and local axes for a Roblox oriented rectangular part."""
-    center = tuple(float(p) for p in position)
-    half = tuple(float(s) * 0.5 for s in size)
+    center = cast(Vector, tuple(float(p) for p in position))
+    half = cast(Vector, tuple(float(s) * 0.5 for s in size))
     rotated = any(angle % 360 != 0 for angle in rotation)
     axes = IDENTITY
     if rotated:
@@ -46,10 +48,10 @@ def from_pose(position, size, rotation=(0, 0, 0)) -> OrientedBox:
             (cx * sz, cx * cz, -sx),
             (-sy * cz + cy * sx * sz, sy * sz + cy * sx * cz, cy * cx),
         )
-        axes = tuple(tuple(rows[i][j] for i in range(3)) for j in range(3))
+        axes = cast(AxisSet, tuple(tuple(rows[i][j] for i in range(3)) for j in range(3)))
     extent = tuple(sum(abs(axes[j][i]) * half[j] for j in range(3)) for i in range(3))
-    lo = tuple(center[i] - extent[i] for i in range(3))
-    hi = tuple(center[i] + extent[i] for i in range(3))
+    lo = cast(Vector, tuple(center[i] - extent[i] for i in range(3)))
+    hi = cast(Vector, tuple(center[i] + extent[i] for i in range(3)))
     return OrientedBox(center, half, axes, lo, hi, rotated)
 
 
@@ -77,7 +79,7 @@ def intersects(a: OrientedBox, b: OrientedBox, *, tolerance: float = 0.05) -> bo
     if not (a.rotated or b.rotated):
         return True
 
-    delta = tuple(b.center[i] - a.center[i] for i in range(3))
+    delta = cast(Vector, tuple(b.center[i] - a.center[i] for i in range(3)))
 
     def separated(axis: Vector) -> bool:
         length_sq = _dot(axis, axis)

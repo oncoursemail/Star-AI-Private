@@ -11,6 +11,8 @@ access is read here. The authorized stage decides whether a frame is current.
 """
 from __future__ import annotations
 
+from typing import cast
+
 import math
 
 from .stream_motion import MODES, MotionFrame
@@ -20,7 +22,7 @@ def _time(value: object) -> float:
     if type(value) not in (float, int):
         raise ValueError("quiet animation needs a finite monotonic time")
     try:
-        now = float(value)
+        now = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError("quiet animation time overflow") from exc
     if not math.isfinite(now) or not 0 <= now <= 1e13:

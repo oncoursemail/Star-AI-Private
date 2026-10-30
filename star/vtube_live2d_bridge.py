@@ -13,6 +13,8 @@ acknowledgements. This is a bounded adapter, not verified speech synchronization
 
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import math
 import re
@@ -45,7 +47,7 @@ def _number(value: object, name: str, low: float, high: float) -> float:
     if type(value) not in (float, int):
         raise ValueError(f"{name} must be a finite number")
     try:
-        value = float(value)
+        value = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{name} must be a finite number") from exc
     if not math.isfinite(value) or not low <= value <= high:

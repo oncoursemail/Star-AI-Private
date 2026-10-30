@@ -12,6 +12,8 @@ or viewer identifiers are written to disk or telemetry.
 """
 from __future__ import annotations
 
+from typing import cast
+
 import asyncio
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -298,6 +300,8 @@ class TwitchRealtimeHost:
             or not viewer.isascii() or not viewer.isdigit()
         ):
             return None
+        # The grammar validator is a runtime bool, not a typing TypeGuard.
+        chat_id = cast(str, chat_id)
         sent = _timestamp(meta.get("message_timestamp"))
         if sent is None or not -_FUTURE_TOLERANCE_SECONDS <= now_unix - sent <= _MAX_AGE_SECONDS:
             return None
@@ -310,7 +314,7 @@ class TwitchRealtimeHost:
         msg_id = event.get("message_id") if type(event) is dict else None
         if not _bounded_id(msg_id):
             return False
-        digest = hmac.new(self._salt, msg_id.encode("ascii"), hashlib.sha256).hexdigest()[:32]
+        digest = hmac.new(self._salt, cast(str, msg_id).encode("ascii"), hashlib.sha256).hexdigest()[:32]
         self._prune_seen(now)
         if digest in self._seen:
             return False
@@ -505,7 +509,10 @@ class TwitchRealtimeHost:
                             sess = packet["payload"].get("session")
                             if type(sess) is not dict:
                                 raise TwitchProtocolError("missing reconnect session")
-                            handoff_url = _url(sess.get("reconnect_url"))
+                            handoff_value = sess.get("reconnect_url")
+                            if type(handoff_value) is not str:
+                                raise TwitchProtocolError("invalid reconnect URL")
+                            handoff_url = _url(handoff_value)
                             new_ws = await self.connect(handoff_url)
                             try:
                                 new_session, new_heartbeat = await self._welcome(new_ws)

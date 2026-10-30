@@ -13,6 +13,8 @@ not termination of the long-lived llama-server service.
 """
 from __future__ import annotations
 
+from typing import cast
+
 import base64
 import hashlib
 from collections import deque
@@ -77,7 +79,7 @@ Transport = Callable[[bytes], tuple[int, bytes]]
 def _finite(value: object, *, minimum: float, maximum: float, name: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be numeric")
-    number = float(value)
+    number = float(cast(int | float, value))
     if not math.isfinite(number) or not minimum <= number <= maximum:
         raise ValueError(f"{name} is out of range")
     return number

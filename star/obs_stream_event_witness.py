@@ -13,6 +13,8 @@ password, stream key or OBS metadata is persisted.
 """
 from __future__ import annotations
 
+from typing import cast
+
 import base64
 import hashlib
 import json
@@ -52,7 +54,7 @@ def _valid_process(identity: object) -> bool:
 
 def _message(ws: object) -> dict:
     """Decode only bounded wire frames; never expose raw OBS content."""
-    raw = ws.recv()
+    raw = getattr(ws, "recv")()
     if type(raw) is not str or len(raw) > 65536:
         raise ValueError("unexpected OBS wire frame")
     message = json.loads(raw)
@@ -64,7 +66,7 @@ def _message(ws: object) -> dict:
 
 
 def _send(ws: object, op: int, data: dict) -> None:
-    ws.send(json.dumps({"op": op, "d": data}, separators=(",", ":")))
+    getattr(ws, "send")(json.dumps({"op": op, "d": data}, separators=(",", ":")))
 
 
 class ObsStreamContinuityWitness:
@@ -135,6 +137,8 @@ class ObsStreamContinuityWitness:
             if any(type(x) is not str or not 1 <= len(x) <= 256
                    for x in (challenge, salt)):
                 raise ValueError("invalid OBS authentication challenge")
+            challenge = cast(str, challenge)
+            salt = cast(str, salt)
             secret = base64.b64encode(
                 hashlib.sha256((password + salt).encode("utf-8")).digest()
             ).decode("ascii")
@@ -160,7 +164,7 @@ class ObsStreamContinuityWitness:
         except Exception:
             if ws is not None:
                 try:
-                    ws.close()
+                    getattr(ws, "close")()
                 except Exception:
                     pass
             raise ObsEventWitnessError(
@@ -175,7 +179,7 @@ class ObsStreamContinuityWitness:
         self._disrupted = True
         if ws is not None:
             try:
-                ws.close()
+                getattr(ws, "close")()
             except Exception:
                 pass
 

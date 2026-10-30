@@ -12,6 +12,8 @@ are best-effort wiped at eviction, expiration and disable.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from collections import deque
 from dataclasses import dataclass
 from io import BytesIO
@@ -59,7 +61,7 @@ class _Entry:
 def _clock(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("host monotonic milliseconds required")
-    number = float(value)
+    number = float(cast(int | float, value))
     if not math.isfinite(number) or not 0 <= number <= 1e13:
         raise ValueError("invalid host monotonic clock")
     return number

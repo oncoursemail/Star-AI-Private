@@ -12,6 +12,8 @@ are accepted or retained. A failed/aborted utterance is NEVER silently dropped.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import asdict
 import json
 import math
@@ -29,7 +31,7 @@ def _clock(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("timestamps must be same-clock monotonic milliseconds")
     try:
-        number = float(value)
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("timestamp must be finite") from exc
     if not math.isfinite(number) or not 0 <= number <= _MAX_CLOCK:
@@ -41,7 +43,7 @@ def _gpu_memory(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("GPU memory sample must be numeric MiB")
     try:
-        number = float(value)
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("GPU memory sample must be finite") from exc
     if not math.isfinite(number) or not 0 <= number <= 262_144:
@@ -145,7 +147,10 @@ class HostStreamTrace:
             if self._finished is not None or self._first_audio_ms is not None:
                 raise RuntimeError("cannot acknowledge duplicate/ended audio")
             now = self._advance(at_ms)
-            latency = now - self._started_ms
+            started = self._started_ms
+            if started is None:
+                raise RuntimeError("trace start not established")
+            latency = now - started
             if latency > _NO_AUDIBLE_SENTINEL_MS:
                 raise ValueError("first audible response exceeded 120 seconds")
             self._first_audio_ms = now
@@ -176,8 +181,11 @@ class HostStreamTrace:
                 raise RuntimeError("need at least 120 observed game-frame intervals")
             if self._gpu_peak_mib is None:
                 raise RuntimeError("need a real host GPU memory sample")
+            started = self._started_ms
+            if started is None:
+                raise RuntimeError("trace start not established")
             first_audio_ms = (
-                self._first_audio_ms - self._started_ms
+                self._first_audio_ms - started
                 if self._first_audio_ms is not None else _NO_AUDIBLE_SENTINEL_MS
             )
             self._result = RealtimeRun(

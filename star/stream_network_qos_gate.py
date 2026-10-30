@@ -12,6 +12,8 @@ only eligibility for a human-supervised pilot.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import json
 import math
@@ -36,21 +38,21 @@ def _uint(value: object, name: str) -> int:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be an unsigned integer")
     try:
-        value_float = float(value)
+        value_float = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{name} is outside the precise integer range") from exc
     if not math.isfinite(value_float) or not 0 <= value_float <= _MAX_COUNTER:
         raise ValueError(f"{name} is outside the precise integer range")
     if int(value_float) != value:
         raise ValueError(f"{name} must be integral")
-    return int(value)
+    return int(cast(int | float, value))
 
 
 def _finite(value: object, name: str, *, maximum: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite number")
     try:
-        amount = float(value)
+        amount = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} is outside the supported range") from exc
     if not math.isfinite(amount) or not 0 <= amount <= maximum:

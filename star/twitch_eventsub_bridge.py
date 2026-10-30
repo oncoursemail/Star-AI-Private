@@ -8,6 +8,8 @@ StreamSignal. Raw chat and Twitch account IDs are never saved in this adapter.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from datetime import datetime, timezone
 import hashlib
 import hmac
@@ -29,7 +31,7 @@ _FUTURE_TOLERANCE_SECONDS = 2.0
 def _clock(value: object, name: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be finite and numeric")
-    result = float(value)
+    result = float(cast(int | float, value))
     if not math.isfinite(result) or not 0 <= result <= 1e12:
         raise ValueError(f"{name} outside valid range")
     return result

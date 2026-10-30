@@ -14,6 +14,8 @@ untrusted DATA even when they are later reoffered to the speaking planner.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from collections import deque
 from dataclasses import dataclass
 from hashlib import sha256
@@ -29,7 +31,7 @@ def _time(value: object) -> float:
     if type(value) not in (float, int):
         raise ValueError("expected monotonic seconds")
     try:
-        seconds = float(value)
+        seconds = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("monotonic clock conversion failed") from exc
     if not math.isfinite(seconds) or not 0 <= seconds <= 1e13:

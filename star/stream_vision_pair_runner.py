@@ -22,6 +22,7 @@ import time
 from typing import Callable
 
 from .stream_local_vlm import LocalLlamaComparisonWorker
+from .stream_visual_perception import VisualPacket
 from .stream_vision_trace_host import (
     HostFrameRef, PairedVisionTraceHost, VisionTraceTicket,
 )
@@ -125,7 +126,7 @@ class PairedOfflineVisionRunner:
     def _run_variant(
         self, worker: LocalLlamaComparisonWorker,
         previous: CapturedVisionFrame, current: CapturedVisionFrame,
-    ) -> tuple[str, object, float, float]:
+    ) -> tuple[str, VisualPacket | None, float, float]:
         """Return only a stopped worker's bounded categorical observation."""
         started = self._clock()
         worker.enable(owner_approved=True, local_model_approved=True)

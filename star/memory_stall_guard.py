@@ -13,6 +13,8 @@ Kernel PSI: https://www.kernel.org/doc/html/latest/accounting/psi.html
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 from functools import wraps
 import math
@@ -29,7 +31,7 @@ def _number(value: object, maximum: float, name: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name}: numeric value required")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{name}: invalid numeric value") from exc
     if not math.isfinite(result) or not 0 <= result <= maximum:
@@ -244,7 +246,7 @@ class MemoryStallGuard:
             hot = (
                 some_window_pct >= self.some_limit_pct or
                 full_window_pct >= self.full_limit_pct or
-                (self._swap_rate >= self.swap_rate_limit
+                (self._swap_rate is not None and self._swap_rate >= self.swap_rate_limit
                  and sample.some_avg10_pct >= 0.5)
             )
         else:
