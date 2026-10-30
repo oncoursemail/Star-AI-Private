@@ -201,6 +201,13 @@ class StreamDirector:
         if not self.enabled or event.timestamp > now + 0.5 or now - event.timestamp > ttl:
             self._counters["rejected"] += 1
             return False
+        # A stable canonical platform account ID is required for ALL direct
+        # viewer events, not only deferred inbox questions. Event IDs and
+        # nicknames do not provide meaningful per-viewer speech fairness.
+        # Account authentication/normalization remains a host responsibility.
+        if event.kind.startswith("viewer") and _ID.fullmatch(event.speaker_id) is None:
+            self._counters["rejected"] += 1
+            return False
         if event.kind == "game_success":
             last = self._game_reactions.get(_reaction_digest(event.detail))
             if last is not None and event.signal_id != last[1] and 0 <= now - last[0] < self.success_repeat_gap_seconds:
@@ -247,6 +254,10 @@ class StreamDirector:
             return None
         eligible = []
         for event in self._events:
+            # offer() tolerates up to 500 ms of source clock skew; that does
+            # not make a not-yet-observed event safe to narrate immediately.
+            if event.timestamp > now:
+                continue
             if voice_speaking and event.kind != "owner_interrupt":
                 continue
             if gameplay_critical and event.kind not in {"owner_interrupt", "game_danger"}:
