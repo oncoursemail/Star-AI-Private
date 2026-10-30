@@ -406,6 +406,10 @@ class StarStage:
         A non-audible/cancelled plan returns no frames, not a fake mouth cue.
         The renderer must confirm current(plan) on every dispatched batch.
         """
+        # Snapshot the active plan under the short state lock, then release it
+        # before bounded but potentially CPU-heavy envelope validation and
+        # animation generation. Otherwise an expensive motion request blocks
+        # the owner barge-in/interrupt path until every frame is generated.
         with self._lock:
             if not self._matches(plan, "audible"):
                 return ()
@@ -415,11 +419,19 @@ class StarStage:
                     at_s=0.0, kind=plan.expression,
                     strength=plan.expression_strength,
                 ),)
-            frames = plan_motion(
-                duration_s=duration_s, audio_levels=list(audio_levels),
-                cues=cues, mode=plan.mode, fps=fps,
-                reduced_motion=plan.reduced_motion, seed=seed,
-            )
+
+        frames = plan_motion(
+            duration_s=duration_s, audio_levels=list(audio_levels),
+            cues=cues, mode=plan.mode, fps=fps,
+            reduced_motion=plan.reduced_motion, seed=seed,
+        )
+
+        # Rendering may overlap an owner interruption, a finished utterance,
+        # or a new stream turn. Revoked plans MUST return no old rig frames.
+        # Hosts still revalidate current(plan) at the physical output boundary.
+        with self._lock:
+            if not self._matches(plan, "audible"):
+                return ()
             self._counts["motion_requests"] += 1
             return frames
 
