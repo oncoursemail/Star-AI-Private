@@ -21,10 +21,16 @@ from dataclasses import dataclass
 from hashlib import sha256
 import hmac
 import math
+import re
 import secrets
 from threading import RLock
 
 from .stream_director import StreamDirector, StreamSignal
+
+# Only canonical, stable platform account IDs, never display names or event IDs.
+# Whitespace/control/confusable characters must be normalized upstream by the
+# trusted chat host, not treated as new independent viewers in this queue.
+_SPEAKER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
 
 
 def _time(value: object) -> float:
@@ -154,7 +160,7 @@ class StreamFocusInbox:
                     or signal.evidence != "reported"
                     # Per-speaker fairness needs a stable, host-supplied ID.
                     # signal_id is per-event and must never stand in for it.
-                    or not signal.speaker_id.strip()
+                    or _SPEAKER_ID.fullmatch(signal.speaker_id) is None
                     or not 0 <= now - signal.timestamp <= 5.0
                     or len(signal.detail) > 350):
                 self._counts["declined"] += 1
