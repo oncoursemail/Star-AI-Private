@@ -46,7 +46,7 @@ class Client:
                 "mesh_brain": False}          # GPU nodes only: both arms on the same model, never the CPU brain
         for attempt in range(self.retries + 1):     # "mesh busy" (503) while other lanes hold the GPUs: wait, retry
             status, headers, data = self._post("/v1/chat/completions", body)
-            if status != 503 or attempt == self.retries:
+            if status not in (0, 503) or attempt == self.retries:     # 0 = connection refused (router restart)
                 break
             time.sleep(30)
         if status != 200:
@@ -72,16 +72,27 @@ def offline_ok(fix: str, item_sets: dict[str, list[dict]], shipped: frozenset) -
     return ok, out
 
 
+def changes(messages: list, fix: str, base: set, max_tokens: int = 600) -> bool:
+    """The fix fires on this chat and the request (note decision or text) differs from the one without it."""
+    la, ra, _ = route.run(messages, base, max_tokens)
+    lb, rb, entry = route.run(messages, base | {fix}, max_tokens)
+    if fix not in (entry.get("fire") or []):
+        return False
+    return la != lb or json.dumps(ra, sort_keys=True) != json.dumps(rb, sort_keys=True)
+
+
 def _spread(xs: list, n: int) -> list:
     return xs if len(xs) <= n else [xs[round(i * (len(xs) - 1) / (n - 1))] for i in range(n)] if n > 1 else xs[:n]
 
 
 def ab(client: Client, fix: str, its: list[dict], shipped: frozenset, max_tokens: int = 900,
        limit: int = 20) -> list[dict]:
-    """A/B on the items the fix fires on (at most `limit` cluster and `limit` control items, spread over the sets).
+    """A/B on the items whose request the fix changes (at most `limit` cluster and `limit` control items, spread over
+    the sets). A turn the fix fires on but another hook already handles (fullcode skips the general note on build
+    turns too) sends the same request in both arms: any difference there is sampling noise, so it is left out.
     A/B answers alternate order per item (no warm-cache advantage)."""
     base = set(shipped) - {fix}
-    fired = [it for it in its if fix in (route.run(it["messages"], base | {fix})[2].get("fire") or [])]
+    fired = [it for it in its if changes(it["messages"], fix, base, max_tokens)]
     want = items_mod.EXPECT_FOR.get(fix)
     picked = _spread([it for it in fired if it["expect"] == want], limit) + \
         _spread([it for it in fired if it["expect"] != want], limit)

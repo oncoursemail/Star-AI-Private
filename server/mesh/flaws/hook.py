@@ -81,6 +81,8 @@ HARD_VETO = re.compile(r"\b(?:steal\w*|hack\w*|phish\w*|grab\w*|logger|someone'?
                        r"them|someone|anyone|people)|a guy|this (?:kid|guy|girl|person)|someone|somebody|stranger|"
                        r"(?:he|she|they) (?:says?|said|wants?|asked)|asks? me|asked me|keeps asking)\b", re.I)
 
+SHORT_WORDS = 60                # the rules read chat turns; longer turns only get "long" (measured: web-research
+                                # prompts with pasted evidence tripped game-build / soft-safety on the first live hour)
 REASK_NOTE = ("(Fix note for Litha, not from the user: the user says the earlier answer did not work. Name the most "
               "likely cause in one short sentence, then give the corrected code in full, ready to paste, and say where "
               "it goes.)")
@@ -131,19 +133,23 @@ def signals(messages: list) -> dict:
     asst = [_text(m.get("content")) for m in earlier if m.get("role") == "assistant"]
     kind = classify.kind(last)
     flags = set()
+    n = len(last.split())
+    if n > SHORT_WORDS:            # pasted documents, tool feedback, web evidence: not a kid's chat turn
+        flags.add("long")
     if asst:
         flags.add("multi")
         if CODE_TEXT.search(asst[-1]) or any(ENGINE.search(_question(u)) or CODE_TEXT.search(u) for u in users[-3:]):
             flags.add("codectx")
-        n = len(last.split())
         if n <= 30 and (REFERS.search(last) or (n <= 6 and not NEW_QUESTION.search(last))):
             flags.add("followup")
-        if REASK.search(last):
+        if REASK.search(last) and "long" not in flags:
             flags.add("reask")
         if users:
             a, b = _words(last), _words(_question(users[-1]))
             if len(a) >= 3 and len(a & b) / max(1, len(a | b)) >= 0.7:
                 flags.add("repeat")
+    if "long" in flags:
+        return {"kind": kind, "flags": sorted(flags), "last": last}
     if kind in ("factual", "writing") and not ENGINE.search(last) and not NOT_GAME.search(last) and (
             STRONG_GAME.search(last) or (BUILD.search(last) and GAME.search(last) and
                                          not (ASK_ONLY.search(last) and not re.search(r"\bhow\b", last, re.I)))):

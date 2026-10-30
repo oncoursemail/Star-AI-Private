@@ -88,7 +88,8 @@ def flaw_lines(rep: dict) -> list[str]:
     if not f:
         return ["- Weak spots: no flaw report yet (the nightly flaw loop has not run)."]
     out = [f"- Weak spots measured on my last {f.get('requests')} Litha requests ({_age(f.get('ts'))}), biggest first:"]
-    for c in (f.get("clusters") or [])[:6]:
+    cs = f.get("clusters") or []
+    for c in [c for c in cs if c.get("group") == "answer"][:4] + [c for c in cs if c.get("group") != "answer"][:3]:
         out.append(f"  {c.get('count')} x {c.get('cause')} ({c.get('group')}, {round(100 * float(c.get('rate') or 0), 1)}%)")
     for u in [u for u in rep.get("upgrade") or [] if str(u.get("component", "")).startswith("flaw-fix:")][-3:]:
         out.append(f"- Self-fix {u['component'][9:]} {_age(u.get('ts'))}: {u.get('decision')} ({str(u.get('why') or '')[:90]})")

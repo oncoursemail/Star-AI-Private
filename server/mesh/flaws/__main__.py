@@ -109,11 +109,17 @@ def run_gate(cfg, fix: str, sets: dict, rows: list[dict], do_ship: bool, do_repo
                       why="won its cluster with no control loss" if ok else "no clear win (or a control loss)")
         if ok and do_ship:
             gate.ship(cfg["flaws_dir"], fix, {"offline": offline, "ab": tally}, gate.live_rates(rows, fix, "would"))
+    was_on = fix in shipped
+    if result["decision"] == "reject" and was_on and do_ship:     # a shipped fix that no longer wins comes out
+        data = gate.read_shipped(cfg["flaws_dir"])
+        data["fixes"].pop(fix, None)
+        gate.write_shipped(cfg["flaws_dir"], data)
     if do_report:
+        on = result["decision"] == "ship" and do_ship or (was_on and not do_ship)
         result["report"] = post_report(cfg, {
-            "kind": "upgrade", "component": f"flaw-fix:{fix}", "current": "off",
-            "latest": "on" if result["decision"] == "ship" and do_ship else "off",
-            "decision": "promote" if result["decision"] == "ship" and do_ship else "reject",
+            "kind": "upgrade", "component": f"flaw-fix:{fix}", "current": "on" if was_on else "off",
+            "latest": "on" if on else "off",
+            "decision": ("promote" if on else "rollback" if was_on else "reject"),
             "why": (result["why"] + "; " + json.dumps(result.get("ab") or result["offline"]))[:400]})
     return result
 

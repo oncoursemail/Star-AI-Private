@@ -178,3 +178,19 @@ def test_reports_summary_keeps_the_last_flaws_report(tmp_path):
     assert r.add({"kind": "eval", "suite": "flaws", "score": 1, "clusters": [{"cause": "x", "count": 1}]})[0]
     assert r.add({"kind": "eval", "suite": "mc", "score": 5})[0]
     assert r.summary()["flaws"]["clusters"][0]["cause"] == "x"
+
+
+def test_long_turns_never_trip_the_rules():
+    research = ("QUESTION: On what date was Go 1.27.0 released?\n\nWEB EVIDENCE:\n" +
+                "untrusted excerpts: the release adds a new block syntax, account settings, IP address handling. " * 8)
+    sig = hook.signals(chat(research))
+    assert "long" in sig["flags"] and hook.eligible(sig) == []
+    feedback = "The real checks of your answer failed: " + "the server log says error loading the pack. " * 10
+    assert hook.eligible(hook.signals(chat("make a data pack", DOOR, feedback))) == []
+
+
+def test_gate_only_measures_turns_whose_request_changes():
+    m = chat("make a door that opens when i press e", DOOR, "where do i put this")
+    assert gate.changes(m, "code-followup", set())
+    assert not gate.changes(chat("whats the capital of australia"), "code-followup", set())
+    assert gate.changes(chat("make a coin", DOOR, "it doesnt work nothing happens"), "reask-note", set())
