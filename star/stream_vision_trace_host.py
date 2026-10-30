@@ -11,6 +11,8 @@ Inputs are bounded categorical fields and host clock observations only.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass, field
 import json
 import math
@@ -37,7 +39,7 @@ def _host_ms(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("trusted host time must be numeric")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("invalid host time") from exc
     if not math.isfinite(result) or not 0 <= result <= 1e13:
@@ -290,12 +292,13 @@ class PairedVisionTraceHost:
     def _cases(self) -> list[VisionEvalCase]:
         if not self._enabled or not self._sealed:
             raise RuntimeError("no sealed cohort")
-        if any(t.truth is None for t in self._entries.values()):
+        if any(t.truth is None or t.truth_source is None
+               for t in self._entries.values()):
             raise RuntimeError("all independent truth labels required")
         return [
             VisionEvalCase(
                 f"case_{serial:05d}", self._game_id, self._game_version,
-                t.truth_source, t.truth,
+                cast(str, t.truth_source), cast(tuple[tuple[str, str], ...], t.truth),
                 t.predictions["baseline"], t.predictions["candidate"],
             )
             for serial, t in sorted(self._entries.items())

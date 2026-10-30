@@ -160,6 +160,9 @@ async def benchmark_stream_startup(
     if own:
         from .providers import open_client
         client = open_client(config, request_timeout=None if server else 90.0)
+    # Explicitly narrow the optional test-injected client before asynchronous use.
+    if client is None:
+        raise RuntimeError("local inference client unavailable")
     semaphore = asyncio.Semaphore(parallel)
 
     async def one(case) -> StartupProbe:

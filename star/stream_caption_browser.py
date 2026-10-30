@@ -162,7 +162,9 @@ class CaptionBrowserOverlay:
                     self.send_error(405, "Method Not Allowed")
 
                 def do_GET(self):
-                    expected_host = f"127.0.0.1:{self.server.server_port}"
+                    # BaseServer lacks this attribute in its protocol type;
+                    # a missing listener port must reject the request.
+                    expected_host = f"127.0.0.1:{getattr(self.server, 'server_port', None)}"
                     if self.headers.get("Host") != expected_host:
                         owner._rejected()
                         self.send_error(404, "Not Found")

@@ -11,6 +11,8 @@ an independent signed GameTrial in gameplay_skill_bank.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from collections import deque
 from dataclasses import dataclass
 import math
@@ -29,7 +31,7 @@ def _ms(value: object, label: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{label} must be a finite monotonic millisecond value")
     try:
-        number = float(value)
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{label} must be finite") from exc
     if not math.isfinite(number) or not 0 <= number <= _MAX_CLOCK:
@@ -310,6 +312,10 @@ class GameActionGate:
         with self._lock:
             if not isinstance(permit, ActionPermit) or self._offered_permit is not permit:
                 return False
+            # An offered permit always has a ticket, but keep the claim API
+            # fail-closed if a malformed internal permit reaches this path.
+            if permit.ticket is None:
+                return False
             accepted = self.claim(permit.ticket, now_ms=now_ms,
                                   host_focus_and_permission=host_focus_and_permission)
             if accepted:
@@ -333,7 +339,7 @@ class GameActionGate:
             self._counts["released"] += 1
             return True
 
-    def metrics(self) -> dict[str, int | bool]:
+    def metrics(self) -> dict[str, int | bool | str]:
         """Privacy-minimal metrics, with no frame, game, action, or owner IDs."""
         with self._lock:
             return {

@@ -7,6 +7,8 @@ Free-form captions, URLs and instructions are deliberately never transported.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import math
 
@@ -22,7 +24,7 @@ MAX_PIXELS = 3840 * 2160
 def _finite_number(value: object, *, low: float, high: float) -> float:
     if type(value) not in (int, float):
         raise ValueError("numeric visual evidence field required")
-    result = float(value)
+    result = float(cast(int | float, value))
     if not math.isfinite(result) or not low <= result <= high:
         raise ValueError("visual evidence numeric range exceeded")
     return result

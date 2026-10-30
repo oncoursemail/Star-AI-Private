@@ -10,6 +10,8 @@ All results are aggregate, bounded, advisory and require owner review.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from bisect import bisect_left
 from dataclasses import dataclass
 import math
@@ -30,7 +32,7 @@ def _bounded(value: object, name: str, low: float, high: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite numeric value")
     try:
-        val = float(value)
+        val = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} is out of range") from exc
     if not math.isfinite(val) or not low <= val <= high:

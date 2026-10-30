@@ -13,6 +13,8 @@ chat, audio, video, player identifiers, prompts or OBS credentials.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
@@ -48,6 +50,7 @@ def _counter(value: object, name: str) -> int:
     # counters as integral floats; reject booleans, NaN, fractions and strings.
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be an integer OBS counter")
+    value = cast(int | float, value)
     if not 0 <= value <= _MAX_COUNTER:
         raise ValueError(f"{name} outside precise OBS counter range")
     if not math.isfinite(value):
@@ -61,7 +64,7 @@ def _millis(value: object, name: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must use host monotonic milliseconds")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{name} out of range") from exc
     if not math.isfinite(result) or not 0 <= result <= 1e13:

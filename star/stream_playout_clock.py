@@ -12,6 +12,8 @@ An untrusted viewer, model result, or game's overlay must never supply cursors.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from bisect import bisect_right
 from dataclasses import dataclass, fields
 import math
@@ -27,7 +29,7 @@ def _seconds(value: object, label: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{label} must be a finite nonnegative number")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"invalid {label}") from exc
     if not math.isfinite(result) or result < 0.0:

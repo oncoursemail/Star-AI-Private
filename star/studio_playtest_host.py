@@ -323,8 +323,10 @@ class StudioPlaytestHost:
             # An unclaimed advisory never issued physical input in this host.
             # Confirm that no key was pressed before clearing its gate slot.
             if self._held is None and self._unclaimed is not None:
-                self._gate.release(self._unclaimed.ticket, now_ms=self._clock(),
-                                   host_confirmed_released=True)
+                ticket = self._unclaimed.ticket
+                if ticket is not None:
+                    self._gate.release(ticket, now_ms=self._clock(),
+                                       host_confirmed_released=True)
             self._unclaimed = None
             self._unclaimed_frame = None
             self._last_report = None

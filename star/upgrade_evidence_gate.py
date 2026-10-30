@@ -13,6 +13,8 @@ stored by this evaluator.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import math
 import random
@@ -44,7 +46,7 @@ def _number(value: object, name: str, lower: float, upper: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite measured number")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"invalid {name}") from exc
     if not math.isfinite(result) or not lower <= result <= upper:

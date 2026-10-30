@@ -170,7 +170,10 @@ def cmd_say(args) -> int:
     from .devices import SoundSpeaker
     settings = _settings(args)
     tts = engines.make_tts(settings.tts_engine, settings.voice, settings.speed, settings.device)
-    with SoundSpeaker(sample_rate=tts.sample_rate, device=settings.output_device or None) as speaker:
+    sample_rate = tts.sample_rate
+    if type(sample_rate) is not int:
+        raise RuntimeError("voice engine did not provide a valid sample rate")
+    with SoundSpeaker(sample_rate=sample_rate, device=settings.output_device or None) as speaker:
         started = time.perf_counter()
         for pcm, rate in tts.synthesize(args.text):
             speaker.play(pcm, rate)

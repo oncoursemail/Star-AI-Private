@@ -6,6 +6,8 @@ module. It never selects models, starts a stream, trains or controls a game.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import asdict, dataclass
 import argparse
 import json
@@ -34,7 +36,7 @@ def _number(value: object, field: str, lo: float, hi: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{field} must be a finite number")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{field} must be finite") from exc
     if not math.isfinite(result) or not lo <= result <= hi:

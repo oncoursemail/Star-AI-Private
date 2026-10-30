@@ -12,6 +12,8 @@ This adapter closes that handoff and confirms it again at input dispatch.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import re
 import sqlite3
@@ -170,10 +172,10 @@ class PortfolioStudioBridge:
                 try:
                     stamp = self._clock_unix_s()
                     forecast = GameForecast(
-                        self._offer.game_id, self._offer.game_version,
-                        self._offer.objective_id, self._offer.situation_id,
-                        self._offer.action_id, self._offer.expected_run_id,
-                        self._forecast_model_id, proposal.success_probability_bps,
+                        cast(str, self._offer.game_id), cast(str, self._offer.game_version),
+                        cast(str, self._offer.objective_id), cast(str, self._offer.situation_id),
+                        cast(str, self._offer.action_id), cast(str, self._offer.expected_run_id),
+                        cast(str, self._forecast_model_id), proposal.success_probability_bps,
                         stamp,
                     )
                     if self._prediction_lab.precommit(forecast, now_unix_s=stamp):
@@ -244,13 +246,13 @@ class PortfolioStudioBridge:
                 self._counts["rejected"] += 1
                 self._runner.discard_unverified()
                 self._portfolio.finish(
-                    self._offer.ticket, now_unix_s=now_unix_s,
+                    cast(int, self._offer.ticket), now_unix_s=now_unix_s,
                     host_reports_recorded=False,
                 )
                 self._finished = True
                 raise
             verified = self._portfolio.finish(
-                self._offer.ticket, now_unix_s=live_now,
+                cast(int, self._offer.ticket), now_unix_s=live_now,
                 host_reports_recorded=recorded.accepted,
             )
             self._finished = True
@@ -281,12 +283,12 @@ class PortfolioStudioBridge:
             self._runner.discard_unverified()
             if self._prediction_lab is not None:
                 try:
-                    self._prediction_lab.cancel(self._offer.expected_run_id)
+                    self._prediction_lab.cancel(cast(str, self._offer.expected_run_id))
                 except (TypeError, ValueError, sqlite3.Error):
                     self._counts["forecast_rejected"] += 1
             try:
                 self._portfolio.finish(
-                    self._offer.ticket, now_unix_s=now_unix_s,
+                    cast(int, self._offer.ticket), now_unix_s=now_unix_s,
                     host_reports_recorded=False,
                 )
             except ValueError:

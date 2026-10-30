@@ -61,9 +61,10 @@ class PocketStreamingTTS:
                 ) from exc
             model_factory = TTSModel.load_model
         self._model = model_factory(language=model)
-        self.sample_rate = getattr(self._model, "sample_rate", None)
-        if type(self.sample_rate) is not int or not 8000 <= self.sample_rate <= 96000:
+        sample_rate = getattr(self._model, "sample_rate", None)
+        if type(sample_rate) is not int or not 8000 <= sample_rate <= 96000:
             raise RuntimeError("Pocket TTS reported an invalid sample rate")
+        self.sample_rate: int = sample_rate
         self.model_name = model
         self.device = "cpu"
         self.speed = 1.0  # Pocket does not expose an independent speed control.

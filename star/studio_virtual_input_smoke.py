@@ -11,6 +11,8 @@ an owner-authorized, private Studio test.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import hashlib
 import json
@@ -24,11 +26,14 @@ _DOMAIN = b"star.studio.virtual_input.smoke.v1\x00"
 
 
 def _real(value: object, field: str, minimum: float, maximum: float) -> float:
-    if type(value) not in (int, float) or not math.isfinite(value):
+    if type(value) not in (int, float):
         raise ValueError(f"{field} must be a finite number")
-    if not minimum <= value <= maximum:
+    number = float(cast(int | float, value))
+    if not math.isfinite(number):
+        raise ValueError(f"{field} must be a finite number")
+    if not minimum <= number <= maximum:
         raise ValueError(f"{field} outside permitted range")
-    return float(value)
+    return number
 
 
 @dataclass(frozen=True)

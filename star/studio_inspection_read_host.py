@@ -199,7 +199,7 @@ class StudioInspectionReadHost:
         challenge = secrets.token_hex(16)
         code = build_readonly_probe(self._footprint, path, challenge=challenge)
         try:
-            result = await session.call_tool("execute_luau", arguments={
+            result = await getattr(session, "call_tool")("execute_luau", arguments={
                 "studio_id": self._studio_id, "datamodel_type": "Edit", "code": code,
             })
             data = _result(result)

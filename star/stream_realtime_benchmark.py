@@ -7,6 +7,8 @@ reports only aggregate numbers, not voice, chat, content, player names or IDs.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import asdict, dataclass
 import json
 import math
@@ -26,7 +28,7 @@ def _bounded(value: object, name: str, lower: float, upper: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite number")
     try:
-        val = float(value)
+        val = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} must be finite") from exc
     if not math.isfinite(val) or not lower <= val <= upper:
@@ -157,6 +159,9 @@ def compare_realtime(
     if not pairs:
         return RealtimeComparison("none", 0, 0, 0, None, None, None, None,
                                   None, None, None, None, "inconclusive")
+    # A nonempty pair collection is constructed only from a concrete scope.
+    if scope is None:
+        raise RuntimeError("matched gameplay scope unavailable")
     completed = [p for p in pairs.values() if len(p) == 2]
     incomplete = len(pairs) - len(completed)
     failures = sum(

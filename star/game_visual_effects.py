@@ -13,6 +13,8 @@ outcomes. Viewer/model text must never call this host API.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import math
 import re
@@ -31,7 +33,7 @@ def _ms(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("trusted monotonic timestamp must be numeric")
     try:
-        number = float(value)
+        number = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError("invalid monotonic timestamp") from exc
     if not math.isfinite(number) or not 0 <= number <= _MAX_MS:

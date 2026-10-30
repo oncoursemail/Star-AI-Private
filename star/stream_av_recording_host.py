@@ -11,6 +11,8 @@ media authenticity, consent, and isolated-audio routing belong to the host.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from array import array
 from dataclasses import dataclass
 import json
@@ -116,7 +118,7 @@ def _media_info(path: Path, ffprobe: str) -> dict:
 
 def _number(value: object, label: str, low: float, high: float) -> float:
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, TypeError, OverflowError) as exc:
         raise AVRecordingError(f"invalid media {label}") from exc
     if not math.isfinite(result) or not low <= result <= high:

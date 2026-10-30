@@ -11,6 +11,8 @@ that evidence itself. Results are advisory and never authorize publication.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import math
 import re
@@ -32,7 +34,7 @@ def _clock(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("capture clock must be host monotonic milliseconds")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("invalid capture clock") from exc
     if not math.isfinite(result) or not 0 <= result <= _MAX_CLOCK:
@@ -44,7 +46,7 @@ def _fraction(value: object, label: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{label} must be a measured fraction")
     try:
-        fraction = float(value)
+        fraction = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"invalid {label}") from exc
     if not math.isfinite(fraction) or not 0 <= fraction <= 1:

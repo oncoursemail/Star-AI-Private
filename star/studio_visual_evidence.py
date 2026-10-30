@@ -98,8 +98,9 @@ def _now(clock: Clock) -> float:
 
 
 def _result(reply: object) -> dict:
-    if hasattr(reply, "model_dump"):
-        reply = reply.model_dump(by_alias=True, exclude_none=True)
+    model_dump = getattr(reply, "model_dump", None)
+    if callable(model_dump):
+        reply = model_dump(by_alias=True, exclude_none=True)
     if type(reply) is not dict or reply.get("isError") is not False:
         raise ObservationRejected("studio_tool_failed")
     return reply
@@ -292,6 +293,8 @@ class StudioVisualObserver:
                     assessment = await self._assess(raw)
                     if not isinstance(assessment, VisualAssessment):
                         raise ObservationRejected("invalid_visual_assessment")
+                if not isinstance(assessment, VisualAssessment):
+                    raise ObservationRejected("invalid_visual_assessment")
                 if not self._armed or generation != self._generation:
                     raise ObservationRejected("observation_session_revoked")
                 self._private()

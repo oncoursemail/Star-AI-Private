@@ -16,6 +16,8 @@ training, or authentication-key storage occurs here. Default OFF.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import dataclass
 import hashlib
 import json
@@ -43,11 +45,14 @@ def _id(value: object, field: str) -> str:
 
 
 def _clock(value: object) -> float:
-    if type(value) not in (float, int) or not math.isfinite(value):
+    if type(value) not in (float, int):
         raise ValueError("trusted host monotonic clock missing")
-    if not 0 <= float(value) <= _MAX_CLOCK_MS:
+    number = float(cast(int | float, value))
+    if not math.isfinite(number):
+        raise ValueError("trusted host monotonic clock missing")
+    if not 0 <= number <= _MAX_CLOCK_MS:
         raise ValueError("invalid host monotonic clock")
-    return float(value)
+    return number
 
 
 def _canonical(value: object) -> bytes:
