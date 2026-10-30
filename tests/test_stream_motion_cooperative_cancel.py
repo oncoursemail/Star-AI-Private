@@ -14,10 +14,10 @@ import pytest
 import star.stream_motion as motion_module
 from star.stream_director import StreamDirector, StreamSignal
 from star.stream_motion import AudioLevel, plan_motion
-from star.stream_stage import StarStage
+from star.stream_stage import StagePlan, StarStage
 
 
-def _start_audible() -> tuple[StarStage, object]:
+def _start_audible() -> tuple[StarStage, StagePlan]:
     stage = StarStage(director=StreamDirector(gap_seconds=0), clock=lambda: 100.0)
     stage.enable(owner_approved=True, mode="cat")
     event = StreamSignal(
