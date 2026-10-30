@@ -633,6 +633,7 @@ def build_shelf(p, r, name):
     door_top = 0 if doors == "none" else (h if doors == "full" else round(h * 0.4))
     gap = (h - 1) / (n + 1)
     books = ["book_a", "book_b", "book_c"]
+    wide = max(1, math.ceil((n + 1) * (w - 2 * t) / 1.33 / 70))  # wide shelves x 6 rows: books get wider so parts stay under the limit
     bi = 0
     for i in range(n + 1):
         y = 1 + i * gap
@@ -644,7 +645,7 @@ def build_shelf(p, r, name):
         x = -w / 2 + t
         j = 0
         while x < w / 2 - t - 1:
-            bw = 1 if (bi + j) % 3 else 2
+            bw = (1 if (bi + j) % 3 else 2) * wide
             bh = min(top_y - y - 0.5, BOOK_ROWS[(bi + j) % len(BOOK_ROWS)] + (gap - 6 if gap > 6 else 0))
             if (bi + j) % 7 == 6:
                 x += 1  # small gap
