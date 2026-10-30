@@ -51,7 +51,7 @@ def test_plain_chat_rules_do_not_deny_memory():
 
 
 def test_the_quick_model_that_reasons_aloud_hands_the_turn_to_the_main_model(tmp_path, monkeypatch):
-    from star import desktop_core as core
+    from star import desktop_core as core, providers
     asked = []
 
     class Models:
@@ -72,6 +72,10 @@ def test_the_quick_model_that_reasons_aloud_hands_the_turn_to_the_main_model(tmp
     home = tmp_path / 'profile'
     monkeypatch.setattr(core, 'app_data', lambda: home)
     monkeypatch.setattr(core, 'open_client', lambda *_a, **_k: Client())
+    # This test exercises model handoff, not credential storage. Mock only the
+    # LAN provider's credential lookup; never depend on a real CI secret.
+    monkeypatch.setattr(providers, 'get_api_key',
+                        lambda name: 'offline-test-token' if name == providers.STAR_SERVER else None)
     settings = core.Settings(model='star-main', fast_model='star-voice', reasoning_model='star-main', provider='star_server',
                              server_endpoint='http://192.168.1.20:8080/v1', knowledge_endpoint='off')  # star:allow
     monkeypatch.setattr(core, 'model_slots_full', lambda *_a, **_k: asyncio.sleep(0, False))
