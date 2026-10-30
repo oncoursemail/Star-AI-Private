@@ -118,6 +118,8 @@ def test_team_deep_research_uses_metadata_only_when_the_setting_is_on(tmp_path):
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Answer [S1].", tool_calls=None))])
 
     async def scenario(enabled: bool) -> list[str]:
+        from star import web_research
+        web_research._SEARCHES.clear()          # the same question twice in one test: no 15-minute search memory
         requested = []
 
         async def web(query, *, limit):

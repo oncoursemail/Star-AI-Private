@@ -8,6 +8,9 @@
 
 One SQLite file; page text stays untrusted data (it is only ever shown inside the research evidence frame).
 CLI (server or PC, night time): python -m star.research_store poll --db PATH   |   recheck --db PATH
+The nightly poll runs on STAR Server 1 (server/research/); the desktop app mirrors the snapshots through the search
+gateway (GET /watched, sync_watched below). A page that refuses STAR's reader (401/403, robots.txt) is left alone for
+BLOCKED_DAYS, never worked around.
 """
 from __future__ import annotations
 
@@ -37,9 +40,16 @@ DEFAULT_WATCH = (
     ("rust-blog", "https://blog.rust-lang.org/", 72),
     ("go-releases", "https://go.dev/doc/devel/release", 72),
     ("node-releases", "https://nodejs.org/en/about/previous-releases", 72),
+    ("luau-releases", "https://github.com/luau-lang/luau/releases", 72),
     ("minecraft-changelogs", "https://feedback.minecraft.net/hc/en-us/sections/360001186971-Release-Changelogs", 24),
+    ("minecraft-java-patch-notes", "https://launchercontent.mojang.com/v2/javaPatchNotes.json", 24),
+    ("minecraft-bedrock-patch-notes", "https://launchercontent.mojang.com/v2/bedrockPatchNotes.json", 24),
 )
-
+ROBLOX_NOTES = "https://create.roblox.com/docs/release-notes/release-notes-{n}"
+ROBLOX_NOTES_FIRST = 745            # the newest number when this list was written; later ones are found by polling
+BLOCKED_DAYS = 30                   # a page that answered 401/403 or is disallowed by robots.txt waits this long
+PAUSE_S = 2.0                       # between two watched pages (one at a time, never in parallel)
+MIRRORED = -1                       # every_hours of a page copied from the server: never polled locally
 
 
 def _now() -> dt.datetime:
@@ -76,6 +86,7 @@ class ResearchStore:
             CREATE INDEX IF NOT EXISTS facts_qkey ON facts(qkey);
             CREATE TABLE IF NOT EXISTS pages(url TEXT PRIMARY KEY, name TEXT, title TEXT, text TEXT, sha TEXT,
                 fetched_at TEXT, changed_at TEXT, every_hours INTEGER, error TEXT DEFAULT '');
+            CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
         """)
         self.db.commit()
 
@@ -157,16 +168,29 @@ class ResearchStore:
     def due_pages(self, *, now: dt.datetime | None = None) -> list[tuple[str, str, int]]:
         now = now or _now()
         out = []
-        for url, name, fetched, every in self.db.execute("SELECT url,name,fetched_at,every_hours FROM pages"):
-            if not fetched or dt.datetime.fromisoformat(fetched) + dt.timedelta(hours=every or 24) <= now:
+        for url, name, fetched, every, error in self.db.execute(
+                "SELECT url,name,fetched_at,every_hours,error FROM pages"):
+            if every is not None and every < 0:
+                continue                           # mirrored from the server: polled there, not here
+            wait = (dt.timedelta(days=BLOCKED_DAYS) if error in ("http 401", "http 403", "robots")
+                    else dt.timedelta(hours=every or 24))
+            if not fetched or dt.datetime.fromisoformat(fetched) + wait <= now:
                 out.append((url, name, every))
         return out
 
-    async def poll(self, fetcher: Fetcher, *, now: dt.datetime | None = None) -> dict:
-        """Fetch every due watched page (one at a time: polite), store the new snapshot when its text changed."""
+    async def poll(self, fetcher: Fetcher, *, now: dt.datetime | None = None, pause_s: float = PAUSE_S) -> dict:
+        """Fetch every due watched page one at a time with a pause between them, store the new snapshot when its
+        text changed. robots.txt is obeyed; a 401/403 or robots refusal is recorded and left alone for
+        BLOCKED_DAYS; a 429 stops this run for that host."""
         now = now or _now()
         report = {"checked": 0, "changed": 0, "failed": 0}
-        for url, _, _ in self.due_pages(now=now):
+        limited: set[str] = set()
+        for n, (url, _, _) in enumerate(self.due_pages(now=now)):
+            host = url.split("/")[2]
+            if host in limited:
+                continue
+            if n and pause_s > 0:
+                await asyncio.sleep(pause_s)
             report["checked"] += 1
             try:
                 if not await robots_allowed(url, fetcher):
@@ -185,6 +209,8 @@ class ResearchStore:
                 report["failed"] += 1
                 status = getattr(getattr(exc, "response", None), "status_code", None)
                 error = f"http {status}" if status else ("robots" if isinstance(exc, PermissionError) else type(exc).__name__)
+                if status == 429:
+                    limited.add(host)
                 self.db.execute("UPDATE pages SET fetched_at=?, error=? WHERE url=?", (now.isoformat(), error, url))
             self.db.commit()
         return report
@@ -194,14 +220,86 @@ class ResearchStore:
         return [tuple(r) for r in self.db.execute(
             "SELECT url,title,text,fetched_at FROM pages WHERE text IS NOT NULL AND text!=''")]
 
+    def latest_roblox_notes(self) -> int | None:
+        """The highest Roblox release-notes number with a stored snapshot."""
+        prefix = ROBLOX_NOTES.format(n="")
+        numbers = [int(url[len(prefix):]) for (url,) in self.db.execute(
+            "SELECT url FROM pages WHERE url LIKE ? AND text IS NOT NULL AND text!=''", (prefix + "%",))
+            if url[len(prefix):].isdigit()]
+        return max(numbers) if numbers else None
+
+    # -------------------------------------------------------------------------------- mirror (desktop / Discord)
+    def get_meta(self, key: str) -> str:
+        row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row[0] if row else ""
+
+    def set_meta(self, key: str, value: str) -> None:
+        self.db.execute("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (key, value))
+        self.db.commit()
+
+    def import_pages(self, rows: list[dict]) -> int:
+        """Snapshots copied from the server's watch list (GET /watched): stored as mirrored pages, never polled here."""
+        count = 0
+        for row in rows:
+            url, text = str(row.get("url", "")), str(row.get("text", ""))
+            if not url.startswith("https://") or not text.strip() or len(url) > 1200:
+                continue
+            self.db.execute(
+                "INSERT INTO pages(url,name,title,text,sha,fetched_at,changed_at,every_hours,error) "
+                "VALUES(?,?,?,?,?,?,?,?,'') ON CONFLICT(url) DO UPDATE SET name=excluded.name, title=excluded.title, "
+                "text=excluded.text, sha=excluded.sha, fetched_at=excluded.fetched_at, changed_at=excluded.changed_at, "
+                "every_hours=excluded.every_hours, error=''",
+                (url, str(row.get("name", ""))[:80], str(row.get("title", ""))[:200], text[:400_000],
+                 hashlib.sha256(text.encode("utf-8")).hexdigest(), str(row.get("fetched_at", ""))[:40],
+                 str(row.get("changed_at", ""))[:40], MIRRORED))
+            count += 1
+        self.db.commit()
+        return count
+
+
+SYNC_HOURS = 6
+
+
+async def sync_watched(store: ResearchStore, fetch_rows, *, now: dt.datetime | None = None,
+                       timeout: float = 8.0) -> int:
+    """Mirror the server's watched-page snapshots into this store, at most every SYNC_HOURS. `fetch_rows(since)`
+    returns (rows, newest changed_at) for pages changed after `since` (web_search.fetch_watched). Never raises:
+    an unreachable server only means the snapshots stay as they were."""
+    now = now or _now()
+    last = store.get_meta("watched_synced_at")
+    if last and dt.datetime.fromisoformat(last) + dt.timedelta(hours=SYNC_HOURS) > now:
+        return 0
+    try:
+        rows, newest = await asyncio.wait_for(fetch_rows(store.get_meta("watched_since")), timeout)
+    except Exception:  # noqa: BLE001 - mirroring is best effort
+        return 0
+    count = store.import_pages(rows)
+    if newest:
+        store.set_meta("watched_since", str(newest)[:40])
+    store.set_meta("watched_synced_at", now.isoformat())
+    return count
+
 
 def install_default_watch(store: ResearchStore, *, roblox_next: int | None = None) -> None:
+    """The default watch list. Roblox release notes: the newest stored number keeps a weekly check and the next
+    number is checked daily until it appears (`roblox_next` overrides the next number)."""
+    latest = store.latest_roblox_notes()
+    if roblox_next is None:
+        roblox_next = latest + 1 if latest is not None else ROBLOX_NOTES_FIRST
     for name, url, every in DEFAULT_WATCH:
         if "{roblox_next}" in url:
-            if roblox_next is None:
-                continue
             url = url.format(roblox_next=roblox_next)
         store.watch(name, url, every)
+    if latest is not None and latest != roblox_next:
+        store.watch("roblox-release-notes-latest", ROBLOX_NOTES.format(n=latest), 168)
+    prefix = ROBLOX_NOTES.format(n="")
+    keep = {ROBLOX_NOTES.format(n=roblox_next), ROBLOX_NOTES.format(n=latest)}
+    for (url,) in store.db.execute("SELECT url FROM pages WHERE url LIKE ?", (prefix + "%",)).fetchall():
+        if url not in keep:
+            store.db.execute("DELETE FROM pages WHERE url=? AND (text IS NULL OR text='')", (url,))  # a miss
+            store.db.execute("UPDATE pages SET every_hours=720, name='roblox-release-notes-old' WHERE url=?", (url,))
+    store.db.commit()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -227,7 +325,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             facts = store.db.execute("SELECT status, COUNT(*) FROM facts GROUP BY status").fetchall()
             pages = store.db.execute("SELECT COUNT(*), SUM(text IS NOT NULL AND text!='') FROM pages").fetchone()
-            print(json.dumps({"facts": dict(facts), "pages": pages[0], "pages_with_text": pages[1] or 0}))
+            errors = dict(store.db.execute("SELECT name, error FROM pages WHERE error!=''").fetchall())
+            print(json.dumps({"facts": dict(facts), "pages": pages[0], "pages_with_text": pages[1] or 0,
+                              "page_errors": errors}))
     finally:
         store.close()
     return 0

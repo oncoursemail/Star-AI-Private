@@ -180,6 +180,13 @@ class Settings:
     learning_auto_live: bool = True
     research_auto_check: bool = False      # opt-in daily public-doc checks while desktop is open
     deep_research_enabled: bool = False    # candidate: bounded page reading for Team + Research
+    # Team + Research collects evidence with star/web_research.py (v2: reads pages, ranks passages, checks each cited
+    # sentence; evals/web_research 61/62 vs 53/62). False = the previous path (snippets, or ResearchSession when
+    # deep_research_enabled).
+    web_research_v2: bool = True
+    # Research memory (star/research_store.py): verified web answers are kept with their source and fetch date, a
+    # repeated question is answered from them while fresh, and the server's watched pages are mirrored.
+    research_memory: bool = True
     scholarly_research_enabled: bool = False  # deep research also asks Crossref/OpenAlex metadata (star/public_research.py)
     # Generate several, test, keep what works (star/best_of_n.py): 'off' or 'auto' (2 to best_of_n_max candidates
     # for code requests on STAR Server, as many as the free model slots allow). Off until the owner opts in.
@@ -304,7 +311,7 @@ class Settings:
                             'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
-                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
+                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'web_research_v2', 'research_memory', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
                             'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'emotion_enabled', 'studio_inspect', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
                             'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled', 'general_help', 'general_gpu')):
             raise ValueError('Tool access settings must be true or false')
@@ -1434,6 +1441,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
     lesson_store = learning.LessonStore(knowledge=knowledge, record=metrics.record)
     recalled = []
     learned = {'grounding': None, 'messages': None, 'done': False}
+    web_found: dict = {}     # the automatic web search's sources (research memory: footer and learning after the answer)
 
     def learn_from_turn():
         """After the turn (answered, failed or stopped): record what it taught. Regular
@@ -1695,7 +1703,15 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 # A question about what is happening now: search without waiting for the switch.
                 # A failure is one line in the context (the model says so), never a failed turn.
                 audited_event({'event': 'search_started'})
-                web_text, _sources = await live_context.auto_search(prompt, settings=settings)
+                # Research memory first: a fresh verified answer to the same question (star/research_store.py).
+                web_store = (live_context.open_store(home / live_context.RESEARCH_STORE_FILE)
+                             if settings.research_memory is not False else None)
+                try:
+                    web_text, web_found['sources'] = await live_context.auto_search(prompt, settings=settings,
+                                                                                    store=web_store)
+                finally:
+                    if web_store is not None:
+                        web_store.close()
                 if web_text:
                     turn_sections.append(('WEB SEARCH', web_text))
                 audited_event({'event': 'search_finished'})
@@ -2049,6 +2065,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                       if provider_kind(settings) == 'lan' else
                       'Try Fast mode, a smaller prompt, or a hosted provider.')
             raise TimeoutError(f'STAR exceeded its {task_timeout}s task budget. {advice}') from exc
+        if web_found.get('sources'):
+            from . import live_context
+            # Answered from research memory: say where it came from and when it was read. Otherwise the first cited
+            # claim is checked against its page after the answer (a background thread) and kept when the page has it.
+            answer += live_context.stored_note(web_found['sources'])
+            if settings.research_memory is not False:
+                live_context.learn_later(home / live_context.RESEARCH_STORE_FILE, prompt, answer,
+                                         web_found['sources'])
         first = token_timing['first']
         requested = token_timing['requested']
         measured_first = (instant_answer.first_token_ms if instant_answer is not None else

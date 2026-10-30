@@ -152,6 +152,11 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
         from .prefs import OwnerPrefs
         # The bot's own state folder (never STAR Desktop's app data): ~/.star/discord-state on the bot's host.
         service.prefs = OwnerPrefs(Path.home() / ".star" / "discord-state" / "owner-memory.sqlite3")
+    if getattr(service, "research_store_path", "") is None:
+        from pathlib import Path
+        from ..live_context import RESEARCH_STORE_FILE
+        # Research memory in the bot's own state folder (never STAR Desktop's app data).
+        service.research_store_path = Path.home() / ".star" / "discord-state" / RESEARCH_STORE_FILE
     proactive = None
     intents = discord.Intents.default()
     intents.message_content = False

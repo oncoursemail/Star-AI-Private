@@ -191,3 +191,25 @@ def source_context(results: list[dict]) -> str:
         dated = f"\nPublished: {result['published']}" if result.get("published") else ""
         lines.append(f"[{i}] {result['title']}\nURL: {result['url']}{dated}\nExcerpt: {result['snippet']}")
     return "\n\n".join(lines)
+
+
+_MAX_WATCHED_BYTES = 8 * 1024 * 1024
+
+
+async def fetch_watched(settings, since: str = "") -> tuple[list[dict], str]:
+    """Watched-page snapshots from the STAR Server's nightly poll (gateway GET /watched), changed after `since`:
+    (rows, newest changed_at). Same private address and STAR Server key as search; raises when unavailable."""
+    endpoint = search_endpoint_for(settings)
+    key = providers.get_api_key(STAR_SERVER) if endpoint else None
+    if not endpoint or not key:
+        raise RuntimeError("STAR search gateway not configured")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=4.0), trust_env=False,
+                                 follow_redirects=False) as client:
+        response = await client.get(f"{endpoint}/watched", params={"since": since[:40]} if since else None,
+                                    headers={"Accept": "application/json", "Authorization": f"Bearer {key}"})
+        response.raise_for_status()
+        if len(response.content) > _MAX_WATCHED_BYTES:
+            raise ValueError("watched reply too large")
+        data = response.json()
+    rows = [row for row in data.get("pages", []) if isinstance(row, dict)] if isinstance(data, dict) else []
+    return rows, str(data.get("newest", "") if isinstance(data, dict) else "")[:40]

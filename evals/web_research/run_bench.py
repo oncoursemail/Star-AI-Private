@@ -4,6 +4,8 @@ Arms (same model call and evidence budget, different retrieval):
   b0  legacy Research: star.deep_research.research_web (3 snippet searches, pages not opened)
   b1  deep Research: star.research_session.ResearchSession with team_service's deep plan and budget
   v2  star.web_research pipeline (parallel plan, passage rerank, link follow, claim->quote check)
+  w2  the wired app path: star.web_research_session.WebResearchSession built as team_service builds it (Team +
+      Research budget, research memory from WR_STORE), its context() and the same claim check
 
 Search goes through STAR's own SearXNG path (star.web_search._searxng) at STAR_SEARCH_ENDPOINT with the STAR Server
 key from ~/.star/server_api_key; Litha answers through the mesh router (STAR_MESH_URL or ~/.star/mesh_url).
@@ -252,7 +254,21 @@ async def arm_n0(question: str, searcher) -> dict:
     return {"evidence": "(no web evidence was retrieved for this question)", "blocks": {}, "stats": {}}
 
 
-ARMS = {"b0": arm_b0, "b1": arm_b1, "v2": arm_v2, "a0": arm_a0, "a2": arm_a2, "n0": arm_n0}
+async def arm_w2(question: str, searcher) -> dict:
+    """The app path: the adapter team_service uses for Team + Research (same budget), not the library call."""
+    from star.research_session import ResearchBudget
+    from star.web_research_session import WebResearchSession
+    session = WebResearchSession(question, searcher=searcher, store=store(),
+                                 budget=ResearchBudget(max_queries=8, max_pages=12, max_sources=32, concurrency=3,
+                                                       total_seconds=120.0))
+    await session.collect()
+    context = session.context(max_chars=EVIDENCE_CHARS)
+    result = session.result
+    return {"evidence": context, "blocks": result.blocks() if result else {},
+            "stats": {**session.summary(), **(result.stats if result else {})}, **({"result": result} if result else {})}
+
+
+ARMS = {"b0": arm_b0, "b1": arm_b1, "v2": arm_v2, "w2": arm_w2, "a0": arm_a0, "a2": arm_a2, "n0": arm_n0}
 
 
 def _pack(result) -> list[dict]:
@@ -291,7 +307,7 @@ async def answer_one(row: dict) -> dict:
     row.pop("error", None)
     try:
         answer, model_s = await ask_litha(row["question"], None if row["arm"] == "n0" else row.get("evidence", ""))
-        if row["arm"] in ("v2", "a2") and os.environ.get("WR_VERIFY", "1") == "1" and row.get("sources"):
+        if row["arm"] in ("v2", "w2", "a2") and os.environ.get("WR_VERIFY", "1") == "1" and row.get("sources"):
             from star.web_research import learn, verify_answer
             result = _unpack(row)
             checked = verify_answer(answer, result)

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sqlite3
+import threading
 import time
 
 from .clock import now_line, observe_server_date
@@ -67,16 +69,29 @@ def wants_fresh_web(prompt: str) -> bool:
     return any(this_year - 1 <= int(year) <= this_year + 1 for year in _YEAR.findall(text))
 
 
-async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int = 5) -> tuple[str, list[dict]]:
+async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int = 5,
+                      store=None) -> tuple[str, list[dict]]:
     """(context text, sources) for a fresh-information question. Never raises.
 
     The text is the untrusted, cited search block (web_search.source_context), or one line saying the
     search failed. Returns ("", []) when the question does not need the web or no provider is set up.
     (Reading the pages through star.web_research here was measured: 60/62 vs 59/62 correct for +4 s, not shipped.)
+    `store` (star.research_store.ResearchStore): a fresh verified answer to the same question is used instead of a
+    search; its one source is marked "stored" with its fetch date (stored_note shows both after the answer).
     """
     from .web_search import search_web, source_context, web_search_available
     if not wants_fresh_web(prompt):
         return "", []
+    if store is not None:
+        try:
+            fact = store.lookup(prompt)
+        except sqlite3.Error:
+            fact = None
+        if fact is not None:
+            from .web_research import _stored_result
+            return (_stored_result(prompt, fact, time.monotonic()).context,
+                    [{"url": fact.url, "title": fact.title or fact.url, "snippet": fact.quote[:300],
+                      "fetched": fact.fetched_at[:10], "stored": True}])
     if searcher is None and not web_search_available(settings):
         return ("Web search is not set up (no STAR search server or search key), so no live results were "
                 "retrieved for this question; say so briefly if the answer depends on them."), []
@@ -90,6 +105,55 @@ async def auto_search(prompt: str, *, settings=None, searcher=None, limit: int =
     if not sources:
         return "An automatic web search found no usable results for this question.", []
     return source_context(sources), list(sources)
+
+
+# ---------------------------------------------------------------------------------------------- research memory
+
+RESEARCH_STORE_FILE = "research-store.sqlite3"   # in STAR's data folder (desktop) or the bot's own state folder
+
+
+def open_store(path):
+    """star.research_store.ResearchStore at `path`, or None when it cannot be opened. Never raises."""
+    try:
+        from .research_store import ResearchStore
+        return ResearchStore(path)
+    except (OSError, sqlite3.Error):
+        return None
+
+
+def stored_note(sources: list[dict]) -> str:
+    """The line shown under an answer that came from research memory: where and when STAR read it; else ''."""
+    for item in sources or []:
+        url = str(item.get("url", "")) if isinstance(item, dict) else ""
+        if item.get("stored") and url.startswith("https://") and not any(c in url for c in " <>"):
+            return f"\n\n*From STAR's research notes: verified on <{url}>, fetched {item.get('fetched', '')[:10]}.*"
+    return ""
+
+
+def learn_later(path, question: str, answer: str, sources: list[dict], *, fetcher=None) -> threading.Thread | None:
+    """After an answer built on live search snippets: check its first cited claim against the cited page and keep a
+    passage of that page that backs it (web_research.learn_from_sources). Runs on a daemon thread with its own
+    store connection, so the answer is never delayed; never raises. Nothing happens for a stored answer."""
+    if not sources or any(isinstance(item, dict) and item.get("stored") for item in sources):
+        return None
+    rows = [dict(item) for item in sources if isinstance(item, dict)]
+
+    def work() -> None:
+        store = open_store(path)
+        if store is None:
+            return
+        try:
+            from .web_research import learn_from_sources
+            kwargs = {"fetcher": fetcher} if fetcher is not None else {}
+            asyncio.run(asyncio.wait_for(learn_from_sources(store, question, answer, rows, **kwargs), 60))
+        except Exception:
+            pass
+        finally:
+            store.close()
+
+    thread = threading.Thread(target=work, name="star-research-learn", daemon=True)
+    thread.start()
+    return thread
 
 
 async def refresh_server_clock(settings, *, timeout: float = 1.5, monotonic=time.monotonic, get=None) -> None:
