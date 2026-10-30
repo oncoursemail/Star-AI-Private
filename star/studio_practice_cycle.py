@@ -14,7 +14,7 @@ default. The observer and scorer MUST belong to an independent authorized host.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import math
 from typing import Awaitable, Callable, Protocol
 
@@ -173,7 +173,6 @@ class StudioPracticeCycle:
         recorded = calibrated = remembered = sent = False
         precommitted = False
         reason, status = "not_started", "deferred"
-        scope = None
         try:
             if not isinstance(forecast, GameForecast):
                 raise TypeError("expected pre-action GameForecast")
@@ -263,7 +262,7 @@ class StudioPracticeCycle:
             status, reason = stop.status, stop.reason
         except asyncio.CancelledError:
             raise
-        except (Exception, asyncio.TimeoutError):
+        except Exception:
             status, reason = "inconclusive", "host_evidence_or_scoring_unavailable"
         finally:
             if precommitted and not calibrated:
