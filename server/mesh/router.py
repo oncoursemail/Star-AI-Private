@@ -27,7 +27,9 @@ import urllib.parse
 from pathlib import Path
 
 from . import instant
+from .agent import route as agent_route
 from .engine import facts as engine_facts
+from .flaws import hook as flaw_hook
 from .general import inject as general
 from . import mcfacts
 from .loop import runner as loop_runner
@@ -124,6 +126,7 @@ DEFAULTS = {
                                       # answers); late = no grounding, the lookup goes on in parallel
     **general.DEFAULTS,              # general questions: general-mode note, exact calculator, safety facts
     **engine_facts.DEFAULTS,         # Unity 6 / Godot 4 / Unreal 5 / LOVE 11 / plain Lua 5.4: version facts note (server/mesh/engine)
+    **flaw_hook.DEFAULTS,            # flaw loop: per-turn flaw signals in the log + gate-shipped fixes (server/mesh/flaws)
     **polyglot_note.DEFAULTS,        # coding questions in other languages/engines: "answer fully" note + version facts
     **mcfacts.DEFAULTS,              # Minecraft plugin/mod questions: compile-verified API facts note
     **fullcode.DEFAULTS,             # build/code requests: complete-code note + max_tokens 1500 (chat stays short)
@@ -145,6 +148,9 @@ DEFAULTS = {
     "self_timeout_s": 0.3,
     "self_max_chars": 900,
     **speed.DEFAULTS,                 # parallel sections (server/mesh/speed/), off by default
+    # agent mode (server/mesh/agent, :8104): model `litha-agent` = write -> real checks -> fix loop for build/code
+    # tasks; other litha-agent requests are plain `litha`. "" = off (litha-agent is then plain litha)
+    "agent_url": "http://127.0.0.1:8104",
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -822,7 +828,9 @@ class Router:
             except (UpstreamError, ValueError, asyncio.TimeoutError):
                 pass
         own = [{"id": FAST, "object": "model", "owned_by": "star-mesh"},
-               {"id": DEEP, "object": "model", "owned_by": "star-mesh"}]
+               {"id": DEEP, "object": "model", "owned_by": "star-mesh"}] + \
+            ([{"id": agent_route.AGENT_MODEL, "object": "model", "owned_by": "star-mesh"}] if self.cfg.get("agent_url")
+             else [])
         return {"object": "list", "data": own + self.brain_models}
 
     def status(self) -> dict:
@@ -860,6 +868,11 @@ class Router:
         except (ValueError, AssertionError):
             return await send_json(writer, 400, err("body must be a JSON object"))
         model, stream = str(req.get("model") or FAST), bool(req.get("stream"))
+        if model == agent_route.AGENT_MODEL:
+            if self.cfg.get("agent_url") and agent_route.wants_agent(req.get("messages")) and \
+                    await self.agent_forward(path, headers, body, writer):
+                return
+            model = req["model"] = FAST       # chat, or the agent service is down: plain litha
         hedge = req.pop("mesh_hedge", None)
         if hedge is None:
             hedge = headers.get("x-mesh-hedge", "").strip().lower() in ("1", "true", "yes") or self.cfg["hedge"]
@@ -931,9 +944,11 @@ class Router:
         if model == FAST and stream and not selfq and (decided or not question) and                 await speed.try_sections(self, path, headers, req, conv, writer, t0, {**cache_hdr, **ground_hdr}):
             return
 
+        flaw = {}
         if selfq:
             cache_hdr.update(await self.self_inject(req, plan[0][0].name if plan else None))
         elif model == FAST:
+            flaw = flaw_hook.apply(req, headers, self.cfg)    # first: reads the user's own turn, may skip the general note
             cache_hdr.update(fullcode.apply(req, self.cfg))     # first: the note stays right after the question
             cache_hdr.update(await self.docs_inject(req, headers))
             cache_hdr.update(await self.mc_inject(req, headers))
@@ -968,6 +983,10 @@ class Router:
             log["docs"] = cache_hdr["X-Mesh-Docs"]
         if "X-Mesh-Self" in cache_hdr:
             log["self"] = cache_hdr["X-Mesh-Self"]
+        if flaw:
+            log["flaw"] = flaw
+        if "X-Mesh-General" in cache_hdr:
+            log["general"] = cache_hdr["X-Mesh-General"]
         self.decisions.append(log)
         # the semantic cache lookup (an embedding round trip) runs while the backend starts: a hit before the first
         # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
@@ -1025,8 +1044,10 @@ class Router:
                 await send_raw(writer, 200, up.headers.get("content-type", "application/json"), rest,
                                {"X-Mesh-Backend": backend.name, **cache_hdr})
                 try:
-                    timings = json.loads(rest).get("timings") or {}
-                except (ValueError, AttributeError):
+                    parsed = json.loads(rest)
+                    timings = parsed.get("timings") or {}
+                    log["finish"] = ((parsed.get("choices") or [{}])[0] or {}).get("finish_reason")
+                except (ValueError, AttributeError, TypeError, IndexError):
                     timings = {}
                 backend.measured(timings.get("predicted_per_second"))
                 log["tok_s"], log["outcome"] = timings.get("predicted_per_second"), "ok"
@@ -1079,6 +1100,7 @@ class Router:
                                     pieces += 1
                                 if choice.get("finish_reason"):
                                     finished = True
+                                    log["finish"] = choice["finish_reason"]
                             if isinstance(obj.get("timings"), dict):
                                 timings = obj["timings"]
                             if changed:
@@ -1259,6 +1281,30 @@ class Router:
         except (UpstreamError, asyncio.TimeoutError) as e:
             return await send_json(writer, 502, err(f"verifier: {e}", "server_error"))
         return await send_raw(writer, up.status, up.headers.get("content-type", "application/json"), data)
+
+    async def agent_forward(self, path: str, headers: dict, body: bytes, writer) -> bool:
+        """litha-agent build/code task -> the agent service, relayed as it streams (progress keeps it alive).
+        False = the service did not answer (nothing was sent; the caller serves plain litha)."""
+        try:
+            up = await open_upstream(self.cfg["agent_url"].rstrip("/") + "/v1" + path, "POST", body,
+                                     {"Content-Type": "application/json",
+                                      "Authorization": headers.get("authorization", "")}, idle_s=660)
+        except (UpstreamError, asyncio.TimeoutError):
+            self.counters["agent_down"] += 1
+            return False
+        self.counters["agent"] += 1
+        try:
+            writer.write(f"HTTP/1.1 {up.status} X\r\nContent-Type: "
+                         f"{up.headers.get('content-type', 'application/json')}\r\nX-Mesh-Agent: 1\r\n"
+                         "Connection: close\r\n\r\n".encode())
+            async for piece in up.chunks():
+                writer.write(piece)
+                await writer.drain()
+        except (UpstreamError, asyncio.TimeoutError, ConnectionError, OSError):
+            pass
+        finally:
+            up.close()
+        return True
 
     async def docs_inject(self, req: dict, headers: dict) -> dict:
         """Litha: the docs service's block (exact API entries + maybe one guide passage) goes in front of the user's

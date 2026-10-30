@@ -1,0 +1,35 @@
+{
+ "note": "art-v2 briefs, written 2026-10-30 BEFORE any art-v2 tuning. 'heldout' is never used for development, prompt examples or template tuning; tune only on 'dev'. Style 'highpoly' is new in art-v2 (the baseline code has no such style and builds it as pbr).",
+ "heldout": [
+  {"id": "p01", "style": "pbr", "category": "weapon", "brief": "Realistic stainless steel revolver with a six-round cylinder, long barrel and rosewood grips."},
+  {"id": "p02", "style": "pbr", "category": "vehicle", "brief": "Realistic vintage sports car, polished chrome bumpers, cherry red paint and wire wheels."},
+  {"id": "p03", "style": "pbr", "category": "prop", "brief": "Realistic steel toolbox with a brushed aluminium lid, latches and a carry handle."},
+  {"id": "p04", "style": "pbr", "category": "character", "brief": "Realistic armoured knight figure standing in polished steel plate armour with a sword at the hip."},
+  {"id": "s01", "style": "stylized", "category": "weapon", "brief": "Stylized hand-painted war hammer with a chunky stone head bound by leather straps."},
+  {"id": "s02", "style": "stylized", "category": "creature", "brief": "Stylized cartoon fox standing on four legs with a big fluffy tail, orange fur and white chest."},
+  {"id": "s03", "style": "stylized", "category": "building", "brief": "Stylized fantasy cottage with a crooked thatched roof, stone chimney and a round wooden door."},
+  {"id": "s04", "style": "stylized", "category": "furniture", "brief": "Stylized wooden bookshelf packed with colourful books on three shelves."},
+  {"id": "l01", "style": "lowpoly", "category": "vehicle", "brief": "Low-poly city bus, white and blue livery, big windows and six wheels."},
+  {"id": "l02", "style": "lowpoly", "category": "creature", "brief": "Low-poly deer with antlers standing on four slender legs."},
+  {"id": "l03", "style": "lowpoly", "category": "prop", "brief": "Low-poly wooden signpost with two arrow boards pointing different ways."},
+  {"id": "l04", "style": "lowpoly", "category": "weapon", "brief": "Low-poly double-bladed battle axe with a dark wooden haft."},
+  {"id": "r01", "style": "roblox", "category": "character", "brief": "Roblox-ready blocky robot character with a boxy head, antenna, chest light and chunky arms and legs."},
+  {"id": "r02", "style": "roblox", "category": "vehicle", "brief": "Roblox-ready police car with a light bar on the roof, black and white paint."},
+  {"id": "r03", "style": "roblox", "category": "building", "brief": "Roblox-ready small wooden watchtower on four legs with a ladder and a pointed roof."},
+  {"id": "r04", "style": "roblox", "category": "furniture", "brief": "Roblox-ready cozy sofa with two cushions and wooden feet."},
+  {"id": "h01", "style": "highpoly", "category": "weapon", "brief": "High-poly sci-fi assault rifle with smooth bevelled panels, a long rail and a holographic sight."},
+  {"id": "h02", "style": "highpoly", "category": "vehicle", "brief": "High-poly motorcycle with a teardrop fuel tank, chrome exhaust and spoked wheels."},
+  {"id": "h03", "style": "highpoly", "category": "prop", "brief": "High-poly vintage brass oil lantern with a glass globe and a wire handle."},
+  {"id": "h04", "style": "highpoly", "category": "accessory", "brief": "High-poly knight great helm with eye slits, breathing holes and a crest on top."}
+ ],
+ "dev": [
+  {"id": "d01", "style": "pbr", "category": "weapon", "brief": "Realistic steel hunting knife with a black rubber handle."},
+  {"id": "d02", "style": "stylized", "category": "creature", "brief": "Stylized cartoon wolf standing on four legs, grey fur."},
+  {"id": "d03", "style": "lowpoly", "category": "building", "brief": "Low-poly small brick house with a red roof and a door."},
+  {"id": "d04", "style": "roblox", "category": "character", "brief": "Roblox-ready blocky adventurer with a hat and a backpack."},
+  {"id": "d05", "style": "highpoly", "category": "furniture", "brief": "High-poly leather armchair with button tufting and wooden legs."},
+  {"id": "d06", "style": "pbr", "category": "prop", "brief": "Realistic copper cooking pot with a lid and two handles."},
+  {"id": "d07", "style": "stylized", "category": "vehicle", "brief": "Stylized cartoon hover bike with two side thrusters."},
+  {"id": "d08", "style": "lowpoly", "category": "character", "brief": "Low-poly villager in a green tunic and brown boots."}
+ ]
+}

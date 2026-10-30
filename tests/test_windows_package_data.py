@@ -58,7 +58,8 @@ OTHER_FILE_ANCHORS = {
     "star/human_evals.py": "developer-only human-likeness eval suite (evals/human)",
     "star/vtuber/model.py": "mascot faces from frontend/dist (bundled) or the source checkout; STAR_FACES_DIR overrides",
     "star/asset3d/pipeline.py": "developer-only 3D asset eval pipeline (briefs in evals/asset3d; not wired into STAR.exe)",
-    "star/asset3d/runner.py": "developer-only: runs build_bpy.py in headless Blender from a source checkout",
+    "star/asset3d/runner.py": "runs build_bpy.py in headless Blender from a source checkout (dev evals, and the opt-in "
+                              "workspace_asset3d_build only when the operator sets STAR_ASSET3D_BUILD)",
     "star/breadth_evals.py": "developer-only breadth eval suites (evals/gdscript, evals/instruction-following)",
     "star/best_of_n.py": "developer-only evaluation prelude ('' in the packaged app)",
     "star/cli.py": "source-only CLI",

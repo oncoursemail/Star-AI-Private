@@ -25,9 +25,15 @@ SELF_PATTERNS = [re.compile(p, re.I) for p in (
     rf"\bwhat\s+(?:changed|is\s+new|did\s+{_WHO}\s+(?:change|learn|improve))\s+(?:in|about|with)?\s*{_WHO}?\b.*\b(?:you|yourself|litha|star)\b",
     rf"\b(?:how\s+many|which)\s+(?:gpus?|cores?|servers?|machines?|nodes?)\s+(?:do|does)\s+{_WHO}\s+(?:have|use|run)\b",
     r"\bself[- ]?(?:model|status|check|report)\b",
+    r"\b(?:what\s+are|what'?s|whats|tell\s+me)\s+(?:your|ur)\s+(?:biggest\s+|main\s+)?(?:weak\s*(?:spots?|points?|ness(?:es)?)|flaws?|limits?|"
+    r"limitations?|mistakes?)\b",
+    rf"\bwhat\s+(?:are|r)\s+{_WHO}\s+(?:bad|worst|weak)\s+at\b",
+    rf"\bwhat\s+(?:do|does)\s+{_WHO}\s+(?:get\s+wrong|struggle\s+with|mess\s+up)\b",
+    r"\byour\s+(?:weak\s*(?:spots?|points?|ness(?:es)?)|flaws?|mistakes?)\b",
 )]
 TOPICS = {
     "gpu": re.compile(r"\b(gpus?|graphics|card|vram|cuda|nvidia|rtx|hardware|machines?|pcs?|computers?|nodes?|cores?|cpus?|servers?|running on|hosted)\b", re.I),
+    "flaws": re.compile(r"\b(weak\w*|flaws?|mistakes?|bad at|worst|wrong|struggl\w*|limit\w*|fail\w*)\b", re.I),
     "speed": re.compile(r"\b(slow|lag|fast|quick|speed|tok|latency|wait|sluggish)\b", re.I),
     "code": re.compile(r"\b(code|version|commit|build|source|deployed|pr|prs|pull request|ci|bug|changed|update[sd]?)\b", re.I),
     "learning": re.compile(r"\b(learn\w*|train\w*|improv\w*|upgrad\w*|tun\w*|better|smarter|eval\w*|score\w*)\b", re.I),
@@ -74,6 +80,20 @@ def _brain_line(snap: dict) -> str:
     load = b.get("host_load")
     return (f"{b.get('name', 'brain1')} ({cpu}, no GPU): {'healthy' if b.get('healthy') else 'NOT healthy'}; loaded: {models}; "
             f"answering {busy} request(s) now" + (f"; host load {load[0]:.1f}" if load else ""))
+
+
+def flaw_lines(rep: dict) -> list[str]:
+    """Measured weak spots (server/mesh/flaws miner) and the fixes the flaw gate shipped or rolled back."""
+    f = rep.get("flaws")
+    if not f:
+        return ["- Weak spots: no flaw report yet (the nightly flaw loop has not run)."]
+    out = [f"- Weak spots measured on my last {f.get('requests')} Litha requests ({_age(f.get('ts'))}), biggest first:"]
+    cs = f.get("clusters") or []
+    for c in [c for c in cs if c.get("group") == "answer"][:4] + [c for c in cs if c.get("group") != "answer"][:3]:
+        out.append(f"  {c.get('count')} x {c.get('cause')} ({c.get('group')}, {round(100 * float(c.get('rate') or 0), 1)}%)")
+    for u in [u for u in rep.get("upgrade") or [] if str(u.get("component", "")).startswith("flaw-fix:")][-3:]:
+        out.append(f"- Self-fix {u['component'][9:]} {_age(u.get('ts'))}: {u.get('decision')} ({str(u.get('why') or '')[:90]})")
+    return out
 
 
 def render(snap: dict, topic: str = "all", backend: str | None = None, max_chars: int = 1100) -> str:
@@ -146,6 +166,8 @@ def render(snap: dict, topic: str = "all", backend: str | None = None, max_chars
             if pts:
                 seq = " -> ".join(f"{p.get('score')}" for p in pts[-4:])
                 lines.append(f"- Eval {suite}: {seq}")
+    if "flaws" in topics:
+        lines.extend(flaw_lines(snap.get("reports") or {}))
     out, size = [], 0
     for line in lines:
         if size + len(line) + 1 > max_chars:

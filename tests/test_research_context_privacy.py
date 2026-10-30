@@ -61,9 +61,10 @@ class _AdversarialCompletions:
             message=SimpleNamespace(content=content, tool_calls=None))])
 
 
+@pytest.mark.parametrize("v2", [False, True])
 @pytest.mark.parametrize("parallel", [1, 2])
 def test_deep_critic_followup_cannot_disclose_reviewed_notes_or_private_peer_drafts(
-        tmp_path, monkeypatch, parallel):
+        tmp_path, monkeypatch, parallel, v2):
     from star.desktop_core import Settings
     from star import team_service
 
@@ -89,7 +90,7 @@ def test_deep_critic_followup_cannot_disclose_reviewed_notes_or_private_peer_dra
 
         settings = Settings(endpoint="http://127.0.0.1:8080/v1", model="offline",
                             project="STAR", knowledge_endpoint="off",
-                            deep_research_enabled=True)
+                            deep_research_enabled=True, web_research_v2=v2)
         answer, result = await team_service.run_research_team(
             prompt=QUESTION, home=tmp_path, settings=settings, research=True,
             parallel=parallel,
@@ -101,7 +102,7 @@ def test_deep_critic_followup_cannot_disclose_reviewed_notes_or_private_peer_dra
         assert set(model.inputs) == {"evidence", "design", "critic", "synthesis"}
         # Ensure the potentially hostile content was actually read and reached
         # the critic; a skipped research run must not make the privacy check pass.
-        assert len(opened) == 2
+        assert len([url for url in opened if not url.endswith("/robots.txt")]) == 2
         assert QUESTION in model.inputs["critic"]
         assert PUBLIC_FACT in model.inputs["critic"]
         assert PAGE_INJECTION in model.inputs["critic"]

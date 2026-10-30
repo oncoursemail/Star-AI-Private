@@ -28,6 +28,10 @@ from .learning import learned_context
 from .team_deadlines import DeadlinePolicy, ProviderSpeeds, SPEEDS, collect_text
 from .research_session import ResearchBudget, ResearchSession, deep_queries
 from .research_activity import research_source_report
+from .web_research import learn, verify_answer
+from .web_research_session import WebResearchSession
+
+RESEARCH_STORE_FILE = "research-store.sqlite3"   # research memory (star/research_store.py), shared with chat
 
 
 SPECIALISTS = (
@@ -106,13 +110,18 @@ async def run_research_team(
     else:
         model, project = settings.model, settings.project
     settings.validate()
-    deep = research and settings.deep_research_enabled
+    # v2 (star/web_research.py) reads pages for every Team + Research run; off = the previous paths.
+    use_v2 = research and settings.web_research_v2 is not False
+    deep = research and (settings.deep_research_enabled or use_v2)
     kind = provider_kind(settings)
     if kind == "cloud":
         raise ValueError("STAR Teams runs only on your own hardware: on-device or STAR Server")
     if not model.strip():
         raise ValueError("Start and select STAR Brain before running Agents")
     input_char_budget = min(28000, model_context_char_budget(settings, model)) if deep else 0
+    if deep and input_char_budget < 6000 and not settings.deep_research_enabled:
+        deep = use_v2 = False            # too small a context for page passages: search snippets as before
+        input_char_budget = 0
     if deep and input_char_budget < 6000:
         raise ValueError("Deep research needs a larger model context to include source evidence. "
                          "Choose a model with more context or increase its context setting before retrying.")
@@ -144,6 +153,7 @@ async def run_research_team(
     created_client = client is None
     book = EvidenceBook()
     session: ResearchSession | None = None
+    store = None
     started = monotonic()
     receipt = None
 
@@ -292,11 +302,17 @@ async def run_research_team(
                 budget = research_budget or ResearchBudget(
                     max_queries=8, max_pages=12, max_sources=32, concurrency=3,
                     total_seconds=remaining)
-                session = ResearchSession(
-                    prompt, searcher=searcher, fetcher=page_provider, on_event=on_event,
-                    queries=deep_queries(prompt),
-                    budget=replace(budget, total_seconds=min(budget.total_seconds, remaining)),
-                )
+                budget = replace(budget, total_seconds=min(budget.total_seconds, remaining))
+                if use_v2:
+                    if settings.research_memory is not False:
+                        store = _open_store(home)
+                        if store is not None:
+                            await _mirror_watched(store, settings)
+                    session = WebResearchSession(prompt, searcher=searcher, fetcher=page_provider,
+                                                 on_event=on_event, budget=budget, store=store)
+                else:
+                    session = ResearchSession(prompt, searcher=searcher, fetcher=page_provider, on_event=on_event,
+                                              queries=deep_queries(prompt), budget=budget)
                 try:
                     await session.collect()
                 finally:
@@ -343,8 +359,19 @@ async def run_research_team(
             raise RuntimeError("STAR Teams could not finish: " + issues[:250])
         answer = result.for_id("synthesis").answer
         status = "completed"
+        claim_check = None
+        if isinstance(session, WebResearchSession) and session.result is not None:
+            # Each cited sentence's numbers and names must be in the passages it cites (moved or marked otherwise),
+            # then the first backed claim is kept in research memory with its source and fetch date.
+            claim_check = verify_answer(answer, session.result)
+            answer = claim_check.text
+            if store is not None:
+                try:
+                    learn(store, prompt, answer, session.result)
+                except (sqlite3.Error, ValueError):
+                    pass
         if session is not None:
-            answer += "\n\n" + research_source_report(session, answer)
+            answer += "\n\n" + research_source_report(session, answer, claim_check=claim_check)
         elif research:
             answer += "\n\n" + book.citations()
             if book.failed_searches:
@@ -365,5 +392,29 @@ async def run_research_team(
                 )
             except (OSError, sqlite3.Error):
                 pass
+        if store is not None:
+            store.close()
         if created_client and client is not None:
             await client.close()
+
+
+def _open_store(home: Path):
+    """Research memory in STAR's data folder (the same file desktop chat uses), or None when it cannot open."""
+    try:
+        from .research_store import ResearchStore
+        return ResearchStore(Path(home) / RESEARCH_STORE_FILE)
+    except (OSError, sqlite3.Error):
+        return None
+
+
+async def _mirror_watched(store, settings) -> None:
+    """The server's watched-page snapshots (release notes, changelogs), at most every 6 hours; never raises."""
+    from .research_store import sync_watched
+    from .web_search import fetch_watched
+
+    async def rows(since: str):
+        return await fetch_watched(settings, since)
+    try:
+        await sync_watched(store, rows)
+    except (OSError, sqlite3.Error):
+        pass

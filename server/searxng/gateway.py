@@ -4,7 +4,8 @@ SearXNG listens on 127.0.0.1:8888 inside the starai container and has no authent
 small stdlib-only service sits in front of it on the container's port 8093 and
 
   * requires the STAR Server key (same key file as the brain: `Authorization: Bearer <key>`);
-  * accepts one route, GET /search?q=...&n=5[&time_range=day|week|month|year][&categories=general|news];
+  * accepts GET /search?q=...&n=5[&time_range=day|week|month|year][&categories=general|news], and
+    GET /watched?since=<iso time>: the watched-page snapshots of the nightly poll (server/research), read-only;
   * rate-limits (token bucket, default 30 searches/minute, burst 10) and caps concurrency (4);
   * re-shapes SearXNG's JSON field by field (title, url, snippet, engine, published date), drops
     anything that is not an http(s) link, and caps every size, so the reply cannot grow without bound;
@@ -20,6 +21,7 @@ import argparse
 import hmac
 import json
 import os
+import sqlite3
 import sys
 import threading
 import time
@@ -38,6 +40,9 @@ UPSTREAM_TIMEOUT = 10.0
 MAX_INFLIGHT = 4
 RATE_PER_MINUTE = 30.0
 RATE_BURST = 10.0
+DEFAULT_WATCH_DB = "/opt/star/research/research-store.sqlite3"   # written by server/research (nightly poll)
+WATCHED_PAGE_CHARS = 400_000
+WATCHED_MAX_BYTES = 6 * 1024 * 1024
 TIME_RANGES = frozenset({"day", "week", "month", "year"})
 CATEGORIES = frozenset({"general", "news", "it", "science"})
 
@@ -123,8 +128,9 @@ def fetch_upstream(upstream: str, params: dict) -> dict:
 
 class Gateway:
     def __init__(self, keys: list[bytes], *, upstream: str = DEFAULT_UPSTREAM, fetch=fetch_upstream,
-                 bucket: TokenBucket | None = None, clock=time.time) -> None:
+                 bucket: TokenBucket | None = None, clock=time.time, watch_db: str = DEFAULT_WATCH_DB) -> None:
         self.keys = keys
+        self.watch_db = watch_db
         self.upstream = upstream
         self.fetch = fetch
         self.bucket = bucket or TokenBucket()
@@ -190,6 +196,48 @@ class Gateway:
         self.last_ok = self.clock()
         return 200, {"query": query, **reshape(payload, limit)}
 
+    def watched(self, query_string: str, auth_header: str | None) -> tuple[int, dict]:
+        """Snapshots of the pages STAR's nightly watch poll keeps (server/research/), changed after `since`,
+        oldest change first, at most WATCHED_MAX_BYTES of text per reply ("more": true = ask again from "newest")."""
+        if not self.keys or not self.authorized(auth_header):
+            self.counters["denied"] += 1
+            return 401, {"error": "STAR Server key required"}
+        params = urllib.parse.parse_qs(query_string, keep_blank_values=False, max_num_fields=4)
+        since = (params.get("since") or [""])[0][:40]
+        if not self.bucket.take():
+            self.counters["limited"] += 1
+            return 429, {"error": "rate limited; try again shortly"}
+        path = Path(self.watch_db)
+        if not path.is_file():
+            return 200, {"pages": [], "newest": since, "more": False}
+        pages, used, newest, more = [], 0, since, False
+        try:
+            db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+            try:
+                rows = db.execute("SELECT url,name,title,text,fetched_at,changed_at FROM pages WHERE text IS NOT NULL "
+                                  "AND text!='' AND COALESCE(changed_at,'')>? ORDER BY changed_at", (since,)).fetchall()
+            finally:
+                db.close()
+        except sqlite3.Error as exc:
+            return 503, {"error": f"watch store unavailable ({type(exc).__name__})"}
+        for url, name, title, text, fetched, changed in rows:
+            text = str(text)[:WATCHED_PAGE_CHARS]
+            if not str(url).startswith("https://"):
+                continue
+            if pages and used + len(text) > WATCHED_MAX_BYTES:
+                # One poll gives every changed page the same time: resume from before this row's time, so the
+                # rest of its group comes in the next reply (pages already sent are simply stored again).
+                more = True
+                cut = _text(changed, 40)
+                newest = max((p["changed_at"] for p in pages if p["changed_at"] < cut), default=since)
+                break
+            used += len(text)
+            pages.append({"url": str(url)[:1200], "name": _text(name, 80), "title": _text(title, 200), "text": text,
+                          "fetched_at": _text(fetched, 40), "changed_at": _text(changed, 40)})
+            newest = _text(changed, 40)
+        self.counters["watched"] = self.counters.get("watched", 0) + 1
+        return 200, {"pages": pages, "newest": newest, "more": more}
+
 
 def make_handler(gateway: Gateway):
     class Handler(BaseHTTPRequestHandler):
@@ -215,6 +263,8 @@ def make_handler(gateway: Gateway):
                 self._send(*gateway.health())
             elif path == "/search":
                 self._send(*gateway.search(query, self.headers.get("Authorization")))
+            elif path == "/watched":
+                self._send(*gateway.watched(query, self.headers.get("Authorization")))
             else:
                 self._send(404, {"error": "not found"})
 
@@ -232,7 +282,8 @@ def main(argv=None) -> int:
     keys = load_keys(os.environ.get("STAR_SEARCH_KEY_FILE", DEFAULT_KEY_FILE))
     if not keys:
         print("no STAR Server key found; every search will be refused", file=sys.stderr)
-    gateway = Gateway(keys, upstream=os.environ.get("STAR_SEARXNG_URL", DEFAULT_UPSTREAM))
+    gateway = Gateway(keys, upstream=os.environ.get("STAR_SEARXNG_URL", DEFAULT_UPSTREAM),
+                      watch_db=os.environ.get("STAR_RESEARCH_DB", DEFAULT_WATCH_DB))
     server = ThreadingHTTPServer((args.host, args.port), make_handler(gateway))
     server.daemon_threads = True
     print(f"star-search-gateway on {args.host}:{args.port} -> {gateway.upstream}", file=sys.stderr)

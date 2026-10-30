@@ -1,0 +1,23 @@
+{
+ "note": "art-v2 Blockbench held-out briefs, written 2026-10-30 BEFORE any art-v2 tuning (the weak-template fixes target frog eyes, golem eyes, totem base, bookshelf). Never used for development.",
+ "briefs": [
+  {"id": "n01", "category": "mob", "brief": "a big-eyed tree frog clinging to nothing, bright green with orange toes"},
+  {"id": "n02", "category": "mob", "brief": "an ancient stone golem with glowing blue eyes and a cracked chest"},
+  {"id": "n03", "category": "entity", "brief": "a carved wooden tiki totem pole on a stone base"},
+  {"id": "n04", "category": "furniture", "brief": "an open library bookshelf with rows of books on four shelves"},
+  {"id": "n05", "category": "mob", "brief": "a toad wearing a tiny crown with bulging gold eyes"},
+  {"id": "n06", "category": "mob", "brief": "a lava golem with glowing orange eyes and cracks"},
+  {"id": "n07", "category": "entity", "brief": "an obsidian obelisk with a glowing purple rune crystal on a pedestal"},
+  {"id": "n08", "category": "furniture", "brief": "a short wooden bookcase with potion bottles and books"},
+  {"id": "n09", "category": "item", "brief": "a fire axe with a red head and a spike on the back"},
+  {"id": "n10", "category": "mob", "brief": "a snow owl with big yellow eyes"},
+  {"id": "n11", "category": "block", "brief": "a wooden cart wheel leaning against a post"},
+  {"id": "n12", "category": "armor", "brief": "a gold crown helmet with red gems"}
+ ],
+ "dev": [
+  {"id": "bd1", "category": "mob", "brief": "a green frog with big round eyes"},
+  {"id": "bd2", "category": "mob", "brief": "a moss golem with glowing green eyes"},
+  {"id": "bd3", "category": "entity", "brief": "a crystal totem on a carved stone base"},
+  {"id": "bd4", "category": "furniture", "brief": "a bookshelf full of books"}
+ ]
+}
