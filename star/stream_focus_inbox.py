@@ -30,7 +30,7 @@ from .stream_director import StreamDirector, StreamSignal
 # Only canonical, stable platform account IDs, never display names or event IDs.
 # Whitespace/control/confusable characters must be normalized upstream by the
 # trusted chat host, not treated as new independent viewers in this queue.
-_SPEAKER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\\Z")
+_SPEAKER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}\Z")
 
 
 def _time(value: object) -> float:
