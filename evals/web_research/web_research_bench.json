@@ -709,8 +709,8 @@
    "domain": "news",
    "question": "After announcing her resignation in October 2026, when will Christine Lagarde step down as ECB president?",
    "answers": [
-    "february 2027",
-    "feb\\.? 2027"
+    "feb(?:ruary|\\.)?\\s+(?:\\d{1,2}(?:st|nd|rd|th)?,?\\s+)?2027",
+    "2027-02"
    ],
    "gold_url": "https://en.wikipedia.org/wiki/Portal:Current_events",
    "gold_quote": "She will step down from office in February 2027"

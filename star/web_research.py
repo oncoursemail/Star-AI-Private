@@ -35,6 +35,10 @@ MAX_PAGES = 6
 MAX_PER_SOURCE = 4
 SEARCH_LIMIT = 6
 USER_AGENT_TOKEN = "STAR-reader"
+# The same search within 15 minutes is answered from memory: the engines behind STAR's SearXNG suspend clients that
+# ask too often (all three default engines were suspended on 10-29 after ~40 searches).
+SEARCH_TTL = 900.0
+_SEARCHES: dict[str, tuple[float, list[dict]]] = {}
 
 _WORD = re.compile(r"[a-z0-9][a-z0-9_.+#-]*[a-z0-9+#]|[a-z0-9]", re.I)
 _STOP = frozenset("""a an and are as at be been by can could did do does for from had has have how i if in into is it
@@ -400,11 +404,20 @@ async def research(question: str, *, searcher: Searcher, fetcher: Fetcher = fetc
     official = official_hosts(question)
 
     async def one(i: int, query: str) -> tuple[int, list[dict]]:
+        key = " ".join(query.split()).casefold()
+        hit = _SEARCHES.get(key)
+        if hit is not None and time.monotonic() - hit[0] < SEARCH_TTL:
+            return i, [dict(row) for row in hit[1]]
         try:
             got = await asyncio.wait_for(searcher(query, limit=SEARCH_LIMIT), timeout=30)
-            return i, got if isinstance(got, list) else []
         except Exception:  # noqa: BLE001 - provider errors may carry credentials; a failed query is just empty
             return i, []
+        got = got if isinstance(got, list) else []
+        if got:
+            if len(_SEARCHES) > 500:
+                _SEARCHES.clear()
+            _SEARCHES[key] = (time.monotonic(), got)
+        return i, got
 
     host_locks: dict[str, asyncio.Lock] = {}
     slots = asyncio.Semaphore(4)
@@ -500,6 +513,8 @@ async def research(question: str, *, searcher: Searcher, fetcher: Fetcher = fetc
              "pages_read": sum(s.status == "read" for s in picked),
              "pages_failed": sum(s.status == "failed" for s in picked),
              "robots_skipped": sum(s.status == "skipped" for s in picked),
+             "thin_pages": sum(s.status == "read" and len(s.text) < 400 for s in picked),
+             "fail_reasons": sorted({s.error for s in picked if s.status == "failed"}),
              "sources_shown": len(shown), "elapsed_s": round(time.monotonic() - started, 2)}
     return ResearchResult(question, ranked, context, stats)
 

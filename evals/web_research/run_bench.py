@@ -143,27 +143,34 @@ def make_searcher():
 STATS: dict[str, int] = {}
 
 
-async def ask_litha(question: str, evidence: str) -> tuple[str, float]:
+MEMORY_SYSTEM = "You are STAR, a helpful assistant. Answer the user's question from your own knowledge, briefly."
+
+
+async def ask_litha(question: str, evidence: str | None) -> tuple[str, float]:
+    """evidence None = no web at all (the model answers from memory, as chat did when the gate did not fire)."""
     import httpx
-    payload = {"model": "litha", "temperature": 0, "max_tokens": ANSWER_TOKENS,
-               "messages": [{"role": "system", "content": SYSTEM},
-                            {"role": "user", "content": f"QUESTION: {question}\n\nWEB EVIDENCE:\n{evidence}\n\nQUESTION (again): {question}"}],
+    if evidence is None:
+        messages = [{"role": "system", "content": MEMORY_SYSTEM}, {"role": "user", "content": question}]
+    else:
+        messages = [{"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": f"QUESTION: {question}\n\nWEB EVIDENCE:\n{evidence}\n\nQUESTION (again): {question}"}]
+    payload = {"model": "litha", "temperature": 0, "max_tokens": ANSWER_TOKENS, "messages": messages,
                "mesh_general": False, "mesh_cache": False, "mesh_ground": False, "mesh_loop": False,
                "mesh_brain": False, "chat_template_kwargs": {"enable_thinking": False}}
     started = time.monotonic()
     async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(240.0, connect=5.0)) as client:
-        for attempt in range(3):
+        for attempt in range(8):
             try:
                 response = await client.post(_mesh() + "/v1/chat/completions", json=payload,
                                              headers={"Authorization": f"Bearer {_key()}"})
             except httpx.TransportError:
-                if attempt == 2:
+                if attempt == 7:
                     raise
                 await asyncio.sleep(10)                         # router restart / dropped connection: retry
                 continue
-            if response.status_code >= 500 and attempt < 2:      # router 'mesh busy' / node hiccup: wait, retry
+            if response.status_code >= 500 and attempt < 7:      # router "mesh busy" / node hiccup: wait, retry
                 STATS[f"model_{response.status_code}"] = STATS.get(f"model_{response.status_code}", 0) + 1
-                await asyncio.sleep(20 if response.status_code == 503 else 5)
+                await asyncio.sleep(30 if response.status_code == 503 else 5)
                 continue
             if response.status_code >= 400:
                 raise RuntimeError(f"router HTTP {response.status_code}: {response.text[:200]}")
@@ -240,29 +247,63 @@ async def arm_a2(question: str, searcher) -> dict:
     return {"evidence": result.context, "blocks": result.blocks(), "stats": result.stats, "result": result}
 
 
-ARMS = {"b0": arm_b0, "b1": arm_b1, "v2": arm_v2, "a0": arm_a0, "a2": arm_a2}
+async def arm_n0(question: str, searcher) -> dict:
+    """No search: what chat answered before the wider gate (the old gate searched 1 of the 76 questions)."""
+    return {"evidence": "(no web evidence was retrieved for this question)", "blocks": {}, "stats": {}}
 
 
-async def run_one(arm: str, q: dict, searcher) -> dict:
+ARMS = {"b0": arm_b0, "b1": arm_b1, "v2": arm_v2, "a0": arm_a0, "a2": arm_a2, "n0": arm_n0}
+
+
+def _pack(result) -> list[dict]:
+    return [{"id": x.id, "url": x.url, "title": x.title, "snippet": x.snippet, "status": x.status,
+             "chosen": [p.text for p in x.chosen]} for x in result.sources]
+
+
+def _unpack(row: dict):
+    from star.web_research import Passage, ResearchResult, Source
+    sources = []
+    for x in row.get("sources", []):
+        src = Source(id=x["id"], url=x["url"], title=x["title"], snippet=x["snippet"], status=x["status"])
+        src.chosen = [Passage(x["id"], 0, t) for t in x["chosen"]]
+        sources.append(src)
+    return ResearchResult(row["question"], sources, row.get("evidence", ""), row.get("stats", {}))
+
+
+async def retrieve_one(arm: str, q: dict, searcher) -> dict:
+    """Phase 1: the arm's retrieval only (model-free; answer_in_evidence is scored from it)."""
     started = time.monotonic()
     row = {"id": q["id"], "arm": arm, "domain": q["domain"], "question": q["question"]}
     try:
         got = await ARMS[arm](q["question"], searcher)
-        row["retrieval_s"] = round(time.monotonic() - started, 2)
-        answer, model_s = await ask_litha(q["question"], got["evidence"])
-        if arm in ("v2", "a2") and os.environ.get("WR_VERIFY", "1") == "1":
+        row.update(evidence=got["evidence"], blocks=got["blocks"], stats=got["stats"],
+                   evidence_chars=len(got["evidence"]))
+        if "result" in got:
+            row["sources"] = _pack(got["result"])
+    except Exception as exc:                       # an arm failure is a wrong answer, never a crash of the run
+        row.update(evidence="", blocks={}, retrieval_error=f"{type(exc).__name__}: {str(exc)[:200]}")
+    row["retrieval_s"] = round(time.monotonic() - started, 2)
+    return row
+
+
+async def answer_one(row: dict) -> dict:
+    """Phase 2: Litha answers from the stored evidence; v2 arms get the claim check (and learn into WR_STORE)."""
+    row.pop("error", None)
+    try:
+        answer, model_s = await ask_litha(row["question"], None if row["arm"] == "n0" else row.get("evidence", ""))
+        if row["arm"] in ("v2", "a2") and os.environ.get("WR_VERIFY", "1") == "1" and row.get("sources"):
             from star.web_research import learn, verify_answer
-            checked = verify_answer(answer, got["result"])
+            result = _unpack(row)
+            checked = verify_answer(answer, result)
             answer = checked.text
             row["verify"] = {"checked": checked.checked, "supported": checked.supported, "moved": checked.moved,
                              "unverified": checked.unverified}
             if store() is not None:
-                row["learned"] = learn(store(), q["question"], answer, got["result"]) is not None
-        row.update(answer=answer, model_s=round(model_s, 2), stats=got["stats"], blocks=got["blocks"],
-                   evidence_chars=len(got["evidence"]))
-    except Exception as exc:                       # an arm failure is a wrong answer, never a crash of the run
-        row.update(answer="", error=f"{type(exc).__name__}: {str(exc)[:200]}", blocks={})
-    row["wall_s"] = round(time.monotonic() - started, 2)
+                row["learned"] = learn(store(), row["question"], answer, result) is not None
+        row.update(answer=answer, model_s=round(model_s, 2))
+    except Exception as exc:
+        row.update(answer="", error=f"{type(exc).__name__}: {str(exc)[:200]}", model_s=None)
+    row["wall_s"] = round(row.get("retrieval_s", 0) + (row.get("model_s") or 0), 2)
     return row
 
 
@@ -280,13 +321,19 @@ def summarize(path: Path, questions: dict) -> dict:
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     scored = [(r, score_row(r, questions[r["id"]])) for r in rows]
     n = len(scored)
-    walls = [r["wall_s"] for r, _ in scored]
+    walls = [r.get("wall_s", 0) for r, _ in scored]
+    rets = [r.get("retrieval_s", 0) for r, _ in scored]
+    models = [r["model_s"] for r, _ in scored if r.get("model_s")]
     out = {"file": path.name, "n": n,
            "correct": sum(s["correct"] for _, s in scored), "supported": sum(s["supported"] for _, s in scored),
            "answer_in_evidence": sum(s["answer_in_evidence"] for _, s in scored),
            "errors": sum(bool(r.get("error")) for r, _ in scored),
            "wall_median_s": round(statistics.median(walls), 1) if walls else 0,
-           "wall_p90_s": round(sorted(walls)[int(0.9 * (n - 1))], 1) if walls else 0}
+           "wall_p90_s": round(sorted(walls)[int(0.9 * (n - 1))], 1) if walls else 0,
+           "retrieval_median_s": round(statistics.median(rets), 1) if rets else 0,
+           "retrieval_p90_s": round(sorted(rets)[int(0.9 * (n - 1))], 1) if rets else 0,
+           "model_median_s": round(statistics.median(models), 1) if models else 0,
+           "unanswered": sum(not r.get("answer") for r, _ in scored)}
     by_domain: dict[str, list[int]] = {}
     for r, s in scored:
         by_domain.setdefault(r["domain"], [0, 0])
@@ -296,8 +343,21 @@ def summarize(path: Path, questions: dict) -> dict:
     return out
 
 
+def _load(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _save(path: Path, rows: list[dict]) -> None:
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("".join(json.dumps(r, ensure_ascii=False) + chr(10) for r in rows), encoding="utf-8")
+    tmp.replace(path)
+
+
 async def main_async(args) -> None:
     bench = json.loads(BENCH.read_text(encoding="utf-8"))
+    by_id = {q["id"]: q for q in bench["questions"]}
     qs = [q for q in bench["questions"] if args.split in ("all", q["split"])]
     if args.ids:
         wanted = set(args.ids.split(","))
@@ -305,19 +365,29 @@ async def main_async(args) -> None:
     qs = qs[:args.limit] if args.limit else qs
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    done = set()
-    if out.exists():
-        done = {json.loads(line)["id"] for line in out.read_text(encoding="utf-8").splitlines() if line.strip()}
-    searcher = make_searcher()
-    for q in qs:
-        if q["id"] in done:
-            continue
-        row = await run_one(args.arm, q, searcher)
-        row.update(score_row(row, q))
-        with out.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        print(f"{q['id']} {args.arm} correct={row['correct']} supported={row['supported']} "
-              f"in_ev={row['answer_in_evidence']} {row['wall_s']}s {row.get('error', '')}", flush=True)
+    rows = {r["id"]: r for r in _load(out)}
+    if args.phase in ("retrieve", "both"):
+        searcher = make_searcher()
+        for q in qs:
+            if q["id"] in rows and not rows[q["id"]].get("retrieval_error") and not args.redo:
+                continue
+            rows[q["id"]] = await retrieve_one(args.arm, q, searcher)
+            rows[q["id"]].update(score_row(rows[q["id"]], q))
+            _save(out, list(rows.values()))
+            r = rows[q["id"]]
+            print(f"{q['id']} {args.arm} retrieved in_ev={r['answer_in_evidence']} {r['retrieval_s']}s "
+                  f"{r.get('retrieval_error', '')}", flush=True)
+    if args.phase in ("answer", "both"):
+        for q in qs:
+            r = rows.get(q["id"])
+            if r is None or (r.get("answer") and not r.get("error")):
+                continue
+            rows[q["id"]] = await answer_one(r)
+            rows[q["id"]].update(score_row(rows[q["id"]], by_id[q["id"]]))
+            _save(out, list(rows.values()))
+            r = rows[q["id"]]
+            print(f"{q['id']} {args.arm} correct={r['correct']} supported={r['supported']} "
+                  f"in_ev={r['answer_in_evidence']} {r['wall_s']}s {r.get('error', '')}", flush=True)
 
 
 def main() -> None:
@@ -328,6 +398,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--ids", default="")
     parser.add_argument("--score", nargs="*")
+    parser.add_argument("--phase", default="both", choices=["retrieve", "answer", "both"])
+    parser.add_argument("--redo", action="store_true", help="retrieve again even when a row exists")
     args = parser.parse_args()
     if args.score:
         bench = json.loads(BENCH.read_text(encoding="utf-8"))

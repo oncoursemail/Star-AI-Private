@@ -16,8 +16,10 @@ from star.web_fetch import Page, _reduce_page, embedded_text
 @pytest.fixture(autouse=True)
 def fresh_robots_cache():
     wr._ROBOTS.clear()
+    wr._SEARCHES.clear()
     yield
     wr._ROBOTS.clear()
+    wr._SEARCHES.clear()
 
 
 def test_plan_is_three_parallel_angles_with_an_official_site_or_year():
