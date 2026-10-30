@@ -262,7 +262,7 @@ def test_noncanonical_viewer_ids_cannot_multiply_deferred_question_slots():
                              now=100, moderated=True)
     assert not inbox.capture(question("space-trailing", speaker="viewerA ", text="Second?"),
                              now=100, moderated=True)
-    assert not inbox.capture(question("unicode", speaker="viewеrA", text="Third?"),
+    assert not inbox.capture(question("unicode", speaker="view\u0435rA", text="Third?"),
                              now=100, moderated=True)
     assert not inbox.capture(question("control", speaker="viewerA\x00", text="Fourth?"),
                              now=100, moderated=True)
