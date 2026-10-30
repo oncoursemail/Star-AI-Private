@@ -93,6 +93,8 @@ async def run(router, req: dict, plan: list, auth: str) -> dict:
     if not text or "(Note for Litha" in text:
         return {}
     kind = classify.kind(text)
+    if req.pop("mesh_general_kind", None) == "factual" and kind == "safety":   # flaw fix safety-substring
+        kind = "factual"
     if kind in ("code", "chat"):
         return {}
     t0 = time.monotonic()

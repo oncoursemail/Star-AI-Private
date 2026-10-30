@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import instant
 from .engine import facts as engine_facts
+from .flaws import hook as flaw_hook
 from .general import inject as general
 from . import mcfacts
 from .loop import runner as loop_runner
@@ -124,6 +125,7 @@ DEFAULTS = {
                                       # answers); late = no grounding, the lookup goes on in parallel
     **general.DEFAULTS,              # general questions: general-mode note, exact calculator, safety facts
     **engine_facts.DEFAULTS,         # Unity 6 / Godot 4 / Unreal 5 / LOVE 11 / plain Lua 5.4: version facts note (server/mesh/engine)
+    **flaw_hook.DEFAULTS,            # flaw loop: per-turn flaw signals in the log + gate-shipped fixes (server/mesh/flaws)
     **polyglot_note.DEFAULTS,        # coding questions in other languages/engines: "answer fully" note + version facts
     **mcfacts.DEFAULTS,              # Minecraft plugin/mod questions: compile-verified API facts note
     **fullcode.DEFAULTS,             # build/code requests: complete-code note + max_tokens 1500 (chat stays short)
@@ -931,9 +933,11 @@ class Router:
         if model == FAST and stream and not selfq and (decided or not question) and                 await speed.try_sections(self, path, headers, req, conv, writer, t0, {**cache_hdr, **ground_hdr}):
             return
 
+        flaw = {}
         if selfq:
             cache_hdr.update(await self.self_inject(req, plan[0][0].name if plan else None))
         elif model == FAST:
+            flaw = flaw_hook.apply(req, headers, self.cfg)    # first: reads the user's own turn, may skip the general note
             cache_hdr.update(fullcode.apply(req, self.cfg))     # first: the note stays right after the question
             cache_hdr.update(await self.docs_inject(req, headers))
             cache_hdr.update(await self.mc_inject(req, headers))
@@ -968,6 +972,10 @@ class Router:
             log["docs"] = cache_hdr["X-Mesh-Docs"]
         if "X-Mesh-Self" in cache_hdr:
             log["self"] = cache_hdr["X-Mesh-Self"]
+        if flaw:
+            log["flaw"] = flaw
+        if "X-Mesh-General" in cache_hdr:
+            log["general"] = cache_hdr["X-Mesh-General"]
         self.decisions.append(log)
         # the semantic cache lookup (an embedding round trip) runs while the backend starts: a hit before the first
         # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
@@ -1025,8 +1033,10 @@ class Router:
                 await send_raw(writer, 200, up.headers.get("content-type", "application/json"), rest,
                                {"X-Mesh-Backend": backend.name, **cache_hdr})
                 try:
-                    timings = json.loads(rest).get("timings") or {}
-                except (ValueError, AttributeError):
+                    parsed = json.loads(rest)
+                    timings = parsed.get("timings") or {}
+                    log["finish"] = ((parsed.get("choices") or [{}])[0] or {}).get("finish_reason")
+                except (ValueError, AttributeError, TypeError, IndexError):
                     timings = {}
                 backend.measured(timings.get("predicted_per_second"))
                 log["tok_s"], log["outcome"] = timings.get("predicted_per_second"), "ok"
@@ -1079,6 +1089,7 @@ class Router:
                                     pieces += 1
                                 if choice.get("finish_reason"):
                                     finished = True
+                                    log["finish"] = choice["finish_reason"]
                             if isinstance(obj.get("timings"), dict):
                                 timings = obj["timings"]
                             if changed:

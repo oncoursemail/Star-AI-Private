@@ -1,0 +1,12 @@
+[Unit]
+Description=STAR flaw loop rollback watch: a shipped fix whose live re-ask/failure rate got worse is removed
+After=star-mesh.service
+
+[Service]
+Type=oneshot
+Environment=PYTHONPATH=/opt/star-mesh/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=/opt/star-mesh/app
+ExecStart=/usr/bin/python3 -m mesh.flaws watch --report --since "7 days ago"
+StandardOutput=append:/var/lib/star-mesh/flaws/watch.log
+Nice=10
