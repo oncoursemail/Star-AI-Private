@@ -654,7 +654,7 @@ def build_shelf(p, r, name):
             continue
         x = -w / 2 + t
         j = 0
-        while x < w / 2 - t - 1:
+        while x < w / 2 - t - 1 and len(k.parts) < 92:  # furniture part limit is 96
             bw = 1 if (bi + j) % 3 else 2
             bh = min(top_y - y - 0.5, BOOK_ROWS[(bi + j) % len(BOOK_ROWS)] + (gap - 6 if gap > 6 else 0))
             if (bi + j) % 7 == 6:
