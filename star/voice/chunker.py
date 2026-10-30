@@ -15,6 +15,7 @@ TERMINATORS = ".!?…。！？"
 CLOSERS = "\"')]}”’»"
 CLAUSE_BREAKS = ",;:—–"
 # Words a long opening sentence may be split in front of when it has no punctuation to split at.
+_MAX_PENDING_CHARS = 65_536  # bounded even inside unfinished hidden/model reasoning
 SOFT_BREAK_WORDS = frozenset({"and", "but", "or", "so", "because", "that", "which", "who", "when", "while", "if",
                               "then", "between", "with", "for", "from", "about", "before", "after", "until"})
 # Words that end with a full stop without ending the sentence. Lower case, without the final dot.
@@ -35,6 +36,15 @@ _SPACES = re.compile(r"\s+")
 _EMOJI = re.compile(
     "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF\U00002190-\U000021FF"
     "\U00002B00-\U00002BFF\U0000FE0F\U0000200D]")
+
+# Scan sentence boundaries and protected spans in C's regex engine instead of
+# walking every character in Python for every tiny LLM token. The protected
+# alternatives MUST precede punctuation: a period inside <think> or a code
+# fence must never become a spoken boundary.
+_BOUNDARY_OR_HIDDEN = re.compile(
+    r"```.*?(?:```|\Z)|<think>.*?(?:</think>|\Z)|[\n.!?…。！？]",
+    re.S | re.I,
+)
 
 
 def speakable(text: str) -> str:
@@ -86,11 +96,21 @@ class SentenceChunker:
         self._emitted = 0
         self._in_think = False
         self._in_code = False
+        self._poisoned = False
 
     # -- public API -------------------------------------------------------------------------
     def feed(self, delta: str) -> list[str]:
+        if self._poisoned:
+            raise RuntimeError("discard overflowed speech stream and create a fresh chunker")
         if not delta:
             return []
+        if len(self._buf) + len(delta) > _MAX_PENDING_CHARS:
+            # An unterminated <think> or code fence otherwise accumulates
+            # indefinitely while withholding all output. Fail closed for this
+            # utterance: never resume a poisoned stream or expose hidden text.
+            self._buf = ""
+            self._poisoned = True
+            raise ValueError("speech stream exceeded bounded pending buffer")
         self._buf += delta
         out: list[str] = []
         while True:
@@ -102,6 +122,8 @@ class SentenceChunker:
 
     def flush(self) -> list[str]:
         """Call when the stream ends: whatever is left is the last chunk."""
+        if self._poisoned:
+            raise RuntimeError("discard overflowed speech stream and create a fresh chunker")
         out: list[str] = []
         while True:
             cut = self._next_cut()
@@ -126,6 +148,10 @@ class SentenceChunker:
 
     def _hidden_region(self) -> bool:
         """True while the buffer ends inside an unfinished <think> block or code fence."""
+        # Most voice tokens contain neither reasoning tags nor code fences.
+        # Avoid allocating a lowercase copy of each growing plain-text buffer.
+        if "<" not in self._buf and "`" not in self._buf:
+            return False
         low = self._buf.lower()
         if low.rfind("<think>") > low.rfind("</think>"):
             return True
@@ -137,13 +163,14 @@ class SentenceChunker:
             return None
         eager = self.first_eager and self._emitted == 0
         n = len(buf)
-        # Finished code fences and <think> blocks are skipped whole: never cut inside one.
-        skip = {m.start(): m.end() for pattern in (_CODE_BLOCK, _THINK) for m in pattern.finditer(buf)}
-        i = 0
-        while i < n:
-            if i in skip:
-                i = skip[i]
-                continue
+        # The regex skips protected text as one token. Iterating the matches
+        # also avoids redoing a Python character-by-character scan every time
+        # the model emits another 1-4 character delta.
+        end_of_punctuation = 0
+        for found in _BOUNDARY_OR_HIDDEN.finditer(buf):
+            i = found.start()
+            if i < end_of_punctuation:
+                continue  # remaining punctuation or closing quotes in a run
             ch = buf[i]
             if ch == "\n":
                 if _has_words(buf[:i]):
@@ -156,9 +183,7 @@ class SentenceChunker:
                     j += 1
                 if self._is_sentence_end(buf, i, j, eager):
                     return j
-                i = j
-                continue
-            i += 1
+                end_of_punctuation = j
         if eager and self.first_clause_words:
             cut = self._first_clause_cut(buf)
             if cut is not None:
