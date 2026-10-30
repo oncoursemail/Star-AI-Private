@@ -12,10 +12,10 @@ from unittest.mock import patch
 import star.stream_stage as stage_module
 from star.stream_director import StreamDirector, StreamSignal
 from star.stream_motion import AudioLevel, MotionFrame
-from star.stream_stage import StarStage
+from star.stream_stage import StagePlan, StarStage
 
 
-def _audible_stage() -> tuple[StarStage, object]:
+def _audible_stage() -> tuple[StarStage, StagePlan]:
     s = StarStage(director=StreamDirector(gap_seconds=0), clock=lambda: 100.0)
     s.enable(owner_approved=True, mode="cat")
     assert s.offer(StreamSignal(
