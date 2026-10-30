@@ -77,7 +77,8 @@ def test_router_adds_general_note_calc_and_safety_card(tmp_path):
         assert "safety" in h["X-Mesh-General"] and "Poison Control" in sent["messages"][-1]["content"]
         # code questions, opt-out: untouched
         st, h, sent = await asyncio.to_thread(ask, "How do I make a part spin in Roblox?")
-        assert "X-Mesh-General" not in h and sent["messages"][-1]["content"] == "How do I make a part spin in Roblox?"
+        assert "X-Mesh-General" not in h and "(Note for Litha" not in sent["messages"][-1]["content"]
+        assert sent["messages"][-1]["content"].startswith("How do I make a part spin in Roblox?")   # + fullcode's build note
         st, h, sent = await asyncio.to_thread(ask, "What started World War 1?", mesh_general=False)
         assert "X-Mesh-General" not in h and sent["messages"][-1]["content"] == "What started World War 1?"
         assert "mesh_general" not in sent

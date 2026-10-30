@@ -34,6 +34,7 @@ from .loop import runner as loop_runner
 from .polyglot import note as polyglot_note
 from .selfmodel import brief as self_brief
 from .speed import hook as speed
+from .speed import fullcode
 
 VERSION = "3"
 FAST, DEEP = "litha", "litha-deep"
@@ -125,6 +126,7 @@ DEFAULTS = {
     **engine_facts.DEFAULTS,         # Unity 6 / Godot 4 / Unreal 5 / LOVE 11 / plain Lua 5.4: version facts note (server/mesh/engine)
     **polyglot_note.DEFAULTS,        # coding questions in other languages/engines: "answer fully" note + version facts
     **mcfacts.DEFAULTS,              # Minecraft plugin/mod questions: compile-verified API facts note
+    **fullcode.DEFAULTS,             # build/code requests: complete-code note + max_tokens 1500 (chat stays short)
     **loop_runner.LOOP_DEFAULTS,      # best-of-2 + verified pick + hidden tool loop (server/mesh/loop), opt-in per request
     # official docs (server/mesh/docs, :8102): a compact block of exact API entries in front of Litha questions
     "docs": True,
@@ -932,6 +934,7 @@ class Router:
         if selfq:
             cache_hdr.update(await self.self_inject(req, plan[0][0].name if plan else None))
         elif model == FAST:
+            cache_hdr.update(fullcode.apply(req, self.cfg))     # first: the note stays right after the question
             cache_hdr.update(await self.docs_inject(req, headers))
             cache_hdr.update(await self.mc_inject(req, headers))
             cache_hdr.update(engine_facts.apply(req, self.cfg))      # engine questions: one facts note (polyglot then skips)
