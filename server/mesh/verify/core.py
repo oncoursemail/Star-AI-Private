@@ -37,6 +37,11 @@ LANGS = {"lua": "luau", "luau": "luau", "rbxlua": "luau", "roblox": "luau",
          "sql": "sql", "sqlite": "sql", "bash": "shell", "sh": "shell", "shell": "shell"}
 LOVE_HINT = re.compile(r"\blove\.\w+|\bio\.write\(|\bio\.read\(|\bio\.lines\(|\bos\.exit\(")
 ROBLOX_HINT = re.compile(r"game:GetService|Instance\.new|\bworkspace\b|:Connect\(|script\.Parent|\btask\.wait|\bEnum\.")
+LOVE_API = re.compile(r"\blove\.(?:graphics|keyboard|mouse|audio|filesystem|physics|timer|window|event|math|load|update|"
+                      r"draw|keypressed|mousepressed)\b")
+PLAIN_LUA_Q = re.compile(r"\b(?:plain|standard|vanilla|pure)\s+lua\b|\blua ?5\.[1-4]\b|\bin lua\b|"
+                         r"\blua (?:program|script|function|code)\b", re.I)
+NOT_LUA_Q = re.compile(r"\broblox\b|\bluau\b|\bstudio\b|\bminecraft\b|\bcomputercraft\b", re.I)
 # what a reader fills in: <spawn_x>, [X], X_POS, ~ ~ ~ (the fix loop never rewrites these)
 PLACEHOLDER = re.compile(r"(?<![\w>])<[A-Za-z_][\w -]{0,30}>|(?<![\w\])}])\[[A-Za-z_][\w ]{0,30}\]"
                          r"|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|(?<!\S)[~^][-\d.]*[ \t]+[~^][-\d.]*[ \t]+[~^][-\d.]*(?!\S)")
@@ -46,6 +51,8 @@ CS_HINT = re.compile(r"using\s+UnityEngine|:\s*MonoBehaviour|\bvoid\s+Update\s*\
 
 def _detect(code: str, info: str) -> str:
     lang = LANGS.get(info.strip().split(" ")[0].lower(), "") if info.strip() else ""
+    if lang in ("luau", "") and LOVE_API.search(code) and not ROBLOX_HINT.search(code):
+        return "love"                      # LOVE 11 (checked by luacheck + the real engine in star-polyglot)
     if lang == "luau" and info.strip().split(" ")[0].lower() == "lua" and LOVE_HINT.search(code) \
             and not ROBLOX_HINT.search(code):
         return "lua"                       # plain Lua (LÖVE / scripts), not Roblox
@@ -110,6 +117,14 @@ class Verifier:
         if key not in self._pg:
             self._pg[key] = self.polyglot.check(lang, code, prose)
         return self._pg[key]
+
+    @staticmethod
+    def _plain_lua(blocks: list[dict], question: str | None):
+        """A Lua block of a question that asks for plain Lua (not Roblox) is checked against the Lua 5.4 library."""
+        if question and PLAIN_LUA_Q.search(question) and not NOT_LUA_Q.search(question):
+            for b in blocks:
+                if b["language"] == "luau" and not ROBLOX_HINT.search(b["code"]):
+                    b["language"] = "lua"
 
     def prefetch(self, blocks: list[dict], prose: str):
         """Compile the blocks of one answer in parallel (the per-block results are then read from the cache)."""
@@ -178,6 +193,7 @@ class Verifier:
         t0 = time.perf_counter()
         scope = question if question and self.mc is not None and mc_index.VERSION_RE.search(question) else text
         blocks = extract_blocks(text, language)
+        self._plain_lua(blocks, question)
         jctx = javamc.check_answer(blocks, text, self.jvm)   # Java + plugin.yml etc.: checked together
         jmeta, jroles = jctx.pop("_meta", None), jctx.pop("_roles", {})
         self.prefetch(blocks, text)
@@ -313,8 +329,9 @@ FIX_SYSTEM = ("You repair code. You get one code block and a list of problems fo
               "exist. Reply with only the corrected code in one fenced code block, nothing else.")
 FENCE_TAG = {"luau": "lua", "csharp": "csharp", "minecraft": "mcfunction", "mcfunction": "mcfunction",
              "plugin.yml": "yaml", "paper-plugin.yml": "yaml", "fabric.mod.json": "json",
-             "neoforge.mods.toml": "toml", "mods.toml": "toml", "shell": "bash"}
-POLYGLOT = {"python", "javascript", "typescript", "java", "cpp", "c", "rust", "go", "gdscript", "lua", "sql", "shell"}
+             "neoforge.mods.toml": "toml", "mods.toml": "toml", "shell": "bash", "love": "lua"}
+POLYGLOT = {"python", "javascript", "typescript", "java", "cpp", "c", "rust", "go", "gdscript", "lua", "love", "sql",
+            "shell"}
 COMPILED = POLYGLOT | {"csharp"}                   # sent to the star-polyglot compilers
 # any non-JDK import, or a Bukkit/Paper/Fabric fragment without imports: the mc-plugins checker's job
 JAVA_PLUGIN = re.compile(r"^\s*import\s+(?:static\s+)?(?!java\.|javax\.)[\w.]+|\b(?:JavaPlugin|CommandSender|"

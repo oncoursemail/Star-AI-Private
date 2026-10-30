@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import instant
 from .agent import route as agent_route
+from .engine import facts as engine_facts
 from .general import inject as general
 from . import mcfacts
 from .loop import runner as loop_runner
@@ -122,6 +123,7 @@ DEFAULTS = {
                                       # starts (grounding changes the prompt; a one-slot node cannot judge while it
                                       # answers); late = no grounding, the lookup goes on in parallel
     **general.DEFAULTS,              # general questions: general-mode note, exact calculator, safety facts
+    **engine_facts.DEFAULTS,         # Unity 6 / Godot 4 / Unreal 5 / LOVE 11 / plain Lua 5.4: version facts note (server/mesh/engine)
     **polyglot_note.DEFAULTS,        # coding questions in other languages/engines: "answer fully" note + version facts
     **mcfacts.DEFAULTS,              # Minecraft plugin/mod questions: compile-verified API facts note
     **loop_runner.LOOP_DEFAULTS,      # best-of-2 + verified pick + hidden tool loop (server/mesh/loop), opt-in per request
@@ -943,6 +945,7 @@ class Router:
         elif model == FAST:
             cache_hdr.update(await self.docs_inject(req, headers))
             cache_hdr.update(await self.mc_inject(req, headers))
+            cache_hdr.update(engine_facts.apply(req, self.cfg))      # engine questions: one facts note (polyglot then skips)
             cache_hdr.update(polyglot_note.apply(req, self.cfg))     # before general: its note then stays out
             if req.pop("mesh_general", None) is not False and \
                     headers.get("x-mesh-general", "").lower() not in ("off", "0", "no"):

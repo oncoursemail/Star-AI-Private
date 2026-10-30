@@ -15,6 +15,10 @@
 #   install  copies server/mesh/polyglot to /opt/pg/app, builds the C# (Roslyn) and Java checkers,
 #            writes the token (container + star-mesh /etc/star-mesh/polyglot_token), the unit,
 #            and the LXD proxy device (host starnat0 address :8110 -> 127.0.0.1:8110 in the container)
+#   engine   (engine-truth lane) adds a NIC for the duration, installs LOVE 11.5 + Xvfb + Mesa software GL from the Ubuntu
+#            archive (the LOVE checker runs answers in the real engine under a virtual display), removes the NIC again.
+#            The data files the engine checks read (data/*.json: Lua 5.4 names from the reference manual, LOVE names
+#            from the running engine) are in the repo and travel with `install`; server/mesh/engine/build regenerates them.
 #   status | logs | remove
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
@@ -66,6 +70,17 @@ curl -fsSL -o unity-index-2022.3.js https://docs.unity3d.com/2022.3/Documentatio
 date -u +%FT%TZ > fetched.txt
 chmod -R a+rX /opt/pg
 echo tools ok
+SH
+  b1 "lxc config device remove $CT eth0 >/dev/null; lxc exec $CT -- ip -4 -o addr | grep -v ' lo ' || echo 'no network (ok)'"
+}
+
+step_engine() {
+  b1 "lxc config device add $CT eth0 nic network=starnat0 name=eth0 >/dev/null; sleep 6"
+  ct_sh <<'SH' || true
+set -e
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq && apt-get install -y -qq love xvfb libgl1-mesa-dri xauth >/dev/null
+love --version
 SH
   b1 "lxc config device remove $CT eth0 >/dev/null; lxc exec $CT -- ip -4 -o addr | grep -v ' lo ' || echo 'no network (ok)'"
 }
@@ -123,9 +138,10 @@ SH
 case "${1:-}" in
   create) step_create ;;
   tools) step_tools ;;
+  engine) step_engine ;;
   install) step_install ;;
   status) b1 "lxc list $CT -c ns --format csv; lxc exec $CT -- systemctl is-active star-polyglot.service; lxc exec $CT -- curl -s -m 5 http://127.0.0.1:$PORT/health; echo" ;;
   logs) b1 "lxc exec $CT -- journalctl -u star-polyglot.service -n 60 --no-pager" ;;
   remove) b1 "lxc stop $CT --force; lxc delete $CT; lxc exec $MESH -- rm -f /etc/star-mesh/polyglot_token /etc/star-mesh/polyglot_url" ;;
-  *) echo "usage: deploy.sh create|tools|install|status|logs|remove"; exit 2 ;;
+  *) echo "usage: deploy.sh create|tools|engine|install|status|logs|remove"; exit 2 ;;
 esac

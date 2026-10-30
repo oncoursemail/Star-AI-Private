@@ -10,7 +10,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-LANGUAGES = {"python", "javascript", "typescript", "csharp", "java", "cpp", "c", "rust", "go", "gdscript", "lua", "sql",
+LANGUAGES = {"python", "javascript", "typescript", "csharp", "java", "cpp", "c", "rust", "go", "gdscript", "lua", "love", "sql",
              "shell"}
 
 
@@ -34,10 +34,11 @@ class Polyglot:
         if language not in LANGUAGES:
             return None
         body = json.dumps({"language": language, "code": code, "context": context}).encode()
+        timeout = max(self.timeout_s, 10.0) if language == "love" else self.timeout_s     # a run in the real engine
         req = urllib.request.Request(self.url + "/check", body, {"Content-Type": "application/json",
                                                                  "Authorization": "Bearer " + self.token})
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 out = json.loads(r.read())
         except (OSError, ValueError):
             return None
