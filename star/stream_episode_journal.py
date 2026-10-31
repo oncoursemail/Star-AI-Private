@@ -31,7 +31,7 @@ _CAPTIONS = {
 
 
 def _time(value: object) -> float:
-    if type(value) not in (float, int):
+    if isinstance(value, bool) or not isinstance(value, (float, int)):
         raise ValueError("timestamp must be finite and nonnegative")
     try:
         converted = float(value)
@@ -43,7 +43,7 @@ def _time(value: object) -> float:
 
 
 def _identifier(value: object, field: str) -> str:
-    if type(value) is not str or _ID.fullmatch(value) is None:
+    if not isinstance(value, str) or _ID.fullmatch(value) is None:
         raise ValueError(f"{field} must be a bounded canonical identifier")
     return value
 
