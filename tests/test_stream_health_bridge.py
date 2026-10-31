@@ -23,7 +23,15 @@ def active():
     return bridge
 
 
+def output(bridge, at_ms, *, active=True, reconnecting=False):
+    return bridge.offer_stream_status(
+        {"outputActive": active, "outputReconnecting": reconnecting},
+        host_ms=at_ms, host_verified=True,
+    )
+
+
 def ready(bridge, *, lagged=False):
+    assert output(bridge, 900)
     assert bridge.offer_obs(obs(), host_ms=1000, host_verified=True) is None
     w = bridge.offer_obs(
         obs(rskip=3 if lagged else 0, rtotal=1100, ototal=1100),
@@ -70,9 +78,11 @@ def test_missing_obs_cannot_be_fake_healthy_zero_lag():
 
 def test_no_output_frames_and_obs_reconnect_invalidate_admission():
     bridge = active()
+    assert output(bridge, 900)
     bridge.offer_obs(obs(), host_ms=1000, host_verified=True)
     assert bridge.offer_obs(obs(), host_ms=1500, host_verified=True) is None
     assert not bridge.offer_host(load(), host_ms=1510, host_verified=True)
+    assert output(bridge, 1950)
     bridge.offer_obs(obs(rtotal=1100, ototal=1100),
                      host_ms=2000, host_verified=True)
     assert bridge.offer_host(load(), host_ms=2010, host_verified=True)
@@ -87,7 +97,8 @@ def test_every_live_host_sample_needs_a_distinct_obs_window():
     ready(bridge)
     assert not bridge.offer_host(load(), host_ms=1600, host_verified=True)
     assert not bridge.advise("vision", now_ms=1610).allowed
-    # Fresh OBS window allows recovery without repeating an old frame.
+    # Fresh OBS window and active output proof enable new admission.
+    assert output(bridge, 1950)
     assert bridge.offer_obs(obs(rtotal=1200, ototal=1200),
                             host_ms=2000, host_verified=True) is not None
     assert bridge.offer_host(load(), host_ms=2010, host_verified=True)
@@ -97,6 +108,7 @@ def test_every_live_host_sample_needs_a_distinct_obs_window():
 def test_obs_window_expiry_is_bounded_by_clock():
     bridge = active()
     ready(bridge)
+    assert output(bridge, 2400)
     assert bridge.advise("vision", now_ms=2450).allowed
     assert not bridge.advise("vision", now_ms=2600).allowed
     assert not bridge.offer_host(load(), host_ms=2610, host_verified=True)
@@ -107,12 +119,14 @@ def test_bad_obs_metrics_trip_and_recover_only_from_distinct_spaced_windows():
     ready(bridge, lagged=True)
     assert not bridge.advise("vision", now_ms=1520).allowed
     for at, total in ((2000, 1200), (2700, 1300)):
+        assert output(bridge, at - 100)
         assert bridge.offer_obs(
             obs(rskip=3, rtotal=total, ototal=total),
             host_ms=at, host_verified=True,
         ) is not None
         assert bridge.offer_host(load(), host_ms=at + 10, host_verified=True)
         assert not bridge.advise("vision", now_ms=at + 20).allowed
+    assert output(bridge, 3600)
     assert bridge.offer_obs(obs(rskip=3, rtotal=1400, ototal=1400),
                             host_ms=3700, host_verified=True) is not None
     assert bridge.offer_host(load(), host_ms=3710, host_verified=True)
@@ -213,7 +227,8 @@ def test_metrics_exclude_obs_payloads_and_require_real_windows():
     assert m["host_admitted"] == 1
     assert set(m) == {
         "obs_windows", "host_admitted", "host_rejected",
-        "bridge_deferrals", "obs_invalidated", "enabled", "live", "overloaded",
+        "bridge_deferrals", "obs_invalidated", "output_verified",
+        "output_invalidated", "enabled", "live", "overloaded",
     }
 
 
