@@ -56,6 +56,14 @@ OPS: dict[str, tuple[str, str]] = {
     "plus-minus-one": (r" \+ 1\b", " - 1"),
     "minus-plus-one": (r" - 1\b", " + 1"),
     "in-notin": (r" in (?=[\w(\[{])", " not in "),
+    "isnone-flip": (r" is None\b", " is not None"),
+    "isnotnone-flip": (r" is not None\b", " is None"),
+    "max-min": (r"\bmax\(", "min("),
+    "min-max": (r"\bmin\(", "max("),
+    "zero-one": (r"([=!]= )0\b", r"\g<1>1"),
+    "strip-drop": (r"\.strip\(\)", ""),
+    "break-continue": (r"\bbreak\b", "continue"),
+    "slice-shift": (r"\[1:\]", "[2:]"),
 }
 
 
@@ -74,7 +82,8 @@ def code_lines(text: str) -> set[int]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             for sub in ast.walk(node):
-                if isinstance(sub, (ast.Compare, ast.BoolOp, ast.If, ast.Return, ast.BinOp, ast.UnaryOp)):
+                if isinstance(sub, (ast.Compare, ast.BoolOp, ast.If, ast.Return, ast.BinOp, ast.UnaryOp, ast.Break,
+                                    ast.Call, ast.Subscript)):
                     lines.add(sub.lineno)
     return lines
 
@@ -194,6 +203,11 @@ HINTS = {
     "true-false": "a return True/False that is inverted", "false-true": "a return True/False that is inverted",
     "plus-minus-one": "+1 / -1 swapped: off by two", "minus-plus-one": "-1 / +1 swapped: off by two",
     "in-notin": "`in` vs `not in` inverted membership",
+    "isnone-flip": "`is None` vs `is not None` inverted", "isnotnone-flip": "`is not None` vs `is None` inverted",
+    "max-min": "max() where min() is meant (or the reverse)", "min-max": "min() where max() is meant (or the reverse)",
+    "zero-one": "a comparison with 0 that became 1", "strip-drop": "a dropped .strip() keeps whitespace",
+    "break-continue": "a `break` that became `continue` keeps looping",
+    "slice-shift": "a [1:] slice that became [2:] skips an item",
 }
 
 
