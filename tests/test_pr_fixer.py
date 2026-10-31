@@ -85,3 +85,22 @@ def test_lint_failures_get_safe_autofixes_then_her_edits(tmp_path):
     assert ok and why == "unused local" and len(asked) == 1 and "F401" not in asked[0]      # os import: autofixed
     assert (tmp_path / "star" / "m.py").read_text(encoding="utf-8") == "\n\ndef f():\n    return 2\n"
     assert F.RUFF_CI.search("::error title=Ruff (F401),file=star/m.py,line=1::x")
+
+
+def test_a_dependency_bump_gets_its_lock_regenerated_by_the_project_tool(tmp_path):
+    (tmp_path / "installer" / "star-home").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "requirements-home.in").write_text("yt-dlp==2\n", encoding="utf-8")
+    (tmp_path / "installer" / "star-home" / "pin_requirements.py").write_text(
+        "from pathlib import Path\nPath('requirements-home.txt').write_text(Path('requirements-home.in').read_text())\n",
+        encoding="utf-8")
+    (tmp_path / "tests" / "test_home_installer.py").write_text(
+        "from pathlib import Path\n\n\ndef test_lock():\n    assert Path('requirements-home.txt').read_text().split() == ['yt-dlp==2']\n",
+        encoding="utf-8")
+    assert F.fix_lock(tmp_path, sys.executable)[0] is True
+    assert F.DEP_FILE.match("requirements-home.txt") and not F.DEP_FILE.match("star/x.py")
+    (tmp_path / "requirements-home.in").write_text("yt-dlp==3\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_home_installer.py").write_text(
+        "def test_pin():\n    assert 'yt-dlp==2' in open('requirements-home.txt').read()\n", encoding="utf-8")
+    ok, why = F.fix_lock(tmp_path, sys.executable)
+    assert not ok and "needs review" in why

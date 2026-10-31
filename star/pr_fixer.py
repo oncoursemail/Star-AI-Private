@@ -290,6 +290,24 @@ def fix_lint(tree: Path, python: str, asker=ask) -> tuple[bool, str, int]:
     return not lint(tree, python), why, ROUNDS
 
 
+LOCK_TOOL = "installer/star-home/pin_requirements.py"
+DEP_FILE = re.compile(r"^requirements[\w-]*\.(in|txt)$")
+
+
+def fix_lock(tree: Path, python: str) -> tuple[bool, str]:
+    """A dependency bump (Dependabot) edits the hashed lock by hand and breaks it: regenerate it with the project's
+    own lock tool from the bumped requirements-home.in, then the installer tests must pass. No model involved."""
+    r = sh([python, LOCK_TOOL], cwd=tree, timeout=1800)
+    if r.returncode:
+        return False, "the lock tool failed: " + (r.stdout + r.stderr)[-300:]
+    ok, out = run_tests(tree, ["tests/test_home_installer.py"], python)
+    if ok:
+        return True, "requirements-home lock regenerated with " + LOCK_TOOL
+    first = (failures(out, 1) or [{"section": out}])[0]["section"]
+    return False, "regenerated lock still fails the installer tests (a test pins this choice; needs review): " + \
+        " ".join(re.findall(r"(?m)^E\s+(.*)$", first)[:2])[:300]
+
+
 def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     sha, number = pr["headRefOid"], pr["number"]
     log = failed_logs(sha)
@@ -314,7 +332,11 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         return {"pr": number, "result": "skip", "why": "fetch failed: " + got.stderr[-200:]}
     sh(["git", "-C", str(CLONE), "worktree", "add", "-q", str(tree), branch])
     tests = sorted({f["test"].split("::")[0] for f in fails})     # whole files: a second bug must fail too
-    if linting:
+    names = gh("pr", "diff", str(number), "--repo", REPO, "--name-only", timeout=300).split()
+    if names and all(DEP_FILE.match(n) for n in names) and (tree / LOCK_TOOL).is_file():
+        ok, why = fix_lock(tree, python)
+        round_no, tests = 1, ["tests/test_home_installer.py"]
+    elif linting:
         ok, why, round_no = fix_lint(tree, python, asker)
         if round_no == 0:
             return {"pr": number, "result": "skip", "why": why}
