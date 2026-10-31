@@ -199,3 +199,48 @@ def test_empty_or_unbounded_evidence_never_qualifies():
         [None], cases()).reasons
     assert "invalid_evidence" in compare_game_skill(
         cases() * 100, cases()).reasons
+
+def test_local_latency_regression_cannot_hide_below_global_tail():
+    # Map 0 is normally very responsive. Making its decisions almost twice as
+    # slow is harmful even when the slow maps keep GLOBAL p95 unchanged.
+    baseline = [
+        replace(t, action_delay_ms=50.0 if t.scenario_id == "map_0" else 240.0)
+        for t in cases()
+    ]
+    candidate = [
+        replace(t, progress=0.8,
+                action_delay_ms=95.0 if t.scenario_id == "map_0" else t.action_delay_ms)
+        for t in baseline
+    ]
+    verdict = compare_game_skill(baseline, candidate)
+    assert not verdict.eligible
+    assert "scenario_p95_action_delay_regression" in verdict.reasons
+    assert "p95_action_delay_regression" not in verdict.reasons
+    assert "severe_action_delay_regression" not in verdict.reasons
+    assert verdict.candidate_p95_action_delay_ms == verdict.baseline_p95_action_delay_ms
+
+
+def test_balanced_holdouts_required_for_cross_map_claims():
+    # One lone unseen seed on the second map cannot establish generalization.
+    baseline = [
+        replace(t, scenario_id="rare_map" if i == 0 else "main_map")
+        for i, t in enumerate(cases())
+    ]
+    candidate = [replace(t, progress=0.85) for t in baseline]
+    verdict = compare_game_skill(baseline, candidate)
+    assert not verdict.eligible
+    assert "insufficient_unseen_scenarios" in verdict.reasons
+
+
+def test_real_cross_map_gain_does_not_fail_scenario_latency_guard():
+    baseline = [
+        replace(t, action_delay_ms=50.0 if t.scenario_id == "map_0" else 240.0)
+        for t in cases()
+    ]
+    candidate = [
+        replace(t, progress=0.75,
+                action_delay_ms=35.0 if t.scenario_id == "map_0" else t.action_delay_ms)
+        for t in baseline
+    ]
+    verdict = compare_game_skill(baseline, candidate)
+    assert verdict.eligible and verdict.reasons == ()

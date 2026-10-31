@@ -168,7 +168,16 @@ def compare_game_skill(
     keys = sorted(bkeys)
     b, n = [bindex[k] for k in keys], [cindex[k] for k in keys]
     reasons: list[str] = []
-    if len(keys) < min_holdouts or len({(key[0], key[1]) for key in keys}) < 2:
+    # "20 unseen cases across two maps" is not credible if one map has only
+    # one example. Require independently matched observations in every
+    # preregistered scenario, not merely two distinct scenario labels.
+    scenario_counts: dict[tuple[str, str], int] = {}
+    for key in keys:
+        scope = (key[0], key[1])
+        scenario_counts[scope] = scenario_counts.get(scope, 0) + 1
+    min_per_scenario = min(4, max(2, min_holdouts // 5))
+    if (len(keys) < min_holdouts or len(scenario_counts) < 2
+            or any(count < min_per_scenario for count in scenario_counts.values())):
         reasons.append("insufficient_unseen_scenarios")
     if any(old.success and not new.success for old, new in zip(b, n)):
         reasons.append("new_failures")
@@ -178,12 +187,25 @@ def compare_game_skill(
     # The per-case 2.5-point tolerance alone permits this aggregate reversal.
     # Compare each preregistered scenario independently (including game scope).
     by_scenario: dict[tuple[str, str], list[float]] = {}
+    scenario_delays: dict[tuple[str, str], list[tuple[float, float]]] = {}
     for old, new in zip(b, n):
         key = (old.game_scope, old.scenario_id)
         by_scenario.setdefault(key, []).append(new.progress - old.progress)
+        scenario_delays.setdefault(key, []).append(
+            (old.action_delay_ms, new.action_delay_ms)
+        )
     if any(sum(deltas) / len(deltas) < -0.01
            for deltas in by_scenario.values()):
         reasons.append("scenario_progress_regression")
+    # An easy map may be the only one made significantly slower. Its p95 is
+    # invisible beneath a different, naturally slow map's GLOBAL p95.
+    # Preserve the original global tail check as a separate safeguard.
+    for paired_delays in scenario_delays.values():
+        old_p95 = _p95([older for older, _ in paired_delays])
+        new_p95 = _p95([newer for _, newer in paired_delays])
+        if new_p95 > old_p95 * 1.10 and new_p95 > old_p95 + 20:
+            reasons.append("scenario_p95_action_delay_regression")
+            break
     if any(new.action_delay_ms > 2 * old.action_delay_ms + 100
            for old, new in zip(b, n)):
         reasons.append("severe_action_delay_regression")
