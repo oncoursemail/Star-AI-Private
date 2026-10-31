@@ -38,6 +38,8 @@ def test_hard_gates_block_on_facts():
     assert M.gate_failures(GOOD, failed, {})[0] == "check ci failure"
     leak = {"x.py": {"text": "", "added": {3: 'host = "10.99.0.1"'}}}  # star:allow
     assert M.gate_failures(GOOD, PASSED, leak) == ["possible secret or private address at x.py:3"]
+    marked = {"x.py": {"text": "", "added": {3: 'host = "10.99.0.1"  # star:allow'}}}  # star:allow
+    assert M.gate_failures(GOOD, PASSED, marked) == []                 # the same marker star commit accepts
     pin = {"r.txt": {"text": "", "added": {1: "pywin32==10.3.10.19"}}}  # star:allow
     assert M.gate_failures(GOOD, PASSED, pin) == []
 

@@ -139,7 +139,7 @@ def gate_failures(pr: dict, checks: list[dict], files: dict[str, dict]) -> list[
             why.append(f"forbidden file {path}")
         for no, text in f["added"].items():
             hit = SECRET.search(text)
-            if hit and not DOC_IP.fullmatch(hit.group(0)):
+            if hit and not DOC_IP.fullmatch(hit.group(0)) and "star:allow" not in text:   # star commit's reviewed marker
                 why.append(f"possible secret or private address at {path}:{no}")
                 break
     why += [f"major dependency bump {b}: run it on STAR's PC first (CI does not install her packages)"
