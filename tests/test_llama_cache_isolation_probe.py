@@ -92,10 +92,10 @@ def test_earlier_session_marker_is_detected_not_only_immediate_pair():
         arm = _which(payload)
         system = str(payload["messages"][0]["content"])
         if arm == "A":
-            match = re.search(r"ALPHA_OK_\\d+", system)
+            match = re.search(r"ALPHA_OK_\d+", system)
             assert match is not None
             return match.group()
-        match = re.search(r"BETA_OK_\\d+", system)
+        match = re.search(r"BETA_OK_\d+", system)
         assert match is not None
         if match.group() == "BETA_OK_1":
             return original
