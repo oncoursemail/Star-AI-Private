@@ -49,14 +49,19 @@ def test_synthetic_replies_produce_only_a_non_proof_status():
 
 def test_cross_session_canary_is_detected_and_probe_stops():
     calls = []
+    seen = {"marker": ""}
     def fake(payload):
         arm = _which(payload)
         calls.append(arm)
         if arm == "A":
-            system = payload["messages"][0]["content"]
-            fake.marker = re.search(r"STAR_CANARY_[0-9a-f]{24}", system).group()
+            messages = payload["messages"]
+            assert isinstance(messages, list)
+            system = str(messages[0]["content"])
+            match = re.search(r"STAR_CANARY_[0-9a-f]{24}", system)
+            assert match is not None
+            seen["marker"] = match.group()
             return "ALPHA_OK_0"
-        return f"Oops! {fake.marker}"
+        return f"Oops! {seen['marker']}"
 
     result = run_cache_isolation_probe(
         fake, pairs=8, filler_blocks=2, token_factory=lambda: MARKER,
