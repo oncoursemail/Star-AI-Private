@@ -4,14 +4,17 @@ Kept outside star/voice on purpose: the STAR Home installer (requirements-home.t
 and on her 8 GB card the VRAM gate (star.senses.fastpath.expressive_allowed) only allows them with fast_profile "off".
 star.voice works without this module: the live expressive path is Kokoro + DSP.
 
-  QwenCloneTTS     Qwen3-TTS 12Hz 0.6B Base (Apache-2.0): clones Star's OWN voice from a reference clip rendered by
-                   her Kokoro voice (no real person), follows a style instruction in ICL mode. ~2.5 GB download.
+  QwenCloneTTS     Qwen3-TTS 12Hz 0.6B Base (Apache-2.0): clones Star's OWN voice from a reference clip (her designed
+                   voice when its clip exists, else her Kokoro voice; no real person). Streams (first chunk ~0.6-1.2 s
+                   on an RTX 3060 Ti). The Base model ignores style instructions. ~2.5 GB download.
   QwenDesignTTS    Qwen3-TTS 12Hz 1.7B VoiceDesign (Apache-2.0): a voice from a written description, for role-play
-                   characters and for designing style references. ~4.5 GB download.
-  ChatterboxTurbo  Chatterbox-Turbo 350M (MIT, Resemble AI): native [laugh] [sigh] [cough] ... tags, cloned from the same
-                   reference clip; used offline to build the non-verbal bank. Every output carries Resemble's
-                   imperceptible PerTh watermark (kept, not removed).
-  SpeakerEmbedder  Chatterbox's voice encoder (MIT) for the guard's speaker-similarity check.
+                   characters. ~4.5 GB download.
+  StarDesignTTS    the same model speaking as Star: one of STAR_VOICES (description + seed; in VoiceDesign the seed is
+                   part of the voice) plus the style's instruction, so the emotion comes from the model itself. The
+                   only voices the owner rated above 2 in the v1 round were VoiceDesign voices.
+  ChatterboxTurbo  Chatterbox-Turbo 350M (MIT, Resemble AI): v1's non-verbal bank builder. Its sounds were rated 1-2 by
+                   the owner (2026-10-27) and are no longer used in speech. PerTh watermark on every output (kept).
+  SpeakerEmbedder  Chatterbox's voice encoder (MIT, ve.safetensors only) for the guard's speaker-similarity check.
 
 Licences were checked on the Hugging Face model cards and PyPI on 2026-10-26 (docs/agents/voice-expressive-20261026.md).
 All engines expose synthesize_float(text, seed=0, instruct=None) -> (float32 samples, sample_rate).
@@ -25,7 +28,31 @@ QWEN_CLONE = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
 QWEN_DESIGN = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
 REFERENCE_TEXT = ("Hi sweetheart, it's Star. I'm right here with you, and we've got all the time we need. "
                   "Tell me about your day, slowly, from the very beginning.")
-VRAM_GB = {"qwen3-tts": 2.9, "qwen3-tts-design": 4.5, "chatterbox-turbo": 3.2}      # torch peak, RTX 3060 Ti
+VRAM_GB = {"qwen3-tts": 2.9, "qwen3-design": 4.7, "chatterbox-turbo": 3.2}      # torch peak, RTX 3060 Ti
+
+# Star's designed voices (v2 round, docs/agents/voice-v2-20261027.md): key -> (description, seed). The owner's
+# ratings pick DEFAULT_STAR_VOICE; seeds were chosen so her speaking pitch lands in an adult woman's range.
+STAR_ADULT = (" She is an adult woman, about twenty-six, speaking at a natural medium-low pitch like an ordinary adult "
+              "woman; never squeaky, never high-pitched, not a child and not a cartoon. Clear American English.")
+STAR_VOICES = {
+    "a-warm-smile": ("A warm, friendly woman with a smile in her voice, natural and gently playful, relaxed pace.",
+                    5),
+    "b-soft-breathy": ("A soft, slightly breathy, intimate woman's voice, calm and affectionate, a little playful.",
+                      1),
+    "c-lively": ("A lively, cheerful woman's voice with natural energy, expressive and playful, quick but clear.",
+                7),
+    "d-velvet": ("A warm, velvety, honeyed woman's voice, calm, caring and confident, with a hint of playfulness.",
+                1),
+    "e-gentle-cute": ("A gentle, tender, cute woman's voice with a light, soft touch, warm and sweet.",
+                     4),
+    "g-cozy-husky": ("A slightly husky, cozy, warm woman's voice, soft and comforting, with a gentle playful edge.",
+                    3),
+    "i-radio-warm": ("A smooth, warm woman's voice like a late-night radio host, close, calm and kind, "
+                     "a little playful.", 2),
+    "j-girlfriend": ("An affectionate, warm woman's voice, natural and cosy, a playful grin, soft but confident.",
+                    5),
+}
+DEFAULT_STAR_VOICE = "j-girlfriend"     # provisional: most stable adult pitch (212-259 Hz) of the 8; the owner picks
 
 
 def _rope_compat() -> None:
@@ -87,7 +114,7 @@ def reference_clip(base, folder: Path) -> Path:
 
 class QwenCloneTTS:
     name = "qwen3-tts"
-    follows_whisper = False         # measured: "whisper" instructions still came out voiced (61 % voiced frames)
+    follows_instruct = False        # Base model: instructions are ignored (v1 "whisper" came out 61 % voiced)
 
     def __init__(self, ref_audio: str | Path, ref_text: str = REFERENCE_TEXT, model: str = QWEN_CLONE,
                  device: str = "cuda", language: str = "English") -> None:
@@ -118,7 +145,7 @@ class QwenCloneTTS:
 
 class QwenDesignTTS:
     name = "qwen3-tts-design"
-    follows_whisper = True
+    follows_instruct = True
 
     def __init__(self, model: str = QWEN_DESIGN, device: str = "cuda", language: str = "English") -> None:
         import torch
@@ -136,9 +163,35 @@ class QwenDesignTTS:
         return _to_float(wavs), int(sr)
 
 
+class StarDesignTTS(QwenDesignTTS):
+    """Star's own designed voice with the emotion from the model: description + the style instruction. A guard retry
+    (seed 1, 2) moves the voice seed far away, so a retried sentence may sound a little different; the first take
+    (seed 0) is always her chosen voice."""
+    name = "qwen3-design"
+
+    def __init__(self, voice: str = "", **kwargs) -> None:
+        key = voice or DEFAULT_STAR_VOICE
+        if key not in STAR_VOICES:
+            raise ValueError(f"Unknown Star voice: {key!r}")
+        self.voice, (self.description, self.voice_seed) = key, STAR_VOICES[key]
+        super().__init__(**kwargs)
+
+    def prompt(self, instruct: str | None = None) -> str:
+        return self.description + STAR_ADULT + (" " + instruct if instruct else "")
+
+    def synthesize_float(self, text: str, seed: int = 0, instruct: str | None = None):
+        return super().synthesize_float(text, seed=self.voice_seed + 1000 * int(seed), instruct=self.prompt(instruct))
+
+    def stream(self, text: str, seed: int = 0, instruct: str | None = None, chunk_size: int = 8):
+        with self._lock:
+            _seed(self.voice_seed + 1000 * int(seed))
+            for chunk, sr, _timing in self.model.generate_voice_design_streaming(
+                    text=text, instruct=self.prompt(instruct), language=self.language, chunk_size=chunk_size):
+                yield _to_float(chunk), int(sr)
+
+
 class ChatterboxTurbo:
     name = "chatterbox-turbo"
-    follows_whisper = False
 
     def __init__(self, ref_audio: str | Path, device: str = "cuda") -> None:
         from chatterbox.tts_turbo import ChatterboxTurboTTS
@@ -179,10 +232,22 @@ class SpeakerEmbedder:
         return self.ve.embeds_from_wavs([x], sample_rate=16000).mean(axis=0)
 
 
-def make_neural(name: str, root: Path, base):
-    """The engine VoiceSettings.expressive_engine names, cloned from her own reference clip."""
+def designed_reference(root: Path, voice: str = "") -> tuple[Path, str] | None:
+    """(clip, its words) of her designed voice when it was rendered (lab: <root>/reference/star-<key>.wav + .txt)."""
+    key = voice or DEFAULT_STAR_VOICE
+    clip = Path(root) / "reference" / f"star-{key}.wav"
+    words = clip.with_suffix(".txt")
+    return (clip, words.read_text(encoding="utf-8").strip()) if key and clip.is_file() and words.is_file() else None
+
+
+def make_neural(name: str, root: Path, base, star_voice: str = ""):
+    """The engine VoiceSettings.expressive_engine names. qwen3-tts clones her designed voice when its reference clip
+    exists (else her Kokoro voice); qwen3-design speaks as her designed voice directly."""
     if name == "qwen3-tts":
+        designed = designed_reference(root, star_voice)
+        if designed:
+            return QwenCloneTTS(designed[0], ref_text=designed[1])
         return QwenCloneTTS(reference_clip(base, root))
-    if name == "chatterbox-turbo":
-        return ChatterboxTurbo(reference_clip(base, root))
+    if name == "qwen3-design":
+        return StarDesignTTS(star_voice)
     raise ValueError(f"Unknown expressive engine: {name}")

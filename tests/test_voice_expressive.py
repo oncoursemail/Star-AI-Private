@@ -309,7 +309,7 @@ def test_sound_routing(tmp_path):
     _wav(bank_dir / "sigh" / "0.wav", 0.5)
     _wav(bank_dir / "sigh" / "1.wav", 0.5)
     bank = NonverbalBank(bank_dir)
-    assert route("laugh", "chatterbox-turbo", bank).how == "native"
+    assert route("laugh", "chatterbox-turbo", None).how == "skip"         # v2: no native engine, no "Ha ha!" read out
     assert route("sigh", "kokoro", bank).how == "clip"
     assert route("mm-hm", "kokoro", bank) == route("mm-hm", "", None) and route("mm-hm", "", None).how == "text"
     assert route("sneeze", "kokoro", bank).how == "skip"                  # never read "achoo" aloud
@@ -375,7 +375,7 @@ def test_quality_mode_uses_neural_and_falls_back_when_guard_rejects(tmp_path):
     bad = make_tts(tmp_path / "b", mode="quality")
     bad.neural, bad.guard = SeededEngine(good=()), ArtefactGuard()
     list(bad.synthesize("Hello there, my dear friend."))
-    assert bad.last[0]["engine"] == "kokoro+dsp" and bad.neural.seeds == [0, 1, 2]
+    assert bad.last[0]["engine"] == "kokoro" and bad.neural.seeds == [0, 1, 2]
     assert bad.stats.summary()["gave_up"] == 1
 
 
@@ -400,7 +400,12 @@ def test_loudness_normalise_and_whisper_has_no_pitch():
 
 
 # -- singing ------------------------------------------------------------------------------------------------------------
-def test_singing_policy_and_composer():
+def test_singing_policy_and_composer(monkeypatch):
+    from star.voice import singing
+    assert singing.SINGING_PAUSED                                          # v2: paused until a model sings well
+    allowed, answer = can_sing("make up a lullaby about the moon")
+    assert not allowed and answer == singing.PAUSED_ANSWER and "words" in answer
+    monkeypatch.setattr(singing, "SINGING_PAUSED", False)
     assert can_sing("sing twinkle twinkle little star")[0]
     assert can_sing("make up a lullaby about the moon")[1] == "original"
     allowed, answer = can_sing("sing Shake It Off")
@@ -449,11 +454,76 @@ def test_write_wav_roundtrip(tmp_path):
         assert f.getframerate() == SR and f.getnchannels() == 1
 
 
-def test_sing_tag_is_sung_or_falls_back_to_sing_song(tmp_path):
+def test_sing_tag_is_spoken_while_singing_is_paused(tmp_path):
     tts = make_tts(tmp_path)
     chunks = list(tts.synthesize("<sing> Goodnight little star."))
-    assert chunks and tts.last[-1]["style"] in ("sing", "sing-song")
-    assert "<sing>" in S.TAGS_PROMPT and "never other people's song lyrics" in S.TAGS_PROMPT
+    assert chunks and tts.last[-1]["style"] == "warm" and tts.last[-1]["engine"] == "kokoro"
+    assert "<sing>" not in S.TAGS_PROMPT and "never other people's song lyrics" in S.TAGS_PROMPT
+
+
+# -- v2: no DSP styles, emotion only from engines that follow instructions, Star's designed voice -------------------
+def test_live_path_applies_no_dsp_style(tmp_path):
+    from star.voice.guard import pitch_track
+    tts = make_tts(tmp_path)
+    chunks = list(tts.synthesize("<whisper> Come here, I have a secret."))
+    x = voicedsp.as_float(chunks[0][0])
+    assert tts.last[0]["style"] == "whisper" and tts.last[0]["engine"] == "kokoro"
+    assert (pitch_track(x, SR) > 0).mean() > 0.8                          # still voiced: no fake DSP whisper
+    assert tts.base.calls[0]["rate"] == 1.0                               # no style speed change either
+
+
+class InstructEngine(SeededEngine):
+    def __init__(self, follows):
+        super().__init__(good=(0,))
+        self.follows_instruct, self.instructs = follows, []
+
+    def synthesize_float(self, text, seed=0, instruct=None):
+        self.instructs.append(instruct)
+        return super().synthesize_float(text, seed, instruct)
+
+
+@pytest.mark.parametrize("follows", [True, False])
+def test_style_instruction_only_for_engines_that_follow_it(tmp_path, follows):
+    tts = make_tts(tmp_path, mode="quality", guard="off")
+    tts.neural = InstructEngine(follows)
+    list(tts.synthesize("<sad> I hoped it would work."))
+    expected = S.STYLES["sad"].instruct if follows else None
+    assert tts.neural.instructs == [expected] and tts.last[0]["engine"] == "fake-neural"
+
+
+def test_star_design_voice_prompt_and_seeds(monkeypatch, tmp_path):
+    import star.voice_neural as N
+    calls = []
+    monkeypatch.setattr(N.QwenDesignTTS, "__init__", lambda self, **k: None)
+    monkeypatch.setattr(N.QwenDesignTTS, "synthesize_float",
+                        lambda self, text, seed=0, instruct=None: calls.append((seed, instruct)) or (np.zeros(10), SR))
+    monkeypatch.setitem(N.STAR_VOICES, "t-test", ("A warm woman's voice.", 5))
+    eng = N.StarDesignTTS("t-test")
+    assert eng.name == "qwen3-design" and eng.follows_instruct
+    eng.synthesize_float("Hi.", seed=0, instruct="Whisper softly.")
+    eng.synthesize_float("Hi.", seed=2)
+    assert calls[0] == (5, "A warm woman's voice." + N.STAR_ADULT + " Whisper softly.")
+    assert calls[1] == (2005, "A warm woman's voice." + N.STAR_ADULT)      # guard retry: a different seed
+    with pytest.raises(ValueError):
+        N.StarDesignTTS("no-such-voice")
+    assert N.designed_reference(tmp_path, "t-test") is None
+    (tmp_path / "reference").mkdir()
+    (tmp_path / "reference" / "star-t-test.wav").write_bytes(b"x")
+    (tmp_path / "reference" / "star-t-test.txt").write_text("Hi, it's Star.\n", encoding="utf-8")
+    assert N.designed_reference(tmp_path, "t-test") == (tmp_path / "reference" / "star-t-test.wav", "Hi, it's Star.")
+
+
+def test_v2_settings_engines_and_star_voice():
+    from star.senses.fastpath import EXPRESSIVE_GB
+    from star.voice.settings import EXPRESSIVE_ENGINES, VoiceSettings
+    import star.voice_neural as N
+    assert "chatterbox-turbo" not in EXPRESSIVE_ENGINES and "qwen3-design" in EXPRESSIVE_ENGINES
+    assert set(EXPRESSIVE_ENGINES) - {"kokoro"} <= set(EXPRESSIVE_GB)
+    assert N.DEFAULT_STAR_VOICE in N.STAR_VOICES
+    s = VoiceSettings.from_mapping({"expressive_engine": "qwen3-design", "star_voice": N.DEFAULT_STAR_VOICE})
+    assert s.star_voice == N.DEFAULT_STAR_VOICE
+    with pytest.raises(ValueError):
+        VoiceSettings.from_mapping({"star_voice": "nobody"})
 
 
 def test_call_session_keeps_tags_for_the_voice_and_strips_them_for_the_screen():

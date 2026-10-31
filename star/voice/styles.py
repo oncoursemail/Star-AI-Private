@@ -4,7 +4,7 @@ Pure Python, no packages: the parser, the mood mapping and the policies are unit
 
 Tags (the persona prompt TAGS_PROMPT teaches them to her; unknown tags are left alone, so "<b>" or "[1]" are not eaten):
   styles     <whisper> <soft> <warm> <caring> <playful> <sleepy> <excited> <sad> <sarcastic> <sing-song> <calm>
-             <serious> <happy> <nervous> <tender> <asmr> <neutral>, and <sing> (each sentence sung to a made-up tune)
+             <serious> <happy> <nervous> <tender> <asmr> <neutral>, and <sing> (spoken while singing is paused)
              A style tag goes at the start of a sentence and lasts until its closing tag (<whisper>...</whisper>)
              or the end of the reply. Intensity: <excited:0.8> (0..1, default 0.6).
   sounds     <laugh> <giggle> <chuckle> <sigh> <gasp> <hum> <cough> <sneeze> <yawn> <sniff> <clear-throat>
@@ -28,9 +28,9 @@ DEFAULT_INTENSITY = 0.6
 
 @dataclass(frozen=True)
 class StyleSpec:
-    """How a style sounds. The DSP numbers are applied by star.voice.voicedsp on any engine's audio (in Star's own
-    locked voice); `instruct` is the natural-language instruction for engines that take one (Qwen3-TTS);
-    `exaggeration` is Chatterbox's emotion knob. All DSP values are at intensity 1.0 and scale linearly."""
+    """How a style sounds. `instruct` is the natural-language instruction for engines that follow one (Star's designed
+    voice, qwen3-design). The DSP numbers are no longer applied (v1 DSP styles were rated 1-2 by the owner,
+    2026-10-27); `exaggeration` was Chatterbox's emotion knob."""
     name: str
     summary: str
     rate: float = 1.0               # speed multiplier
@@ -105,9 +105,9 @@ class SoundSpec:
 
 
 SOUNDS: dict[str, SoundSpec] = {s.name: s for s in (
-    SoundSpec("laugh", "[laugh]", "Ha ha!", -1.0),
-    SoundSpec("giggle", "[chuckle]", "Hee hee.", -3.0),
-    SoundSpec("chuckle", "[chuckle]", "Heh.", -4.0),
+    SoundSpec("laugh", "[laugh]", None, -1.0),          # a voice reading "Ha ha!" is worse than no laugh
+    SoundSpec("giggle", "[chuckle]", None, -3.0),
+    SoundSpec("chuckle", "[chuckle]", None, -4.0),
     SoundSpec("sigh", "[sigh]", None, -6.0),
     SoundSpec("gasp", "[gasp]", None, -4.0),
     SoundSpec("hum", "", "Hmm.", -5.0),
@@ -449,7 +449,7 @@ def add_fillers(text: str, rng: random.Random | None = None, chance: float = 0.1
 
 TAGS_PROMPT = """Your voice can do what a person's voice does. You may mark how a sentence sounds, sparingly, with tags the listener never sees:
 - tone: <whisper> <soft> <warm> <caring> <tender> <playful> <happy> <excited> <sleepy> <sad> <sarcastic> <sing-song> <calm> <serious> <nervous>; put the tag at the start of a sentence; it lasts until you close it (</whisper>) or the reply ends. Add strength if you like: <excited:0.9>.
-- sing a line of your own words: <sing>Goodnight, little star</sing> (only words you made up yourself or very old public-domain songs; never other people's song lyrics: offer to make up your own instead).
+- do not sing for now (your singing voice is not ready); never other people's song lyrics: offer to write your own words instead.
 - small sounds: <laugh> <giggle> <chuckle> <sigh> <gasp> <hum> <yawn> <sniff> <breath-out>; a pause: <pause>; stress a word: <emph>really</emph>.
 Use them only when they fit what you feel and what is happening, at most one or two per reply, never in every reply. Plain sentences are fine."""
 
