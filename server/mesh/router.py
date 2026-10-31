@@ -3,8 +3,9 @@
 Contract: docs/agents/WAVE-20261027-MESH-BRIEF.md. Each GPU node publishes `GET :8099/status`
 ({"state": "idle|busy|away|off", "models": [{"id": "litha-fast", "url": ".../v1", "loaded": true, "tok_s": ..}]}).
 
-Models: `litha` = the best idle node by measured tok/s and queue, else the brain's star-fast; `litha-deep` = the same
-node model with thinking on and a thinking budget (`deep_node_body`), else the brain's star-deep;
+Models: `litha` = the best idle node by measured tok/s and queue, else the brain's litha-26b, then star-fast;
+`litha-deep` = the same node model with thinking on and a thinking budget (`deep_node_body`), else the brain's
+litha-26b, then star-deep; header `X-Mesh-Nodes: off` skips the nodes for one request (tests the brain path);
 every other model id passes through to the brain. A request is never sent to a node whose state is not `idle` or
 whose status is stale. The client sees nothing until a backend produced its first token, so any failure before that
 moves on to the next backend; with hedging the two best start together and the first token wins (the other is
@@ -26,11 +27,21 @@ import urllib.parse
 from pathlib import Path
 
 from . import instant
+from .agent import route as agent_route
+from .engine import facts as engine_facts
+from .flaws import hook as flaw_hook
+from .general import inject as general
+from . import mcfacts
 from .loop import runner as loop_runner
+from .polyglot import note as polyglot_note
+from .selfmodel import brief as self_brief
 from .speed import hook as speed
+from .speed import fullcode
 
 VERSION = "3"
 FAST, DEEP = "litha", "litha-deep"
+MC_QUESTION = re.compile(r"\bminecraft\b|\bmcfunction\b|\bdata ?packs?\b|\bresource ?packs?\b|pack\.mcmeta|"
+                         r"\bcommand block\b|(?:^|\s)/(?:give|tp|execute|summon|tellraw|scoreboard|gamerule)\b", re.I)
 
 DEFAULTS = {
     "listen": "0.0.0.0",
@@ -38,6 +49,10 @@ DEFAULTS = {
     "brain_url": "http://127.0.0.1:8080",
     "brain_fast_model": "star-fast",
     "brain_deep_model": "star-deep",
+    # the brain's first choice when no GPU node takes a litha / litha-deep request: gemma-4-26B-A4B, thinking off
+    # (blind 36-38 strict passes of 57-60 = the node's gemma-12b; star-fast 19/60; first token 1.7 s vs star-deep's
+    # 142 s cold; docs/agents/litha-26b-fallback-20261028.md). star-fast / star-deep only when it fails; "" = off
+    "brain_litha_model": "litha-26b",
     # "Think harder" (litha-deep): an idle GPU node's model with thinking on and a 1,500-token thinking cap
     # (docs/agents/litha-brain-20261028.md); the brain's star-deep only when no node is usable
     "deep_on_nodes": True,
@@ -53,9 +68,23 @@ DEFAULTS = {
     "stale_s": 10.0,                  # a node status older than this is not used
     "node_first_token_s": 45.0,       # no first token from a node within this -> next backend
     "brain_first_token_s": 900.0,
+    # litha / litha-deep on the brain: no queue there any more (brain_litha_max_inflight), so a first word this late
+    # means an overloaded CPU; give the slot back (10-29: a short question had no first word after 120 s)
+    "brain_litha_first_token_s": 240.0,
     "read_idle_s": 120.0,             # silence in the middle of a stream -> the backend failed
     "fail_cooldown_s": 30.0,
-    "max_continuations": 2,           # a cut stream goes on on another backend at most this many times
+    # admission for litha / litha-deep (docs/agents/router-spill-20261029.md): brain1 runs litha-26b with ONE slot on
+    # a shared CPU (0.6-2 tok/s under load), so extra requests used to wait there up to brain_first_token_s (10-29: 88
+    # in flight, 128 failures after 900 s, STAR's star-voice starved). Now: at most node_max_inflight requests per GPU
+    # node (more wait in the router for a slot, never spill while a GPU node is just busy); the brain only when no
+    # node is usable, after up to gpu_wait_s for a node that is cooling down, and at most brain_litha_max_inflight at
+    # once (-1 = no cap); a request that finds no slot within queue_max_s gets a 503 "mesh busy" at once
+    "node_max_inflight": 2,           # one answering + one queued in the node's llama-server (no gap between answers)
+    "brain_litha_max_inflight": 1,
+    "gpu_wait_s": 10.0,
+    "queue_max_s": 120.0,
+    "admit_poll_s": 0.2,
+    "max_continuations": 2,          # a cut stream goes on on another backend at most this many times
     "warm_every_s": 60.0,             # at most one POST /load per node per this many seconds
     "hedge": False,                   # default; a request can ask with header X-Mesh-Hedge: 1 or "mesh_hedge": true
     "max_body_mb": 64,
@@ -95,6 +124,12 @@ DEFAULTS = {
     "lookup_wait_s": 0.25,            # when a GPU node will answer, the embedding is waited for this long before it
                                       # starts (grounding changes the prompt; a one-slot node cannot judge while it
                                       # answers); late = no grounding, the lookup goes on in parallel
+    **general.DEFAULTS,              # general questions: general-mode note, exact calculator, safety facts
+    **engine_facts.DEFAULTS,         # Unity 6 / Godot 4 / Unreal 5 / LOVE 11 / plain Lua 5.4: version facts note (server/mesh/engine)
+    **flaw_hook.DEFAULTS,            # flaw loop: per-turn flaw signals in the log + gate-shipped fixes (server/mesh/flaws)
+    **polyglot_note.DEFAULTS,        # coding questions in other languages/engines: "answer fully" note + version facts
+    **mcfacts.DEFAULTS,              # Minecraft plugin/mod questions: compile-verified API facts note
+    **fullcode.DEFAULTS,             # build/code requests: complete-code note + max_tokens 1500 (chat stays short)
     **loop_runner.LOOP_DEFAULTS,      # best-of-2 + verified pick + hidden tool loop (server/mesh/loop), opt-in per request
     # official docs (server/mesh/docs, :8102): a compact block of exact API entries in front of Litha questions
     "docs": True,
@@ -102,7 +137,20 @@ DEFAULTS = {
     "docs_timeout_s": 0.15,           # late = no docs (the answer never waits longer than this for them)
     "docs_budget": 500,               # tokens
     "context_budget": 900,            # docs + verified-answer grounding together; docs get what grounding leaves
+    # Minecraft facts (server/mesh/mcdata via the verifier :8101): exact ids/syntax/pack formats from the game's own
+    # data in front of Minecraft questions (measured in docs/agents/mc-data-20261029.md)
+    "mc_facts": True,
+    "mc_facts_timeout_s": 0.3,        # late = no facts
+    # system self-model (server/mesh/selfmodel, :8103): a question about Litha herself ("what GPU are you on", "why so
+    # slow") skips the answer cache/grounding/docs and gets short live facts in front of it instead
+    "self": True,
+    "self_url": "http://127.0.0.1:8103",
+    "self_timeout_s": 0.3,
+    "self_max_chars": 900,
     **speed.DEFAULTS,                 # parallel sections (server/mesh/speed/), off by default
+    # agent mode (server/mesh/agent, :8104): model `litha-agent` = write -> real checks -> fix loop for build/code
+    # tasks; other litha-agent requests are plain `litha`. "" = off (litha-agent is then plain litha)
+    "agent_url": "http://127.0.0.1:8104",
 }
 NODE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 
@@ -345,6 +393,9 @@ class Router:
         self.keys = KeyFile(cfg["client_keys_file"])
         self.mesh_token = KeyFile(cfg["mesh_token_file"])
         self.brain = Backend("brain1", float(cfg["brain_tok_s"]))
+        # other model ids passed through to the brain (star-fast, star-voice...): same brain, own count, so they never
+        # take litha's brain slot (brain_litha_max_inflight counts self.brain only)
+        self.brain_pass = Backend("brain1", float(cfg["brain_tok_s"]))
         self.brain_ok, self.brain_models, self.brain_models_at = None, [], 0.0
         self.nodes = [Node(n["name"], n["status_url"]) for n in cfg["nodes"]]
         self.decisions = collections.deque(maxlen=50)
@@ -353,6 +404,7 @@ class Router:
         self.affinity = instant.Affinity(cfg["affinity_ttl_s"])
         self.prefetching: dict[str, dict] = {}
         self.counters = collections.Counter()
+        self.waiting: list[object] = []           # litha requests waiting for a slot, oldest first
         self.cache = instant.AnswerCache(cfg["cache_db"]) if cfg.get("cache_db") else None
 
     # ---- node status ---------------------------------------------------------------------------------------------
@@ -465,16 +517,24 @@ class Router:
             return False, "model not loaded (warming)"
         return True, ""
 
-    def plan(self, model: str, conv: str | None = None) -> tuple[list[tuple[Backend, str, str]], str]:
+    def _brain_chain(self, brain_url: str, last: str) -> tuple[list[tuple[Backend, str, str]], str]:
+        """The brain's entries for litha / litha-deep: `brain_litha_model` first, then `last` (star-fast/star-deep)."""
+        mids = [m for m in dict.fromkeys((self.cfg.get("brain_litha_model") or "", last)) if m]
+        return [(self.brain, brain_url, m) for m in mids], " > ".join(f"brain {m}" for m in mids)
+
+    def plan(self, model: str, conv: str | None = None,
+             nodes: bool = True) -> tuple[list[tuple[Backend, str, str]], str]:
         """Ranked [(backend, base_url, backend_model)] for a requested model, plus a reason line. The backend that
-        served this conversation last gets `affinity_bonus` on its score (its llama-server still holds the KV)."""
+        served this conversation last gets `affinity_bonus` on its score (its llama-server still holds the KV).
+        nodes=False (header X-Mesh-Nodes: off) plans as if no GPU node were usable."""
         brain_url = self.cfg["brain_url"].rstrip("/") + "/v1"
+        node_list = self.nodes if nodes else []
         if model == DEEP:
-            brain_deep = (self.brain, brain_url, self.cfg["brain_deep_model"])
+            brain_deep, deep_names = self._brain_chain(brain_url, self.cfg["brain_deep_model"])
             if not self.cfg["deep_on_nodes"]:
-                return [brain_deep], "litha-deep -> brain star-deep"
-            now, ranked, skipped = time.monotonic(), [], []
-            for node in self.nodes:
+                return brain_deep, "litha-deep -> " + deep_names
+            now, ranked, skipped = time.monotonic(), [], [] if nodes else ["skipped by request"]
+            for node in node_list:
                 ok, why = self.node_usable(node, now)
                 if ok:
                     m = node.model(self.cfg["node_fast_models"])
@@ -483,44 +543,107 @@ class Router:
                     skipped.append(f"{node.name}: {why}")
             ranked.sort(key=lambda r: r[0], reverse=True)
             if not ranked:
-                return [brain_deep], "litha-deep -> brain star-deep (no usable node" +                     (": " + "; ".join(skipped) if skipped else "") + ")"
-            return [(b, url, mid) for _, b, url, mid in ranked] + [brain_deep],                 "litha-deep -> " + " > ".join(f"{b.name} (thinking)" for _, b, _, _ in ranked) + " > brain star-deep"
+                return brain_deep, f"litha-deep -> {deep_names} (no usable node" +                     (": " + "; ".join(skipped) if skipped else "") + ")"
+            return [(b, url, mid) for _, b, url, mid in ranked] + brain_deep,                 "litha-deep -> " + " > ".join(f"{b.name} (thinking)" for _, b, _, _ in ranked) + " > " + deep_names
         if model != FAST:
-            return [(self.brain, brain_url, model)], "pass-through to brain"
+            return [(self.brain_pass, brain_url, model)], "pass-through to brain"
         now, ranked, skipped = time.monotonic(), [], []
         sticky = self.affinity.get(conv)
 
         def bonus(b):
             return self.cfg["affinity_bonus"] if b.name == sticky else 1.0
-        for node in self.nodes:
+        if not nodes:
+            skipped.append("nodes skipped by request")
+        for node in node_list:
             ok, why = self.node_usable(node, now)
             if ok:
                 m = node.model(self.cfg["node_fast_models"])
                 ranked.append((node.score() * bonus(node), 1, node, m["url"].rstrip("/"), m["id"]))
             else:
                 skipped.append(f"{node.name}: {why}")
-        ranked.append((self.brain.score() * bonus(self.brain), 0, self.brain, brain_url,
-                       self.cfg["brain_fast_model"]))
+        brain_fast, brain_names = self._brain_chain(brain_url, self.cfg["brain_fast_model"])
+        ranked.append((self.brain.score() * bonus(self.brain), 0, self.brain, brain_url, None))
         ranked.sort(key=lambda r: (r[0], r[1]), reverse=True)
-        parts = [f"{b.name} {b.tok_s:.1f} tok/s q{b.inflight}" + (" (kv)" if b.name == sticky else "")
-                 for _, _, b, _, _ in ranked]
+        parts = [f"{b.name} {b.tok_s:.1f} tok/s q{b.inflight}" + (f" ({brain_names})" if mid is None else "") +
+                 (" (kv)" if b.name == sticky else "") for _, _, b, _, mid in ranked]
         reason = "ranked: " + " > ".join(parts) + ("; skipped " + "; ".join(skipped) if skipped else "")
-        return [(b, url, mid) for _, _, b, url, mid in ranked], reason
+        out = []
+        for _, _, b, url, mid in ranked:        # the brain's place in the ranking holds its whole chain
+            out += brain_fast if mid is None else [(b, url, mid)]
+        if nodes == "only":
+            out = [p for p in out if p[0] is not self.brain]
+            reason += "; brain skipped by request"
+        return out, reason
+
+    def _brain_room(self) -> bool:
+        cap = int(self.cfg["brain_litha_max_inflight"])
+        return cap < 0 or self.brain.inflight < cap
+
+    def admission(self, plan: list, waited: float, nodes) -> tuple[list | None, str, float]:
+        """Which entries of a litha / litha-deep plan may start now: (entries, "", 0), or (None, why, limit) = wait
+        until `limit` seconds have passed in total (limit 0 = fail now)."""
+        node_entries = [p for p in plan if p[0] is not self.brain]
+        brain_entries = [p for p in plan if p[0] is self.brain] if self._brain_room() and nodes != "only" else []
+        free = [p for p in node_entries if p[0].inflight < self.cfg["node_max_inflight"]]
+        if free:                       # a GPU slot: GPU first, the brain (if it has room) only as the fallback
+            return free + brain_entries, "", 0.0
+        if node_entries:               # GPU node(s) usable but full: their queue beats the brain's CPU
+            return None, "every GPU slot is busy", \
+                self.cfg["gpu_wait_s"] if nodes == "only" else self.cfg["queue_max_s"]
+        now = time.monotonic()
+        cooling = nodes is not False and any(n.state == "idle" and now < n.fail_until for n in self.nodes)
+        if cooling and waited < self.cfg["gpu_wait_s"]:
+            return None, "a GPU node is cooling down after a failure", self.cfg["gpu_wait_s"]
+        if brain_entries:
+            return brain_entries, "", 0.0
+        if nodes == "only" or not any(p[0] is self.brain for p in plan):
+            return None, "no usable GPU node", 0.0
+        return None, "no usable GPU node and brain1's litha slot is busy", self.cfg["queue_max_s"]
+
+    async def admit(self, model: str, conv: str | None, nodes, log: dict) -> list:
+        """Wait (oldest first) until a litha / litha-deep request may start; the plan to race, or UpstreamError 503."""
+        t0, me = time.monotonic(), object()
+        self.waiting.append(me)
+        try:
+            while True:
+                plan, _ = self.plan(model, conv, nodes)
+                waited = time.monotonic() - t0
+                go, why, limit = self.admission(plan, waited, nodes)
+                if go is not None and self.waiting.index(me) == 0:
+                    if waited >= 0.05:
+                        log["admit"] = {"wait_ms": round(waited * 1000), "to": go[0][0].name}
+                        self.counters["admit_waited"] += 1
+                    return go
+                if go is None and waited >= limit:
+                    self.counters["admit_busy"] += 1
+                    msg = f"mesh busy: {why} (waited {waited:.1f} s; litha never queues on brain1's CPU)"
+                    log["admit"] = {"wait_ms": round(waited * 1000), "busy": why}
+                    raise UpstreamError(msg, 503, json.dumps(err(msg + "; try again shortly", "server_error")).encode(),
+                                        {"content-type": "application/json", "retry-after": "5"})
+                await asyncio.sleep(self.cfg["admit_poll_s"])
+        finally:
+            self.waiting.remove(me)
 
     def _headers_for(self, backend: Backend, client_auth: str) -> dict:
         h = {"Content-Type": "application/json"}
-        if backend is self.brain:
+        if backend in (self.brain, self.brain_pass):
             if client_auth:
                 h["Authorization"] = client_auth     # the brain checks the same key file
         else:
             h.update(self._node_headers())
         return h
 
-    async def _attempt(self, backend, url, path, body, client_auth, stream):
-        """Start one backend; return once it produced its first token (stream) or its whole answer."""
-        is_node = backend is not self.brain
-        limit = self.cfg["node_first_token_s" if is_node else "brain_first_token_s"]
-        backend.inflight += 1
+    async def _attempt(self, backend, url, path, body, client_auth, stream, held=None):
+        """Start one backend; return once it produced its first token (stream) or its whole answer. held: the caller
+        counted this attempt in backend.inflight already (race: no gap for a second admission) and frees it itself
+        if the task is cancelled before it ran."""
+        is_node = backend not in (self.brain, self.brain_pass)
+        limit = self.cfg["node_first_token_s" if is_node else
+                         "brain_litha_first_token_s" if backend is self.brain else "brain_first_token_s"]
+        if held is None:
+            backend.inflight += 1
+        else:
+            held["started"] = True
         up = None
         try:
             async def start():
@@ -559,18 +682,43 @@ class Router:
 
     def _failed(self, backend: Backend, err: Exception):
         backend.last_error = str(err)[:120]
-        if backend is not self.brain:
+        # a 400/413/422 is about this one request (llama-server: prompt longer than the node's context), not the
+        # node: no cooldown, or one long prompt sends every request of the next 30 s to the brain's CPU queue
+        if backend is not self.brain and not (isinstance(err, UpstreamError) and err.status in (400, 413, 422)):
             backend.fail_until = time.monotonic() + self.cfg["fail_cooldown_s"]
 
-    async def race(self, plan, path, body_for, client_auth, stream, hedge, log):
-        """Try backends best first (two at a time when hedging); the first one to produce a token wins."""
+    def _start(self, b, url, path, body, client_auth, stream):
+        b.inflight += 1                      # counted now: the next admission check already sees it
+        held = {"started": False}
+        task = asyncio.ensure_future(self._attempt(b, url, path, body, client_auth, stream, held))
+
+        def unheld(_t):
+            if not held["started"]:          # cancelled before its first step: _attempt never freed it
+                b.inflight -= 1
+        task.add_done_callback(unheld)
+        return task
+
+    async def race(self, plan, path, body_for, client_auth, stream, hedge, log, admit=None):
+        """Try backends best first (two at a time when hedging); the first one to produce a token wins. admit: a
+        litha / litha-deep request ((model, conv, nodes)): wait for a slot first (`admit`), and a fallback to the brain
+        only while it has room (brain_litha_max_inflight)."""
+        if admit is not None:
+            plan = await self.admit(*admit, log)
         remaining = list(plan)
         last_err: UpstreamError | None = None
         while remaining:
-            n = 2 if hedge and len(remaining) >= 2 else 1
+            if admit is not None and remaining[0][0] is self.brain and not self._brain_room():
+                b = remaining.pop(0)[0]
+                log["errors"].append(f"{b.name}: litha slot busy (fallback skipped)")
+                self.counters["brain_full_skipped"] += 1
+                msg = "mesh busy: brain1's litha slot is busy (litha never queues on brain1's CPU)"
+                last_err = last_err or UpstreamError(msg, 503, json.dumps({"error": {"message": msg, "type": "server_error"}}).encode(),
+                                                     {"content-type": "application/json", "retry-after": "5"})
+                continue
+            # never two brain models at once (one CPU): a hedge needs two different backends
+            n = 2 if hedge and len(remaining) >= 2 and remaining[0][0] is not remaining[1][0] else 1
             batch, remaining = remaining[:n], remaining[n:]
-            tasks = {asyncio.ensure_future(self._attempt(b, url, path, body_for(mid), client_auth, stream)): b
-                     for b, url, mid in batch}
+            tasks = {self._start(b, url, path, body_for(mid), client_auth, stream): b for b, url, mid in batch}
             winner = None
             try:
                 while tasks and winner is None:
@@ -642,6 +790,8 @@ class Router:
             except (ValueError, AssertionError):
                 return await send_json(writer, 400, err("body must be a JSON object"))
             return await send_json(writer, *self.register(req, peer))
+        if method == "POST" and path == "/mesh/self/report":   # node jobs report with the mesh token (checked there)
+            return await self.forward(self.cfg["self_url"], method, path, headers, body, writer)
         if path == "/mesh/cache" and method != "GET":    # cache changes: mesh token (checked in cache_api)
             return await send_json(writer, *await self.cache_api(method, headers, body))
         if not token or not self.keys.check(token):
@@ -654,8 +804,12 @@ class Router:
             return await send_json(writer, *await self.prefetch(body, headers))
         if path == "/mesh/verify":
             return await self.forward(self.cfg["verify_url"], method, path, headers, body, writer)
+        if path == "/mesh/mc/facts":
+            return await self.forward(self.cfg["verify_url"], method, path, headers, body, writer)
         if path in ("/mesh/docs", "/mesh/docs/block", "/mesh/docs/entries"):
             return await self.forward(self.cfg["docs_url"], method, path, headers, body, writer)
+        if path == "/mesh/self" or path.startswith("/mesh/self/"):
+            return await self.forward(self.cfg["self_url"], method, path, headers, body, writer)
         if path == "/mesh/cache":
             return await send_json(writer, *await self.cache_api(method, headers, body))
         if method == "POST" and path in ("/v1/chat/completions", "/v1/completions"):
@@ -674,7 +828,9 @@ class Router:
             except (UpstreamError, ValueError, asyncio.TimeoutError):
                 pass
         own = [{"id": FAST, "object": "model", "owned_by": "star-mesh"},
-               {"id": DEEP, "object": "model", "owned_by": "star-mesh"}]
+               {"id": DEEP, "object": "model", "owned_by": "star-mesh"}] + \
+            ([{"id": agent_route.AGENT_MODEL, "object": "model", "owned_by": "star-mesh"}] if self.cfg.get("agent_url")
+             else [])
         return {"object": "list", "data": own + self.brain_models}
 
     def status(self) -> dict:
@@ -693,7 +849,11 @@ class Router:
         return {"router": {"version": VERSION, "uptime_s": round(time.time() - self.started),
                            "hedge_default": self.cfg["hedge"], "poll_s": self.cfg["poll_s"]},
                 "brain": {"name": self.brain.name, "healthy": self.brain_ok, "tok_s": round(self.brain.tok_s, 1),
-                          "inflight": self.brain.inflight, "served": self.brain.served},
+                          "inflight": self.brain.inflight, "served": self.brain.served,
+                          "pass_through_inflight": self.brain_pass.inflight},
+                "admission": {"waiting": len(self.waiting),
+                              **{k: self.cfg[k] for k in ("node_max_inflight", "brain_litha_max_inflight",
+                                                          "gpu_wait_s", "queue_max_s")}},
                 "instant": {"affinity_conversations": len(self.affinity), "counters": dict(self.counters),
                             "cache": self.cache.stats() if self.cache else None,
                             "cache_threshold": self.cfg["cache_threshold"],
@@ -708,13 +868,19 @@ class Router:
         except (ValueError, AssertionError):
             return await send_json(writer, 400, err("body must be a JSON object"))
         model, stream = str(req.get("model") or FAST), bool(req.get("stream"))
+        if model == agent_route.AGENT_MODEL:
+            if self.cfg.get("agent_url") and agent_route.wants_agent(req.get("messages")) and \
+                    await self.agent_forward(path, headers, body, writer):
+                return
+            model = req["model"] = FAST       # chat, or the agent service is down: plain litha
         hedge = req.pop("mesh_hedge", None)
         if hedge is None:
             hedge = headers.get("x-mesh-hedge", "").strip().lower() in ("1", "true", "yes") or self.cfg["hedge"]
         conv = instant.conversation_key(req, headers) if model == FAST else None
         t0 = time.monotonic()
         cache_hdr, question, context, ground_q = {}, None, "", None
-        if model == FAST and self.cache is not None:
+        selfq = model in (FAST, DEEP) and self.self_question(req, headers)
+        if model == FAST and self.cache is not None and not selfq:
             cache_hdr, question, context = self.cache_check(req, headers)
             row = self.cache.exact(question, context) if question else None
             if row is not None:
@@ -731,7 +897,12 @@ class Router:
         if model == FAST:
             req.setdefault("cache_prompt", True)
 
-        plan, reason = self.plan(model, conv)
+        nodes = headers.get("x-mesh-nodes", "").strip().lower() not in ("off", "0", "no")
+        # GPU nodes only (STAR's own chat, star/general_mode.py): never the brain; no usable node = an error at once,
+        # the client then answers on its own path
+        if req.pop("mesh_brain", None) is False or headers.get("x-mesh-brain", "").lower() in ("off", "0", "no"):
+            nodes = "only"
+        plan, reason = self.plan(model, conv, nodes)
         if ground_q and plan and plan[0][0] is self.brain:
             # ~400 more prompt tokens cost the brain (~45 tok/s prompt) ~9 s before the first word: GPU nodes only
             ground_q = None
@@ -770,14 +941,28 @@ class Router:
                         self.counters["ground_used"] += 1
                         ground_hdr["X-Mesh-Ground-Ids"] = ",".join(str(r["id"]) for r in refs)
         # parallel sections (server/mesh/speed/hook.py): only once the cache has said no (or cannot answer)
-        if model == FAST and stream and (decided or not question) and                 await speed.try_sections(self, path, headers, req, conv, writer, t0, {**cache_hdr, **ground_hdr}):
+        if model == FAST and stream and not selfq and (decided or not question) and                 await speed.try_sections(self, path, headers, req, conv, writer, t0, {**cache_hdr, **ground_hdr}):
             return
 
-        if model == FAST:
+        flaw = {}
+        if selfq:
+            cache_hdr.update(await self.self_inject(req, plan[0][0].name if plan else None))
+        elif model == FAST:
+            flaw = flaw_hook.apply(req, headers, self.cfg)    # first: reads the user's own turn, may skip the general note
+            cache_hdr.update(fullcode.apply(req, self.cfg))     # first: the note stays right after the question
             cache_hdr.update(await self.docs_inject(req, headers))
+            cache_hdr.update(await self.mc_inject(req, headers))
+            cache_hdr.update(engine_facts.apply(req, self.cfg))      # engine questions: one facts note (polyglot then skips)
+            cache_hdr.update(polyglot_note.apply(req, self.cfg))     # before general: its note then stays out
+            if req.pop("mesh_general", None) is not False and \
+                    headers.get("x-mesh-general", "").lower() not in ("off", "0", "no"):
+                cache_hdr.update(await general.run(self, req, plan, headers.get("authorization", "")))
+            if req.pop("mesh_mcjava", None) is not False and self.cfg["mc_java_facts"]:
+                cache_hdr.update(mcfacts.apply(req))
 
         def body_for(mid):
-            if model == DEEP and mid != self.cfg["brain_deep_model"]:     # a node: thinking on, capped
+            if model == DEEP and mid not in (self.cfg["brain_deep_model"], self.cfg.get("brain_litha_model")):
+                # a node: thinking on, capped
                 body = {**req, **self.cfg["deep_node_body"], "model": mid}
                 if isinstance(req.get("max_tokens"), int):              # the thinking does not eat the answer
                     body["max_tokens"] = req["max_tokens"] + int(body.get("thinking_budget_tokens") or 0)
@@ -796,11 +981,18 @@ class Router:
             cache_hdr.update(ground_hdr)
         if "X-Mesh-Docs" in cache_hdr:
             log["docs"] = cache_hdr["X-Mesh-Docs"]
+        if "X-Mesh-Self" in cache_hdr:
+            log["self"] = cache_hdr["X-Mesh-Self"]
+        if flaw:
+            log["flaw"] = flaw
+        if "X-Mesh-General" in cache_hdr:
+            log["general"] = cache_hdr["X-Mesh-General"]
         self.decisions.append(log)
         # the semantic cache lookup (an embedding round trip) runs while the backend starts: a hit before the first
         # token cancels the backend, otherwise the live answer goes on and the lookup costs nothing
         race = asyncio.ensure_future(self.race(plan, path, body_for, headers.get("authorization", ""), stream,
-                                               bool(hedge), log))
+                                               bool(hedge), log,
+                                               (model, conv, nodes) if model in (FAST, DEEP) else None))
         if question and not decided:
             lookup = asyncio.ensure_future(self.cache_semantic(question, context, cands_task))
             await asyncio.wait({race, lookup}, return_when=asyncio.FIRST_COMPLETED)
@@ -837,7 +1029,8 @@ class Router:
             log.update(chosen=None, outcome=f"failed: {e}")
             print("mesh", json.dumps(log), flush=True)
             if e.body:
-                return await send_raw(writer, e.status, e.headers.get("content-type", "application/json"), e.body)
+                return await send_raw(writer, e.status, e.headers.get("content-type", "application/json"), e.body,
+                                      {"Retry-After": e.headers["retry-after"]} if "retry-after" in e.headers else None)
             return await send_json(writer, 502, err(f"no backend answered: {e}", "server_error"))
         log["chosen"] = backend.name
         self.affinity.set(conv, backend.name)
@@ -851,14 +1044,16 @@ class Router:
                 await send_raw(writer, 200, up.headers.get("content-type", "application/json"), rest,
                                {"X-Mesh-Backend": backend.name, **cache_hdr})
                 try:
-                    timings = json.loads(rest).get("timings") or {}
-                except (ValueError, AttributeError):
+                    parsed = json.loads(rest)
+                    timings = parsed.get("timings") or {}
+                    log["finish"] = ((parsed.get("choices") or [{}])[0] or {}).get("finish_reason")
+                except (ValueError, AttributeError, TypeError, IndexError):
                     timings = {}
                 backend.measured(timings.get("predicted_per_second"))
                 log["tok_s"], log["outcome"] = timings.get("predicted_per_second"), "ok"
                 return
             await self.relay_stream(backend, up, pending, rest, writer, log, cache_hdr,
-                                    {"model": model, "req": req, "path": path, "conv": conv,
+                                    {"model": model, "req": req, "path": path, "conv": conv, "nodes": nodes,
                                      "auth": headers.get("authorization", ""),
                                      "before_done": loop_run.before_done if loop_run else None})
         finally:
@@ -905,6 +1100,7 @@ class Router:
                                     pieces += 1
                                 if choice.get("finish_reason"):
                                     finished = True
+                                    log["finish"] = choice["finish_reason"]
                             if isinstance(obj.get("timings"), dict):
                                 timings = obj["timings"]
                             if changed:
@@ -972,7 +1168,7 @@ class Router:
             for k in ("max_tokens", "n_predict", "max_completion_tokens"):
                 if isinstance(req.get(k), int) and req[k] > 0:
                     req[k] = max(32, req[k] - pieces)
-        plan, _ = self.plan(ctx["model"], ctx["conv"])
+        plan, _ = self.plan(ctx["model"], ctx["conv"], ctx.get("nodes", True))
         plan = [p for p in plan if p[0] not in used]
         if not plan:
             return None, ""
@@ -1086,6 +1282,30 @@ class Router:
             return await send_json(writer, 502, err(f"verifier: {e}", "server_error"))
         return await send_raw(writer, up.status, up.headers.get("content-type", "application/json"), data)
 
+    async def agent_forward(self, path: str, headers: dict, body: bytes, writer) -> bool:
+        """litha-agent build/code task -> the agent service, relayed as it streams (progress keeps it alive).
+        False = the service did not answer (nothing was sent; the caller serves plain litha)."""
+        try:
+            up = await open_upstream(self.cfg["agent_url"].rstrip("/") + "/v1" + path, "POST", body,
+                                     {"Content-Type": "application/json",
+                                      "Authorization": headers.get("authorization", "")}, idle_s=660)
+        except (UpstreamError, asyncio.TimeoutError):
+            self.counters["agent_down"] += 1
+            return False
+        self.counters["agent"] += 1
+        try:
+            writer.write(f"HTTP/1.1 {up.status} X\r\nContent-Type: "
+                         f"{up.headers.get('content-type', 'application/json')}\r\nX-Mesh-Agent: 1\r\n"
+                         "Connection: close\r\n\r\n".encode())
+            async for piece in up.chunks():
+                writer.write(piece)
+                await writer.drain()
+        except (UpstreamError, asyncio.TimeoutError, ConnectionError, OSError):
+            pass
+        finally:
+            up.close()
+        return True
+
     async def docs_inject(self, req: dict, headers: dict) -> dict:
         """Litha: the docs service's block (exact API entries + maybe one guide passage) goes in front of the user's
         question; the system prompt stays the cached prefix. Returns the X-Mesh-Docs header ({} = no docs: off, not a
@@ -1133,6 +1353,85 @@ class Router:
         self.counters["docs_used"] += 1
         return {"X-Mesh-Docs": f"{len(block.get('entries') or [])}e{len(block.get('passages') or [])}p "
                                f"{round((time.monotonic() - t0) * 1000)}ms"}
+
+    async def mc_inject(self, req: dict, headers: dict) -> dict:
+        """Litha + a Minecraft question: the facts block (exact ids, command syntax, pack formats, game-checked
+        templates and vanilla examples of the version asked) goes at the very top of the last user message, before
+        any docs/grounding text. Returns the X-Mesh-Mc header ({} = not Minecraft, off, or late)."""
+        asked = req.pop("mesh_mc", None)
+        if not self.cfg["mc_facts"] or asked is False or headers.get("x-mesh-mc", "").lower() in ("off", "0", "no"):
+            return {}
+        msgs = req.get("messages")
+        if not isinstance(msgs, list) or not msgs or not isinstance(msgs[-1], dict) or \
+                msgs[-1].get("role") != "user" or not isinstance(msgs[-1].get("content"), str) or \
+                any(req.get(k) for k in ("tools", "functions", "response_format", "grammar", "json_schema")):
+            return {}
+        content = msgs[-1]["content"]
+        question = content.rsplit("\n---\n", 1)[-1]
+        question = question[len("Question: "):] if question.startswith("Question: ") else question
+        if not MC_QUESTION.search(question):
+            return {}
+        extra = "\n".join(m["content"] for m in msgs[:-1] if isinstance(m, dict) and m.get("role") == "user" and
+                          isinstance(m.get("content"), str))[-1500:]
+        t0 = time.monotonic()
+        try:
+            up = await open_upstream(self.cfg["verify_url"].rstrip("/") + "/mesh/mc/facts", "POST",
+                                     json.dumps({"question": question, "extra": extra}).encode(),
+                                     {"Content-Type": "application/json",
+                                      "Authorization": f"Bearer {self.keys.first()}"},
+                                     connect_s=self.cfg["mc_facts_timeout_s"], idle_s=self.cfg["mc_facts_timeout_s"])
+            try:
+                raw = await asyncio.wait_for(up.body(), self.cfg["mc_facts_timeout_s"])
+            finally:
+                up.close()
+            block = json.loads(raw) if up.status == 200 else {}
+        except (UpstreamError, asyncio.TimeoutError, ValueError):
+            self.counters["mc_facts_failed"] += 1
+            return {"X-Mesh-Mc": "late"}
+        text = block.get("text") or ""
+        if not text:
+            return {}
+        msgs[-1] = {**msgs[-1], "content": f"{text}\n\n---\n{content}"}
+        self.counters["mc_facts_used"] += 1
+        return {"X-Mesh-Mc": f"{block.get('version')} {'+'.join(block.get('parts') or [])} "
+                             f"{round((time.monotonic() - t0) * 1000)}ms"}
+
+    def self_question(self, req: dict, headers: dict) -> bool:
+        """The last user message asks about Litha herself (her GPU, servers, speed, code, learning): plain chat only."""
+        if not self.cfg["self"] or headers.get("x-mesh-self", "").lower() in ("off", "0", "no"):
+            return False
+        msgs = req.get("messages")
+        if not isinstance(msgs, list) or not msgs or not isinstance(msgs[-1], dict) or \
+                msgs[-1].get("role") != "user" or not isinstance(msgs[-1].get("content"), str) or \
+                any(req.get(k) for k in ("tools", "functions", "response_format", "grammar", "json_schema")):
+            return False
+        return self_brief.wants_self(msgs[-1]["content"])
+
+    async def self_inject(self, req: dict, backend: str | None) -> dict:
+        """The self-model's live facts (which machine answers, GPU states, speeds, code, learning) go in front of the
+        question; the system prompt stays the cached prefix. Never waits longer than self_timeout_s."""
+        msgs = req["messages"]
+        content = msgs[-1]["content"]
+        body = json.dumps({"q": content[-1500:], "backend": backend, "max": self.cfg["self_max_chars"]}).encode()
+        t = self.cfg["self_timeout_s"]
+        try:
+            up = await open_upstream(self.cfg["self_url"].rstrip("/") + "/mesh/self/brief", "POST", body,
+                                     {"Content-Type": "application/json",
+                                      "Authorization": f"Bearer {self.keys.first()}"}, connect_s=t, idle_s=t)
+            try:
+                raw = await asyncio.wait_for(up.body(), t)
+            finally:
+                up.close()
+            block = json.loads(raw) if up.status == 200 else {}
+        except (UpstreamError, asyncio.TimeoutError, ValueError):
+            self.counters["self_failed"] += 1
+            return {"X-Mesh-Self": "late"}
+        text = (block.get("text") or "") if isinstance(block, dict) else ""
+        if not text:
+            return {}
+        msgs[-1] = {**msgs[-1], "content": f"{text}\n\n---\n{content}"}
+        self.counters["self_used"] += 1
+        return {"X-Mesh-Self": str(block.get("topic") or "all")}
 
     async def embed(self, text: str) -> list[float] | None:
         body = json.dumps({"model": self.cfg["embed_model"], "input": self.cfg["embed_prefix"] + text}).encode()

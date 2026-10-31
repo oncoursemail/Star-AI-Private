@@ -1090,6 +1090,7 @@ def test_star_vtuber_is_a_plugin_and_her_speaker_is_wrapped_for_lip_sync(monkeyp
 
 
 def test_the_check_reports_a_ready_cable_as_ok_instead_of_a_type_error(monkeypatch):
+    pytest.importorskip("numpy")
     from star.home import voicestack
     from star.senses import routes
     device = {"name": "STAR Microphone", "kind": "input"}

@@ -252,3 +252,10 @@ def test_ladder_prefers_draft_with_fewer_layers_and_steps_down_by_position_even_
     argv = procs[-1][0]
     assert node.step == 4 and len(procs) == 2 and argv[argv.index("-ngl") + 1] == "47" and "--model-draft" not in argv
     assert na.step_label(node.config, 1) == "ngl 47 + draft" and na.step_label(node.config, 4) == "ngl 47"
+
+
+def test_step_label_names_ffn_layers_kept_on_the_cpu():
+    from test_mesh_node import na  # noqa: PLC0415
+    cfg = {"ngl_ladder": [[99, 7210, "mtp"], [99, 7040, "mtp_ffn2"], [46, 6900]],
+           "step_args": {"mtp": ["--model-draft", "m.gguf"], "mtp_ffn2": ["--model-draft", "m.gguf", "-ncffn", "2"]}}
+    assert [na.step_label(cfg, i) for i in range(3)] == ["ngl 99 + draft", "ngl 99 + draft, 2 FFN on CPU", "ngl 46"]

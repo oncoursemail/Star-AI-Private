@@ -16,7 +16,7 @@ STAR on the PC --(private network, Bearer <STAR Server key>)--> star-search-gate
 | SearXNG source | `/usr/local/searxng/searxng-src` (git clone, `VERSION` file next to it) | user `searxng`, venv `searx-pyenv`, served by granian |
 | Settings | `/etc/searxng/settings.yml` (from `settings.yml`; random `secret_key` kept across installs) | JSON API on, limiter off (the gateway limits), safe search 1 |
 | `searxng.service` | binds **127.0.0.1:8888** only | Nice 10, CPUWeight 20, MemoryMax 1G, hardened |
-| Gateway | `/opt/star/search-gateway/gateway.py`, `star-search-gateway.service` on :8093 | stdlib only; same key file as the brain (`/opt/star/secrets/api_keys`); `GET /health` (no key), `GET /search?q=&n=&time_range=&categories=` |
+| Gateway | `/opt/star/search-gateway/gateway.py`, `star-search-gateway.service` on :8093 | stdlib only; same key file as the brain (`/opt/star/secrets/api_keys`); `GET /health` (no key), `GET /search?q=&n=&time_range=&categories=`, `GET /watched?since=` (watch-list snapshots from `/opt/star/research`, read-only; see server/research) |
 
 The desktop app and the Discord bot find the gateway automatically: the STAR Server's address on port 8093
 (`Settings.search_endpoint` overrides it; `off` disables it). The key is the STAR Server key the app already has.

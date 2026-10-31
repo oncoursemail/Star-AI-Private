@@ -550,10 +550,12 @@ def _play_stop_code(identity: PlaceIdentity, request: str, *, stop: bool) -> str
 
 def _server_not_ready(result) -> bool:
     """Only captured native readiness errors permit repeating the fixed read-only probe."""
-    return result_failed(result) and result_text(result).strip() in {
+    text = result_text(result).strip()
+    return result_failed(result) and (text in {
         "Target is not reachable",
         "Target is not reachable (createExecuteLuauBridge_loadCodeAsync, Server)",
-    }
+    } or ("Target is not reachable (ExecuteLuau.loadCode, DMN_ID_PLAYSERVER)" in text
+             and "No OnInvoke handler responded" in text))  # wording of the Studio build seen 2026-10-29
 
 
 class GuardedStudio:

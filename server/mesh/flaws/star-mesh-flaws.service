@@ -1,0 +1,13 @@
+[Unit]
+Description=STAR flaw loop (server/mesh/flaws): rollback watch, mine the router log, regression items, A/B gate + auto-ship
+After=star-mesh.service star-mesh-self.service
+
+[Service]
+Type=oneshot
+Environment=PYTHONPATH=/opt/star-mesh/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=/opt/star-mesh/app
+ExecStart=/usr/bin/python3 -m mesh.flaws loop --report --ship
+StandardOutput=append:/var/lib/star-mesh/flaws/loop.log
+Nice=10
+TimeoutStartSec=6h

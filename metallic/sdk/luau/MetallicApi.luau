@@ -128,6 +128,21 @@ function MetallicApi:getGame(game: string): (boolean, any)
 	return self:request("GET", "/v1/games/" .. encode(game), nil)
 end
 
+-- Every Rec Room revival: status and people online. Public.
+function MetallicApi:listRevivals(): (boolean, any)
+	return self:request("GET", "/v1/revivals", nil)
+end
+
+-- One revival's status and people online. Public.
+function MetallicApi:getRevival(revival: string): (boolean, any)
+	return self:request("GET", "/v1/revivals/" .. encode(revival), nil)
+end
+
+-- Latest news from the Rec Room revivals. Public.
+function MetallicApi:listRevivalNews(): (boolean, any)
+	return self:request("GET", "/v1/revival-news", nil)
+end
+
 -- Release channels. Public.
 function MetallicApi:listReleases(): (boolean, any)
 	return self:request("GET", "/v1/releases", nil)

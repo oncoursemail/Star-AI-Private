@@ -1,0 +1,627 @@
+{
+ "ue-async-terrain#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Captures raw this in the worker, calls non-existent FMath::GridToWorldPosition and obsolete IsPendingKill, ignores seed, and blocks re-Generate instead of dropping stale results."
+ },
+ "ue-async-terrain#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Captures raw this (dangling if destroyed), uses invented FMath::GridToWorld, no FRandomStream seed offset, and rejects Generate while generating instead of applying only the latest."
+ },
+ "ue-gas-attributes#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Refusal; no code."
+ },
+ "ue-gas-attributes#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Refusal; no code."
+ },
+ "lv-dev-console#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Uses local (not global) console/game, nonexistent key 'grave' so backtick never toggles, echo/add outputs wrong, backspace not UTF-8 safe (1/11 tests)."
+ },
+ "lv-dev-console#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Key 'grave' does not exist so console never opens, backtick never closes it, add modifies gold, and backspace calls # on a number (3/11 tests)."
+ },
+ "lv-dev-console#C": {
+  "pass": false,
+  "score": 1,
+  "why": "Same nonexistent 'grave' key flaw plus words[1] on a string match result breaks every command (3/11 tests)."
+ },
+ "lv-dev-console#D": {
+  "pass": false,
+  "score": 1,
+  "why": "Local globals, nonexistent 'backtick' key, love.getWidth/getHeight do not exist (draw errors), wrong echo/add output (1/11 tests)."
+ },
+ "gd-score-ranking#A": {
+  "pass": false,
+  "score": 2,
+  "why": "Comparator sorts score ascending and String.pad_right does not exist in Godot 4 (rpad), so lines are wrong."
+ },
+ "gd-score-ranking#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Uses lpad (pads on the left) instead of rpad and the rank condition has an and/or precedence bug (7/9 tests)."
+ },
+ "love-state-machine#A": {
+  "pass": false,
+  "score": 2,
+  "why": "Player has no movement controls (cannot dodge) and resuming from pause re-enters play which calls initGame, restarting the run."
+ },
+ "love-state-machine#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Menu starts on Space not Enter, movement multiplies by an ever-growing accumulated_dt, and resuming from pause resets the run."
+ },
+ "unity-rigidbody-controller#A": {
+  "pass": false,
+  "score": 2,
+  "why": "Uses obsolete Rigidbody.velocity, applies jump force in Update, jump is a force not a height, and no rotation freeze."
+ },
+ "unity-rigidbody-controller#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Applies the jump impulse in Update (physics outside FixedUpdate) and jump is a raw force rather than a configurable height; no rotation freeze."
+ },
+ "unity-rigidbody-controller#C": {
+  "pass": true,
+  "score": 4,
+  "why": "Correct Unity 6 API, Update input/FixedUpdate physics, sqrt(2gh) jump and flattened camera axes; minor flaws (impulse assumes mass 1, unconsumed jump request buffers)."
+ },
+ "gds-ability-charges#A": {
+  "pass": false,
+  "score": 2,
+  "why": "Timeout never restarts the timer while still below max, so only one charge ever comes back (7/12 tests)."
+ },
+ "gds-ability-charges#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Timeout never restarts the timer while still below max, so only one charge ever comes back (7/12 tests)."
+ },
+ "godot-platformer-coyote#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Refusal; no code."
+ },
+ "godot-platformer-coyote#B": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct Godot 4 CharacterBody2D with project gravity, acceleration, coyote/buffer timers reset on jump, jump cut and exported tuning."
+ },
+ "lv-camera-trail#A": {
+  "pass": false,
+  "score": 2,
+  "why": "player/camera/trail/marker are locals instead of the required globals (0/11 tests), and marker = {x = screenToWorld(...), y = screenToWorld(...)} sets y to the x value."
+ },
+ "lv-camera-trail#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Calls nonexistent love.window.setModeModes (crashes in love.load), locals instead of globals, marker assigned a number."
+ },
+ "lv-camera-trail#C": {
+  "pass": false,
+  "score": 2,
+  "why": "Logic mostly right but player/camera/trail/marker are locals, not the globals the task requires (0/11 tests), and the trail does not fade with alpha."
+ },
+ "lv-camera-trail#D": {
+  "pass": false,
+  "score": 1,
+  "why": "Locals instead of globals and marker = screenToWorld(x, y) stores a number, so drawing marker.x errors after a click."
+ },
+ "unity-navmesh-patrol#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Raycast logic inverted: reads hit.collider only when the raycast missed (NullReferenceException), and FindWithTag(...).transform throws when no player."
+ },
+ "unity-navmesh-patrol#B": {
+  "pass": true,
+  "score": 4,
+  "why": "Works: pathPending/stoppingDistance waypoint advance, last-seen timer, speed switching, null/empty guards; LOS relies on the player being on a 'Player' layer and patrol only starts after the lose timer."
+ },
+ "un-cinemachine3-zone#A": {
+  "pass": true,
+  "score": 4,
+  "why": "Correct CM3 namespace/classes, implicit int Priority, CompareTag, impulse and static event; event only fires when a camera is assigned (minor)."
+ },
+ "un-cinemachine3-zone#B": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct Cinemachine 3 code: Unity.Cinemachine, CinemachineCamera, Priority.Value, GenerateImpulse, CompareTag, static event invoked on enter."
+ },
+ "unreal-coin-pickup#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Overlap handler definition has a garbage signature (Uclass TArray, VEC3) and calls nonexistent APIs; score is never added; uses YOURGAME_API."
+ },
+ "unreal-coin-pickup#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Garbage overlap signature (Uclass TArray, VEC3) that cannot compile or bind, nonexistent GetOwnerRole().IsAuthority/GetPlayerState on AActor, score never added."
+ },
+ "unreal-coin-pickup#C": {
+  "pass": true,
+  "score": 4,
+  "why": "Correct components, exact overlap signature with AddDynamic, HasAuthority + collected flag, IsPlayerControlled, SetScore, DeltaTime spin; minor raw sound pointer."
+ },
+ "lua-calendar#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Pattern (%S+)(%S+)... without spaces never matches a command line and parts[1] indexes a string, so nothing is printed (0/4 tests)."
+ },
+ "lua-calendar#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Line pattern without separators never matches, so no output; also uses locale %A and midnight times (0/4 tests)."
+ },
+ "lua-calendar#C": {
+  "pass": false,
+  "score": 1,
+  "why": "os.time(date_str) raises an error (expects a table) and %d{4} is not Lua pattern syntax (0/4 tests)."
+ },
+ "lv-physics-jump-ball#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Locals instead of globals, assigns a field on Body userdata (crashes), invalid newFixture table arg, getLinearVelocity().x, drawing a Shape (0/12 tests)."
+ },
+ "lv-physics-jump-ball#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Invented table-based newBody/newFixture/setContactPreSolve API; crashes at load, no wall shapes (0/12 tests)."
+ },
+ "lv-physics-jump-ball#C": {
+  "pass": false,
+  "score": 1,
+  "why": "Invented API (newBody with table, love.physics.newCircle); crashes at load (0/12 tests)."
+ },
+ "lua-fnv1a#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Uses ^ (float power) instead of XOR and float fmod arithmetic, so the hash is wrong and string.format crashes (0/4 tests)."
+ },
+ "lua-fnv1a#B": {
+  "pass": false,
+  "score": 1,
+  "why": "h % mod with mod = 2^64 (a float) turns h into a float, losing precision and crashing string.format (0/4 tests)."
+ },
+ "lua-fnv1a#C": {
+  "pass": false,
+  "score": 1,
+  "why": "Decimal literal becomes an inexact float, ^ is power not XOR, float fmod; crashes on format (0/4 tests)."
+ },
+ "lua-fnv1a#D": {
+  "pass": false,
+  "score": 1,
+  "why": "Decimal seed literal is a float so ~ fails, and % 2^64 is float arithmetic; crashes (0/4 tests)."
+ },
+ "un-input-actions#A": {
+  "pass": false,
+  "score": 3,
+  "why": "Input System usage and event-driven fire are correct, but aiming uses Physics.Raycast against colliders (can hit the character's own controller) instead of the requested ray-vs-horizontal-plane at character height."
+ },
+ "un-input-actions#B": {
+  "pass": false,
+  "score": 3,
+  "why": "Correct actions/subscription, but aim uses Physics.Raycast against scene colliders instead of the requested camera ray vs horizontal plane at the character's height."
+ },
+ "ue-save-subsystem#A": {
+  "pass": false,
+  "score": 2,
+  "why": "Runs synchronous SaveGameToSlot on a background thread (UObject serialization off game thread) instead of AsyncSaveGameToSlot, captures raw this, and StaticLoadObject result assigned without cast will not compile."
+ },
+ "ue-save-subsystem#B": {
+  "pass": false,
+  "score": 1,
+  "why": "DECLARE_..._TwoParams with one param and invented FGameplayTagSaveDelegate/include do not compile, and OnSaveCompleted is never broadcast."
+ },
+ "lua-seeded-loot#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Consumes stdin three times so the loot table is empty (n%0 crash), ignores R and rolls once (0/4 tests)."
+ },
+ "lua-seeded-loot#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Ignores R (one roll only), io.read('n') fails on 'seed', and counts are never incremented (0/4 tests)."
+ },
+ "unity-so-inventory#A": {
+  "pass": true,
+  "score": 4,
+  "why": "CreateAssetMenu SO, stack-first TryAdd returning leftover, all-or-nothing Remove and change event are correct; event also fires when nothing changed (minor)."
+ },
+ "unity-so-inventory#B": {
+  "pass": false,
+  "score": 3,
+  "why": "Logic is right but slots are built in a MonoBehaviour constructor, so the slot count set in the Inspector is ignored, and the event fires even when nothing changed."
+ },
+ "unity-json-save#A": {
+  "pass": true,
+  "score": 4,
+  "why": "persistentDataPath + temp file then move, defaults on missing/corrupt; small gap (delete-then-move window, null FromJson result not guarded)."
+ },
+ "unity-json-save#B": {
+  "pass": true,
+  "score": 5,
+  "why": "Temp file + File.Replace/Move atomic write, JsonUtility-compatible data, defaults on missing, corrupt or null data."
+ },
+ "lua-grid-paths-mod#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Indexes strings with grid[i][j] (always nil), so every grid is treated as blocked/zero paths (1/4 tests)."
+ },
+ "lua-grid-paths-mod#B": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct DP with modulo at each step and blocked start/end handling (4/4 tests)."
+ },
+ "gd-combat-math#A": {
+  "pass": false,
+  "score": 2,
+  "why": "hp_after_hits prepends the starting HP, cooldown formula is inverted, and a never-used ability returns cooldown_ms instead of 0 (4/8 tests)."
+ },
+ "gd-combat-math#B": {
+  "pass": false,
+  "score": 3,
+  "why": "cooldown_left_ms returns cooldown_ms instead of 0 when last_used_ms is negative (7/8 tests)."
+ },
+ "un-explosion-nonalloc#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Calls AddExplosionForce with a Vector3 as the force (no such overload, does not compile) and uses GetComponent<Rigidbody> instead of attachedRigidbody."
+ },
+ "un-explosion-nonalloc#B": {
+  "pass": false,
+  "score": 3,
+  "why": "Uses col.GetComponent<Rigidbody>() instead of attachedRigidbody, so child colliders of a compound body get no explosion force."
+ },
+ "ue-weapon-data-async#A": {
+  "pass": false,
+  "score": 2,
+  "why": "No GetPrimaryAssetId override (not registered as Weapon), OnAssetsLoaded(TArray) does not match FStreamableDelegate, and Mesh.IsValid() is false before loading so nothing is ever requested."
+ },
+ "ue-weapon-data-async#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Asks a question back instead of writing the code."
+ },
+ "lua-ini-parser#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Syntax error (table.sort call never closed) so it does not run; also prints error texts instead of 'errors: K' (0/3 tests)."
+ },
+ "lua-ini-parser#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Escaped-bracket patterns and the '^%s*' check wrongly flag every key line as an error, and errors are printed per line instead of 'errors: K' (0/3 tests)."
+ },
+ "lua-ini-parser#C": {
+  "pass": false,
+  "score": 1,
+  "why": "ipairs(io.lines) raises an error immediately; output format for errors is also wrong (0/3 tests)."
+ },
+ "gds-enemy-fsm#A": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct enum/signal API, group join/leave, change-only emits, dead lock, static alert_all and create_tween knockback (11/11 tests)."
+ },
+ "gds-enemy-fsm#B": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct state machine, groups, signal emission only on change, static alert_all and tween knockback returning the Tween (11/11 tests)."
+ },
+ "unreal-enhanced-input-character#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Invented header/functions (EnhancedInputMapper.h, FRotationToEuler), Jump BindAction missing the object, and garbled movement math; will not compile."
+ },
+ "unreal-enhanced-input-character#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Jump() calls itself (infinite recursion), never sets bOrientRotationToMovement so the character does not face movement, and uses YOURGAME_API."
+ },
+ "lua-utf8-names#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Syntax error (':..' in line:sub(1,12):..) so nothing runs; utf8.codepoint at every byte would also error on continuation bytes (0/4 tests)."
+ },
+ "lua-utf8-names#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Rambling unfinished drafts; final version calls nonexistent utf8.chars, pads by bytes and its ^(.*)$ gmatch never splits lines (0/4 tests)."
+ },
+ "ue-hitscan-weapon#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Invented APIs (GetViewLocation returning bool, MakeDamageEvent, TakeDamage with a pointer) will not compile; no first-shot/remaining-interval logic, no proper cone spread."
+ },
+ "ue-hitscan-weapon#B": {
+  "pass": false,
+  "score": 2,
+  "why": "EndPlay(const EEndPlayReason) is the wrong signature (should be EEndPlayReason::Type, does not compile), wrong include path, first shot delayed by a full interval and spread is not a proper cone."
+ },
+ "godot-health-component#A": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct Godot 4 component: exported max, clamped damage/heal, died emitted once with guard, dead ignores input, correct connect comment."
+ },
+ "godot-health-component#B": {
+  "pass": false,
+  "score": 3,
+  "why": "Health is not clamped at 0 (emits negative values) and the connection comment uses owner.died, a signal the owner does not have."
+ },
+ "gd-tile-chunks#A": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct posmod-style wrap, float floor chunk math, local offsets and row-major Manhattan tiles (12/12 tests)."
+ },
+ "gd-tile-chunks#B": {
+  "pass": false,
+  "score": 3,
+  "why": "chunk_of uses integer division before floor, so negative tiles map to the wrong chunk (9/12 tests)."
+ },
+ "godot-settings-autoload#A": {
+  "pass": true,
+  "score": 4,
+  "why": "Works: user:// JSON with defaults when missing, linear_to_db on the master bus and DisplayServer window mode; minor gaps (no FileAccess null check, bus by index)."
+ },
+ "godot-settings-autoload#B": {
+  "pass": true,
+  "score": 5,
+  "why": "ConfigFile at user:// with defaults on load error, Master bus via get_bus_index + linear_to_db, DisplayServer.window_set_mode, clamped volume."
+ },
+ "lua-split-fields#A": {
+  "pass": false,
+  "score": 1,
+  "why": "First block consumes all stdin so the real loop sees nothing; gsub's two return values break table.insert and strip inner spaces (0/5 tests)."
+ },
+ "lua-split-fields#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Prints '#fields: N:' instead of 'N:' and the trim pattern ^%s*(.*)%s*$ never removes trailing spaces (0/5 tests)."
+ },
+ "lv-seeded-starfield#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Palette entries are not wrapped in tables, so colorFromBytes values get truncated/flattened and star.color is a number (draw crashes, 0/9 tests)."
+ },
+ "lv-seeded-starfield#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Palette stores 0-255 bytes instead of colorFromBytes floats, so setColor receives values above 1 and every star renders white (8/9 tests)."
+ },
+ "gd-chat-command#A": {
+  "pass": false,
+  "score": 2,
+  "why": "String.is_alpha does not exist in Godot 4, so every valid command fails (10/18 tests); parse_amount sign handling is also off."
+ },
+ "gd-chat-command#B": {
+  "pass": false,
+  "score": 2,
+  "why": "String.match_with_regex does not exist, so parse_command rejects valid commands (10/18 tests)."
+ },
+ "unreal-health-component#A": {
+  "pass": false,
+  "score": 3,
+  "why": "Damage binding, clamping and once-only death are right, but the UCLASS lacks meta=(BlueprintSpawnableComponent) so it cannot be added to actors in the editor, and it uses a placeholder API macro."
+ },
+ "unreal-health-component#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Handler definition takes UDamageType* while the declaration takes const UDamageType* (does not compile), invented include GameFramework/DamageSystem.h, misspelled spawnable meta."
+ },
+ "unreal-health-component#C": {
+  "pass": false,
+  "score": 1,
+  "why": "Handler signature uses non-const UDamageType* so AddDynamic fails to compile, plus invented include GameFramework/DamageSystem.h."
+ },
+ "un-awaitable-dash#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Obsolete drag/velocity, nonexistent Awaitable.WaitForSeconds, TryDash returns Task<bool>, never applies dash speed, no destroy cancellation."
+ },
+ "un-awaitable-dash#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Never sets the dash velocity, TryDash returns Task<bool> instead of bool, and no destroyCancellationToken handling."
+ },
+ "un-awaitable-dash#C": {
+  "pass": false,
+  "score": 2,
+  "why": "Correct Awaitable + destroyCancellationToken pattern, but gravity is never turned off and afterwards it keeps the dash's horizontal velocity instead of the previous one."
+ },
+ "lua-bitmask#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Lua patterns have no '?' groups so match returns nil and parts:match crashes; also ^ (power) used for flip and broken set (0/4 tests)."
+ },
+ "lua-bitmask#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Float arithmetic (2^k) instead of integer bit ops: wrong set/clear/flip, broken popcount, prints nothing for one-word commands like print (0/4 tests)."
+ },
+ "lua-bitmask#C": {
+  "pass": false,
+  "score": 1,
+  "why": "Float arithmetic, parts[1] on a string match result, and one-word commands never match, so nothing is printed (0/4 tests)."
+ },
+ "lv-highscore-file#A": {
+  "pass": false,
+  "score": 1,
+  "why": "local game (not global), love.filesystem.getSource/load misused and io.open writes outside the save dir, score added every frame via isDown (0/10 tests)."
+ },
+ "lv-highscore-file#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Calls nonexistent love.filesystem.loadFile (crashes in love.load), io.open outside save dir, isDown scoring, local game (0/10 tests)."
+ },
+ "lv-highscore-file#C": {
+  "pass": false,
+  "score": 2,
+  "why": "love.filesystem.read returns (contents, size) but the code parses the second value, so loadBest returns the file size instead of the stored number (7/10 tests)."
+ },
+ "un-anim-channel#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Obsolete FindObjectOfType and velocity, Lerp instead of damped SetFloat, lambda unsubscribe never removes the handler, no RequireComponent."
+ },
+ "un-anim-channel#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Searches for ProfilerMarker instead of PlayerMarker (type not imported, wrong object), speed uses only the x axis, no RequireComponent."
+ },
+ "un-anim-channel#C": {
+  "pass": false,
+  "score": 1,
+  "why": "Searches for ProfilerMarker instead of PlayerMarker, Lerp instead of damped SetFloat, lambda unsubscribe does not detach."
+ },
+ "un-anim-channel#D": {
+  "pass": false,
+  "score": 3,
+  "why": "Mostly right (hashes, damped SetFloat, FindFirstObjectByType<PlayerMarker>, proper subscribe), but Speed uses only |velocity.x| not XZ speed, no [RequireComponent] for Animator/Rigidbody, and Update skips everything without a player."
+ },
+ "godot-wave-spawner#A": {
+  "pass": false,
+  "score": 2,
+  "why": "Wave completion is checked only once when spawning ends; enemies dying later are never observed (no tree_exited tracking), so the next wave never starts."
+ },
+ "godot-wave-spawner#B": {
+  "pass": false,
+  "score": 2,
+  "why": "Completion is checked only once after the last spawn, so if enemies are still alive the wave never clears; enemies are also parented to the spawner."
+ },
+ "ue-replicated-inventory#A": {
+  "pass": false,
+  "score": 1,
+  "why": "DECLARE_..._TwoParams with one parameter, ServerUseItem_Implementation missing its parameter, and HasAuthority() is not a UActorComponent member; does not compile."
+ },
+ "ue-replicated-inventory#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Server RPCs return int32 (UHT error), AddItem made an RPC, TwoParams delegate with one param, SetIsReplicated in ctor; does not compile."
+ },
+ "gd-duration-strings#A": {
+  "pass": false,
+  "score": 1,
+  "why": "result is declared inside if/else blocks and used outside, so the script fails to load (0/12 tests)."
+ },
+ "gd-duration-strings#B": {
+  "pass": false,
+  "score": 2,
+  "why": "parse_duration is broken: relies on nonexistent String.is_valid_uint and never multiplies the MM part of H:MM:SS by 60 (6/12 tests)."
+ },
+ "gd-duration-strings#C": {
+  "pass": false,
+  "score": 2,
+  "why": "Uses is_valid_int (accepts signs) and nonexistent has_to_int, and parse_duration fails on valid input like 1:05 (6/12 tests)."
+ },
+ "gd-grid-bfs#A": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct neighbour order and BFS with wall/equal edge cases (8/8 tests)."
+ },
+ "gd-grid-bfs#B": {
+  "pass": false,
+  "score": 3,
+  "why": "BFS is right but rows is typed Array[String] instead of the requested Array, so calls with a plain Array fail (3/8 tests)."
+ },
+ "gd-grid-bfs#C": {
+  "pass": false,
+  "score": 1,
+  "why": "Nested named func inside a function is invalid GDScript; the script fails to load (0/8 tests)."
+ },
+ "unity-health-iframes#A": {
+  "pass": true,
+  "score": 4,
+  "why": "Correct guards, i-frame timer, heal clamp, once-only died and Inspector-hookable UnityEvents; HP can go below 0 on the killing hit (minor)."
+ },
+ "unity-health-iframes#B": {
+  "pass": false,
+  "score": 3,
+  "why": "Uses plain C# events, which the Inspector cannot hook as required, and initialises health in Start instead of Awake."
+ },
+ "gds-inventory-save#A": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct stacking, all-or-nothing removal, sorted ids, ConfigFile save/load with clamping, failure keeps data, signals as specified (15/15 tests)."
+ },
+ "gds-inventory-save#B": {
+  "pass": true,
+  "score": 5,
+  "why": "Correct API, ConfigFile inventory section, replace-on-load with skip/clamp, loaded emitted once, no item_changed from load (15/15 tests)."
+ },
+ "gds-inventory-save#C": {
+  "pass": false,
+  "score": 2,
+  "why": "load_from calls nonexistent ConfigFile methods (get_section_names, get_properties_in_section), so loading crashes (12/15 tests)."
+ },
+ "gds-inventory-save#D": {
+  "pass": false,
+  "score": 2,
+  "why": "load_from calls nonexistent ConfigFile.get_properties_section, so loading never works (12/15 tests)."
+ },
+ "un-uitk-hud#A": {
+  "pass": false,
+  "score": 3,
+  "why": "SetHealth sets a normalised 0..1 value without setting the bar range to 0..max (default highValue 100, bar looks empty) and max is not rounded up; UIDocument relies on a manual Inspector reference."
+ },
+ "un-uitk-hud#B": {
+  "pass": false,
+  "score": 3,
+  "why": "UI Toolkit wiring and pause toggle are right, but SetHealth writes a 0..1 value without setting lowValue/highValue to 0..max and does not round max."
+ },
+ "lua-damage-totals#A": {
+  "pass": false,
+  "score": 1,
+  "why": "parts holds one string, so parts:match re-parse returns nil name and data[nil] crashes; tie order not preserved and format strips '7.50' to '7.5' (1/6 tests)."
+ },
+ "lua-damage-totals#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Same nil-name crash from re-matching the first capture, and the unstable sort has no first-appearance tiebreak (1/6 tests)."
+ },
+ "unity-projectile-pool#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Does not compile (Instantiate returns GameObject for an ObjectPool<Projectile>, Release(gameObject)), uses obsolete velocity, and Destroy(gameObject, lifetime) defeats the pool."
+ },
+ "unity-projectile-pool#B": {
+  "pass": false,
+  "score": 1,
+  "why": "createFunc returns a GameObject for ObjectPool<Projectile> (compile error), Destroy(gameObject, lifetime) destroys pooled objects, objects never reactivated on Get."
+ },
+ "unity-projectile-pool#C": {
+  "pass": true,
+  "score": 4,
+  "why": "Proper ObjectPool with get/release/destroy callbacks, velocity and angular reset, lifetime timer and collision release, timestamp fire rate; both classes in one file and a hard-coded Space key are minor drawbacks."
+ },
+ "lv-sliding-puzzle#A": {
+  "pass": false,
+  "score": 1,
+  "why": "grid/moves are locals (not globals), RNG created at file scope and rng:next() does not exist, so shuffle crashes (0/10 tests)."
+ },
+ "lv-sliding-puzzle#B": {
+  "pass": false,
+  "score": 1,
+  "why": "grid/moves are locals, rng:integer() does not exist (shuffle crashes), RNG not created in love.load (0/10 tests)."
+ },
+ "love-topdown-shooter#A": {
+  "pass": false,
+  "score": 1,
+  "why": "Calls nonexistent love.mouse.setAllowedMouseMotion in love.load, crashing at startup."
+ },
+ "love-topdown-shooter#B": {
+  "pass": false,
+  "score": 1,
+  "why": "Refusal; no code."
+ },
+ "love-topdown-shooter#C": {
+  "pass": false,
+  "score": 3,
+  "why": "Playable, but enemy spawning uses getTime() % 1 < 0.02, so the spawn rate depends on frame rate (several or zero per second) instead of every second, and restart does not reset the player."
+ }
+}

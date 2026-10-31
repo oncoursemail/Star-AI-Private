@@ -9,6 +9,7 @@ Group=starmesh
 Environment=PYTHONPATH=/opt/star-verify/app
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
+Environment=STAR_VERIFY_CONFIG=/var/lib/star-verify/verify.json
 WorkingDirectory=/opt/star-verify
 ExecStart=/usr/bin/python3 -m mesh.verify
 Restart=always

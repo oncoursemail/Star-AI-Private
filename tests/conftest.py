@@ -36,6 +36,16 @@ def _no_owner_roblox_key(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_web_research_memory():
+    """star.web_research keeps searches (15 min) and robots.txt (6 h) in process memory; no test sees another's."""
+    import sys
+    module = sys.modules.get("star.web_research")
+    for cache in (getattr(module, "_SEARCHES", None), getattr(module, "_ROBOTS", None)):
+        if cache is not None:
+            cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _own_curiosity_queue(monkeypatch, tmp_path):
     """No test writes to the machine's real curiosity queue (star/curiosity.py)."""
     monkeypatch.setenv("STAR_CURIOSITY_FILE", str(tmp_path / "curiosity-queue.jsonl"))
@@ -79,3 +89,10 @@ def pc_clock_is_daytime(monkeypatch):
     """"Automatically turn on at night" (star/gpu_helper.py) must not make a test depend on the hour it runs at."""
     from star import gpu_helper
     monkeypatch.setattr(gpu_helper, "local_hour", lambda: 14)
+
+
+@pytest.fixture(autouse=True)
+def _no_mesh_router(monkeypatch):
+    """No test may send a chat to the real mesh router (star/general_mode.py's GPU lane reads STAR_MESH_URL or
+    ~/.star/mesh_url). Tests of the lane set their own address and fakes."""
+    monkeypatch.setenv("STAR_MESH_URL", "off")

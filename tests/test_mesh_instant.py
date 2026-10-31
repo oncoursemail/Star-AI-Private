@@ -151,9 +151,9 @@ def test_affinity_bonus_does_not_keep_a_conversation_on_the_slow_brain():
     n.state, n.last_ok, n.tok_s = "idle", time.monotonic(), 44.0
     n.status = {"models": [{"id": "litha-fast", "url": "http://n/v1", "loaded": True}]}
     r.affinity.set("id:c", "brain1")                      # 10 * 2 = 20 < 44
-    assert [b.name for b, _, _ in r.plan("litha", "id:c")[0]] == ["gpu", "brain1"]
+    assert [b.name for b, _, _ in r.plan("litha", "id:c")[0]] == ["gpu", "brain1", "brain1"]  # litha-26b, star-fast
     n.tok_s = 15.0                                        # 20 > 15: stay where the KV is
-    assert [b.name for b, _, _ in r.plan("litha", "id:c")[0]] == ["brain1", "gpu"]
+    assert [b.name for b, _, _ in r.plan("litha", "id:c")[0]] == ["brain1", "brain1", "gpu"]
 
 
 # ---- prefetch ----------------------------------------------------------------------------------------------------------
@@ -201,11 +201,11 @@ def test_prefetch_never_loads_a_brain_model_and_skips_busy_backends(tmp_path):
     async def go():
         r, port, brain, _ = await setup(tmp_path, [], cache=False)
         body = {"conversation_id": "b", "wait": True, "messages": [SYSTEM, {"role": "user", "content": "hi"}]}
-        r.brain_models = [{"id": "star-fast", "status": {"value": "unloaded"}}]
+        r.brain_models = [{"id": "litha-26b", "status": {"value": "unloaded"}}]
         r.brain_models_at = time.monotonic()
         out = json.loads((await post(port, "/mesh/prefetch", body))[2])
         assert out["backend"] == "brain1" and "not loaded" in out["skipped"] and not brain.requests
-        r.brain_models = [{"id": "star-fast", "status": {"value": "loaded"}}]
+        r.brain_models = [{"id": "litha-26b", "status": {"value": "loaded"}}]
         out = json.loads((await post(port, "/mesh/prefetch", {**body, "conversation_id": "b2"}))[2])
         assert out["backend"] == "brain1" and "skipped" not in out
         assert brain.requests[-1]["max_tokens"] == 0 and brain.auth[-1] == f"Bearer {KEY}"

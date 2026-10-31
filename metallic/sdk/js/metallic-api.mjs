@@ -169,6 +169,21 @@ export class MetallicApi {
     return this.request("GET", `/v1/games/${encodeURIComponent(game)}`);
   }
 
+  /** Every Rec Room revival: status and people online. Public. */
+  listRevivals() {
+    return this.request("GET", `/v1/revivals`);
+  }
+
+  /** One revival's status and people online. Public. */
+  getRevival(revival) {
+    return this.request("GET", `/v1/revivals/${encodeURIComponent(revival)}`);
+  }
+
+  /** Latest news from the Rec Room revivals. Public. */
+  listRevivalNews() {
+    return this.request("GET", `/v1/revival-news`);
+  }
+
   /** Release channels. Public. */
   listReleases() {
     return this.request("GET", `/v1/releases`);

@@ -171,6 +171,15 @@ class Api:
     def op_listGames(self, ctx):
         return 200, {"games": self.content.games()}
 
+    def op_listRevivals(self, ctx):
+        return 200, self.content.revivals.list()
+
+    def op_listRevivalNews(self, ctx):
+        return 200, self.content.revival_news.list()
+
+    def op_getRevival(self, ctx):
+        return 200, self.content.revivals.get(ctx["path"]["revival"])
+
     def op_getGame(self, ctx):
         return 200, self.content.game(ctx["path"]["game"])
 

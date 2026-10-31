@@ -22,10 +22,11 @@ class Fake:
     """A fake node (status on /status, llama-server-like chat on /v1/chat/completions) or a fake brain."""
 
     def __init__(self, name, state="idle", tok_s=30.0, loaded=True, first_delay=0.0, words=("Hi", " there", "!"),
-                 die_before_token=False, die_after=None, http_status=200, end="finish", cut_body=False):
+                 die_before_token=False, die_after=None, http_status=200, end="finish", cut_body=False,
+                 fail_models=()):
         self.name, self.state, self.tok_s, self.loaded = name, state, tok_s, loaded
         self.first_delay, self.words, self.die_before_token, self.die_after = first_delay, words, die_before_token, die_after
-        self.http_status = http_status
+        self.http_status, self.fail_models = http_status, fail_models
         self.end, self.cut_body = end, cut_body        # end: finish | clean (no finish_reason) | error (error event)
         self.requests, self.auth, self.loads, self.cancelled = [], [], [], 0
         self.server, self.port = None, 0
@@ -66,8 +67,9 @@ class Fake:
             req = json.loads(body)
             self.requests.append(req)
             self.auth.append(headers.get("authorization", ""))
-            if self.http_status != 200:
-                return await self.reply(writer, self.http_status, b'{"error":{"message":"nope"}}')
+            if self.http_status != 200 or req.get("model") in self.fail_models:
+                return await self.reply(writer, self.http_status if self.http_status != 200 else 500,
+                                        b'{"error":{"message":"nope"}}')
             if not req.get("stream"):
                 await asyncio.sleep(self.first_delay)
                 out = {"model": req["model"], "choices": [{"message": {"role": "assistant",
@@ -181,7 +183,7 @@ def test_busy_and_unloaded_nodes_are_skipped_and_unloaded_one_is_warmed(tmp_path
         r, port, brain = await setup(tmp_path, [busy, cold])
         status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
         assert status == 200 and headers["X-Mesh-Backend"] == "brain1" and sse_text(data) == "Brain here"
-        assert brain.requests[0]["model"] == "star-fast" and brain.auth[0] == f"Bearer {KEY}"
+        assert brain.requests[0]["model"] == "litha-26b" and brain.auth[0] == f"Bearer {KEY}"
         assert not busy.requests and not cold.requests
         await asyncio.sleep(0.05)
         assert cold.loads == [{"model": "litha-fast"}] and not busy.loads
@@ -218,6 +220,10 @@ def test_failure_before_first_token_retries_next_backend(tmp_path):
         r.nodes[0].fail_until = 0
         status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
         assert headers["X-Mesh-Backend"] == "brain1"
+        node.http_status = 400                # this request is too long for the node: fall back, no cooldown
+        r.nodes[0].fail_until = 0
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
+        assert headers["X-Mesh-Backend"] == "brain1" and r.node_usable(r.nodes[0], time.monotonic())[0]
     run(go())
 
 
@@ -339,7 +345,7 @@ def test_streaming_passthrough_and_models(tmp_path):
         assert status == 200 and headers["Content-Type"] == "text/event-stream" and sse_text(data) == "Brain here"
         assert brain.requests[-1]["model"] == "star-deep"
         await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", {**body, "model": "litha-deep"})
-        assert brain.requests[-1]["model"] == "star-deep"
+        assert brain.requests[-1]["model"] == "litha-26b"
         status, _, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions",
                                                   {**body, "stream": False, "model": "litha"})
         assert status == 200 and json.loads(data)["choices"][0]["message"]["content"] == "Brain here"
@@ -348,17 +354,37 @@ def test_streaming_passthrough_and_models(tmp_path):
         assert status == 200 and json.loads(data)["data"][0]["embedding"] == [0.1]
         status, _, data = await asyncio.to_thread(call, port, "GET", "/v1/models")
         ids = [m["id"] for m in json.loads(data)["data"]]
-        assert ids == ["litha", "litha-deep", "star-fast", "star-deep"]
+        assert ids == ["litha", "litha-deep", "litha-agent", "star-fast", "star-deep"]
         status, _, data = await asyncio.to_thread(call, port, "GET", "/mesh/status")
         st = json.loads(data)
         assert st["brain"]["healthy"] is True and len(st["decisions"]) == 3 and st["decisions"][0]["model"] == "litha"
     run(go())
 
 
+def test_litha_agent_build_tasks_go_to_the_agent_chat_stays_litha(tmp_path):
+    async def go():
+        agent = await Fake("agent", words=("Built", " + verified")).start()
+        node = Fake("owner-pc", words=("Plain",))
+        r, port, brain = await setup(tmp_path, [node], agent_url=agent.url)
+        build = {**CHAT, "model": "litha-agent",
+                 "messages": [{"role": "user", "content": "Make me a Paper 1.21.11 plugin with /heal"}]}
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", build)
+        assert status == 200 and headers["X-Mesh-Agent"] == "1" and sse_text(data) == "Built + verified"
+        assert agent.requests[-1]["model"] == "litha-agent" and agent.auth[-1] == f"Bearer {KEY}"
+        chat = {**CHAT, "model": "litha-agent", "messages": [{"role": "user", "content": "What is a RemoteEvent?"}]}
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", chat)
+        assert status == 200 and headers["X-Mesh-Backend"] == "owner-pc" and sse_text(data) == "Plain"
+        assert node.requests[-1]["model"] == "litha-fast" and len(agent.requests) == 1
+        r.cfg["agent_url"] = "http://127.0.0.1:9"            # agent service down: plain litha, never an error
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", build)
+        assert status == 200 and headers["X-Mesh-Backend"] == "owner-pc" and r.counters["agent_down"] == 1
+    run(go())
+
+
 def test_litha_deep_thinks_on_an_idle_node_else_brain_star_deep(tmp_path):
     async def go():
         node = Fake("owner-pc", tok_s=31.0, words=("Deep", "!"))
-        r, port, brain = await setup(tmp_path, [node])
+        r, port, brain = await setup(tmp_path, [node], brain_litha_model="")   # the 26B step: test below
         deep = {**CHAT, "model": "litha-deep", "max_tokens": 1400, "chat_template_kwargs": {"enable_thinking": False}}
         status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", deep)
         assert status == 200 and headers["X-Mesh-Backend"] == "owner-pc" and sse_text(data) == "Deep!"
@@ -389,6 +415,43 @@ def test_litha_deep_thinks_on_an_idle_node_else_brain_star_deep(tmp_path):
     run(go())
 
 
+def test_no_usable_node_goes_to_brain_litha_26b_first_then_star_fast_or_star_deep(tmp_path):
+    async def go():
+        node = Fake("owner-pc", tok_s=31.0, words=("Node",))
+        r, port, brain = await setup(tmp_path, [node])
+        # node idle, but the request asks for the brain path (live test hook): litha-26b, plain body
+        hdr = {"X-Mesh-Nodes": "off"}
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT, KEY, hdr)
+        assert status == 200 and headers["X-Mesh-Backend"] == "brain1" and not node.requests
+        assert [q["model"] for q in brain.requests] == ["litha-26b"]
+        assert r.decisions[-1]["reason"].startswith("ranked: brain1 10.0 tok/s q0 (brain litha-26b > brain star-fast)")
+        assert "nodes skipped by request" in r.decisions[-1]["reason"]
+        deep = {**CHAT, "model": "litha-deep", "max_tokens": 1400}
+        await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", deep, KEY, hdr)
+        sent = brain.requests[-1]
+        assert sent["model"] == "litha-26b" and sent["max_tokens"] == 1400
+        assert "thinking_budget_tokens" not in sent and "chat_template_kwargs" not in sent
+        assert r.decisions[-1]["reason"] == ("litha-deep -> brain litha-26b > brain star-deep "
+                                             "(no usable node: skipped by request)")
+        # hedging never starts two brain models at once (one CPU)
+        n = len(brain.requests)
+        await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", {**CHAT, "mesh_hedge": True}, KEY, hdr)
+        await asyncio.sleep(0.1)
+        assert [q["model"] for q in brain.requests[n:]] == ["litha-26b"] and "cancelled" not in r.decisions[-1]
+        # litha-26b fails before its first token -> star-fast / star-deep on the same brain
+        brain.fail_models = ("litha-26b",)
+        n = len(brain.requests)
+        status, headers, data = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT, KEY, hdr)
+        assert status == 200 and sse_text(data) == "Brain here"
+        assert [q["model"] for q in brain.requests[n:]] == ["litha-26b", "star-fast"]
+        await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", deep, KEY, hdr)
+        assert [q["model"] for q in brain.requests[-2:]] == ["litha-26b", "star-deep"]
+        # without the header the idle node serves as before
+        status, headers, _ = await asyncio.to_thread(call, port, "POST", "/v1/chat/completions", CHAT)
+        assert headers["X-Mesh-Backend"] == "owner-pc"
+    run(go())
+
+
 def test_auth_uses_brain_key_file(tmp_path):
     async def go():
         r, port, brain = await setup(tmp_path)
@@ -412,11 +475,16 @@ def test_queue_lowers_a_busy_nodes_rank():
     for n, tok in zip(r.nodes, (30.0, 20.0)):
         n.state, n.last_ok, n.tok_s = "idle", time.monotonic(), tok
         n.status = {"models": [{"id": "litha-fast", "url": "http://n/v1", "loaded": True}]}
-    assert [b.name for b, _, _ in r.plan("litha")[0]] == ["a", "b", "brain1"]
+    assert [b.name for b, _, _ in r.plan("litha")[0]] == ["a", "b", "brain1", "brain1"]   # litha-26b, star-fast
     r.nodes[0].inflight = 1                 # 30/2 = 15 < 20
-    assert [b.name for b, _, _ in r.plan("litha")[0]] == ["b", "a", "brain1"]
+    assert [b.name for b, _, _ in r.plan("litha")[0]] == ["b", "a", "brain1", "brain1"]
     r.nodes[0].inflight, r.nodes[1].inflight = 3, 3   # 7.5 and 5 < brain 10
     assert [b.name for b, _, _ in r.plan("litha")[0]][0] == "brain1"
+    # nodes only (mesh_brain: false / X-Mesh-Brain: off, STAR's GPU lane): the brain is never planned
+    assert [b.name for b, _, _ in r.plan("litha", None, "only")[0]] == ["a", "b"]
+    for n in r.nodes:
+        n.state = "busy"
+    assert r.plan("litha", None, "only")[0] == []
 
 
 def test_self_registration_routes_expires_and_needs_mesh_token(tmp_path):

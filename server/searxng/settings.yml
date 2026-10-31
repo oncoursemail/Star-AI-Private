@@ -1,5 +1,5 @@
 # STAR's SearXNG instance (server 1, inside the starai container). Installed as /etc/searxng/settings.yml
-# by install.sh, which replaces __SECRET__ with a random key (never committed).
+# by install.sh, which puts a random key in place of the secret_key placeholder (never committed).
 # Only reachable from inside the container (127.0.0.1); STAR reaches it through star-search-gateway
 # (port 8093, STAR Server key required, rate limited). See README.md.
 use_default_settings: true
@@ -35,3 +35,16 @@ outgoing:
 
 valkey:
   url: false
+
+# Web engines (web-research-20261029): the defaults left three general web engines (duckduckgo, google cse,
+# brave); a burst of ~40 searches got all three suspended (CAPTCHA / too many requests) and every STAR search came
+# back empty. bing, yahoo and mwmbl (an independent open index) answered then; with them a blocked engine only
+# thins the results. Engine blocks are respected (SearXNG suspends the engine), never worked around.
+engines:
+  - name: bing
+    disabled: false
+  - name: yahoo
+    disabled: false
+  - name: mwmbl
+    disabled: false
+    weight: 0.3   # an independent index, but noisy (old, off-topic pages): ranked below the others

@@ -268,6 +268,7 @@ class FakeLlama:
         self.requests: list[dict] = []
         self.cancelled = 0
         self.slot_busy: dict[int, bool] = {}
+        self.words: dict[int, int] = {}       # words sent so far, per request
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -342,6 +343,8 @@ class FakeLlama:
                         choice = {"index": 0, "delta": {"content": piece}} if chat else {"index": 0, "text": piece}
                         self._send({"id": "up", "created": 1, "model": "m", "choices": [choice],
                                     "timings": {**timing, "predicted_n": n}})
+                        with fake.lock:
+                            fake.words[id(self)] = n
                     reason = "stop" if stop == NATURAL_END else "length"
                     end = {"index": 0, "delta": {}, "finish_reason": reason} if chat else \
                         {"index": 0, "text": "", "finish_reason": reason}
@@ -370,8 +373,8 @@ class FakeLlama:
 def stack(tmp_path):
     made = []
 
-    def build(slots=2, solo=False, bg_cap=0, keys=None, grace=0.2):
-        fake = FakeLlama(slots)
+    def build(slots=2, solo=False, bg_cap=0, keys=None, grace=0.2, delay=0.02):
+        fake = FakeLlama(slots, delay=delay)
         cfg = pp.Config(upstream=fake.url, host="127.0.0.1", port=0, solo_p0=solo, grace_s=grace,
                         log=str(tmp_path / "proxy.jsonl"),
                         models={"m": pp.ModelPolicy("m", slots, bg_cap, ("alias",))})
@@ -419,6 +422,12 @@ def wait_for(pred, timeout=10.0):
     return False
 
 
+def streaming(fake, count, words=3):
+    """`count` answers have sent a few words: on a loaded runner a fixed sleep may end before any word is out."""
+    with fake.lock:
+        return sum(n >= words for n in fake.words.values()) >= count
+
+
 def run_bg(port, path, body, out, key):
     out[key] = call(port, path, body)
 
@@ -431,7 +440,7 @@ def test_p0_pauses_background_and_both_background_answers_come_back_whole(stack)
     for t in bg:
         t.start()
     assert wait_for(lambda: fake.busy == 2)
-    time.sleep(0.1)
+    assert wait_for(lambda: streaming(fake, 2))
     t0 = time.monotonic()
     status, chunks, _ = call(port, "/p0/v1/chat/completions", chat(5, stream=True))
     p0_time = time.monotonic() - t0
@@ -458,14 +467,15 @@ def test_p0_pauses_background_and_both_background_answers_come_back_whole(stack)
 
 
 def test_solo_p0_pauses_every_background_stream(stack):
-    fake, server, port = stack(slots=3, solo=True)
+    # 4 s answers: with 2 s one could finish before the chat on a loaded runner (1 pause, not 2; seen twice on CI)
+    fake, server, port = stack(slots=3, solo=True, delay=0.1)
     results: dict = {}
     bg = [threading.Thread(target=run_bg, args=(port, "/p3/v1/chat/completions", chat(), results, f"bg{i}"))
           for i in range(2)]
     for t in bg:
         t.start()
     assert wait_for(lambda: fake.busy == 2)
-    time.sleep(0.1)
+    assert wait_for(lambda: streaming(fake, 2))
     status, data, _ = call(port, "/p0/v1/chat/completions", chat(8))
     assert status == 200 and data["choices"][0]["message"]["content"] == words(0, 8)
     for t in bg:

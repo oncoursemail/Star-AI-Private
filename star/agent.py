@@ -57,7 +57,9 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_roblox_game_image", "search_asset",
     "star_github_tree", "star_github_read", "star_mcp_search", "star_mcp_call", "star_delegate_research",
     "star_debug_report", "star_debug_compare", "star_debug_source",
-    "workspace_minecraft_audit", "workspace_minecraft_inspect", "star_identify_song",
+    "workspace_minecraft_audit", "workspace_minecraft_inspect", "workspace_minecraft_model_check",
+    "workspace_asset3d_check",
+    "star_identify_song",
     "star_game_video_study", "star_game_experience_search", "star_game_episode_analyze",
     "star_api_catalog_search",
 })
@@ -383,7 +385,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   history=None, turn_sections=None, mode="", guidance="",
                   turn_context_chars=10000, request_extras=None, sampling=None, today=None,
                   tool_memory=None, helper_client=None, document_tools=None, image_max_side=None,
-                  reverse_engineering=None, debug_evidence=None, song_lookup=None, minecraft_tools=None, live_show=None,
+                  reverse_engineering=None, debug_evidence=None, song_lookup=None, minecraft_tools=None, asset3d_tools=None, live_show=None,
                   preserve_history=False, complete_code_answers=None,
                   tool_discovery_enabled=False, candidate_code_team_enabled=False, now=None,
                   web_settings=None, on_first_request=None, incremental_repair=None):
@@ -430,6 +432,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         definitions.append({"type": "function", "function": {"name": CLOCK_TOOL["name"],
                             "description": CLOCK_TOOL["description"],
                             "parameters": CLOCK_TOOL["inputSchema"]}})
+    # Like the clock: offered only to a prompt about her own machines, speed, code or learning (star/system_view.py).
+    from .system_view import TOOL as SYSTEM_TOOL, wants_system
+    system_enabled = any(wants_system(text) for text in (prompt, *pinned))
+    if system_enabled:
+        definitions.append({"type": "function", "function": {"name": SYSTEM_TOOL["name"],
+                            "description": SYSTEM_TOOL["description"],
+                            "parameters": SYSTEM_TOOL["inputSchema"]}})
     if github_enabled:
         definitions.extend([
             {"type": "function", "function": {
@@ -579,6 +588,11 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
                        for tool in minecraft_definitions)
     enabled_minecraft = {tool["name"] for tool in minecraft_definitions}
+    asset3d_definitions = selected(asset3d_tools)
+    definitions.extend({"type": "function", "function": {"name": tool["name"],
+                       "description": tool["description"], "parameters": tool["inputSchema"]}}
+                       for tool in asset3d_definitions)
+    enabled_asset3d = {tool["name"] for tool in asset3d_definitions}
     song_definitions = selected(song_lookup)
     definitions.extend({"type": "function", "function": {"name": tool["name"],
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
@@ -643,7 +657,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         # This classifies effects only to PAUSE actions. Existing authorization
         # above dispatch remains authoritative; this never grants a capability.
         read_only = ((TOOL_NAMES - WORKSPACE_WRITE_TOOLS) | STUDIO_READ_TOOLS | {
-            'star_self_state', 'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
+            'star_self_state', 'star_evidence_read', 'star_calculate', 'star_clock', 'star_system', 'star_web_fetch',
             'star_web_search', 'star_github_tree', 'star_github_read', 'star_delegate',
             'star_mcp_registry_search', 'star_candidate_code_team',
             'star_self_capabilities', 'star_self_improvement_plan',
@@ -925,6 +939,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif name == 'star_clock':
                         if not clock_enabled or not isinstance(args, dict):
                             raise PermissionError('Clock not authorized for this task')
+                    elif name == 'star_system':
+                        if not system_enabled or not isinstance(args, dict):
+                            raise PermissionError('System self-model not authorized for this task')
                     elif name == 'star_web_fetch':
                         if not web_search_enabled or not isinstance(args, dict) or set(args) != {'url'}:
                             raise PermissionError('Web page reading is not authorized')
@@ -990,6 +1007,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif minecraft_tools is not None and minecraft_tools.owns(name):
                         if name not in enabled_minecraft:
                             raise PermissionError("Minecraft tool not authorized for this task")
+                    elif asset3d_tools is not None and asset3d_tools.owns(name):
+                        if name not in enabled_asset3d:
+                            raise PermissionError("3D asset tool not authorized for this task")
                     elif song_lookup is not None and song_lookup.owns(name):
                         if name not in enabled_song:
                             raise PermissionError("Song recognition not authorized for this message")
@@ -1050,6 +1070,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 raise
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Clock tool failed: {type(exc).__name__}"}]}
+                    elif name == 'star_system':
+                        from .system_view import tool_result as system_result
+                        data = await system_result(args)   # never raises: an unreachable self-model is an isError result
                     elif name == 'star_web_fetch':
                         try:
                             from .web_fetch import tool_result as fetch_result
@@ -1193,6 +1216,14 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         except (ValueError, PermissionError, OSError, UnicodeError) as exc:
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Minecraft tool failed: {type(exc).__name__}: {exc}"}]}
+                    elif asset3d_tools is not None and asset3d_tools.owns(name):
+                        try:
+                            local_output = await asyncio.to_thread(asset3d_tools.call, name, args, enabled=enabled_asset3d)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except (ValueError, PermissionError, OSError, UnicodeError, RuntimeError) as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"3D asset tool failed: {type(exc).__name__}: {exc}"}]}
                     elif song_lookup is not None and song_lookup.owns(name):
                         # One lookup the owner approved for an attached WAV (star/music_recognition.py).
                         from .music_recognition import LookupFailed

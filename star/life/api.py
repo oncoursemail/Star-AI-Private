@@ -13,7 +13,6 @@ from __future__ import annotations
 import hmac
 import json
 import secrets
-import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 

@@ -258,7 +258,7 @@ def test_grounding_attaches_close_verified_answers_on_a_miss(tmp_path):
         msgs = node.requests[-1]["messages"]
         assert msgs[0] == SYSTEM and len(msgs) == 2 and "mesh_ground" not in node.requests[-1]
         text = msgs[-1]["content"]
-        assert text.startswith(instant.GROUND_HEAD) and text.endswith("Question: " + q)
+        assert text.startswith(instant.GROUND_HEAD) and ("\n---\nQuestion: " + q) in text   # + fullcode build note
         assert text.index(DOOR) < text.index(TOUCH) and DOOR_ANSWER in text and TOUCH_ANSWER in text
         assert r.decisions[-1]["ground"] == h["X-Mesh-Ground-Ids"] and r.counters["ground_used"] == 1
     run(go())

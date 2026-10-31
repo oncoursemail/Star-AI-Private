@@ -27,6 +27,8 @@ CREATE INDEX IF NOT EXISTS deliveries_webhook ON deliveries(webhook, created);
 CREATE TABLE IF NOT EXISTS heartbeats (
   game TEXT NOT NULL, server_id TEXT NOT NULL, key TEXT NOT NULL, players INTEGER NOT NULL, max_players INTEGER,
   version TEXT, updated REAL NOT NULL, PRIMARY KEY (game, server_id));
+CREATE TABLE IF NOT EXISTS revival_samples (id TEXT NOT NULL, t REAL NOT NULL, online INTEGER NOT NULL, members INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS revival_samples_id_t ON revival_samples(id, t);
 CREATE TABLE IF NOT EXISTS channels_seen (channel TEXT PRIMARY KEY, sequence INTEGER NOT NULL, seen REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, event TEXT NOT NULL, actor TEXT, ip TEXT, ok INTEGER NOT NULL,

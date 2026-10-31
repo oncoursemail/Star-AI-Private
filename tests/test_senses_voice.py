@@ -7,8 +7,9 @@ import random
 import threading
 import time
 
-import numpy as np
 import pytest
+
+np = pytest.importorskip("numpy")
 
 from star.senses import audio, classify, fastpath, hearing, instant, output, reference, routes
 from star.senses.audio import RATE

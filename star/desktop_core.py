@@ -38,6 +38,7 @@ from . import server_roles, turn_memory
 from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
+from . import general_mode
 from . import edit_format
 from . import studio_loop, studio_tool_examples, thinking_budget, verify_ladder
 from . import project_rules
@@ -88,6 +89,7 @@ class Settings:
     debug_evidence_enabled: bool = False  # opt-in report analysis; never grants process execution or attachment
     live_show_enabled: bool = False       # opt-in offline episode-manifest planner (star/live_show.py); no posting or rendering
     minecraft_tools_enabled: bool = False  # opt-in offline pack/server-folder tools (star/minecraft_tools.py)
+    asset3d_tools_enabled: bool = False  # opt-in 3D template asset tools (star/asset3d/tools.py), offline by default
     max_calls: int = 12
     context_chars: int = 26000
     llama_server: str = ''
@@ -172,11 +174,22 @@ class Settings:
     gold_examples_enabled: bool = False     # verified licence-recorded examples (star/gold_bank.py), opt-in
     studio_atlas: bool = True               # tested reference systems by capability (star/studio_atlas.py); retrieval only
     presolve_enabled: bool = False          # overnight pre-solved answers (star/presolve.py), off until owner opts in
+    # General questions (star/general_mode.py, truth-20261029): hidden key-facts note, exact calculator, safety facts;
+    # general_gpu answers them on the mesh router's GPU nodes (STAR_MESH_URL / ~/.star/mesh_url) instead of the brain.
+    general_help: bool = True
+    general_gpu: bool = True
     # Owner default (O1): night school's text lessons that won the paired gate go live for 14 days, visibly, with undo
     # (star/learned_week.py). False = bundles only add candidates that wait for review.
     learning_auto_live: bool = True
     research_auto_check: bool = False      # opt-in daily public-doc checks while desktop is open
     deep_research_enabled: bool = False    # candidate: bounded page reading for Team + Research
+    # Team + Research collects evidence with star/web_research.py (v2: reads pages, ranks passages, checks each cited
+    # sentence; evals/web_research 61/62 vs 53/62). False = the previous path (snippets, or ResearchSession when
+    # deep_research_enabled).
+    web_research_v2: bool = True
+    # Research memory (star/research_store.py): verified web answers are kept with their source and fetch date, a
+    # repeated question is answered from them while fresh, and the server's watched pages are mirrored.
+    research_memory: bool = True
     scholarly_research_enabled: bool = False  # deep research also asks Crossref/OpenAlex metadata (star/public_research.py)
     # Generate several, test, keep what works (star/best_of_n.py): 'off' or 'auto' (2 to best_of_n_max candidates
     # for code requests on STAR Server, as many as the free model slots allow). Off until the owner opts in.
@@ -297,13 +310,13 @@ class Settings:
         if not self.project.strip() or len(self.project) > 100:
             raise ValueError('Project name is invalid')
         if any(type(getattr(self, key)) is not bool
-               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled', 'live_show_enabled', 'minecraft_tools_enabled',
+               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled', 'live_show_enabled', 'minecraft_tools_enabled', 'asset3d_tools_enabled',
                             'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
-                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
+                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'web_research_v2', 'research_memory', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
                             'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'emotion_enabled', 'studio_inspect', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
-                            'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
+                            'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled', 'general_help', 'general_gpu')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -1435,6 +1448,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
     lesson_store = learning.LessonStore(knowledge=knowledge, record=metrics.record)
     recalled = []
     learned = {'grounding': None, 'messages': None, 'done': False}
+    web_found: dict = {}     # the automatic web search's sources (research memory: footer and learning after the answer)
 
     def learn_from_turn():
         """After the turn (answered, failed or stopped): record what it taught. Regular
@@ -1585,6 +1599,10 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         if workspace is not None and settings.minecraft_tools_enabled is True:
             from .minecraft_tools import MinecraftTools
             minecraft_tools = MinecraftTools(workspace, enabled=True, allow_write=settings.workspace_edit is True)
+        asset3d_tools = None
+        if workspace is not None and settings.asset3d_tools_enabled is True:
+            from .asset3d.tools import Asset3DTools
+            asset3d_tools = Asset3DTools(workspace, enabled=True, allow_write=settings.workspace_edit is True)
         if use_tools and settings.tool_workshop_enabled:
             workshop = ToolWorkshop(home=home,project=settings.project,knowledge=knowledge,
                                     workspace=workspace,intelligence=intelligence)
@@ -1696,10 +1714,52 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 # A question about what is happening now: search without waiting for the switch.
                 # A failure is one line in the context (the model says so), never a failed turn.
                 audited_event({'event': 'search_started'})
-                web_text, _sources = await live_context.auto_search(prompt, settings=settings)
+                # Research memory first: a fresh verified answer to the same question (star/research_store.py).
+                web_store = (live_context.open_store(home / live_context.RESEARCH_STORE_FILE)
+                             if settings.research_memory is not False else None)
+                try:
+                    web_text, web_found['sources'] = await live_context.auto_search(prompt, settings=settings,
+                                                                                    store=web_store)
+                finally:
+                    if web_store is not None:
+                        web_store.close()
                 if web_text:
                     turn_sections.append(('WEB SEARCH', web_text))
                 audited_event({'event': 'search_finished'})
+            # General questions (star/general_mode.py, truth-20261029): answered on the mesh router's GPU nodes when
+            # one is configured (seconds instead of the brain's CPU) with a hidden key-facts note, the exact calculation
+            # for maths and safety facts; the brain's own path gets only the safety facts (the note did not help it).
+            general_kind = (general_mode.kind(prompt) if settings.general_help is True and kind == 'lan'
+                            and mode in ('fast', 'auto') and not use_tools and not images and not documents
+                            and not attachment_count and document_tools is None and not github_enabled
+                            and not research and not wants_deep and not strata_plan.active else 'chat')
+            if general_kind in general_mode.GENERAL_KINDS:
+                gpu = general_mode.gpu_endpoint(settings)
+                if gpu:
+                    general_secs = general_mode.sections(prompt)
+                    if general_kind == 'math':
+                        calc = await general_mode.gpu_calc(settings, gpu, prompt)
+                        general_secs = [calc] if calc else []
+                    shown: list[str] = []
+
+                    async def show(text):
+                        shown.append(text)
+                        audited_event({'event': 'assistant_delta', 'text': text})
+                    try:
+                        text = await general_mode.gpu_answer(
+                            settings, gpu, general_mode.desktop_messages(
+                                prompt, history, learning.guard_sections([*turn_sections, *general_secs]),
+                                current_turn_line(conversation_records)),
+                            max_tokens=route.response_tokens, temperature=0.3, on_delta=show)
+                    except Exception as exc:
+                        audited_event({'event': 'general_gpu_fallback', 'reason': type(exc).__name__})
+                        text = ''.join(shown)
+                    if text:
+                        first_visible_token = True
+                        audited_event({'event': 'model_answered', 'model': general_mode.GPU_MODEL})
+                        audited_event({'event': 'finished', 'model_calls': 1, 'tool_calls': 0})
+                        return (text, [{'role': 'user', 'content': prompt}, {'role': 'assistant', 'content': text}], [])
+                turn_sections.extend(general_mode.sections(prompt, gpu=False))
             # One client per task.  When Strata is selected, keep the ordinary
             # resident local brain open as a no-replay fallback for transport/model
             # failures that happen before Strata produces output.
@@ -1805,6 +1865,8 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     kwargs['live_show'] = live_show
                 if minecraft_tools is not None:
                     kwargs['minecraft_tools'] = minecraft_tools
+                if asset3d_tools is not None:
+                    kwargs['asset3d_tools'] = asset3d_tools
                 if song_tool is not None:
                     kwargs['song_lookup'] = song_tool
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
@@ -2016,6 +2078,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                       if provider_kind(settings) == 'lan' else
                       'Try Fast mode, a smaller prompt, or a hosted provider.')
             raise TimeoutError(f'STAR exceeded its {task_timeout}s task budget. {advice}') from exc
+        if web_found.get('sources'):
+            from . import live_context
+            # Answered from research memory: say where it came from and when it was read. Otherwise the first cited
+            # claim is checked against its page after the answer (a background thread) and kept when the page has it.
+            answer += live_context.stored_note(web_found['sources'])
+            if settings.research_memory is not False:
+                live_context.learn_later(home / live_context.RESEARCH_STORE_FILE, prompt, answer,
+                                         web_found['sources'])
         first = token_timing['first']
         requested = token_timing['requested']
         measured_first = (instant_answer.first_token_ms if instant_answer is not None else
@@ -2024,6 +2094,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         throughput = (instant_answer.tokens_per_second if instant_answer is not None else
                       model_stats.get('tokens_per_second'))
         brain = ('pc' if instant_answer is not None or kind == 'local'
+                 else 'gpu' if kind == 'lan' and answered_by == general_mode.GPU_MODEL
                  else 'server' if kind == 'lan' else 'cloud')
         stats = {'brain': brain, 'model': answered_by or route.model,
                  'first_token_ms': measured_first, 'tokens_per_second': throughput,

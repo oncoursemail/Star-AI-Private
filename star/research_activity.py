@@ -139,8 +139,11 @@ def sanitize_research_event(event: dict) -> dict | None:
     return {"phase": phrase, "activity": payload}
 
 
-def research_source_report(session, answer: str) -> str:
-    """Host-authored source manifest plus honest, non-semantic reference checks."""
+def research_source_report(session, answer: str, *, claim_check=None) -> str:
+    """Host-authored source manifest plus honest, non-semantic reference checks.
+
+    `claim_check` (star.web_research.Verified, v2 sessions): the token check of each cited sentence against the
+    passages it cites replaces the 'not verified' line with its counts."""
     check = session.report_citations(answer)
     summary = session.summary()
     lines = ["### Research sources", "",
@@ -159,7 +162,14 @@ def research_source_report(session, answer: str) -> str:
     if check["unread_source_ids"]:
         lines.append("Some cited sources were available only as search snippets: " +
                      ", ".join(check["unread_source_ids"]) + ".")
-    lines.append("These checks confirm reference membership only. Claim support has not been automatically verified.")
+    if claim_check is not None and claim_check.checked:
+        lines.append(f"Claim check: {claim_check.supported} of {claim_check.checked} cited sentences have their "
+                     f"numbers and names in the passages they cite ({claim_check.moved} citations moved to the "
+                     f"passage that has them; {claim_check.unverified} marked [unverified]). This is a text match, "
+                     "not proof that a claim is true.")
+    else:
+        lines.append("These checks confirm reference membership only. "
+                     "Claim support has not been automatically verified.")
     lines.append("")
     for row in session.source_manifest():
         url = public_source_url(row["final_url"] or row["requested_url"])

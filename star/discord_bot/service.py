@@ -37,6 +37,8 @@ def source_lines(sources) -> str:
         url = str(item.get("url", "")) if isinstance(item, dict) else ""
         if url.startswith("https://") and not any(c in url for c in " <>"):
             title = " ".join(str(item.get("title", "")).split())[:90]
+            if item.get("stored"):          # from research memory: when STAR read it
+                title = f"{title} (STAR's research notes, fetched {str(item.get('fetched', ''))[:10]})".strip()
             lines.append(f"- {title}: <{url}>" if title else f"- <{url}>")
     return ("\n\nSources:\n" + "\n".join(lines)) if lines else ""
 
@@ -70,8 +72,12 @@ def lookup_schema() -> dict:
 class DiscordService:
     def __init__(self, policy: AccessPolicy, *, brain=None, memory: SessionMemory | None = None,
                  ffmpeg_dir: str = "", searcher=None, rate_limiter: RateLimiter | None = None,
-                 queue_seconds: float = 60.0, awareness: Any = None, runner: Any = None, prefs: Any = None) -> None:
+                 queue_seconds: float = 60.0, awareness: Any = None, runner: Any = None, prefs: Any = None,
+                 research_store_path: Any = None) -> None:
         self.policy = policy
+        # Research memory (star/research_store.py, the bot's own state folder): verified web answers with source and
+        # fetch date; None (tests, a bare service) = search every time and keep nothing.
+        self.research_store_path = research_store_path
         # Owner-private turns only: live status (awareness.Awareness), allow-listed actions (actions.ActionRunner)
         # and what he asked Star to remember (prefs.OwnerPrefs). All optional; without them chat is as before.
         self.awareness, self.runner, self.prefs = awareness, runner, prefs
@@ -144,6 +150,10 @@ class DiscordService:
             # The session keeps the answer as generated (what the server cached); the owner also sees
             # the links the answer was based on.
             self.memory.remember(key, remembered, answer)
+            store_path = self._research_store_path()
+            if sources and store_path is not None:
+                from ..live_context import learn_later
+                learn_later(store_path, question, answer, sources)
             return answer + source_lines(sources)
         finally:
             self._brain_lock.release()
@@ -188,6 +198,12 @@ class DiscordService:
                     "message him when it's done. Do not say it is done or paused yet.")
         return f"Unknown tool {name[:40]}"
 
+    def _research_store_path(self):
+        settings = getattr(self.brain, "_settings", None)
+        if self.research_store_path is None or getattr(settings, "research_memory", True) is False:
+            return None
+        return self.research_store_path
+
     def speed(self) -> dict:
         stats = getattr(self.brain, "last_stats", None)
         return {} if stats is None else {"model": stats.model, "first_text_s": stats.first_text_s,
@@ -197,12 +213,17 @@ class DiscordService:
         """(web block or '', its sources, the time line). The web block is cited, untrusted results for
         a news/"latest"/weather question, or one line saying the search failed. Never raises."""
         from ..clock import now_line
-        from ..live_context import auto_search
+        from ..live_context import auto_search, open_store
+        store_path = self._research_store_path()
+        store = open_store(store_path) if store_path is not None else None
         try:
             web, sources = await auto_search(question, settings=getattr(self.brain, "_settings", None),
-                                             searcher=self._searcher)
+                                             searcher=self._searcher, store=store)
         except Exception:
             web, sources = "", []
+        finally:
+            if store is not None:
+                store.close()
         zone = self.awareness.owner_tz() if self.awareness is not None else None
         # On a server the container clock is UTC: name the owner's own time when it is known.
         return web, sources, now_line(datetime.now(zone) if zone is not None else None)
