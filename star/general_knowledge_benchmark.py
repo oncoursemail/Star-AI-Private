@@ -307,6 +307,9 @@ def compare_runs(suite, oracles, baseline, candidate, *, axis="same",
     elif expected_baseline_model is not None or expected_candidate_model is not None:
         _reject("Expected model pairs require explicit model-axis comparison")
     if axis == "app":
+        # Explicit non-null narrowing for Pyright; _app_build validates shape.
+        if expected_baseline_app is None or expected_candidate_app is None:
+            raise ValueError("App comparison requires both declared software revisions")
         # Compare app revisions with the model, tokenizer, adapter, prompt
         # builder, backend, mode and inference options held identical.
         _app_build(expected_baseline_app)
