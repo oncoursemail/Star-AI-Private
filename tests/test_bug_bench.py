@@ -79,3 +79,22 @@ def test_bank_rows_go_to_the_nightly_work_dir(tmp_path):
     row = json.loads((work / "bank-litha-fixes.jsonl").read_text(encoding="utf-8"))
     assert row["kind"] == "corrected" and [m["role"] for m in row["messages"]] == ["system", "user", "assistant"]
     B.bank_row("p", {}, {}, tmp_path / "missing.json")                # no nightly here: nothing written, no error
+
+
+def test_hunt_keeps_only_proven_flags_on_changed_functions(tmp_path):
+    from star import bug_hunt as H
+    src = "def a(x):\n    return x + 1\n\n\ndef b(x):\n    if x > 3:\n        return 1\n    return 0\n"
+    head = _tree(tmp_path, "head", src)
+    assert H.functions_touching(src, {6}) == [(5, 8)]
+    asked = []
+
+    def ask(prompt):
+        asked.append(prompt)
+        return json.dumps({"bug": True, "line": 6, "why": "should be >="})
+
+    proven = lambda tree, risk, py, asker, base=None: {"proven": risk["line"] == 6, "test": "t"}  # noqa: E731
+    found = H.hunt(head, head, {"star/calc.py": {6}, "tests/x.py": {1}}, sys.executable, ask, proven)
+    assert len(asked) == 1 and ">> 6:" in asked[0] and "return x + 1" not in asked[0]
+    assert found == [{"file": "star/calc.py", "line": 6, "severity": "high", "why": "should be >=", "proof": {"proven": True}}]
+    off = lambda p: json.dumps({"bug": True, "line": 2, "why": "outside the function"})  # noqa: E731
+    assert H.hunt(head, head, {"star/calc.py": {6}}, sys.executable, off, proven) == []

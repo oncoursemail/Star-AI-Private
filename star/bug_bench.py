@@ -13,7 +13,8 @@
    - history  ~/.star/litha/bench.jsonl    one row per run: solved/total, by kind, seconds -> the trend.
 
     python -m star.bug_bench list  [--limit 40]                    which mutants exist (tests must kill them)
-    python -m star.bug_bench run   [--n 10] [--seed -1] [--kind K] [--blind]  the benchmark; prints the score
+    python -m star.bug_bench run   [--n 10] [--seed -1] [--kind K] [--blind]  the fix benchmark; prints the score
+    python -m star.bug_bench hunt  [--n 10] [--seed -1]   review catch rate: she must find AND prove the bug
 Runs in worktrees/litha-bench (a detached star/next checkout). Every item is reset with git afterwards.
 """
 from __future__ import annotations
@@ -337,9 +338,51 @@ def run(n: int, seed: int, kinds: list[str] | None, python: str, asker=None, bli
     return score
 
 
+def ensure_base() -> Path:
+    """A second, never-mutated star/next checkout: the 'code before the change' for differential proofs."""
+    base = BENCH.parent / "litha-bench-base"
+    if not base.exists():
+        sh(["git", "-C", str(CLONE), "worktree", "add", "-q", "--detach", str(base), "origin/star/next"])
+    sh(["git", "checkout", "-q", "--detach", sh(["git", "rev-parse", "HEAD"], cwd=ensure_bench()).stdout.strip()],
+       cwd=base)
+    return base
+
+
+def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
+    """Review catch rate: plant a bug, let her hunt it in the changed function, count only proven finds."""
+    from star import bug_hunt
+    tree, base = ensure_bench(), ensure_base()
+    rng = random.Random(seed)
+    items = killed(tree, candidates(tree, kinds, rng, max_files=25), n, python, rng)
+    score = {"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "seed": seed, "mode": "hunt",
+             "n": len(items), "caught": 0, "wrong_line": 0, "by_kind": {}}
+    for it in items:
+        f = tree / it["file"]
+        f.write_bytes(mutate(f.read_text(encoding="utf-8"), it["line"], it["kind"]).encode("utf-8"))
+        t = time.time()
+        try:
+            found = bug_hunt.hunt(tree, base, {it["file"]: {it["line"]}}, python)
+        except Exception as e:  # noqa: BLE001
+            found = []
+            print(f"error {e}"[:200], flush=True)
+        reset(tree)
+        hit = any(abs(x["line"] - it["line"]) <= 1 for x in found)
+        score["caught"] += int(hit)
+        score["wrong_line"] += int(bool(found) and not hit)
+        k = score["by_kind"].setdefault(it["kind"], [0, 0])
+        k[0] += int(hit)
+        k[1] += 1
+        print(f"{'CAUGHT' if hit else 'missed'} {it['kind']:<15} {it['file']}:{it['line']} {round(time.time() - t)} s "
+              f"{(found[0]['why'] if found else '')[:90]}", flush=True)
+    HISTORY.parent.mkdir(parents=True, exist_ok=True)
+    with HISTORY.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(score) + "\n")
+    return score
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m star.bug_bench")
-    ap.add_argument("cmd", choices=["list", "run"])
+    ap.add_argument("cmd", choices=["list", "run", "hunt"])
     ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--seed", type=int, default=-1, help="-1 = today's date (new bugs every day)")
     ap.add_argument("--blind", action="store_true", help="no diff: find the bug from the failing tests alone")
@@ -357,6 +400,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{it['kind']:<15} {it['file']}:{it['line']}  tests {', '.join(it['tests'])}")
         return 0
     seed = a.seed if a.seed >= 0 else int(dt.date.today().strftime("%Y%m%d"))
+    if a.cmd == "hunt":
+        print(json.dumps(hunt_run(a.n, seed, a.kind, a.python)))
+        return 0
     print(json.dumps(run(a.n, seed, a.kind, a.python, blind=a.blind)))
     return 0
 

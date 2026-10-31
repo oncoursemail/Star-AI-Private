@@ -14,6 +14,7 @@ Decisions go to ~/.star/pr-merger/decisions.jsonl. Never merges into main; never
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 from pathlib import Path
 import re
@@ -252,9 +253,10 @@ SAFETY = re.compile(r"secret|token|password|credential|injection|rm -rf|delet|da
                     re.I)
 
 
-def prove_high_risks(pr: dict, rev: dict, ask=ask_litha, limit: int = 3) -> None:
-    """Check the PR out (worktrees/litha-proof-<n>) and keep a high risk only if her test really fails on it."""
-    from star import bug_proof, pr_fixer
+@contextlib.contextmanager
+def pr_trees(pr: dict):
+    """(PR head, star/next) checkouts under worktrees/: the code after and before the PR, removed afterwards."""
+    from star import pr_fixer
     tree = pr_fixer.WORK / f"litha-proof-{pr['number']}"
     branch = f"litha/proof-{pr['number']}"
     if tree.exists():
@@ -268,6 +270,16 @@ def prove_high_risks(pr: dict, rev: dict, ask=ask_litha, limit: int = 3) -> None
     pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "fetch", "-q", "origin", BASE])
     pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "add", "-q", "--detach", str(base), f"origin/{BASE}"])
     try:
+        yield tree, base
+    finally:
+        for wt in (tree, base):
+            pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "remove", "--force", str(wt)])
+
+
+def prove_high_risks(pr: dict, rev: dict, ask=ask_litha, limit: int = 3) -> None:
+    """Keep a high risk only if her test really fails on the PR and passes on star/next."""
+    from star import bug_proof
+    with pr_trees(pr) as (tree, base):
         testable = [r for r in rev["risks"] if r["severity"] == "high" and not SAFETY.search(r["why"])]
         for r in testable[:limit]:                              # safety claims stay blocking without a test
             proof = bug_proof.prove(tree, r, sys.executable, bug_proof.ask if ask is ask_litha else ask, base=base)
@@ -276,13 +288,26 @@ def prove_high_risks(pr: dict, rev: dict, ask=ask_litha, limit: int = 3) -> None
                 r["severity"] = "unproven"
         for r in testable[limit:]:
             r["severity"] = "unproven"                          # past the proof budget: not evidence
-    finally:
-        for wt in (tree, base):
-            pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "remove", "--force", str(wt)])
     rev["verdict"] = "hold" if any(r["severity"] == "high" for r in rev["risks"]) else "merge"
 
 
-def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_fn=prove_high_risks) -> dict:
+def hunt_pr(pr: dict, files: dict, rev: dict) -> None:
+    """Last look before a merge: hunt each changed function for a bug; a proven regression holds the PR."""
+    from star import bug_hunt
+    changed = {path: set(f["added"]) for path, f in files.items() if f["added"]}
+    if not any(p.endswith(".py") and not p.startswith("tests/") for p in changed):
+        return
+    with pr_trees(pr) as (tree, base):
+        intent = f"{pr.get('title', '')}\n{pr.get('body') or ''}"
+        found = bug_hunt.hunt(tree, base, changed, sys.executable, intent=intent)
+    for r in found:
+        rev["risks"].append({**r, "why": "hunt: " + r["why"]})
+    if found:
+        rev["verdict"] = "hold"
+
+
+def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_fn=prove_high_risks,
+           hunt_fn=hunt_pr) -> dict:
     diff = diff_fn(pr) if diff_fn else gh("pr", "diff", str(pr["number"]), "--repo", REPO, timeout=300)
     files = parse_diff(diff)
     checks = checks_fn(pr["headRefOid"])
@@ -290,6 +315,8 @@ def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_f
     rev = review(pr, files, ask) if not gates else None          # no model time on a PR the gates already block
     if rev and rev["verdict"] == "hold" and prove_fn:
         prove_fn(pr, rev, ask)                                   # a high claim must be shown by a failing test
+    if rev and rev["verdict"] == "merge" and not gates and hunt_fn:
+        hunt_fn(pr, files, rev)                                  # her own proven bug finds can still stop a merge
     action = "merge" if not gates and rev and rev["verdict"] == "merge" else "hold"
     reasons = gates or [f"Litha: {r['file']}:{r['line']} {r['why']}" for r in (rev or {}).get("risks", [])
                         if r["severity"] == "high"]

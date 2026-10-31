@@ -73,3 +73,18 @@ def test_decide_never_asks_the_model_when_gates_block_and_merge_refuses_main():
         assert "refusing" in str(e)
     else:
         raise AssertionError("merged outside star/next")
+
+
+def test_a_proven_hunt_find_stops_a_merge_the_review_allowed():
+    clean = DIFF.split("diff --git a/pnpm-lock.yaml")[0]
+    ok = lambda p: json.dumps({"verdict": "merge", "summary": "fine", "risks": []})  # noqa: E731
+
+    def hunt(pr, files, rev):
+        assert set(files["star/a.py"]["added"]) == {2, 3, 4}
+        rev["risks"].append({"file": "star/a.py", "line": 4, "severity": "high", "why": "hunt: wrong call"})
+        rev["verdict"] = "hold"
+
+    row = M.decide(GOOD, ask=ok, checks_fn=lambda sha: PASSED, diff_fn=lambda pr: clean, hunt_fn=hunt)
+    assert row["action"] == "hold" and row["reasons"] == ["Litha: star/a.py:4 hunt: wrong call"]
+    row = M.decide(GOOD, ask=ok, checks_fn=lambda sha: PASSED, diff_fn=lambda pr: clean, hunt_fn=lambda *a: None)
+    assert row["action"] == "merge"
