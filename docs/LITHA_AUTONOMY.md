@@ -103,8 +103,8 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   class. Fix: the prover gets the module outline + a real test of the module, and retries when her test also fails
   on the old code. Then 1/6 caught, 0 wrong-line flags (different mutants: 10 kinds were added in between).
 - Then the hunt also sees how the tests call the function and names up to 2 suspects (each proven): same 6
-  mutants, 1/6 again (a different one caught: run-to-run noise, no measured gain). Misses are mostly proofs that
-  never fail; next lever: let the proof run the module's existing tests on head vs base first and give her the
+  mutants, 1/6 again (a different one caught: run-to-run noise, no measured gain). Not yet checked whether the
+  misses are wrong suspects or failed proofs (one traced miss earlier was a failed proof). Next lever: let the proof run the module's existing tests on head vs base first and give her the
   first assert that differs, instead of asking her to invent a new test.
 - False holds: `python -m star.pr_merger --replay-hunt 8` on merged PRs #816-#847: 0/7 flagged (one had no Python
   change).
