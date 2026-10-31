@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import math
 import re
 from threading import RLock
+from typing import cast
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}\Z")
 
@@ -20,7 +21,7 @@ def _time(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("time must be a finite nonnegative number")
     try:
-        number = float(value)
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("time must be a finite nonnegative number") from exc
     if not math.isfinite(number) or number < 0:
