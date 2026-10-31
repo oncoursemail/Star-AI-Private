@@ -285,9 +285,18 @@ def score_run(suite: Artifact, oracles: Artifact, run: dict) -> dict:
             "counts": counts, "rows": scored}
 
 
-def compare_runs(suite, oracles, baseline, candidate, *, axis="same", expected_baseline_model=None, expected_candidate_model=None):
+def _app_build(value):
+    """Exact, predeclared software identity. Labels are NOT authentication."""
+    _keys(value, ("app_commit", "source_sha256"))
+    _hash(value["app_commit"], 40)
+    _hash(value["source_sha256"])
+
+
+def compare_runs(suite, oracles, baseline, candidate, *, axis="same",
+                 expected_baseline_model=None, expected_candidate_model=None,
+                 expected_baseline_app=None, expected_candidate_app=None):
     before, after = score_run(suite, oracles, baseline), score_run(suite, oracles, candidate)
-    if axis not in {"same", "model"} or before["repeats"] != after["repeats"]:
+    if axis not in {"same", "model", "app"} or before["repeats"] != after["repeats"]:
         _reject("Invalid comparison axis or repeats")
     first, second = dict(before["identity"]), dict(after["identity"])
     if axis == "model":
@@ -297,6 +306,21 @@ def compare_runs(suite, oracles, baseline, candidate, *, axis="same", expected_b
             _reject("Declared model pair differs from the explicit expected pair")
     elif expected_baseline_model is not None or expected_candidate_model is not None:
         _reject("Expected model pairs require explicit model-axis comparison")
+    if axis == "app":
+        # Compare app revisions with the model, tokenizer, adapter, prompt
+        # builder, backend, mode and inference options held identical.
+        _app_build(expected_baseline_app)
+        _app_build(expected_candidate_app)
+        if (expected_baseline_app["app_commit"] == expected_candidate_app["app_commit"]
+                or expected_baseline_app["source_sha256"] == expected_candidate_app["source_sha256"]):
+            _reject("App comparison requires distinct committed source identities")
+        fields = ("app_commit", "source_sha256")
+        before_app = {key: first.pop(key) for key in fields}
+        after_app = {key: second.pop(key) for key in fields}
+        if before_app != expected_baseline_app or after_app != expected_candidate_app:
+            _reject("Declared source pair differs from the explicit expected app pair")
+    elif expected_baseline_app is not None or expected_candidate_app is not None:
+        _reject("Expected app pairs require explicit app-axis comparison")
     if _canonical(first) != _canonical(second):
         _reject("Declared source, model, adapter, backend, mode or options differ")
     changes = [{"task_id": a["task_id"], "attempt": a["attempt"], "baseline": a["status"], "candidate": b["status"]}
@@ -316,9 +340,11 @@ def main(arguments=None):
     parser.add_argument("--run", type=Path)
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--candidate", type=Path)
-    parser.add_argument("--axis", choices=("same", "model"), default="same")
+    parser.add_argument("--axis", choices=("same", "model", "app"), default="same")
     parser.add_argument("--baseline-model", help="Explicit expected model identity JSON; model-axis only")
     parser.add_argument("--candidate-model", help="Explicit expected model identity JSON; model-axis only")
+    parser.add_argument("--baseline-app", help="Expected app_commit/source_sha256 JSON; app-axis only")
+    parser.add_argument("--candidate-app", help="Expected app_commit/source_sha256 JSON; app-axis only")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(arguments)
     if args.command is None:
@@ -342,7 +368,9 @@ def main(arguments=None):
                     _reject("Compare requires two explicit raw runs")
                 result = compare_runs(suite, oracles, _read(args.baseline)[0], _read(args.candidate)[0],
                     axis=args.axis, expected_baseline_model=parse_json(args.baseline_model.encode(), 2048) if args.baseline_model else None,
-                    expected_candidate_model=parse_json(args.candidate_model.encode(), 2048) if args.candidate_model else None)
+                    expected_candidate_model=parse_json(args.candidate_model.encode(), 2048) if args.candidate_model else None,
+                    expected_baseline_app=parse_json(args.baseline_app.encode(), 1024) if args.baseline_app else None,
+                    expected_candidate_app=parse_json(args.candidate_app.encode(), 1024) if args.candidate_app else None)
         text = json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
         if args.out is None:
             print(text, end="")
