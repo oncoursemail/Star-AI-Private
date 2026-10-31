@@ -19,9 +19,47 @@ def test_two_samples_produce_interval_not_lifetime_percentages():
                  host_ms=1500, host_verified=True)
     assert isinstance(x, ObsLagWindow)
     assert x.window_ms == 500
-    assert x.render_lag_pct == pytest.approx(100 * 2 / 102)
-    assert x.output_lag_pct == pytest.approx(100 * 3 / 100)
+    assert x.render_lag_pct == pytest.approx(100 * 2 / 100)
+    assert x.output_lag_pct == pytest.approx(100 * 3 / 97)
     assert s.metrics()["windows"] == 1
+
+
+
+def test_obs_native_total_denominator_does_not_hide_stream_pressure():
+    """OBS's own status bar divides lost frames by total, not lost+total."""
+    s = ObsStatsWindow()
+    assert s.ingest(counters(rskip=4, rtotal=1000, oskip=2, ototal=1000),
+                    host_ms=1000, host_verified=True) is None
+    x = s.ingest(counters(rskip=14, rtotal=1050, oskip=6, ototal=1040),
+                 host_ms=1500, host_verified=True)
+    assert x is not None
+    assert x.render_lag_pct == pytest.approx(20.0)
+    assert x.output_lag_pct == pytest.approx(10.0)
+    # The previous erroneous denominator would report ~16.67%, ~9.09%.
+
+
+def test_full_interval_loss_reports_100_percent_not_50():
+    s = ObsStatsWindow()
+    s.ingest(counters(), host_ms=1000, host_verified=True)
+    x = s.ingest(counters(rskip=100, rtotal=1100, oskip=100, ototal=1100),
+                 host_ms=1500, host_verified=True)
+    assert x is not None
+    assert x.render_lag_pct == 100.0
+    assert x.output_lag_pct == 100.0
+
+
+def test_impossible_skipped_delta_rebases_instead_of_admitting_window():
+    s = ObsStatsWindow()
+    s.ingest(counters(), host_ms=1000, host_verified=True)
+    assert s.ingest(counters(rskip=10, rtotal=1005, oskip=0, ototal=1010),
+                    host_ms=1500, host_verified=True) is None
+    assert s.metrics()["resets"] == 1
+    assert s.metrics()["windows"] == 0
+    x = s.ingest(counters(rskip=12, rtotal=1105, oskip=2, ototal=1110),
+                 host_ms=2000, host_verified=True)
+    assert x is not None
+    assert x.render_lag_pct == pytest.approx(2.0)
+    assert x.output_lag_pct == pytest.approx(2.0)
 
 
 def test_obs_lag_feeds_existing_admission_advice():
@@ -85,7 +123,7 @@ def test_unauthenticated_and_replayed_frames_cannot_update_baseline():
     x = s.ingest(counters(rskip=2, rtotal=1100, ototal=1100), host_ms=1500,
                  host_verified=True)
     assert x is not None
-    assert x.render_lag_pct == pytest.approx(100 * 2 / 102)
+    assert x.render_lag_pct == pytest.approx(100 * 2 / 100)
     assert s.metrics()["rejected"] == 3
 
 
