@@ -98,8 +98,11 @@ def test_stale_sample_and_clock_reversal_fail_closed_for_background():
     gate.observe(sample())
     assert not gate.advise("vision", now_ms=2600).allowed
     assert gate.advise("gameplay", now_ms=2600).allowed
-    assert not gate.observe(sample(2400))  # earlier than previous query
+    # A new telemetry observation can arrive later than a prior advice call.
+    # Its *capture* timestamp can be older than that call but still fresh.
+    assert gate.observe(sample(2400))
     assert not gate.advise("vision", now_ms=2599).allowed
+    assert gate.advise("vision", now_ms=2600).allowed
 
 
 def test_disable_reset_but_cannot_skip_owner_approval():
