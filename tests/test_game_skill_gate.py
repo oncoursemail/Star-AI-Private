@@ -72,6 +72,33 @@ def test_normalized_progress_regression_blocks_more_successes():
     assert not v.eligible and "progress_regression" in v.reasons
 
 
+def test_paired_scenario_guard_blocks_hidden_local_regression():
+    # Every case loses less than the old 2.5-point per-case tolerance on
+    # map_0, while other maps gain enough to improve the overall average.
+    # A supposedly smarter student must not silently forget a whole map.
+    baseline = cases()
+    candidate = [
+        replace(t, progress=0.38) if t.scenario_id == "map_0"
+        else replace(t, progress=0.85) if t.scenario_id == "map_1"
+        else t for t in baseline
+    ]
+    verdict = compare_game_skill(baseline, candidate)
+    assert not verdict.eligible
+    assert "scenario_progress_regression" in verdict.reasons
+    assert "progress_regression" not in verdict.reasons
+
+
+def test_scenario_guard_preserves_real_cross_map_gain():
+    baseline = cases()
+    candidate = [
+        replace(t, progress=0.53) if t.scenario_id in {"map_0", "map_1"}
+        else t for t in baseline
+    ]
+    verdict = compare_game_skill(baseline, candidate)
+    assert verdict.eligible
+    assert "scenario_progress_regression" not in verdict.reasons
+
+
 def test_zero_gain_is_not_an_intelligence_improvement():
     same = cases()
     v = compare_game_skill(same, tuple(reversed(same)))
