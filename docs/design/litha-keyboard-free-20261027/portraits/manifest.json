@@ -1,0 +1,112 @@
+{
+  "kind": "illustrated-launcher-portraits",
+  "generator": "built-in image generation",
+  "raster_postprocessing": false,
+  "files": [
+    {
+      "name": "neutral.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alpha": [
+        0,
+        255
+      ],
+      "sha256": "fed639885db8cab8ec1413ca9f095e9a4b9d0e4fbf0121077c0c9b25e757f76d"
+    },
+    {
+      "name": "blink.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alpha": [
+        0,
+        255
+      ],
+      "sha256": "723f4d296dd1b3f0014267ca7bcf3b0db7276da3e88f182b8c54ed33e46be65f"
+    },
+    {
+      "name": "wave.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alpha": [
+        0,
+        255
+      ],
+      "sha256": "908708ef920a832655c30879538d8a14205342c54b609355ad6390701c9a2702"
+    },
+    {
+      "name": "think.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alpha": [
+        0,
+        255
+      ],
+      "sha256": "a335e199f1efc647b84bcfb20b58a0144bab8334db34144fc1927adbc6008905"
+    },
+    {
+      "name": "working.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alpha": [
+        0,
+        255
+      ],
+      "sha256": "3679af4d91b5754d8ea4d4f725eeda161bc94e1bf8ad6871bd3d8be16b5671fa"
+    },
+    {
+      "name": "cheer.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alpha": [
+        0,
+        255
+      ],
+      "sha256": "817c6b772070a55bf63573aff69b50dc24974ce4bca207d36852a8ce9fe4a74e"
+    },
+    {
+      "name": "sleepy.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alpha": [
+        0,
+        255
+      ],
+      "sha256": "67f46a111ec4c8f9a1ff2cd0f1d15072dca36e486b9f2a6331409c781283fc96"
+    },
+    {
+      "name": "surprised.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alpha": [
+        0,
+        255
+      ],
+      "sha256": "50d4a80f60dbbf2bd98136a49a67adf705d6cab4fd756a5e95c39da61b9178f1"
+    }
+  ],
+  "note": "Keyboard-free working expression replaces the rejected holographic keyboard; generation originals remain outside runtime assets."
+}
