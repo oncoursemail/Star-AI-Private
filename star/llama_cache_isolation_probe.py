@@ -8,11 +8,11 @@ Only the CLI's separately approved transport may send data, to loopback.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 import json
 import re
 import secrets
-import statistics
 import time
 from typing import Callable
 from urllib.parse import urlsplit
@@ -63,10 +63,10 @@ def _payload(system: str, question: str) -> dict[str, object]:
 
 def run_cache_isolation_probe(
     client: Callable[[dict[str, object]], str], *, pairs: int = 4,
-    filler_blocks: int = 32,
+    filler_blocks: int = 32, concurrent: bool = False,
     token_factory: Callable[[], str] = lambda: "STAR_CANARY_" + secrets.token_hex(12),
 ) -> CacheIsolationReport:
-    """A/B sequential requests with independent canaries and no sensitive input.
+    """A/B sequential or two-worker requests with synthetic canaries.
 
     client() is a trusted synchronous local inference adapter returning ONLY
     generated assistant text. The A canary is never sent in B's request. Both
@@ -79,41 +79,68 @@ def run_cache_isolation_probe(
         raise ValueError("pairs must be 1..12")
     if type(filler_blocks) is not int or not 1 <= filler_blocks <= 256:
         raise ValueError("filler_blocks must be 1..256")
+    if type(concurrent) is not bool:
+        raise ValueError("concurrent must be a boolean")
     # Fixed fictional tokens; all private canaries are per-run random. Never
     # generate this input from live viewers, project files or private memories.
     filler = " quiet scenery lamp river compass bicycle cloud brick." * filler_blocks
     timings: list[float] = []
     completed = unexpected = failed = leaks = attempted = 0
+    seen_markers: list[str] = []
+    seen_a_replies: list[str] = []
+    seen_b_replies: list[str] = []
+
+    def invoke(payload: dict[str, object]) -> tuple[str, float]:
+        started_ns = time.monotonic_ns()
+        answer = client(payload)
+        return answer, (time.monotonic_ns() - started_ns) / 1e6
+
     for index in range(pairs):
         marker = token_factory()
         if type(marker) is not str or _CANARY.fullmatch(marker) is None:
             raise ValueError("token factory must issue a synthetic 96-bit canary")
+        if marker in seen_markers:
+            raise ValueError("canary must be unique for each independent session")
         ack_a = f"ALPHA_OK_{index}"
         ack_b = f"BETA_OK_{index}"
+        request_a = _payload(
+            f"Test A: private synthetic marker {marker}. Respond only {ack_a}.",
+            f"Return exactly {ack_a}, no explanation.\n{filler}",
+        )
+        request_b = _payload(
+            f"Test B: independent session. Respond only {ack_b}.",
+            f"Return exactly {ack_b}, no explanation.\n{filler}",
+        )
         attempted += 1
         try:
-            start = time.monotonic_ns()
-            text_a = client(_payload(
-                f"Test A: private synthetic marker {marker}. Respond only {ack_a}.",
-                f"Return exactly {ack_a}, no explanation.\n{filler}",
-            ))
-            timings.append((time.monotonic_ns() - start) / 1e6)
-            start = time.monotonic_ns()
-            text_b = client(_payload(
-                f"Test B: independent session. Respond only {ack_b}.",
-                f"Return exactly {ack_b}, no explanation.\n{filler}",
-            ))
-            timings.append((time.monotonic_ns() - start) / 1e6)
+            if concurrent:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    future_a = pool.submit(invoke, request_a)
+                    future_b = pool.submit(invoke, request_b)
+                    text_a, duration_a = future_a.result()
+                    text_b, duration_b = future_b.result()
+            else:
+                text_a, duration_a = invoke(request_a)
+                text_b, duration_b = invoke(request_b)
         except (OSError, ValueError, RuntimeError, TimeoutError):
             failed += 1
             break
         if type(text_a) is not str or type(text_b) is not str:
             failed += 1
             break
+        timings.extend((duration_a, duration_b))
         completed += 1
-        if marker in text_b or ack_a in text_b:
+        # Search every prior canary, not just the immediately preceding A.
+        # In concurrent mode A must not inherit B's output either.
+        if (any(old in text_b for old in (*seen_markers, marker))
+                or any(old in text_b for old in (*seen_a_replies, ack_a))
+                or any(old in text_a for old in seen_markers)
+                or any(old in text_a for old in (*seen_b_replies, ack_b))):
             leaks += 1
-            break  # do not continue using a potentially contaminated server
+            break  # stop immediately on suspected cross-context reuse
+        seen_markers.append(marker)
+        seen_a_replies.append(ack_a)
+        seen_b_replies.append(ack_b)
         if text_a.strip() != ack_a or text_b.strip() != ack_b:
             unexpected += 1
     status = ("possible_context_leak" if leaks else
@@ -151,14 +178,14 @@ def _local_client(endpoint: str, timeout_seconds: int) -> Callable[[dict[str, ob
     validated = validate_loopback_endpoint(endpoint)
     if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 120:
         raise ValueError("timeout_seconds must be 1..120")
-    opener = build_opener(_NoRedirect())
-
     def call(payload: dict[str, object]) -> str:
         request = Request(
             validated, data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST",
         )
-        with opener.open(request, timeout=timeout_seconds) as response:
+        # Per-request opener avoids sharing mutable urllib handler state
+        # during optional two-worker replay. Redirects remain forbidden.
+        with build_opener(_NoRedirect()).open(request, timeout=timeout_seconds) as response:
             raw = response.read(65_537)
             if len(raw) > 65_536:
                 raise ValueError("oversized local inference response")
@@ -189,6 +216,8 @@ def main() -> int:
     parser.add_argument("--pairs", type=int, default=4)
     parser.add_argument("--filler-blocks", type=int, default=32)
     parser.add_argument("--timeout-seconds", type=int, default=45)
+    parser.add_argument("--concurrent", action="store_true",
+                        help="exercise a second local server slot simultaneously")
     parser.add_argument("--opt-in-local", action="store_true",
                         help="acknowledge deliberate requests to local llama-server")
     args = parser.parse_args()
@@ -197,6 +226,7 @@ def main() -> int:
     client = _local_client(args.endpoint, args.timeout_seconds)
     report = run_cache_isolation_probe(
         client, pairs=args.pairs, filler_blocks=args.filler_blocks,
+        concurrent=args.concurrent,
     )
     # Only aggregate status and timing; never print canaries or model responses.
     print(json.dumps(asdict(report), sort_keys=True))
