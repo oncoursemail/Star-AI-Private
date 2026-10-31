@@ -117,7 +117,8 @@ class GameDeadlineRouter:
             self._scope = game_scope
             self._reactive.clear()
             self._last_sample_id = 0
-        self._last_sample_ms: float | None = None
+            # The next host sample must not race a reset outside this lock.
+            self._last_sample_ms = None
 
     def disable(self) -> None:
         with self._lock:
@@ -125,7 +126,8 @@ class GameDeadlineRouter:
             self._scope = ""
             self._reactive.clear()
             self._last_sample_id = 0
-        self._last_sample_ms: float | None = None
+            # The next host sample must not race a reset outside this lock.
+            self._last_sample_ms = None
 
     def record_reactive_latency(
         self, *, game_scope: str, sample_id: int, duration_ms: float,
