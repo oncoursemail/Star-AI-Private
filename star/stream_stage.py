@@ -147,6 +147,7 @@ class StarStage:
         self._counts = {
             "prepared": 0, "queued": 0, "audible": 0,
             "abandoned": 0, "interrupted": 0, "motion_requests": 0,
+            "journal_recall_skipped": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -346,9 +347,17 @@ class StarStage:
             if (journal is not None and episode_broadcast_approved
                     and current_game_scope and intent.kind == "viewer_question"
                     and not gameplay_critical and not measured_pressure):
-                recalled = journal.recall(
-                    now_s=current, game_scope=current_game_scope, limit=2,
-                )
+                # An optional memory provider may have received timestamps
+                # from a different monotonic-clock domain. An out-of-order
+                # recall must not strand an issued speech intent or interrupt
+                # live viewer conversation; fail closed on memory only.
+                try:
+                    recalled = journal.recall(
+                        now_s=current, game_scope=current_game_scope, limit=2,
+                    )
+                except ValueError:
+                    self._counts["journal_recall_skipped"] += 1
+                    recalled = ()
                 if recalled:
                     facts = [
                         {"fact": card.context, "age_seconds": card.age_seconds}
