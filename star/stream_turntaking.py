@@ -20,6 +20,9 @@ _CONFIRM_MS = 120.0
 _RECENT_MS = 250.0
 _QUIET_MS = 350.0
 _MAX_GAP_MS = 150.0
+# A long silent interval cannot be counted as uninterrupted speech merely
+# because successive VAD frames have close *end* timestamps.
+_MAX_CONTINUOUS_SILENCE_MS = 40.0
 
 
 def _number(value: object, name: str, *, ceiling: float) -> float:
@@ -129,7 +132,14 @@ class TurnTakingGate:
                 if gap <= 0 or frame.at_ms - frame.duration_ms < prev.at_ms - 1e-6:
                     self._counts["rejected"] += 1
                     raise ValueError("overlapping or reversed voice frames")
-                if gap > _MAX_GAP_MS:
+                # The previous end and the current *start* delimit actual
+                # unobserved silence. End-to-end gaps alone overcount short,
+                # disconnected voice bursts as one owner interruption.
+                unobserved_silence_ms = (
+                    frame.at_ms - frame.duration_ms - prev.at_ms
+                )
+                if (gap > _MAX_GAP_MS or
+                        unobserved_silence_ms > _MAX_CONTINUOUS_SILENCE_MS):
                     self._owner_ms = self._guest_ms = 0.0
                     self._owner_yield_counted = False
             owner = (frame.echo_cleared and
