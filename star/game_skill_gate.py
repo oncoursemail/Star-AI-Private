@@ -174,6 +174,16 @@ def compare_game_skill(
         reasons.append("new_failures")
     if any(new.progress < old.progress - 0.025 for old, new in zip(b, n)):
         reasons.append("progress_regression")
+    # A large win on one map must not hide many small losses on another.
+    # The per-case 2.5-point tolerance alone permits this aggregate reversal.
+    # Compare each preregistered scenario independently (including game scope).
+    by_scenario: dict[tuple[str, str], list[float]] = {}
+    for old, new in zip(b, n):
+        key = (old.game_scope, old.scenario_id)
+        by_scenario.setdefault(key, []).append(new.progress - old.progress)
+    if any(sum(deltas) / len(deltas) < -0.01
+           for deltas in by_scenario.values()):
+        reasons.append("scenario_progress_regression")
     if any(new.action_delay_ms > 2 * old.action_delay_ms + 100
            for old, new in zip(b, n)):
         reasons.append("severe_action_delay_regression")
