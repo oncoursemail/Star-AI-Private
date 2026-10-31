@@ -2,7 +2,9 @@
 
 This component cannot operate a game, claim a victory, train a model, or
 authorize an update. A trusted external game-state harness supplies matched
-baseline/candidate trials from unseen maps and seeds. The attestation flag
+baseline/candidate trials from unseen maps and seeds. This supplemental
+latency/progress diagnostic does NOT replace the signed GameplaySkillBank
+and preregistered game_transfer_eval validation gate. The attestation flag
 does not authenticate a compromised host. No player IDs, chat or videos here.
 """
 from __future__ import annotations
@@ -37,7 +39,7 @@ def _nonnegative_float(value: object, field: str) -> float:
 
 
 @dataclass(frozen=True)
-class GameTrial:
+class GamePerformanceTrial:
     """One independently checked game outcome; metadata excludes personal data."""
 
     case_id: str
@@ -83,21 +85,23 @@ class GameSkillVerdict:
     baseline_p95_action_delay_ms: float
     candidate_p95_action_delay_ms: float
     evidence: str = "host_attested_not_cryptographic_proof"
+    authorized_to_promote: bool = False
+    authorized_to_play: bool = False
 
 
-def _key(t: GameTrial) -> tuple[str, str, int, str]:
+def _key(t: GamePerformanceTrial) -> tuple[str, str, int, str]:
     return (t.game_scope, t.scenario_id, t.seed, t.mode)
 
 
-def _index(rows: Sequence[GameTrial]) -> dict[tuple[str, str, int, str], GameTrial]:
+def _index(rows: Sequence[GamePerformanceTrial]) -> dict[tuple[str, str, int, str], GamePerformanceTrial]:
     """Reject duplicates and any replay of a practice map/seed in holdouts."""
     if not isinstance(rows, (list, tuple)) or len(rows) > 2048:
         raise ValueError("trials must be a bounded list/tuple")
-    found: dict[tuple[str, str, int, str], GameTrial] = {}
+    found: dict[tuple[str, str, int, str], GamePerformanceTrial] = {}
     seen_cases: set[str] = set()
     seeds_by_split: dict[tuple[str, str, int], str] = {}
     for t in rows:
-        if not isinstance(t, GameTrial) or not t.host_verified:
+        if not isinstance(t, GamePerformanceTrial) or not t.host_verified:
             raise ValueError("all trials need structured host attestation")
         if t.case_id in seen_cases:
             raise ValueError("duplicate case identifier")
@@ -122,10 +126,10 @@ def _p95(values: list[float]) -> float:
 
 
 def compare_game_skill(
-    baseline: Sequence[GameTrial], candidate: Sequence[GameTrial], *,
+    baseline: Sequence[GamePerformanceTrial], candidate: Sequence[GamePerformanceTrial], *,
     mode: str = "realtime", min_holdouts: int = 20,
 ) -> GameSkillVerdict:
-    """Promote only verified paired improvements on unseen gameplay cases.
+    """Flag paired performance improvements for further independent review.
 
     A speed gain alone can qualify if at least 10% faster at p95; a new win or
     >=0.02 mean normalized progress gain also counts. Every previously won case
@@ -138,8 +142,8 @@ def compare_game_skill(
     if type(min_holdouts) is not int or not 4 <= min_holdouts <= 1024:
         raise ValueError("min_holdouts must be 4..1024")
 
-    def verdict(reasons: tuple[str, ...], base: list[GameTrial] | None = None,
-                new: list[GameTrial] | None = None) -> GameSkillVerdict:
+    def verdict(reasons: tuple[str, ...], base: list[GamePerformanceTrial] | None = None,
+                new: list[GamePerformanceTrial] | None = None) -> GameSkillVerdict:
         b, n = base or [], new or []
         return GameSkillVerdict(
             eligible=not reasons, reasons=reasons, mode=mode, matched_holdouts=len(b),
@@ -182,4 +186,4 @@ def compare_game_skill(
     return verdict(tuple(reasons), b, n)
 
 
-__all__ = ["GameTrial", "GameSkillVerdict", "compare_game_skill"]
+__all__ = ["GamePerformanceTrial", "GameSkillVerdict", "compare_game_skill"]
