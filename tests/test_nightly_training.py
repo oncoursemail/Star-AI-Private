@@ -139,6 +139,23 @@ def test_owner_active_ignores_soft_busy(monkeypatch):
     assert "owner input" in H.owner_active(120)
 
 
+def test_hold_waits_for_the_owner_instead_of_losing_the_night(tmp_path, monkeypatch):
+    answers = iter(["owner input 3 s ago", "node busy: game.exe is running", "card not free after unload"])
+    monkeypatch.setattr(H, "minutes_until", lambda until: 300)
+    monkeypatch.setattr(H, "in_window", lambda **k: True)
+    monkeypatch.setattr(H, "acquire", lambda *a: next(answers))
+    naps = []
+    monkeypatch.setattr(H.time, "sleep", naps.append)
+    stop = tmp_path / "STOP"
+    # retries the owner/game refusals, then gives up on a refusal that waiting does not fix
+    assert H.run(["x"], "t", 300, "07:45", 120, "", stop, wait_start=60) == H.REFUSED
+    assert naps == [120, 120]
+    answers = iter(["owner input 3 s ago"])
+    naps.clear()
+    assert H.run(["x"], "t", 300, "07:45", 120, "", stop) == H.REFUSED      # no --wait-start: old behaviour
+    assert naps == []
+
+
 def test_chunked_loss_matches_full_cross_entropy():
     torch = pytest.importorskip("torch")
     from training.nightly.fit_probe import chunked_loss

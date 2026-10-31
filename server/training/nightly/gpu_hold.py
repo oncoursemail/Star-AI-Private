@@ -211,16 +211,22 @@ def release(holder: str, note: str = "") -> dict:
 
 
 def run(cmd: list[str], holder: str, minutes: int, until: str, min_idle: float, note: str, stop_file: Path,
-        log: str = "") -> int:
-    budget = min(minutes, minutes_until(until))
-    anytime = os.environ.get("STAR_HOLD_ANYTIME") == "1"      # owner idle in the day: short tests only
-    if budget < 2 or not (anytime or in_window(start="00:00", end=until)):
-        print(f"refused: outside the night window (until {until}, budget {budget:.0f} min)", flush=True)
-        return REFUSED
-    why = acquire(holder, int(budget), note, min_idle)
-    if why:
-        print("refused:", why, flush=True)
-        return REFUSED
+        log: str = "", wait_start: float = 0, min_budget: float = 2) -> int:
+    give_up = time.time() + wait_start * 60   # owner at the PC or a game in front: try again, do not lose the night
+    while True:
+        budget = min(minutes, minutes_until(until))
+        anytime = os.environ.get("STAR_HOLD_ANYTIME") == "1"      # owner idle in the day: short tests only
+        if budget < min_budget or not (anytime or in_window(start="00:00", end=until)):
+            print(f"refused: outside the night window (until {until}, budget {budget:.0f} min)", flush=True)
+            return REFUSED
+        why = acquire(holder, int(budget), note, min_idle)
+        if not why:
+            break
+        if not why.startswith(("owner input", "node busy")) or time.time() + 120 > give_up or stop_file.exists():
+            print("refused:", why, flush=True)
+            return REFUSED
+        print("waiting:", why, flush=True)
+        time.sleep(120)
     deadline = time.time() + budget * 60
     rc, stopped = None, ""
     proc = None
@@ -274,10 +280,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--note", default="nightly training")
     ap.add_argument("--log", default="", help="file for the command's output")
     ap.add_argument("--stop-file", default=str(Path.home() / ".star" / "nightly" / "STOP"))
+    ap.add_argument("--wait-start", type=float, default=0, help="minutes to keep retrying while the owner is active")
+    ap.add_argument("--min-budget", type=float, default=2, help="refuse when fewer minutes than this are left")
     a = ap.parse_args(argv[:i])
     stop = Path(a.stop_file)
     stop.parent.mkdir(parents=True, exist_ok=True)
-    return run(argv[i + 1:], a.holder, a.minutes, a.until, a.min_idle, a.note, stop, a.log)
+    return run(argv[i + 1:], a.holder, a.minutes, a.until, a.min_idle, a.note, stop, a.log, a.wait_start, a.min_budget)
 
 
 if __name__ == "__main__":
