@@ -65,6 +65,15 @@ OPS: dict[str, tuple[str, str]] = {
     "strip-drop": (r"\.strip\(\)", ""),
     "break-continue": (r"\bbreak\b", "continue"),
     "slice-shift": (r"\[1:\]", "[2:]"),
+    "drop-return": (r"^(\s+)return (?=\S)", r"\g<1>"),
+    "swap-args": (r"\b(\w+)\((\w+), (\w+)\)", r"\g<1>(\g<3>, \g<2>)"),
+    "last-first": (r"\[-1\]", "[0]"),
+    "first-last": (r"\[0\]", "[-1]"),
+    "any-all": (r"\bany\(", "all("),
+    "all-any": (r"\ball\(", "any("),
+    "starts-ends": (r"\.startswith\(", ".endswith("),
+    "lower-upper": (r"\.lower\(\)", ".upper()"),
+    "add-sub": (r"(\w|\)) \+ (?=\w)", r"\g<1> - "),
 }
 
 
@@ -209,6 +218,11 @@ HINTS = {
     "zero-one": "a comparison with 0 that became 1", "strip-drop": "a dropped .strip() keeps whitespace",
     "break-continue": "a `break` that became `continue` keeps looping",
     "slice-shift": "a [1:] slice that became [2:] skips an item",
+    "drop-return": "a line lost its `return`: the function falls through and returns None",
+    "swap-args": "two arguments passed in the wrong order", "last-first": "[0] where [-1] is meant (first vs last)",
+    "first-last": "[-1] where [0] is meant (last vs first)", "any-all": "all() where any() is meant",
+    "all-any": "any() where all() is meant", "starts-ends": "endswith where startswith is meant",
+    "lower-upper": ".upper() where .lower() is meant", "add-sub": "a + that became -",
 }
 
 

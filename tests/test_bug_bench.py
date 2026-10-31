@@ -24,6 +24,10 @@ def test_mutations_hit_code_lines_only_and_stay_valid_python():
     assert B.mutate(SRC, 6, "true-false").split("\n")[5] == "        return False"
     assert B.mutate(SRC, 7, "in-notin").split("\n")[6] == "    return x not in items"
     assert B.mutate(SRC, 6, "eq-flip") is None                         # nothing to flip there
+    src = "def f(a, b, xs):\n    if any(xs):\n        return pow(a, b) + xs[0]\n    return a.lower()\n"
+    assert B.mutate(src, 3, "drop-return").split("\n")[2] == "        pow(a, b) + xs[0]"
+    assert B.mutate(src, 3, "swap-args").split("\n")[2] == "        return pow(b, a) + xs[0]"
+    assert B.mutate(src, 2, "any-all").split("\n")[1] == "    if all(xs):"
 
 
 def test_lessons_remember_misses_and_show_the_weakest(tmp_path, monkeypatch):
