@@ -23,8 +23,8 @@ class EvidenceBank:
         self.data = data or {}
         self.calls = []
 
-    def practice_evidence(self, game_id, game_version, objective_id, situation_id, *, now_unix_s):
-        self.calls.append((game_id, game_version, objective_id, situation_id, now_unix_s))
+    def practice_evidence(self, game_id, game_version, objective_id, situation_id, *, now_unix_s, max_age_s):
+        self.calls.append((game_id, game_version, objective_id, situation_id, now_unix_s, max_age_s))
         return tuple(self.data.get(situation_id, ()))
 
 
@@ -143,6 +143,7 @@ def test_verified_practice_scope_is_looked_up_once_per_situation():
     bank = EvidenceBank()
     plan(bank, target(action="jump"), target(action="dash"))
     assert len(bank.calls) == 1
+    assert bank.calls[0][-1] == 7 * 24 * 3600
 
 
 @pytest.mark.parametrize("bad", [
