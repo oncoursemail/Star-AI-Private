@@ -116,6 +116,32 @@ class TurnTakingTests(unittest.TestCase):
                          "vad_missing_or_stale")
         self.assertEqual(self.gate.advise(now_ms=800, star_speaking=False).action, "hold")
 
+    def test_sparse_short_voice_bursts_do_not_become_a_barge_in(self):
+        self.gate.enable(owner_approved=True)
+        # Each 30-ms frame is separated by 50 ms of unobserved silence.
+        # Comparing only frame end timestamps (80 ms < 150 ms) used to
+        # incorrectly accumulate 120 ms of apparent continuous owner voice.
+        for at in (100, 180, 260, 340):
+            self.gate.observe(frame(at, owner=.99))
+        advice = self.gate.advise(now_ms=340, star_speaking=True)
+        self.assertFalse(advice.should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 0)
+        # Four genuinely contiguous 30-ms frames still interrupt.
+        for at in (370, 400, 430):
+            self.gate.observe(frame(at, owner=.99))
+        self.assertTrue(
+            self.gate.advise(now_ms=430, star_speaking=True).should_interrupt
+        )
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+
+    def test_sparse_guest_frames_do_not_fake_sustained_guest_speech(self):
+        self.gate.enable(owner_approved=True)
+        for at in (100, 180, 260, 340):
+            self.gate.observe(frame(at, guest=.99))
+        decision = self.gate.advise(now_ms=340, star_speaking=False)
+        self.assertFalse(decision.should_interrupt)
+        self.assertNotEqual(decision.reason, "confirmed_guest_voice")
+
     def test_reverse_duplicate_and_overlapping_frames_rejected(self):
         self.gate.enable(owner_approved=True)
         self.gate.observe(frame(100))
