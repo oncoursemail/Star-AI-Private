@@ -29,7 +29,7 @@ yt-dlp[default]==2026.10.26        # star.watch: captions and metadata of videos
 soundcard>=0.4.6,<1
 sounddevice>=0.5.6,<1
 faster-whisper>=1.2.1,<2
-huggingface-hub>=0.21,<2          # faster-whisper 1.2.1 came out beside hub 1.x; hub 2.x (new HTTP stack) is untested with it
+huggingface-hub>=2.4.0,<3          # faster-whisper 1.2.1 came out beside hub 1.x; hub 2.x (new HTTP stack) is untested with it
 kokoro-onnx>=0.6.1,<0.7
 # GPU build INSTEAD of the CPU onnxruntime (same import name; the CPU wheel would overwrite it). It is left out of the
 # lock file on purpose (#!skip above); docs/STAR_VOICE_CALLS.md "GPU" has the reason. cuDNN and the CUDA runtime come as wheels.
