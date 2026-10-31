@@ -135,6 +135,8 @@ def run_cache_isolation_probe(
         if (any(old in text_b for old in (*seen_markers, marker))
                 or any(old in text_b for old in (*seen_a_replies, ack_a))
                 or any(old in text_a for old in seen_markers)
+                # In concurrent trials, A can inherit the current B response.
+                # Earlier versions checked *previous* B acknowledgements only.
                 or any(old in text_a for old in (*seen_b_replies, ack_b))):
             leaks += 1
             break  # stop immediately on suspected cross-context reuse
