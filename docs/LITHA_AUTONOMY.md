@@ -102,8 +102,10 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Seed 3, first version: 0/6. Cause seen in the log: right line and reason, but the proof imported an invented
   class. Fix: the prover gets the module outline + a real test of the module, and retries when her test also fails
   on the old code. Then 1/6 caught, 0 wrong-line flags (different mutants: 10 kinds were added in between).
-- Then the hunt also sees how the tests call the function and names up to 2 suspects (each proven): see
-  `bench.jsonl` for the latest.
+- Then the hunt also sees how the tests call the function and names up to 2 suspects (each proven): same 6
+  mutants, 1/6 again (a different one caught: run-to-run noise, no measured gain). Misses are mostly proofs that
+  never fail; next lever: let the proof run the module's existing tests on head vs base first and give her the
+  first assert that differs, instead of asking her to invent a new test.
 - False holds: `python -m star.pr_merger --replay-hunt 8` on merged PRs #816-#847: 0/7 flagged (one had no Python
   change).
 
