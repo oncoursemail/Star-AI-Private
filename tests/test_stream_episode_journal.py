@@ -114,6 +114,20 @@ def test_capacity_eviction_and_bounded_public_metrics():
     assert journal.recall(now_s=103, game_scope="obby_v1")[0].age_seconds == 1
 
 
+def test_same_local_event_id_in_independent_games_is_not_lost():
+    journal = StreamEpisodeJournal(capacity=2)
+    journal.enable(owner_approved=True)
+    assert journal.record(moment("event_1", scope="game_a"), now_s=100, host_observed=True)
+    assert journal.record(moment("event_1", scope="game_b"), now_s=100, host_observed=True)
+    assert not journal.record(moment("event_1", scope="game_a"), now_s=100, host_observed=True)
+    assert len(journal.recall(now_s=100, game_scope="game_a")) == 1
+    assert len(journal.recall(now_s=100, game_scope="game_b")) == 1
+    # Eviction and ID bookkeeping must also be game-scoped.
+    assert journal.record(moment("event_2", scope="game_a", time=101), now_s=101, host_observed=True)
+    assert journal.record(moment("event_1", scope="game_a", time=102), now_s=102, host_observed=True)
+    assert journal.metrics()["retained"] == 2
+
+
 def test_multithreaded_replay_admits_only_one_moment():
     journal = StreamEpisodeJournal()
     journal.enable(owner_approved=True)
