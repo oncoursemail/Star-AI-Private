@@ -102,6 +102,7 @@ class GameDeadlineRouter:
         self._reactive: deque[tuple[float, float]] = deque(maxlen=history)
         self._last_sample_id = 0
         self._last_sample_ms: float | None = None
+        self._last_advice_ms: float | None = None
         self._counts = {"measured": 0, "timeouts": 0, "replays": 0, "reactive": 0,
                         "skipped": 0, "offline_teacher": 0}
 
@@ -119,6 +120,7 @@ class GameDeadlineRouter:
             self._last_sample_id = 0
             # The next host sample must not race a reset outside this lock.
             self._last_sample_ms = None
+            self._last_advice_ms = None
 
     def disable(self) -> None:
         with self._lock:
@@ -128,6 +130,7 @@ class GameDeadlineRouter:
             self._last_sample_id = 0
             # The next host sample must not race a reset outside this lock.
             self._last_sample_ms = None
+            self._last_advice_ms = None
 
     def record_reactive_latency(
         self, *, game_scope: str, sample_id: int, duration_ms: float,
@@ -223,6 +226,11 @@ class GameDeadlineRouter:
             if now_host_ms is None:
                 return skip("host_clock_missing", remaining=remaining)
             now = _clock_ms(now_host_ms, "now_host_ms")
+            # A host-clock reset must not make a previously expired speed
+            # profile eligible again. A new session must be explicitly enabled.
+            if self._last_advice_ms is not None and now < self._last_advice_ms:
+                return skip("host_clock_reversed", remaining=remaining)
+            self._last_advice_ms = now
             if self._last_sample_ms is not None and now < self._last_sample_ms:
                 return skip("host_clock_before_samples", remaining=remaining)
             fresh = [duration for at, duration in self._reactive
