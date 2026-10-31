@@ -51,6 +51,37 @@ class TurnTakingTests(unittest.TestCase):
         self.assertEqual(decision.reason, "confirmed_authenticated_owner_voice")
         self.assertEqual(self.gate.metrics()["owner_yields"], 1)
 
+    def test_barge_in_metric_is_once_per_confirmed_utterance_not_per_poll(self):
+        self.gate.enable(owner_approved=True)
+        for at in (100, 130, 160, 190):
+            self.gate.observe(frame(at, owner=1))
+        # The host may poll faster than VAD emits frames. The advice must
+        # remain actionable if an earlier interruption wasn't yet performed.
+        for _ in range(10):
+            decision = self.gate.advise(now_ms=200, star_speaking=True)
+            self.assertTrue(decision.should_interrupt)
+            self.assertEqual(decision.action, "yield_owner")
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        # A genuinely new utterance is counted only after another 120ms of
+        # verified speech, not from a stale owner probability.
+        self.gate.observe(frame(220))
+        for at in (250, 280, 310, 340):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(
+            self.gate.advise(now_ms=340, star_speaking=True).should_interrupt
+        )
+        self.assertEqual(self.gate.metrics()["owner_yields"], 2)
+        self.gate.disable()
+        self.gate.enable(owner_approved=True)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 2)
+        # Counters are cumulative; utterance state, not counters, resets.
+        for at in (600, 630, 660, 690):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(
+            self.gate.advise(now_ms=690, star_speaking=True).should_interrupt
+        )
+        self.assertEqual(self.gate.metrics()["owner_yields"], 3)
+
     def test_guest_voice_holds_speech_without_owner_privilege(self):
         self.gate.enable(owner_approved=True)
         for at in (100, 130, 160, 190):
