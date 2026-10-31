@@ -17,7 +17,7 @@ import hashlib
 import math
 import re
 from threading import RLock
-from typing import Mapping
+from typing import Mapping, cast
 
 from .stream_director import StreamSignal
 
@@ -31,7 +31,7 @@ def _host_seconds(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("host time must be a finite monotonic second value")
     try:
-        number = float(value)
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("invalid host time") from exc
     if not math.isfinite(number) or not 0 <= number <= _MAX_CLOCK_S:
