@@ -64,10 +64,13 @@ class StreamHealthBridge:
         self._last_live: bool | None = None
         self._stream_status_ms: float | None = None
         self._stream_active: bool | None = None
+        # Busy until a trusted status explicitly confirms the output stopped.
+        self._stream_output_busy = False
         self._counts = {
             "obs_windows": 0, "host_admitted": 0, "host_rejected": 0,
             "bridge_deferrals": 0, "obs_invalidated": 0,
             "output_verified": 0, "output_invalidated": 0,
+            "output_mode_mismatch": 0,
         }
 
     def _reset(self) -> None:
@@ -78,6 +81,7 @@ class StreamHealthBridge:
         self._last_live = None
         self._stream_status_ms = None
         self._stream_active = None
+        self._stream_output_busy = False
         self._obs.reset()
 
     def enable(self, *, owner_approved: bool = False) -> None:
@@ -105,6 +109,8 @@ class StreamHealthBridge:
             self._ready_host_ms = None
             self._stream_status_ms = None
             self._stream_active = None
+            # Reconnecting OBS does not prove the stream has stopped.
+            # Retain _stream_output_busy until verified stopped status.
             self._counts["obs_invalidated"] += 1
 
     def offer_stream_status(self, data: Mapping[str, object], *, host_ms: float,
@@ -119,18 +125,28 @@ class StreamHealthBridge:
         at = _host_clock(host_ms)
         if type(host_verified) is not bool:
             raise ValueError("host_verified must be a strict boolean")
-        if not isinstance(data, Mapping):
-            raise TypeError("GetStreamStatus responseData must be a mapping")
         with self._lock:
             if not self._enabled or not host_verified:
                 return False
             if self._stream_status_ms is not None and at <= self._stream_status_ms:
                 return False
+            if not isinstance(data, Mapping):
+                # Malformed trusted status invalidates readiness; unlike an
+                # unverified packet it must never preserve old admissions.
+                self._stream_status_ms = at
+                self._stream_active = None
+                self._stream_output_busy = True
+                self._obs.reset()
+                self._latest = None
+                self._ready_host_ms = None
+                self._counts["output_invalidated"] += 1
+                raise TypeError("GetStreamStatus responseData must be a mapping")
             active = data.get("outputActive")
             reconnecting = data.get("outputReconnecting")
             if type(active) is not bool or type(reconnecting) is not bool:
                 self._stream_status_ms = at
                 self._stream_active = None
+                self._stream_output_busy = True
                 self._obs.reset()
                 self._latest = None
                 self._ready_host_ms = None
@@ -140,6 +156,7 @@ class StreamHealthBridge:
             previously_healthy = self._stream_active is True
             self._stream_status_ms = at
             self._stream_active = healthy
+            self._stream_output_busy = active or reconnecting
             self._counts["output_verified"] += 1
             if not healthy or not previously_healthy:
                 self._obs.reset()
@@ -195,8 +212,15 @@ class StreamHealthBridge:
             # A signed live transition may not reuse the previous *offline*
             # admission sample, even if OBS is disconnected at that instant.
             self._last_host_ms = at
-            self._last_live = telemetry.live
             self._ready_host_ms = None
+            if not telemetry.live and self._stream_output_busy:
+                # Live=False cannot unlock offline jobs during an OBS output,
+                # reconnect, or invalid previously-active output status.
+                self._last_live = True
+                self._counts["host_rejected"] += 1
+                self._counts["output_mode_mismatch"] += 1
+                return False
+            self._last_live = telemetry.live
             render = output = 0.0
             window = self._latest
             if telemetry.live:

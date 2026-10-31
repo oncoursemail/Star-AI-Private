@@ -228,7 +228,7 @@ def test_metrics_exclude_obs_payloads_and_require_real_windows():
     assert set(m) == {
         "obs_windows", "host_admitted", "host_rejected",
         "bridge_deferrals", "obs_invalidated", "output_verified",
-        "output_invalidated", "enabled", "live", "overloaded",
+        "output_invalidated", "output_mode_mismatch", "enabled", "live", "overloaded",
     }
 
 
