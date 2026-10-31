@@ -192,13 +192,13 @@ def recommend_practice(
     # Stop infinite ineffective self-play after a bounded failure budget.
     stalled = [item for item in candidates if item[1] >= max_trials_before_review]
     if stalled:
-        target, attempts, successes, lower, _ = min(
+        target, attempts, successes, lower, _, _ = min(
             stalled, key=lambda item: (item[0].situation_id, item[0].action_id)
         )
         return PracticeAdvice("review_required", target, "practice_stalled_needs_host_review",
                               attempts, successes, round(lower, 4))
     # Cover neglected scenarios before repeatedly grinding a familiar one.
-    target, attempts, successes, lower, _ = min(
+    target, attempts, successes, lower, _, _ = min(
         candidates,
         key=lambda item: (item[1], item[3], item[4],
                           item[0].situation_id, item[0].action_id),
