@@ -62,6 +62,21 @@ def test_impossible_skipped_delta_rebases_instead_of_admitting_window():
     assert x.output_lag_pct == pytest.approx(2.0)
 
 
+def test_frame_loss_boundary_prevents_false_positive_background_admission():
+    """1 skipped out of 99 total is >1%, though old 1/(99+1) was 1%."""
+    s, gate = ObsStatsWindow(), StreamAdmissionGate()
+    gate.enable(owner_approved=True)
+    s.ingest(counters(), host_ms=1000, host_verified=True)
+    x = s.ingest(counters(rskip=1, rtotal=1099, ototal=1100),
+                 host_ms=1500, host_verified=True)
+    assert x is not None and x.render_lag_pct > 1.0
+    telemetry = StreamTelemetry(True, True, 2048, 8192, 60, 30)
+    assert gate.observe(StreamHealthSample(x.observed_ms, telemetry,
+                                           x.render_lag_pct, x.output_lag_pct,
+                                           host_verified=True))
+    assert not gate.advise("vision", now_ms=1510).allowed
+
+
 def test_obs_lag_feeds_existing_admission_advice():
     s, gate = ObsStatsWindow(), StreamAdmissionGate()
     gate.enable(owner_approved=True)
