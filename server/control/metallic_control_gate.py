@@ -446,6 +446,8 @@ def action_command(name: str, cfg: dict) -> list[str] | None:
         return [LXC, "exec", star["container"], "--", "/usr/bin/python3", star["gate"], name]
     if name in ("ns-pause", "ns-resume") and star:
         return [LXC, "exec", star["container"], "--", "/usr/bin/python3", star["gate"], name]
+    if name in ("litha-brain:on", "litha-brain:off"):  # helper next to this file (deploy.sh gate copies both)
+        return ["/usr/bin/python3", str(Path(__file__).with_name("litha_brain.py")), name[12:]]
     if name.startswith("runner-start:") or name.startswith("runner-stop:"):
         verb, _, which = name.partition(":")
         for item in cfg.get("runners", []):
