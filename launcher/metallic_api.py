@@ -181,6 +181,18 @@ class MetallicAPI:
         """One game's status. Public."""
         return self.request("GET", f"/v1/games/{urllib.parse.quote(str(game), safe='')}", None)
 
+    def list_revivals(self) -> dict:
+        """Every Rec Room revival: status and people online. Public."""
+        return self.request("GET", "/v1/revivals", None)
+
+    def get_revival(self, revival) -> dict:
+        """One revival's status and people online. Public."""
+        return self.request("GET", f"/v1/revivals/{urllib.parse.quote(str(revival), safe='')}", None)
+
+    def list_revival_news(self) -> dict:
+        """Latest news from the Rec Room revivals. Public."""
+        return self.request("GET", "/v1/revival-news", None)
+
     def list_releases(self) -> dict:
         """Release channels. Public."""
         return self.request("GET", "/v1/releases", None)

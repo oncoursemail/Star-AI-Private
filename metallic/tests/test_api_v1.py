@@ -684,3 +684,146 @@ def test_website_downloads_asks_the_api_first_then_the_channel_file(live):
     code, h, body = live.call("GET", "/v1/releases/beta", origin="https://metallic.club")
     assert code == 200 and h["Access-Control-Allow-Origin"] == "*"
     assert body["components"][0]["size"] == len(b"MZ fake launcher 1.0.0")
+
+
+# ---------------------------------------------------------------- Rec Room revivals
+def _invite(online, members):
+    return json.dumps({"approximate_presence_count": online, "approximate_member_count": members,
+                       "guild": {"id": "42", "name": "G", "icon": "abc", "banner": None, "splash": "sp", "description": "d"}})
+
+
+META_PAGE = ('<script type="application/ld+json">{"@graph":[{"@type":["SoftwareApplication"],"aggregateRating":'
+             '{"ratingValue":3.3210603829161,"ratingCount":"1358"}}]}</script><script>{"latest_supported_binary":'
+             '{"__typename":"AndroidBinary","version":"20240726"},"release_info":{"display_date":"May 31, 2026"}}</script>')
+RSS_PAGE = ('<rss><channel><item><title><![CDATA[Radium Maintenance Notice &amp; more]]></title>'
+            '<link>https://blog.recroomarchive.org/notice/</link><pubDate>Fri, 09 Oct 2026 12:00:00 +0000</pubDate></item>'
+            '<item><title>Bad</title><link>javascript:alert(1)</link></item></channel></rss>')
+YT_PAGE = ('"lockupViewModel":{"contentImage":{"url":"https://i.ytimg.com/vi/LS0q5AKSp30/hq720.jpg"},"metadata":'
+           '{"lockupMetadataViewModel":{"title":{"content":"The Future of Rec Room Q\\u0026A."}},"rows":[{"content":"9d ago"}]}}')
+
+
+class FakeNet:
+    """Discord invites answer `online` people (Vanilla 500); Vanilla's manifest answers with a version and its count
+    address a bare number (17); RecFlare publishes `players` in game; Meta store pages carry a rating; Radium's blog is
+    RSS; YouTube feeds fail and the channel page answers instead."""
+    def __init__(self):
+        self.calls, self.online, self.down, self.players = [], 10, False, 395
+
+    def __call__(self, url, timeout=6.0):
+        self.calls.append(url)
+        if self.down:
+            raise OSError("offline")
+        if "discord.com" in url:
+            return 200, _invite(500 if "vanillarec" in url else self.online, 900)
+        if "ws/getplrcount" in url:
+            return 200, "17"
+        if "launcher/manifest" in url:
+            return 200, json.dumps({"version": "1.0.17", "notes": "detection fixes", "pub_date": "2026-10-25T00:00:00Z"})
+        if "www.meta.com/experiences" in url:
+            return 200, META_PAGE
+        if "recroomarchive.org/rss" in url:
+            return 200, RSS_PAGE
+        if "youtube.com/feeds" in url:
+            return 500, ""
+        if "youtube.com/channel/UCVL4rv82WsVzlZB4raB5kVw" in url:
+            return 200, YT_PAGE
+        if "recflare.net/api/stats/online" in url:
+            return 200, json.dumps({"range": "24h", "online": self.players, "peak": 452})
+        return 200, "{}"
+
+
+@pytest.fixture
+def rv(tmp_path):
+    net = FakeNet()
+    return Rig(tmp_path, {"revival_fetch": net}), net
+
+
+def test_revivals_are_public_sorted_and_keep_discord_people_apart_from_players(rv):
+    rig, _ = rv
+    code, h, out = rig.call("GET", "/v1/revivals")                 # check_response validates the schema
+    assert code == 200
+    ids = [r["id"] for r in out["revivals"]]
+    assert ids[0] == "vanilla" and {"stella", "meownet", "studio87", "uranium", "phoenix"} <= set(ids)
+    assert "campus" not in ids and "studio8" not in ids
+    by = {r["id"]: r for r in out["revivals"]}
+    assert by["vanilla"]["status"] == "answering" and by["vanilla"]["version"] == "1.0.17"
+    assert by["radium"]["status"] == "community" and by["uranium"]["status"] == "unknown" and by["uranium"]["discord"] is None
+    assert by["radium"]["discord"]["icon"] == "https://cdn.discordapp.com/icons/42/abc.webp?size=128"
+    with_invite = sum(1 for r in out["revivals"] if r["invite"])
+    assert out["totals"]["online"] == 500 + 10 * (with_invite - 1) and out["totals"]["answering"] == 2        # Vanilla and RecFlare
+    assert by["recflare"]["players"] == 395 and by["recflare"]["status"] == "answering"
+    assert all(r["players"] is None for r in out["revivals"] if r["id"] not in ("recflare", "vanilla"))   # Discord people are not players
+    assert out["totals"]["in_game"] == 395 + 17 and out["totals"]["with_players"] == 2
+    assert rig.call("GET", "/v1/revivals/radium")[2]["discord"]["online"] == 10
+    assert rig.call("GET", "/v1/revivals/nope")[0] == 404
+
+
+def test_revivals_ask_discord_at_most_every_two_minutes_and_keep_stale_numbers(rv):
+    rig, net = rv
+    rig.call("GET", "/v1/revivals")
+    first = len(net.calls)
+    rig.clock.t += 30
+    rig.call("GET", "/v1/revivals")
+    assert len(net.calls) == first                                  # nothing is due yet
+    rig.clock.t += 31
+    rig.call("GET", "/v1/revivals")
+    assert all("discord.com" not in u for u in net.calls[first:])  # servers again after 1 min, Discord not yet
+    net.down = True
+    rig.clock.t += 120
+    out = rig.call("GET", "/v1/revivals")[2]
+    radium = next(r for r in out["revivals"] if r["id"] == "radium")
+    assert radium["discord"]["online"] == 10 and radium["discord"]["stale"] is True
+    assert next(r for r in out["revivals"] if r["id"] == "vanilla")["status"] == "not_answering"
+
+
+def test_vanilla_players_come_from_their_own_address_and_meta_pages_give_ratings(rv):
+    rig, _ = rv
+    out = rig.call("GET", "/v1/revivals")[2]
+    by = {r["id"]: r for r in out["revivals"]}
+    assert by["vanilla"]["players"] == 17 and by["vanilla"]["version"] == "1.0.17" and by["vanilla"]["status"] == "answering"
+    assert out["totals"]["in_game"] == 17 + 395 and out["totals"]["with_players"] == 2
+    assert by["meownet"]["meta"] == {"rating": 3.32, "ratings": 1358, "version": "20240726", "released": "May 31, 2026",
+                                     "url": "https://www.meta.com/experiences/meownet/1196298696890609/"}
+    assert by["radium"]["meta"] is None and "recify" in by
+
+
+def test_revival_news_merges_feeds_newest_first_with_youtube_fallback(rv):
+    rig, net = rv
+    code, _, out = rig.call("GET", "/v1/revival-news")
+    assert code == 200
+    by = {(i["revival"], i["source"]): i for i in out["items"]}
+    assert by[("radium", "Blog")]["title"] == "Radium Maintenance Notice & more"
+    yt = by[("phoenix", "YouTube")]
+    assert yt["title"] == "The Future of Rec Room Q&A." and yt["link"] == "https://www.youtube.com/watch?v=LS0q5AKSp30"
+    assert yt["date"] == int(rig.clock.t) - 9 * 86400
+    assert by[("vanilla", "Launcher update")]["link"] == "https://vanillarec.net/"
+    assert all(i["link"].startswith("https://") for i in out["items"])
+    dates = [i["date"] or 0 for i in out["items"]]
+    assert dates == sorted(dates, reverse=True)
+    net.down = True                                                  # a failing source keeps its last items
+    rig.clock.t += 901
+    assert len(rig.call("GET", "/v1/revival-news")[2]["items"]) == len(out["items"])
+
+
+def test_player_counts_are_read_by_path_sum_and_length():
+    from metallic.api.revivals import count_at
+    d = {"a": {"n": 7, "f": 3.0, "neg": -1, "b": True}, "rooms": [{"p": 2}, {"p": 5}, {"x": 1}], "list": [1, 2, 3]}
+    assert [count_at(d, x) for x in ("a.n", "a.f", "a.neg", "a.b", "rooms.*.p", "rooms.*", "list", "rooms.1.p", "a.missing")] ==         [7, 3, None, None, 7, 3, 3, 5, None]
+    assert count_at("text", "a") is None
+
+
+def test_revival_samples_give_a_24_hour_trend_and_peak_and_expire_after_a_week(rv):
+    rig, net = rv
+    for online in (10, 40, 25):
+        net.online = online
+        rig.content.revivals.sample()
+        rig.clock.t += 1800
+    r = rig.call("GET", "/v1/revivals/radium")[2]
+    assert [p[1] for p in r["trend"]] == [10, 40, 25]
+    assert r["peak_24h"] == 40
+    f = rig.call("GET", "/v1/revivals/recflare")[2]
+    assert f["players_peak_24h"] == 395 and len(f["players_trend"]) >= 1
+    rig.clock.t += 8 * 86400
+    rig.content.revivals.sample()
+    assert rig.store.one("SELECT COUNT(*) AS n FROM revival_samples WHERE t < ?", (rig.clock.t - 7 * 86400,))["n"] == 0
+    assert rig.call("GET", "/v1/revivals/radium")[2]["peak_24h"] == 25   # only the newest sample is within a day
