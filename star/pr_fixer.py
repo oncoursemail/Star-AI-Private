@@ -308,17 +308,27 @@ def fix_lock(tree: Path, python: str) -> tuple[bool, str]:
         " ".join(re.findall(r"(?m)^E\s+(.*)$", first)[:2])[:300]
 
 
-def rerun_failed(sha: str) -> int:
-    """Run the failed jobs of this commit again; returns how many workflow runs were restarted."""
+def rerun_failed(sha: str, number: int | None = None) -> int:
+    """Run the failed jobs of this commit again; returns how many workflow runs were restarted. When GitHub refuses
+    every rerun ("cannot be retried", seen on a 4-day-old run), closing and reopening the PR starts a fresh CI run."""
     checks = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs"))["check_runs"]
     runs = {m.group(1) for c in checks if c.get("conclusion") == "failure"
             for m in [re.search(r"/runs/(\d+)/", c.get("details_url") or "")] if m}
+    done = 0
     for run in runs:
         try:
             gh("run", "rerun", run, "--failed", "--repo", REPO)
+            done += 1
         except RuntimeError:
             pass
-    return len(runs)
+    if runs and not done and number:
+        try:
+            gh("pr", "close", str(number), "--repo", REPO)
+            gh("pr", "reopen", str(number), "--repo", REPO)
+            done = 1
+        except RuntimeError:
+            pass
+    return done
 
 
 def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
@@ -326,10 +336,11 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     log = failed_logs(sha)
     fails = failures(log)
     if not log.strip():                   # logs expire on GitHub: run the failed jobs again, look next time
-        return {"pr": number, "result": "rerun", "why": f"failed logs expired; reran {rerun_failed(sha)} run(s)"}
+        return {"pr": number, "result": "rerun", "why": f"failed logs expired; reran {rerun_failed(sha, number)} run(s)"}
     linting = not fails and bool(RUFF_CI.search(log))
-    if not fails and not linting:
-        return {"pr": number, "result": "skip", "why": "no pytest or ruff failure in the failed logs"}
+    if not fails and not linting:         # timeout, lost runner, setup step (seen: #700 died after 9 h): one rerun
+        return {"pr": number, "result": "flaky-rerun",
+                "why": f"no test or lint failure in the failed logs; reran {rerun_failed(sha, number)} failed run(s) once"}
     day = dt.date.today().strftime("%Y%m%d")
     branch, tree = f"litha/fix-{number}-{day}", WORK / f"litha-fix-{number}"
     if tree.exists():
@@ -343,7 +354,7 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         ok, out = run_tests(tree, tests, python)
         if ok:                            # flaky or CI-only (seen: a 0.6 s timing limit missed by 8 ms): one rerun
             return {"pr": number, "result": "flaky-rerun", "tests": tests,
-                    "why": f"the failing tests pass locally; reran {rerun_failed(sha)} failed run(s) once"}
+                    "why": f"the failing tests pass locally; reran {rerun_failed(sha, number)} failed run(s) once"}
     if str(pr.get("headRefName", "")).startswith("litha/"):
         return {"pr": number, "result": "skip", "why": "her own fix branch fails for real: no fix on top of a fix"}
     names = gh("pr", "diff", str(number), "--repo", REPO, "--name-only", timeout=300).split()
