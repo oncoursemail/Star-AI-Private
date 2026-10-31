@@ -105,3 +105,26 @@ def test_hunt_keeps_only_proven_flags_on_changed_functions(tmp_path):
     assert found == [{"file": "star/calc.py", "line": 6, "severity": "high", "why": "should be >=", "proof": {"proven": True}}]
     off = lambda p: json.dumps({"bug": True, "line": 2, "why": "outside the function"})  # noqa: E731
     assert H.hunt(head, head, {"star/calc.py": {6}}, sys.executable, off, proven) == []
+
+
+def test_the_prover_sees_the_module_shape_and_a_real_test_and_retries_a_wrong_expectation(tmp_path):
+    src = "class Calc:\n    def __init__(self, k):\n        self.k = k\n\n    def add(self, a):\n        return a + self.k\n"
+    assert P.outline(src) == "class Calc:\n    def __init__(self, k):"
+    good, bad = _tree(tmp_path, "base", src), _tree(tmp_path, "head", src.replace("a + self.k", "a - self.k"))
+    (bad / "tests" / "test_calc.py").write_text(
+        "from star.calc import Calc\n\n\ndef test_other():\n    assert 1\n\n\ndef test_k():\n    assert Calc(2).k == 2\n",
+        encoding="utf-8")
+    example = P.example_test(bad, "star.calc", ["Calc"])
+    assert "from star.calc import Calc" in example and "test_k" in example and "test_other" not in example
+    wrong = "from star.calc import Calc\n\n\ndef test_add():\n    assert Calc(2).add(1) == 99\n"
+    right = "from star.calc import Calc\n\n\ndef test_add():\n    assert Calc(2).add(1) == 3\n"
+    answers, prompts = iter([wrong, right]), []
+
+    def ask(prompt):
+        prompts.append(prompt)
+        return json.dumps({"possible": True, "test": next(answers)})
+
+    risk = {"file": "star/calc.py", "line": 6, "severity": "high", "why": "subtracts"}
+    got = P.prove(bad, risk, sys.executable, ask, base=good)
+    assert got["proven"] is True and got["tries"] == 2
+    assert "class Calc:" in prompts[0] and "BEFORE the change too" in prompts[1]
