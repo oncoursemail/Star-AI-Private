@@ -166,6 +166,10 @@ class TwitchEventSubIngress:
             subscription = _part(payload.get("subscription"), "subscription")
             event = _part(payload.get("event"), "event")
             message = _part(event.get("message"), "message")
+            # Preserve strict malformed-account rejection before checking whether
+            # a syntactically valid but different channel belongs to this session.
+            broadcaster = _account_id(event.get("broadcaster_user_id"), "broadcaster")
+            chatter = _account_id(event.get("chatter_user_id"), "chatter")
             condition = _part(subscription.get("condition"), "subscription condition")
             transport = _part(subscription.get("transport"), "subscription transport")
             sent = _timestamp_utc(metadata.get("message_timestamp"))
@@ -184,8 +188,6 @@ class TwitchEventSubIngress:
                 return None
             envelope_id = _bounded_id(metadata.get("message_id"), "message_id")
             chat_id = _bounded_id(event.get("message_id"), "chat_message_id")
-            broadcaster = _account_id(event.get("broadcaster_user_id"), "broadcaster")
-            chatter = _account_id(event.get("chatter_user_id"), "chatter")
             if broadcaster != self._broadcaster:
                 self._counts["rejected"] += 1
                 return None
