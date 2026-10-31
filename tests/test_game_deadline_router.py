@@ -321,3 +321,14 @@ def test_session_enable_cannot_erase_a_racing_latency_sample_timestamp():
         duration_ms=40, host_measured=True,
     )
     assert gate.metrics()["replays"] == 1
+
+
+def test_pressure_or_stale_scene_cannot_hide_a_host_clock_rollback():
+    gate = router()
+    train(gate)
+    assert decide(gate, now_host_ms=18000, cpu_pressure=True).reason == "hardware_pressure"
+    assert decide(gate, now_host_ms=1000).reason == "host_clock_reversed"
+    assert decide(gate, now_host_ms=18001, observation_age_ms=500).reason == (
+        "scene_deadline_expired"
+    )
+    assert decide(gate, now_host_ms=1001).reason == "host_clock_reversed"
