@@ -16,8 +16,6 @@ import math
 from threading import RLock
 from typing import Mapping, cast
 
-_KEYS = ("renderSkippedFrames", "renderTotalFrames",
-         "outputSkippedFrames", "outputTotalFrames")
 _MAX_COUNTER = 2**53 - 1  # integer precision in JSON/JavaScript transports
 _MAX_CLOCK_MS = 1e13
 
@@ -94,7 +92,14 @@ class ObsStatsWindow:
                 return None
             # Extract only four expected fields, never persist arbitrary OBS
             # response data (e.g. third-party plugin fields or identifying text).
-            values = tuple(_valid_counter(data.get(key)) for key in _KEYS)
+            # Explicit tuple fields keep static types precise and prevent
+            # accidental schema broadening if OBS adds additional counters.
+            values = (
+                _valid_counter(data.get("renderSkippedFrames")),
+                _valid_counter(data.get("renderTotalFrames")),
+                _valid_counter(data.get("outputSkippedFrames")),
+                _valid_counter(data.get("outputTotalFrames")),
+            )
             self._last_seen_ms = now
             self._counts["samples"] += 1
             prev = self._before
