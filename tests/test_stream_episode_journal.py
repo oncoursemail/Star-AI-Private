@@ -162,3 +162,21 @@ def test_out_of_order_observations_do_not_recall_or_expire_in_wrong_order():
     contexts = journal.recall(now_s=161, game_scope="obby_v1")
     assert [c.age_seconds for c in contexts] == [51]
     assert journal.metrics()["expired"] == 1
+
+
+
+def test_unattested_claim_cannot_expire_facts_or_poison_host_clock():
+    journal = StreamEpisodeJournal(max_age_s=60)
+    journal.enable(owner_approved=True)
+    assert journal.record(moment("trusted", time=100), now_s=100, host_observed=True)
+    # This is not a trusted game observation. A forged far-future timestamp
+    # must neither evict real memories nor prevent the next legitimate query.
+    assert not journal.record(
+        moment("viewer_claim", kind="win", time=100), now_s=100_000,
+        host_observed=False,
+    )
+    cards = journal.recall(now_s=101, game_scope="obby_v1")
+    assert len(cards) == 1
+    assert "checkpoint" in cards[0].context
+    assert journal.metrics()["retained"] == 1
+    assert journal.metrics()["expired"] == 0
