@@ -308,18 +308,25 @@ def fix_lock(tree: Path, python: str) -> tuple[bool, str]:
         " ".join(re.findall(r"(?m)^E\s+(.*)$", first)[:2])[:300]
 
 
+def rerun_failed(sha: str) -> int:
+    """Run the failed jobs of this commit again; returns how many workflow runs were restarted."""
+    checks = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs"))["check_runs"]
+    runs = {m.group(1) for c in checks if c.get("conclusion") == "failure"
+            for m in [re.search(r"/runs/(\d+)/", c.get("details_url") or "")] if m}
+    for run in runs:
+        try:
+            gh("run", "rerun", run, "--failed", "--repo", REPO)
+        except RuntimeError:
+            pass
+    return len(runs)
+
+
 def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     sha, number = pr["headRefOid"], pr["number"]
     log = failed_logs(sha)
     fails = failures(log)
     if not log.strip():                   # logs expire on GitHub: run the failed jobs again, look next time
-        runs = set(re.findall(r"/runs/(\d+)/", json.dumps(json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs")))))
-        for run in runs:
-            try:
-                gh("run", "rerun", run, "--failed", "--repo", REPO)
-            except RuntimeError:
-                pass
-        return {"pr": number, "result": "rerun", "why": f"failed logs expired; reran {len(runs)} run(s)"}
+        return {"pr": number, "result": "rerun", "why": f"failed logs expired; reran {rerun_failed(sha)} run(s)"}
     linting = not fails and bool(RUFF_CI.search(log))
     if not fails and not linting:
         return {"pr": number, "result": "skip", "why": "no pytest or ruff failure in the failed logs"}
@@ -332,6 +339,13 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         return {"pr": number, "result": "skip", "why": "fetch failed: " + got.stderr[-200:]}
     sh(["git", "-C", str(CLONE), "worktree", "add", "-q", str(tree), branch])
     tests = sorted({f["test"].split("::")[0] for f in fails})     # whole files: a second bug must fail too
+    if fails:
+        ok, out = run_tests(tree, tests, python)
+        if ok:                            # flaky or CI-only (seen: a 0.6 s timing limit missed by 8 ms): one rerun
+            return {"pr": number, "result": "flaky-rerun", "tests": tests,
+                    "why": f"the failing tests pass locally; reran {rerun_failed(sha)} failed run(s) once"}
+    if str(pr.get("headRefName", "")).startswith("litha/"):
+        return {"pr": number, "result": "skip", "why": "her own fix branch fails for real: no fix on top of a fix"}
     names = gh("pr", "diff", str(number), "--repo", REPO, "--name-only", timeout=300).split()
     if names and all(DEP_FILE.match(n) for n in names) and (tree / LOCK_TOOL).is_file():
         ok, why = fix_lock(tree, python)
@@ -342,10 +356,6 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
             return {"pr": number, "result": "skip", "why": why}
         tests = ["ruff check star"]
     else:
-        ok, out = run_tests(tree, tests, python)
-        if ok:
-            return {"pr": number, "result": "skip", "why": "the failing tests pass locally (CI-only failure)",
-                    "tests": tests}
         diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
         ok, why, round_no = repair(tree, pr.get("title", ""), fails, out, tests, python, asker, diff)
     if not ok:
@@ -388,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         if done >= a.max:
             break
         if (pr.get("isDraft") or pr.get("baseRefName") != BASE or pr.get("mergeable") != "MERGEABLE"
-                or str(pr.get("headRefName", "")).startswith("litha/") or tried.get(str(pr["number"])) == pr["headRefOid"]):
+                or tried.get(str(pr["number"])) == pr["headRefOid"]):       # her own branches too: flaky reruns
             continue
         checks = head_checks(pr["headRefOid"])
         if not any(c["conclusion"] == "FAILURE" for c in checks) or any(c["status"] != "completed" for c in checks):
@@ -405,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
         with LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": round(t), **row}) + "\n")
         print(json.dumps(row), flush=True)
-        done += row["result"] in ("fixed", "failed", "error", "rerun")   # one CI rerun per run: one runner
+        done += row["result"] in ("fixed", "failed", "error", "rerun", "flaky-rerun")   # one CI rerun per run
     return 0
 
 
