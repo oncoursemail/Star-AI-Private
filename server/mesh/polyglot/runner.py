@@ -30,6 +30,18 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+if __package__:
+    from .rust_edition import resolve as rust_edition
+else:
+    # Production starts this script with python -I, which excludes the script
+    # directory from sys.path. Load the adjacent trusted helper by exact path.
+    import importlib.util
+    _rs_spec = importlib.util.spec_from_file_location(
+        "pg_rust_edition", os.path.join(os.path.dirname(os.path.abspath(__file__)), "rust_edition.py"))
+    _rs_mod = importlib.util.module_from_spec(_rs_spec)
+    _rs_spec.loader.exec_module(_rs_mod)
+    rust_edition = _rs_mod.resolve
+
 PG = os.environ.get("PG_HOME", "/opt/pg")
 APP = os.path.dirname(os.path.abspath(__file__))
 WORK = os.environ.get("PG_WORK", "/work")
@@ -566,7 +578,11 @@ RS_LOCAL = {"std", "core", "alloc", "crate", "self", "super", "Self"}
 RS_BORROW = {"E0382", "E0499", "E0502", "E0505", "E0506", "E0597", "E0716", "E0384", "E0596", "E0503", "E0373", "E0507"}
 
 
-def check_rust(code: str, context: str) -> dict:
+def check_rust(code: str, context: str, edition: str | None = None) -> dict:
+    try:
+        edition = rust_edition("" if context.strip() == code.strip() else context, edition)
+    except ValueError as exc:
+        return {"checked": False, "compiled": False, "tool": "rustc", "problems": [], "error": str(exc)}
     src, offset = blank_ellipsis(code, "//"), 0
     fragment = not RS_ITEM.search(code)
     if fragment:
@@ -576,15 +592,17 @@ def check_rust(code: str, context: str) -> dict:
     ext = {e for e in ext if re.search(r"^\s*(?:pub\s+)?use\s+(?:::)?" + e + r"\b|extern\s+crate\s+" + e, code, re.M)}
     crate_type = "bin" if re.search(r"\bfn\s+main\s*\(", src) else "lib"
     with Workdir(files={"main.rs": src}) as d:
-        r = run_limited([RUSTC, "--edition", "2021", "--crate-type", crate_type, "--emit=metadata", "-o", "out.rmeta",
+        r = run_limited([RUSTC, "--edition", edition, "--crate-type", crate_type, "--emit=metadata", "-o", "out.rmeta",
                          "--error-format=json", "-A", "warnings", "-W", "deprecated", "main.rs"], d, mem_mb=None)
     if r["timed_out"]:
-        return {"checked": False, "tool": "rustc", "error": "timeout"}
+        return {"checked": False, "compiled": False, "tool": "rustc", "edition": edition, "error": "timeout"}
     probs = []
     for raw in r["stderr"].splitlines():
         try:
             d = json.loads(raw)
         except ValueError:
+            continue
+        if not isinstance(d, dict):
             continue
         level, msg = d.get("level"), d.get("message", "")
         if level not in ("error", "warning") or msg.startswith(("aborting due to", "Some errors have", "For more information")):
@@ -611,7 +629,14 @@ def check_rust(code: str, context: str) -> dict:
                     break
         probs.append(problem("borrow" if cid in RS_BORROW else ("syntax" if not cid else "compile"),
                              f"Rust {cid}: {msg}".replace("Rust : ", "Rust: "), line, suggestion=sugg))
-    return {"checked": True, "tool": "rustc 1.99", "mode": "fragment" if fragment else ("file+crates" if ext else "file"),
+    compiled = r["rc"] == 0
+    if not compiled and not any(p["severity"] == "error" for p in probs):
+        # Missing external crates and filtered fragment diagnostics do not prove
+        # successful compilation. Nor does an unparseable/crashed compiler.
+        return {"checked": False, "compiled": False, "tool": "rustc", "edition": edition, "problems": [],
+                "error": "Rust compilation did not complete with reportable diagnostics"}
+    return {"checked": True, "compiled": compiled, "tool": "rustc", "edition": edition,
+            "mode": "fragment" if fragment else ("file+crates" if ext else "file"),
             "problems": shift(probs, offset, len(code.splitlines()))[:12]}
 
 
@@ -891,7 +916,7 @@ CHECKS = {
 }
 
 
-def check(language: str, code: str, context: str = "") -> dict:
+def check(language: str, code: str, context: str = "", *, edition: str | None = None) -> dict:
     t0 = time.perf_counter()
     fn = CHECKS.get(language)
     if fn is None or not code.strip():
@@ -899,7 +924,7 @@ def check(language: str, code: str, context: str = "") -> dict:
     else:
         with SEM:
             try:
-                out = fn(code, context or "")
+                out = fn(code, context or "", edition=edition) if language == "rust" else fn(code, context or "")
             except Exception as e:          # a checker bug must never become a reported problem
                 out = {"checked": False, "problems": [], "error": f"{type(e).__name__}: {e}"[:300]}
     out.setdefault("problems", [])
@@ -957,6 +982,17 @@ def run_job(job: dict) -> dict:
     if recipe is None or not isinstance(files, dict) or not files or len(files) > 12:
         res["error"] = "bad job"
         return res
+    if lang == "rust":
+        try:
+            edition = rust_edition(explicit=job.get("edition"))
+        except ValueError as exc:
+            res["error"] = str(exc)
+            return res
+        # Copy the recipe: one request's edition must never leak to the next.
+        compile_steps = [list(step) for step in recipe["compile"]]
+        compile_steps[0][compile_steps[0].index("--edition") + 1] = edition
+        recipe = {**recipe, "compile": compile_steps}
+        res["edition"] = edition
     clean = {}
     for name, text in {**RUN_EXTRA.get(lang, {}), **files}.items():
         base = os.path.basename(str(name))
@@ -1056,7 +1092,8 @@ def make_handler(token: str):
                 if not isinstance(code, str) or len(code) > MAX_CODE:
                     return self._send(400, {"error": "send {language, code}"})
                 ctx = req.get("context") if isinstance(req.get("context"), str) else ""
-                return self._send(200, check(str(req.get("language", "")), code, ctx[:2 * MAX_CODE]))
+                return self._send(200, check(str(req.get("language", "")), code, ctx[:2 * MAX_CODE],
+                                            edition=req.get("edition")))
             if self.path == "/run":
                 with RUN_LOCK:
                     return self._send(200, run_job(req))

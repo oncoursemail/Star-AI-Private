@@ -151,6 +151,9 @@ _DIR_C2S = re.compile(r"\b(client|local ?scripts?|player|gui|button)\b[\w ]{0,20
                       r"[\w ]{0,12}?\bserver\b|\bfireserver\b|\bonserverevent\b|\binvokeserver\b")
 # (name, cues A, cues B): a question with an A cue and a candidate with a B cue (and no A cue) ask different things
 INTENT_PAIRS = (
+    ("language", re.compile(r"\brust\b"), re.compile(r"\b(luau|lua|csharp|python|javascript|typescript|js|java|"
+                                                     r"golang|cpp|gdscript|kotlin|swift|ruby|php|scala|dart|zig)\b|"
+                                                     r"\bin (?:go|c)\b|\b(?:go|c) (?:program|code|function|language)\b")),
     ("language", re.compile(r"\b(luau|lua)\b"), re.compile(r"\b(csharp|python|javascript|js|java)\b")),
     ("language", re.compile(r"\bpython\b"), re.compile(r"\b(luau|lua|csharp|javascript|js|java)\b")),
     ("language", re.compile(r"\bcsharp\b"), re.compile(r"\b(luau|lua|python|javascript|js)\b")),
@@ -160,7 +163,7 @@ INTENT_PAIRS = (
 
 
 def _cue_text(text: str) -> str:
-    return " " + unicodedata.normalize("NFKC", text).lower().replace("c#", "csharp") + " "
+    return " " + unicodedata.normalize("NFKC", text).lower().replace("c#", "csharp").replace("c++", "cpp") + " "
 
 
 def _direction(text: str) -> str:
@@ -178,6 +181,15 @@ def intent_conflict(question: str, entry_question: str) -> str | None:
         for x, y in ((q, e), (e, q)):
             if a.search(x) and b.search(y) and not a.search(y):
                 return name
+    if re.search(r"\brust\b", q) and re.search(r"\brust\b", e):
+        from .polyglot.rust_edition import resolve
+        try:
+            if resolve(q) != resolve(e):
+                return "rust edition"
+        except ValueError:
+            # Ambiguous/unsupported targets require a fresh answer, not reuse
+            # of code checked under a guessed edition.
+            return "rust edition"
     return None
 
 

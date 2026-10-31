@@ -35,6 +35,8 @@ DEFAULTS = {
     "embed_timeout_s": 0.6,
     "dense_in_block": False,                    # measured: docs/agents/litha-docs-20261028.md
     "dense_in_search": True,
+    "dense_backend": "python",                  # explicit opt-in: "rust" + separately installed litha-search wheel
+    "dense_max_vector_bytes": 512 * 1024 * 1024,  # packed vector/ID payload, not a total-process RSS cap
     "budget_tokens": 500,
     "block_passages": 0,                        # guide passages in the block: measured harmful (wrong guides followed)
     "max_body_kb": 256,
@@ -97,7 +99,13 @@ def make_handler(cfg: dict, idx: DocsIndex, keys, embed):
         def do_GET(self):
             url = urllib.parse.urlsplit(self.path)
             if url.path == "/health":
-                return self._send(200, {"status": "ok", "meta": idx.meta, "vectors": len(idx.vectors)})
+                return self._send(200, {"status": "ok", "meta": idx.meta, "vectors": idx.vector_count,
+                                        "dense_backend": idx.dense_backend,
+                                        "dense_backend_requested": idx.dense_backend_requested,
+                                        "dense_backend_reason": idx.dense_backend_reason,
+                                        "vector_dimension": idx.vector_dimension,
+                                        "vector_payload_bytes": idx.vector_bytes,
+                                        "invalid_vectors": idx.invalid_vectors})
             if url.path != "/mesh/docs":
                 return self._send(404, {"error": {"message": "not found"}})
             if not self._authed():
@@ -108,7 +116,8 @@ def make_handler(cfg: dict, idx: DocsIndex, keys, embed):
                 return self._send(400, {"error": {"message": "send ?q=<question or API name>"}})
             k = max(1, min(int((qs.get("k") or ["5"])[0] or 5), 20))
             t0 = time.perf_counter()
-            vec = embed(q) if cfg["dense_in_search"] and (qs.get("dense") or ["1"])[0] != "0" else None
+            vec = embed(q) if cfg["dense_in_search"] and idx.vector_count and \
+                (qs.get("dense") or ["1"])[0] != "0" else None
             entries = [entry_json(idx.entry(n)) for n in idx.names_in(q)]
             passages = [{key: p[key] for key in ("title", "heading", "url", "body", "bm25", "cos")}
                         for p in idx.search(q, k, vec)]
@@ -139,7 +148,7 @@ def make_handler(cfg: dict, idx: DocsIndex, keys, embed):
                 return self._send(400, {"error": {"message": "send {\"question\": ...}"}})
             budget = max(100, min(int(req.get("budget") or cfg["budget_tokens"]), 1200))
             vec = None
-            if cfg["dense_in_block"] and idx.vectors and idx.wants_docs(question, str(req.get("context") or "")):
+            if cfg["dense_in_block"] and idx.vector_count and idx.wants_docs(question, str(req.get("context") or "")):
                 vec = embed(question)
             out = idx.block(question, str(req.get("extra") or "")[:8000], vec, str(req.get("context") or "")[:500],
                             budget, max_passages=cfg["block_passages"])
@@ -150,7 +159,8 @@ def make_handler(cfg: dict, idx: DocsIndex, keys, embed):
 
 
 def serve(cfg: dict) -> ThreadingHTTPServer:
-    idx = DocsIndex(cfg["index"])
+    idx = DocsIndex(cfg["index"], dense_backend=cfg.get("dense_backend", "python"),
+                    dense_max_vector_bytes=cfg.get("dense_max_vector_bytes", DEFAULTS["dense_max_vector_bytes"]))
     keys = KeyFile(cfg["client_keys_file"])
     srv = ThreadingHTTPServer((cfg["listen"], cfg["port"]), make_handler(cfg, idx, keys, embedder(cfg, keys)))
     srv.daemon_threads = True
