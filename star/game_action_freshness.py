@@ -87,10 +87,12 @@ class GameActionFreshnessGate:
         self._session = ""
         self._scope = ""
         self._last_sequence = -1
+        self._last_observed_at: float | None = None
         self._last_now: float | None = None
         self._counts = {
             "allowed": 0, "stale": 0, "replayed": 0,
             "unverified": 0, "wrong_session": 0, "bad_clock": 0,
+            "out_of_order_observation": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -106,6 +108,7 @@ class GameActionFreshnessGate:
             self._session = session
             self._scope = scope
             self._last_sequence = -1
+            self._last_observed_at = None
             self._last_now = None
 
     def disable(self) -> None:
@@ -113,6 +116,7 @@ class GameActionFreshnessGate:
             self._enabled = False
             self._session = self._scope = ""
             self._last_sequence = -1
+            self._last_observed_at = None
             self._last_now = None
 
     def assess(self, timing: GameActionTiming, *, now_s: float) -> ActionAgeVerdict:
@@ -136,11 +140,16 @@ class GameActionFreshnessGate:
             if timing.observation_seq <= self._last_sequence:
                 self._counts["replayed"] += 1
                 return ActionAgeVerdict(False, "replayed", None)
+            if (self._last_observed_at is not None
+                    and timing.observed_at_s < self._last_observed_at):
+                self._counts["out_of_order_observation"] += 1
+                return ActionAgeVerdict(False, "out_of_order_observation", None)
             age_ms = (now - timing.observed_at_s) * 1000.0
             if not math.isfinite(age_ms) or age_ms > self._max_age_ms:
                 self._counts["stale"] += 1
                 return ActionAgeVerdict(False, "stale", None)
             self._last_sequence = timing.observation_seq
+            self._last_observed_at = timing.observed_at_s
             self._counts["allowed"] += 1
             return ActionAgeVerdict(True, "fresh", round(age_ms, 3))
 
