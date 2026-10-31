@@ -13,14 +13,14 @@ def router(*, device="cpu", warmup=8):
 def train(gate, *, durations=None):
     for i, duration in enumerate(durations or [70] * 8, 1):
         assert gate.record_reactive_latency(
-            game_scope="obby:v2", sample_id=i, duration_ms=duration,
+            game_scope="obby:v2", sample_id=i, sample_host_ms=i * 100, duration_ms=duration,
             host_measured=True,
         )
 
 
 def decide(gate, **kwargs):
     params = dict(game_scope="obby:v2", game_active=True,
-                  observation_age_ms=120, host_verified=True)
+                  observation_age_ms=120, now_host_ms=1000, host_verified=True)
     params.update(kwargs)
     return gate.advise(**params)
 
@@ -46,9 +46,9 @@ def test_profiled_fast_route_accepted_only_with_deadline_slack():
 def test_unknown_speed_cannot_assume_inference_is_fast():
     gate = router()
     for i in range(1, 8):
-        gate.record_reactive_latency(game_scope="obby:v2", sample_id=i,
+        gate.record_reactive_latency(game_scope="obby:v2", sample_id=i, sample_host_ms=i * 100,
                                      duration_ms=30, host_measured=True)
-    assert decide(gate).reason == "insufficient_host_latency_samples"
+    assert decide(gate).reason == "insufficient_recent_latency_samples"
 
 
 def test_p95_high_tail_prevents_wasted_late_work():
@@ -104,10 +104,10 @@ def test_stale_cross_game_or_unverified_timing_is_not_used():
     gate = router()
     for index in range(1, 9):
         assert not gate.record_reactive_latency(
-            game_scope="another_game", sample_id=index, duration_ms=30,
+            game_scope="another_game", sample_id=index, sample_host_ms=index * 100, duration_ms=30,
             host_measured=True)
         assert not gate.record_reactive_latency(
-            game_scope="obby:v2", sample_id=index, duration_ms=30,
+            game_scope="obby:v2", sample_id=index, sample_host_ms=index * 100, duration_ms=30,
             host_measured=False)
     assert decide(gate).route == "skip"
     assert gate.advise(game_scope="another_game", game_active=True,
@@ -118,10 +118,10 @@ def test_stale_cross_game_or_unverified_timing_is_not_used():
 
 def test_replay_same_id_fails_and_cannot_warm_fake_samples():
     gate = router()
-    assert gate.record_reactive_latency(game_scope="obby:v2", sample_id=1,
+    assert gate.record_reactive_latency(game_scope="obby:v2", sample_id=1, sample_host_ms=1 * 100,
                                         duration_ms=50, host_measured=True)
     for _ in range(20):
-        assert not gate.record_reactive_latency(game_scope="obby:v2", sample_id=1,
+        assert not gate.record_reactive_latency(game_scope="obby:v2", sample_id=1, sample_host_ms=1 * 100,
                                                 duration_ms=1, host_measured=True)
     assert gate.metrics()["timing_samples"] == 1
     assert gate.metrics()["replays"] == 20
@@ -149,12 +149,12 @@ def test_malformed_flags_and_times_rejected():
             decide(gate, max_observation_age_ms=invalid)
     for invalid in (0, True, float("inf")):
         with pytest.raises(ValueError):
-            gate.record_reactive_latency(game_scope="obby:v2", sample_id=1,
+            gate.record_reactive_latency(game_scope="obby:v2", sample_id=1, sample_host_ms=1 * 100,
                                          duration_ms=invalid, host_measured=True)
     with pytest.raises(ValueError):
         decide(gate, cpu_pressure=1)
     with pytest.raises(ValueError):
-        gate.record_reactive_latency(game_scope="obby:v2", sample_id=True,
+        gate.record_reactive_latency(game_scope="obby:v2", sample_id=True, sample_host_ms=True * 100,
                                      duration_ms=30, host_measured=True)
     with pytest.raises(ValueError):
         GameDeadlineRouter(minimum_samples=True)
@@ -176,11 +176,11 @@ def test_timed_out_inference_is_counted_as_slow_not_silently_discarded():
     gate = router()
     for index in range(1, 8):
         assert gate.record_reactive_latency(
-            game_scope="obby:v2", sample_id=index, duration_ms=50,
+            game_scope="obby:v2", sample_id=index, sample_host_ms=index * 100, duration_ms=50,
             completed=True, host_measured=True,
         )
     assert gate.record_reactive_latency(
-        game_scope="obby:v2", sample_id=8, duration_ms=200,
+        game_scope="obby:v2", sample_id=8, sample_host_ms=8 * 100, duration_ms=200,
         completed=False, host_measured=True,
     )
     assert gate.metrics()["timeouts"] == 1
@@ -193,6 +193,59 @@ def test_non_boolean_completion_is_rejected():
     gate = router()
     with pytest.raises(ValueError):
         gate.record_reactive_latency(
-            game_scope="obby:v2", sample_id=1, duration_ms=20,
+            game_scope="obby:v2", sample_id=1, sample_host_ms=1 * 100, duration_ms=20,
             completed=1, host_measured=True,
         )
+
+
+def test_old_model_timings_expire_before_live_game_decision():
+    gate = router()
+    train(gate)
+    assert decide(gate, now_host_ms=1000).route == "reactive"
+    # No replayed or historically fast sample can fill today's window.
+    stale = decide(gate, now_host_ms=18000)
+    assert stale.reason == "insufficient_recent_latency_samples"
+    for i in range(9, 16):
+        assert gate.record_reactive_latency(
+            game_scope="obby:v2", sample_id=i, sample_host_ms=16500 + 100 * i,
+            duration_ms=55, host_measured=True,
+        )
+    assert decide(gate, now_host_ms=18100).reason == "insufficient_recent_latency_samples"
+    assert gate.record_reactive_latency(
+        game_scope="obby:v2", sample_id=16, sample_host_ms=18100,
+        duration_ms=55, host_measured=True,
+    )
+    assert decide(gate, now_host_ms=18200).route == "reactive"
+
+
+def test_out_of_order_timing_clock_and_future_samples_fail_closed():
+    gate = router()
+    train(gate)
+    assert not gate.record_reactive_latency(
+        game_scope="obby:v2", sample_id=9, sample_host_ms=800,
+        duration_ms=1, host_measured=True,
+    )
+    assert gate.metrics()["replays"] == 1
+    assert decide(gate, now_host_ms=799).reason == "host_clock_before_samples"
+    assert decide(gate, now_host_ms=1000).route == "reactive"
+    assert gate.record_reactive_latency(
+        game_scope="obby:v2", sample_id=9, sample_host_ms=900,
+        duration_ms=80, host_measured=True,
+    )
+
+
+def test_live_route_requires_host_clock_and_valid_sample_age():
+    gate = router()
+    train(gate)
+    assert decide(gate, now_host_ms=None).reason == "host_clock_missing"
+    for bad in (True, -1, float("nan"), float("inf"), 10**100):
+        with pytest.raises(ValueError):
+            decide(gate, now_host_ms=bad)
+        with pytest.raises(ValueError):
+            gate.record_reactive_latency(
+                game_scope="obby:v2", sample_id=9, sample_host_ms=bad,
+                duration_ms=80, host_measured=True,
+            )
+    for bad in (1, 240, float("nan"), 60001, True):
+        with pytest.raises(ValueError):
+            GameDeadlineRouter(max_latency_sample_age_ms=bad)
