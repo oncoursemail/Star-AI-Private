@@ -75,7 +75,11 @@ def example_test(tree: Path, module: str, names: list[str], max_lines: int = 60)
         text = f.read_text(encoding="utf-8", errors="replace")
         if not pat.search(text):
             continue
-        imports = [ln for ln in text.splitlines() if re.match(r"(from \S+ import |import )", ln)]
+        try:                                                             # whole statements: `from x import (A,` spans lines
+            imports = [ast.get_source_segment(text, s) or "" for s in ast.parse(text).body
+                       if isinstance(s, (ast.Import, ast.ImportFrom))]
+        except SyntaxError:
+            continue
         for block in re.split(r"(?m)^(?=def test_)", text)[1:]:
             body = re.split(r"\n(?=\S)", block, maxsplit=1)[0]               # up to the next top-level statement
             if uses.search(body):
