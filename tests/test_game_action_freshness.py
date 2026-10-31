@@ -184,9 +184,10 @@ def test_denials_do_not_fabricate_latency_samples():
     assert g.metrics()["capture_to_assessment_p95_ms"] is None
     assert g.assess(signal(verified=False), now_s=100.1).reason == "unverified"
     assert g.assess(signal(scope="wrong"), now_s=100.1).reason == "wrong_session"
-    assert g.assess(signal(seq=1), now_s=100.3).reason == "stale"
     assert g.assess(signal(seq=1), now_s=100.1).fresh
     assert g.assess(signal(seq=1), now_s=100.12).reason == "replayed"
+    assert g.assess(signal(seq=2, observed=100.12, decided=100.15),
+                    now_s=100.4).reason == "stale"
     assert g.metrics()["accepted_samples"] == 1
     assert g.metrics()["capture_to_assessment_p95_ms"] == pytest.approx(100.0)
 
@@ -204,3 +205,17 @@ def test_episode_change_clears_pre_dispatch_latency_history():
         signal(session="stream_02", scope="platformer_v2"), now_s=100.1,
     ).fresh
     assert g.metrics()["accepted_samples"] == 1
+
+
+def test_latency_history_stays_bounded_after_many_accepted_scenes():
+    g = gate()
+    for seq in range(1, 101):
+        t = 100.0 + seq
+        assert g.assess(
+            signal(seq=seq, observed=t, decided=t + 0.01),
+            now_s=t + 0.02,
+        ).fresh
+    metrics = g.metrics()
+    assert metrics["allowed"] == 100
+    assert metrics["accepted_samples"] == 64
+    assert metrics["capture_to_assessment_p95_ms"] == pytest.approx(20.0)
