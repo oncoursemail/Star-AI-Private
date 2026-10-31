@@ -82,6 +82,39 @@ def test_review_required_after_bounded_unsuccessful_self_play():
     assert not advice.authorized_to_play
 
 
+def test_stale_signed_lifetime_wins_cannot_unlock_new_difficulty():
+    old = NOW - (8 * 24 * 3600)
+    bank = EvidenceBank({"easy": (PracticeAggregate("jump", 20, 20, old),)})
+    advice = plan(bank, target("easy"), target("boss", difficulty=5))
+    assert advice.status == "review_required"
+    assert advice.target.situation_id == "easy"
+    assert advice.reason == "practice_evidence_stale_requires_fresh_assessment"
+    assert advice.trials == 20 and advice.successes == 20
+    assert not advice.authorized_to_play and not advice.heldout_evaluated
+
+
+def test_fresh_retention_evidence_allows_progress_and_staleness_boundary():
+    day = 24 * 3600
+    bank = EvidenceBank({"easy": (PracticeAggregate("jump", 20, 20, NOW - 7 * day),)})
+    advice = plan(bank, target("easy"), target("boss", difficulty=2))
+    assert advice.status == "rehearse"
+    assert advice.target.situation_id == "boss"
+    bank.data["easy"] = (PracticeAggregate("jump", 20, 20, NOW - 7 * day - 1),)
+    assert plan(bank, target("easy"), target("boss", difficulty=2)).status == "review_required"
+
+
+def test_missing_evidence_is_not_misclassified_as_expired():
+    advice = plan(EvidenceBank(), target("unseen"))
+    assert advice.status == "rehearse"
+    assert advice.reason == "lowest_unmastered_difficulty"
+
+
+def test_expiration_budget_requires_bounded_integer():
+    for invalid in (True, 0, -1, 30.1, 60 * 60 * 24 * 31):
+        with pytest.raises(ValueError):
+            plan(EvidenceBank(), target(), max_evidence_age_s=invalid)
+
+
 def test_complete_is_not_model_promotion_or_holdout_evaluation():
     bank = EvidenceBank({"map_1": (PracticeAggregate("jump", 20, 20),)})
     advice = plan(bank, target())
