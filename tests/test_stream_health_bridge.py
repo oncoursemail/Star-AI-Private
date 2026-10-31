@@ -179,6 +179,27 @@ def test_malformed_new_obs_invalidates_previous_readiness():
     assert bridge.advise("gameplay", now_ms=2010).allowed
 
 
+
+def test_malformed_verified_obs_requires_two_fresh_counter_samples():
+    bridge = active()
+    ready(bridge)
+    with pytest.raises(ValueError):
+        bridge.offer_obs(obs(rskip=float("nan")), host_ms=1700,
+                         host_verified=True)
+    assert output(bridge, 1900)
+    # A valid next sample must establish a new OBS baseline, not join the
+    # old one from before the invalid trusted measurement.
+    assert bridge.offer_obs(obs(rtotal=1200, ototal=1200),
+                            host_ms=2000, host_verified=True) is None
+    assert not bridge.offer_host(load(), host_ms=2010, host_verified=True)
+    assert not bridge.advise("vision", now_ms=2020).allowed
+    assert output(bridge, 2400)
+    assert bridge.offer_obs(obs(rtotal=1300, ototal=1300),
+                            host_ms=2500, host_verified=True) is not None
+    assert bridge.offer_host(load(), host_ms=2510, host_verified=True)
+    assert bridge.advise("vision", now_ms=2520).allowed
+
+
 def test_short_obs_interval_cannot_represent_a_new_complete_window():
     bridge = active()
     ready(bridge)
