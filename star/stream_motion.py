@@ -7,6 +7,7 @@ Live2D/3D model. No audio, OBS, websocket or device I/O occurs here.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import math
 import random
@@ -123,7 +124,8 @@ def _audio_at(t: float, samples: tuple[AudioLevel, ...], cursor: int) -> tuple[f
 def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | list[AudioLevel],
                 cues: tuple[ExpressionCue, ...] | list[ExpressionCue] = (),
                 mode: str = "normal", fps: int = 30,
-                reduced_motion: bool = False, seed: int = 7) -> tuple[MotionFrame, ...]:
+                reduced_motion: bool = False, seed: int = 7,
+                cancelled: Callable[[], bool] | None = None) -> tuple[MotionFrame, ...]:
     """Generate deterministic local rig targets at 15/30/60 Hz, max 15 seconds.
 
     For live playback, synchronize returned timestamps with *actual output
@@ -139,6 +141,12 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
         raise ValueError("reduced_motion must be bool and seed must be a 32-bit unsigned int")
     audio_levels = _ordered(audio_levels, AudioLevel, MAX_AUDIO_SAMPLES, duration_s, "audio_levels")
     cues = _ordered(cues, ExpressionCue, MAX_CUES, duration_s, "cues")
+    if cancelled is not None and not callable(cancelled):
+        raise TypeError("cancelled must be callable or None")
+    # Keep invalid caller inputs observable even if the turn was revoked.
+    # This avoids treating corrupt sample envelopes as harmless interruptions.
+    if cancelled is not None and cancelled():
+        return ()
 
     blink_intervals = _blink_intervals(duration_s, seed)
     cursor, blink_cursor = 0, 0
@@ -146,7 +154,17 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
     phase = (seed % 997) / 997.0 * 2 * math.pi
     frames: list[MotionFrame] = []
     count = math.floor(duration_s * fps)
+    # Cues and frames are sorted by time. Maintain a sliding active interval:
+    # reviewing all 32 cues for every one of 901 frames is avoidable work.
+    # The window includes events at t and exactly 1.5 seconds old.
+    cue_start = cue_end = 0
+    cue_count = len(cues)
     for index in range(count + 1):
+        # Revoke obsolete work promptly, not just obsolete output. At most
+        # eight frames are computed between cancellation checks.
+        # Never return partially generated frames from a cancelled turn.
+        if cancelled is not None and index % 8 == 0 and cancelled():
+            return ()
         t = min(index / fps, duration_s)
         level, cursor = _audio_at(t, audio_levels, cursor)
         target = _clamp((level - 0.07) * 1.2, 0, 1)
@@ -158,7 +176,15 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
             mouth = 0.0
 
         smile = brow = gaze = nod = laugh = surprise = 0.0
-        for cue in cues:
+        # O(frames + cues + active cues), not O(frames * all cues).
+        # Preserve the original cue ordering: later focus cues override earlier
+        # ones, while other expression channels use their maximum contribution.
+        while cue_end < cue_count and cues[cue_end].at_s <= t:
+            cue_end += 1
+        while cue_start < cue_end and t - cues[cue_start].at_s > 1.5:
+            cue_start += 1
+        for active_index in range(cue_start, cue_end):
+            cue = cues[active_index]
             age = t - cue.at_s
             if age < 0 or age > 1.5:
                 continue
@@ -211,4 +237,6 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
                                   _clamp(shoulder, 0, 1), _clamp(gaze),
                                   _clamp(ear_l), _clamp(ear_r), _clamp(tail),
                                   _clamp(hair)))
+    if cancelled is not None and cancelled():
+        return ()
     return tuple(frames)

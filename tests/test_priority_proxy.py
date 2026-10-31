@@ -452,6 +452,14 @@ def test_p0_pauses_background_and_both_background_answers_come_back_whole(stack)
     assert cont[0]["add_generation_prompt"] is False
     assert cont[0]["max_tokens"] == 30 - len(cont[0]["messages"][-1]["content"].split())
     assert fake.max_busy == 2 and p0_time < 2.0
+    # The HTTP client can finish reading before Handler._scheduled's finally
+    # publishes the resumed-segment counters. Wait for the audit write rather
+    # than mistaking scheduler bookkeeping timing for lost prompt-cache tokens.
+    # This still fails if the resumed upstream never reports cached tokens.
+    assert wait_for(
+        lambda: server.RequestHandlerClass.proxy.sched.view()["classes"]["P3"]["resume_cached_tokens"] > 0,
+        timeout=5.0,
+    )
     view = server.RequestHandlerClass.proxy.sched.view()
     assert view["classes"]["P3"]["preemptions"] == 1 and view["classes"]["P3"]["resumes"] == 1
     assert view["classes"]["P3"]["resume_cached_tokens"] > 0

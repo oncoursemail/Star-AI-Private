@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 from star.gameplay_skill_bank import GameTrial, GameplaySkillBank, wilson_lower
+from star.game_practice_curriculum import PracticeTarget, recommend_practice
 
 PRACTICE = hashlib.sha256(b"fixture-only-practice-key").digest()
 VALIDATION = hashlib.sha256(b"fixture-only-independent-evaluator-key").digest()
@@ -50,6 +51,35 @@ class GameplaySkillBankTests(unittest.TestCase):
         self.assertEqual(info.status, "no_evidence")
         self.assertIsNone(info.action_id)
         self.assertFalse(info.authorized_to_play)
+
+    def test_recent_curriculum_window_does_not_reuse_eight_day_old_wins(self):
+        # A lifetime-ish 90-day bank aggregate would report 12/13 success
+        # after ONE current failure. That should not unlock harder games.
+        for _ in range(12):
+            self.add(at=NOW - 8 * 86400)
+        self.add(outcome="failure", at=NOW)
+        old = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )
+        self.assertEqual((old[0].trials, old[0].successes), (13, 12))
+        recent = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+            max_age_s=7 * 86400,
+        )
+        self.assertEqual((recent[0].trials, recent[0].successes), (1, 0))
+        advice = recommend_practice(
+            self.bank, targets=(PracticeTarget("obby", "v1", "cross", "bridge", "jump", 1),),
+            now_unix_s=NOW, owner_approved=True,
+        )
+        self.assertEqual(advice.status, "rehearse")
+        self.assertEqual((advice.trials, advice.successes), (1, 0))
+        self.assertFalse(advice.authorized_to_play)
+        for invalid in (0, True, -1, 90 * 86400 + 1):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.bank.practice_evidence(
+                    "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+                    max_age_s=invalid,
+                )
 
     def test_practice_requires_several_independent_runs(self):
         for _ in range(4):
