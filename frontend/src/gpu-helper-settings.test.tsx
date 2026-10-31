@@ -27,7 +27,7 @@ async function openPanel() {
   await screen.findByRole('textbox', {name: /message star/i})
   await waitFor(() => expect(desktop.sent('bootstrap').length).toBeGreaterThan(0))
   await user.click(screen.getByRole('button', {name: /^settings/i}))
-  const tab = await screen.findByRole('tab', {name: 'Model'})
+  const tab = await screen.findByRole('tab', {name: 'Models & speed'})
   if (tab.getAttribute('aria-selected') !== 'true') await user.click(tab)
   return {user, box: await screen.findByRole('region', {name: 'Use my GPU'})}
 }
@@ -61,6 +61,17 @@ describe('Settings > Use my GPU', () => {
     await user.click(within(box).getByRole('checkbox', {name: 'Use my GPU'}))
     await waitFor(() => expect(within(box).getByRole('status').textContent).toContain('Off'))
     expect(desktop.sent('gpuHelperSet').map(call => call.payload)).toEqual([{enabled: true}, {enabled: false}])
+  })
+
+  it('"Automatically turn on at night" is on by default and saves with the page', async () => {
+    desktop.onAction('gpuHelperStatus', () => ({ok: true, data: off}))
+    const {user, box} = await openPanel()
+    const auto = within(box).getByRole('checkbox', {name: 'Automatically turn on at night'}) as HTMLInputElement
+    expect(auto.checked).toBe(true)
+    await user.click(auto)
+    expect(auto.checked).toBe(false)
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
+    expect(desktop.sent('gpuHelperSet')).toHaveLength(0)
   })
 
   it('a refused switch stays off and says why', async () => {

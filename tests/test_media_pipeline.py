@@ -302,9 +302,11 @@ def test_chat_entry_point_uses_the_built_in_model_without_a_workflow_file(tmp_pa
 
     def fake(settings, prompt, home, **kwargs):
         seen.update(kwargs, prompt=prompt)
+        (home / 'generated-images').mkdir(parents=True, exist_ok=True)
+        (home / 'generated-images' / 'x.png').write_bytes(b'x')
         return {'answer': 'ok', 'image': 'data:image/webp;base64,AA', 'message': PREFIX + 'x.png', 'path': home, 'note': {}}
     monkeypatch.setattr(image_gen, 'generate', fake)
-    result = generate_chat_image(Settings(project='Test'), 'a cat', tmp_path, size='draft')
+    result = generate_chat_image(Settings(project='Test', image_quality=False), 'a cat', tmp_path, size='draft')
     assert result == {'answer': 'ok', 'image': 'data:image/webp;base64,AA', 'message': PREFIX + 'x.png'}
     assert seen['size'] == 'draft' and seen['source'] is None and seen['prompt'] == 'a cat'
 
@@ -700,6 +702,16 @@ def test_comfyui_is_found_on_its_own_only_in_the_fixed_places(tmp_path):
     assert media_actions.find_comfy_home(search_from=(code,), **nowhere) == mine
     named = _comfy_install(tmp_path / 'chosen' / 'ComfyUI')
     assert media_actions.find_comfy_home(search_from=(code,), **{**nowhere, 'env': {'STAR_COMFY_HOME': named}}) == named
+
+
+def test_comfyui_is_found_in_the_projects_media_folder_inside_the_profile(tmp_path):
+    profile = tmp_path / 'profile'
+    nowhere = dict(env={}, data_dir=tmp_path / 'data', user_home=profile)
+    elsewhere = tmp_path / 'Program Files' / 'STAR'
+    elsewhere.mkdir(parents=True)
+    assert media_actions.find_comfy_home(search_from=(elsewhere,), **nowhere) == ''
+    found = _comfy_install(profile / 'Documents' / 'starai' / 'media' / 'ComfyUI')
+    assert media_actions.find_comfy_home(search_from=(elsewhere,), **nowhere) == found
 
 
 def test_a_folder_that_is_not_a_complete_install_or_sits_outside_the_profile_is_not_used(tmp_path):

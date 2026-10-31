@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import secrets
 import time
 from pathlib import Path
@@ -86,8 +87,20 @@ def _save(home: Path, picture: bytes, note: dict) -> Path:
     if not NAME.fullmatch(name):
         raise RuntimeError('Unexpected generated image filename')
     path = folder / name
-    path.write_bytes(picture)
-    path.with_suffix('.json').write_text(json.dumps(note, ensure_ascii=False, indent=1), encoding='utf-8')
+    # The note first, the picture last and under a temporary name: a picture that exists is complete and has its note,
+    # and the chat only ever names a file that is on disk (a reference must never run ahead of the file).
+    try:
+        path.with_suffix('.json').write_text(json.dumps(note, ensure_ascii=False, indent=1), encoding='utf-8')
+    except (OSError, TypeError, ValueError):
+        pass        # the note is a nicety: a picture that was made is never thrown away because its note could not be written
+    partial = path.with_name(path.name + '.part')
+    with open(partial, 'wb') as out:
+        out.write(picture)
+        out.flush()
+        os.fsync(out.fileno())
+    os.replace(partial, path)
+    if not path.is_file() or path.stat().st_size != len(picture):
+        raise RuntimeError('The picture was made but could not be saved in the STAR data folder')
     return path
 
 

@@ -1,0 +1,35 @@
+[Unit]
+Description=STAR system self-model (server/mesh/selfmodel): /mesh/self on 127.0.0.1:8103, sibling of star-mesh
+After=network-online.target star-mesh.service
+Wants=network-online.target
+
+[Service]
+User=starmesh
+Group=starmesh
+Environment=PYTHONPATH=/opt/star-self/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/star-self
+ExecStart=/usr/bin/python3 -m mesh.selfmodel /etc/star-self/self.json
+Restart=always
+RestartSec=3
+Nice=10
+MemoryMax=120M
+TasksMax=64
+StateDirectory=star-self
+StateDirectoryMode=0750
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

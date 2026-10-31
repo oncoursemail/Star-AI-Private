@@ -48,6 +48,13 @@ if [ "$pool_only" = 0 ]; then
   remote "install -d -o star -g star $home $home/app $home/pool $home/data $home/data/home $home/report $home/outbox"
   git archive HEAD star server/night_school requirements.txt evals/roblox/prelude.luau |
     ssh -o BatchMode=yes "$target" "lxc exec $container -- runuser -u star -- tar -x -C $home/app"
+  # Notes that changed in the last two days (public docs only; paintball notes are left out) for the night conductor.
+  remote "install -d -o star -g star $home/docs-recent $home/conductor"
+  recent="$(git log --since=2.days --name-only --pretty=format: -- 'docs/agents/*.md' | sort -u | grep -viE 'paintball|(^|/)pb-' | head -12 || true)"
+  if [ -n "$recent" ]; then
+    # shellcheck disable=SC2086
+    git archive HEAD $recent | ssh -o BatchMode=yes "$target" "lxc exec $container -- runuser -u star -- bash -c 'rm -rf $home/docs-recent/* && tar -x -C $home/docs-recent --strip-components=2 && touch $home/docs-recent/*.md'"
+  fi
 fi
 
 if [ -n "$pool" ]; then
@@ -73,6 +80,8 @@ as_star "bash -c 'nice -n 19 $home/venv/bin/pip install --quiet --disable-pip-ve
 
 echo "== unit"
 remote "install -m 0644 $home/app/server/night_school/star-night-school.service /etc/systemd/system/star-night-school.service"
+remote "install -m 0644 $home/app/server/night_school/star-night-conductor.service /etc/systemd/system/star-night-conductor.service"
+remote "install -m 0644 $home/app/server/night_school/star-night-conductor.timer /etc/systemd/system/star-night-conductor.timer"
 remote "systemctl daemon-reload"
 
 echo "== practice pool, checked with the repository's loader"
@@ -84,6 +93,7 @@ if [ "$start" = 1 ]; then
   echo "== start"
   remote "systemctl enable star-night-school"
   remote "systemctl restart star-night-school"
+  remote "systemctl enable --now star-night-conductor.timer"
   sleep 20
   remote "systemctl is-active star-night-school"
   remote "journalctl -u star-night-school -n 12 --no-pager -o cat"

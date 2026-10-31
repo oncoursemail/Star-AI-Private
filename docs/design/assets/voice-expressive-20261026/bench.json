@@ -1,0 +1,94 @@
+{
+ "gpu": "NVIDIA GeForce RTX 3060 Ti, 1467 MiB, 10 %",
+ "when": "2026-10-26 19:05:49",
+ "runs": 5,
+ "engines": {
+  "kokoro star-mum": {
+   "first_audio_p50": 0.369,
+   "first_audio_max": 0.954,
+   "rtf": 0.144,
+   "device": "cuda"
+  },
+  "kokoro+dsp whisper": {
+   "first_audio_p50": 0.658,
+   "first_audio_max": 0.933
+  },
+  "kokoro+dsp excited": {
+   "first_audio_p50": 0.955,
+   "first_audio_max": 3.181
+  },
+  "kokoro+dsp sad": {
+   "first_audio_p50": 0.511,
+   "first_audio_max": 0.696
+  },
+  "kokoro+dsp asmr": {
+   "first_audio_p50": 0.652,
+   "first_audio_max": 1.528
+  },
+  "qwen3-tts 0.6B clone": {
+   "first_sentence_p50": 2.04,
+   "first_sentence_max": 3.518,
+   "stream_first_chunk_p50": 1.167,
+   "stream_first_chunk_max": 1.87,
+   "with_instruct_p50": 2.412,
+   "rtf": 0.886,
+   "vram_peak_gb": 2.89
+  },
+  "qwen3-tts 1.7B voice design": {
+   "first_sentence_p50": 1.287,
+   "first_sentence_max": 1.348,
+   "vram_peak_gb": 4.5
+  },
+  "chatterbox-turbo": {
+   "first_sentence_p50": 1.804,
+   "first_sentence_max": 2.204,
+   "rtf": 1.088,
+   "vram_peak_gb": 3.23
+  }
+ },
+ "runs_log": [
+  {
+   "gpu": "NVIDIA GeForce RTX 3060 Ti, 1544 MiB, 4 %",
+   "when": "2026-10-26 19:12:46",
+   "engines": [
+    "qwen3-tts 0.6B clone"
+   ]
+  },
+  {
+   "gpu": "NVIDIA GeForce RTX 3060 Ti, 1597 MiB, 9 %",
+   "when": "2026-10-26 19:17:18",
+   "engines": [
+    "qwen3-tts 1.7B voice design"
+   ]
+  },
+  {
+   "gpu": "NVIDIA GeForce RTX 3060 Ti, 1882 MiB, 15 %",
+   "when": "2026-10-26 19:21:46",
+   "engines": [
+    "kokoro star-mum",
+    "kokoro+dsp whisper",
+    "kokoro+dsp excited",
+    "kokoro+dsp sad",
+    "kokoro+dsp asmr"
+   ]
+  },
+  {
+   "gpu": "NVIDIA GeForce RTX 3060 Ti, 1658 MiB, 7 %",
+   "when": "2026-10-26 19:35:48",
+   "engines": [
+    "chatterbox-turbo"
+   ]
+  },
+  {
+   "gpu": "NVIDIA GeForce RTX 3060 Ti, 3058 MiB, 19 %",
+   "when": "2026-10-26 19:47:43",
+   "engines": [
+    "kokoro star-mum",
+    "kokoro+dsp whisper",
+    "kokoro+dsp excited",
+    "kokoro+dsp sad",
+    "kokoro+dsp asmr"
+   ]
+  }
+ ]
+}

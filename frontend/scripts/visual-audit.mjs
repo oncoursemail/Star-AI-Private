@@ -59,11 +59,34 @@ function createPreviewServer() {
 
 async function snapshot(page) {
   return page.evaluate(() => {
+    const clips = value => ['hidden', 'clip', 'auto', 'scroll'].includes(value)
+    const visibleBox = node => {
+      const box = node.getBoundingClientRect()
+      let left = box.left, top = box.top, right = box.right, bottom = box.bottom
+      // A scrolled-out row still has a DOM rectangle behind the sidebar
+      // footer. Measure only the part inside each ancestor's clipping box.
+      for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent)
+        if (!clips(style.overflowX) && !clips(style.overflowY)) continue
+        const bounds = parent.getBoundingClientRect()
+        const x = bounds.left + parent.clientLeft
+        const y = bounds.top + parent.clientTop
+        if (clips(style.overflowX)) {
+          left = Math.max(left, x)
+          right = Math.min(right, x + parent.clientWidth)
+        }
+        if (clips(style.overflowY)) {
+          top = Math.max(top, y)
+          bottom = Math.min(bottom, y + parent.clientHeight)
+        }
+      }
+      return {x:left, y:top, width:Math.max(0, right-left), height:Math.max(0, bottom-top)}
+    }
     const candidates = [...document.querySelectorAll(
       'button, a[href], input, select, textarea, [role="button"]'
     )].filter(node => {
       const style = getComputedStyle(node)
-      const box = node.getBoundingClientRect()
+      const box = visibleBox(node)
       return (style.display !== 'none' && style.visibility !== 'hidden' &&
         style.opacity !== '0' && style.pointerEvents !== 'none' &&
         box.width > 0 && box.height > 0 &&
@@ -78,7 +101,7 @@ async function snapshot(page) {
       documentWidth: Math.max(document.body.scrollWidth, document.documentElement.scrollWidth),
       controlsOmitted,
       controls: measured.map(node => {
-        const box = node.getBoundingClientRect()
+        const box = visibleBox(node)
         const style = getComputedStyle(node)
         const labelledBy = (node.getAttribute('aria-labelledby') || '').split(/\s+/)
           .map(id => document.getElementById(id)?.textContent || '').join(' ')
@@ -128,7 +151,7 @@ try {
     {id:'phone',width:390,height:844},
   ]
   for (const viewport of viewports) {
-    for (const tab of ['chat','tools']) {
+    for (const tab of ['chat','tools','business']) {
       const id = tab + '-' + viewport.id
       const context = await browser.newContext({
         viewport: {width:viewport.width,height:viewport.height},
@@ -158,6 +181,7 @@ try {
         })
         await page.screenshot({path: path.join(outputDir, id + '.png')})
         results.push({id, screenshot:id + '.png', controlsOmitted:data.controlsOmitted,
+                      controls:data.controls.map(({id,label,role,rect}) => ({id,label,role,rect})),
                       accessibility, ...audit})
         console.log(id, (audit.issues.length + accessibility.length) +
                            ' geometry/a11y findings')

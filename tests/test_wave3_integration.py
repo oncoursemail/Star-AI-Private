@@ -77,7 +77,7 @@ class Client:
 class Docs:
     """Stands in for the documentation service: two passages for any search, checks pass."""
 
-    def search(self, query, *, top=4, mode="vector"):
+    def search(self, query, *, top=4, mode="vector", scope=None):
         return [{"rank": n, "title": f"Title {n}", "heading": f"Title {n} > Section", "kind": "guide",
                  "url": f"https://create.roblox.com/docs/page{n}", "source": "creator-docs", "path": f"p{n}.md",
                  "commit": "af5f853c78b58c4e", "licence": "CC-BY-4.0",

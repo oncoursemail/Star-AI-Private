@@ -526,3 +526,14 @@ VoxCPM2 (OpenBMB, 2B, Apache-2.0, voice design from a description, streaming) wa
 the card to 7.7 GB and ran about 2.8 times slower than real time, with MOS estimates 3.4 to 4.1 and large pitch drift
 between lines, so it is audition-only on an 8 GB card. Full table: `docs/research/voice.md` section 9 in the project
 folder.
+
+## Expressive voice (2026-10-27, off by default)
+
+`VoiceSettings.expressive` wraps the call's voice in `star/voice/expressive.py`: Star can mark her own words with
+tags (`<whisper>`, `<caring>`, `<excited:0.8>`, `<laugh>`, `<sigh>`, `<sing>`, `<pause:400>`, `<emph>word</emph>`, ...;
+list in `star/voice/styles.py`), her tone follows the conversation and her mood, ASMR mode, rare non-verbal sounds in
+her own voice, role-play character voices (`star/voice/library.py`, clones of real people only with recorded consent),
+songs she writes herself (`star/voice/singing.py`), loudness normalisation and an artefact guard (`star/voice/guard.py`).
+The live path (Kokoro + DSP in the chosen voice) measured 0.5-0.96 s to first audio on the RTX 3060 Ti; the neural
+engines (Qwen3-TTS, Chatterbox-Turbo) are quality-mode only. Details, licences, measurements and the A/B listening page:
+docs/agents/voice-expressive-20261026.md.

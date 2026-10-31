@@ -1,5 +1,5 @@
 #ifndef StarVersion
-  #define StarVersion "1.0.0"
+  #define StarVersion "2.0.0"
 #endif
 #define STARName "STAR Intelligence"
 #define STARExe "STAR.exe"
@@ -18,11 +18,18 @@ UninstallDisplayIcon={app}\{#STARExe}
 OutputDir=..\dist
 OutputBaseFilename=STAR-Setup-v{#StarVersion}
 SetupIconFile=..\assets\star.ico
+#ifdef StarFastCompression
+; Pull-request validation only (ISCC /DStarFastCompression): same files, same install logic, payload stored
+; with fast compression so CI does not spend minutes on LZMA. Releases build without this define.
+Compression=zip/1
+SolidCompression=no
+#else
 Compression=lzma2
 SolidCompression=yes
 ; Multi-threaded LZMA2 (CI runners have 4 cores): same files, ~2-3x faster compile, slightly larger Setup.
 LZMAUseSeparateProcess=yes
 LZMANumBlockThreads=4
+#endif
 WizardStyle=modern
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog

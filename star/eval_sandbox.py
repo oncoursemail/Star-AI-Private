@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+import hashlib
+import json
+import os
 import re
 import subprocess
 from time import monotonic
@@ -117,3 +120,93 @@ class ContainerSandbox:
         if done.returncode != 0 or ("LOCKED" not in out and "FREE" not in out):
             return None
         return "LOCKED" in out
+
+
+# --- the star-judge container (Python / JavaScript; no network device, user `sandbox`) --------------------------
+
+_JUDGE_HOST_PY = r"""
+import base64, json, subprocess, time
+jobs = json.loads(base64.b64decode(JOBS).decode("utf-8"))
+Q = "/judge/queue"
+def lx(cmd, data=None):
+    return subprocess.run(["lxc", "exec", "star-judge", "--", "sh", "-c", cmd], input=data, capture_output=True, timeout=60)
+for job in jobs:
+    lx(f"cat > {Q}/{job['id']}.tmp && mv {Q}/{job['id']}.tmp {Q}/{job['id']}.job.json", json.dumps(job).encode())
+pending = {j["id"] for j in jobs}
+out = {}
+deadline = time.time() + WAIT
+while pending and time.time() < deadline:
+    time.sleep(0.4)
+    names = " ".join(f"{Q}/{i}.result.json" for i in sorted(pending))
+    got = lx(f"for f in {names}; do [ -f $f ] && echo \"@@FILE $f\" && cat $f && echo; done").stdout.decode("utf-8", "replace")
+    for block in got.split("@@FILE ")[1:]:
+        path, _, body = block.partition("\n")
+        jid = path.rsplit("/", 1)[-1][:-len(".result.json")]
+        try:
+            out[jid] = json.loads(body)
+            pending.discard(jid)
+        except ValueError:
+            pass
+lx("rm -f " + " ".join(f"{Q}/{j['id']}.result.json {Q}/{j['id']}.job.json {Q}/{j['id']}.running.json" for j in jobs))
+print("@@JSON " + json.dumps(out))
+"""
+
+
+class JudgeSandbox:
+    """Runs one-file Python/JavaScript programs in the `star-judge` LXD container (no network device, user `sandbox`,
+    limits set by its runner). Jobs are written from inside the container (`lxc exec`), never by the host user: the
+    runner cannot claim a file the host user owns."""
+
+    MAIN = {"python": "main.py", "javascript": "main.js"}
+
+    def __init__(self, target: str, *, runner=subprocess.run, chunk: int = 40, run_s: int = 10, ssh: str = "ssh"):
+        if not _SSH_TARGET.fullmatch(target or ""):
+            raise ValueError("SSH target must look like user@address")
+        self._argv = [ssh, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", target, "python3 -"]
+        self._runner, self.chunk, self.run_s = runner, chunk, run_s
+
+    def run_many(self, language: str, sources: list[str]) -> list[SandboxResult]:
+        if language not in self.MAIN:
+            raise ValueError("judge languages are python and javascript")
+        results: list[SandboxResult] = []
+        for start in range(0, len(sources), self.chunk):
+            part = sources[start:start + self.chunk]
+            nonce = hashlib.sha256(os.urandom(16)).hexdigest()[:12]
+            jobs = [{"id": f"ev-{nonce}-{i}", "language": language, "files": {self.MAIN[language]: src},
+                     "run_s": self.run_s} for i, src in enumerate(part)]
+            payload = base64.b64encode(json.dumps(jobs).encode("utf-8")).decode("ascii")
+            program = f"JOBS = {payload!r}\nWAIT = {20.0 + 2 * len(part)!r}\n" + _JUDGE_HOST_PY
+            began = monotonic()
+            try:
+                done = self._runner(self._argv, input=program.encode("utf-8"), capture_output=True,
+                                    timeout=120 + 5 * len(part))
+            except subprocess.TimeoutExpired:
+                results.extend(SandboxResult(error="ssh to the judge timed out") for _ in part)
+                continue
+            except OSError as exc:
+                results.extend(SandboxResult(error="could not start ssh (" + type(exc).__name__ + ")") for _ in part)
+                continue
+            data: dict = {}
+            for line in done.stdout.decode("utf-8", "replace").splitlines():
+                if line.startswith("@@JSON "):
+                    try:
+                        data = json.loads(line[7:])
+                    except ValueError:
+                        data = {}
+            for job in jobs:
+                row = data.get(job["id"])
+                if not isinstance(row, dict):
+                    results.append(SandboxResult(error="the judge gave no result", seconds=monotonic() - began))
+                    continue
+                steps = row.get("steps") or []
+                last = steps[-1] if steps and isinstance(steps[-1], dict) else {}
+                rc = last.get("rc")
+                results.append(SandboxResult(rc=rc if isinstance(rc, int) else -1,
+                                             stdout=str(row.get("stdout", ""))[:OUTPUT_CAP],
+                                             timed_out=bool(last.get("timed_out", False)),
+                                             seconds=float(row.get("seconds", 0.0) or 0.0),
+                                             error="" if steps else str(row.get("error", "no steps"))[:200]))
+        return results
+
+    def run(self, language: str, source: str) -> SandboxResult:
+        return self.run_many(language, [source])[0]

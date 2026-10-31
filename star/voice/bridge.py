@@ -34,6 +34,7 @@ VOICE_ACTIONS = frozenset({
     "voiceStatus", "voiceGetSettings", "voiceSaveSettings", "voiceListVoices", "voiceSelectVoice",
     "voiceListDevices", "voiceStartCall", "voiceStopCall", "voiceInterrupt", "voiceSetMuted", "voicePreviewVoice",
     "voicePushToTalk", "voiceSpeak", "voiceStopSpeaking",
+    "voiceListCharacters", "voiceCreateCharacter", "voiceUpdateCharacter", "voiceDeleteCharacter",
 })
 REQUIRED_PACKAGES = {"numpy": "numpy", "onnxruntime": "onnxruntime", "sounddevice": "sounddevice",
                      "faster_whisper": "faster-whisper", "kokoro_onnx": "kokoro-onnx", "httpx": "httpx"}
@@ -74,6 +75,23 @@ class _Factories:
     def devices() -> list[dict]:
         from .devices import list_devices
         return list_devices()
+
+    @staticmethod
+    def route_speaker(settings: VoiceSettings):
+        """voice_route "virtual-mic": her voice only into the virtual cable (never the real speakers); else None."""
+        if settings.voice_route != "virtual-mic":
+            return None
+        from ..senses.routes import open_voice_output, query_devices
+        return open_voice_output(query_devices(), monitor=settings.monitor_device)
+
+    @staticmethod
+    def route_microphone(settings: VoiceSettings):
+        """With the virtual cable as the PC's default recording device, her own ears must be the physical microphone."""
+        if settings.voice_route != "virtual-mic" or settings.input_device:
+            return settings.input_device
+        from ..senses.routes import physical_microphone, query_devices
+        mic = physical_microphone(query_devices())
+        return str(mic["index"]) if mic else ""
 
 
 class _Call:
@@ -186,6 +204,8 @@ class VoiceBridge:
             return self._read_aloud(body, request_id)
         if action == "voiceStopSpeaking":
             return {"stopped": self.stop_speaking()}
+        if action in ("voiceListCharacters", "voiceCreateCharacter", "voiceUpdateCharacter", "voiceDeleteCharacter"):
+            return self._characters(action, body)
         call = self._call
         if call is None or call.session is None:
             raise RuntimeError("No voice call is active")
@@ -199,6 +219,35 @@ class VoiceBridge:
             return {"down": body.get("down") is True}
         call.session.set_muted(body.get("muted") is True)          # voiceSetMuted
         return {"muted": call.session.muted}
+
+    def _characters(self, action: str, body: dict) -> dict:
+        """Role-play voice library (star/voice/library.py). Designed and own voices only from here: a clone of a real
+        person needs a consent record with their recording, which this UI path does not take, so it is refused."""
+        from dataclasses import asdict as as_dict
+        from pathlib import Path as _Path
+        from .expressive import _default_home
+        from .library import CharacterLibrary
+        from .styles import STYLES as VOICE_STYLES
+        settings = self._load_settings()
+        lib = CharacterLibrary((_Path(settings.expressive_home) if settings.expressive_home else _default_home())
+                               / "characters.json")
+        if action == "voiceCreateCharacter":
+            kind = str(body.get("kind") or "designed")
+            style = str(body.get("style") or "neutral")
+            if style not in VOICE_STYLES:
+                raise ValueError("Unknown style")
+            if kind == "designed":
+                lib.create_designed(str(body.get("name") or ""), str(body.get("description") or ""), style)
+            elif kind == "own":
+                lib.create_own(str(body.get("name") or ""), str(body.get("voice") or ""), style)
+            else:
+                raise PermissionError("Cloning a real person's voice needs their recorded consent (not from this screen)")
+        elif action == "voiceUpdateCharacter":
+            changes = {k: body[k] for k in ("name", "description", "style") if k in body}
+            lib.update(str(body.get("id") or ""), **changes)
+        elif action == "voiceDeleteCharacter":
+            lib.delete(str(body.get("id") or ""))
+        return {"characters": [as_dict(c) for c in lib.list()], "styles": sorted(VOICE_STYLES)}
 
     def _start_call(self, body: dict, request_id: str) -> dict:
         settings = VoiceSettings.from_mapping(body.get("settings") or {}, self._load_settings())
@@ -293,7 +342,9 @@ class VoiceBridge:
     # -- workers ------------------------------------------------------------------------------
     def _get_engines(self, settings: VoiceSettings, progress):
         key = (settings.tts_engine, settings.asr_engine, settings.asr_model, settings.asr_prompt, settings.device,
-               settings.vad, settings.endpointer)
+               settings.vad, settings.endpointer, settings.expressive, settings.expressive_engine, settings.asmr,
+               settings.allowed_styles, settings.default_style, settings.style_intensity, settings.voice_sounds,
+               settings.fillers, settings.artefact_guard)
         if self._engines is None or self._engines_key != key:
             self._engines = self._factories.engines(settings, progress)
             self._engines_key = key
@@ -309,9 +360,12 @@ class VoiceBridge:
             if call.stop.is_set():
                 return
             brain = self._factories.brain(call.settings)
-            speaker = self._factories.speaker(int(getattr(engines.tts, "sample_rate", 24000)),
-                                              call.settings.output_device)
-            call.microphone = self._factories.microphone(call.settings.input_device)
+            route_speaker = getattr(self._factories, "route_speaker", None)
+            speaker = (route_speaker(call.settings) if route_speaker else None) or self._factories.speaker(
+                int(getattr(engines.tts, "sample_rate", 24000)), call.settings.output_device)
+            route_mic = getattr(self._factories, "route_microphone", None)
+            call.microphone = self._factories.microphone(route_mic(call.settings) if route_mic
+                                                         else call.settings.input_device)
 
             def forward(event: dict) -> None:
                 self._emit(call.id, event)
@@ -442,6 +496,7 @@ def _settings_for(entry: VoiceEntry) -> dict:
 
 def _apply_voice(tts, settings: VoiceSettings) -> None:
     """Point a loaded TTS engine at the chosen voice; engines without a setting ignore it."""
+    tts = getattr(tts, "base", tts)          # the expressive wrapper: the voice settings belong to the voice inside
     if hasattr(tts, "set_voice") and getattr(tts, "voice", None) != settings.voice:
         tts.set_voice(settings.voice)
     if hasattr(tts, "speed"):

@@ -13,6 +13,12 @@ llama-server (the STAR app's "Use my GPU" switch), no program from `block_proces
 rules (free video memory, free RAM, ComfyUI). It stops within seconds when any of that changes: the owner touches
 the PC, a game starts, the switch starts, or the OFF file appears.
 
+One switch for all PC use: the STAR app's "Use my PC" switch (the setting `use_my_gpu` in the app's settings.json,
+read here and never written) must be on. Off, or a settings file that is missing or unreadable, means no session
+starts, and a running one stops the way it does when the owner returns. Exception: the app's "Automatically turn
+on at night" (`use_my_pc_auto_night`, on by default) lets sessions run in the night window with the switch off;
+at `night_end` it follows the switch again. `config.json` "app_settings" overrides the file's location.
+
 A session = the GPU switch's own launcher (star/gpu_helper.GpuHelper: the same llama-server command line and
 checks) + night school (`python -m nightschool run`) pointed at it, with its own share of the practice tasks
 (`share`, default 2/4: server 1 has 0,1/4, server 2 3/4), the tasks server 1 already answered left out, server 1's
@@ -27,6 +33,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -54,6 +61,7 @@ DEFAULTS = {
     "other_gpu_percent": 15,              # another process this busy on the card (two looks in a row) blocks
     "block_processes": [],                # program names (e.g. "RobloxPlayerBeta.exe") that always block
     "back_seconds": 10,                   # input this recent while running = the owner is back
+    "app_settings": "",                   # the STAR app's settings.json; "" = <app data>/STAR/settings.json
 }
 POLL_S = 2.0
 GPU_LOOK_S = 15.0
@@ -69,6 +77,28 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 def default_home() -> Path:
     return Path(os.environ.get("STAR_TURBO_HOME") or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "STAR-night-turbo")
+
+
+def app_settings_path(config: dict) -> Path:
+    if config.get("app_settings"):
+        return Path(config["app_settings"]).expanduser()
+    if os.name == "nt":
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "STAR" / "settings.json"
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "star-ai" / "settings.json"
+
+
+def app_switch_blocker(config: dict, hour: int) -> str:
+    """"" when the app's "Use my PC" switch is on (or it is night and auto-night is on); else why not.
+    Read only; unreadable counts as off."""
+    try:
+        data = json.loads(app_settings_path(config).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "the STAR app's Use my PC switch is off (its settings could not be read)"
+    if isinstance(data, dict) and data.get("use_my_gpu") is True:
+        return ""
+    if isinstance(data, dict) and data.get("use_my_pc_auto_night", True) is True and night_now(config, hour):
+        return ""
+    return "the STAR app's Use my PC switch is off"
 
 
 def load_config(home: Path) -> dict:
@@ -217,6 +247,9 @@ class Turbo:
     def start_blocker(self) -> str:
         if (self.home / "OFF").exists():
             return "off (the OFF file exists)"
+        switch = app_switch_blocker(self.config, self._hour()) if self.config.get("require_app_switch", True) else ""
+        if switch:
+            return switch
         if self._clock() < self.cool_until:
             return "cooling down after a failure"
         night = night_now(self.config, self._hour())
@@ -234,6 +267,8 @@ class Turbo:
     def stop_reason(self) -> str:
         if (self.home / "OFF").exists():
             return "off switch"
+        if self.config.get("require_app_switch", True) and app_switch_blocker(self.config, self._hour()):
+            return "the Use my PC switch was turned off"
         if self.probe.idle_seconds() < float(self.config["back_seconds"]):
             return "the owner is back"
         if self.worker is not None and self.worker.poll() is not None:
@@ -362,6 +397,7 @@ def worker_env(config: dict, ns: Path, brain_url: str) -> dict:
         "STAR_NS_SHARE": config["share"], "STAR_NS_VALIDATION_SHARE": str(config["validation_share"]),
         "STAR_NS_SKIP_FILE": str(ns / "skip.json"), "STAR_NS_SANDBOX_SSH": config["server_ssh"],
         "STAR_NS_DIAGNOSE_MODEL": "",                    # only star-fast is loaded here
+        "STAR_NS_CONDUCTOR_MODELS": "star-fast", "STAR_NS_CONDUCTOR_TAG": "pc-",   # its new tasks go to server 1's pool
         "PYTHONIOENCODING": "utf-8",
         "APPDATA": str(ns / "appdata"), "XDG_DATA_HOME": str(ns / "appdata"),   # never the owner's STAR profile
     }
@@ -457,10 +493,64 @@ def apply_server_state(ns: Path, state: dict) -> str:
     return f"{len(tried)} tasks answered on server 1 are skipped" + seeded
 
 
+def push_conductor_tasks(config: dict, ns: Path) -> int:
+    """Copy the PC conductor's pool files (pool/conductor-pc-*.json, already checked by the same validators) into
+    server 1's pool, so every worker practises them and the next pool sync does not lose them. Returns files sent."""
+    sent = 0
+    for path in sorted((ns / "pool").glob("conductor-pc-*.json")) if config["server_ssh"] else ():
+        name = path.name
+        if not re.fullmatch(r"conductor-pc-\d{8}\.json", name):
+            continue
+        done = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", config["server_ssh"],
+             f"lxc exec {config['container']} -- sh -c 'cat > {SERVER_HOME}/pool/.{name}.tmp && "
+             f"chown star:star {SERVER_HOME}/pool/.{name}.tmp && mv {SERVER_HOME}/pool/.{name}.tmp {SERVER_HOME}/pool/{name}'"],
+            input=path.read_bytes(), capture_output=True, timeout=90, creationflags=NO_WINDOW)
+        sent += done.returncode == 0
+    return sent
+
+
+def curiosity_queue(config: dict) -> Path:
+    return Path(os.environ.get("STAR_CURIOSITY_FILE") or app_settings_path(config).parent / "curiosity.jsonl")
+
+
+def sync_curiosity(config: dict) -> str:
+    """Curiosity queue (star/curiosity.py, issue #555): bring back which items night school studied (server 1's
+    data/curiosity-done.jsonl, into the app's queue), then send the app's open items to server 1 (data/curiosity.jsonl,
+    replaced atomically) for the night conductor. "" = nothing to do; a failure never stops the practice."""
+    if not config["server_ssh"]:
+        return ""
+    try:
+        from star import curiosity
+        queue = curiosity_queue(config)
+        if not queue.is_file():
+            return ""
+        try:
+            studied = curiosity.merge_resolutions(
+                _ssh(config, f"cat {SERVER_HOME}/data/curiosity-done.jsonl").decode("utf-8", "replace"), path=queue)
+        except OSError:
+            studied = 0               # no resolutions on the server yet
+        data = curiosity.snapshot(path=queue)
+        sent = 0
+        if data:
+            name = "curiosity.jsonl"
+            done = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", config["server_ssh"],
+                 f"lxc exec {config['container']} -- sh -c 'cat > {SERVER_HOME}/data/.{name}.tmp && "
+                 f"chown star:star {SERVER_HOME}/data/.{name}.tmp && mv {SERVER_HOME}/data/.{name}.tmp {SERVER_HOME}/data/{name}'"],
+                input=data, capture_output=True, timeout=90, creationflags=NO_WINDOW)
+            sent = len(data.splitlines()) if done.returncode == 0 else 0
+        return f"curiosity queue: {sent} open items sent, {studied} studied items brought back"
+    except (ImportError, OSError, subprocess.SubprocessError) as exc:
+        return f"curiosity queue not synced ({type(exc).__name__})"
+
+
 def sync_from_server(config: dict, ns: Path) -> str:
     if not config["server_ssh"]:
         return "no server_ssh in config.json: using the pool already here"
     try:
+        push_conductor_tasks(config, ns)          # before the local pool is replaced by server 1's copy
+        curious = sync_curiosity(config)
         data = _ssh(config, f"tar c -C {SERVER_HOME} pool")
         with tempfile.TemporaryDirectory(dir=ns.parent if ns.parent.is_dir() else None) as folder:
             _untar(data, Path(folder))
@@ -468,7 +558,7 @@ def sync_from_server(config: dict, ns: Path) -> str:
             shutil.rmtree(ns / "pool", ignore_errors=True)
             shutil.move(str(Path(folder) / "pool"), str(ns / "pool"))
         state = json.loads(_ssh(config, f"cat {SERVER_HOME}/data/state.json").decode("utf-8"))
-        return "pool copied; " + apply_server_state(ns, state)
+        return "pool copied; " + apply_server_state(ns, state) + ("; " + curious if curious else "")
     except (OSError, ValueError, subprocess.SubprocessError, tarfile.TarError) as exc:
         return f"server 1 not reachable ({type(exc).__name__}); using the pool already here"
 
@@ -525,15 +615,20 @@ def merge_now(config: dict, home: Path) -> str:
             except (OSError, subprocess.SubprocessError, tarfile.TarError) as exc:
                 note = f"server 1's outbox not reachable ({type(exc).__name__}); "
         sources.append(("pc-gpu", home / "ns"))
+        try:
+            if push_conductor_tasks(config, home / "ns"):
+                note += "PC conductor tasks copied to server 1's pool; "
+        except (OSError, subprocess.SubprocessError) as exc:
+            note += f"PC conductor tasks not copied ({type(exc).__name__}); "
         done = merge_outboxes(sources, home / "merged")
     return note + f"{done['lessons']} lessons, {done['examples']} worked examples in merged/"
 
 
 # ---- commands ------------------------------------------------------------------------------------------------------
-def single_instance() -> bool:
+def single_instance(name: str = "Local\\STAR-gpu-night-turbo") -> bool:
     import ctypes
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.CreateMutexW(None, False, "Local\\STAR-gpu-night-turbo")     # held until this process ends
+    kernel.CreateMutexW(None, False, name)                                 # held until this process ends
     return ctypes.get_last_error() != 183                                  # ERROR_ALREADY_EXISTS
 
 

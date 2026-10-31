@@ -8,6 +8,10 @@ a project's visual references. Plain functions, so they are tested without the Q
   pinReference       pin an image the owner picked (file picker), with a label and a note
   unpinReference     remove STAR's copy of one reference
   compareReference   reference | output side by side, measured facts, the vision model's differences
+  imageAbNext        the next unpicked pair of the owner's blind A/B test (two pictures, sides at random)
+  imageAbPick        store the owner's pick (left / right / same) and return the summary
+  imageAbSummary     counts, the new pipeline's win rate, the sign-test p-value
+  imageAbMake        draw one more pair from a prompt: the old pipeline and the new one (minutes)
 """
 from __future__ import annotations
 
@@ -24,9 +28,10 @@ from typing import Callable
 from . import image_gen, media_places, references
 
 MEDIA_ACTIONS = frozenset({'mediaStatus', 'mediaStartComfy', 'mediaFreeMemory',
-                           'listReferences', 'pinReference', 'unpinReference', 'compareReference'})
+                           'listReferences', 'pinReference', 'unpinReference', 'compareReference',
+                           'imageAbNext', 'imageAbPick', 'imageAbSummary', 'imageAbMake'})
 # These talk to ComfyUI or a model and must not run on the interface thread.
-SLOW_MEDIA_ACTIONS = frozenset({'mediaStatus', 'mediaStartComfy', 'mediaFreeMemory', 'compareReference'})
+SLOW_MEDIA_ACTIONS = frozenset({'mediaStatus', 'mediaStartComfy', 'mediaFreeMemory', 'compareReference', 'imageAbMake'})
 
 
 class ComfyLauncher:
@@ -121,7 +126,8 @@ def find_comfy_home(*, env: dict | None = None, data_dir: Path | None = None, se
 
     A fixed, short list and nothing else (no disk search): the folder named by STAR_COMFY_HOME; a `media/ComfyUI`
     folder inside STAR's own data folder; and `media/ComfyUI` next to STAR's own folder or up to four levels above
-    it, which is where `scripts/media/setup_comfyui.sh` puts it when MEDIA_HOME is the project's `media` folder.
+    it, which is where `scripts/media/setup_comfyui.sh` puts it when MEDIA_HOME is the project's `media` folder; and
+    `Documents/starai/media/ComfyUI` in the user's profile (the installed app does not run from the project).
     The folders above STAR count only when they are inside the user's own profile, so a folder that another user of
     this PC could create (for example one at the root of a drive) is never run. A folder counts only when it
     has `main.py` and ComfyUI's own Python, exactly what the launcher needs.
@@ -154,6 +160,10 @@ def find_comfy_home(*, env: dict | None = None, data_dir: Path | None = None, se
                 found = level / 'media' / 'ComfyUI'
                 if usable(found):
                     return str(found)
+        # The project's own media folder in the user's profile, for an installed app that runs from elsewhere.
+        project_media = profile / 'Documents' / 'starai' / 'media' / 'ComfyUI'
+        if usable(project_media):
+            return str(project_media)
     except (OSError, RuntimeError):
         return ''
     return ''
@@ -228,6 +238,19 @@ def handle(action: str, body: dict, *, settings, home: Path, allowed_file: Calla
         with ComfyClient(port=settings.comfy_port, timeout=10.0) as comfy:
             comfy.status()
             return {'freed': comfy.free()}
+    if action == 'imageAbNext':
+        from . import image_ab
+        return {'pair': image_ab.next_pair(home), 'summary': image_ab.summarize(home)}
+    if action == 'imageAbPick':
+        from . import image_ab
+        return {'summary': image_ab.pick(home, str(body.get('id', '')), str(body.get('side', '')))}
+    if action == 'imageAbSummary':
+        from . import image_ab
+        return image_ab.summarize(home)
+    if action == 'imageAbMake':
+        from . import image_ab
+        pair = image_ab.make_pair(settings, home, str(body.get('prompt', '')), cancel_event=None)
+        return {'made': pair['id'], 'summary': image_ab.summarize(home)}
     if action == 'listReferences':
         return {'references': references.listing(home, project), 'limit': references.MAX_REFERENCES,
                 'enabled': bool(getattr(settings, 'media_use_references', True))}

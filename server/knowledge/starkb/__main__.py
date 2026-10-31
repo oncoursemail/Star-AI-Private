@@ -1,5 +1,6 @@
-"""CLI: python -m starkb {build|stats|subset|embed|search|ask|api-lookup|luau-check|serve|eval|
-                         study-plan|study|study-status|refresh|api-coverage}
+"""CLI: python -m starkb {build|build-private|stats|subset|embed|search|ask|api-lookup|luau-check|serve|eval|
+                         study-plan|study|study-status|refresh|api-coverage|
+                         offload-export|offload-import|offload-sample|offload-run|offload-claim|offload-release|watchdog}
 
 Paths default to the deployed layout in the container:
   /opt/star/knowledge/app      this code
@@ -27,6 +28,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true", help="accept a result with far fewer chunks than before")
     sub.add_parser("stats", help="print index statistics")
 
+    p = sub.add_parser("build-private", help="index a brain vault (Markdown notes) into the PRIVATE database (--db)")
+    p.add_argument("--vault", type=Path, required=True)
+    p.add_argument("--force", action="store_true", help="accept a result with far fewer chunks than before")
+
     p = sub.add_parser("subset", help="write the text hashes of a focus-area subset to a file")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--size", type=int, default=2000)
@@ -40,6 +45,28 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pause", type=float, default=0.0, help="sleep between batches (seconds)")
     p.add_argument("--duty", type=float, default=1.0,
                    help="fraction of time the embedding server may be busy, e.g. 0.4 (see embed.py)")
+
+    p = sub.add_parser("offload-export", help="print the texts still to embed as JSON lines (embedding on a GPU, offload.py)")
+    p.add_argument("--limit", type=int)
+    p = sub.add_parser("offload-import", help="load a vectors file from stdin (offload.py format); never replaces vectors")
+    p.add_argument("--batch", type=int, default=2000, help="rows per commit")
+    p = sub.add_parser("offload-sample", help="print N embedded texts with their stored vectors (check another machine)")
+    p.add_argument("--n", type=int, default=200)
+    p = sub.add_parser("offload-run", help="embed the pending texts on a LAN worker (the laptop GPU) and store them; "
+                                           "resumable, exits at once when nothing is pending (offload.py)")
+    p.add_argument("--url", default=os.environ.get("STAR_KB_OFFLOAD_URL", ""), help="worker base URL ($STAR_KB_OFFLOAD_URL)")
+    p.add_argument("--key-file", default=os.environ.get("STAR_KB_OFFLOAD_KEY_FILE", ""), help="worker API key file")
+    p.add_argument("--owner", default="laptop", help="name on the claim file (the PC's gpu_embed.py uses 'pc')")
+    p.add_argument("--batch", type=int, default=8, help="texts per request (8 x 2 in flight measured fastest on the laptop)")
+    p.add_argument("--in-flight", type=int, default=2, help="requests at the same time")
+    p.add_argument("--max-seconds", type=float, default=3300.0)
+    p.add_argument("--small", type=int, default=3000, help="more pending than this = bulk: only inside --hours")
+    p.add_argument("--hours", default="0-8", help="local hours (America/Chicago) for a bulk run, START-END")
+    p = sub.add_parser("offload-claim", help="take the claim on embedding the pending texts (exit 1 if another holds it)")
+    p.add_argument("--owner", required=True)
+    p.add_argument("--ttl", type=float, default=43200.0)
+    p = sub.add_parser("offload-release", help="give the claim back")
+    p.add_argument("--owner", required=True)
 
     p = sub.add_parser("search", help="search and print cited passages")
     p.add_argument("query")
@@ -58,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("api-lookup", help="exact engine API symbol check, e.g. TweenService:Create")
     p.add_argument("symbols", nargs="+")
 
+    sub.add_parser("watchdog", help="one health check of the running service; restarts it after 2 failures (timer)")
     p = sub.add_parser("serve", help="run the HTTP service (127.0.0.1:8091 by default; the unit binds 0.0.0.0)")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8091)
@@ -138,6 +166,48 @@ def main(argv: list[str] | None = None) -> int:
                              log=lambda m: print(m, flush=True)), indent=2))
         return 0
 
+    if args.cmd in ("offload-export", "offload-import", "offload-sample"):
+        from . import offload
+        from .client import EMBED_MODEL
+        if args.cmd == "offload-export":
+            count = offload.export_pending(args.db, sys.stdout, EMBED_MODEL, limit=args.limit)
+        elif args.cmd == "offload-sample":
+            count = offload.sample_existing(args.db, sys.stdout, EMBED_MODEL, n=args.n)
+        else:
+            count = offload.import_vectors(args.db, sys.stdin.buffer, EMBED_MODEL, batch=args.batch,
+                                           log=lambda m: print(m, file=sys.stderr, flush=True))
+        print(json.dumps({"model": EMBED_MODEL, "result": count}), file=sys.stderr)
+        return 0
+
+    if args.cmd in ("offload-run", "offload-claim", "offload-release"):
+        from . import offload
+        from .client import EMBED_MODEL
+        claim_file = args.db.parent / "offload-claim.json"
+        if args.cmd == "offload-claim":
+            holder = offload.claim(claim_file, args.owner, args.ttl)
+            print(json.dumps({"claimed": not holder, "holder": holder or args.owner}))
+            return 1 if holder else 0
+        if args.cmd == "offload-release":
+            print(json.dumps({"released": offload.release(claim_file, args.owner)}))
+            return 0
+        if not args.url:
+            parser.error("offload-run needs --url or $STAR_KB_OFFLOAD_URL")
+        from .client import Brain
+        from .quiet import Stopper
+        start, end = (int(x) for x in args.hours.split("-"))
+        worker = Brain(url=args.url, key_file=args.key_file, retries=1, timeout=120.0)
+        stopper = Stopper()
+        result = offload.run_on_worker(args.db, worker, EMBED_MODEL, claim_path=claim_file, owner=args.owner,
+                                       batch=args.batch, in_flight=args.in_flight, max_seconds=args.max_seconds, small=args.small,
+                                       hours=(start, end), stop=stopper, log=lambda m: print(m, flush=True))
+        return 0 if result["ok"] else 3
+
+    if args.cmd == "build-private":
+        from .private_corpus import build_private
+        stats = build_private(args.vault, args.db, force=args.force)
+        print(json.dumps(stats["_all"] | {"db": str(args.db)}, indent=2))
+        return 0
+
     if args.cmd == "search":
         from .search import Searcher, context_block
         searcher = Searcher(args.db)
@@ -172,6 +242,10 @@ def main(argv: list[str] | None = None) -> int:
         from .luaucheck import check
         print(json.dumps(check(args.file.read_text(encoding="utf-8"), mode=args.mode), indent=2))
         return 0
+
+    if args.cmd == "watchdog":
+        from .watchdog import main as watchdog_main
+        return watchdog_main()
 
     if args.cmd == "serve":
         from .serve import serve

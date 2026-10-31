@@ -1,0 +1,726 @@
+{
+ "note": "Syntax templates for the facts block. Each is checked with the game's own parser/codec (lab/McCheck.java) per version by lab/verify_templates.py, which writes templates.json with the versions where it is valid. 'kw' = question words that select it. min/max: version limits the parser cannot see (NBT and text-component keys the game silently ignores), from the 1.21.4/1.21.5 changelogs.",
+ "commands": [
+  {
+   "id": "name_ench_new",
+   "kw": [
+    "name",
+    "named",
+    "enchant",
+    "efficiency",
+    "sharpness",
+    "unbreaking",
+    "custom name",
+    "pickaxe",
+    "sword"
+   ],
+   "cmd": "give @s diamond_pickaxe[custom_name={text:\"Mega Pick\",color:\"gold\",italic:false},enchantments={efficiency:5,unbreaking:3}]"
+  },
+  {
+   "id": "name_ench_old",
+   "kw": [
+    "name",
+    "named",
+    "enchant",
+    "efficiency",
+    "sharpness",
+    "unbreaking",
+    "custom name",
+    "pickaxe",
+    "sword"
+   ],
+   "cmd": "give @s diamond_pickaxe[custom_name='{\"text\":\"Mega Pick\",\"color\":\"gold\",\"italic\":false}',enchantments={levels:{efficiency:5,unbreaking:3}}]"
+  },
+  {
+   "id": "lore_new",
+   "kw": [
+    "lore"
+   ],
+   "cmd": "give @s stick[lore=[{text:\"Line 1\",color:\"gray\",italic:false}]]"
+  },
+  {
+   "id": "lore_old",
+   "kw": [
+    "lore"
+   ],
+   "cmd": "give @s stick[lore=['{\"text\":\"Line 1\",\"color\":\"gray\",\"italic\":false}']]",
+   "max": "1.21.4"
+  },
+  {
+   "id": "potion",
+   "kw": [
+    "potion",
+    "strength",
+    "effect",
+    "lasts"
+   ],
+   "cmd": "give @s potion[potion_contents={custom_effects:[{id:\"minecraft:strength\",amplifier:1,duration:3600}]}]",
+   "note": "duration is in ticks (3600 = 3 minutes), amplifier 1 = level II"
+  },
+  {
+   "id": "effect_give",
+   "kw": [
+    "effect",
+    "speed",
+    "strength",
+    "jump"
+   ],
+   "cmd": "effect give @a minecraft:speed 30 1 true",
+   "note": "effect give <targets> <effect> [seconds|infinite] [amplifier] [hideParticles]"
+  },
+  {
+   "id": "head_profile",
+   "kw": [
+    "head",
+    "skull",
+    "notch"
+   ],
+   "cmd": "give @s player_head[profile={name:\"Notch\"}]"
+  },
+  {
+   "id": "head_profile_str",
+   "kw": [
+    "head",
+    "skull",
+    "notch"
+   ],
+   "cmd": "give @s player_head[profile=\"Notch\"]",
+   "skip": true
+  },
+  {
+   "id": "cmd_floats",
+   "kw": [
+    "custom_model_data",
+    "custom model data",
+    "custom model"
+   ],
+   "cmd": "give @s stick[custom_model_data={floats:[1.0]}]"
+  },
+  {
+   "id": "cmd_int",
+   "kw": [
+    "custom_model_data",
+    "custom model data",
+    "custom model"
+   ],
+   "cmd": "give @s stick[custom_model_data=1]"
+  },
+  {
+   "id": "item_model",
+   "kw": [
+    "item_model",
+    "item model",
+    "custom model",
+    "model"
+   ],
+   "cmd": "give @s diamond[item_model=\"mypack:ruby\"]"
+  },
+  {
+   "id": "equippable_asset",
+   "kw": [
+    "equippable",
+    "armor",
+    "worn",
+    "wear"
+   ],
+   "cmd": "give @s leather_chestplate[equippable={slot:\"chest\",asset_id:\"mypack:ruby\"}]",
+   "min": "1.21.4"
+  },
+  {
+   "id": "equippable_model",
+   "kw": [
+    "equippable",
+    "armor",
+    "worn",
+    "wear"
+   ],
+   "cmd": "give @s leather_chestplate[equippable={slot:\"chest\",model:\"mypack:ruby\"}]",
+   "max": "1.21.3"
+  },
+  {
+   "id": "click_new",
+   "kw": [
+    "click",
+    "clickable",
+    "trigger",
+    "run_command",
+    "chat message"
+   ],
+   "cmd": "tellraw @a {text:\"[Open menu]\",color:\"aqua\",click_event:{action:\"run_command\",command:\"/trigger menu\"}}",
+   "note": "1.21.5+: click_event/hover_event; run_command takes command, open_url takes url"
+  },
+  {
+   "id": "click_old",
+   "kw": [
+    "click",
+    "clickable",
+    "trigger",
+    "run_command",
+    "chat message"
+   ],
+   "cmd": "tellraw @a {\"text\":\"[Open menu]\",\"color\":\"aqua\",\"clickEvent\":{\"action\":\"run_command\",\"value\":\"/trigger menu\"}}",
+   "note": "before 1.21.5: clickEvent/hoverEvent with value",
+   "max": "1.21.4"
+  },
+  {
+   "id": "trigger_setup",
+   "kw": [
+    "trigger"
+   ],
+   "cmd": "scoreboard objectives add menu trigger\nscoreboard players enable @a menu"
+  },
+  {
+   "id": "zombie_new",
+   "kw": [
+    "zombie",
+    "despawn",
+    "helmet",
+    "wears",
+    "equipment"
+   ],
+   "cmd": "summon zombie ~ ~ ~ {PersistenceRequired:1b,equipment:{head:{id:\"minecraft:diamond_helmet\",count:1}}}",
+   "note": "1.21.5+: equipment:{head:...,chest:...,mainhand:...}; before: ArmorItems/HandItems lists (the parser accepts any NBT keys; unknown keys are silently ignored)",
+   "nbt_note": true,
+   "min": "1.21.5"
+  },
+  {
+   "id": "zombie_old",
+   "kw": [
+    "zombie",
+    "despawn",
+    "helmet",
+    "wears",
+    "equipment"
+   ],
+   "cmd": "summon zombie ~ ~ ~ {PersistenceRequired:1b,ArmorItems:[{},{},{},{id:\"minecraft:diamond_helmet\",count:1}]}",
+   "nbt_note": true,
+   "max": "1.21.4"
+  },
+  {
+   "id": "armor_stand_new",
+   "kw": [
+    "armor stand",
+    "armor_stand",
+    "floating name",
+    "hologram"
+   ],
+   "cmd": "summon armor_stand ~ ~ ~ {Invisible:1b,NoGravity:1b,CustomNameVisible:1b,CustomName:\"Shop\"}",
+   "note": "1.21.5+: CustomName is a text component in SNBT (\"Shop\" or {text:\"Shop\"}); before: a JSON string '\"Shop\"'",
+   "nbt_note": true,
+   "min": "1.21.5"
+  },
+  {
+   "id": "armor_stand_old",
+   "kw": [
+    "armor stand",
+    "armor_stand",
+    "floating name",
+    "hologram"
+   ],
+   "cmd": "summon armor_stand ~ ~ ~ {Invisible:1b,NoGravity:1b,CustomNameVisible:1b,CustomName:'\"Shop\"'}",
+   "nbt_note": true,
+   "max": "1.21.4"
+  },
+  {
+   "id": "deaths",
+   "kw": [
+    "died",
+    "death",
+    "deaths",
+    "tab list"
+   ],
+   "cmd": "scoreboard objectives add deaths deathCount\nscoreboard objectives setdisplay list deaths"
+  },
+  {
+   "id": "kill_near",
+   "kw": [
+    "kill",
+    "zombies",
+    "within",
+    "nearest"
+   ],
+   "cmd": "execute at @p run kill @e[type=minecraft:zombie,distance=..10]"
+  },
+  {
+   "id": "tp_facing",
+   "kw": [
+    "teleport",
+    "facing",
+    "face",
+    "north"
+   ],
+   "cmd": "execute positioned 0 64 0 as @a[distance=..5] run tp @s 100 70 100 180 0",
+   "note": "yaw: south 0, west 90, north 180 (or -180), east -90"
+  },
+  {
+   "id": "frames",
+   "kw": [
+    "item frame",
+    "item frames",
+    "invisible"
+   ],
+   "cmd": "execute as @e[type=minecraft:item_frame,distance=..10] run data merge entity @s {Invisible:1b}"
+  },
+  {
+   "id": "gamerule_new",
+   "kw": [
+    "gamerule",
+    "fire",
+    "spread",
+    "griefing",
+    "mobs breaking",
+    "keep inventory",
+    "daylight"
+   ],
+   "cmd": "gamerule mob_griefing false\ngamerule keep_inventory true"
+  },
+  {
+   "id": "gamerule_old",
+   "kw": [
+    "gamerule",
+    "fire",
+    "spread",
+    "griefing",
+    "mobs breaking",
+    "keep inventory",
+    "daylight"
+   ],
+   "cmd": "gamerule doFireTick false\ngamerule mobGriefing false\ngamerule keepInventory true"
+  },
+  {
+   "id": "fill_replace",
+   "kw": [
+    "fill",
+    "replace",
+    "only the stone",
+    "turn"
+   ],
+   "cmd": "fill 0 60 0 9 60 9 minecraft:glass replace minecraft:stone"
+  },
+  {
+   "id": "chest_items",
+   "kw": [
+    "chest",
+    "inside",
+    "items in"
+   ],
+   "cmd": "setblock ~ ~ ~ minecraft:chest[facing=north]{Items:[{Slot:0b,id:\"minecraft:diamond\",count:1}]}",
+   "note": "item stacks in NBT use id and count (lowercase) since 1.20.5",
+   "nbt_note": true
+  },
+  {
+   "id": "sign_new",
+   "kw": [
+    "sign"
+   ],
+   "cmd": "setblock ~ ~ ~ minecraft:oak_sign[rotation=8]{front_text:{messages:[{text:\"Welcome\",color:\"red\"},\"\",\"\",\"\"]}}",
+   "note": "1.21.5+: messages are SNBT text components; standing signs use rotation 0-15, wall signs use facing",
+   "nbt_note": true
+  },
+  {
+   "id": "sign_old",
+   "kw": [
+    "sign"
+   ],
+   "cmd": "setblock ~ ~ ~ minecraft:oak_sign[rotation=8]{front_text:{messages:['{\"text\":\"Welcome\",\"color\":\"red\"}','\"\"','\"\"','\"\"']}}",
+   "nbt_note": true,
+   "max": "1.21.4"
+  },
+  {
+   "id": "dust",
+   "kw": [
+    "particle",
+    "dust",
+    "red"
+   ],
+   "cmd": "particle minecraft:dust{color:[1.0,0.0,0.0],scale:1.0} ~ ~1 ~ 0.5 0.5 0.5 0 20 force"
+  },
+  {
+   "id": "dice",
+   "kw": [
+    "random",
+    "dice",
+    "roll"
+   ],
+   "cmd": "scoreboard objectives add dice dummy\nexecute store result score @s dice run random value 1..6"
+  },
+  {
+   "id": "scale_new",
+   "kw": [
+    "big",
+    "bigger",
+    "scale",
+    "size",
+    "tall",
+    "small"
+   ],
+   "cmd": "attribute @s minecraft:scale base set 2\nattribute @s minecraft:scale base reset"
+  },
+  {
+   "id": "scale_old",
+   "kw": [
+    "big",
+    "bigger",
+    "scale",
+    "size",
+    "tall",
+    "small"
+   ],
+   "cmd": "attribute @s minecraft:generic.scale base set 2"
+  },
+  {
+   "id": "playsound",
+   "kw": [
+    "sound",
+    "play"
+   ],
+   "cmd": "execute as @a at @s run playsound minecraft:entity.experience_orb.pickup master @s ~ ~ ~ 1 1"
+  },
+  {
+   "id": "bossbar_score",
+   "kw": [
+    "boss bar",
+    "bossbar"
+   ],
+   "cmd": "bossbar add mypack:points \"Points\"\nbossbar set mypack:points players @a\nbossbar set mypack:points max 100\nexecute store result bossbar mypack:points value run scoreboard players get @p points"
+  },
+  {
+   "id": "count_items",
+   "kw": [
+    "at least",
+    "how many",
+    "count",
+    "emeralds",
+    "inventory",
+    "has"
+   ],
+   "cmd": "scoreboard objectives add emeralds dummy\nexecute as @a store result score @s emeralds run clear @s minecraft:emerald 0\nexecute as @a[scores={emeralds=10..}] run say I have 10+ emeralds",
+   "note": "clear <targets> <item> 0 removes nothing and returns how many there are"
+  },
+  {
+   "id": "if_items",
+   "kw": [
+    "holding",
+    "hand",
+    "has",
+    "if items"
+   ],
+   "cmd": "execute as @a if items entity @s weapon.mainhand minecraft:stick run say holding a stick"
+  },
+  {
+   "id": "macro_call",
+   "kw": [
+    "macro",
+    "macros",
+    "pass in",
+    "arguments"
+   ],
+   "cmd": "function mypack:tp_to {x:10,y:64,z:-5}",
+   "note": "inside mypack:tp_to the macro line starts with $: $tp @s $(x) $(y) $(z)"
+  },
+  {
+   "id": "item_modify",
+   "kw": [
+    "item modifier",
+    "item_modifier",
+    "modify"
+   ],
+   "cmd": "item modify entity @s weapon.mainhand mypack:name_and_lore"
+  }
+ ],
+ "files": [
+  {
+   "id": "recipe_shaped_new",
+   "kw": [
+    "shaped",
+    "crafting",
+    "recipe"
+   ],
+   "path": "data/mypack/recipe/netherite_from_diamonds.json",
+   "json": {
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+     "DDD",
+     "DSD",
+     "DDD"
+    ],
+    "key": {
+     "D": "minecraft:diamond",
+     "S": "minecraft:stick"
+    },
+    "result": {
+     "id": "minecraft:netherite_ingot",
+     "count": 1
+    }
+   }
+  },
+  {
+   "id": "recipe_shaped_old",
+   "kw": [
+    "shaped",
+    "crafting",
+    "recipe"
+   ],
+   "path": "data/mypack/recipe/netherite_from_diamonds.json",
+   "json": {
+    "type": "minecraft:crafting_shaped",
+    "pattern": [
+     "DDD",
+     "DSD",
+     "DDD"
+    ],
+    "key": {
+     "D": {
+      "item": "minecraft:diamond"
+     },
+     "S": {
+      "item": "minecraft:stick"
+     }
+    },
+    "result": {
+     "id": "minecraft:netherite_ingot",
+     "count": 1
+    }
+   }
+  },
+  {
+   "id": "recipe_shapeless_new",
+   "kw": [
+    "shapeless",
+    "recipe"
+   ],
+   "path": "data/mypack/recipe/leather_from_flesh.json",
+   "json": {
+    "type": "minecraft:crafting_shapeless",
+    "ingredients": [
+     "minecraft:rotten_flesh",
+     "minecraft:rotten_flesh",
+     "minecraft:rotten_flesh",
+     "minecraft:rotten_flesh"
+    ],
+    "result": {
+     "id": "minecraft:leather",
+     "count": 1
+    }
+   }
+  },
+  {
+   "id": "recipe_shapeless_old",
+   "kw": [
+    "shapeless",
+    "recipe"
+   ],
+   "path": "data/mypack/recipe/leather_from_flesh.json",
+   "json": {
+    "type": "minecraft:crafting_shapeless",
+    "ingredients": [
+     {
+      "item": "minecraft:rotten_flesh"
+     },
+     {
+      "item": "minecraft:rotten_flesh"
+     },
+     {
+      "item": "minecraft:rotten_flesh"
+     },
+     {
+      "item": "minecraft:rotten_flesh"
+     }
+    ],
+    "result": {
+     "id": "minecraft:leather",
+     "count": 1
+    }
+   }
+  },
+  {
+   "id": "recipe_smelt_new",
+   "kw": [
+    "smelt",
+    "furnace",
+    "smelting",
+    "cook"
+   ],
+   "path": "data/mypack/recipe/leather_smelting.json",
+   "json": {
+    "type": "minecraft:smelting",
+    "ingredient": "minecraft:rotten_flesh",
+    "result": {
+     "id": "minecraft:leather"
+    },
+    "experience": 0.1,
+    "cookingtime": 200
+   }
+  },
+  {
+   "id": "recipe_smelt_old",
+   "kw": [
+    "smelt",
+    "furnace",
+    "smelting",
+    "cook"
+   ],
+   "path": "data/mypack/recipe/leather_smelting.json",
+   "json": {
+    "type": "minecraft:smelting",
+    "ingredient": {
+     "item": "minecraft:rotten_flesh"
+    },
+    "result": {
+     "id": "minecraft:leather"
+    },
+    "experience": 0.1,
+    "cookingtime": 200
+   }
+  },
+  {
+   "id": "adv_eat",
+   "kw": [
+    "advancement",
+    "eat",
+    "eats",
+    "golden apple",
+    "first time"
+   ],
+   "path": "data/mypack/advancement/ate_golden_apple.json",
+   "json": {
+    "criteria": {
+     "ate": {
+      "trigger": "minecraft:consume_item",
+      "conditions": {
+       "item": {
+        "items": "minecraft:golden_apple"
+       }
+      }
+     }
+    },
+    "rewards": {
+     "function": "mypack:reward"
+    }
+   }
+  },
+  {
+   "id": "pred_sneak",
+   "kw": [
+    "predicate",
+    "sneaking",
+    "sneak"
+   ],
+   "path": "data/mypack/predicate/is_sneaking.json",
+   "json": {
+    "condition": "minecraft:entity_properties",
+    "entity": "this",
+    "predicate": {
+     "flags": {
+      "is_sneaking": true
+     }
+    }
+   },
+   "use": "execute as @a if predicate mypack:is_sneaking run say sneaking"
+  },
+  {
+   "id": "mod_name_lore_new",
+   "kw": [
+    "item modifier",
+    "lore",
+    "name"
+   ],
+   "path": "data/mypack/item_modifier/name_and_lore.json",
+   "json": [
+    {
+     "function": "minecraft:set_name",
+     "name": {
+      "text": "Ruby Blade",
+      "color": "red",
+      "italic": false
+     },
+     "target": "custom_name"
+    },
+    {
+     "function": "minecraft:set_lore",
+     "lore": [
+      {
+       "text": "Forged in fire",
+       "color": "gray"
+      }
+     ],
+     "mode": "replace_all"
+    }
+   ]
+  },
+  {
+   "id": "loot_zombie_add",
+   "kw": [
+    "drop",
+    "drops",
+    "loot",
+    "zombie",
+    "zombies"
+   ],
+   "path": "data/minecraft/loot_table/entities/zombie.json",
+   "json": {
+    "type": "minecraft:entity",
+    "pools": [
+     {
+      "rolls": 1,
+      "entries": [
+       {
+        "type": "minecraft:item",
+        "name": "minecraft:diamond"
+       }
+      ],
+      "conditions": [
+       {
+        "condition": "minecraft:random_chance",
+        "chance": 0.1
+       }
+      ]
+     }
+    ]
+   },
+   "note": "a file at this path REPLACES the vanilla zombie loot table: copy the vanilla pools (below) and add the new pool"
+  },
+  {
+   "id": "tag_ores",
+   "kw": [
+    "tag",
+    "ores",
+    "ore"
+   ],
+   "path": "data/mypack/tags/block/ores.json",
+   "json": {
+    "values": [
+     "#minecraft:coal_ores",
+     "#minecraft:iron_ores",
+     "#minecraft:copper_ores",
+     "#minecraft:gold_ores",
+     "#minecraft:redstone_ores",
+     "#minecraft:lapis_ores",
+     "#minecraft:diamond_ores",
+     "#minecraft:emerald_ores",
+     "minecraft:nether_gold_ore",
+     "minecraft:nether_quartz_ore",
+     "minecraft:ancient_debris"
+    ]
+   },
+   "use": "execute as @a at @s if block ~ ~-1 ~ #mypack:ores run say standing on ore"
+  },
+  {
+   "id": "load_tag",
+   "kw": [
+    "load",
+    "tick",
+    "every tick",
+    "on load",
+    "runs once"
+   ],
+   "path": "data/minecraft/tags/function/load.json",
+   "json": {
+    "values": [
+     "mypack:load"
+    ]
+   },
+   "note": "tick: data/minecraft/tags/function/tick.json"
+  }
+ ]
+}

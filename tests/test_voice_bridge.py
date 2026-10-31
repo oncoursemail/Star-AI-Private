@@ -1,7 +1,6 @@
 """The UI bridge for voice calls: actions in, "voice" events out, one call at a time."""
 import json
 import threading
-import time
 
 import pytest
 
@@ -122,7 +121,7 @@ def test_start_failures_are_reported_as_events_and_leave_no_call_behind(tmp_path
 
 def test_actions_are_validated_and_settings_round_trip(tmp_path):
     bridge, _events, _saved, _built = make_bridge(tmp_path)
-    assert "voiceStartCall" in VOICE_ACTIONS and len(VOICE_ACTIONS) == 14
+    assert "voiceStartCall" in VOICE_ACTIONS and len(VOICE_ACTIONS) == 18      # 14 + 4 role-play voice library actions
     with pytest.raises(PermissionError):
         bridge.handle("deleteEverything", {})
     for action in ("voiceInterrupt", "voiceSetMuted"):
@@ -157,3 +156,15 @@ def test_status_reports_missing_pieces_without_loading_anything(tmp_path, monkey
     assert status["available"] is False and status["serverConfigured"] is False and status["state"] == "idle"
     assert status["missingPackages"] or status["missingModels"]
     assert built["engines"] == 0
+
+
+def test_character_library_actions_refuse_clones(tmp_path):
+    bridge, _events, _saved, _built = make_bridge(tmp_path)
+    bridge.handle("voiceSaveSettings", {"settings": {"expressive_home": str(tmp_path / "expr")}})
+    out = bridge.handle("voiceCreateCharacter", {"name": "Brine", "description": "A gruff old sea captain, deep voice."})
+    assert [c["name"] for c in out["characters"]] == ["Brine"] and "whisper" in out["styles"]
+    with pytest.raises(PermissionError, match="consent"):
+        bridge.handle("voiceCreateCharacter", {"name": "Sam", "kind": "clone"})
+    cid = out["characters"][0]["id"]
+    assert bridge.handle("voiceUpdateCharacter", {"id": cid, "style": "serious"})["characters"][0]["style"] == "serious"
+    assert bridge.handle("voiceDeleteCharacter", {"id": cid})["characters"] == []

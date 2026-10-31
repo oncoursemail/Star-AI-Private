@@ -12,6 +12,31 @@ ImageOps = lazy_module("PIL.ImageOps")
 PREFIX = "STAR_GENERATED_IMAGE:"
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,190}$")
 
+# A text model has no picture tool, so when it answers a "make me a ..." message with "I can't create or show images"
+# the message was a picture request the chat's own detector (frontend/src/imageIntent.ts) did not recognise.
+_REFUSAL = re.compile(
+    r"\b(?:can(?:['’]t|not)|can not|unable to|not able to|(?:do not|don['’]t) have (?:the )?(?:ability|capability))\b"
+    r"[^.!?\n]{0,60}?\b(?:create|generate|make|draw|produce|render|show|display)\b[^.!?\n]{0,40}?"
+    r"\b(?:images?|pictures?|photos?|drawings?|illustrations?|artwork|visuals?)\b", re.I)
+_MAKE_VERB = re.compile(
+    r"^(?:(?:please|kindly|can you|could you|would you|will you|go ahead and|i want you to|i need you to|i'd like you to)\s+){0,2}"
+    r"(?:generate|create|make|draw|render|paint|sketch|illustrate|design|produce|doodle|show|give|send|get)\b", re.I)
+_FILLER = re.compile(r"\b(?:please|kindly|can|could|would|will|you|to|generate|create|make|draw|render|paint|sketch|illustrate|"
+                     r"design|produce|doodle|show|give|send|get|me|an?|the|some|images?|pictures?|photos?|pics?|drawings?)\b", re.I)
+
+
+def refused_to_make_picture(prompt: str, answer: str) -> bool:
+    """True when a short text answer says STAR cannot make pictures to a message that asked for one to be made.
+
+    "Can you create images?" (nothing left to draw once the filler words go) and a long answer that only
+    mentions the limit while doing the work are not picture requests.
+    """
+    if len(answer or "") > 600 or not _REFUSAL.search(answer):
+        return False
+    request = (prompt or "").replace("’", "'").strip()
+    return bool(_MAKE_VERB.match(request) and re.search(r"\w", _FILLER.sub(" ", request)))
+
+
 def preview_image(path: Path) -> str:
     """Return a small thumbnail for Qt WebChannel, cached across chat refreshes."""
     path = path.resolve(strict=True)
@@ -69,11 +94,16 @@ def generate_chat_image(settings, prompt: str, home: Path, cancel_event=None, *,
     """
     if not 1 <= len(prompt.strip()) <= 1500:
         raise ValueError("Image prompt must be 1–1500 characters")
+    if source is None and not settings.comfy_workflow.strip():
+        from . import image_quality
+        if image_quality.enabled(settings):
+            made = image_quality.generate_best(settings, prompt, home, size=size, cancel_event=cancel_event)
+            return _on_disk(home, {"answer": made["answer"], "image": made["image"], "message": made["message"]})
     if source is not None or not settings.comfy_workflow.strip():
         from .image_gen import generate as generate_built_in
         made = generate_built_in(settings, prompt, home, size=size, source=source, mask=mask,
                                  cancel_event=cancel_event)
-        return {"answer": made["answer"], "image": made["image"], "message": made["message"]}
+        return _on_disk(home, {"answer": made["answer"], "image": made["image"], "message": made["message"]})
     from . import media_places
     media_places.require(settings, "images", home)
     from .comfy import generate
@@ -84,8 +114,16 @@ def generate_chat_image(settings, prompt: str, home: Path, cancel_event=None, *,
     first = images[0]
     if not NAME.fullmatch(first.name):
         raise RuntimeError("Unexpected generated image filename")
-    return {"answer": "Image generated locally · original saved in STAR/generated-images",
-            "image": preview_image(first), "message": PREFIX + first.name}
+    return _on_disk(home, {"answer": "Image generated locally · original saved in STAR/generated-images",
+                           "image": preview_image(first), "message": PREFIX + first.name})
+
+
+def _on_disk(home: Path, result: dict) -> dict:
+    """Refuse to hand the chat a reference to a file that is not in the generated-images folder."""
+    name = result["message"][len(PREFIX):]
+    if not (home / "generated-images" / name).is_file():
+        raise RuntimeError("The picture was made but its file is not in the STAR data folder, so it was not added to the chat")
+    return result
 
 
 def latest_generated_path(home: Path, project: str, chat_id: str) -> Path | None:

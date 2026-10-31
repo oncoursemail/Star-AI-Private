@@ -9,6 +9,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 import hashlib
 import json
 import os
@@ -23,6 +24,7 @@ import uuid
 from .desktop_core import Settings, Conversations, app_data, run_task, query_models, check_studio
 from .analytics import get_dashboard
 from .brain_overview import brain_snapshot, planner_snapshot
+from .bulk_tasks import BULK_ACTIONS, BulkTaskService
 from .brain_setup import BrainInstall, install_brain
 from .local_runtime import Runtime
 from .version import __version__
@@ -31,7 +33,7 @@ from .intelligence import for_settings
 from .providers import credential_status, save_api_key, clear_api_key, provider_kind
 from .model_health import (explain_model_failure, missing_model_message, note_server_result,
                            probe_server, server_status)
-from .chat_images import chat_image, generate_chat_image, latest_generated_path
+from .chat_images import chat_image, generate_chat_image, latest_generated_path, refused_to_make_picture
 from .comfy import ComfyError
 from .warmup import Warmer
 from .prefill_warm import DraftWarmer
@@ -53,6 +55,8 @@ from .lessons import (LESSON_ACTIONS, handle_action as handle_lesson_action,
                       import_bundled_lessons, learning_status, write_export)
 from .learned_week import LEARNED_ACTIONS, handle_action as handle_learned_action, import_bundled as import_learning_bundle
 from .corrections import CORRECTION_ACTIONS, handle_action as handle_correction_action
+from . import self_audit
+from .self_audit import ACTIONS as SELF_AUDIT_ACTIONS
 from .lesson_digest import Digester, may_start_automatic
 from . import image_gen
 from .media_actions import (MEDIA_ACTIONS, SLOW_MEDIA_ACTIONS, ComfyLauncher, effective_comfy_home,
@@ -62,10 +66,13 @@ from . import gpu_helper
 from .chat_media import prepare_turn
 from .roblox_cloud import (ROBLOX_ACTIONS, ROBLOX_NETWORK_ACTIONS, RobloxCloud,
                            handle_action as handle_roblox_action)
+from .research_activity import sanitize_research_event
+from .metallic_access import METALLIC_ACTIONS, check_account_login, check_code as check_metallic_code, for_home as metallic_for_home
+from .metallic_access import status_for as metallic_status
 
 ALLOWED_ACTIONS = frozenset({
     'bootstrap','brainSnapshot','plannerStatus','switchProject','pickFiles','sendMessage','saveSettings',
-    'installBrain','startBrain','listModels','testModel','discoverStudio','selectStudio',
+    'installBrain','startBrain','listModels','testModel','testStrata','repairStrataConfig','discoverStudio','selectStudio',
     'checkUpdates','installUpdate','transcribe','openDataFolder', 'copyText', 'openLegacy', 'selectFolder',
     'generateImage','saveProviderKey','clearProviderKey','cancelMessage','exportReviewBundle',
     'newChat','switchChat','testMcpConnection','runTeam','rememberDecision','listLearning',
@@ -81,6 +88,9 @@ ALLOWED_ACTIONS = frozenset({
 })
 # Voice calls keep their own action list (star/voice/bridge.py, docs/STAR_VOICE_CALLS.md).
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | VOICE_ACTIONS
+# The Identify-a-song dialog (star/music_recognition.py); refused while Settings > Song recognition is off.
+MUSIC_ACTIONS = frozenset({'musicStatus', 'musicChooseWav', 'musicClear', 'musicIdentify'})
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | MUSIC_ACTIONS
 # Voice actions that make sound must run where Settings → Where STAR generates says (star/media_places.py).
 VOICE_PLACE_ACTIONS = frozenset({'voiceStartCall', 'voicePreviewVoice', 'voiceSpeak'})
 # Learning: review of lessons and thumbs on answers (star/lessons.py), plus the optional
@@ -88,7 +98,7 @@ VOICE_PLACE_ACTIONS = frozenset({'voiceStartCall', 'voicePreviewVoice', 'voiceSp
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | LESSON_ACTIONS | {'digestLessons'}
 # What STAR learned this week (undo / restore / keep) and owner corrections that may become regression tests
 # (star/learned_week.py, star/corrections.py, docs/SELF_LEARNING_LOOP.md).
-ALLOWED_ACTIONS = ALLOWED_ACTIONS | LEARNED_ACTIONS | CORRECTION_ACTIONS
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | LEARNED_ACTIONS | CORRECTION_ACTIONS | SELF_AUDIT_ACTIONS
 # Media: where images, voice and video run, the image engine on this PC, and a project's
 # visual references (star/media_actions.py, docs/STAR_MEDIA.md).
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | MEDIA_ACTIONS
@@ -101,6 +111,9 @@ ALLOWED_ACTIONS = ALLOWED_ACTIONS | STUDIO_HOST_ACTIONS
 # Settings > Discord: status, Start/Stop and the opt-in autostart for the Discord bot process
 # (star/discord_supervisor.py). Never carries the token, the owner's IDs or any key.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | DISCORD_ACTIONS
+# Metallic sign-in and read-only stats (star/metallic_access.py): the code goes to Metallic Control once and is
+# never stored; the token is kept with Windows DPAPI. No action here can run anything on Metallic.
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | METALLIC_ACTIONS
 # STAR Clips only accepts explicit desktop UI clicks; never model tool calls.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_ACTIONS
 # Optional read-only clip folders and developer-owned SteelSeries Moments events.
@@ -111,41 +124,101 @@ CLIP_INTEROP_ACTIONS = frozenset({
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_INTEROP_ACTIONS
 # A static read-only source index; no arbitrary fetch/install/execute capability.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | {'gameLabCatalog'}
+# Business uses only local draft and review actions; it cannot publish, spend or contact buyers.
+# Do not import the commerce package at desktop startup: its art scanner uses Pillow.
+COMMERCE_ACTIONS = frozenset({
+    'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview',
+    'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
+    'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
+    'commerceLearning', 'commerceImportDailyMetrics',
+    'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
+    'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
+    'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
+    'commerceApprovals', 'commerceApprovalDecide', 'commerceApprovalExecute',
+})
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | COMMERCE_ACTIONS
+
+# Owner-selected bulk work has its own durable ledger and cancellation, outside chat.
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | BULK_ACTIONS
 
 # A background warm-up (server check + prompt-cache priming) gives way at once to
 # anything that talks to the model server or changes what it would talk to.
 WARM_UP_STOPPERS = frozenset({
-    'sendMessage','runTeam','generateImage','testServer','testModel','testModelTeam','listModels',
+    'sendMessage','runTeam','generateImage','testServer','testModel','testStrata','repairStrataConfig','testModelTeam','listModels',
     'startModelRouter','stopBrain','startBrain','installBrain','saveSettings','switchProject',
-    'saveProviderKey','clearProviderKey','newChat','switchChat','testBlender','deleteChat',
+    'saveProviderKey','clearProviderKey','newChat','switchChat','testBlender','deleteChat','bulkTaskSend',
 })
 
 # Settings the React interface may change. Never a credential: provider and
 # server keys go straight to the OS keyring through saveProviderKey.
 PERMITTED_SETTINGS = frozenset({
     'endpoint','model','fast_model','reasoning_model','roblox_model','vision_model',
-    'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled',
+    'strata_enabled','strata_endpoint','strata_model','strata_reasoning',
+    'strata_context_tokens','strata_timeout','strata_vision_enabled','strata_loop_guard_enabled',
+    'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled','commerce_enabled',
     'tool_workshop_enabled','specialists_enabled','specialist_parallelism','provider',
-    'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','max_calls',
+    'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','debug_evidence_enabled','minecraft_tools_enabled','asset3d_tools_enabled','live_show_enabled','max_calls',
     'context_chars','reduced_motion','comfy_workflow','comfy_prompt_node','comfy_port',
     'obsidian_vault','obsidian_enabled','skills_enabled','graphify_enabled',
     'mcp_graphify_docs','mcp_graphify_local','mcp_graphify_port','mcp_obsidian_live',
-    'blender_enabled','blender_edit','blender_executable','blender_brain2',
+    'mcp_github_repositories','github_repository_access_source',
+    'blender_enabled','blender_edit','blender_executable','blender_brain2','blender_motion_qa',
     'server_endpoint','server_timeout','server_parallel','server_context_tokens','allow_cgnat',
     'instant_route_enabled','web_auto_search',
     'knowledge_endpoint','luau_run_before_answer',
-    'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'presolve_enabled',
+    'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','deep_research_enabled','web_research_v2','research_memory','scholarly_research_enabled','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'presolve_enabled',
     'media_images','media_voice','media_video','media_chat_auto','session_capabilities_prompt','media_use_references','comfy_home','ffmpeg_dir',
-    'picture_max_side',
+    'picture_max_side','image_quality','image_drafts','image_engine',
     'best_of_n','best_of_n_max',
     # Use my GPU: where its files are and when it unloads. The switch itself is `gpuHelperSet`, saved at once.
-    'gpu_helper_server','gpu_helper_model','gpu_idle_minutes',
+    'gpu_helper_server','gpu_helper_model','gpu_idle_minutes','use_my_pc_auto_night',
     'prefill_while_typing',   # star/prefill_warm.py: warm the prompt cache with the draft, off by default
+    'fixed_roblox_tools',     # star/turn_memory.py: one fixed tool list for Roblox chats (prompt cache reuse), on
+    'edit_diff',              # star/edit_format.py: changed lines only for pasted-code edits, off by default
+    'music_recognition_enabled','fpcalc_path',   # star/music_recognition.py, off by default
+    'metallic_control_url',   # star/metallic_access.py: the Metallic Control address (never the code or token)
+    'metallic_accounts_url','metallic_accounts_fingerprint',   # the Metallic accounts address and its pinned certificate
 })
 
 # Settings > Media "session capabilities" line: put before the owner's words of every turn (and of a draft warm-up).
 SESSION_CAPABILITIES = ('Session capabilities: Image creation is available through STAR chat when the local engine is configured. '
                         'Other features depend on the current setup.\n\n')
+
+
+def _repair_strata_config(host, active_task) -> dict:
+    """User-selected local JSON repair, independent of the oversized action router.
+
+    A model cannot supply this path: only the Qt file chooser supplies it.
+    """
+    if active_task:
+        raise RuntimeError('Finish the current chat before editing Strata settings')
+    # Qt is an optional desktop-only dependency: never import it at module load.
+    from PySide6.QtWidgets import QFileDialog
+    selected, _ = QFileDialog.getOpenFileName(
+        host, 'Choose an installed Strata model config',
+        str(Path.home()), 'Strata model settings (strata-*.json)')
+    if not selected:
+        return {'configured': False, 'cancelled': True}
+    from .strata_config import enable_repeat_recovery
+    return enable_repeat_recovery(Path(selected))
+
+
+def song_lookup_request(raw, files: list, selected: list[Path], settings) -> tuple[Path, str] | None:
+    """The composer's per-message song lookup approval: {provider, file (one of `files`, a .wav), consent: true}.
+
+    Only this owner-side flag attaches star_identify_song to a turn; the model cannot set it.
+    """
+    if raw is None:
+        return None
+    if settings.music_recognition_enabled is not True:
+        raise PermissionError('Song recognition is off. Turn it on in Settings > Song recognition.')
+    if (not isinstance(raw, dict) or set(raw) != {'provider', 'file', 'consent'} or raw['consent'] is not True
+            or raw['provider'] not in ('audd', 'acoustid') or raw['file'] not in files):
+        raise ValueError('Invalid song lookup approval')
+    path = selected[files.index(raw['file'])]
+    if path.suffix.lower() != '.wav':
+        raise ValueError('Song lookup needs an attached WAV file')
+    return path, raw['provider']
 
 
 def prepare_desktop_update(bridge, request_id: str, home: Path) -> dict:
@@ -284,6 +357,15 @@ _TOOL_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_.-]{0,47}')
 # A model id as a server or provider names it ("star-voice", "openai/gpt-oss-20b"). Shown as
 # plain text in the status popover and the activity record; anything else is not forwarded.
 _MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/+-]{0,79}')
+_REPAIR_CHECKS = {
+    'python.compile': 'Python syntax check',
+    'json.loads': 'JSON syntax check',
+    'tomllib.loads': 'TOML syntax check',
+    'luau.lint': 'Luau advisory check',
+    'tool.result': 'Tool result check',
+    'none': 'Repair check',
+}
+_REPAIR_KINDS = frozenset({'syntax', 'advisory', 'tool_error', 'unknown_outcome', 'budget'})
 
 
 def _model_name(value):
@@ -308,7 +390,11 @@ def sanitize_event(event: dict) -> dict:
     passed authorization. Goals, arguments, outputs and model-authored task ids
     are never included.
     """
+    activity: dict[str, Any]
     kind = str(event.get('event', 'working'))[:36]
+    research_activity = sanitize_research_event(event)
+    if research_activity is not None:
+        return research_activity
     if kind == 'team_planned':
         steps = []
         tasks = event.get('tasks')
@@ -381,7 +467,7 @@ def sanitize_event(event: dict) -> dict:
         if first is not None:
             activity['first_token_ms'] = first
         rate = event.get('tokens_per_second')
-        if type(rate) in (int, float) and 0 <= rate <= 10000:
+        if isinstance(rate, (int, float)) and type(rate) in (int, float) and 0 <= rate <= 10000:
             activity['tokens_per_second'] = round(float(rate), 1)
         activity['estimated_tokens'] = event.get('estimated_tokens') is True
         return {'phase': 'Answer complete', 'activity': activity}
@@ -420,6 +506,41 @@ def sanitize_event(event: dict) -> dict:
         return {'phase':'Reading the official documentation' if kind == 'knowledge_started'
                 else 'Documentation ready' if activity['state'] == 'done' else 'Documentation unavailable',
                 'activity':activity}
+    if kind in {'repair_detected', 'repair_check_passed', 'repair_blocked'}:
+        # Adapter-owned facts only. Diagnostics, file paths, model text and opaque
+        # output never cross into the page, even when an event carries extra fields.
+        checker = event.get('checker')
+        checker = checker if isinstance(checker, str) and checker in _REPAIR_CHECKS else 'none'
+        repair_kind = event.get('kind')
+        repair_kind = (repair_kind if isinstance(repair_kind, str) and repair_kind in _REPAIR_KINDS
+                       else 'unknown_outcome')
+        result = {'repair_detected': 'detected', 'repair_check_passed': 'check_passed',
+                  'repair_blocked': 'blocked'}[kind]
+        # An unknown checker or outcome cannot be promoted into a passed check.
+        if result == 'check_passed' and (checker == 'none' or repair_kind in {'unknown_outcome', 'budget'}):
+            result = 'blocked'
+        advisory = result == 'detected' and repair_kind == 'advisory' and checker == 'luau.lint'
+        state = 'done' if result == 'check_passed' or advisory else 'failed' if result == 'detected' else 'blocked'
+        repair_activity: dict = {'type': 'repair', 'result': result, 'state': state,
+                                 'checker': checker, 'kind': repair_kind}
+        for key, top in (('count', 100), ('attempt', 2)):
+            count = _bounded_int(event.get(key), top)
+            if count is not None:
+                repair_activity[key] = count
+        if result == 'check_passed':
+            phase = ('Tool call returned successfully' if checker == 'tool.result'
+                     else _REPAIR_CHECKS[checker] + ' passed')
+        elif result == 'blocked':
+            phase = ('Focused repair limit reached' if repair_kind == 'budget' and repair_activity.get('attempt') == 2
+                     else 'Work paused for a repair' if repair_kind == 'budget'
+                     else 'Tool outcome needs inspection' if repair_kind == 'unknown_outcome'
+                     else 'Automatic repair paused')
+        else:
+            phase = ('Luau advisory check reported possible issues' if advisory
+                     else 'A tool reported a problem' if repair_kind == 'tool_error'
+                     else 'A tool outcome is unconfirmed' if repair_kind == 'unknown_outcome'
+                     else _REPAIR_CHECKS[checker] + ' reported a problem')
+        return {'phase': phase, 'activity': repair_activity}
     if kind in {'luau_check_started','luau_repair_started','luau_check_finished'}:
         state=str(event.get('state',''))
         result=state if state in {'passed','failed','repaired','unavailable'} else ''
@@ -639,6 +760,7 @@ def _get_state(settings_file: Path, runtime: Runtime, busy: bool = False, studio
                                                  project=settings.project)
     except (OSError, ValueError, sqlite3.Error) as exc:
         learning_bundle = {'status': 'error', 'message': str(exc)[:160]}
+    self_audit.run_if_due(home)  # weekly report from stored data, in a background thread, only when 7 days old
     chat = _chat_view(home, settings, busy)
     brain = BrainInstall.load(home / 'brain.json')
     workshop = ToolWorkshop(home=home,project=settings.project)
@@ -657,6 +779,7 @@ def _get_state(settings_file: Path, runtime: Runtime, busy: bool = False, studio
         'lesson_bundle':lesson_bundle,
         'learning_bundle':learning_bundle,
         'credentials':credential_status(),
+        'metallic':metallic_status(home,settings.metallic_control_url,settings.metallic_accounts_url),
         'server':server_status(settings),
         'roblox':roblox_state(home),
         'intelligence':for_settings(settings,home).status(),
@@ -722,6 +845,14 @@ def launch():
             self.research_timer.timeout.connect(self._research_tick)
             self.research_timer.start()
             QTimer.singleShot(10_000, self._research_tick)
+            # Commerce Pilot scans private, owner-imported supplier rows while STAR
+            # Desktop is open. Opt-in only, rate-capped, no external writes/network.
+            self.commerce_pilot_running = threading.Event()
+            self.commerce_pilot_timer = QTimer(self)
+            self.commerce_pilot_timer.setInterval(15 * 60 * 1000)
+            self.commerce_pilot_timer.timeout.connect(self._commerce_pilot_tick)
+            self.commerce_pilot_timer.start()
+            QTimer.singleShot(30_000, self._commerce_pilot_tick)
             self.shutdownRequested.connect(QApplication.instance().quit)
             self.allowed_files: set[Path] = set()
             self.active_task = False
@@ -730,8 +861,11 @@ def launch():
             self.active_update = False
             self.pending_update = None
             self._closing = False
+            self.bulk_tasks = None  # Lazy local service; no batch resumes automatically.
+            self.bulk_lock = threading.RLock()
+            self.bulk_config_lock = threading.RLock()
             self.warmer = Warmer()
-            self.draft_warmer = DraftWarmer()
+            self.draft_warmer = DraftWarmer(keep_fresh=True)
             self.digester = Digester()
             self.comfy_launcher = ComfyLauncher()
             self.clips = ClipService()  # No capture until explicit owner-controlled OBS actions.
@@ -747,8 +881,20 @@ def launch():
                 pass
             from . import presolve   # opt-in overnight pre-solving: until it is switched on it only reads the setting
             presolve.start_nightly(self.settings_file, app_data())
+            self.music = None   # star.music_recognition.DesktopSession, made on first use
             self.voice = VoiceBridge(lambda call_id, data: self._emit(call_id, 'voice', data),
                                      settings_path=app_data() / 'voice.json', save_turn=self._save_voice_turn)
+
+        def _bulk_action(self, action, body):
+            with self.bulk_lock:
+                if self._closing:
+                    raise PermissionError('STAR is closing')
+                if self.bulk_tasks is None:
+                    self.bulk_tasks = BulkTaskService(
+                        app_data(), lambda: Settings.load(self.settings_file),
+                        configuration_lock=self.bulk_config_lock)
+                service = self.bulk_tasks
+            return service.handle(action, body)
 
         def _discord_autostart(self):
             if self._closing:
@@ -785,6 +931,30 @@ def launch():
                 self.pool.submit(worker)
             except RuntimeError:
                 self.research_running.clear()
+
+        def _commerce_pilot_tick(self):
+            """Opt-in local seller-catalog safety check; never an external worker.
+
+            Runs at most one scan job per desktop scheduler tick. A paused shop,
+            an opt-out, or a not-yet-due configured business results in no work.
+            """
+            if self._closing or self.commerce_pilot_running.is_set():
+                return
+            self.commerce_pilot_running.set()
+
+            def worker():
+                try:
+                    from .commerce.autopilot import run_due_pilot_checks
+                    current = Settings.load(self.settings_file)
+                    if current.commerce_enabled is True:
+                        run_due_pilot_checks(app_data(), current.project)
+                finally:
+                    self.commerce_pilot_running.clear()
+
+            try:
+                self.pool.submit(worker)
+            except RuntimeError:
+                self.commerce_pilot_running.clear()
 
         def _warm_target(self):
             """What a message sent now would talk to. Runs on the warm-up thread."""
@@ -922,7 +1092,8 @@ def launch():
             source = info.executable if info is not None else Settings.load(self.settings_file).llama_server
             return self.runtime, self.settings_file, app_data(), source
 
-        def _run_chat(self, request_id, prompt, selected, mode='auto', research=False, github=False, retry_id=None):
+        def _run_chat(self, request_id, prompt, selected, mode='auto', research=False, github=False, retry_id=None,
+                      song=None):
             home=app_data()
             settings=Settings.load(self.settings_file)
             if not settings.model.strip():
@@ -943,8 +1114,9 @@ def launch():
                 # about looks; the "not watched" rule for a bare video link (star/chat_media.py).
                 if any(path.suffix.lower() in {'.mp4','.mov','.mkv','.webm','.avi'} for path in selected):
                     self._emit(request_id,'progress',{'phase':'Sampling frames and transcribing the sound…'})
-                media=prepare_turn(settings,home,prompt,selected,Path(directory)/('m_'+uuid.uuid4().hex),
-                                   cancelled=self.cancel_chat.is_set)
+                # A WAV approved for song lookup goes to star_identify_song, not to speech-to-text.
+                media=prepare_turn(settings,home,prompt,[path for path in selected if song is None or path!=song[0]],
+                                   Path(directory)/('m_'+uuid.uuid4().hex),cancelled=self.cancel_chat.is_set)
                 pics=media.pictures
                 full_prompt=media.prompt(prompt)
                 documents=media.documents
@@ -968,11 +1140,16 @@ def launch():
                 answer=run_task(settings,full_prompt,pics,on_event=relay,
                     stream_tokens=True, mode=mode, research=research, cancel_event=self.cancel_chat, github_enabled=github, chat_id=active_chat,
                     owner_text=prompt, studio_configuration_home=self.settings_file.parent, attachment_count=len(selected),
-                    **({'documents': documents} if documents else {}))
+                    **({'documents': documents} if documents else {}), **({'song_lookup': song} if song else {}))
                 # STAR states what a video answer was based on, whatever the model wrote.
                 answer+=media.footer
             if self.cancel_chat.is_set():
                 raise RuntimeError('cancelled by user')
+            # The text model has no picture tool: when it refuses a message that asked for a picture (the chat's own
+            # detector missed the wording), the same turn goes to the image engine instead of showing the refusal.
+            if (not pics and not documents and song is None and settings.media_chat_auto is not False
+                    and refused_to_make_picture(prompt,answer)):
+                return self._run_image(request_id,prompt,display_prompt=prompt,turn_user_id=user_id)
             if provider_kind(settings)=='lan' and not instant_used:
                 note_server_result(settings,True,'ok')
             chats=Conversations(home/'conversations.sqlite3')
@@ -987,7 +1164,8 @@ def launch():
                 self._warm(check=False,then=self._digest_when_idle)
             return {'answer':answer,'learned':learned} if learned else {'answer':answer}
 
-        def _run_image(self, request_id, prompt, files=(), size='square', followup=False, display_prompt=None, retry_id=None):
+        def _run_image(self, request_id, prompt, files=(), size='square', followup=False, display_prompt=None, retry_id=None,
+                       turn_user_id=None):
             settings=Settings.load(self.settings_file)
             home=app_data()
             shown=display_prompt or prompt     # the words the owner typed; `prompt` is what the picture model gets
@@ -995,7 +1173,9 @@ def launch():
             chats=Conversations(home/'conversations.sqlite3')
             try:
                 active_chat=chats.active_chat(settings.project)
-                if retry_id is not None:
+                if turn_user_id is not None:     # the question is already stored: a refused text turn handed over
+                    user_id=turn_user_id
+                elif retry_id is not None:
                     user_id=chats.recover_turn(settings.project,active_chat,retry_id,shown)
                 else:
                     user_id=chats.add(settings.project,'user',shown,chat_id=active_chat)
@@ -1073,6 +1253,28 @@ def launch():
                 "elapsed_ms": team.elapsed_ms,
             }
 
+        def _music_action(self, action: str, body: dict, rid: str) -> str:
+            """Identify-a-song dialog. Replies carry booleans and a file name only, never a key."""
+            from .music_recognition import DesktopSession
+            settings = Settings.load(self.settings_file)
+            if self.music is None:
+                self.music = DesktopSession()
+            if action == 'musicStatus':
+                return json.dumps({'ok': True, 'data': self.music.status(settings)})
+            if settings.music_recognition_enabled is not True:
+                raise PermissionError('Song recognition is off. Turn it on in Settings > Song recognition.')
+            if action == 'musicChooseWav':
+                chosen, _ = QFileDialog.getOpenFileName(self.host, 'Choose a WAV recording', '', 'PCM16 WAV (*.wav)')
+                return json.dumps({'ok': True, 'data': self.music.choose(Path(chosen)) if chosen else {'cancelled': True}})
+            if action == 'musicClear':
+                return json.dumps({'ok': True, 'data': self.music.clear()})
+            if self.active_task or self._in_voice_call():
+                raise RuntimeError('Finish the current chat or voice call before identifying a song')
+            music = self.music
+            self._run(rid, action, lambda: music.identify(
+                body, settings, progress=lambda phase: self._emit(rid, 'progress', {'phase': phase})))
+            return json.dumps({'ok': True, 'pending': True, 'requestId': rid})
+
         def _clip_action(self, action: str, body: dict, rid: str) -> str:
             """STAR Clips, clip folder, SteelSeries Moments and Game Lab (kept out of invoke for pyright)."""
             if action == 'gameLabCatalog':
@@ -1114,7 +1316,7 @@ def launch():
             raise PermissionError('Unsupported STAR Clips action.')
 
         @Slot(str,result=str)
-        def invoke(self, raw: str) -> str:
+        def invoke(self, raw: str) -> str:  # pyright: ignore[reportGeneralTypeIssues]
             try:
                 if len(raw)>100000:
                     raise ValueError('Request is too large')
@@ -1125,6 +1327,9 @@ def launch():
                 rid=str(body.get('requestId',''))[:80]
                 if action in WARM_UP_STOPPERS:self.warmer.cancel();self.draft_warmer.cancel()
                 if action in WARM_UP_STOPPERS or action in VOICE_ACTIONS:self.digester.cancel()
+                if action in BULK_ACTIONS:
+                    self._run(rid, action, lambda: self._bulk_action(action, body))
+                    return json.dumps({'ok':True,'pending':True,'requestId':rid})
                 if action=='warmDraft':return json.dumps({'ok':True,'data':self._warm_draft(body)})
                 if action=='warmUp':
                     if self.active_task:
@@ -1153,8 +1358,30 @@ def launch():
                         saved.discord_autostart=enabled
                         saved.save(self.settings_file)
                     return json.dumps({'ok':True,'data':handle_discord_action(action,self.discord,autostart=saved.discord_autostart)})
+                if action in METALLIC_ACTIONS:
+                    # The network calls run off the Qt thread; status and sign-out only touch the local file.
+                    metallic=metallic_for_home(app_data())
+                    saved_metallic=Settings.load(self.settings_file)
+                    url_setting=saved_metallic.metallic_control_url
+                    if action=='metallicStatus':
+                        return json.dumps({'ok':True,'data':metallic.status(url_setting,saved_metallic.metallic_accounts_url)})
+                    if action=='metallicSignOut':
+                        return json.dumps({'ok':True,'data':metallic.sign_out(url_setting)})
+                    if action=='metallicSignIn':
+                        code=check_metallic_code(body.get('code'))
+                        self._run(rid,action,lambda:metallic.sign_in(code,url_setting))
+                    elif action=='metallicAccountSignIn':
+                        login=check_account_login(body)
+                        self._run(rid,action,lambda:metallic.sign_in_account(login,url_setting,saved_metallic.metallic_accounts_url,saved_metallic.metallic_accounts_fingerprint))
+                    else:
+                        rng=body.get('range','hour')
+                        if rng not in ('hour','day','week'):raise ValueError('Range is hour, day or week')
+                        self._run(rid,action,lambda:metallic.state(url_setting,rng))
+                    return json.dumps({'ok':True,'pending':True,'requestId':rid})
                 if action == 'gameLabCatalog' or action in CLIP_INTEROP_ACTIONS or action in CLIP_ACTIONS:
                     return self._clip_action(action, body, rid)
+                if action in MUSIC_ACTIONS:
+                    return self._music_action(action, body, rid)
                 if action in MEDIA_ACTIONS:
                     def media_worker():
                         return handle_media_action(
@@ -1185,6 +1412,24 @@ def launch():
                         self._run(rid, action, research_task)
                         return json.dumps({'ok':True,'pending':True,'requestId':rid})
                     return json.dumps({'ok':True,'data':research_task()},default=str)
+                # String literals preserve the standalone Qt bridge test harness that
+                # extracts invoke() without its module globals. Keep in sync with the allowlist.
+                if action in (
+                    'commerceBoard', 'commerceCreate', 'commerceEvidence', 'commerceReview',
+                    'commerceCreateBusiness', 'commercePauseBusiness', 'commerceAssignBusiness',
+                    'commerceQueuePreflight', 'commerceRunPreflight', 'commerceCancelPreflight',
+    'commerceLearning', 'commerceImportDailyMetrics',
+    'commerceDropship', 'commerceDropshipImportOffers', 'commerceDropshipImportSignals',
+    'commerceDropshipSavePolicy', 'commerceDropshipDraftReply',
+    'commercePilot', 'commercePilotConfigure', 'commercePilotScan', 'commercePilotDismiss',
+    'commerceApprovals', 'commerceApprovalDecide', 'commerceApprovalExecute',
+                ):
+                    from .commerce.workspace import handle_commerce
+                    current = Settings.load(self.settings_file)
+                    if current.commerce_enabled is not True:
+                        raise PermissionError('Business tools are off. Turn them on in Settings > Tools.')
+                    result = handle_commerce(action, body, project=current.project, home=app_data())
+                    return json.dumps({'ok':True,'data':result})
                 if action=='bootstrap':return json.dumps({'ok':True,'data':_get_state(self.settings_file,self.runtime,busy=self.active_task,studio_status=self.studio_status)})
                 if action=='brainSnapshot':return json.dumps({'ok':True,'data':brain_snapshot(self.settings_file,app_data())})
                 if action=='plannerStatus':return json.dumps({'ok':True,'data':planner_snapshot(self.settings_file)})
@@ -1249,6 +1494,10 @@ def launch():
                     # Only an explicit "Take screenshot" press reaches here (consent: true, per use).
                     require_screen_consent(body)
                     return json.dumps({'ok':True,'data':self._capture_screen()})
+                if action in SELF_AUDIT_ACTIONS:
+                    # The newest weekly self-audit (star/self_audit.py); read only.
+                    settings=Settings.load(self.settings_file)
+                    return json.dumps({'ok':True,'data':self_audit.handle_action(app_data(),settings.project,action,body)},default=str)
                 if action in LEARNED_ACTIONS or action in CORRECTION_ACTIONS:
                     # Owner clicks in What STAR learned this week / corrections; `approved` is the click itself.
                     settings=Settings.load(self.settings_file)
@@ -1309,8 +1558,9 @@ def launch():
                 if action=='saveSettings':
                     if self.active_task:
                         raise RuntimeError('Wait for the current task before changing connections or permissions')
-                    old=apply_setting_changes(Settings.load(self.settings_file),body.get('settings'))
-                    old.save(self.settings_file)
+                    with self.bulk_config_lock:
+                        old=apply_setting_changes(Settings.load(self.settings_file),body.get('settings'))
+                        old.save(self.settings_file)
                     gpu_helper.HELPER.configure(old,app_data())
                     if old.research_auto_check:
                         QTimer.singleShot(200, self._research_tick)
@@ -1327,17 +1577,20 @@ def launch():
                 if action=='saveProviderKey':
                     name=str(body.get('provider',''))
                     token=body.get('key','')
-                    save_api_key(name,token)
+                    with self.bulk_config_lock:
+                        save_api_key(name,token)
                     return json.dumps({'ok':True,'data':{'connected':True}})
                 if action=='serverKeyFileStatus':
                     from .server_key_file import key_file_status
                     return json.dumps({'ok':True,'data':key_file_status()})
                 if action=='importServerKeyFile':
                     from .server_key_file import import_key_file
-                    return json.dumps({'ok':True,'data':import_key_file()})
+                    with self.bulk_config_lock:
+                        return json.dumps({'ok':True,'data':import_key_file()})
                 if action=='clearProviderKey':
                     name=str(body.get('provider',''))
-                    clear_api_key(name)
+                    with self.bulk_config_lock:
+                        clear_api_key(name)
                     return json.dumps({'ok':True,'data':{'connected':False}})
                 if action=='selectFolder':
                     selected=QFileDialog.getExistingDirectory(self.host, 'Choose a local notes or project folder')
@@ -1367,13 +1620,13 @@ def launch():
                             raise RuntimeError('Could not capture current screen')
                         screenshot=bytes(buffer.data())
                         buffer.close()
-                    def worker():
+                    def export_worker():
                         result=export_review_bundle(
                             app_data(),Settings.load(self.settings_file),destination,
                             runtime_status=self.runtime.status(),screenshot_png=screenshot)
                         return {'filename':result.name,'screenshot_included':bool(screenshot),
                                 'saved_to_user_selected_location':True}
-                    self._run(rid,action,worker)
+                    self._run(rid,action,export_worker)
                     return json.dumps({'ok':True,'pending':True,'requestId':rid})
                 if action=='openLegacy':
                     raise PermissionError('The legacy UI is diagnostic-only; start STAR.exe --legacy-ui explicitly if necessary.')
@@ -1423,6 +1676,7 @@ def launch():
                     github=body.get('github',False)
                     if not isinstance(github,bool) or (github and mode != 'agent'):
                         raise ValueError('GitHub inspection requires Agent mode')
+                    song=song_lookup_request(body.get('songLookup'),files,selected,Settings.load(self.settings_file))
                     self.cancel_chat = threading.Event()
                     self.active_task=True
                     try:
@@ -1436,7 +1690,7 @@ def launch():
                                 chats.recover_turn(current,chats.active_chat(current),retry_id,prompt)
                             finally:
                                 chats.close()
-                        self._run(rid,action,lambda:self._run_chat(rid,prompt,selected,mode=mode,research=research,github=github,retry_id=retry_id))
+                        self._run(rid,action,lambda:self._run_chat(rid,prompt,selected,mode=mode,research=research,github=github,retry_id=retry_id,song=song))
                     except Exception:
                         self.active_task=False
                         raise
@@ -1511,7 +1765,21 @@ def launch():
                     # timings and model IDs go back to the interface.
                     self._run(rid,action,lambda:probe_server(Settings.load(self.settings_file)))
                 elif action=='listModels':
-                    def worker():return {'models':query_models(Settings.load(self.settings_file))}
+                    def models_worker():return {'models':query_models(Settings.load(self.settings_file))}
+                    self._run(rid,action,models_worker)
+                elif action=='repairStrataConfig':
+                    return json.dumps({'ok': True, 'data': _repair_strata_config(self.host, self.active_task)})
+                elif action=='testStrata':
+                    if self.active_task:
+                        raise RuntimeError('Finish the current chat before testing Strata')
+                    def worker():
+                        import asyncio
+                        from .strata_backend import probe
+                        current=Settings.load(self.settings_file)
+                        return asyncio.run(probe(
+                            current,
+                            endpoint=str(body.get('endpoint') or current.strata_endpoint),
+                            model=str(body.get('model') or current.strata_model)))
                     self._run(rid,action,worker)
                 elif action=='testModel':
                     def worker():
@@ -1555,12 +1823,12 @@ def launch():
                     self._run(rid,action,worker)
                 elif action=='testMcpConnection':
                     server=str(body.get('server',''))
-                    if server not in {'graphify_docs','graphify_local','obsidian_live'}:
+                    if server not in {'graphify_docs','graphify_local','obsidian_live','github_repositories'}:
                         raise ValueError('Unknown MCP connector')
                     def worker():
                         import asyncio
                         gateway=MCPGateway(Settings.load(self.settings_file))
-                        # Probe does not call any server tool or perform writes.
+                        # Probe uses curated read-only connection checks; never writes.
                         return asyncio.run(gateway.probe(server))
                     self._run(rid,action,worker)
                 elif action=='discoverStudio':
@@ -1617,6 +1885,9 @@ def launch():
             self._closing = True
             self.research_timer.stop()
             self.cancel_chat.set()
+            with self.bulk_lock:
+                if self.bulk_tasks is not None:
+                    self.bulk_tasks.shutdown()
             if self.turn is not None:
                 _, detail = failure_outcome('sendMessage', RuntimeError('cancelled by user'), cancelled=True)
                 record_turn_failure(app_data(), self.turn, 'cancelled', detail)

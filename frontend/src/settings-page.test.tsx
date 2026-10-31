@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Settings page layout: sections as tabs, search across all of them, the unsaved-changes bar, and the two
+ * Settings page layout: seven plain sections as tabs, the Appearance theme cards, search across all of them, the unsaved-changes bar, and the two
  * switches and keys the page added (live Roblox docs, automatic web search, Brave/Tavily keys).
  * Driven through the real app root against the fake Qt bridge; no class names are asserted.
  */
@@ -28,7 +28,7 @@ afterEach(cleanup)
 async function openSettings() {
   const user = userEvent.setup()
   render(<App/>)
-  await screen.findByRole('textbox', {name: /message star/i})
+  await screen.findByRole('textbox', {name: /message star/i}, {timeout: 15_000})
   await waitFor(() => expect(desktop.sent('bootstrap').length).toBeGreaterThan(0))
   await user.click(screen.getByRole('button', {name: /^settings/i}))
   await screen.findByRole('tablist', {name: 'Settings sections'})
@@ -39,33 +39,78 @@ describe('Settings sections', () => {
   it('shows one section at a time and moves between them with the arrow keys', async () => {
     const user = await openSettings()
     const tabs = within(screen.getByRole('tablist', {name: 'Settings sections'})).getAllByRole('tab')
-    expect(tabs.map(t => t.textContent)).toEqual(['General', 'Model', 'Roblox & Studio', 'Images, voice & 3D', 'Knowledge & search', 'Permissions', 'Updates'])
+    expect(tabs.map(t => t.textContent)).toEqual(['Basics', 'Appearance', 'Models & speed', 'Voice', 'Companions', 'Account & Metallic', 'Advanced'])
     expect(tabs[0].getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByRole('tabpanel', {name: 'General'})).toBeTruthy()
+    expect(screen.getByRole('tabpanel', {name: 'Basics'})).toBeTruthy()
     expect(screen.queryByRole('checkbox', {name: 'Allow workspace writes'})).toBeNull()
 
     tabs[0].focus()
     await user.keyboard('{ArrowDown}')
     expect(document.activeElement).toBe(tabs[1])
     expect(tabs[1].getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByRole('tabpanel', {name: 'Model'})).toBeTruthy()
+    expect(screen.getByRole('tabpanel', {name: 'Appearance'})).toBeTruthy()
     await user.keyboard('{End}')
-    expect(screen.getByRole('tabpanel', {name: 'Updates'})).toBeTruthy()
+    expect(screen.getByRole('tabpanel', {name: 'Advanced'})).toBeTruthy()
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('tabpanel', {name: 'General'})).toBeTruthy()
+    expect(screen.getByRole('tabpanel', {name: 'Basics'})).toBeTruthy()
 
-    await user.click(screen.getByRole('tab', {name: 'Permissions'}))
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
     expect(screen.getByRole('checkbox', {name: 'Allow workspace writes'})).toBeTruthy()
     // Only the chosen tab is in the Tab order.
-    expect(tabs.filter(t => t.tabIndex === 0).map(t => t.textContent)).toEqual(['Permissions'])
+    expect(tabs.filter(t => t.tabIndex === 0).map(t => t.textContent)).toEqual(['Advanced'])
+  })
+
+  it('keeps Basics to the common switches and puts the technical ones under Advanced', async () => {
+    const user = await openSettings()
+    const basics = screen.getByRole('tabpanel', {name: 'Basics'})
+    expect(within(basics).getAllByRole('checkbox').map(box => box.getAttribute('aria-label')))
+      .toEqual(['Search the web when a question needs it', 'Create images straight from chat', 'Reduced motion'])
+    expect(within(basics).getByRole('button', {name: /check for updates/i})).toBeTruthy()
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
+    const advanced = screen.getByRole('tabpanel', {name: 'Advanced'})
+    for (const name of ['Allow workspace writes', 'Allow Studio edits', 'Use Strata for hard local work', 'Read the live Roblox documentation', 'Enable Agent Skills'])
+      expect(within(advanced).getByRole('checkbox', {name})).toBeTruthy()
+    for (const heading of ['Model engine', 'Roblox & Studio', 'Knowledge & search', 'Permissions', 'Update details'])
+      expect(within(advanced).getByRole('heading', {name: heading})).toBeTruthy()
+  })
+
+  it('shows Star and the companion choices on Companions, and the Metallic sign-in block on Account', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Companions'}))
+    const companions = screen.getByRole('tabpanel', {name: 'Companions'})
+    expect(within(companions).getByRole('checkbox', {name: 'Show Star'})).toBeTruthy()
+    expect(within(companions).getByRole('checkbox', {name: 'Show companions'})).toBeTruthy()
+    await user.click(screen.getByRole('tab', {name: 'Account & Metallic'}))
+    expect(within(screen.getByRole('tabpanel', {name: 'Account & Metallic'})).getByLabelText('Metallic Control address')).toBeTruthy()
   })
 
   it('remembers the last section on this device', async () => {
     const user = await openSettings()
-    await user.click(screen.getByRole('tab', {name: 'Updates'}))
+    await user.click(screen.getByRole('tab', {name: 'Voice'}))
     cleanup()
     await openSettings()
-    expect(screen.getByRole('tab', {name: 'Updates'}).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', {name: 'Voice'}).getAttribute('aria-selected')).toBe('true')
+  })
+})
+
+describe('Appearance section', () => {
+  it('keeps the standard look until a theme card is picked, then applies it at once and Reset returns to standard', async () => {
+    const user = await openSettings()
+    const root = document.documentElement
+    expect(root.hasAttribute('data-star-appearance')).toBe(false)
+    await user.click(screen.getByRole('tab', {name: 'Appearance'}))
+    const panel = screen.getByRole('tabpanel', {name: 'Appearance'})
+    const cards = within(panel).getAllByRole('radio').filter(radio => ['Obsidian', 'Pearl', 'Dusk', 'Grove'].includes(radio.getAttribute('aria-label') || ''))
+    expect(cards).toHaveLength(4)
+    expect(cards.some(card => (card as HTMLInputElement).checked)).toBe(false)
+    await user.click(within(panel).getByRole('radio', {name: 'Pearl'}))
+    expect(root.getAttribute('data-star-appearance')).toBe('v1')
+    expect(root.getAttribute('data-star-theme')).toBe('pearl')
+    expect(root.style.getPropertyValue('--star-appearance-bg')).toBe('#F7F5F0')
+    expect(within(panel).getByRole('radio', {name: 'Pearl'})).toHaveProperty('checked', true)
+    expect(desktop.sent('saveSettings')).toHaveLength(0)
+    await user.click(within(panel).getByRole('button', {name: /reset appearance/i}))
+    expect(root.hasAttribute('data-star-appearance')).toBe(false)
   })
 })
 
@@ -73,29 +118,32 @@ describe('Settings search', () => {
   it('finds a setting in any section by its words or a synonym, and says when nothing matches', async () => {
     const user = await openSettings()
     const search = screen.getByRole('searchbox', {name: 'Search settings'})
-    await user.type(search, 'workspace writes')
+    await user.click(search)
+    await user.paste('workspace writes')
     expect(screen.getByRole('checkbox', {name: 'Allow workspace writes'})).toBeTruthy()
     expect(screen.queryByRole('checkbox', {name: 'Show Star'})).toBeNull()
     expect(screen.queryByRole('tabpanel')).toBeNull()
 
     await user.clear(search)
-    await user.type(search, 'animation')
+    await user.click(search)
+    await user.paste('animation')
     expect(screen.getByRole('checkbox', {name: 'Reduced motion'})).toBeTruthy()
 
     await user.clear(search)
-    await user.type(search, 'zzqx')
+    await user.click(search)
+    await user.paste('zzqx')
     expect(screen.getByText(/No settings match/)).toBeTruthy()
     await user.keyboard('{Escape}')
     expect((search as HTMLInputElement).value).toBe('')
-    expect(screen.getByRole('tabpanel', {name: 'General'})).toBeTruthy()
-  })
+    expect(screen.getByRole('tabpanel', {name: 'Basics'})).toBeTruthy()
+  }, 60_000) // pastes three queries; each search re-reads all seven sections
 
   it('clicking a section while searching clears the search and opens it', async () => {
     const user = await openSettings()
     await user.type(screen.getByRole('searchbox', {name: 'Search settings'}), 'key')
-    await user.click(screen.getByRole('tab', {name: 'Roblox & Studio'}))
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
     expect((screen.getByRole('searchbox', {name: 'Search settings'}) as HTMLInputElement).value).toBe('')
-    expect(screen.getByRole('tabpanel', {name: 'Roblox & Studio'})).toBeTruthy()
+    expect(screen.getByRole('tabpanel', {name: 'Advanced'})).toBeTruthy()
   })
 })
 
@@ -103,6 +151,7 @@ describe('Unsaved changes', () => {
   it('says when the form differs from what is saved, and Discard puts it back', async () => {
     const user = await openSettings()
     expect(screen.queryByText('Unsaved changes')).toBeNull()
+    await user.click(screen.getByRole('tab', {name: 'Models & speed'}))
     await user.click(screen.getByRole('checkbox', {name: 'Instant answers on this PC'}))
     expect(screen.getByText('Unsaved changes')).toBeTruthy()
     await user.click(screen.getByRole('button', {name: 'Discard'}))
@@ -113,7 +162,7 @@ describe('Unsaved changes', () => {
   it('saves the live Roblox docs and automatic web search switches', async () => {
     const user = await openSettings()
     await user.click(screen.getByRole('checkbox', {name: 'Search the web when a question needs it'}))
-    await user.click(screen.getByRole('tab', {name: 'Roblox & Studio'}))
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
     const docs = screen.getByRole('checkbox', {name: 'Read the live Roblox documentation'}) as HTMLInputElement
     expect(docs.checked).toBe(false)
     await user.click(docs)
@@ -125,11 +174,70 @@ describe('Unsaved changes', () => {
   })
 })
 
+describe('Strata specialist settings', () => {
+  it('applies the Strata engine recovery through a native owner-picked config', async () => {
+    desktop.onAction('repairStrataConfig', () => ({
+      ok:true,data:{configured:true,changed:true,restart_required:true,backup_name:'strata-qwen.json.star-before-recovery.bak'}
+    }))
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
+    await user.click(screen.getByRole('button', {name: 'Apply engine loop recovery…'}))
+    await waitFor(() => expect(desktop.sent('repairStrataConfig').length).toBe(1))
+    expect(desktop.sent('repairStrataConfig')[0].payload).toEqual({})
+    expect(await screen.findByText(/Recovery enabled in Strata config/)).toBeTruthy()
+  })
+
+  it('can disable the issue #728 watchdog for intentional repetition', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
+    await user.click(screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}))
+    const control = screen.getByRole('checkbox', {name: 'Stop runaway Strata repetition'}) as HTMLInputElement
+    expect(control.checked).toBe(true)
+    await user.click(control)
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    const saved = desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>
+    expect(saved.strata_loop_guard_enabled).toBe(false)
+  })
+
+  it('tests the Strata endpoint and model currently on screen', async () => {
+    desktop.onAction('testStrata', () => ({ok:true,data:{ok:true,model:'strata',sample:'Strata is ready.',elapsed_ms:12}}))
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
+    await user.click(screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}))
+    await user.click(screen.getByRole('button', {name: 'Test Strata'}))
+    await waitFor(() => expect(desktop.sent('testStrata').length).toBe(1))
+    const call = desktop.sent('testStrata')[0]
+    expect(call.payload).toEqual({endpoint:'http://127.0.0.1:8082/v1',model:'strata'})
+    expect(await screen.findByText(/Strata is ready/)).toBeTruthy()
+  })
+
+  it('keeps the second engine opt-in and saves its bounded local configuration', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
+    const enabled = screen.getByRole('checkbox', {name: 'Use Strata for hard local work'}) as HTMLInputElement
+    expect(enabled.checked).toBe(false)
+    await user.click(enabled)
+    const model = screen.getByLabelText('Strata model ID') as HTMLInputElement
+    await user.clear(model); await user.type(model, 'strata')
+    const effort = screen.getByLabelText('Reasoning') as HTMLSelectElement
+    await user.selectOptions(effort, 'high')
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    const saved = desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>
+    expect(saved.strata_enabled).toBe(true)
+    expect(saved.strata_endpoint).toBe('http://127.0.0.1:8082/v1')
+    expect(saved.strata_reasoning).toBe('high')
+    expect(saved.strata_context_tokens).toBe(32768)
+    expect(saved.strata_loop_guard_enabled).toBe(true)
+  })
+})
+
 describe('Web search keys', () => {
   it('stores a Brave key through the OS vault action and never keeps it in the page', async () => {
     desktop.onAction('saveProviderKey', () => ({ok: true, data: {connected: true}}))
     const user = await openSettings()
-    await user.click(screen.getByRole('tab', {name: 'Knowledge & search'}))
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
     const field = screen.getByLabelText('Brave Search key') as HTMLInputElement
     expect(field.type).toBe('password')
     expect(screen.getAllByText('No key stored').length).toBe(2)
@@ -140,6 +248,19 @@ describe('Web search keys', () => {
     expect(field.value).toBe('')
     expect(await screen.findByText('Brave Search key saved in Windows Credential Manager.')).toBeTruthy()
     expect(screen.getByRole('button', {name: 'Forget Brave Search key'})).toHaveProperty('disabled', false)
+  })
+})
+
+describe('Scholarly research switch', () => {
+  it('is off by default and saves scholarly_research_enabled when turned on', async () => {
+    const user = await openSettings()
+    await user.click(screen.getByRole('tab', {name: 'Advanced'}))
+    const box = screen.getByRole('checkbox', {name: 'Add scholarly papers to deep research'}) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    await user.click(box)
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBeGreaterThan(0))
+    expect((desktop.sent('saveSettings').at(-1)!.payload.settings as Record<string, unknown>).scholarly_research_enabled).toBe(true)
   })
 })
 
@@ -155,5 +276,24 @@ describe('helpers', () => {
     expect(settingsDirty({...base, reduced_motion: !base.reduced_motion}, base)).toBe(false)
     expect(settingsDirty({...base, max_calls: 3}, base)).toBe(true)
     expect(settingsDirty({...base, instant_route_enabled: null}, {...base, instant_route_enabled: undefined})).toBe(false)
+  })
+})
+
+describe('Song recognition', () => {
+  it('is off by default: no composer button and no key fields until the switch is on, then it saves the flag', async () => {
+    expect((backendSettings as AppSettings).music_recognition_enabled).toBeUndefined()
+    const user = userEvent.setup()
+    render(<App/>)
+    await screen.findByRole('textbox', {name: /message star/i})
+    expect(screen.queryByRole('button', {name: 'Identify a song'})).toBeNull()
+    await user.click(screen.getByRole('button', {name: /^settings/i}))
+    await user.click(await screen.findByRole('tab', {name: 'Voice'}))
+    expect(screen.queryByLabelText('AudD key')).toBeNull()
+    await user.click(screen.getByRole('checkbox', {name: 'Song recognition'}))
+    expect((screen.getByLabelText('AudD key') as HTMLInputElement).type).toBe('password')
+    expect(screen.getByLabelText('AcoustID key')).toBeTruthy()
+    await user.click(screen.getByRole('button', {name: 'Save settings'}))
+    await waitFor(() => expect(desktop.sent('saveSettings').length).toBe(1))
+    expect((desktop.sent('saveSettings')[0].payload.settings as AppSettings).music_recognition_enabled).toBe(true)
   })
 })

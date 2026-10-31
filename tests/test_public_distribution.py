@@ -31,7 +31,7 @@ class FakeClient:
 
 
 def test_official_release_metadata_requires_no_authentication():
-    public={"tag_name":"v1.1.0","html_url":updates.RELEASES_URL,"assets":[]}
+    public={"tag_name":"v9.1.0","html_url":updates.RELEASES_URL,"assets":[]}
     client=FakeClient({updates.API:FakeResponse(body=public)})
     result=updates.get_latest(client)
     assert result.available and result.repository==REPO and result.anonymous_access
@@ -47,10 +47,10 @@ def test_missing_release_uses_official_browser_fallback():
 
 
 def test_unverified_or_other_repository_assets_cannot_be_auto_downloaded():
-    missing_proof=updates.UpdateResult(True,'1.1.0',updates.RELEASES_URL,repository=REPO)
+    missing_proof=updates.UpdateResult(True,'9.1.0',updates.RELEASES_URL,repository=REPO)
     with pytest.raises(PermissionError):
         updates._trusted_setup_asset(missing_proof)
-    wrong_repo=updates.UpdateResult(True,'1.1.0',updates.RELEASES_URL,
+    wrong_repo=updates.UpdateResult(True,'9.1.0',updates.RELEASES_URL,
         repository='other-owner/not-star',anonymous_access=True)
     with pytest.raises(PermissionError):
         updates._trusted_setup_asset(wrong_repo)
@@ -59,7 +59,7 @@ def test_unverified_or_other_repository_assets_cannot_be_auto_downloaded():
 @pytest.mark.parametrize("flag",["draft","prerelease"])
 def test_draft_and_prerelease_are_not_auto_updates(flag):
     client=FakeClient({updates.API:FakeResponse(body={
-        'tag_name':'v1.1.0','assets':[],flag:True})})
+        'tag_name':'v9.1.0','assets':[],flag:True})})
     result=updates.get_latest(client)
     assert not result.available and result.requires_browser
 

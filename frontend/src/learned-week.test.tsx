@@ -25,7 +25,7 @@ const fix = (over: Partial<CorrectionItem>): CorrectionItem => ({
   answer: 'wait(2) workspace.Door.Transparency = 1', correction: 'Use task.wait instead of wait.', cause: 'invented API name',
   status: 'candidate', task_id: '', ...over})
 
-function host(items: LearnedItem[], corrections: CorrectionItem[]) {
+function host(items: LearnedItem[], corrections: CorrectionItem[], audit: unknown = null) {
   let list = items.slice()
   let fixes = corrections.slice()
   const calls: Array<{action: string; params: Record<string, unknown>}> = []
@@ -48,12 +48,30 @@ function host(items: LearnedItem[], corrections: CorrectionItem[]) {
         task_id: params.op === 'approve' ? 'CR-0007' : ''})
       return listing()
     }
+    if (action === 'selfAudit') return {report: audit}
     return {}
   })
   return {invoke, sent: (action: string) => calls.filter(c => c.action === action)}
 }
 
 describe('what STAR learned this week', () => {
+  it('shows the weekly self-audit the host stored, and nothing when there is none yet', async () => {
+    const report = {generated: '2026-10-25T10:00:00Z', strengths: ['luau-typing: 83% of 12 scored tasks'],
+      weaknesses: ['most common failure class: invented API name (7 failed tasks)'], missing: ['receipts']}
+    const withReport = host([item({})], [], report)
+    render(<LearnedThisWeek invoke={withReport.invoke} project="MyGame"/>)
+    expect(await screen.findByText(/weekly self-audit/i)).toBeTruthy()
+    expect(screen.getByText('luau-typing: 83% of 12 scored tasks')).toBeTruthy()
+    expect(screen.getByText(/most common failure class: invented API name/)).toBeTruthy()
+    expect(screen.getByText(/No data on this PC for: receipts/)).toBeTruthy()
+    expect(withReport.sent('selfAudit')).toHaveLength(1)
+    cleanup()
+    const without = host([item({})], [])
+    render(<LearnedThisWeek invoke={without.invoke} project="MyGame"/>)
+    await screen.findByText(/Clamp a stamina value/)
+    expect(screen.queryByText(/weekly self-audit/i)).toBeNull()
+  })
+
   it('lists a live lesson with its evidence, days left and the gate result', async () => {
     const h = host([item({}), item({id: 2, kind: 'example', title: 'Write a Luau module that clamps stamina.', gate: {}, days_left: 3})], [])
     render(<LearnedThisWeek invoke={h.invoke} project="MyGame"/>)

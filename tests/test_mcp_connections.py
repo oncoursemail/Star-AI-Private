@@ -224,7 +224,7 @@ def test_unauthorized_credentials_are_not_returned(monkeypatch):
     monkeypatch.setenv("STAR_OBSIDIAN_MCP_TOKEN", "super-private-token")
     gateway = MCPGateway(task_settings(mcp_graphify_docs=False, mcp_obsidian_live=True))
     state = gateway.status()
-    assert state["servers"][-1]["credential_ready"] is True
+    assert next(item for item in state["servers"] if item["name"] == "obsidian_live")["credential_ready"] is True
     assert "super-private-token" not in repr(state)
     monkeypatch.setenv("STAR_OBSIDIAN_MCP_CA_BUNDLE", "/no/such/certificate.crt")
     with pytest.raises(ValueError):

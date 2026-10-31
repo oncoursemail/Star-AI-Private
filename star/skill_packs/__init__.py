@@ -50,7 +50,7 @@ DEFAULT_ENABLED: tuple[str, ...] = (
 _ROBLOX_CONTEXT = re.compile(
     r"\b(?:roblox|luau|studio|workspace|LocalScript|ModuleScript|ServerScriptService|ServerStorage|ReplicatedStorage|"
     r"StarterGui|StarterPlayer\w*|StarterCharacterScripts|PlayerGui|ScreenGui|Instance\.new|game:GetService|"
-    r"Humanoid|RemoteEvent|RemoteFunction|DataStore\w*|OnServerEvent|BindToClose|R6|R15)\b", re.IGNORECASE)
+    r"EditableMesh|Humanoid|RemoteEvent|RemoteFunction|DataStore\w*|OnServerEvent|BindToClose|R6|R15)\b", re.IGNORECASE)
 
 _GODOT_CONTEXT = re.compile(r"\b(?:godot(?:\s*4)?|gdscript|PackedScene|CharacterBody2D|Node2D|Control\s+node)\b", re.IGNORECASE)
 GODOT_PACKS = frozenset(("godot-scenes-and-nodes", "godot-gdscript-typing-and-signals",
@@ -161,6 +161,11 @@ TRIGGERS: dict[str, re.Pattern] = {
         r"\b(?:replication|replicat\w+|PivotTo|SetAttribute|GetAttribute|attributes?|UnreliableRemoteEvent|bandwidth|"
         r"network budget|network traffic|items per second|per-frame|hot path|allocations?|GetDescendants|"
         r"LocalTransparencyModifier|sequence numbers?)\b", re.IGNORECASE),
+    # 2026 geometry batching; never enabled without a measured evaluation gate.
+    "roblox-editablemesh-batching": re.compile(
+        r"\b(?:EditableMesh batch(?:ing)?|batch(?:ed)? mesh|BatchAdd|BatchSetValues|BatchGetValues|"
+        r"MeshAttribute|parallel (?:mesh )?quer(?:y|ies)|procedural (?:wave|water|mesh)|"
+        r"deform(?:able|ing)? mesh|wave mesh|geometry batches)\b", re.IGNORECASE),
     "roblox-editable-memory-streaming": re.compile(
         r"\b(?:EditableMesh|EditableImage|CreateEditableMeshAsync|CreateEditableImage\w*|FixedSize|memory budget|"
         r"Content\.fromObject|TintMask|AlphaMode|ModelStreamingMode|Persistent|Atomic|streams? in|streamed in|"
@@ -231,6 +236,27 @@ TRIGGERS: dict[str, re.Pattern] = {
         r"CameraType\.Scriptable|Scriptable camera|letterbox\w*|skip button|FaceControls|facial (?:expressions?|animation)|"
         r"dynamic heads?|FACS|expressions? (?:change|player)|lip-?sync|talking animation|"
         r"Catmull-?Rom|camera splines?|depth of field|DepthOfFieldEffect|boss intro)\b", re.IGNORECASE),
+    # EXPERIMENTAL XPBD secondary-motion kernel and rig preflight (SmartBone 2 comparison). OFF until evaluated.
+    "roblox-secondary-motion-lab": re.compile(
+        r"\b(?:SmartBone(?: ?2)?|XPBD|secondary motion|jiggle bones?|spring bones?|bone chains?|hair physics|cloth physics|"
+        r"cosmetic physics|AnimationConstraint|ponytail|capes?|dangling)\b", re.IGNORECASE),
+    # 2026 platform changes from the official docs (action-wave1-20261025). OFF until the evaluation gate measures them.
+    "roblox-server-authority": re.compile(
+        r"\b(?:server authority|server-authoritative (?:movement|physics|simulation|game)|AuthorityMode|"
+        r"BindToSimulation|SetPredictionMode|client prediction|predict\w*|rollback|resimulat\w*|netcode|"
+        r"NextGenerationReplication|UseFixedSimulation|competitive (?:game|shooter|fps|racing)|flyhacks?|speedhacks?|"
+        r"server authority game|for prediction|in the simulation)\b",
+        re.IGNORECASE),
+    "roblox-luau-new-solver": re.compile(
+        r"\b(?:type solver|new solver|UseNewLuauTypeSolver|LuauTypeCheckMode|--!strict|--!nonstrict|strict mode|"
+        r"type check\w*|type errors?|blocked type|type functions?|export type|type annotations?|typed Luau)\b",
+        re.IGNORECASE),
+    "roblox-data-limits-2026": re.compile(
+        r"\b(?:data ?store limits?|rate limits?|throttl\w*|request budgets?|GetRequestBudgetForRequestType|"
+        r"SetRateLimitForRequestType|DataStoreRequestType|quota\w*|how many (?:requests|saves|writes)|"
+        r"storage limit|4 ?MB|Open Cloud (?:limits?|data ?stores?)|data ?store errors?|30[1-6] error|limits?|"
+        r"per minute|how (?:big|large|long|many)|budgets?|storage|shared with Open Cloud)\b",
+        re.IGNORECASE),
 }
 
 

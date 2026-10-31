@@ -51,6 +51,7 @@ def bootstrap(settings) -> str:
     key = read_key(settings.key_file)
     if key:
         os.environ["STAR_SERVER_API_KEY"] = key
+    os.environ.setdefault("STAR_PRIORITY", "P3")     # background class for the brain's priority proxy
     if settings.packs:
         os.environ["STAR_SKILL_PACKS"] = settings.packs
     return key
@@ -86,7 +87,8 @@ def pin_slots(slot_of):
         limits = providers.call_limits(settings)
         timeout = httpx.Timeout(request_timeout or limits.request_timeout, connect=limits.connect_timeout)
         client = httpx.AsyncClient(trust_env=False, timeout=timeout, transport=PinTransport())
-        return AsyncOpenAI(base_url=endpoint, api_key=key, timeout=timeout, max_retries=0, http_client=client)
+        return AsyncOpenAI(base_url=endpoint, api_key=key, timeout=timeout, max_retries=0, http_client=client,
+                           default_headers={"X-Star-Priority": os.environ.get("STAR_PRIORITY", "P3")})
 
     replaced = []
     for module in list(sys.modules.values()):
@@ -296,8 +298,15 @@ class RealModel:
 
     def score(self, task: dict, answer: str):
         from star import eval_checks as checks
-        return checks.score_answer(task, answer, luau_check=self.luau_check, sandbox=self._sandbox,
-                                   prelude=self.prelude, test_body=task.get("_test_body", ""))
+        score = checks.score_answer(task, answer, luau_check=self.luau_check, sandbox=self._sandbox,
+                                    prelude=self.prelude, test_body=task.get("_test_body", ""))
+        mode = getattr(self.settings, "slop", "off")
+        if mode in ("measure", "gate") and answer.strip():
+            from star import slop
+            report = slop.score_answer(answer, prompt=task.get("prompt", ""))
+            is_slop = report.hard or report.score >= int(getattr(self.settings, "slop_max", 30))
+            score.checks.append(checks.Check("slop", mode == "measure" or not is_slop, scrub(report.summary())))
+        return score
 
     # --- the two calls the engine needs --------------------------------------------------------------------
     def _solve_in_child(self, task: dict, lessons: list[dict]) -> Result:
@@ -399,6 +408,28 @@ class RealModel:
         except Exception:
             return {}
         return parse_diagnosis(reply)
+
+
+    def complete(self, model: str, system: str, user: str, *, max_tokens: int = 1600, temperature: float = 0.4) -> str:
+        """One plain chat reply from `model` (the night conductor's calls). Same politeness as `diagnose`: waits for the
+        idle gate, is pinned to night school's slot (SlotRefused for a model that only has slot 0) and is cancelled
+        (Yielded) the moment another client shows up."""
+        from star import providers
+        self._ready()
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+        async def ask(cancel):
+            async with providers.open_client(self.app_settings) as client:
+                job = asyncio.ensure_future(client.chat.completions.create(
+                    model=model, messages=messages, max_tokens=max_tokens, temperature=temperature,
+                    extra_body={"cache_prompt": False, "chat_template_kwargs": {"enable_thinking": False}}))
+                while not job.done():
+                    if cancel.is_set():
+                        job.cancel()
+                        raise Yielded("another client")
+                    await asyncio.wait({job}, timeout=1.0)
+                return job.result().choices[0].message.content or ""
+        return self._watched(lambda cancel: asyncio.run(ask(cancel)))
 
 
 def parse_diagnosis(reply: str) -> dict:

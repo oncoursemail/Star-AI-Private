@@ -30,6 +30,10 @@ class Settings:
     # STAR's resource planner (star/resource_planner_service.py) on this machine; "off" = only the idle gate above.
     # Planner down or without fresh data: the idle gate decides, exactly as before.
     planner_url: str = field(default_factory=lambda: _env("STAR_NS_PLANNER_URL", "http://127.0.0.1:8098"))
+    # "priority": brain_url goes through STAR's priority proxy (star/priority_proxy.py, e.g. http://127.0.0.1:8097/p3),
+    # which pauses night school's generation for the owner's chat and resumes it; so night school works beside other
+    # clients (no idle wait, no cancel). HOLD and the quiet lock still stop it. Proxy not answering: the idle gate.
+    gate: str = field(default_factory=lambda: _env("STAR_NS_GATE", "idle"))
     # Parallel practice lanes (each its own planner lease and its own slot: slot, slot + 1, ...). Lanes 2..N run only
     # while the planner admits them; with the planner off or down night school is single-lane, as before.
     # The model that drafts lessons (the "diagnose" step, 260 tokens). "" = the answer model. star-quick (its own
@@ -64,6 +68,36 @@ class Settings:
     # A worker outside the server (the PC's graphics card): run the unit tests in the server container's sandbox over
     # SSH (star/eval_sandbox.ContainerSandbox, "user@address"), never on this machine. "" = the local Luau VM.
     sandbox_ssh: str = field(default_factory=lambda: _env("STAR_NS_SANDBOX_SSH", ""))
+    # Anti-slop check (star/slop.py) of every answer: "off" (default), "measure" (the score is recorded in the
+    # attempt's checks, pass/fail unchanged) or "gate" (a slop answer fails: it cannot become a verified example).
+    slop: str = field(default_factory=lambda: _env("STAR_NS_SLOP", "off"))
+    slop_max: int = field(default_factory=lambda: int(_env("STAR_NS_SLOP_MAX", "30")))
+
+    # The night conductor (conductor.py): turns last night's failures and the newest notes into new practice tasks.
+    # On by default for nights; "off" (or the file data/CONDUCTOR_OFF) switches it off. Models are tried in order; a
+    # model with a single slot (slot 0 is the owner's chat) is skipped, so star-deep is used only while it has a spare slot.
+    conductor: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR", "on"))
+    conductor_models: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_MODELS", "star-deep,star-fast"))
+    conductor_max_new: int = field(default_factory=lambda: int(_env("STAR_NS_CONDUCTOR_MAX_NEW", "40")))
+    conductor_window: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_WINDOW", "18:00-09:00"))
+    conductor_tz_hours: float = field(default_factory=lambda: float(_env("STAR_NS_CONDUCTOR_TZ_HOURS", "-5")))   # owner's local time vs UTC
+    conductor_interval_min: int = field(default_factory=lambda: int(_env("STAR_NS_CONDUCTOR_INTERVAL_MIN", "30")))
+    conductor_docs: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_DOCS", ""))   # "" = home/docs-recent
+    conductor_tag: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_TAG", ""))     # "pc-": pool/conductor-pc-<night>.json
+
+    # Curiosity queue (star/curiosity.py): the conductor turns the app's open "did not know / got wrong" items into
+    # practice tasks. data/curiosity.jsonl is the app PC's snapshot (pc/turbo.py sync); the conductor's own results go to
+    # data/curiosity-done.jsonl, which the PC brings back. "off" = the conductor ignores the queue.
+    curiosity: str = field(default_factory=lambda: _env("STAR_NS_CURIOSITY", "on"))
+    curiosity_items: int = field(default_factory=lambda: int(_env("STAR_NS_CURIOSITY_ITEMS", "6")))
+
+    @property
+    def curiosity_file(self) -> Path:
+        return self.data / "curiosity.jsonl"
+
+    @property
+    def curiosity_done_file(self) -> Path:
+        return self.data / "curiosity-done.jsonl"
 
     @property
     def app(self) -> Path:          # a copy of the repository (the folder that holds `star/`)
@@ -84,6 +118,14 @@ class Settings:
     @property
     def outbox(self) -> Path:
         return self.home / "outbox"
+
+    @property
+    def conductor_dir(self) -> Path:
+        return self.home / "conductor"
+
+    @property
+    def conductor_off_file(self) -> Path:
+        return self.data / "CONDUCTOR_OFF"
 
     @property
     def hold_file(self) -> Path:

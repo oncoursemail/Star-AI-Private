@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "show_id": "night-window",
+  "episode_id": "weather-report-animatic",
+  "canon_version": "night-window-draft-001",
+  "title": "Weather Report — offline opening timing sketch",
+  "cast": [
+    {"character_id": "mara", "asset_id": "mara-rig-draft-001", "voice_id": "mara-voice-draft-001"},
+    {"character_id": "kit", "asset_id": "kit-rig-draft-001", "voice_id": "kit-voice-draft-001"},
+    {"character_id": "rook", "asset_id": "rook-rig-draft-001", "voice_id": "rook-voice-draft-001"},
+    {"character_id": "bram", "asset_id": "bram-rig-draft-001", "voice_id": "bram-voice-draft-001"}
+  ],
+  "shots": [
+    {
+      "shot_id": "shot-001",
+      "set_asset_id": "station-counter-draft-001",
+      "start_seconds": 0,
+      "duration_seconds": 12,
+      "cast_ids": ["mara", "kit", "rook"],
+      "dialogue": [
+        {"line_id": "line-001", "speaker_id": "kit", "text": "Good news. Found something useful.", "offset_seconds": 1, "duration_seconds": 2},
+        {"line_id": "line-002", "speaker_id": "mara", "text": "A roofer?", "offset_seconds": 4, "duration_seconds": 1}
+      ]
+    },
+    {
+      "shot_id": "shot-002",
+      "set_asset_id": "station-counter-draft-001",
+      "start_seconds": 12,
+      "duration_seconds": 8,
+      "cast_ids": ["mara", "kit", "rook", "bram"],
+      "dialogue": [
+        {"line_id": "line-003", "speaker_id": "kit", "text": "Portable weather.", "offset_seconds": 1, "duration_seconds": 2},
+        {"line_id": "line-004", "speaker_id": "rook", "text": "Take it outside.", "offset_seconds": 5, "duration_seconds": 2}
+      ]
+    }
+  ]
+}

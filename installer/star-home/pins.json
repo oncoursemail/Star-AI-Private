@@ -1,0 +1,49 @@
+{
+  "_about": "Everything setup.ps1 downloads that is not a Python package (those are in requirements-home.txt) and not a model owned by star.senses.setup (Kokoro, speech, llama.cpp, Qwen: pinned in star/voice/setup_models.py, star/senses/fastpath.py and star/senses/setup.py). Model sizes and hashes were read from the publishers on 2026-10-26; nothing was downloaded to read them. App MB figures are planning estimates. Winget resolves current publisher manifests and checks their download hashes at installation; app versions and sizes can change.",
+  "python": {"winget": "Python.Python.3.12", "note": "winget's manifest carries the installer SHA-256 and winget checks it"},
+  "node": {"winget": "OpenJS.NodeJS.LTS", "min_major": 22, "mb": 33, "why": "mineflayer 4.39 needs Node 22 or newer"},
+  "npm": {"mineflayer": "4.39.0", "mineflayer-pathfinder": "2.4.5"},
+  "apps": [
+    {"id": "OBSProject.OBSStudio", "name": "OBS Studio (stream scenes; no stream key is configured)", "mb": 175, "present": ["%ProgramFiles%\\obs-studio\\bin\\64bit\\obs64.exe"]},
+    {"id": "KDE.Krita", "name": "Krita (editable layered painting)", "mb": 175, "present": ["%ProgramFiles%\\Krita (x64)\\bin\\krita.exe"]},
+    {"id": "Discord.Discord", "name": "Discord", "mb": 146, "present": ["%LOCALAPPDATA%\\Discord\\Update.exe"]},
+    {"id": "Mojang.MinecraftLauncher", "name": "Minecraft Launcher", "mb": 2, "present": ["%ProgramFiles(x86)%\\Minecraft Launcher\\MinecraftLauncher.exe", "%ProgramFiles%\\Minecraft Launcher\\MinecraftLauncher.exe"]},
+    {"id": "Microsoft.OpenJDK.21", "name": "Java 21 (Microsoft OpenJDK), which Minecraft needs", "mb": 179, "present": ["%ProgramFiles%\\Microsoft\\jdk-21*\\bin\\java.exe", "%ProgramFiles%\\Java\\*\\bin\\java.exe", "%ProgramFiles%\\Eclipse Adoptium\\*\\bin\\java.exe"]}
+  ],
+  "vbcable": {
+    "url": "https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip",
+    "size": 1318877,
+    "sha256": "",
+    "signer_pattern": "VB-Audio|Burel",
+    "note": "No published hash exists; the check is the Authenticode signature of VBCABLE_Setup_x64.exe (valid, and the signer name matches signer_pattern). The signer name is the publisher's as documented by VB-Audio and was NOT read from the file, because the file was not downloaded; if setup refuses a valid signature it prints the signer so the owner can decide."
+  },
+  "grounder": {
+    "qwen3-vl-2b": {
+      "name": "Qwen3-VL-2B-Instruct Q4_K_M with F16 vision encoder (Apache-2.0), official optional candidate; VRAM and accuracy require measurement",
+      "repo": "Qwen/Qwen3-VL-2B-Instruct-GGUF", "revision": "52d6c8ffea26cc873ac5ad116f8631268d7eb503",
+      "files": [
+        {"name": "Qwen3VL-2B-Instruct-Q4_K_M.gguf", "size": 1107409952, "sha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae"},
+        {"name": "mmproj-Qwen3VL-2B-Instruct-F16.gguf", "size": 819394848, "sha256": "c3d5afbef5287953acd57b4043d2269456e5761a4eaccb3b71b062996970aea5"}
+      ],
+      "model_file": "Qwen3VL-2B-Instruct-Q4_K_M.gguf", "mmproj_file": "mmproj-Qwen3VL-2B-Instruct-F16.gguf"
+    },
+    "ui-tars-2b": {
+      "name": "UI-TARS-2B-SFT Q4_K_M (Apache-2.0), optional small vision grounder; game/voice headroom requires measurement",
+      "repo": "bartowski/UI-TARS-2B-SFT-GGUF", "revision": "5a0ef8290ddab04e691efca7fce30105bda2decb",
+      "files": [
+        {"name": "UI-TARS-2B-SFT-Q4_K_M.gguf", "size": 1117319712, "sha256": "f316ecef2e2e8fa9a29e81ba2c9efa8ea6f408241e175331332960c7160e9c53"},
+        {"name": "mmproj-UI-TARS-2B-SFT-f16.gguf", "size": 1331656192, "sha256": "b9c248c4ff9770b3cd82d0ed5b5d377ea02500d8d22368db9b7c2d4476b32ce8"}
+      ],
+      "model_file": "UI-TARS-2B-SFT-Q4_K_M.gguf", "mmproj_file": "mmproj-UI-TARS-2B-SFT-f16.gguf", "vram_gb": 2.0
+    },
+    "ui-tars-1.5-7b": {
+      "name": "UI-TARS-1.5-7B Q4_K_M (Apache-2.0), the accurate one: needs the card to itself",
+      "repo": "mradermacher/UI-TARS-1.5-7B-GGUF", "revision": "ae7049069016c5829821d9af687f144aef72068a",
+      "files": [
+        {"name": "UI-TARS-1.5-7B.Q4_K_M.gguf", "size": 4683073856, "sha256": "3233f143243135ef458a3e18894c4d6883d384abcef23367a538a3a78003009b"},
+        {"name": "UI-TARS-1.5-7B.mmproj-Q8_0.gguf", "size": 856130240, "sha256": "31492401b0da4d2fc68e353c66bdcf3837818c68abb5265207ec1923abf738d3"}
+      ],
+      "model_file": "UI-TARS-1.5-7B.Q4_K_M.gguf", "mmproj_file": "UI-TARS-1.5-7B.mmproj-Q8_0.gguf", "vram_gb": 5.5
+    }
+  }
+}

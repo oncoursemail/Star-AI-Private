@@ -1,0 +1,27 @@
+{
+  "note": "Held-out eval briefs for the 3d-assets lane, written 2026-10-29 12:20Z BEFORE the builder/prompt tuning. Never use them for development or prompt examples. Dev briefs are separate (dev).",
+  "heldout": [
+    {"id": "h01", "category": "weapon", "style": "pbr", "brief": "Compact 9mm sidearm pistol: black polymer frame, steel slide with front and rear serrations, tan grip panels."},
+    {"id": "h02", "category": "weapon", "style": "pbr", "brief": "Bolt-action hunting rifle with a walnut stock, blued steel barrel and a scope on two rings."},
+    {"id": "h03", "category": "weapon", "style": "stylized", "brief": "Chunky stylized sci-fi plasma blaster, orange and white panels with a glowing cyan energy cell."},
+    {"id": "h04", "category": "weapon", "style": "lowpoly", "brief": "Low-poly medieval longsword with a straight crossguard, round pommel and leather-wrapped grip."},
+    {"id": "h05", "category": "weapon", "style": "roblox", "brief": "Roblox-ready fire axe: red painted steel head with a pick on the back, wooden handle."},
+    {"id": "h06", "category": "vehicle", "style": "stylized", "brief": "Stylized cartoon delivery van with chunky proportions, yellow body with blue trim."},
+    {"id": "h07", "category": "vehicle", "style": "lowpoly", "brief": "Low-poly farm tractor: green body, big rear wheels, small front wheels, exhaust pipe."},
+    {"id": "h08", "category": "vehicle", "style": "pbr", "brief": "Realistic quad bike ATV with a matte olive body, black knobby tires and front and rear racks."},
+    {"id": "h09", "category": "vehicle", "style": "roblox", "brief": "Roblox-ready go-kart with a tube frame, roll bar, seat and steering wheel."},
+    {"id": "h10", "category": "furniture", "style": "pbr", "brief": "Industrial workbench: steel frame, oak top, lower shelf, bench vise on one corner."},
+    {"id": "h11", "category": "furniture", "style": "stylized", "brief": "Stylized tavern wooden chair with iron studs and a slightly crooked back."},
+    {"id": "h12", "category": "prop", "style": "pbr", "brief": "Military ammo crate: olive painted steel, two side latches and folding carry handles."},
+    {"id": "h13", "category": "prop", "style": "stylized", "brief": "Stylized treasure chest: wooden planks, gold metal bands and corner caps, a lock plate."},
+    {"id": "h14", "category": "prop", "style": "roblox", "brief": "Roblox-ready red fuel jerrycan with a three-bar handle and a spout cap."},
+    {"id": "h15", "category": "accessory", "style": "pbr", "brief": "Tactical combat helmet with a night-vision mount on the front and side accessory rails."},
+    {"id": "h16", "category": "accessory", "style": "stylized", "brief": "Stylized adventurer backpack with a rolled bedroll on top, side pouches and leather straps."}
+  ],
+  "dev": [
+    {"id": "d01", "category": "weapon", "style": "pbr", "brief": "Realistic assault rifle with a rail handguard, curved magazine and adjustable stock."},
+    {"id": "d02", "category": "vehicle", "style": "stylized", "brief": "Stylized hover bike with two side thrusters."},
+    {"id": "d03", "category": "prop", "style": "lowpoly", "brief": "Low-poly wooden barrel with iron hoops."},
+    {"id": "d04", "category": "furniture", "style": "roblox", "brief": "Roblox-ready office desk with two drawers and a desk lamp."}
+  ]
+}

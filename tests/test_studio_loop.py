@@ -256,6 +256,7 @@ def test_an_existing_script_is_restored_exactly(tmp_path):
     assert fake.scripts["ReplicatedStorage.Config"]["source"] == "local a = 2\nprint(a)"
     entry = studio.journal.entries[0]
     assert entry == {"kind": "script", "path": "game.ReplicatedStorage.Config", "created": False,
+                     "target_inspected": True,
                      "before": original, "after": "local a = 2\nprint(a)", "restorable": True,
                      "tag": entry["tag"], "instance_id": fake.scripts["ReplicatedStorage.Config"]["_id"],
                      "known": True, "ok": True, "undo_can": False, "undo_name": None,

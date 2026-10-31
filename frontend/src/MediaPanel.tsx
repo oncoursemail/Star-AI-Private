@@ -16,10 +16,10 @@
  * never states a number of its own.
  */
 import {useCallback,useEffect,useRef,useState} from 'react'
-import {Cpu,ImagePlus,Images,LoaderCircle,Pin,RefreshCw,Trash2} from 'lucide-react'
+import {Columns2,Cpu,ImagePlus,Images,LoaderCircle,Pin,RefreshCw,Trash2} from 'lucide-react'
 import {onBackendEvent} from './bridge'
 import {EmptyState} from './states'
-import type {AppSettings,MediaCapability,MediaComparison,MediaReference,MediaStatus} from './types'
+import type {AbPair,AbSummary,AppSettings,MediaCapability,MediaComparison,MediaReference,MediaStatus} from './types'
 import './learning.css'
 import './media.css'
 
@@ -144,6 +144,14 @@ export function MediaPlaces({settings,invoke,disabled=false,refresh}:{settings:A
          <small>Longer side of an attached picture as the STAR Server or the on-device brain reads it. Your file is never changed.</small></label>
        <label className="learn-switch"><span><strong>Use this project's visual references</strong><small>Pinned reference images are given to image generation, and to chat turns about how something looks.</small></span>
          <input type="checkbox" checked={settings.media_use_references!==false} disabled={disabled} onChange={event=>void save({media_use_references:event.target.checked})}/></label>
+       <label className="learn-switch"><span><strong>Careful pictures</strong><small>STAR expands your request into a full prompt, draws a draft, and lets the vision model check it blind (legs, hands, text). A clearly good first draft is taken at once; otherwise up to the number of drafts below are drawn, and a flawed spot is repainted on its own. Words on a sign are read back and must match exactly, or STAR draws them itself. Slower; off draws one picture straight from your words.</small></span>
+         <input type="checkbox" checked={settings.image_quality!==false} disabled={disabled} onChange={event=>void save({image_quality:event.target.checked})}/></label>
+       <label className="media-field">Most drafts per picture
+         <select value={String(settings.image_drafts??3)} disabled={disabled||settings.image_quality===false} onChange={event=>void save({image_drafts:Number(event.target.value)})}>
+           <option value="1">1 (fastest)</option><option value="2">2</option><option value="3">3 (default)</option><option value="4">4</option><option value="5">5 (slowest)</option></select></label>
+       <label className="media-field">Picture model
+         <select value={settings.image_engine??'auto'} disabled={disabled} onChange={event=>void save({image_engine:event.target.value as 'auto'|'klein'|'zimage'})}>
+           <option value="auto">Automatic (Z-Image Turbo when installed, else klein)</option><option value="klein">FLUX.2 klein 4B (about 6x faster)</option><option value="zimage">Z-Image Turbo</option></select></label>
      </div>
    </div>}
    {notice&&<p className="learn-notice" role="status">{notice}</p>}
@@ -235,5 +243,68 @@ export function ReferencesPanel({project,invoke,disabled=false}:{project:string;
      <ul>{comparison.measured.lines.map((line,index)=><li key={index}>{line}</li>)}</ul>
      <p className="learn-help">Saved in your STAR data folder under comparisons/{comparison.saved}.</p>
    </div>}
+ </section>
+}
+
+/**
+ * The owner's blind A/B test of the old and the new picture pipeline. Two pictures of one prompt, sides at random (decided
+ * and stored by the host, never revealed here); the owner picks the better one or says they look the same. The summary is
+ * the host's: counts, the new pipeline's win rate and a plain verdict from a sign test.
+ */
+export function ImageAbPanel({invoke,disabled=false}:{invoke:Invoke;disabled?:boolean}){
+ const [pair,setPair]=useState<AbPair|null>(null)
+ const [summary,setSummary]=useState<AbSummary|null>(null)
+ const [busy,setBusy]=useState('')
+ const [notice,setNotice]=useState('')
+ const [prompt,setPrompt]=useState('')
+ const later=useLater()
+ const load=useCallback(async()=>{
+   if(disabled)return
+   const next=await invoke('imageAbNext') as {pair?:AbPair|null;summary?:AbSummary}|null
+   if(next){setPair(next.pair??null);if(next.summary)setSummary(next.summary)}
+ },[disabled,invoke])
+ useEffect(()=>{void load()},[load])
+ const pick=async(side:'left'|'right'|'tie')=>{
+   if(disabled||busy||!pair)return
+   setBusy('pick');setNotice('')
+   try{
+     const done=await invoke('imageAbPick',{id:pair.id,side}) as {summary?:AbSummary}|null
+     if(done?.summary)setSummary(done.summary)
+     await load()
+   }finally{setBusy('')}
+ }
+ const make=()=>{
+   const text=prompt.trim()
+   if(disabled||busy||!text)return
+   setBusy('make');setNotice('Drawing the same prompt with the old and the new pipeline. This takes about five minutes; you can leave this page.')
+   void later(invoke,'imageAbMake',{prompt:text},(kind,data)=>{
+     setBusy('')
+     if(kind==='error'||!data){setNotice(String(data||'The comparison could not be made.').slice(0,400));return}
+     setNotice('A new pair is ready.');setPrompt('');void load()
+   })
+ }
+ return <section className="learn" aria-label="Picture quality blind test">
+   <div className="learn-head"><Columns2 size={20}/><div className="learn-title"><h2>Picture quality: blind test</h2>
+     <p>Two pictures of the same prompt, one from the old pipeline and one from the new, in random order. Pick the one you like better, or say they look the same. STAR keeps your picks and tells you at the end whether the new pipeline really is better; it does not show which is which until then.</p></div></div>
+   {pair
+     ?<div className="ab-pair" aria-label={'Which picture is better for: '+pair.prompt}>
+       <p className="ab-prompt">{pair.prompt}</p>
+       <div className="ab-images">
+         <figure><img src={pair.left} alt="Left picture"/><button type="button" className="learn-button is-primary" disabled={disabled||!!busy} onClick={()=>void pick('left')}>Left is better</button></figure>
+         <figure><img src={pair.right} alt="Right picture"/><button type="button" className="learn-button is-primary" disabled={disabled||!!busy} onClick={()=>void pick('right')}>Right is better</button></figure>
+       </div>
+       <div className="learn-tools"><button type="button" className="learn-button" disabled={disabled||!!busy} onClick={()=>void pick('tie')}>They look the same</button>
+         <span className="learn-help">{pair.waiting} pair{pair.waiting===1?'':'s'} waiting</span></div>
+     </div>
+     :<EmptyState compact icon={<Columns2 size={15}/>} title="No pair waiting." description="Draw a new pair below. STAR makes the same prompt twice, once with each pipeline."/>}
+   {summary&&summary.picked>0&&<div className="ab-summary" role="status" aria-label="Blind test result">
+     <p><strong>{summary.verdict}</strong></p>
+     <p className="learn-help">{summary.picked} picked · new {summary.new} · old {summary.old} · same {summary.tie}{summary.new_rate!==null?` · new wins ${Math.round(summary.new_rate*100)}% of the decided pairs`:''}</p>
+   </div>}
+   <div className="learn-tools ab-make">
+     <input type="text" value={prompt} maxLength={400} disabled={disabled||!!busy} placeholder="A prompt for a new pair, for example a horse galloping across a field" aria-label="Prompt for a new pair" onChange={event=>setPrompt(event.target.value)}/>
+     <button type="button" className="learn-button" disabled={disabled||!!busy||!prompt.trim()} onClick={make}>{busy==='make'?<LoaderCircle size={14} className="spin"/>:<ImagePlus size={14}/>} Draw a new pair</button>
+   </div>
+   {notice&&<p className="learn-notice" role="status">{notice}</p>}
  </section>
 }

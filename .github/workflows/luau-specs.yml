@@ -30,13 +30,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   LUAU_VERSION: '0.691'
   LUAU_ZIP_SHA256: '9b7699968c911beb3781f682c6be298440879ae279ff352d36dd58603418de2b'
 
 jobs:
   luau-specs:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,7 +65,8 @@ jobs:
 
   luau-quality-smoke:
     name: Pinned Luau analyzer smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, star-ci]
+    if: ${{ !github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

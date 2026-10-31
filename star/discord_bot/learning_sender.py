@@ -111,6 +111,11 @@ class DeliveryLedger:
             claimed_at TEXT NOT NULL, sent_at TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (owner_id, event_id)
         )""")
+        # service alerts (knowledge watchdog restarts): at most once each, outside the digest cooldown
+        self.db.execute("""CREATE TABLE IF NOT EXISTS alert_dms (
+            owner_id INTEGER NOT NULL, alert_id TEXT NOT NULL, state TEXT NOT NULL,
+            claimed_at TEXT NOT NULL, PRIMARY KEY (owner_id, alert_id)
+        )""")
 
     def close(self):
         self.db.close()
@@ -188,6 +193,19 @@ class DeliveryLedger:
         except BaseException:
             self.db.rollback()
             raise
+
+    def reserve_alert(self, alert_id: str, *, now) -> bool:
+        """True once per alert: the caller sends it and calls mark_alert. A crash mid-send is never resent."""
+        if not re.fullmatch(r"[0-9a-f]{64}", alert_id) or now.tzinfo is None:
+            raise ValueError("Invalid alert identity or clock")
+        return self.db.execute("INSERT OR IGNORE INTO alert_dms(owner_id,alert_id,state,claimed_at) VALUES(?,?,'pending',?)",
+                               (self.owner, alert_id, now.astimezone(timezone.utc).isoformat())).rowcount == 1
+
+    def mark_alert(self, alert_id: str, state: str):
+        if state not in {"sent", "unknown"}:
+            raise ValueError("Invalid alert delivery state")
+        self.db.execute("UPDATE alert_dms SET state=? WHERE owner_id=? AND alert_id=? AND state='pending'",
+                        (state, self.owner, alert_id))
 
     def mark_task(self, event_id: str, state: str, *, now):
         if state not in {"sent", "unknown"}:

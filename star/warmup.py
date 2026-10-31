@@ -104,7 +104,10 @@ def prefix_requests(settings: Settings, home: Path, chat_id: str | None) -> list
     routed = server_roles.effective(settings)
     quick = select_route(routed, 'hello', mode='fast').model
     main = select_route(routed, MAIN_MODEL_PROBE, mode='fast').model
-    shape = turn_memory.last_shape(scope)
+    # Do not reuse a previous request shape when this profile/chat has no
+    # persisted history. This also prevents an in-process profile switch (and
+    # test profiles) from priming unrelated tool prompts under the same scope.
+    shape = turn_memory.last_shape(scope) if history else None
     if shape and shape.get('model'):
         targets = [build(shape['model'], shape.get('tools'), str(shape.get('guidance') or ''))]
     else:
@@ -238,27 +241,20 @@ def warm_up(settings: Settings, *, home: Path | None = None, chat_id: str | None
         return done(skipped='no_request', error=type(exc).__name__, **checked)
     if kind == 'lan' and asyncio.run(_slot_busy(settings, request, probe)):
         return done(skipped='slot_busy', **checked)
-    # The optional bank is purely an accelerator for this same chat's already
-    # authorized prompt. The ordinary prompt remains authoritative if restore
-    # fails, and the model never receives an extra bank tool or instruction.
+    # Saved project memory (star/cache_banks.py, opt-in): into an empty slot (after a model restart) the banked
+    # start of this request is restored, or read once and banked, before the priming request. It only fills the
+    # server's cache; the request itself is unchanged.
     bank = None
-    bank_home = home or app_data()
     if kind == 'lan':
         from . import cache_banks
-        if cache_banks.enabled():
-            bank = cache_banks.plan(settings, request, scope=memory_scope_for(settings, chat_id))
-            if bank is not None and not cancelled():
-                try:
-                    bank_restore = asyncio.run(cache_banks.restore(
-                        settings, bank_home, bank, cancel_event=cancel_event))
-                except Exception:
-                    bank_restore = {'performed': False, 'reason': 'unavailable'}
-            else:
-                bank_restore = None
-        else:
-            bank_restore = None
-    else:
-        bank_restore = None
+        if cache_banks.enabled() and not cancelled():
+            mark = own_warm_started(settings, request['model'], (request.get('extras') or {}).get('id_slot'))
+            try:
+                bank = asyncio.run(cache_banks.prepare(settings, home or app_data(), request, cancel_event=cancel_event))
+            except Exception:
+                bank = {'bank': 'skipped', 'reason': 'unavailable'}
+            finally:
+                own_warm_ended(mark, cancelled=cancelled())
     try:
         result = asyncio.run(_prime(settings, request, cancel_event, None))
     except Exception as exc:
@@ -269,20 +265,8 @@ def warm_up(settings: Settings, *, home: Path | None = None, chat_id: str | None
         return done(error=type(exc).__name__, **({'ok': False, 'code': 'request_failed'} if kind == 'lan' else {}))
     if report:
         result.update(ok=True, code='ok')
-    # Save only a successful, completed, uncancelled priming request. A failed
-    # /slots feature never delays or changes the ordinary model conversation.
-    if bank is not None and result.get('primed') and not cancelled():
-        try:
-            bank_save = asyncio.run(cache_banks.save(
-                settings, bank_home, bank, cancel_event=cancel_event))
-        except Exception:
-            bank_save = {'performed': False, 'reason': 'unavailable'}
-        result['cache_bank'] = {
-            'restored': bool(bank_restore and bank_restore.get('performed')),
-            'saved': bool(bank_save.get('performed')),
-            'restore_reason': str((bank_restore or {}).get('reason', ''))[:50],
-            'save_reason': str(bank_save.get('reason', ''))[:50],
-        }
+    if bank is not None:
+        result['cache_bank'] = bank
     result['history_messages'] = len(request['messages']) - 2
     result['model'] = str(request['model'])[:180]
     result['with_tools'] = bool(request.get('tools'))
