@@ -154,6 +154,11 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
     phase = (seed % 997) / 997.0 * 2 * math.pi
     frames: list[MotionFrame] = []
     count = math.floor(duration_s * fps)
+    # Cues and frames are sorted by time. Maintain a sliding active interval:
+    # reviewing all 32 cues for every one of 901 frames is avoidable work.
+    # The window includes events at t and exactly 1.5 seconds old.
+    cue_start = cue_end = 0
+    cue_count = len(cues)
     for index in range(count + 1):
         # Revoke obsolete work promptly, not just obsolete output. At most
         # eight frames are computed between cancellation checks.
@@ -171,7 +176,15 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
             mouth = 0.0
 
         smile = brow = gaze = nod = laugh = surprise = 0.0
-        for cue in cues:
+        # O(frames + cues + active cues), not O(frames * all cues).
+        # Preserve the original cue ordering: later focus cues override earlier
+        # ones, while other expression channels use their maximum contribution.
+        while cue_end < cue_count and cues[cue_end].at_s <= t:
+            cue_end += 1
+        while cue_start < cue_end and t - cues[cue_start].at_s > 1.5:
+            cue_start += 1
+        for active_index in range(cue_start, cue_end):
+            cue = cues[active_index]
             age = t - cue.at_s
             if age < 0 or age > 1.5:
                 continue
