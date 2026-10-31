@@ -5,10 +5,10 @@ check on the exact head passed, no secret / private-address / forbidden file in 
 of the diff with no high-risk finding. Every risk she names must point at a changed line of the diff; claims that do
 not are dropped (a model's guess is not evidence). Anything else is held with the reasons, never merged.
 
-    python -m star.pr_merger                 dry run over the open PRs into star/next (prints decisions)
-    python -m star.pr_merger --apply         merge the ones that pass
-    python -m star.pr_merger --pr 846        one PR
-    python -m star.pr_merger --replay 40     blind replay on closed PRs: her verdict vs what really happened
+    python -m litha.pr_merger                 dry run over the open PRs into star/next (prints decisions)
+    python -m litha.pr_merger --apply         merge the ones that pass
+    python -m litha.pr_merger --pr 846        one PR
+    python -m litha.pr_merger --replay 40     blind replay on closed PRs: her verdict vs what really happened
 Decisions go to ~/.star/pr-merger/decisions.jsonl. Never merges into main; never force-pushes; never closes a PR.
 """
 from __future__ import annotations
@@ -280,7 +280,7 @@ def pr_trees(pr: dict):
     """(PR head, merge-base) checkouts under worktrees/: the code after and before the PR, removed afterwards.
     The merge-base, not today's star/next: for a PR that is behind, star/next holds later fixes the PR never had,
     and a test of those would look like a bug the PR made. A merged PR (replay): star/next after vs before its merge."""
-    from star import pr_fixer
+    from litha import pr_fixer
     tree = pr_fixer.WORK / f"litha-proof-{pr['number']}"
     branch = f"litha/proof-{pr['number']}"
     base = pr_fixer.WORK / f"litha-base-{pr['number']}"               # the code before the PR (differential proof)
@@ -308,7 +308,7 @@ def pr_trees(pr: dict):
 
 def prove_high_risks(pr: dict, rev: dict, ask=ask_litha, limit: int = 3) -> None:
     """Keep a high risk only if her test really fails on the PR and passes on star/next."""
-    from star import bug_proof
+    from litha import bug_proof
     with pr_trees(pr) as (tree, base):
         testable = [r for r in rev["risks"] if r["severity"] == "high" and not SAFETY.search(r["why"])]
         for r in testable[:limit]:                              # safety claims stay blocking without a test
@@ -326,7 +326,7 @@ HUNTED = Path.home() / ".star" / "pr-fixer" / "hunted.json"
 
 def hunt_pr(pr: dict, files: dict, rev: dict) -> None:
     """Last look before a merge: hunt each changed function for a bug; a proven regression holds the PR."""
-    from star import bug_hunt
+    from litha import bug_hunt
     changed = {path: set(f["added"]) for path, f in files.items() if f["added"]}
     if not any(p.endswith(".py") and not p.startswith("tests/") for p in changed):
         return
@@ -399,7 +399,7 @@ def replay(n: int) -> dict:
 def replay_hunt(n: int) -> dict:
     """The hunt's false holds: run it on merged PRs (star/next just before vs just after each merge). Each proven
     find is a hold on a PR the project kept: read it, then it is either a real bug or a hunt mistake to fix."""
-    from star import bug_hunt, pr_fixer
+    from litha import bug_hunt, pr_fixer
     rows = json.loads(gh("pr", "list", "--repo", REPO, "--base", BASE, "--state", "merged", "--limit", str(n),
                          "--json", "number,title,body,mergeCommit"))
     score = {"n": 0, "flagged": 0}
@@ -429,7 +429,7 @@ def replay_hunt(n: int) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m star.pr_merger")
+    ap = argparse.ArgumentParser(prog="python -m litha.pr_merger")
     ap.add_argument("--apply", action="store_true", help="really merge the PRs that pass (default: dry run)")
     ap.add_argument("--pr", type=int, help="only this PR")
     ap.add_argument("--replay", type=int, help="blind replay on this many closed PRs")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-import star.pr_promote as P
+import litha.pr_promote as P
 
 OK = [{"name": "Offline Python checks", "status": "completed", "conclusion": "SUCCESS"},
       {"name": "windows-build", "status": "completed", "conclusion": "SUCCESS"}]

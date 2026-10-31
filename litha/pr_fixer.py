@@ -10,7 +10,7 @@ For an open, non-draft PR into star/next whose Python checks failed on the head 
    force), open a PR into star/next. The merger (star/pr_merger) merges it once CI is green there.
 The tests are the spec: she may not edit them. Tried heads are remembered so a PR is not retried until it changes.
 
-    python -m star.pr_fixer [--pr N] [--max 1] [--dry]
+    python -m litha.pr_fixer [--pr N] [--max 1] [--dry]
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ import sys
 import tempfile
 import time
 
-from star.pr_merger import BASE, REPO, gh, head_checks, open_prs
+from litha.pr_merger import BASE, REPO, gh, head_checks, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
 WORK = ROOT.parent                                          # worktrees/
@@ -164,7 +164,7 @@ def apply_edits(tree: Path, edits: list) -> list[str]:
 
 def _lessons() -> str:
     try:
-        from star.bug_bench import lessons_text
+        from litha.bug_bench import lessons_text
         return lessons_text()
     except Exception:  # noqa: BLE001 - lessons are a help, never a reason to fail a fix
         return ""
@@ -411,7 +411,7 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         if c.startswith("tests/") and c.endswith(".py"):
             tests.add(c)
         elif c.endswith(".py"):
-            from star.bug_bench import tests_for
+            from litha.bug_bench import tests_for
             tests.update(tests_for(c[:-3].replace("/", "."), tree / "tests", {})[:3])
     if locks and (tree / LOCK_TOOL).is_file():
         r = sh([python, LOCK_TOOL], cwd=tree, timeout=1800)
@@ -524,7 +524,7 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m star.pr_fixer")
+    ap = argparse.ArgumentParser(prog="python -m litha.pr_fixer")
     ap.add_argument("--pr", type=int)
     ap.add_argument("--max", type=int, default=1, help="PRs to work on per run")
     ap.add_argument("--dry", action="store_true", help="fix and test locally, do not commit or push")
@@ -533,7 +533,7 @@ def main(argv: list[str] | None = None) -> int:
     STATE.parent.mkdir(parents=True, exist_ok=True)
     tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
     done = 0
-    from star.pr_merger import HUNTED
+    from litha.pr_merger import HUNTED
     hunted = json.loads(HUNTED.read_text(encoding="utf-8")) if HUNTED.exists() else {}
     for pr in open_prs(a.pr):                           # first: bugs her review proved -> her fix with her test
         item = hunted.pop(str(pr["number"]), None)

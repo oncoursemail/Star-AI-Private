@@ -1,7 +1,7 @@
 """Bug hunt: Litha reads each changed function on its own and names a suspected bug; only PROVEN suspicions count.
 
 Measured 2026-10-31: whole-diff review caught 0/3 planted bugs; a per-function "find the bug" prompt caught 2/3 but
-also flagged 3 lines of a clean file. So every suspicion goes through star.bug_proof with the code BEFORE the change:
+also flagged 3 lines of a clean file. So every suspicion goes through litha.bug_proof with the code BEFORE the change:
 her test must pass before and fail after. False flags die there; real regressions survive.
 
     hunt(head, base, changed)  ->  [{"file", "line", "why", "proof"}]  (proven only)
@@ -14,7 +14,7 @@ import json
 import re
 from pathlib import Path
 
-from star import bug_proof
+from litha import bug_proof
 
 HUNT = """You are Litha, a careful code reviewer. This function was just changed (changed lines are marked >>).
 {intent}{doc}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-import star.pr_merger as M
+import litha.pr_merger as M
 
 DIFF = """diff --git a/star/a.py b/star/a.py
 --- a/star/a.py

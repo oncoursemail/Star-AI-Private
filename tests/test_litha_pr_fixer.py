@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 
-import star.pr_fixer as F
+import litha.pr_fixer as F
 
 LOG = """____________________________ test_add ____________________________
 

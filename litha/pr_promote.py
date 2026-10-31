@@ -10,7 +10,7 @@ The ledger's release checks (STAR_EXECUTION_LEDGER.md, owner OK 2026-10-13) for 
 Receipts are written by the runs that did the work, each {"ok": true, "sha": "<sha>", ...}. A missing or failed one
 means no merge: she opens / refreshes the star/next -> main PR and reports exactly what is missing.
 
-    python -m star.pr_promote [--apply]
+    python -m litha.pr_promote [--apply]
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 import sys
 
-from star.pr_merger import LOG, OK_CHECKS, REPO, gh, head_checks
+from litha.pr_merger import LOG, OK_CHECKS, REPO, gh, head_checks
 
 RELEASE = Path.home() / ".star" / "release"
 RECEIPTS = ("acceptance.json", "install.json")
@@ -71,7 +71,7 @@ def recent_decisions(n: int = 300) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m star.pr_promote")
+    ap = argparse.ArgumentParser(prog="python -m litha.pr_promote")
     ap.add_argument("--apply", action="store_true", help="merge star/next into main when every check holds")
     a = ap.parse_args(argv)
     sha = head_sha()
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         url = gh("pr", "create", "--repo", REPO, "--base", "main", "--head", "star/next", "--title",
                  "star/next -> main (Litha's release promotion)", "--body",
-                 "Opened by Litha. Merged only when the release checks in star/pr_promote.py hold for the exact head.")
+                 "Opened by Litha. Merged only when the release checks in litha/pr_promote.py hold for the exact head.")
         number = int(url.strip().rsplit("/", 1)[-1])
     if why:
         print(f"main: HOLD star/next {sha[:8]} (PR #{number}): " + "; ".join(why))

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import sys
 
-import star.bug_bench as B
-import star.bug_proof as P
+import litha.bug_bench as B
+import litha.bug_proof as P
 
 SRC = '''"""doc: a == b in text is not code"""
 
@@ -89,7 +89,7 @@ def test_bank_rows_go_to_the_nightly_work_dir(tmp_path):
 
 
 def test_hunt_keeps_only_proven_flags_on_changed_functions(tmp_path):
-    from star import bug_hunt as H
+    from litha import bug_hunt as H
     src = "def a(x):\n    return x + 1\n\n\ndef b(x):\n    if x > 3:\n        return 1\n    return 0\n"
     head = _tree(tmp_path, "head", src)
     assert H.functions_touching(src, {6}) == [(5, 8)]
@@ -132,7 +132,7 @@ def test_the_prover_sees_the_module_shape_and_a_real_test_and_retries_a_wrong_ex
 
 
 def test_hunt_tries_the_second_suspect_and_shows_how_tests_call_the_function(tmp_path):
-    from star import bug_hunt as H
+    from litha import bug_hunt as H
     src = "def score(x):\n    y = x * 2\n    return y + 1\n"
     head = _tree(tmp_path, "head", src)
     (head / "tests" / "test_calc.py").write_text("from star.calc import score\n\n\ndef test_s():\n    assert score(1) == 3\n",

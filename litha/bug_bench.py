@@ -3,7 +3,7 @@
 1. mutants(): small realistic bugs in star/ and server/ source (== <-> !=, < -> <=, and <-> or, dropped `not`,
    True <-> False returns, +1 <-> -1, ...). A mutant counts only if the module's own tests FAIL with it (the tests
    can see the bug, so a fix can be proven by the same tests).
-2. run(): for each mutant, in the bench worktree, Litha repairs it with exactly the fixer's loop (star.pr_fixer.repair:
+2. run(): for each mutant, in the bench worktree, Litha repairs it with exactly the fixer's loop (litha.pr_fixer.repair:
    CI-style failure output + the mutant's diff + the real code). Solved = the module's tests pass again.
 3. Learning, from every item (the answer is known: the original line):
    - lessons  ~/.star/litha/lessons.json   per bug kind: tries, solved, and the right fix of the latest miss; the fixer
@@ -12,9 +12,9 @@
                                            with the real answer, never another model's text).
    - history  ~/.star/litha/bench.jsonl    one row per run: solved/total, by kind, seconds -> the trend.
 
-    python -m star.bug_bench list  [--limit 40]                    which mutants exist (tests must kill them)
-    python -m star.bug_bench run   [--n 10] [--seed -1] [--kind K] [--blind]  the fix benchmark; prints the score
-    python -m star.bug_bench hunt  [--n 10] [--seed -1]   review catch rate: she must find AND prove the bug
+    python -m litha.bug_bench list  [--limit 40]                    which mutants exist (tests must kill them)
+    python -m litha.bug_bench run   [--n 10] [--seed -1] [--kind K] [--blind]  the fix benchmark; prints the score
+    python -m litha.bug_bench hunt  [--n 10] [--seed -1]   review catch rate: she must find AND prove the bug
 Runs in worktrees/litha-bench (a detached star/next checkout). Every item is reset with git afterwards.
 """
 from __future__ import annotations
@@ -345,7 +345,7 @@ def killed(tree: Path, items: list[dict], n: int, python: str, rng: random.Rando
 
 
 def run(n: int, seed: int, kinds: list[str] | None, python: str, asker=None, blind: bool = False) -> dict:
-    from star import pr_fixer
+    from litha import pr_fixer
     tree = ensure_bench()
     rng = random.Random(seed)
     items = killed(tree, candidates(tree, kinds, rng, max_files=25), n, python, rng)
@@ -401,7 +401,7 @@ def ensure_base() -> Path:
 
 def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
     """Review catch rate: plant a bug, let her hunt it in the changed function, count only proven finds."""
-    from star import bug_hunt
+    from litha import bug_hunt
     tree, base = ensure_bench(), ensure_base()
     rng = random.Random(seed)
     items = killed(tree, candidates(tree, kinds, rng, max_files=25), n, python, rng)
@@ -435,7 +435,7 @@ def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m star.bug_bench")
+    ap = argparse.ArgumentParser(prog="python -m litha.bug_bench")
     ap.add_argument("cmd", choices=["list", "run", "hunt"])
     ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--seed", type=int, default=-1, help="-1 = today's date (new bugs every day)")

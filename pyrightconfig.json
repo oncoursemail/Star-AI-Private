@@ -1,5 +1,5 @@
 {
-  "include": ["star"],
+  "include": ["star", "litha"],
   "exclude": ["**/__pycache__", "star/skill_packs", "star/studio_lab_specs", "star/re_scripts"],
   "pythonVersion": "3.12",
   "pythonPlatform": "Linux",

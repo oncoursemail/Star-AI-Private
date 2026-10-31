@@ -17,7 +17,7 @@ anything here; every rule below exists because a measured run needed it.
 | `release_receipt.py` | runs a release check and writes its receipt | by whoever runs acceptance / install |
 | `bug_bench.py` | plants real bugs in the real repo, she fixes them, lessons + training pairs + score history | task "Litha bug bench", 03:10 daily |
 
-Scheduled script: `server/pr_merger_run.cmd` (fixer -> merger -> promote) and `server/bug_bench_run.cmd`.
+Scheduled script: `litha/pr_merger_run.cmd` (fixer -> merger -> promote) and `litha/bug_bench_run.cmd`.
 Off switches: `%USERPROFILE%\.star\pr-merger\OFF`, `%USERPROFILE%\.star\litha\OFF`.
 Logs: `~/.star/pr-merger/{run.log,decisions.jsonl}`, `~/.star/pr-fixer/{fixes.jsonl,tried.json}`,
 `~/.star/litha/{bench.jsonl,bench.log,lessons.json,sft/pr-fix.jsonl}`, receipts `~/.star/release/<sha>/`.
@@ -59,7 +59,7 @@ safe autofixes, then up to 5 rounds of her edits (a round that does not lower th
 **Promotion** (`pr_promote.py`): merges the open `star/next -> main` PR only when, for the exact head: every check
 passed incl. a Windows build; receipts `acceptance.json` and `install.json` say ok for that sha; `notes.md` exists;
 no open proven high-risk hold. These are the ledger's release checks (owner OK 2026-10-13). Receipts come from
-`python -m star.release_receipt acceptance -- python scripts/shell_acceptance.py` and
+`python -m litha.release_receipt acceptance -- python scripts/shell_acceptance.py` and
 `... install -- cmd /c scripts\windows_acceptance.cmd` (the install test backs up `%APPDATA%\STAR` first).
 
 ## 3. Measured (RAN, 2026-10-31)
@@ -81,7 +81,7 @@ no open proven high-risk hold. These are the ledger's release checks (owner OK 2
 Done 2026-10-31: blind fixing (8/8), the proven bug hunt in the merger, 32 bug kinds, ruff failures in the fixer,
 bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "corrected").
 
-1. **Hunt catch rate**: `python -m star.bug_bench hunt --n 10` (runs nightly too). Raise it: give the hunt the
+1. **Hunt catch rate**: `python -m litha.bug_bench hunt --n 10` (runs nightly too). Raise it: give the hunt the
    function's callers and its tests, ask for 2 candidate lines instead of 1, prove each.
 2. **Hunt false flags on real PRs**: the proof cannot flag identical code, but an INTENDED behaviour change looks
    like a regression. Replay the hunt on the last 20 merged PRs (`pr_merger.replay` style) and count holds; if any,
@@ -112,7 +112,7 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   mutants, 1/6 again (a different one caught: run-to-run noise, no measured gain). Not yet checked whether the
   misses are wrong suspects or failed proofs (one traced miss earlier was a failed proof). Next lever: let the proof run the module's existing tests on head vs base first and give her the
   first assert that differs, instead of asking her to invent a new test.
-- False holds: `python -m star.pr_merger --replay-hunt 8` on merged PRs #816-#847: 0/7 flagged (one had no Python
+- False holds: `python -m litha.pr_merger --replay-hunt 8` on merged PRs #816-#847: 0/7 flagged (one had no Python
   change).
 
 ## 4b. Added 2026-10-31 evening (measured where it says so)
