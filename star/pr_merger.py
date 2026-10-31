@@ -248,12 +248,48 @@ def review(pr: dict, files: dict[str, dict], ask=ask_litha, read=head_file) -> d
             "risks": risks, "dropped_claims": dropped}
 
 
-def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None) -> dict:
+SAFETY = re.compile(r"secret|token|password|credential|injection|rm -rf|delet|data loss|leak|privilege|sandbox escape",
+                    re.I)
+
+
+def prove_high_risks(pr: dict, rev: dict, ask=ask_litha, limit: int = 3) -> None:
+    """Check the PR out (worktrees/litha-proof-<n>) and keep a high risk only if her test really fails on it."""
+    from star import bug_proof, pr_fixer
+    tree = pr_fixer.WORK / f"litha-proof-{pr['number']}"
+    branch = f"litha/proof-{pr['number']}"
+    if tree.exists():
+        pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "remove", "--force", str(tree)])
+    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "fetch", "-q", "origin", f"pull/{pr['number']}/head:{branch}",
+                 "--force"])
+    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "add", "-q", str(tree), branch])
+    base = pr_fixer.WORK / f"litha-base-{pr['number']}"               # the code before the PR (differential proof)
+    if base.exists():
+        pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "remove", "--force", str(base)])
+    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "fetch", "-q", "origin", BASE])
+    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "add", "-q", "--detach", str(base), f"origin/{BASE}"])
+    try:
+        testable = [r for r in rev["risks"] if r["severity"] == "high" and not SAFETY.search(r["why"])]
+        for r in testable[:limit]:                              # safety claims stay blocking without a test
+            proof = bug_proof.prove(tree, r, sys.executable, bug_proof.ask if ask is ask_litha else ask, base=base)
+            r["proof"] = {k: v for k, v in proof.items() if k != "test"}
+            if not proof["proven"]:
+                r["severity"] = "unproven"
+        for r in testable[limit:]:
+            r["severity"] = "unproven"                          # past the proof budget: not evidence
+    finally:
+        for wt in (tree, base):
+            pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "remove", "--force", str(wt)])
+    rev["verdict"] = "hold" if any(r["severity"] == "high" for r in rev["risks"]) else "merge"
+
+
+def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_fn=prove_high_risks) -> dict:
     diff = diff_fn(pr) if diff_fn else gh("pr", "diff", str(pr["number"]), "--repo", REPO, timeout=300)
     files = parse_diff(diff)
     checks = checks_fn(pr["headRefOid"])
     gates = gate_failures(pr, checks, files)
     rev = review(pr, files, ask) if not gates else None          # no model time on a PR the gates already block
+    if rev and rev["verdict"] == "hold" and prove_fn:
+        prove_fn(pr, rev, ask)                                   # a high claim must be shown by a failing test
     action = "merge" if not gates and rev and rev["verdict"] == "merge" else "hold"
     reasons = gates or [f"Litha: {r['file']}:{r['line']} {r['why']}" for r in (rev or {}).get("risks", [])
                         if r["severity"] == "high"]

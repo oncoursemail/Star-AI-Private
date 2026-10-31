@@ -49,7 +49,7 @@ What this PR changed (the cause is most likely in these lines):
 
 The real code around every line in the tracebacks (line numbers on the left, do not copy them):
 {code}
-{feedback}
+{lessons}{feedback}
 Fix the cause in the source code. The tests describe the wanted behaviour: never edit files under tests/.
 Edit only files shown above, with exactly those paths. Make the smallest correct change. Answer only JSON:
 {{"why": "<one sentence: the cause>", "edits": [{{"file": "<path>", "find": "<exact existing text, a few whole lines,
@@ -162,6 +162,14 @@ def apply_edits(tree: Path, edits: list) -> list[str]:
     return problems
 
 
+def _lessons() -> str:
+    try:
+        from star.bug_bench import lessons_text
+        return lessons_text()
+    except Exception:  # noqa: BLE001 - lessons are a help, never a reason to fail a fix
+        return ""
+
+
 def source_diff(diff: str) -> str:
     """The PR's diff without test files (the tests are the spec, the cause is in the source)."""
     parts = re.split(r"(?m)^(?=diff --git )", diff)
@@ -189,7 +197,7 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
     for round_no in range(1, ROUNDS + 1):
         sections = "\n\n".join(f"{f['test']}\n{f['section']}" for f in fails) + "\n\nlocal run now:\n" + out[-1500:]
         prompt = PROMPT.format(title=title, failures=sections[:6000],
-                               code=code_excerpts(tree, sections), feedback=feedback,
+                               code=code_excerpts(tree, sections), feedback=feedback, lessons=_lessons(),
                                diff=source_diff(diff)[:5000] or "(not available)")
         try:
             answer = json.loads(asker(prompt))
