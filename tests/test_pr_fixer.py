@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import sys
+
 import star.pr_fixer as F
 
 LOG = """____________________________ test_add ____________________________
@@ -64,3 +67,21 @@ def test_repair_runs_her_edit_against_the_real_tests(tmp_path):
                                asker=lambda p: next(answers))
     assert (ok, why, rounds) == (True, "subtracts", 2)
     assert "a + b" in (tmp_path / "star" / "calc.py").read_text(encoding="utf-8")
+
+
+def test_lint_failures_get_safe_autofixes_then_her_edits(tmp_path):
+    import pytest
+    pytest.importorskip("ruff")
+    (tmp_path / "star").mkdir()
+    (tmp_path / "star" / "m.py").write_text("import os\n\n\ndef f():\n    x = 1\n    return 2\n", encoding="utf-8")
+    assert {e[2].split()[0] for e in F.lint(tmp_path, sys.executable)} == {"F401", "F841"}
+    asked = []
+
+    def ask(prompt):
+        asked.append(prompt)
+        return json.dumps({"why": "unused local", "edits": [{"file": "star/m.py", "find": "    x = 1\n", "replace": ""}]})
+
+    ok, why, rounds = F.fix_lint(tmp_path, sys.executable, ask)
+    assert ok and why == "unused local" and len(asked) == 1 and "F401" not in asked[0]      # os import: autofixed
+    assert (tmp_path / "star" / "m.py").read_text(encoding="utf-8") == "\n\ndef f():\n    return 2\n"
+    assert F.RUFF_CI.search("::error title=Ruff (F401),file=star/m.py,line=1::x")

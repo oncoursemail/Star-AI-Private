@@ -239,6 +239,57 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
     return ok, why, round_no
 
 
+LINT = re.compile(r"^(star/[\w/.-]+\.py):(\d+):\d+: (\w+) (.*)$", re.M)
+RUFF_CI = re.compile(r"Ruff \(\w+\)|ruff check star")         # the lint step failed (it runs before pytest in CI)
+LINT_PROMPT = """You are Litha, fixing ruff lint errors in STAR's Python code so CI passes. Keep behaviour the same.
+Errors, each with the real code around it (line numbers on the left, do not copy them):
+{errors}
+{feedback}
+Fix each error the way the rule intends (remove what is unused, define what is undefined, do not add noqa).
+Answer only JSON: {{"why": "<one sentence>", "edits": [{{"file": "<path>", "find": "<exact existing text, unique in
+the file>", "replace": "<new text>"}}]}}"""
+
+
+def lint(tree: Path, python: str) -> list[tuple[str, int, str]]:
+    r = sh([python, "-m", "ruff", "check", "star", "--output-format=concise", "--no-cache"], cwd=tree)
+    return [(f, int(n), f"{rule} {msg}") for f, n, rule, msg in LINT.findall(r.stdout.replace("\\", "/"))]
+
+
+def fix_lint(tree: Path, python: str, asker=ask) -> tuple[bool, str, int]:
+    """Ruff's safe autofixes first, then up to ROUNDS rounds of her edits; a round that does not lower the error
+    count is undone."""
+    errs = lint(tree, python)
+    if not errs:
+        return False, "ruff passes locally (CI-only lint failure)", 0
+    sh([python, "-m", "ruff", "check", "--fix", "--no-cache", *sorted({e[0] for e in errs})], cwd=tree)
+    feedback, why = "", "ruff safe autofixes"
+    for round_no in range(1, ROUNDS + 1):
+        errs = lint(tree, python)
+        if not errs:
+            return True, why, round_no
+        listing = []
+        for f, n, msg in errs[:12]:
+            lines = (tree / f).read_text(encoding="utf-8", errors="replace").splitlines()
+            near = "\n".join(f"{i + 1:5}: {lines[i]}" for i in range(max(0, n - 7), min(len(lines), n + 6)))
+            listing.append(f"{f}:{n}: {msg}\n{near}")
+        before = {f: (tree / f).read_bytes() for f in {e[0] for e in errs}}
+        try:
+            answer = json.loads(asker(LINT_PROMPT.format(errors="\n\n".join(listing)[:7000], feedback=feedback)))
+        except (ValueError, TypeError):
+            feedback = "\nYour last answer was not valid JSON. Answer only the JSON object.\n"
+            continue
+        problems = apply_edits(tree, answer.get("edits"))
+        after = lint(tree, python)
+        if len(after) < len(errs):
+            why, feedback = str(answer.get("why", why))[:300], ""
+            continue
+        for f, data in before.items():                     # no progress: undo this round
+            (tree / f).write_bytes(data)
+        feedback = ("\nYour previous edits did not reduce the errors. " + ("Problems: " + "; ".join(problems) + ". "
+                    if problems else "") + "Try a different fix.\n")
+    return not lint(tree, python), why, ROUNDS
+
+
 def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     sha, number = pr["headRefOid"], pr["number"]
     log = failed_logs(sha)
@@ -251,8 +302,9 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
             except RuntimeError:
                 pass
         return {"pr": number, "result": "rerun", "why": f"failed logs expired; reran {len(runs)} run(s)"}
-    if not fails:
-        return {"pr": number, "result": "skip", "why": "no pytest failure in the failed logs"}
+    linting = not fails and bool(RUFF_CI.search(log))
+    if not fails and not linting:
+        return {"pr": number, "result": "skip", "why": "no pytest or ruff failure in the failed logs"}
     day = dt.date.today().strftime("%Y%m%d")
     branch, tree = f"litha/fix-{number}-{day}", WORK / f"litha-fix-{number}"
     if tree.exists():
@@ -262,11 +314,18 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         return {"pr": number, "result": "skip", "why": "fetch failed: " + got.stderr[-200:]}
     sh(["git", "-C", str(CLONE), "worktree", "add", "-q", str(tree), branch])
     tests = sorted({f["test"].split("::")[0] for f in fails})     # whole files: a second bug must fail too
-    ok, out = run_tests(tree, tests, python)
-    if ok:
-        return {"pr": number, "result": "skip", "why": "the failing tests pass locally (CI-only failure)", "tests": tests}
-    diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
-    ok, why, round_no = repair(tree, pr.get("title", ""), fails, out, tests, python, asker, diff)
+    if linting:
+        ok, why, round_no = fix_lint(tree, python, asker)
+        if round_no == 0:
+            return {"pr": number, "result": "skip", "why": why}
+        tests = ["ruff check star"]
+    else:
+        ok, out = run_tests(tree, tests, python)
+        if ok:
+            return {"pr": number, "result": "skip", "why": "the failing tests pass locally (CI-only failure)",
+                    "tests": tests}
+        diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
+        ok, why, round_no = repair(tree, pr.get("title", ""), fails, out, tests, python, asker, diff)
     if not ok:
         return {"pr": number, "result": "failed", "rounds": ROUNDS, "tests": tests, "why": why}
     changed = [ln[3:] for ln in sh(["git", "status", "--porcelain"], cwd=tree).stdout.splitlines()]
