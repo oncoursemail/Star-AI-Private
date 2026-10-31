@@ -119,15 +119,23 @@ class ObsStatsWindow:
             drskip, drtotal, doskip, dototal = (
                 new - prior for new, prior in zip(values, old)
             )
-            render_frame_count = drskip + drtotal
-            output_frame_count = doskip + dototal
-            if render_frame_count == 0 or output_frame_count == 0:
+            # OBS counts skipped frames *within* its total frame count.
+            # Its own status bar computes skipped / total, not
+            # skipped / (skipped + total). The latter underreports GPU
+            # pressure precisely when the stream is struggling.
+            if drtotal == 0 or dototal == 0:
                 return None  # no running OBS output, not zero-lag proof
+            if drskip > drtotal or doskip > dototal:
+                # Impossible within one OBS counter epoch: do not treat it
+                # as a valid percentage or healthy streaming evidence.
+                # Rebase on this attested sample and require another one.
+                self._counts["resets"] += 1
+                return None
             self._counts["windows"] += 1
             return ObsLagWindow(
                 observed_ms=now,
-                render_lag_pct=100.0 * drskip / render_frame_count,
-                output_lag_pct=100.0 * doskip / output_frame_count,
+                render_lag_pct=100.0 * drskip / drtotal,
+                output_lag_pct=100.0 * doskip / dototal,
                 window_ms=elapsed,
             )
 
