@@ -211,6 +211,15 @@ class GameDeadlineRouter:
                 self._counts["offline_teacher"] += 1
                 return DeadlineAdvice("teacher_offline", "offline_study_only")
 
+            # Record the monotonic host clock even when pressure or stale
+            # observations make this particular routing opportunity a skip.
+            # Otherwise a later backward clock could revive old fast samples.
+            now: float | None = None
+            if now_host_ms is not None:
+                now = _clock_ms(now_host_ms, "now_host_ms")
+                if self._last_advice_ms is not None and now < self._last_advice_ms:
+                    return skip("host_clock_reversed")
+                self._last_advice_ms = now
             if observation_age_ms is None:
                 return skip("observation_age_missing")
             age = _milliseconds(observation_age_ms, "observation_age_ms")
@@ -223,14 +232,8 @@ class GameDeadlineRouter:
                 return skip("scene_deadline_expired", remaining=remaining)
             if cpu_pressure or (gpu_pressure and self._device == "gpu"):
                 return skip("hardware_pressure", remaining=remaining)
-            if now_host_ms is None:
+            if now is None:
                 return skip("host_clock_missing", remaining=remaining)
-            now = _clock_ms(now_host_ms, "now_host_ms")
-            # A host-clock reset must not make a previously expired speed
-            # profile eligible again. A new session must be explicitly enabled.
-            if self._last_advice_ms is not None and now < self._last_advice_ms:
-                return skip("host_clock_reversed", remaining=remaining)
-            self._last_advice_ms = now
             if self._last_sample_ms is not None and now < self._last_sample_ms:
                 return skip("host_clock_before_samples", remaining=remaining)
             fresh = [duration for at, duration in self._reactive
