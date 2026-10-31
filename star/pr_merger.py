@@ -97,6 +97,25 @@ def parse_diff(diff: str) -> dict[str, dict]:
     return files
 
 
+REQ = re.compile(r"^([+-])([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*((?:[<>=!~]=?\s*[\w.*]+\s*,?\s*)+)", re.M)
+
+
+def major_bumps(files: dict) -> list[str]:
+    """Requirement lines whose major version numbers changed (e.g. `<2` -> `<3`, `==1.x` -> `==2.x`). CI never runs
+    STAR Home's packages, so a new major version must run on her PC before it merges."""
+    out = []
+    for path, f in files.items():
+        if not re.fullmatch(r"requirements[\w-]*\.in", path):
+            continue
+        rows = [(s, n.lower(), spec) for s, n, spec in REQ.findall(f["text"]) if not n.startswith(("--", "++"))]
+        old = {n: spec for s, n, spec in rows if s == "-"}
+        for s, n, spec in rows:
+            majors = set(re.findall(r"[<>=!~]=?\s*(\d+)", spec))
+            if s == "+" and n in old and majors != set(re.findall(r"[<>=!~]=?\s*(\d+)", old[n])):
+                out.append(f"{n} {old[n].strip()} -> {spec.strip()}")
+    return out
+
+
 def gate_failures(pr: dict, checks: list[dict], files: dict[str, dict]) -> list[str]:
     """Why this PR may not be merged, from facts only ([] = all hard gates pass)."""
     why = []
@@ -123,6 +142,8 @@ def gate_failures(pr: dict, checks: list[dict], files: dict[str, dict]) -> list[
             if hit and not DOC_IP.fullmatch(hit.group(0)):
                 why.append(f"possible secret or private address at {path}:{no}")
                 break
+    why += [f"major dependency bump {b}: run it on STAR's PC first (CI does not install her packages)"
+            for b in major_bumps(files)]
     return why
 
 

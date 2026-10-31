@@ -88,3 +88,12 @@ def test_a_proven_hunt_find_stops_a_merge_the_review_allowed():
     assert row["action"] == "hold" and row["reasons"] == ["Litha: star/a.py:4 hunt: wrong call"]
     row = M.decide(GOOD, ask=ok, checks_fn=lambda sha: PASSED, diff_fn=lambda pr: clean, hunt_fn=lambda *a: None)
     assert row["action"] == "merge"
+
+
+def test_a_major_dependency_bump_waits_for_a_run_on_her_pc():
+    diff = ("diff --git a/requirements-home.in b/requirements-home.in\n--- a/requirements-home.in\n"
+            "+++ b/requirements-home.in\n@@ -1,2 +1,2 @@\n-huggingface-hub>=0.21,<2   # note\n"
+            "+huggingface-hub>=2.4.0,<3   # note\n-yt-dlp[default]==2026.10.21\n+yt-dlp[default]==2026.10.26\n")
+    files = M.parse_diff(diff)
+    assert M.major_bumps(files) == ["huggingface-hub >=0.21,<2 -> >=2.4.0,<3"]
+    assert any("major dependency bump" in w for w in M.gate_failures(GOOD, PASSED, files))
