@@ -239,8 +239,9 @@ def review(pr: dict, files: dict[str, dict], ask=ask_litha, read=head_file) -> d
             if not no and SPECULATIVE.search(r["why"]):
                 r["severity"] = "low"                     # "could / might": worth a note, not a block
                 continue
-            if not no and cache[r["file"]] is not None:
-                no = confirmed(r, cache[r["file"]], ask)
+            source = cache[r["file"]]
+            if not no and source is not None:
+                no = confirmed(r, source, ask)
             if no:
                 r.update(severity="refuted", refuted=no)
     high = [r for r in risks if r["severity"] == "high"]

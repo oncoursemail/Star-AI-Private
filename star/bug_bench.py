@@ -355,7 +355,10 @@ def run(n: int, seed: int, kinds: list[str] | None, python: str, asker=None, bli
     t0 = time.time()
     for it in items:
         f = tree / it["file"]
-        f.write_bytes(mutate(f.read_text(encoding="utf-8"), it["line"], it["kind"]).encode("utf-8"))
+        new = mutate(f.read_text(encoding="utf-8"), it["line"], it["kind"])
+        if new is None:                                  # killed() already checked it; never write an empty file
+            continue
+        f.write_bytes(new.encode("utf-8"))
         fails = pr_fixer.failures(it["fail"]) or [{"test": it["tests"][0], "section": it["fail"][-2500:]}]
         prompts: list[str] = []
 
@@ -406,7 +409,10 @@ def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
              "n": len(items), "caught": 0, "wrong_line": 0, "by_kind": {}}
     for it in items:
         f = tree / it["file"]
-        f.write_bytes(mutate(f.read_text(encoding="utf-8"), it["line"], it["kind"]).encode("utf-8"))
+        new = mutate(f.read_text(encoding="utf-8"), it["line"], it["kind"])
+        if new is None:                                  # killed() already checked it; never write an empty file
+            continue
+        f.write_bytes(new.encode("utf-8"))
         t = time.time()
         try:
             found = bug_hunt.hunt(tree, base, {it["file"]: {it["line"]}}, python)

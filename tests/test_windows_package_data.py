@@ -63,6 +63,8 @@ OTHER_FILE_ANCHORS = {
     "star/breadth_evals.py": "developer-only breadth eval suites (evals/gdscript, evals/instruction-following)",
     "star/best_of_n.py": "developer-only evaluation prelude ('' in the packaged app)",
     "star/cli.py": "source-only CLI",
+    "star/pr_fixer.py": "Litha's PR fixer: finds the worktrees/ folder of a source checkout (scheduled task, never in STAR.exe)",
+    "star/bug_bench.py": "Litha's bug bench: plants bugs in a source checkout's worktrees/ (scheduled task, never in STAR.exe)",
     "star/discord_supervisor.py": "source checkout of the Discord bot (STAR_CHECKOUT for the packaged app)",
     "star/discord_bot/gpu_worker.py": "source checkout that the PC GPU worker's logon task runs",
     "star/eval_gate.py": "developer-only evaluation result files",

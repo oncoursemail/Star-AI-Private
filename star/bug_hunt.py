@@ -63,7 +63,8 @@ def test_uses(head: Path, name: str, limit: int = 12) -> str:
 
 def suspects(ans: dict) -> list[tuple[int, str]]:
     """[(line, why)] from {"suspects": [...]} (or the older {"bug", "line", "why"} shape)."""
-    rows = ans.get("suspects") if isinstance(ans.get("suspects"), list) else [ans] if ans.get("bug") else []
+    listed = ans.get("suspects")
+    rows = listed if isinstance(listed, list) else [ans] if ans.get("bug") else []
     out = []
     for r in rows[:2]:
         try:
