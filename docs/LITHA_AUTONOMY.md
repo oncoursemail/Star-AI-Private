@@ -94,7 +94,13 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
    `bug_bench run --n 10 --seed <held-out>` against it; ship only if the solved count does not drop.
 6. **Receipts automatically on STAR's own PC**: run shell + Windows acceptance there for each green `star/next` head
    and write the receipts, so `main` moves with nobody involved (STAR's PC is hers: full admin, no prompts).
-7. **Dependency PRs**: let the fixer run the project's lock tool (requirements-home) instead of editing locks.
+7. **Dependency PRs**: DONE 2026-10-31. A PR that only changes `requirements*.in/.txt` gets the hashed lock rebuilt
+   by `installer/star-home/pin_requirements.py`, then `tests/test_home_installer.py` (#831 -> #850 in 46 s, #833 ->
+   #851 in 61 s; #832 onnxruntime-gpu stops: a test pins the GPU build on purpose, owner's call). The merger holds
+   a MAJOR bump of a STAR Home package (`major_bumps()`): CI never installs them, so it must run on her PC first.
+9. **Hunt benchmark measures the wrong bugs**: it plants bugs the module's tests already catch, i.e. bugs CI
+   already blocks. The hunt's real value is bugs the tests miss. Next: plant mutants that SURVIVE the tests and
+   count how many she proves (expect some mutants to be harmless: those cannot be proven, which is correct).
 8. **Codex's stacked drafts**: once marked ready, walk them bottom-up (base first), one per run.
 
 ## 3b. Hunt measured
