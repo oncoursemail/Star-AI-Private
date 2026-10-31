@@ -1,5 +1,5 @@
 # STAR: cache isolation, robust game learning, and natural VTuber responsiveness
-Date: 2026-10-31. Status: researched design + two focused Python corrections in draft PR #845. No Windows/OBS execution, model replacement, or performance gain claimed.
+Date: 2026-10-31. Status: researched design + two focused Python corrections, a synthetic opt-in local inference cache-isolation probe, and regression tests in draft PR #845. No Windows/OBS execution, model replacement, or performance gain claimed.
 
 ## Current-state inventory (inspected branch `feat/stream-cooperative-motion-cancel-20261030`)
 - `star/stream_brain_governor.py` already connects trusted telemetry, `AdaptiveQoS`, and `StarStage`. Do **not** add a second independent scheduler. Keep the real FPS/CPU/VRAM/audio sensors as the only authority for work admission.
@@ -71,4 +71,12 @@ This run corrected `TurnTakingGate` owner-yield **telemetry**: polling the same 
 | General knowledge | Fresh unseen source-grounded tasks, calibration, source provenance, no answer contamination | Ten public development cases |
 
 ## Honest status and next experiment
-This document records implementation work only in `star/game_skill_gate.py` and `star/stream_turntaking.py` plus their regression tests. No new model, LiveKit, VTS, OBS, Rust engine, game controller, or unsafe cache workaround was deployed. Next prioritize a **pinned build and cross-context canary test** for llama-server (before accelerating cached context), followed by a locally authorized Windows rehearsal. If it cannot be measured, do not report a speed or intelligence improvement.
+This run modified `star/game_skill_gate.py` and `star/stream_turntaking.py`, and added `star/llama_cache_isolation_probe.py` with `tests/test_llama_cache_isolation_probe.py`, in addition to the relevant regression tests.
+
+For a pinned, locally hosted llama-server already running **off-stream**, an authorized operator can exercise the synthetic probe:
+
+```bash
+python -m star.llama_cache_isolation_probe --endpoint http://127.0.0.1:8080/v1/chat/completions --pairs 4 --opt-in-local
+```
+
+This probe only attempts sequential synthetic A/B requests; it does not test concurrent slot interleavings, eviction after very long context, or hidden internal KV state. A positive leak indicator is actionable; a clean report is merely `no_leak_observed_not_proven_safe` and must never be called a security certification. Do not send real viewer or private context to an unverified server. No new model, LiveKit, VTS, OBS, Rust engine, game controller, or unsafe cache workaround was deployed. Next prioritize a **pinned build and cross-context canary test** for llama-server (before accelerating cached context), followed by a locally authorized Windows rehearsal. If it cannot be measured, do not report a speed or intelligence improvement.
