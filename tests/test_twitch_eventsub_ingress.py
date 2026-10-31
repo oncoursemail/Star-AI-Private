@@ -14,7 +14,7 @@ UTC_NOW = datetime.fromtimestamp(UNIX_NOW, timezone.utc).isoformat().replace("+0
 
 def packet(*, delivery="d1", chat="c1", broadcaster="123", chatter="789",
            text="Hello Star!", event_type="channel.chat.message",
-           timestamp=UTC_NOW):
+           timestamp=UTC_NOW, session_id="session123"):
     return {
         "metadata": {"message_id": delivery, "message_type": "notification",
                      "subscription_type": event_type, "subscription_version": "1",
@@ -24,7 +24,7 @@ def packet(*, delivery="d1", chat="c1", broadcaster="123", chatter="789",
                              "condition": {"broadcaster_user_id": broadcaster,
                                            "user_id": "999"},
                              "transport": {"method": "websocket",
-                                           "session_id": "session123"}},
+                                           "session_id": session_id}},
             "event": {
                 "message_id": chat, "broadcaster_user_id": broadcaster,
                 "chatter_user_id": chatter, "message": {"text": text},
@@ -37,7 +37,7 @@ def ingress(*, max_seen_ids=2048, retention_seconds=900):
     gate = TwitchEventSubIngress(
         max_seen_ids=max_seen_ids, retention_seconds=retention_seconds,
     )
-    gate.enable(owner_approved=True, broadcaster_user_id="123")
+    gate.enable(owner_approved=True, broadcaster_user_id="123", websocket_session_id="session123")
     return gate
 
 
@@ -57,12 +57,12 @@ def test_opt_in_and_host_moderation_are_required():
     gate = TwitchEventSubIngress()
     assert offer(gate) is None
     with pytest.raises(PermissionError):
-        gate.enable(broadcaster_user_id="123")
+        gate.enable(broadcaster_user_id="123", websocket_session_id="session123")
     with pytest.raises(ValueError):
-        gate.enable(owner_approved=True, broadcaster_user_id="notnumeric")
-    gate.enable(owner_approved=True, broadcaster_user_id="123")
+        gate.enable(owner_approved=True, broadcaster_user_id="notnumeric", websocket_session_id="session123")
+    gate.enable(owner_approved=True, broadcaster_user_id="123", websocket_session_id="session123")
     with pytest.raises(RuntimeError):
-        gate.enable(owner_approved=True, broadcaster_user_id="123")
+        gate.enable(owner_approved=True, broadcaster_user_id="123", websocket_session_id="session123")
     assert offer(gate, host_verified=False) is None
     assert offer(gate, moderated=False) is None
     assert offer(gate) is not None
@@ -163,7 +163,7 @@ def test_reconnect_reuses_dedupe_history_and_new_stream_resets_it():
     assert offer(gate) is not None
     assert offer(gate, now=101) is None
     gate.disable()
-    gate.enable(owner_approved=True, broadcaster_user_id="123")
+    gate.enable(owner_approved=True, broadcaster_user_id="123", websocket_session_id="session123")
     assert offer(gate, now=5) is not None
 
 
@@ -268,8 +268,70 @@ def test_account_pseudonyms_are_stable_per_session_and_rotate_after_disable():
     assert first.signal_id != second.signal_id
     assert "789" not in first.speaker_id
     gate.disable()
-    gate.enable(owner_approved=True, broadcaster_user_id="123")
+    gate.enable(owner_approved=True, broadcaster_user_id="123", websocket_session_id="session123")
     new = offer(gate)
     assert new is not None
     assert new.speaker_id != first.speaker_id
     assert new.signal_id != first.signal_id
+
+
+def test_reconnect_session_binding_rejects_foreign_socket_and_keeps_dedupe():
+    gate = ingress()
+    assert offer(gate, packet(session_id="foreign")) is None
+    first = offer(gate)
+    assert first is not None
+    assert gate.metrics()["bound_websocket_sessions"] == 1
+    gate.begin_reconnect(owner_approved=True, websocket_session_id="sessionNEW")
+    assert gate.metrics()["bound_websocket_sessions"] == 2
+    # Both authorized sockets are valid during the documented overlap.
+    assert offer(gate, packet(delivery="d2", chat="c2", session_id="sessionNEW"),
+                 now=101) is not None
+    assert offer(gate, packet(delivery="d3", chat="c3", session_id="session123"),
+                 now=102) is not None
+    # Twitch can deliver the *same* chat on both sockets. Do not narrate twice.
+    assert offer(gate, packet(delivery="d4", chat="c1", session_id="sessionNEW"),
+                 now=103) is None
+    gate.finish_reconnect(owner_approved=True,
+                          previous_websocket_session_id="session123")
+    assert gate.metrics()["bound_websocket_sessions"] == 1
+    assert offer(gate, packet(delivery="d5", chat="c5", session_id="session123"),
+                 now=104) is None
+    assert offer(gate, packet(delivery="d6", chat="c6", session_id="sessionNEW"),
+                 now=105) is not None
+    assert gate.metrics()["duplicates"] == 1
+
+
+def test_only_one_trusted_reconnect_overlap_and_no_reset_on_transition():
+    gate = ingress()
+    with pytest.raises(PermissionError):
+        gate.begin_reconnect(websocket_session_id="new123")
+    with pytest.raises(ValueError):
+        gate.begin_reconnect(owner_approved=True, websocket_session_id="session123")
+    with pytest.raises(RuntimeError):
+        gate.finish_reconnect(owner_approved=True,
+                              previous_websocket_session_id="session123")
+    gate.begin_reconnect(owner_approved=True, websocket_session_id="new123")
+    with pytest.raises(RuntimeError):
+        gate.begin_reconnect(owner_approved=True, websocket_session_id="third123")
+    with pytest.raises(PermissionError):
+        gate.finish_reconnect(previous_websocket_session_id="session123")
+    with pytest.raises(ValueError):
+        gate.finish_reconnect(owner_approved=True,
+                              previous_websocket_session_id="new123")
+    gate.finish_reconnect(owner_approved=True,
+                          previous_websocket_session_id="session123")
+    gate.begin_reconnect(owner_approved=True, websocket_session_id="third123")
+    gate.finish_reconnect(owner_approved=True,
+                          previous_websocket_session_id="new123")
+    gate.disable()
+    assert gate.metrics()["bound_websocket_sessions"] == 0
+    with pytest.raises(RuntimeError):
+        gate.begin_reconnect(owner_approved=True, websocket_session_id="new123")
+
+
+@pytest.mark.parametrize("bad", ["", "invalid/session", "a" * 81, None, 10, True])
+def test_websocket_binding_requires_valid_host_welcome_id(bad):
+    gate = TwitchEventSubIngress()
+    with pytest.raises(ValueError):
+        gate.enable(owner_approved=True, broadcaster_user_id="123",
+                    websocket_session_id=bad)

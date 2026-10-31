@@ -5,7 +5,8 @@ WebSocket reconnection. This bounded adapter rejects stale UTC events and
 repeated transport/chat message IDs BEFORE they reach StreamDirector.
 
 An authenticated, consented host must parse Twitch TLS/WebSocket traffic,
-validate OAuth subscriptions, and pass independently approved replacement text.
+validate OAuth subscriptions, bind the connection's verified Welcome session ID,
+and pass independently approved replacement text.
 host_verified/moderated are host attestations, not cryptographic checks. Viewer text is ALWAYS data;
 this module never sends chat, speaks, controls games, stores raw text, or
 connects to the internet. It is disabled by default.
@@ -100,28 +101,77 @@ class TwitchEventSubIngress:
         self._seen: OrderedDict[str, float] = OrderedDict()
         self._enabled = False
         self._broadcaster = ""
+        self._websocket_sessions: tuple[str, ...] = ()
         self._session_salt: bytes | None = None
         self._last_now: float | None = None
         self._counts = {"accepted": 0, "rejected": 0, "duplicates": 0}
 
     def enable(self, *, owner_approved: bool = False,
-               broadcaster_user_id: str) -> None:
+               broadcaster_user_id: str,
+               websocket_session_id: str) -> None:
+        """Start a broadcast using the session ID from a verified Welcome.
+
+        A trusted TLS/WebSocket host must authenticate the Welcome, confirm
+        the active subscription, and supply its session ID. A token inferred
+        from a viewer notification is NOT an acceptable session binding.
+        """
         if owner_approved is not True:
             raise PermissionError("trusted host must opt into Twitch chat ingest")
         broadcaster = _account_id(broadcaster_user_id, "broadcaster_user_id")
+        session = _bounded_id(websocket_session_id, "websocket_session_id")
         with self._lock:
             if self._enabled:
                 raise RuntimeError("disable before switching stream sessions")
             self._seen.clear()
             self._broadcaster = broadcaster
+            self._websocket_sessions = (session,)
             self._session_salt = secrets.token_bytes(32)
             self._last_now = None
             self._enabled = True
+
+    def begin_reconnect(self, *, owner_approved: bool = False,
+                        websocket_session_id: str) -> None:
+        """Accept one verified *new Welcome* during Twitch's overlap window.
+
+        Twitch keeps the old connection delivering notifications until the
+        replacement WebSocket receives Welcome. Keep both session IDs bound
+        temporarily, preserving duplicate protection across both transports.
+        The network host, not this offline gate, performs reconnect and OAuth.
+        """
+        if owner_approved is not True:
+            raise PermissionError("trusted host approval required for reconnect")
+        session = _bounded_id(websocket_session_id, "websocket_session_id")
+        with self._lock:
+            if not self._enabled or len(self._websocket_sessions) != 1:
+                raise RuntimeError("reconnect requires one active session")
+            if session in self._websocket_sessions:
+                raise ValueError("new websocket session must be distinct")
+            self._websocket_sessions = (*self._websocket_sessions, session)
+
+    def finish_reconnect(self, *, owner_approved: bool = False,
+                         previous_websocket_session_id: str) -> None:
+        """Retire only the old socket after the trusted host closes it.
+
+        This cannot clear the chat/event replay cache or create a new STAR
+        stream epoch. Require both sessions so an accidental early retirement
+        cannot silently detach the only active source of authenticated chat.
+        """
+        if owner_approved is not True:
+            raise PermissionError("trusted host approval required for reconnect")
+        previous = _bounded_id(previous_websocket_session_id,
+                               "previous_websocket_session_id")
+        with self._lock:
+            if not self._enabled or len(self._websocket_sessions) != 2:
+                raise RuntimeError("no two-session reconnect in progress")
+            if previous != self._websocket_sessions[0]:
+                raise ValueError("only the previous websocket session may retire")
+            self._websocket_sessions = (self._websocket_sessions[1],)
 
     def disable(self) -> None:
         with self._lock:
             self._enabled = False
             self._broadcaster = ""
+            self._websocket_sessions = ()
             self._session_salt = None
             self._last_now = None
             self._seen.clear()
@@ -183,6 +233,7 @@ class TwitchEventSubIngress:
                     or transport.get("method") != "websocket"
                     or type(transport.get("session_id")) is not str
                     or _ID.fullmatch(cast(str, transport["session_id"])) is None
+                    or transport["session_id"] not in self._websocket_sessions
                     or sent is None or not -2.0 <= now_unix - sent <= 15.0):
                 self._counts["rejected"] += 1
                 return None
@@ -222,7 +273,8 @@ class TwitchEventSubIngress:
         """Anonymous counts only, never raw IDs, messages, or viewer names."""
         with self._lock:
             return {**self._counts, "enabled": self._enabled,
-                    "recent_id_count": len(self._seen)}
+                    "recent_id_count": len(self._seen),
+                    "bound_websocket_sessions": len(self._websocket_sessions)}
 
 
 __all__ = ["TwitchEventSubIngress"]
