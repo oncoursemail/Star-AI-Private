@@ -16,7 +16,7 @@ import secrets
 import time
 from typing import Callable
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
 _CANARY = re.compile(r"STAR_CANARY_[0-9a-f]{24}\Z")
@@ -183,9 +183,12 @@ def _local_client(endpoint: str, timeout_seconds: int) -> Callable[[dict[str, ob
             validated, data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST",
         )
-        # Per-request opener avoids sharing mutable urllib handler state
-        # during optional two-worker replay. Redirects remain forbidden.
-        with build_opener(_NoRedirect()).open(request, timeout=timeout_seconds) as response:
+        # Per-request opener avoids sharing mutable handler state across two
+        # workers. Forbid redirects AND environment-configured HTTP proxies;
+        # synthetic canaries must never be sent to a remote proxy server.
+        with build_opener(ProxyHandler({}), _NoRedirect()).open(
+            request, timeout=timeout_seconds,
+        ) as response:
             raw = response.read(65_537)
             if len(raw) > 65_536:
                 raise ValueError("oversized local inference response")
