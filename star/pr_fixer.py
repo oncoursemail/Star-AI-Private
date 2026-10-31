@@ -36,7 +36,8 @@ ROUNDS = 5
 NO_TOUCH = re.compile(r"^(tests/|\.github/)|(^|/)(requirements[^/]*\.txt|pnpm-lock\.yaml|[^/]+\.lock)$")
 FAILED = re.compile(r"^FAILED (\S+::\S+)", re.M)
 FRAME = re.compile(r"^(?:\S+ +)?((?:star|server|metallic|tools|tests)/[\w/.-]+\.py):(\d+):", re.M)
-STAMP = re.compile(r"^\S+\s+\S+\s+\d{4}-\d\d-\d\dT[\d:.]+Z ", re.M)   # "job step 2026-...Z " prefixes of gh logs
+ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+STAMP = re.compile(r"^(?:\S+\t\S+\t)?\d{4}-\d\d-\d\dT[\d:.]+Z ", re.M)   # "2026-...Z " (gh run view adds "job<TAB>step<TAB>")
 
 PROMPT = """You are Litha, fixing a failing pull request in STAR's Python repository so its tests pass.
 PR title: {title}
@@ -70,7 +71,8 @@ def failed_logs(sha: str) -> str:
         m = re.search(r"/job/(\d+)", c.get("details_url") or "")
         if m:
             try:
-                out.append(gh("api", f"repos/{REPO}/actions/jobs/{m.group(1)}/logs", timeout=300))
+                out.append(ANSI.sub("", gh("api", "--allow-escape-sequences", f"repos/{REPO}/actions/jobs/{m.group(1)}/logs",
+                                           timeout=300)))
             except RuntimeError:
                 pass
     return STAMP.sub("", "\n".join(out))
@@ -299,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
         with LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": round(t), **row}) + "\n")
         print(json.dumps(row), flush=True)
-        done += row["result"] in ("fixed", "failed", "error")
+        done += row["result"] in ("fixed", "failed", "error", "rerun")   # one CI rerun per run: one runner
     return 0
 
 
