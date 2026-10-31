@@ -4,12 +4,12 @@ from dataclasses import replace
 
 import pytest
 
-from star.game_skill_gate import GameTrial, compare_game_skill
+from star.game_skill_gate import GamePerformanceTrial, compare_game_skill
 
 
 def cases(*, split="holdout", mode="realtime", win=False, delay=80.0):
     return [
-        GameTrial(
+        GamePerformanceTrial(
             case_id=f"trial_{i}", game_scope="platformer_v1",
             scenario_id=f"map_{i % 3}", seed=i, split=split,
             mode=mode, success=win, progress=0.4 if not win else 1.0,
