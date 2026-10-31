@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import ceil, isfinite
 import re
-from typing import Sequence
+from typing import Sequence, cast
 
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}\Z")
@@ -30,7 +30,9 @@ def _nonnegative_float(value: object, field: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{field} must be finite and nonnegative")
     try:
-        number = float(value)
+        # Runtime checks reject bool/subclasses; cast only informs Pyright that
+        # this validated object is one of the numeric builtin types.
+        number = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{field} must be finite and nonnegative") from exc
     if not isfinite(number) or number < 0:
