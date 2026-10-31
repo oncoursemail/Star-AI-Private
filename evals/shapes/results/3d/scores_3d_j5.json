@@ -1,0 +1,66 @@
+{"judge": "j5", "scores": {
+"h01": {
+ "A": {"reads": 7, "proportion": 5, "form": 6, "materials": 5, "style": 5, "overall": 6, "note": "Clear pistol with slide, rail, trigger guard and serrations; whole frame tan instead of black frame with tan panels, grip angle and mag base awkward."},
+ "B": {"reads": 1, "proportion": 1, "form": 1, "materials": 2, "style": 1, "overall": 1, "note": "Stacked black boxes with floating bits; not a pistol."},
+ "C": {"reads": 2, "proportion": 2, "form": 3, "materials": 3, "style": 3, "overall": 2, "note": "Boxy block with sight details; no grip, barrel or pistol silhouette."}},
+"h02": {
+ "A": {"reads": 4, "proportion": 2, "form": 4, "materials": 4, "style": 3, "overall": 3, "note": "Barrel absurdly thick and scope merged into a slab; stock stub; reads only vaguely as a rifle."},
+ "B": {"reads": 1, "proportion": 1, "form": 1, "materials": 2, "style": 1, "overall": 1, "note": "Disconnected scattered primitives standing on end."},
+ "C": {"reads": 8, "proportion": 7, "form": 7, "materials": 7, "style": 7, "overall": 7, "note": "Convincing bolt rifle, walnut stock, blued barrel, scope on rings; barrel a bit long and surfaces plain for PBR."}},
+"h03": {
+ "A": {"reads": 7, "proportion": 6, "form": 7, "materials": 7, "style": 6, "overall": 6, "note": "Orange/black blaster with glowing cyan coils and cell; reads well but more rifle-slim than chunky, little white paneling."},
+ "B": {"reads": 3, "proportion": 3, "form": 3, "materials": 3, "style": 4, "overall": 3, "note": "White blobby body with orange fins; vague gun shape, no glowing cell."},
+ "C": {"reads": 1, "proportion": 1, "form": 2, "materials": 2, "style": 2, "overall": 1, "note": "Orange cube on white block and black cone; unrecognisable."}},
+"h04": {
+ "A": {"reads": 3, "proportion": 3, "form": 3, "materials": 4, "style": 4, "overall": 3, "note": "Blade is a thin rod with an offset slab; block guard; wrong construction."},
+ "B": {"reads": 3, "proportion": 2, "form": 3, "materials": 3, "style": 4, "overall": 3, "note": "Flat plank blade with tiny guard and almost no grip; minimal."},
+ "C": {"reads": 8, "proportion": 7, "form": 7, "materials": 7, "style": 8, "overall": 7, "note": "Clean low-poly longsword with tapered blade, straight guard, round pommel, leather grip."}},
+"h05": {
+ "A": {"reads": 5, "proportion": 3, "form": 5, "materials": 6, "style": 5, "overall": 4, "note": "Axe readable but head tiny vs. very long handle, no distinct back pick."},
+ "B": {"reads": 3, "proportion": 3, "form": 2, "materials": 4, "style": 4, "overall": 3, "note": "Chunky handle with black/red head blocks; parts floating and misaligned."},
+ "C": {"reads": 1, "proportion": 2, "form": 2, "materials": 3, "style": 3, "overall": 2, "note": "Red lumpy mass lying flat; no axe silhouette."}},
+"h06": {
+ "A": {"reads": 2, "proportion": 2, "form": 2, "materials": 3, "style": 2, "overall": 2, "note": "Yellow bar on a blue slab; no wheels or cab."},
+ "B": {"reads": 2, "proportion": 2, "form": 2, "materials": 3, "style": 2, "overall": 2, "note": "Yellow box with sticking-up blue bars; not a van."},
+ "C": {"reads": 8, "proportion": 6, "form": 7, "materials": 7, "style": 6, "overall": 7, "note": "Clean yellow van with wheels, windows, blue bumpers; proportions realistic rather than chunky cartoon."}},
+"h07": {
+ "A": {"reads": 9, "proportion": 8, "form": 8, "materials": 8, "style": 8, "overall": 8, "note": "Strong low-poly tractor: big rear/small front wheels, fenders, exhaust, ROPS and seat."},
+ "B": {"reads": 2, "proportion": 2, "form": 2, "materials": 3, "style": 3, "overall": 2, "note": "Two black cylinders with a green block; not a tractor."},
+ "C": {"reads": 3, "proportion": 3, "form": 3, "materials": 3, "style": 3, "overall": 3, "note": "Stacked green blocks with wheels pasted on side; odd white box."}},
+"h08": {
+ "A": {"reads": 2, "proportion": 2, "form": 3, "materials": 3, "style": 3, "overall": 2, "note": "Two-wheeled slab with white tires; reads as a bike, not ATV."},
+ "B": {"reads": 1, "proportion": 1, "form": 2, "materials": 2, "style": 2, "overall": 1, "note": "Green box over black cylinders; unrecognisable."},
+ "C": {"reads": 8, "proportion": 7, "form": 7, "materials": 7, "style": 6, "overall": 7, "note": "Clear olive ATV with knobby black tires, front/rear racks, seat, bars; materials simple for realistic PBR."}},
+"h09": {
+ "A": {"reads": 1, "proportion": 1, "form": 2, "materials": 2, "style": 2, "overall": 1, "note": "Black wall with cylinders; no kart."},
+ "B": {"reads": 8, "proportion": 7, "form": 8, "materials": 7, "style": 7, "overall": 8, "note": "Good go-kart: tube frame, roll bar, seat, wheel, bodywork; Roblox-friendly."},
+ "C": {"reads": 1, "proportion": 1, "form": 1, "materials": 2, "style": 2, "overall": 1, "note": "Black panel with floating red wire bits; broken."}},
+"h10": {
+ "A": {"reads": 3, "proportion": 2, "form": 3, "materials": 4, "style": 3, "overall": 3, "note": "Top stood vertically between side panels; no vise or shelf read."},
+ "B": {"reads": 9, "proportion": 8, "form": 8, "materials": 7, "style": 7, "overall": 8, "note": "Proper workbench: steel frame, oak top, shelf, backsplash, vise; wood texture a bit noisy."},
+ "C": {"reads": 2, "proportion": 2, "form": 2, "materials": 3, "style": 3, "overall": 2, "note": "Vertical slabs with protruding rods; not a bench."}},
+"h11": {
+ "A": {"reads": 8, "proportion": 8, "form": 8, "materials": 7, "style": 7, "overall": 7, "note": "Nice stylized ladder-back chair; iron studs and crooked back not visible."},
+ "B": {"reads": 2, "proportion": 2, "form": 2, "materials": 3, "style": 3, "overall": 2, "note": "Flat board with sticks and a yellow strip; not a chair."},
+ "C": {"reads": 2, "proportion": 2, "form": 2, "materials": 3, "style": 3, "overall": 2, "note": "Orange voxel-like slabs floating; chair barely implied."}},
+"h12": {
+ "A": {"reads": 3, "proportion": 4, "form": 3, "materials": 5, "style": 3, "overall": 3, "note": "Plain olive box with loose rails; no latches or handles readable."},
+ "B": {"reads": 7, "proportion": 7, "form": 7, "materials": 6, "style": 6, "overall": 7, "note": "Olive crate with latches, side handles, corner caps, label; clean but flat surfacing."},
+ "C": {"reads": 3, "proportion": 4, "form": 3, "materials": 5, "style": 3, "overall": 3, "note": "Olive box with random stubs; latches/handles unclear."}},
+"h13": {
+ "A": {"reads": 2, "proportion": 3, "form": 2, "materials": 3, "style": 3, "overall": 2, "note": "Orange box with gold slab sticking up; not a chest."},
+ "B": {"reads": 2, "proportion": 2, "form": 2, "materials": 3, "style": 3, "overall": 2, "note": "Flat yellow panels with a brown block; broken layout."},
+ "C": {"reads": 9, "proportion": 8, "form": 8, "materials": 8, "style": 8, "overall": 8, "note": "Classic stylized chest with domed lid, gold bands, corner caps, lock plate, ring handles."}},
+"h14": {
+ "A": {"reads": 9, "proportion": 8, "form": 8, "materials": 8, "style": 7, "overall": 8, "note": "Excellent jerrycan: X-stamped sides, three-bar handle, spout cap; slightly detailed for Roblox."},
+ "B": {"reads": 4, "proportion": 4, "form": 3, "materials": 5, "style": 5, "overall": 4, "note": "Red box with tangled handle and protruding white plate; can shape weak."},
+ "C": {"reads": 2, "proportion": 2, "form": 2, "materials": 4, "style": 3, "overall": 2, "note": "Flat red slab with black nub; not a jerrycan."}},
+"h15": {
+ "A": {"reads": 2, "proportion": 2, "form": 1, "materials": 3, "style": 2, "overall": 2, "note": "Full sphere on a ring with floating parts; not a helmet."},
+ "B": {"reads": 3, "proportion": 3, "form": 3, "materials": 3, "style": 3, "overall": 3, "note": "Faceted dome with odd fins; no mount or rails."},
+ "C": {"reads": 6, "proportion": 5, "form": 5, "materials": 6, "style": 5, "overall": 6, "note": "Olive helmet with side rails and front mount; strange legs underneath and blocky add-ons."}},
+"h16": {
+ "A": {"reads": 4, "proportion": 4, "form": 3, "materials": 4, "style": 5, "overall": 4, "note": "Pack with pink bedroll but side pouch on a detached frame; no straps."},
+ "B": {"reads": 9, "proportion": 8, "form": 8, "materials": 8, "style": 8, "overall": 8, "note": "Appealing stylized backpack: bedroll with straps, flap, buckles, side pouches, shoulder straps."},
+ "C": {"reads": 2, "proportion": 2, "form": 2, "materials": 3, "style": 3, "overall": 2, "note": "Brown blocks resembling an armchair; not a backpack."}}
+}}

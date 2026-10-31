@@ -9,6 +9,7 @@ watched it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from typing import Callable
 
@@ -57,9 +58,13 @@ def prepare_turn(settings, home: Path, prompt: str, selected: list[Path], workdi
         room = IMAGE_CAP - len(turn.pictures)
         if room < 1:
             raise ValueError(f'Attach the video with at most {IMAGE_CAP - 1} pictures, so there is room for its frames.')
+        # Explicit local opt-in: never let a model-selected prompt change the sampling mode.
+        sampling = ('adaptive' if os.environ.get('STAR_VIDEO_FRAME_SAMPLING') == 'adaptive'
+                    else 'uniform')
         evidence = video_understanding.prepare(videos[0], workdir / 'video', frames=room,
                                                ffmpeg_dir=getattr(settings, 'ffmpeg_dir', ''),
-                                               asr=asr, cancelled=cancelled)
+                                               asr=asr, cancelled=cancelled,
+                                               frame_sampling=sampling)
         turn.video = evidence
         turn.pictures.extend(evidence.frames)
         turn.extras.append(video_understanding.evidence_text(evidence))

@@ -210,7 +210,7 @@ def test_bridge_exposes_test_server_and_only_nonsecret_server_settings(tmp_path)
     assert "testServer" in ALLOWED_ACTIONS and "saveProviderKey" in ALLOWED_ACTIONS
     assert {"server_endpoint", "server_timeout", "server_parallel", "server_context_tokens"} <= PERMITTED_SETTINGS
     assert PERMITTED_SETTINGS <= set(Settings.__dataclass_fields__)
-    assert not [name for name in PERMITTED_SETTINGS if name != "server_context_tokens" and any(
+    assert not [name for name in PERMITTED_SETTINGS if name not in ("server_context_tokens", "strata_context_tokens") and any(
         word in name for word in ("key", "token", "secret", "password", "bearer"))]
     # Engine paths stay host-controlled, exactly as before.
     assert not {"llama_server", "gguf_model"} & PERMITTED_SETTINGS

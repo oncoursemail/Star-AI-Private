@@ -1,0 +1,4 @@
+- The bus leaves the station and makes its first stop at the market near the old library on Main Street
+- Next stop is the bridge
+- Then the harbour
+- Last stop is the airport

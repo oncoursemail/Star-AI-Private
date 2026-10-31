@@ -53,13 +53,13 @@ def test_saved_endpoint_is_never_rewritten_by_the_new_default(tmp_path):
 
 def test_react_default_endpoint_literals_match_python_default():
     """Cross-language guard: every hard-coded default endpoint in the UI equals Python's."""
-    pattern = re.compile(r"""endpoint\s*:\s*['"](http://127\.0\.0\.1:\d+/v1)['"]""")
+    pattern = re.compile(r"""\bendpoint\s*:\s*['"](http://127\.0\.0\.1:\d+/v1)['"]""")
     found = {}
     for source in sorted((ROOT / "frontend" / "src").rglob("*.ts*")):
         if ".test." in source.name:
             continue
         for match in pattern.findall(source.read_text(encoding="utf-8")):
             found[f"{source.name}"] = match
-    if not found:
-        pytest.skip("The UI no longer hard-codes a default endpoint; Python is the only source")
-    assert set(found.values()) == {Settings().endpoint}, found
+    # The UI hard-codes no default endpoint today (Python is the only source), so this is vacuous; if one is
+    # added again it must equal Python's.
+    assert set(found.values()) <= {Settings().endpoint}, found

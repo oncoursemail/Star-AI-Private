@@ -41,3 +41,9 @@ The client sends only an ability name and a style name (strings, length-checked,
 
 ## Reviewing an effect
 Capture frames across the whole timeline in slow motion from a fixed camera; check impact readability (the hit changes the picture far more than the charge), layering (several layers visible at once, not one blob), timing (anticipation, a short hit, a longer tail), palette, flash and shake strength, and that the scene returns to normal at the end.
+
+## 2026 creator-reference compositions (original assets)
+STAR VFX Studio now includes two **original** authored cue lists inspired by externally supplied footage (no borrowed textures or source code):
+- `frost_cyclone`: an inward anticipation, cool-coloured crystal spikes at hit, ring segments, restrained flash, multi-arm vortex and slow falling/smoke dissipation. Prompt: "blue ice vortex crystal storm".
+- `cinematic_sword_arc`: brief anticipation, fast narrow slash strokes, localized orange-gold impact, sparks, modest shake, short ring segments, and a lingering motion trail. Prompt: "anime sword slash orange". For real combat, anchor hits to animation markers and validate server-owned damage separately.
+Evaluate the effect from **multiple camera angles**, not a hero still. Use slow-motion capture to inspect silhouette and timing; compare p50/p95 frame time and cleanup on mobile and desktop. Visual effects may never grant gameplay authority. The short-video claim that a professional effect took "five minutes" is unverified. A plugin license does not grant rights to copy its source or textures; favor native editable Studio assets.

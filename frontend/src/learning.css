@@ -310,3 +310,13 @@
 .shell .learn-advanced summary:hover {
   color: var(--star-text);
 }
+.shell .learn-audit h4 {
+  margin: var(--star-4) 0 var(--star-1);
+  font-size: var(--star-fs-meta);
+  color: var(--star-muted);
+}
+.shell .learn-audit ul {
+  margin: 0;
+  padding-left: var(--star-5, 1.25rem);
+  line-height: 1.6;
+}

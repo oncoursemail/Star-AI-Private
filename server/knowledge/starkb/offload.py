@@ -13,14 +13,26 @@ ignored and overwritten on the next run. The import never replaces a vector the 
 are no longer in the index, refuses vectors that are not unit length, and pauses for the quiet lock between batches.
 Searches keep running: the service reads with its own read-only connection and reloads the matrix when the count
 changes (search.VectorCache).
+
+Automatic variant (`offload-run`, the star-knowledge-offload timer on the brain): the same thing in one process with no
+files. It reads the pending texts from the index, embeds them on a worker over the LAN (the laptop's GPU), and writes
+each batch straight into the index (INSERT OR IGNORE). The index is the resume state, so a stop at any point, a laptop
+that goes away or a run cut by --max-seconds simply continues next time, and with nothing pending it exits at once.
+A claim file (claim/release below) keeps this and the PC's gpu_embed.py from embedding the same texts.
 """
 from __future__ import annotations
 
 from array import array
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, tzinfo
+import io
 import json
 import math
+import os
 from pathlib import Path
+import time
 from typing import BinaryIO, Iterable, TextIO
+from zoneinfo import ZoneInfo
 
 from .embed import embed_batch, pending
 from .quiet import wait_while_locked
@@ -176,3 +188,151 @@ def compare_sample(brain, sample_path: Path, *, batch: int = 16) -> dict:
     return {"n": len(sims), "min": round(ordered[0], 6) if sims else None,
             "median": round(ordered[len(ordered) // 2], 6) if sims else None,
             "below_0.999": sum(s < 0.999 for s in sims), "shortening_retries": stats.get("truncated", 0)}
+
+
+# ---- automatic embedding on a LAN worker (offload-run) -------------------------------------------------------------
+
+CLAIM_TTL = 1200.0                    # seconds; offload-run renews it before every batch group, so a dead run frees it
+MIN_MEDIAN_COSINE, MIN_EACH_COSINE = 0.9997, 0.999   # measured laptop vs brain 1: median 0.99982, min 0.99951 (n=1000)
+
+
+def claim(path: Path, owner: str, ttl: float = CLAIM_TTL, *, clock=time.time) -> str:
+    """Take or renew the claim on embedding the pending texts. Returns "" when `owner` holds it now, else the
+    name of the holder. An expired claim is taken over (the rename lets only one contender win)."""
+    path = Path(path)
+    record = json.dumps({"owner": owner, "until": clock() + ttl})
+    for _ in range(3):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            try:
+                held = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                held = {}
+            if held.get("owner") == owner:
+                tmp = path.with_name(f"{path.name}.{os.getpid()}")
+                tmp.write_text(record, encoding="utf-8")
+                os.replace(tmp, path)
+                return ""
+            if held.get("until", 0) > clock():
+                return str(held.get("owner") or "?")
+            stale = path.with_name(f"{path.name}.stale.{os.getpid()}")
+            try:
+                os.rename(path, stale)
+            except OSError:
+                continue                      # someone else took it over first
+            stale.unlink(missing_ok=True)
+        else:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(record)
+            return ""
+    return "?"
+
+
+def release(path: Path, owner: str) -> bool:
+    """Give the claim back (only its owner can). True when a claim of `owner` was removed."""
+    path = Path(path)
+    try:
+        if json.loads(path.read_text(encoding="utf-8")).get("owner") != owner:
+            return False
+        path.unlink()
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def in_window(hours: tuple[int, int], tz: "tzinfo | str", at: datetime | None = None) -> bool:
+    """Is the local hour in [start, end)? (Wraps past midnight when start > end.) `tz`: a name or a tzinfo."""
+    zone = ZoneInfo(tz) if isinstance(tz, str) else tz
+    hour = (at or datetime.now(zone)).astimezone(zone).hour
+    start, end = hours
+    return start <= hour < end if start <= end else hour >= start or hour < end
+
+
+def check_worker(db_path: Path, worker, model: str, n: int = 24) -> dict:
+    """Embed n texts the brain already embedded on `worker` and compare with the stored vectors."""
+    buffer = io.StringIO()
+    sample_existing(db_path, buffer, model, n=n)
+    rows = [json.loads(line) for line in buffer.getvalue().splitlines() if line.strip()]
+    if not rows:
+        return {"n": 0, "ok": True}
+    vectors, _ = embed_batch(worker, [r["input"] for r in rows], {})
+    sims = sorted(cosine(r["vec"], v) for r, v in zip(rows, vectors))
+    median = sims[len(sims) // 2]
+    return {"n": len(sims), "min": round(sims[0], 6), "median": round(median, 6),
+            "ok": sims[0] >= MIN_EACH_COSINE and median >= MIN_MEDIAN_COSINE}
+
+
+def run_on_worker(db_path: Path, worker, model: str, *, claim_path: Path, owner: str = "laptop", batch: int = 8,
+                  in_flight: int = 2, max_seconds: float = 3300.0, small: int = 3000, hours: tuple[int, int] = (0, 8),
+                  tz: "tzinfo | str" = "America/Chicago", log=print, stop=lambda: False, wait=wait_while_locked,
+                  clock=time.monotonic, at: datetime | None = None, dim: int = DIM) -> dict:
+    """Embed the pending texts on `worker` (client.Brain contract) and store them (see the module docstring).
+
+    A run with more than `small` texts pending is a bulk change and only starts inside `hours` (local hours in `tz`),
+    so the laptop's owner is not disturbed in the evening; a small delta runs at any time. Stops, resumably, when
+    nothing is pending, someone else holds the claim, the worker is down or fails the parity check, a stop is
+    requested, or `max_seconds` is used up."""
+    db = connect(db_path)
+    todo = pending(db, model)
+    result = {"pending_before": len(todo), "embedded_now": 0, "pending_after": len(todo), "stopped": "", "ok": True}
+    if not todo:
+        result["stopped"] = "nothing pending"
+    elif len(todo) > small and not in_window(hours, tz, at):
+        result["stopped"] = f"{len(todo)} pending is a bulk change: waits for {hours[0]:02d}:00-{hours[1]:02d}:00 {getattr(tz, "key", tz)}"
+    else:
+        holder = claim(claim_path, owner)
+        if holder:
+            result["stopped"] = f"{holder} holds the claim"
+    if result["stopped"]:
+        db.close()
+        log(f"offload-run: {result['stopped']}")
+        return result
+    try:
+        started, stats, done = clock(), {}, 0
+        try:
+            parity = check_worker(db_path, worker, model)
+            log(f"offload-run: worker parity {parity}")
+            if not parity["ok"]:
+                result["stopped"], result["ok"] = "parity check failed", False
+        except Exception as exc:                  # noqa: BLE001 - worker off, asleep or erroring: nothing is lost
+            result["stopped"] = f"worker not usable ({type(exc).__name__}: {str(exc)[:120]})"
+        size = batch * in_flight
+        with ThreadPoolExecutor(max_workers=in_flight) as pool:
+            for first in range(0, 0 if result["stopped"] else len(todo), size):
+                if wait(log, stop) is None or stop():
+                    result["stopped"] = "stop requested"
+                    break
+                if clock() - started > max_seconds:
+                    result["stopped"] = "time budget used"
+                    break
+                if claim(claim_path, owner):
+                    result["stopped"] = "claim lost to another embedder"
+                    break
+                group = todo[first:first + size]
+                parts = [group[i:i + batch] for i in range(0, len(group), batch)]
+                try:
+                    outputs = list(pool.map(lambda part: embed_batch(worker, [t for _, t in part], stats), parts))
+                except Exception as exc:          # noqa: BLE001
+                    result["stopped"] = f"worker failed ({type(exc).__name__}: {str(exc)[:120]})"
+                    break
+                stamp = now()
+                rows = [(sha, model, dim, array("f", vec).tobytes(), stamp)
+                        for part, (vectors, _) in zip(parts, outputs) for (sha, _), vec in zip(part, vectors)]
+                if any(len(row[3]) != 4 * dim or not unit_length(row[3]) for row in rows):
+                    result["stopped"], result["ok"] = "worker returned a bad vector", False
+                    break
+                db.executemany("INSERT OR IGNORE INTO embeddings(text_sha,model,dim,vec,created_at) VALUES(?,?,?,?,?)", rows)
+                db.commit()
+                done += len(rows)
+        seconds = clock() - started
+        result.update(embedded_now=done, pending_after=len(todo) - done, seconds=round(seconds, 1),
+                      chunks_per_s=round(done / seconds, 2) if seconds and done else None,
+                      shortening_retries=stats.get("truncated", 0))
+        result["stopped"] = result["stopped"] or "done"
+        result["embeddings_total"] = db.execute("SELECT COUNT(*) FROM embeddings WHERE model=?", (model,)).fetchone()[0]
+    finally:
+        db.close()
+        release(claim_path, owner)
+    log(f"offload-run: {json.dumps(result)}")
+    return result

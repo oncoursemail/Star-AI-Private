@@ -1,0 +1,19 @@
+{
+  "router_url": "http://127.0.0.1:8100",
+  "brain_url": "http://<starai bridge address>:8080",
+  "machines": {
+    "brain1": {"role": "CPU brain server (litha-26b, star-fast, star-deep, embeddings)", "cpu": "<cpu, cores>", "ram_gb": 0},
+    "owner-pc": {"role": "owner's PC, Litha GPU node when free", "cpu": "<cpu>", "gpu": "<gpu>"},
+    "star-pc": {"role": "STAR's own PC, Litha GPU node when she is not gaming", "cpu": "<cpu>", "gpu": "<gpu>"},
+    "laptop": {"role": "embed + rerank workers for the knowledge service", "gpu": "<gpu>"}
+  },
+  "services": [
+    {"name": "knowledge", "host": "brain1", "url": "http://<starai bridge address>:8091/health"},
+    {"name": "laptop-embed", "host": "laptop", "url": "http://<laptop>:8090/health"},
+    {"name": "laptop-rerank", "host": "laptop", "url": "http://<laptop>:8092/health"},
+    {"name": "images", "host": "brain1", "url": "http://<star-images>:8095/health"},
+    {"name": "forgejo", "host": "brain1", "url": "http://<forge>:3000/", "version_regex": "VersionEncoded: encodeURIComponent[(]'([^'~]+)"},
+    {"name": "verify", "host": "brain1", "url": "http://127.0.0.1:8101/health"},
+    {"name": "docs", "host": "brain1", "url": "http://127.0.0.1:8102/health"}
+  ]
+}

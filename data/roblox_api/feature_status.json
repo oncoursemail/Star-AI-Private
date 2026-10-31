@@ -1,0 +1,13 @@
+{"checked": "2026-10-25",
+ "source": "github.com/Roblox/creator-docs content/en-us (CC-BY-4.0), commit 4e795e6 of 2026-10-24; BetaAlert notices and missing reference pages",
+ "apis": [
+  {"api": "InputActionLabel", "status": "beta", "note": "Studio beta feature InputActionLabel", "source": "input/input-action-system.md"},
+  {"api": "Enum.GradientType.Radial", "status": "beta", "note": "Studio beta feature Upgraded UIGradients", "source": "ui/appearance-modifiers.md"},
+  {"api": "Enum.GradientType.Elliptical", "status": "beta", "note": "Studio beta feature Upgraded UIGradients", "source": "ui/appearance-modifiers.md"},
+  {"api": "Enum.GradientType.Conical", "status": "beta", "note": "Studio beta feature Upgraded UIGradients", "source": "ui/appearance-modifiers.md"},
+  {"api": "UIGradient.Scale", "status": "beta", "note": "Studio beta feature Upgraded UIGradients", "source": "ui/appearance-modifiers.md"},
+  {"api": "UIGradient.TileMode", "status": "beta", "note": "Studio beta feature Upgraded UIGradients", "source": "ui/appearance-modifiers.md"},
+  {"api": "AnimationGraphDefinition", "status": "undocumented", "note": "no engine reference page", "source": "reference/engine/classes (absent)"},
+  {"api": "StateMachineDefinition", "status": "undocumented", "note": "no engine reference page", "source": "reference/engine/classes (absent)"},
+  {"api": "StateMachineTransitionDefinition", "status": "undocumented", "note": "no engine reference page", "source": "reference/engine/classes (absent)"}
+ ]}

@@ -606,7 +606,7 @@ def run_turn(monkeypatch, tmp_path, knowledge, prompt, mode="auto"):
     monkeypatch.setattr(desktop_core, "open_client", fake_client)
     monkeypatch.setattr(doc_grounding, "client_for", lambda settings: knowledge)
     events = []
-    answer = run_task(Settings(model="m"), prompt, on_event=events.append, mode=mode)
+    answer = run_task(Settings(model="m", verify_ladder="off"), prompt, on_event=events.append, mode=mode)
     return answer, model, events
 
 

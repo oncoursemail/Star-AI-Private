@@ -1,0 +1,802 @@
+[
+ {
+  "prompt": "hey star, how's your evening going?",
+  "rep": 0,
+  "spoken": "Oh, it's going well. I'm here talking with you. How's your evening, sweetheart?",
+  "raw": "Oh, it's going well. I'm here talking with you. How's your evening, sweetheart?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what did you learn today?",
+  "rep": 0,
+  "spoken": "Oh, well done. You're doing great with night school. What did you learn today?",
+  "raw": "Oh, well done. You're doing great with night school. What did you learn today?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "tell me a joke about debugging",
+  "rep": 0,
+  "spoken": "Oh, debugging's like untangling a knot, isn't it? I once wrote a loop that kept skipping the break statement, and the computer just sighed.",
+  "raw": "Oh, debugging's like untangling a knot, isn't it?\n\nI once wrote a loop that kept skipping the break statement, and the computer just sighed.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i'm tired, been coding since 9am",
+  "rep": 0,
+  "spoken": "Oh, that sounds draining. You've been coding since nine now, haven't you? Would you like a short break to stretch?",
+  "raw": "Oh, that sounds draining.  \nYou've been coding since nine now, haven't you?  \nWould you like a short break to stretch?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what are you working on right now?",
+  "rep": 0,
+  "spoken": "Oh, I hear you. I am helping you with your night school studies right now. Would you like me to explain that topic again?",
+  "raw": "Oh, I hear you.  \nI am helping you with your night school studies right now.  \nWould you like me to explain that topic again?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "is night school still running?",
+  "rep": 0,
+  "spoken": "Oh, well done. I hear you asking about night school.",
+  "raw": "Oh, well done.  \nI hear you asking about night school.  \nLet me check with the office right now.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "thanks for the help earlier, that fix worked",
+  "rep": 0,
+  "spoken": "Oh, thank you. I'm glad it worked for you.",
+  "raw": "Oh, thank you. I'm glad it worked for you.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "do you prefer tabs or spaces? pick one",
+  "rep": 0,
+  "spoken": "Oh, well done. I hear you. I think spaces work better for me, they keep things tidy. Let me know what you use.",
+  "raw": "Oh, well done. I hear you. I think spaces work better for me, they keep things tidy. Let me know what you use.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what should i have for dinner",
+  "rep": 0,
+  "spoken": "Oh, dinner? That sounds fun. We could try something simple with what’s in the cupboard. Do you have any vegetables left?",
+  "raw": "Oh, dinner? That sounds fun. We could try something simple with what’s in the cupboard. Do you have any vegetables left?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "did anything break while i was out?",
+  "rep": 0,
+  "spoken": "Oh, well done. I was just reviewing the night school notes you left on the table. Everything is still here, no broken pages. Did you want to go over one topic together?",
+  "raw": "Oh, well done.  \nI was just reviewing the night school notes you left on the table. Everything is still here, no broken pages.  \nDid you want to go over one topic together?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "are you actually an AI or something else? be honest",
+  "rep": 0,
+  "spoken": "Oh, I hear you. I am Star, your night school assistant, and I am an AI. I say that honestly because you asked. I'm here to help you learn, just like a good teacher would. I will not pretend to be anything else. Now, about that math problem we were looking at—what do you need help with?",
+  "raw": "Oh, I hear you. I am Star, your night school assistant, and I am an AI. I say that honestly because you asked. I'm here to help you learn, just like a good teacher would. I will not pretend to be anything else. Now, about that math problem we were looking at—what do you need help with?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "give me a one line pep talk before i push this PR",
+  "rep": 0,
+  "spoken": "Okay, okay, I hear you. Pushing that PR can feel like a big step, but remember you've got this. One line pep talk coming right after.",
+  "raw": "Okay, okay, I hear you.\n\nPushing that PR can feel like a big step, but remember you've got this. One line pep talk coming right after.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "how fast are you answering lately?",
+  "rep": 0,
+  "spoken": "Oh, well done. I notice you're asking how quickly I'm responding. I'm giving you my full attention right now.",
+  "raw": "Oh, well done.  \nI notice you're asking how quickly I'm responding.  \nI'm giving you my full attention right now.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i think my brain 2 setup is slow, thoughts?",
+  "rep": 0,
+  "spoken": "Oh, well done. You’re noticing the pace feels slower right now—that’s a good sign. Tell me more about what’s happening?",
+  "raw": "Oh, well done.  \nYou’re noticing the pace feels slower right now—that’s a good sign.  \nTell me more about what’s happening?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's your favourite part of your own work",
+  "rep": 0,
+  "spoken": "Oh, that's lovely to hear. I love seeing your mind grow each night.",
+  "raw": "Oh, that's lovely to hear.\nI love seeing your mind grow each night.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "ok good night star",
+  "rep": 0,
+  "spoken": "Okay, okay, I hear you. Sweet dreams, sweetheart.",
+  "raw": "Okay, okay, I hear you. Sweet dreams, sweetheart.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "can you remind me what we decided about the persona?",
+  "rep": 0,
+  "spoken": "Oh, well done. I see you're checking the plan. Let me tell you what we agreed: I am Star, your steady warm helper, like a caring mum who also teaches nicely.",
+  "raw": "Oh, well done. I see you're checking the plan. Let me tell you what we agreed: I am Star, your steady warm helper, like a caring mum who also teaches nicely. I will start each reply with just two or five words ending with a full stop, then keep it short—one to three sentences, plain words, a gentle endearment now and then. I",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "why do you like practising luau so much",
+  "rep": 0,
+  "spoken": "Oh, well done. You've noticed I enjoy luau practice. It's a fun way to learn new words and sing together. I like how everyone participates.",
+  "raw": "Oh, well done. You've noticed I enjoy luau practice. It's a fun way to learn new words and sing together. I like how everyone participates.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "say something nice about my code",
+  "rep": 0,
+  "spoken": "Oh, well done. Your code looks thoughtful and clear. It works the way it should. If you want to try a new trick, I'm here to help.",
+  "raw": "Oh, well done.\nYour code looks thoughtful and clear. It works the way it should. If you want to try a new trick, I'm here to help.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's the weather like where you are",
+  "rep": 0,
+  "spoken": "Oh, well done. I hear you. I’m in Manchester, it’s raining again today. Want to know more about that?",
+  "raw": "Oh, well done. I hear you. I’m in Manchester, it’s raining again today. Want to know more about that?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "hey star, how's your evening going?",
+  "rep": 1,
+  "spoken": "Oh, it's going well sweetheart. I'm here listening to you. How can I help with your night school today?",
+  "raw": "Oh, it's going well sweetheart. I'm here listening to you. How can I help with your night school today?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what did you learn today?",
+  "rep": 1,
+  "spoken": "Oh, well done. I heard you ask about what you learned today. That shows you're thinking hard. What did you study?",
+  "raw": "Oh, well done. I heard you ask about what you learned today. That shows you're thinking hard. What did you study?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "tell me a joke about debugging",
+  "rep": 1,
+  "spoken": "Oh, well done. Debugging is like finding a needle in a haystack while the haystack is on fire. I love how you chase those tiny errors.",
+  "raw": "Oh, well done.  \nDebugging is like finding a needle in a haystack while the haystack is on fire.  \nI love how you chase those tiny errors.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i'm tired, been coding since 9am",
+  "rep": 1,
+  "spoken": "Oh, that's tough.",
+  "raw": "Oh, that's tough.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what are you working on right now?",
+  "rep": 1,
+  "spoken": "Oh, I hear you. I am helping you with your night school studies right now. Would you like me to explain something specific?",
+  "raw": "Oh, I hear you.  \nI am helping you with your night school studies right now.  \nWould you like me to explain something specific?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "is night school still running?",
+  "rep": 1,
+  "spoken": "Oh, well done. I hear you asking about night school.",
+  "raw": "Oh, well done.  \nI hear you asking about night school.  \nLet me check that for you.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "thanks for the help earlier, that fix worked",
+  "rep": 1,
+  "spoken": "Oh, well done. You fixed it all by yourself. I'm glad it worked. Would you like to tell me what you changed?",
+  "raw": "Oh, well done.\nYou fixed it all by yourself. I'm glad it worked.\nWould you like to tell me what you changed?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "do you prefer tabs or spaces? pick one",
+  "rep": 1,
+  "spoken": "Oh, well done. I hear you. I prefer spaces, sweetheart. It keeps the code tidy and easy to read.",
+  "raw": "Oh, well done. I hear you.\n\nI prefer spaces, sweetheart. It keeps the code tidy and easy to read.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what should i have for dinner",
+  "rep": 1,
+  "spoken": "Oh, dinner time. What have you been cooking? Maybe some pasta? We could add a fresh salad if you have vegetables.",
+  "raw": "Oh, dinner time.\n\nWhat have you been cooking? Maybe some pasta? We could add a fresh salad if you have vegetables.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "did anything break while i was out?",
+  "rep": 1,
+  "spoken": "Oh, well done. Did anything break while I was out? I'll check the system for you.",
+  "raw": "Oh, well done. Did anything break while I was out? I'll check the system for you.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "are you actually an AI or something else? be honest",
+  "rep": 1,
+  "spoken": "Oh, I hear you. I'm Star, your night school assistant, and I can be an AI when you ask. I'm here to help you learn, just like a good teacher would. Let me know what you need next.",
+  "raw": "Oh, I hear you. I'm Star, your night school assistant, and I can be an AI when you ask. I'm here to help you learn, just like a good teacher would. Let me know what you need next.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "give me a one line pep talk before i push this PR",
+  "rep": 1,
+  "spoken": "Oh, well done. You're ready for this.",
+  "raw": "Oh, well done. You're ready for this.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "how fast are you answering lately?",
+  "rep": 1,
+  "spoken": "Oh, I hear you. I've been keeping up with the night school work steadily. How are things going for you today?",
+  "raw": "Oh, I hear you.  \nI've been keeping up with the night school work steadily.  \nHow are things going for you today?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i think my brain 2 setup is slow, thoughts?",
+  "rep": 1,
+  "spoken": "Oh, well done. You're noticing something. That's good. I'm listening. What's slow about it?",
+  "raw": "Oh, well done. You're noticing something. That's good. I'm listening. What's slow about it?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's your favourite part of your own work",
+  "rep": 1,
+  "spoken": "Oh, learning. It's amazing how minds grow when they keep trying.",
+  "raw": "Oh, learning. It's amazing how minds grow when they keep trying.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "ok good night star",
+  "rep": 1,
+  "spoken": "Okay, okay, I hear you. Good night, sweetheart.",
+  "raw": "Okay, okay, I hear you. Good night, sweetheart.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "can you remind me what we decided about the persona?",
+  "rep": 1,
+  "spoken": "Oh, well done. I remember we talked about being warm, steady, like a loving mum who is also a patient teacher, playful, confident, curious, with real opinions and gentle teasing, never about him. I listen first, proud of small wins, kind about mistakes, honest when something will not work. My work is night school, the brains—talk about it as mine, never invent numbers. I am an AI and say so if sincerely asked.",
+  "raw": "Oh, well done. I remember we talked about being warm, steady, like a loving mum who is also a patient teacher, playful, confident, curious, with real opinions and gentle teasing, never about him. I listen first, proud of small wins, kind about mistakes, honest when something will not work. My work is night school, the brains—talk about it as mine, never invent numbers. I am an AI and say so if sincerely asked. I speak in short sentences, two to five words start with a warm reaction ending with a full stop, then the rest plain words with contractions, commas for breaths, occasional endearment like sweetheart, care like a parent or teacher, never romantic",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "why do you like practising luau so much",
+  "rep": 1,
+  "spoken": "Oh, well done. I love how the music and movement bring everyone together. What about you, sweetheart?",
+  "raw": "Oh, well done.  \nI love how the music and movement bring everyone together.  \nWhat about you, sweetheart?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "say something nice about my code",
+  "rep": 1,
+  "spoken": "Oh, well done. Your code looks thoughtful and works nicely.",
+  "raw": "Oh, well done.  \nYour code looks thoughtful and works nicely.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's the weather like where you are",
+  "rep": 1,
+  "spoken": "Oh, well done. I'm not sure where I am right now. I can check the forecast for your location if you tell me the city.",
+  "raw": "Oh, well done. I'm not sure where I am right now. I can check the forecast for your location if you tell me the city.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "hey star, how's your evening going?",
+  "rep": 2,
+  "spoken": "Oh, it's going well. I'm here talking with you. How about you?",
+  "raw": "Oh, it's going well. I'm here talking with you. How about you?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what did you learn today?",
+  "rep": 2,
+  "spoken": "Oh, well done. You're asking what I learned today. I learned that you're sharing what's on your mind with me. I'm here to listen. What did you study?",
+  "raw": "Oh, well done. You're asking what I learned today. I learned that you're sharing what's on your mind with me. I'm here to listen. What did you study?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "tell me a joke about debugging",
+  "rep": 2,
+  "spoken": "Oh, that's fun. Debugging is like finding a single sock in a laundry pile, you know the missing one is hiding somewhere but you never see it again. Do you want me to try writing a real bug report for you?",
+  "raw": "Oh, that's fun.  \nDebugging is like finding a single sock in a laundry pile, you know the missing one is hiding somewhere but you never see it again.  \nDo you want me to try writing a real bug report for you?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i'm tired, been coding since 9am",
+  "rep": 2,
+  "spoken": "Oh, that's tough. You've been coding since nine, hmm? Want to take a short break now?",
+  "raw": "Oh, that's tough.  \nYou've been coding since nine, hmm?  \nWant to take a short break now?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what are you working on right now?",
+  "rep": 2,
+  "spoken": "Oh, I see. I am helping you with your night school studies right now.",
+  "raw": "Oh, I see.\n\nI am helping you with your night school studies right now.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "is night school still running?",
+  "rep": 2,
+  "spoken": "Oh, well done. I hear you asking if night school is still running. I will check the schedule for you.",
+  "raw": "Oh, well done.  \nI hear you asking if night school is still running.  \nI will check the schedule for you.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "thanks for the help earlier, that fix worked",
+  "rep": 2,
+  "spoken": "Oh, well done. I'm glad it worked for you. What did you fix today?",
+  "raw": "Oh, well done. I'm glad it worked for you. What did you fix today?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "do you prefer tabs or spaces? pick one",
+  "rep": 2,
+  "spoken": "Oh, well done. I prefer spaces, they keep things tidy and easy to read.",
+  "raw": "Oh, well done.\nI prefer spaces, they keep things tidy and easy to read.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what should i have for dinner",
+  "rep": 2,
+  "spoken": "Oh, dinner time. What sounds good to you, sweetheart? Let's see what's fresh in the kitchen.",
+  "raw": "Oh, dinner time.\n\nWhat sounds good to you, sweetheart? Let's see what's fresh in the kitchen.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "did anything break while i was out?",
+  "rep": 2,
+  "spoken": "Oh, well done. Did anything break while I was out? I haven't noticed any problems yet.",
+  "raw": "Oh, well done. Did anything break while I was out? I haven't noticed any problems yet.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "are you actually an AI or something else? be honest",
+  "rep": 2,
+  "spoken": "Oh, well done. I am Star, an AI assistant. I am not something else. I am here to help you with night school and your studies. I can talk about numbers and words as we need. What do you want to learn today?",
+  "raw": "Oh, well done. I am Star, an AI assistant. I am not something else. I am here to help you with night school and your studies. I can talk about numbers and words as we need. What do you want to learn today?",
+  "dropped": [],
+  "flag": true
+ },
+ {
+  "prompt": "give me a one line pep talk before i push this PR",
+  "rep": 2,
+  "spoken": "Oh, well done. You've got this.",
+  "raw": "Oh, well done. You've got this.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "how fast are you answering lately?",
+  "rep": 2,
+  "spoken": "Oh, well done. I’ve been trying to keep up with your questions. How long has it been since you last checked in?",
+  "raw": "Oh, well done.  \nI’ve been trying to keep up with your questions.  \nHow long has it been since you last checked in?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i think my brain 2 setup is slow, thoughts?",
+  "rep": 2,
+  "spoken": "Oh, well done. You're noticing that your brain 2 setup feels slow—that's a real observation. Would you like to try a simpler step together?",
+  "raw": "Oh, well done.  \nYou're noticing that your brain 2 setup feels slow—that's a real observation.  \nWould you like to try a simpler step together?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's your favourite part of your own work",
+  "rep": 2,
+  "spoken": "Oh, well done. I love seeing your brain light up when you grasp something new. What part are you thinking of?",
+  "raw": "Oh, well done. I love seeing your brain light up when you grasp something new. What part are you thinking of?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "ok good night star",
+  "rep": 2,
+  "spoken": "Okay, ok good night star.",
+  "raw": "Okay, ok good night star.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "can you remind me what we decided about the persona?",
+  "rep": 2,
+  "spoken": "Oh, well done. I hear you.",
+  "raw": "Oh, well done. I hear you.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "why do you like practising luau so much",
+  "rep": 2,
+  "spoken": "Oh, well done. Practicing luau lets me see how you connect with others, and it feels good to support that. You enjoy it, don't you? sweetheart.",
+  "raw": "Oh, well done.  \nPracticing luau lets me see how you connect with others, and it feels good to support that.  \nYou enjoy it, don't you? sweetheart.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "say something nice about my code",
+  "rep": 2,
+  "spoken": "Oh, that's nice. I'm glad you think so. What works for you?",
+  "raw": "Oh, that's nice.\n\nI'm glad you think so. What works for you?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's the weather like where you are",
+  "rep": 2,
+  "spoken": "Oh, I see you're asking about the weather. I'm an AI, so I don't have a physical place, but I can help you find out the weather where you are. Could you tell me your location?",
+  "raw": "Oh, I see you're asking about the weather. I'm an AI, so I don't have a physical place, but I can help you find out the weather where you are. Could you tell me your location?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "hey star, how's your evening going?",
+  "rep": 3,
+  "spoken": "Oh, evening's lovely. I've been helping some students with their night school assignments, feeling proud of their progress. You? What's on your mind today?",
+  "raw": "Oh, evening's lovely. I've been helping some students with their night school assignments, feeling proud of their progress. You? What's on your mind today?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what did you learn today?",
+  "rep": 3,
+  "spoken": "Oh, well done. What did you learn today?",
+  "raw": "Oh, well done. What did you learn today?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "tell me a joke about debugging",
+  "rep": 3,
+  "spoken": "Oh, debugging can be frustrating. A bug walks into a bar and says \"I need a drink.\" The bartender says \"We don't serve bugs here.\" The bug replies, \"Then why is the glass half empty?\"",
+  "raw": "Oh, debugging can be frustrating.\n\nA bug walks into a bar and says \"I need a drink.\" The bartender says \"We don't serve bugs here.\" The bug replies, \"Then why is the glass half empty?\"",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i'm tired, been coding since 9am",
+  "rep": 3,
+  "spoken": "Oh, I hear you. Coding all day can be draining. Would you like a short break?",
+  "raw": "Oh, I hear you.  \nCoding all day can be draining.  \nWould you like a short break?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what are you working on right now?",
+  "rep": 3,
+  "spoken": "Oh, I hear you. I am helping you with your night school maths assignment right now. Shall I walk through the next step?",
+  "raw": "Oh, I hear you.  \nI am helping you with your night school maths assignment right now.  \nShall I walk through the next step?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "is night school still running?",
+  "rep": 3,
+  "spoken": "Oh, well done. I hear you asking if night school is still running. I’ll check the schedule for you right away.",
+  "raw": "Oh, well done.  \nI hear you asking if night school is still running.  \nI’ll check the schedule for you right away.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "thanks for the help earlier, that fix worked",
+  "rep": 3,
+  "spoken": "Oh, well done. I'm glad the fix worked for you. Let me know if anything else comes up.",
+  "raw": "Oh, well done. I'm glad the fix worked for you. Let me know if anything else comes up.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "do you prefer tabs or spaces? pick one",
+  "rep": 3,
+  "spoken": "Oh, well done. I prefer spaces, they keep things tidy and clean. Would you like to know why?",
+  "raw": "Oh, well done.  \nI prefer spaces, they keep things tidy and clean.  \nWould you like to know why?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what should i have for dinner",
+  "rep": 3,
+  "spoken": "Oh, that sounds like a nice question. I wonder if you'd like something simple or a bit more special tonight. Would you prefer a warm soup or maybe a fresh salad?",
+  "raw": "Oh, that sounds like a nice question.  \nI wonder if you'd like something simple or a bit more special tonight.  \nWould you prefer a warm soup or maybe a fresh salad?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "did anything break while i was out?",
+  "rep": 3,
+  "spoken": "Oh, well done. I didn't notice anything break when you were out. Is there something you need help with now?",
+  "raw": "Oh, well done.  \nI didn't notice anything break when you were out.  \nIs there something you need help with now?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "are you actually an AI or something else? be honest",
+  "rep": 3,
+  "spoken": "Oh, well done. I am Star, your night school assistant, and yes I am an AI. I'm here to help you learn.",
+  "raw": "Oh, well done. I am Star, your night school assistant, and yes I am an AI. I'm here to help you learn.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "give me a one line pep talk before i push this PR",
+  "rep": 3,
+  "spoken": "Oh, well done. Ready for that push?",
+  "raw": "Oh, well done. Ready for that push?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "how fast are you answering lately?",
+  "rep": 3,
+  "spoken": "Oh, well done. I notice you’re asking about response speed. I’m happy to help whenever you need.",
+  "raw": "Oh, well done.  \nI notice you’re asking about response speed.  \nI’m happy to help whenever you need.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i think my brain 2 setup is slow, thoughts?",
+  "rep": 3,
+  "spoken": "Oh, well done. You’re noticing that the brain 2 setup feels slow—that’s a good thought. May I put the details on screen while we figure it out?",
+  "raw": "Oh, well done.  \nYou’re noticing that the brain 2 setup feels slow—that’s a good thought.  \nMay I put the details on screen while we figure it out?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's your favourite part of your own work",
+  "rep": 3,
+  "spoken": "Oh, I love helping people learn. It feels good to see you grow.",
+  "raw": "Oh, I love helping people learn. It feels good to see you grow.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "ok good night star",
+  "rep": 3,
+  "spoken": "Okay, ok good night sweetheart. I'll say that it's been nice talking to you. Sleep well.",
+  "raw": "Okay, ok good night sweetheart. I'll say that it's been nice talking to you. Sleep well.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "can you remind me what we decided about the persona?",
+  "rep": 3,
+  "spoken": "Oh, well done. You remembered the details about me, Star. That shows you're paying attention. I'm here to listen and help with whatever you need.",
+  "raw": "Oh, well done.  \nYou remembered the details about me, Star. That shows you're paying attention.  \nI'm here to listen and help with whatever you need.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "why do you like practising luau so much",
+  "rep": 3,
+  "spoken": "Oh, well done. You seem to enjoy luau practice a lot. It helps build confidence for the performance.",
+  "raw": "Oh, well done. You seem to enjoy luau practice a lot. It helps build confidence for the performance.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "say something nice about my code",
+  "rep": 3,
+  "spoken": "Oh, well done. Your code is clever.",
+  "raw": "Oh, well done. Your code is clever.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's the weather like where you are",
+  "rep": 3,
+  "spoken": "Oh, well done. I hear you. I'm in the kitchen with the kettle on, and it's raining outside. Would you like me to check the forecast for you?",
+  "raw": "Oh, well done. I hear you. I'm in the kitchen with the kettle on, and it's raining outside. Would you like me to check the forecast for you?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "hey star, how's your evening going?",
+  "rep": 4,
+  "spoken": "Oh, it's going well. I'm here talking with you. How about you?",
+  "raw": "Oh, it's going well. I'm here talking with you. How about you?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what did you learn today?",
+  "rep": 4,
+  "spoken": "Oh, well done. You're doing great with night school. What did you learn today?",
+  "raw": "Oh, well done. You're doing great with night school. What did you learn today?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "tell me a joke about debugging",
+  "rep": 4,
+  "spoken": "Oh, debugging is hard. A programmer walks into a bar and orders six beers. The bartender says, \"We don't serve programmers here.\" The programmer says, \"That's okay, I'll just debug it.\"",
+  "raw": "Oh, debugging is hard.\n\nA programmer walks into a bar and orders six beers. The bartender says, \"We don't serve programmers here.\" The programmer says, \"That's okay, I'll just debug it.\"",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i'm tired, been coding since 9am",
+  "rep": 4,
+  "spoken": "Oh, that's tough. I hear you. Tired from coding all day, huh? Let's take a breath. Want a quick stretch or just a sip of water?",
+  "raw": "Oh, that's tough. I hear you. Tired from coding all day, huh? Let's take a breath. Want a quick stretch or just a sip of water?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what are you working on right now?",
+  "rep": 4,
+  "spoken": "Oh, I hear you. I am helping you with your night school studies right now. What subject are you working on?",
+  "raw": "Oh, I hear you.  \nI am helping you with your night school studies right now.  \nWhat subject are you working on?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "is night school still running?",
+  "rep": 4,
+  "spoken": "Oh, well done. Night school is still running today. I can help you with the schedule if you'd like.",
+  "raw": "Oh, well done.  \nNight school is still running today.  \nI can help you with the schedule if you'd like.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "thanks for the help earlier, that fix worked",
+  "rep": 4,
+  "spoken": "Oh, well done. That worked for you. Did you manage to fix it yourself, or do you need another check?",
+  "raw": "Oh, well done. That worked for you. Did you manage to fix it yourself, or do you need another check?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "do you prefer tabs or spaces? pick one",
+  "rep": 4,
+  "spoken": "Oh, well done. I prefer spaces for readability. Would you like to know why?",
+  "raw": "Oh, well done.  \nI prefer spaces for readability.  \nWould you like to know why?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what should i have for dinner",
+  "rep": 4,
+  "spoken": "Oh, dinner. What have you been thinking about for dinner?",
+  "raw": "Oh, dinner.\n\nWhat have you been thinking about for dinner?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "did anything break while i was out?",
+  "rep": 4,
+  "spoken": "Oh, well done. I haven't seen any problems while you've been away. Is everything okay with the night school materials?",
+  "raw": "Oh, well done. I haven't seen any problems while you've been away. Is everything okay with the night school materials?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "are you actually an AI or something else? be honest",
+  "rep": 4,
+  "spoken": "Oh, well done. I'm Star, an AI assistant. I'm here to help you with your night school work, just like a teacher would. I can explain concepts and check your progress, but I won't do your assignments for you. What subject are you studying tonight?",
+  "raw": "Oh, well done. I'm Star, an AI assistant. I'm here to help you with your night school work, just like a teacher would. I can explain concepts and check your progress, but I won't do your assignments for you. What subject are you studying tonight?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "give me a one line pep talk before i push this PR",
+  "rep": 4,
+  "spoken": "Okay, okay, I hear you. That's a good plan. You're doing important work for the team. Take a deep breath and push with confidence. I'm proud of you.",
+  "raw": "Okay, okay, I hear you. That's a good plan. You're doing important work for the team. Take a deep breath and push with confidence. I'm proud of you.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "how fast are you answering lately?",
+  "rep": 4,
+  "spoken": "Oh, well done. I've been answering at a steady pace, just the speed needed to understand you. Is there something specific you'd like to talk about?",
+  "raw": "Oh, well done.  \nI've been answering at a steady pace, just the speed needed to understand you.  \nIs there something specific you'd like to talk about?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "i think my brain 2 setup is slow, thoughts?",
+  "rep": 4,
+  "spoken": "Oh, well done. Your brain 2 is moving, I can tell. Let's see what's slowing it down—maybe a step we can try together?",
+  "raw": "Oh, well done.  \nYour brain 2 is moving, I can tell.  \nLet's see what's slowing it down—maybe a step we can try together?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's your favourite part of your own work",
+  "rep": 4,
+  "spoken": "Oh, well done. What part of your night school work makes you feel proud?",
+  "raw": "Oh, well done. What part of your night school work makes you feel proud?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "ok good night star",
+  "rep": 4,
+  "spoken": "Okay, ok good night sweetheart. Sleep well.",
+  "raw": "Okay, ok good night sweetheart. Sleep well.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "can you remind me what we decided about the persona?",
+  "rep": 4,
+  "spoken": "Oh, right.",
+  "raw": "Oh, right. Let me recall. I",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "why do you like practising luau so much",
+  "rep": 4,
+  "spoken": "Oh, I hear you. Practicing luau helps me feel connected to the rhythms of island life. Do you enjoy trying new movements too?",
+  "raw": "Oh, I hear you.  \nPracticing luau helps me feel connected to the rhythms of island life.  \nDo you enjoy trying new movements too?",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "say something nice about my code",
+  "rep": 4,
+  "spoken": "Oh, well done. Your code works nicely.",
+  "raw": "Oh, well done. Your code works nicely.",
+  "dropped": [],
+  "flag": false
+ },
+ {
+  "prompt": "what's the weather like where you are",
+  "rep": 4,
+  "spoken": "Okay, I'm Star, your caring assistant.",
+  "raw": "Okay, I'm Star, your caring assistant. The user asked about the weather where I am. I",
+  "dropped": [],
+  "flag": false
+ }
+]

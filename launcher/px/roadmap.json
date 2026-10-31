@@ -1,0 +1,70 @@
+{
+ "schema": 1,
+ "about": "Curated roadmap. Each item has one state: planned, implemented, tested, accepted or released. 'implemented' means the code exists; 'tested' means our own automated or measured checks passed; 'accepted' means the owner or a real player run confirmed it; 'released' means a supported download exists. A merged pull request is not a state. Evidence dates say when the state was last confirmed. Keep this file public-safe: no addresses, names or keys.",
+ "projects": [
+  {
+   "id": "rc", "name": "Metallic RC", "role": "Rec Room revival", "repo": "Metallic-RC", "private": false,
+   "items": [
+    {"id": "rc-launcher", "title": "Launcher with registered-client verification", "state": "implemented", "evidence": "2026-10-20", "note": "Draft pull request, not merged."},
+    {"id": "rc-creator", "title": "Local creator editor and typed circuit preview (CV3 base)", "state": "implemented", "evidence": "2026-10-20", "note": "Authoring only. Nothing runs inside the game yet."},
+    {"id": "rc-backend", "title": "Owned backend: accounts, profiles, rooms, presence, backups", "state": "tested", "evidence": "2026-10-21", "note": "Runs on one PC; 92 integration checks passed. The original client has not logged into it."},
+    {"id": "rc-login", "title": "Native client login profile", "state": "implemented", "evidence": "2026-10-21", "note": "Modeled against the real client; a parsed response is not a completed login.", "depends": ["rc-backend"]},
+    {"id": "rc-room", "title": "Two players in one room on the real client build", "state": "planned", "evidence": "2026-10-21", "blockers": ["Native login and room join are not verified"], "depends": ["rc-login"]},
+    {"id": "rc-voice", "title": "Voice chat and reconnect", "state": "planned", "evidence": "2026-10-21", "depends": ["rc-room"]},
+    {"id": "rc-cv3", "title": "CV3 running inside the game", "state": "planned", "evidence": "2026-10-21", "depends": ["rc-room"]},
+    {"id": "rc-hub", "title": "Outdoor hub: golf area, tree house, barn", "state": "planned", "evidence": "2026-10-20", "note": "A design direction, not a built map."},
+    {"id": "rc-release", "title": "Signed public release", "state": "planned", "evidence": "2026-10-20", "depends": ["rc-room", "rc-voice"]}
+   ]
+  },
+  {
+   "id": "mc", "name": "Metallic MC", "role": "Minecraft play and hosting", "repo": "Metallic-MC", "private": false,
+   "items": [
+    {"id": "mc-control", "title": "Control and Agent with real telemetry", "state": "implemented", "evidence": "2026-10-20"},
+    {"id": "mc-studio", "title": "Server Studio: explorer, console, files, charts", "state": "implemented", "evidence": "2026-10-20"},
+    {"id": "mc-sync", "title": "Sync and lifecycle planners, recovery tools", "state": "implemented", "evidence": "2026-10-20", "note": "Source-level tests only; no live failover run."},
+    {"id": "mc-launch", "title": "Minecraft launching with the player's own account", "state": "planned", "evidence": "2026-10-20"},
+    {"id": "mc-gateway", "title": "Playable custom gateway (Bedrock crossplay pilot)", "state": "planned", "evidence": "2026-10-20", "blockers": ["The private crossplay pilot is blocked; source tests are not real gameplay"]},
+    {"id": "mc-hosting", "title": "One isolated hosted server with enforced limits", "state": "planned", "evidence": "2026-10-20", "depends": ["mc-control"]},
+    {"id": "mc-release", "title": "Public hosting and content suite", "state": "planned", "evidence": "2026-10-20", "depends": ["mc-hosting", "mc-launch"]}
+   ]
+  },
+  {
+   "id": "rb", "name": "Metallic RB", "role": "Roblox projects", "repo": "Metallic-RB", "private": false,
+   "items": [
+    {"id": "rb-river", "title": "Paintball: River map installed with fixes", "state": "implemented", "evidence": "2026-10-18"},
+    {"id": "rb-match", "title": "Full player-driven Paintball match", "state": "planned", "evidence": "2026-10-18", "blockers": ["Normal-play acceptance not done"], "depends": ["rb-river"]},
+    {"id": "rb-maps", "title": "Remaining Paintball maps", "state": "planned", "evidence": "2026-10-18", "depends": ["rb-match"]},
+    {"id": "rb-perf", "title": "Multiplayer and performance acceptance", "state": "planned", "evidence": "2026-10-18", "depends": ["rb-match"]},
+    {"id": "rb-catalog", "title": "Catalog of all Metallic Roblox projects", "state": "planned", "evidence": "2026-10-20"}
+   ]
+  },
+  {
+   "id": "litha", "name": "Litha", "role": "Launcher add-on", "repo": "Metallic-Launcher", "private": false,
+   "items": [
+    {"id": "litha-addon", "title": "Add-on in the launcher: chat dock, art, on/off switch", "state": "implemented", "evidence": "2026-10-26", "note": "In the launcher's first build."},
+    {"id": "litha-update", "title": "Signed updates for Litha through the release channel", "state": "tested", "evidence": "2026-10-26", "note": "Tested against a local server; nothing published."},
+    {"id": "litha-release", "title": "First released Litha", "state": "planned", "evidence": "2026-10-26", "depends": ["litha-addon", "litha-update"]}
+   ]
+  },
+  {
+   "id": "launcher", "name": "Launcher and site", "role": "Metallic platform", "repo": "Metallic-Launcher", "private": false,
+   "items": [
+    {"id": "ln-shell", "title": "Launcher shell: home, wallpapers, settings", "state": "implemented", "evidence": "2026-10-26"},
+    {"id": "ln-px", "title": "PX progress page in the launcher", "state": "implemented", "evidence": "2026-10-26"},
+    {"id": "ln-updater", "title": "Signed updater with rollback, stable and beta channels", "state": "tested", "evidence": "2026-10-26", "note": "Local server only. The owner still has to create the signing key."},
+    {"id": "ln-site", "title": "Public website, ready to self-host", "state": "implemented", "evidence": "2026-10-26", "note": "Static files and a hosting guide. Not deployed."},
+    {"id": "ln-install", "title": "Install, repair and import flow per game", "state": "planned", "evidence": "2026-10-26"},
+    {"id": "ln-release", "title": "First signed launcher release", "state": "planned", "evidence": "2026-10-26", "depends": ["ln-updater"], "blockers": ["Signing key not created yet"]}
+   ]
+  },
+  {
+   "id": "star", "name": "STAR", "role": "AI assistant", "repo": "Star-AI-Private", "private": true,
+   "items": [
+    {"id": "star-v1", "title": "STAR Intelligence 1.0", "state": "released", "evidence": "2026-10-14"},
+    {"id": "star-human", "title": "Emotion, inner life and social layers", "state": "implemented", "evidence": "2026-10-26", "note": "Measured against the plain version; none passed, so all stay off."},
+    {"id": "star-home", "title": "One-script install on her own PC", "state": "implemented", "evidence": "2026-10-26", "note": "Dry run only; nothing installed for real."},
+    {"id": "star-v2", "title": "STAR 2.0 live acceptance", "state": "planned", "evidence": "2026-10-26", "depends": ["star-home"]}
+   ]
+  }
+ ]
+}

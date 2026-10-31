@@ -213,3 +213,6 @@ def test_vector_search_reranks_remotely_and_keeps_vector_order_when_remote_fails
         assert timing.get("rerank_remote" if not fail else "rerank_skipped") == 1.0
         assert [p.chunk_id for p in passages] == [p.chunk_id for p in plain]   # 2 items: RRF keeps the tie order
         assert [p.score for p in passages] == [p.score for p in plain]        # scores stay cosines
+        brain.calls.clear()                                             # hybrid reranks its fused head the same way
+        searcher.search("tweening", mode="hybrid", top=5, scope="all", remote_rerank_n=10)
+        assert len(brain.calls) == 1 and brain.calls[0][1] is False

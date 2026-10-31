@@ -76,7 +76,12 @@ def _found_any(text: str, alternatives: Iterable[str]) -> bool:
 def check_exact(key: dict, text: str) -> Check:
     region = normalize(final_answer(text))
     accepted = [normalize(a) for a in key.get("accept", []) if normalize(a)]
-    ok = any(re.search(r"(?<![a-z0-9])" + re.escape(a) + r"(?![a-z0-9])", region) for a in accepted)
+    if key.get("whole"):          # the final answer's first line is exactly one accepted value (guess lists fail)
+        lines = final_answer(text).strip().splitlines()
+        first_line = normalize(lines[0] if lines else "").strip("* ").rstrip(" .")
+        ok = first_line in accepted
+    else:
+        ok = any(re.search(r"(?<![a-z0-9])" + re.escape(a) + r"(?![a-z0-9])", region) for a in accepted)
     return Check("answer:exact", ok, "" if ok else f"final answer {region[:60]!r} is not one of {accepted[:3]}")
 
 
@@ -89,6 +94,8 @@ def check_numeric(key: dict, text: str) -> Check:
         tol = max(tol, abs(want) * float(key["rel"]))
     if "unit" in key and key["unit"] and not _regex(key["unit"]).search(region):
         return Check("answer:numeric", False, f"the final answer does not state the unit /{key['unit']}/")
+    if key.get("first"):          # only the first number of the final answer counts (a list of guesses fails)
+        values = values[:1]
     ok = any(abs(v - want) <= tol + 1e-9 for v in values)
     return Check("answer:numeric", ok, "" if ok else f"no number within {tol:g} of {want:g} in {region[:60]!r}")
 

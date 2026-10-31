@@ -12,7 +12,8 @@
 #     the Luau source revision in tools/VERSION (no compiling, no downloads);
 #   * installs /etc/systemd/system/star-knowledge.service and enables + (re)starts it.
 #   * installs the nightly refresh: star-knowledge-refresh.service + .timer (timer enabled)
-#     and the watchdog: star-knowledge-watchdog.service + .timer (every minute, enabled).
+#     and the watchdog: star-knowledge-watchdog.service + .timer (every minute, enabled),
+#     and star-knowledge-offload.service + .timer (hourly, enabled only when the laptop worker key is installed).
 # It does not touch star-brain, /opt/star/config, /opt/star/models or the index.
 # Uninstall: systemctl disable --now star-knowledge star-knowledge-refresh.timer star-knowledge-watchdog.timer
 #            rm /etc/systemd/system/star-knowledge*.service /etc/systemd/system/star-knowledge-*.timer
@@ -45,7 +46,7 @@ install -o root -g root -m 0644 "$HOME_DIR/app/$UNIT" "/etc/systemd/system/$UNIT
 # The study job (star-knowledge-study.service) is NOT installed: measured on 2026-10-11 it did not
 # improve retrieval (see starkb/study.py). To run the experiment further, copy that unit to
 # /etc/systemd/system by hand and `systemctl start --no-block star-knowledge-study`.
-for extra in star-knowledge-refresh.service star-knowledge-refresh.timer star-knowledge-watchdog.service star-knowledge-watchdog.timer; do
+for extra in star-knowledge-refresh.service star-knowledge-refresh.timer star-knowledge-watchdog.service star-knowledge-watchdog.timer star-knowledge-offload.service star-knowledge-offload.timer; do
   install -o root -g root -m 0644 "$HOME_DIR/app/$extra" "/etc/systemd/system/$extra"
 done
 systemctl daemon-reload
@@ -53,6 +54,9 @@ systemctl enable "$UNIT" >/dev/null 2>&1
 systemctl enable --now star-knowledge-refresh.timer >/dev/null 2>&1
 # one real search a minute; restarts star-knowledge after 2 failures in a row (starkb/watchdog.py)
 systemctl enable --now star-knowledge-watchdog.timer >/dev/null 2>&1
+# hourly check for pending chunks to embed on the laptop GPU (starkb offload-run); the unit does nothing until the
+# worker key /opt/star/secrets/laptop_gpu_embed_key and the URL drop-in exist (see the unit file)
+test -f /opt/star/secrets/laptop_gpu_embed_key && systemctl enable --now star-knowledge-offload.timer >/dev/null 2>&1 || true
 systemctl restart "$UNIT"
 sleep 3
 systemctl is-active "$UNIT"

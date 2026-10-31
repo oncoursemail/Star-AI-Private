@@ -946,4 +946,374 @@ function Prim.shake(ctx: Ctx, p: Params?)
 	end
 end
 
+-- ------------------------------------------------------------------ data-driven layers (STAR designer)
+-- The design-plan generator (star/roblox_vfx_designer.py) writes these as plain data: curves are strings
+-- "t v t v ..." (times 0..1, values relative to `size` or as transparency), colour ramps are "t key t key ..."
+-- over palette keys. A malformed curve or ramp falls back to a safe default; nothing here runs generated code.
+
+local function curve(p: Params?, key: string, scale: number, fallback: NumberSequence): NumberSequence
+	local v = p and p[key]
+	if type(v) ~= "string" then
+		return fallback
+	end
+	local items = string.split(v, " ")
+	local points: { NumberSequenceKeypoint } = {}
+	for i = 1, #items - 1, 2 do
+		local t = tonumber(items[i])
+		local x = tonumber(items[i + 1])
+		if t == nil or x == nil then
+			return fallback
+		end
+		table.insert(points, NumberSequenceKeypoint.new(math.clamp(t, 0, 1), x * scale))
+	end
+	if #points < 2 then
+		return fallback
+	end
+	local ok, made = pcall(NumberSequence.new, points)
+	return if ok then made else fallback
+end
+Prim.curve = curve
+
+local function ramp(ctx: Ctx, p: Params?, key: string, fallback: Color3): ColorSequence
+	local v = p and p[key]
+	if type(v) ~= "string" then
+		return ColorSequence.new(fallback)
+	end
+	local items = string.split(v, " ")
+	local points: { ColorSequenceKeypoint } = {}
+	for i = 1, #items - 1, 2 do
+		local t = tonumber(items[i])
+		local c = (ctx.style.palette :: any)[items[i + 1]]
+		if t == nil or typeof(c) ~= "Color3" then
+			return ColorSequence.new(fallback)
+		end
+		table.insert(points, ColorSequenceKeypoint.new(math.clamp(t, 0, 1), c))
+	end
+	if #points < 2 then
+		return ColorSequence.new(fallback)
+	end
+	local ok, made = pcall(ColorSequence.new, points)
+	return if ok then made else ColorSequence.new(fallback)
+end
+
+local SHAPES: { [string]: Enum.ParticleEmitterShape } = {
+	sphere = Enum.ParticleEmitterShape.Sphere,
+	disc = Enum.ParticleEmitterShape.Disc,
+	box = Enum.ParticleEmitterShape.Box,
+	cylinder = Enum.ParticleEmitterShape.Cylinder,
+}
+
+local function offset(p: Params?, suffix: string, x: number, y: number, z: number): Vector3
+	return Vector3.new(num(p, "x" .. suffix, x), num(p, "y" .. suffix, y), num(p, "z" .. suffix, z))
+end
+
+-- Emitter host: an Attachment for point emission, else a tiny invisible part sized to the shape (Sphere and
+-- Cylinder shapes do not display correctly on an Attachment). pitch/yaw (degrees) turn the emission face.
+local function host(ctx: Ctx, p: Params?): Instance
+	local rotation = CFrame.Angles(0, math.rad(num(p, "yaw", 0)), 0) * CFrame.Angles(math.rad(num(p, "pitch", 0)), 0, 0)
+	local shapeName = if type(p) == "table" and type(p.shape) == "string" then p.shape else "point"
+	local shape = SHAPES[shapeName]
+	if shape == nil then
+		local a = attachment(ctx, offset(p, "", 0, 1, 0))
+		a.CFrame = CFrame.new(a.Position) * rotation
+		return a
+	end
+	local radius = num(p, "radius", 2) * ctx.style.sizeScale
+	local height = num(p, "height", 0.2) * ctx.style.sizeScale
+	local size = if shapeName == "sphere" then Vector3.one * radius * 2 else Vector3.new(radius * 2, height, radius * 2)
+	local h = part(ctx, Enum.PartType.Block, size, ctx.origin * CFrame.new(offset(p, "", 0, 1, 0)) * rotation,
+		ctx.style.palette.glow, Enum.Material.SmoothPlastic)
+	h.Transparency = 1
+	return h
+end
+
+-- A particle layer from data: a burst (count -> Emit) or a loop (rate for dur seconds), with size / transparency
+-- curves, a colour ramp, emitter shape, orientation and an optional flipbook (the style's flipbook sheet).
+-- Params: count | rate+dur, life, lifeMin, size, sizeCurve, alphaCurve, ramp, color, texture, speed, speedMin,
+-- spread, gravity, drag, windX, spin, orient, shape, radius, height, surface, inward, x/y/z, pitch, yaw,
+-- lightEmission, zOffset, flipbook ("oneshot" | "loop" | "random"), fps, locked.
+function Prim.particles(ctx: Ctx, p: Params?)
+	local rate = num(p, "rate", 0)
+	local dur = num(p, "dur", 1)
+	local n = Prim.take(ctx, if rate > 0 then rate * dur else num(p, "count", 20))
+	if n <= 0 then
+		return
+	end
+	local life = num(p, "life", 0.8)
+	local h = host(ctx, p)
+	local base = color(ctx, p, "color", "glow")
+	local e = emitter(ctx, h, texture(ctx, p, "glow"), base)
+	e.Color = ramp(ctx, p, "ramp", base)
+	local size = num(p, "size", 1) * ctx.style.sizeScale
+	e.Size = curve(p, "sizeCurve", size, seq(0, size, 1, 0))
+	e.Transparency = curve(p, "alphaCurve", 1, seq(0, 0, 0.7, 0.2, 1, 1))
+	e.Lifetime = NumberRange.new(math.min(num(p, "lifeMin", life * 0.7), life), life)
+	local speed = num(p, "speed", 5) * ctx.style.sizeScale
+	e.Speed = NumberRange.new(math.min(num(p, "speedMin", speed * 0.5), speed), speed)
+	local spread = num(p, "spread", 180)
+	e.SpreadAngle = Vector2.new(spread, spread)
+	e.Drag = num(p, "drag", 0)
+	e.Acceleration = Vector3.new(num(p, "windX", 0), -num(p, "gravity", 0), 0)
+	local spin = num(p, "spin", 60)
+	e.Rotation = NumberRange.new(0, 360)
+	e.RotSpeed = NumberRange.new(-spin, spin)
+	local orient = if type(p) == "table" and type(p.orient) == "string" then p.orient else "camera"
+	if orient == "velocity" then
+		e.Orientation = Enum.ParticleOrientation.VelocityParallel
+	elseif orient == "flat" then
+		e.Orientation = Enum.ParticleOrientation.VelocityPerpendicular
+	elseif orient == "worldup" then
+		e.Orientation = Enum.ParticleOrientation.FacingCameraWorldUp
+	end
+	local shape = SHAPES[if type(p) == "table" and type(p.shape) == "string" then p.shape else "point"]
+	if shape then
+		e.Shape = shape
+		e.ShapeStyle = if bool(p, "surface", false) then Enum.ParticleEmitterShapeStyle.Surface else Enum.ParticleEmitterShapeStyle.Volume
+		e.ShapeInOut = if bool(p, "inward", false) then Enum.ParticleEmitterShapeInOut.Inward else Enum.ParticleEmitterShapeInOut.Outward
+	end
+	e.LightEmission = math.clamp(num(p, "lightEmission", ctx.style.lightEmission), 0, 1)
+	e.ZOffset = num(p, "zOffset", 0)
+	e.LockedToPart = bool(p, "locked", false)
+	local mode = if type(p) == "table" and type(p.flipbook) == "string" then p.flipbook else nil
+	local book = ctx.style.textures.flipbook
+	if mode and book then
+		e.Texture = book
+		e.FlipbookLayout = Enum.ParticleFlipbookLayout.Grid4x4
+		e.FlipbookMode = if mode == "loop" then Enum.ParticleFlipbookMode.Loop
+			elseif mode == "random" then Enum.ParticleFlipbookMode.Random
+			else Enum.ParticleFlipbookMode.OneShot
+		e.FlipbookFramerate = NumberRange.new(math.clamp(num(p, "fps", 16), 1, 30))
+		e.FlipbookStartRandom = mode ~= "oneshot"
+	end
+	if rate > 0 then
+		e.Rate = n / dur
+		e.Enabled = true
+		task.delay(Prim.dur(ctx, dur), function()
+			e.Enabled = false
+		end)
+	else
+		e:Emit(n)
+	end
+	Prim.cleanup(ctx, h, (if rate > 0 then dur else 0) + life + 0.3)
+end
+
+-- A beam from (x0,y0,z0) to (x1,y1,z1): a thin core over a wider glow, CurveSize bend, Segments, scrolling
+-- texture (opt-in), grow-in and fade-out. zigzag > 0 cuts it into that many jagged joints that re-jitter every `flicker`
+-- seconds (a lightning bolt). Params: width, taper, layers, segments, curve0, curve1, texture, textureSpeed,
+-- textureLength, ramp, alphaCurve, dur, grow, zigzag, jitter, flicker.
+function Prim.beam(ctx: Ctx, p: Params?)
+	local life = num(p, "dur", 0.6)
+	local from = offset(p, "0", 0, 0, 0)
+	local to = offset(p, "1", 0, 20, 0)
+	local joints = math.clamp(math.floor(num(p, "zigzag", 0)), 0, 12)
+	local jitter = num(p, "jitter", 2) * ctx.style.sizeScale
+	local width = num(p, "width", 1) * ctx.style.sizeScale
+	local dir = (to - from).Unit
+	local side = dir:Cross(if math.abs(dir.Y) > 0.9 then Vector3.xAxis else Vector3.yAxis).Unit
+	local up = dir:Cross(side).Unit
+	local points: { Attachment } = {}
+	for i = 0, joints + 1 do
+		local a = attachment(ctx, from:Lerp(to, i / (joints + 1)))
+		table.insert(points, a)
+		Prim.cleanup(ctx, a, life + 0.2)
+	end
+	local function jolt()
+		for i = 2, #points - 1 do
+			points[i].Position = from:Lerp(to, (i - 1) / (joints + 1)) + side * ctx.random:NextNumber(-jitter, jitter)
+				+ up * ctx.random:NextNumber(-jitter, jitter) * 0.5
+		end
+	end
+	if joints > 0 then
+		jolt()
+	end
+	local grow = num(p, "grow", math.min(0.08, life * 0.2))
+	local beams: { Beam } = {}
+	for layer = 1, math.clamp(math.floor(num(p, "layers", 2)), 1, 3) do
+		local w = if layer == 1 then width * 0.45 else width * (0.6 + 0.7 * layer)
+		for i = 1, #points - 1 do
+			local b = Instance.new("Beam")
+			b.Attachment0 = points[i]
+			b.Attachment1 = points[i + 1]
+			b.FaceCamera = true
+			b.Segments = math.clamp(math.floor(num(p, "segments", 10)), 1, 100)
+			b.CurveSize0 = num(p, "curve0", 0)
+			b.CurveSize1 = num(p, "curve1", 0)
+			-- Solid layers unless a texture is asked for: the particle textures are radial or tapered, so wrapped
+			-- along a beam they read as a row of dots.
+			if type(p) == "table" and type(p.texture) == "string" then
+				b.Texture = texture(ctx, p, "glow")
+				b.TextureMode = Enum.TextureMode.Wrap
+				b.TextureLength = num(p, "textureLength", 6)
+				b.TextureSpeed = num(p, "textureSpeed", 2) * ctx.speed
+			end
+			b.LightEmission = ctx.style.lightEmission
+			b.LightInfluence = 0
+			b.Color = if layer == 1 then ColorSequence.new(ctx.style.palette.core) else ramp(ctx, p, "ramp", ctx.style.palette.glow)
+			b.Transparency = if layer == 1 then curve(p, "alphaCurve", 1, NumberSequence.new(0)) else NumberSequence.new(0.3 + 0.15 * layer)
+			b.ZOffset = if layer == 1 then 0.2 else 0
+			b.Width0 = 0
+			b.Width1 = 0
+			b.Parent = ctx.anchor
+			Prim.tween(ctx, b, grow, { Width0 = w, Width1 = w * num(p, "taper", 1) })
+			table.insert(beams, b)
+			Prim.cleanup(ctx, b, life + 0.2)
+		end
+	end
+	if joints > 0 then
+		local flicker = math.max(0.03, num(p, "flicker", 0.06))
+		task.spawn(function()
+			local started = os.clock()
+			while ctx.alive and (os.clock() - started) * ctx.speed < life do
+				task.wait(Prim.dur(ctx, flicker))
+				jolt()
+			end
+		end)
+	end
+	task.delay(Prim.dur(ctx, life * 0.6), function()
+		if not ctx.alive then
+			return
+		end
+		for _, b in beams do
+			Prim.tween(ctx, b, life * 0.4, { Width0 = 0, Width1 = 0 }, ctx.style.timing.easeIn, Enum.EasingDirection.In)
+		end
+	end)
+end
+
+-- A projectile: a glowing head flies from (x0,y0,z0) to (x1,y1,z1) in `dur` seconds on an arc of height `arc`,
+-- leaving a Trail (trailLife, widthCurve, trailAlpha, minLength, ramp) and, with rate > 0, an emitter on the head
+-- (embers / flame: emitLife, emitSize, emitCurve, emitTexture). Params also: size, headAlpha.
+function Prim.projectile(ctx: Ctx, p: Params?)
+	local life = num(p, "dur", 0.6)
+	local from = offset(p, "0", 0, 4, -30)
+	local to = offset(p, "1", 0, 2, 0)
+	local size = num(p, "size", 1.5) * ctx.style.sizeScale
+	local arc = num(p, "arc", 0)
+	local head = part(ctx, Enum.PartType.Ball, Vector3.one * size, ctx.origin * CFrame.new(from), ctx.style.palette.core,
+		if ctx.style.lightEmission > 0.5 then Enum.Material.Neon else ctx.style.material)
+	head.Transparency = num(p, "headAlpha", 0)
+	local top = Instance.new("Attachment")
+	top.Position = Vector3.new(0, size * 0.5, 0)
+	top.Parent = head
+	local bottom = Instance.new("Attachment")
+	bottom.Position = Vector3.new(0, -size * 0.5, 0)
+	bottom.Parent = head
+	local trailLife = num(p, "trailLife", 0.35)
+	local t = Instance.new("Trail")
+	t.Attachment0 = top
+	t.Attachment1 = bottom
+	t.FaceCamera = true
+	t.Lifetime = trailLife / ctx.speed
+	t.MinLength = num(p, "minLength", 0.1)
+	t.WidthScale = curve(p, "widthCurve", 1, seq(0, 1, 1, 0))
+	t.Transparency = curve(p, "trailAlpha", 1, seq(0, 0, 1, 1))
+	t.Color = ramp(ctx, p, "ramp", ctx.style.palette.glow)
+	-- A ribbon reads as a solid band shaped by WidthScale and Transparency; a texture (trailTexture) is opt-in,
+	-- because the particle textures fade across their height and would show only a thin line along the ribbon.
+	if type(p) == "table" and type(p.trailTexture) == "string" then
+		t.Texture = texture(ctx, { texture = p.trailTexture }, "glow")
+		t.TextureMode = Enum.TextureMode.Stretch
+	end
+	t.LightEmission = ctx.style.lightEmission
+	t.LightInfluence = 0
+	t.Parent = head
+	local e: ParticleEmitter? = nil
+	local emitLife = num(p, "emitLife", 0.5)
+	local rate = num(p, "rate", 0)
+	local n = if rate > 0 then Prim.take(ctx, rate * life) else 0
+	if n > 0 then
+		local emitSize = num(p, "emitSize", size) * ctx.style.sizeScale
+		local made = emitter(ctx, top, texture(ctx, { texture = if type(p) == "table" then p.emitTexture else nil }, "glow"),
+			ctx.style.palette.glow)
+		made.Color = ramp(ctx, p, "ramp", ctx.style.palette.glow)
+		made.Size = curve(p, "emitCurve", emitSize, seq(0, emitSize, 1, 0))
+		made.Transparency = seq(0, 0.1, 0.6, 0.4, 1, 1)
+		made.Lifetime = NumberRange.new(emitLife * 0.6, emitLife)
+		made.Speed = NumberRange.new(1, 3)
+		made.SpreadAngle = Vector2.new(180, 180)
+		made.Acceleration = Vector3.new(0, num(p, "rise", 4), 0)
+		made.Rotation = NumberRange.new(0, 360)
+		made.RotSpeed = NumberRange.new(-120, 120)
+		made.Rate = n / life
+		made.Enabled = true
+		e = made
+	end
+	local started = os.clock()
+	local connection: RBXScriptConnection
+	connection = RunService.Heartbeat:Connect(function()
+		local k = math.min((os.clock() - started) * ctx.speed / life, 1)
+		if not ctx.alive or head.Parent == nil then
+			connection:Disconnect()
+			return
+		end
+		head.CFrame = ctx.origin * CFrame.new(from:Lerp(to, k) + Vector3.yAxis * arc * 4 * k * (1 - k))
+		if k >= 1 then
+			head.Transparency = 1
+			local made = e
+			if made then
+				made.Enabled = false
+			end
+			connection:Disconnect()
+		end
+	end)
+	table.insert(ctx.connections, connection)
+	Prim.cleanup(ctx, head, life + math.max(trailLife, emitLife) + 0.3)
+end
+
+-- A sweep (sword / claw slash): an invisible arm swings through `arc` degrees around the origin at height y; a flat
+-- Trail between `inner` (fraction of radius) and `radius` draws the crescent with a fast-in, slow-out swing.
+-- Params: radius, inner, arc, dur, y, yaw, roll, tilt, trailLife, widthCurve, trailAlpha, ramp, texture.
+function Prim.sweep(ctx: Ctx, p: Params?)
+	local radius = num(p, "radius", 8) * ctx.style.sizeScale
+	local inner = math.clamp(num(p, "inner", 0.55), 0, 0.95) * radius
+	local life = num(p, "dur", 0.18)
+	local arc = math.rad(num(p, "arc", 160))
+	-- yaw turns the swing toward the viewer, roll makes it diagonal, tilt (about the rolled X axis) stands the swing
+	-- plane up: tilt 90 faces the viewer at yaw's +Z, tilt 0 is a flat horizontal sweep.
+	local pivot = ctx.origin * CFrame.new(0, num(p, "y", 3), 0) * CFrame.Angles(0, math.rad(num(p, "yaw", 0)), 0)
+		* CFrame.Angles(0, 0, math.rad(num(p, "roll", 0))) * CFrame.Angles(math.rad(num(p, "tilt", 0)), 0, 0)
+	local arm = part(ctx, Enum.PartType.Block, Vector3.one * 0.2, pivot, ctx.style.palette.glow)
+	arm.Transparency = 1
+	local a0 = Instance.new("Attachment")
+	a0.Position = Vector3.new(0, 0, -inner)
+	a0.Parent = arm
+	local a1 = Instance.new("Attachment")
+	a1.Position = Vector3.new(0, 0, -radius)
+	a1.Parent = arm
+	local trailLife = num(p, "trailLife", 0.2)
+	local t = Instance.new("Trail")
+	t.Attachment0 = a0
+	t.Attachment1 = a1
+	t.FaceCamera = false
+	t.Lifetime = trailLife / ctx.speed
+	t.MinLength = 0
+	t.WidthScale = curve(p, "widthCurve", 1, seq(0, 1, 1, 0.3))
+	t.Transparency = curve(p, "trailAlpha", 1, seq(0, 0, 0.6, 0.3, 1, 1))
+	t.Color = ramp(ctx, p, "ramp", ctx.style.palette.glow)
+	if type(p) == "table" and type(p.texture) == "string" then -- solid ribbon unless a texture is asked for
+		t.Texture = texture(ctx, p, "glow")
+		t.TextureMode = Enum.TextureMode.Stretch
+	end
+	t.LightEmission = ctx.style.lightEmission
+	t.LightInfluence = 0
+	t.Parent = arm
+	local start = -arc * 0.5
+	arm.CFrame = pivot * CFrame.Angles(0, start, 0)
+	local started = os.clock()
+	local connection: RBXScriptConnection
+	connection = RunService.Heartbeat:Connect(function()
+		local k = math.min((os.clock() - started) * ctx.speed / life, 1)
+		if not ctx.alive or arm.Parent == nil then
+			connection:Disconnect()
+			return
+		end
+		local eased = 1 - (1 - k) ^ 3
+		arm.CFrame = pivot * CFrame.Angles(0, start + arc * eased, 0)
+		if k >= 1 then
+			connection:Disconnect()
+		end
+	end)
+	table.insert(ctx.connections, connection)
+	Prim.cleanup(ctx, arm, life + trailLife + 0.2)
+end
+
 return Prim

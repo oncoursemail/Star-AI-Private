@@ -34,6 +34,13 @@ CATALOG: dict[str, tuple[str, str, str, str]] = {
     "ns-pause": ("Night school", "Pause night school",
                  "Writes the HOLD file: night school stops after dropping its current answer.", "normal"),
     "ns-resume": ("Night school", "Resume night school", "Removes the HOLD file: night school carries on.", "normal"),
+    "litha-brain:off": ("Litha", "Turn Litha off on brain 1",
+                        "Unloads litha-26b on brain 1 (about 18 GB RAM back) and keeps it unloaded after restarts; "
+                        "litha requests go to the GPU nodes, then star-fast. The router restarts (a few seconds).",
+                        "high"),
+    "litha-brain:on": ("Litha", "Turn Litha on on brain 1",
+                       "Loads litha-26b on brain 1 again (cold load about a minute) and makes it the router's "
+                       "fallback when the GPU nodes are busy or away. The router restarts (a few seconds).", "normal"),
     "runner-start:github": ("CI runners", "Start the GitHub runner", "Starts brain2-ci-runner (GitHub Actions).",
                             "normal"),
     "runner-stop:github": ("CI runners", "Stop the GitHub runner",

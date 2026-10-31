@@ -1,16 +1,32 @@
-"""Opt-in llama.cpp prompt-prefix KV banks for the operator's own STAR Server.
+"""Saved project memory (G0b): llama.cpp KV snapshots of the stable start of STAR's requests. Opt-in.
 
-An on-server snapshot is not a knowledge database: the model must use exactly
-the same tokenizer/template and prompt prefix. STAR stores only an opaque local
-receipt, not raw prompts, cache tensors, user content or authentication tokens.
-The actual KV state remains under llama-server's owner-configured --slot-save-path.
+The start of every STAR request is byte-stable: the system message (rules, memory, an approved reference packet)
+and the tool list (star/context_layout.py). After a model restart the server has to read it again (the tool
+prompt alone is ~1,100 tokens, 16-30 s on star-fast). With a bank, STAR has the server save that start once
+(`POST /slots/{id}?action=save`, the server's own --slot-save-path) and later restores it instead of re-reading.
 
-Never enable this silently. The read/write slot endpoints can interfere with
-other clients and expose cached prompt state on an unsecured server.
+How:
+  * the start is rendered by the server's own chat template (`/apply-template`, system + tools + a placeholder
+    user message, twice with different placeholders; the bank is the common start) and keyed by the SHA-256 of
+    that text, the model, the server and STAR_KV_BANK_MODEL_REVISION;
+  * only the start is banked (a raw `/v1/completions` of exactly that text, then save), never a conversation:
+    star-fast is hybrid, so a slot can be reused only up to a saved checkpoint, and a saved conversation would be
+    of no use to another chat;
+  * restore or build happens only into an EMPTY slot (it holds no tokens: the model process just started, or the
+    slot was erased; `GET /slots` n_prompt_tokens). A used slot is left alone: its own contents or the server's
+    RAM prompt cache serve the start already, and a restore would replace the slot's contents without the server keeping them;
+  * at most MAX_BANKS files on the server, per STAR install: the file names are a fixed pool and the least
+    recently used bank's name is reused, so the server's disk use is bounded without a delete endpoint;
+  * the server checks the restored tokens against every request (cache_prompt), so a stale or foreign file can
+    only cost time, never change an answer.
+
+Off unless STAR_KV_BANKS=on AND STAR_KV_BANK_MODEL_REVISION names the exact model file (change it whenever the
+GGUF, template or adapter changes). STAR Server (LAN) only; the index in app data holds hashes and sizes, never
+prompt text. Server side: `slot-save-path` in models.ini (server/brain/kv_banks/enable.sh, undo.sh).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
 import hashlib
 import json
 import os
@@ -26,25 +42,19 @@ from .providers import connection_for, provider_kind, server_slots
 
 ENV_ENABLE = "STAR_KV_BANKS"
 ENV_REVISION = "STAR_KV_BANK_MODEL_REVISION"
-SCHEMA_VERSION = 1
-MAX_INDEX_BYTES = 24_000
+ENV_MAX = "STAR_KV_BANKS_MAX"
+SCHEMA_VERSION = 2
+DEFAULT_MAX_BANKS = 8
+MAX_INDEX_BYTES = 64_000
+MAX_SLOTS_REPLY_BYTES = 8 * 1024 * 1024   # ~1.3 KB per slot; a server with slots debug on adds every prompt
 MAX_REPLY_BYTES = 4_096
-MAX_BANKS = 16
-MAX_BANK_AGE_SECONDS = 12 * 60 * 60
-# Server may have gigabytes of KV. This is only a sanity check of its report;
-# the actual storage quota must be configured and monitored on the server.
 MAX_SNAPSHOT_BYTES = 16 * 1024**3
 MODEL_REV = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{7,95}$")
-BANK_NAME = re.compile(r"^star-kv-[a-f0-9]{40}\.bin$")
-
-
-@dataclass(frozen=True)
-class BankPlan:
-    filename: str
-    fingerprint: str
-    slot: int
-    model: str
-    scope: str
+FINGERPRINT = re.compile(r"^[a-f0-9]{64}$")
+BANK_NAME = re.compile(r"^star-kv-[a-f0-9]{8}-[0-9]{2}\.bin$")
+# Two placeholder user messages that differ in their first character: the common start of the two renders ends
+# exactly where the user's words begin.
+_PLACEHOLDERS = ("alpha", "omega")
 
 
 def enabled() -> bool:
@@ -52,57 +62,26 @@ def enabled() -> bool:
     return os.environ.get(ENV_ENABLE) == "on"
 
 
-def plan(settings: Any, request: dict, *, scope: str) -> BankPlan | None:
-    """Build a project/chat/model-specific receipt from the *shared prefix*.
-
-    Hash system and tools but NOT the changing history: on restore llama.cpp
-    must compare request tokens to the snapshot and re-evaluate any divergent
-    suffix (cache_prompt=True). No snapshot is an authority for live context.
-    """
-    revision = os.environ.get(ENV_REVISION, "")
-    if not enabled() or not MODEL_REV.fullmatch(revision):
-        return None
-    if provider_kind(settings) != "lan" or type(scope) is not str or not 1 <= len(scope) <= 200:
-        return None
-    if any(ord(ch) < 32 for ch in scope):
-        return None
-    if not isinstance(request, dict) or not isinstance(request.get("messages"), list):
-        return None
-    messages = request["messages"]
-    if not messages or not isinstance(messages[0], dict) or messages[0].get("role") != "system":
-        return None
-    model = request.get("model")
-    extras = request.get("extras")
-    if not isinstance(model, str) or not 1 <= len(model) <= 180 or not isinstance(extras, dict):
-        return None
-    slot = extras.get("id_slot")
-    slots = server_slots(settings, model)
-    if type(slot) is not int or not 2 <= slots <= 64 or not 0 <= slot < slots:
-        return None
-    if extras.get("cache_prompt") is not True:
-        return None
-    # Inference template settings and tool *order* are part of the prefix.
+def max_banks() -> int:
     try:
-        common = {
-            "schema": SCHEMA_VERSION, "server": str(settings.server_endpoint).rstrip("/"),
-            "project": str(settings.project), "conversation_scope": scope,
-            "model": model, "revision": revision, "system": messages[0],
-            "tools": request.get("tools") or [],
-            "template": extras.get("chat_template_kwargs") or {},
-        }
-        encoded = json.dumps(common, sort_keys=True, separators=(",", ":"),
-                             ensure_ascii=False, allow_nan=False).encode("utf-8")
-        if len(encoded) > 250_000:
-            return None
-        fingerprint = hashlib.sha256(encoded).hexdigest()
-        # A stable filename for this chat/model/revision, so updated content
-        # replaces the old snapshot rather than proliferating files per turn.
-        namespace = json.dumps([SCHEMA_VERSION, common["server"], common["project"],
-                                scope, model, revision], ensure_ascii=False).encode("utf-8")
-        filename = "star-kv-" + hashlib.sha256(namespace).hexdigest()[:40] + ".bin"
-    except (ValueError, TypeError, AttributeError):
-        return None
-    return BankPlan(filename=filename, fingerprint=fingerprint, slot=slot, model=model, scope=scope)
+        return min(64, max(1, int(os.environ.get(ENV_MAX, DEFAULT_MAX_BANKS))))
+    except ValueError:
+        return DEFAULT_MAX_BANKS
+
+
+def _common_length(a: str, b: str) -> int:
+    n = min(len(a), len(b))
+    return next((i for i in range(n) if a[i] != b[i]), n)
+
+
+def fingerprint(server: str, model: str, revision: str, prefix: str) -> str:
+    return hashlib.sha256(json.dumps([SCHEMA_VERSION, server, model, revision, prefix],
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def pool_name(home: Path, number: int) -> str:
+    """This install's file name number `number`: installs sharing one server never overwrite each other's banks."""
+    return f"star-kv-{hashlib.sha256(str(home).encode('utf-8')).hexdigest()[:8]}-{number:02d}.bin"
 
 
 def _index_path(home: Path) -> Path:
@@ -113,45 +92,23 @@ def _index_path(home: Path) -> Path:
 
 
 def _load(home: Path) -> dict:
-    file = _index_path(home)
-    if file.is_symlink():
-        raise PermissionError("KV bank index cannot be a symlink")
-    if not file.is_file():
-        return {}
-    if file.stat().st_size > MAX_INDEX_BYTES:
-        return {}
     try:
+        file = _index_path(home)
+        if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_INDEX_BYTES:
+            return {}
         data = json.loads(file.read_text(encoding="utf-8"))
-        return data["banks"] if isinstance(data, dict) and data.get("version") == SCHEMA_VERSION and (
-            isinstance(data.get("banks"), dict)) else {}
-    except (OSError, UnicodeError, ValueError, TypeError):
+    except (OSError, PermissionError, UnicodeError, ValueError):
         return {}
+    if not isinstance(data, dict) or data.get("version") != SCHEMA_VERSION or not isinstance(data.get("banks"), dict):
+        return {}
+    return {key: value for key, value in data["banks"].items()
+            if FINGERPRINT.fullmatch(str(key)) and isinstance(value, dict)
+            and BANK_NAME.fullmatch(str(value.get("file", ""))) and type(value.get("used")) in (int, float)}
 
 
-def _has_matching_receipt(home: Path, candidate: BankPlan, *, now: float) -> bool:
-    try:
-        record = _load(home).get(candidate.filename)
-    except (PermissionError, OSError):
-        return False
-    if not isinstance(record, dict):
-        return False
-    stamp = record.get("saved_at")
-    return (record.get("fingerprint") == candidate.fingerprint
-            and isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and 0 <= now - stamp <= MAX_BANK_AGE_SECONDS)
-
-
-def _record(home: Path, candidate: BankPlan, *, now: float, n_saved: int) -> None:
-    """Atomic, restricted local metadata only; no raw user/project/model prompt."""
-    if not 1 <= n_saved <= 10_000_000:
-        return
+def _write(home: Path, banks: dict) -> None:
+    """Atomic, restricted local metadata only: hashes, file names, sizes, times."""
     file = _index_path(home)
-    banks = _load(home)
-    banks = {key: value for key, value in banks.items()
-             if BANK_NAME.fullmatch(str(key)) and isinstance(value, dict)
-             and type(value.get("saved_at")) in (float, int)
-             and 0 <= now - value["saved_at"] <= MAX_BANK_AGE_SECONDS}
-    banks[candidate.filename] = {"fingerprint": candidate.fingerprint, "saved_at": now}
-    banks = dict(sorted(banks.items(), key=lambda item: item[1]["saved_at"], reverse=True)[:MAX_BANKS])
     file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     if file.is_symlink():
         raise PermissionError("KV bank index cannot be a symlink")
@@ -169,86 +126,179 @@ def _record(home: Path, candidate: BankPlan, *, now: float, n_saved: int) -> Non
             name.unlink(missing_ok=True)
 
 
-async def _post(settings, candidate: BankPlan, *, action: str,
-                transport: httpx.AsyncBaseTransport | None = None,
-                cancel_event=None) -> dict:
-    """One no-redirect LAN call, after checking that the exact model slot is idle."""
-    if action not in {"save", "restore"} or not enabled():
-        return {"performed": False, "reason": "disabled"}
-    if cancel_event is not None and cancel_event.is_set():
-        return {"performed": False, "reason": "cancelled"}
+def pick_file(home: Path, banks: dict) -> str:
+    """A free name of this install's pool, else the name of the least recently used bank (that bank is dropped)."""
+    taken = {value["file"] for value in banks.values()}
+    for number in range(max_banks()):
+        name = pool_name(home, number)
+        if name not in taken:
+            return name
+    oldest = min(banks, key=lambda key: banks[key]["used"])
+    return banks.pop(oldest)["file"]
+
+
+def _connection(settings) -> tuple[str, dict] | None:
+    endpoint, key = connection_for(settings)
+    endpoint = str(endpoint).rstrip("/")
+    if not endpoint.endswith("/v1") or not isinstance(key, str) or not key:
+        return None
+    return endpoint[:-3], {"Authorization": "Bearer " + key, "Accept": "application/json"}
+
+
+async def _json(response: httpx.Response, limit: int) -> Any:
+    parts, total = [], 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > limit:
+            raise ValueError("reply too large")
+        parts.append(chunk)
+    return json.loads(b"".join(parts))
+
+
+async def slot_state(client: httpx.AsyncClient, root: str, headers: dict, model: str, slot: int) -> str:
+    """'empty' (the slot holds no tokens: model just started, or erased), 'used', 'busy', or 'unavailable'."""
     try:
-        endpoint, key = connection_for(settings)
-        if provider_kind(settings) != "lan":
-            return {"performed": False, "reason": "not_local_server"}
-        endpoint = endpoint.rstrip("/")
-        if not endpoint.endswith("/v1") or not isinstance(key, str) or not key:
-            return {"performed": False, "reason": "endpoint"}
-        root = endpoint[:-3]
-        headers = {"Authorization": "Bearer " + key, "Accept": "application/json"}
-        async with httpx.AsyncClient(timeout=httpx.Timeout(4.0, connect=1.0),
-                                     trust_env=False, follow_redirects=False,
-                                     transport=transport) as client:
-            # More than one STAR client or worker can use this same server.
-            # A busy slot must never be saved/overwritten by a bank operation.
-            probe = await client.get(root + "/slots", params={"model": candidate.model}, headers=headers)
-            if probe.status_code != 200 or len(probe.content) > MAX_REPLY_BYTES:
-                return {"performed": False, "reason": "slots_unavailable"}
-            slots = probe.json()
-            if not isinstance(slots, list):
-                return {"performed": False, "reason": "slots_invalid"}
-            selected = next((row for row in slots if isinstance(row, dict)
-                             and type(row.get("id")) is int and row["id"] == candidate.slot), None)
-            if selected is None or selected.get("is_processing") is not False:
-                return {"performed": False, "reason": "slot_busy_or_unknown"}
+        async with client.stream("GET", root + "/slots", params={"model": model}, headers=headers) as reply:
+            if reply.status_code != 200:
+                return "unavailable"
+            rows = await _json(reply, MAX_SLOTS_REPLY_BYTES)
+    except (httpx.HTTPError, ValueError):
+        return "unavailable"
+    row = next((row for row in rows if isinstance(row, dict) and row.get("id") == slot), None) if isinstance(
+        rows, list) else None
+    if row is None:
+        return "unavailable"
+    if row.get("is_processing") is not False:
+        return "busy"
+    # n_prompt_tokens is the number of tokens the slot holds now (0 after an erase; absent before its first task)
+    return "used" if row.get("n_prompt_tokens") else "empty"
+
+
+async def render_prefix(client: httpx.AsyncClient, root: str, headers: dict, request: dict) -> str | None:
+    """The request's stable start as the server's template renders it, up to where the first user words begin."""
+    base = {"model": request["model"]}
+    if request.get("tools"):
+        base["tools"] = request["tools"]
+    kwargs = (request.get("extras") or {}).get("chat_template_kwargs")
+    if kwargs:
+        base["chat_template_kwargs"] = kwargs
+    texts = []
+    for word in _PLACEHOLDERS:
+        reply = await client.post(root + "/apply-template", headers=headers, json={
+            **base, "messages": [request["messages"][0], {"role": "user", "content": word}]})
+        if reply.status_code != 200:
+            return None
+        texts.append(str(reply.json().get("prompt") or ""))
+    n = _common_length(*texts)
+    if n == 0 or not texts[0][n:].startswith(_PLACEHOLDERS[0]) or not texts[1][n:].startswith(_PLACEHOLDERS[1]):
+        return None
+    return texts[0][:n]
+
+
+async def slot_action(client: httpx.AsyncClient, root: str, headers: dict, model: str, slot: int,
+                      action: str, filename: str) -> dict | None:
+    """POST /slots/{slot}?action=save|restore; {'tokens', 'bytes', 'ms'} from a verified receipt, else None."""
+    try:
+        async with client.stream("POST", root + f"/slots/{slot}", params={"action": action},
+                                 headers={**headers, "Content-Type": "application/json"},
+                                 json={"filename": filename, "model": model}) as reply:
+            if reply.status_code != 200:
+                return None
+            payload = await _json(reply, MAX_REPLY_BYTES)
+    except (httpx.HTTPError, ValueError):
+        return None
+    count = payload.get("n_saved" if action == "save" else "n_restored") if isinstance(payload, dict) else None
+    size = payload.get("n_written" if action == "save" else "n_read") if isinstance(payload, dict) else None
+    if (payload.get("id_slot") != slot or payload.get("filename") != filename
+            or type(count) is not int or not 0 < count <= 10_000_000
+            or type(size) is not int or not 0 < size <= MAX_SNAPSHOT_BYTES):
+        return None
+    took = (payload.get("timings") or {}).get("save_ms" if action == "save" else "restore_ms")
+    return {"tokens": count, "bytes": size, **({"ms": round(took, 1)} if isinstance(took, (int, float)) else {})}
+
+
+def _usable(settings, request: dict) -> tuple[str, int] | str:
+    """(model, slot) for a request a bank may serve, else why not."""
+    if provider_kind(settings) != "lan":
+        return "not_local_server"
+    messages = request.get("messages") if isinstance(request, dict) else None
+    if not isinstance(messages, list) or not messages or not isinstance(messages[0], dict) or (
+            messages[0].get("role") != "system"):
+        return "no_system"
+    model, extras = request.get("model"), request.get("extras")
+    if not isinstance(model, str) or not 1 <= len(model) <= 180 or not isinstance(extras, dict):
+        return "request"
+    slot = extras.get("id_slot")
+    slots = server_slots(settings, model)
+    if type(slot) is not int or not 2 <= slots <= 64 or not 0 <= slot < slots or extras.get("cache_prompt") is not True:
+        return "unpinned"
+    return model, slot
+
+
+async def _prepare(settings, home: Path, request: dict, transport, now) -> dict:
+    revision = os.environ.get(ENV_REVISION, "")
+    if not MODEL_REV.fullmatch(revision):
+        return {"bank": "skipped", "reason": "revision"}
+    usable = _usable(settings, request)
+    if isinstance(usable, str):
+        return {"bank": "skipped", "reason": usable}
+    model, slot = usable
+    connection = _connection(settings)
+    if connection is None:
+        return {"bank": "skipped", "reason": "endpoint"}
+    root, headers = connection
+    async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=2.0), trust_env=False,
+                                 follow_redirects=False, transport=transport) as client:
+        state = await slot_state(client, root, headers, model, slot)
+        if state != "empty":
+            return {"bank": "skipped", "reason": "slot_" + state}
+        prefix = await render_prefix(client, root, headers, request)
+        if not prefix:
+            return {"bank": "skipped", "reason": "template"}
+        key = fingerprint(root, model, revision, prefix)
+        banks = _load(home)
+        known = banks.get(key)
+        if known is not None:
+            restored = await slot_action(client, root, headers, model, slot, "restore", known["file"])
+            if restored is not None:
+                banks[key] = {**known, "used": now}
+                _write(home, banks)
+                return {"bank": "restored", **restored}
+            del banks[key]   # gone or overwritten on the server: build it again
+        began = time.perf_counter()
+        reply = await client.post(root + "/v1/completions", headers=headers, json={
+            "model": model, "prompt": prefix, "max_tokens": 1, "temperature": 0,
+            "cache_prompt": True, "id_slot": slot})
+        if reply.status_code != 200:
+            return {"bank": "skipped", "reason": "prefill_failed"}
+        read_ms = int((time.perf_counter() - began) * 1000)
+        name = pick_file(home, banks)
+        saved = await slot_action(client, root, headers, model, slot, "save", name)
+        if saved is None:
+            return {"bank": "skipped", "reason": "save_failed", "read_ms": read_ms}
+        banks[key] = {"file": name, "used": now, "tokens": saved["tokens"], "bytes": saved["bytes"]}
+        _write(home, banks)
+        return {"bank": "saved", "read_ms": read_ms, **saved}
+
+
+async def prepare(settings, home: Path, request: dict, *, cancel_event=None, transport=None, now=None) -> dict:
+    """Before priming or sending `request`: restore its banked start into its slot, or read and bank it, when that
+    slot is empty. Never raises; returns a small nonsecret report ({'bank': 'restored'|'saved'|'skipped', ...})."""
+    if not enabled():
+        return {"bank": "skipped", "reason": "off"}
+    if cancel_event is not None and cancel_event.is_set():
+        return {"bank": "skipped", "reason": "cancelled"}
+    job = asyncio.ensure_future(_prepare(settings, home, request, transport, time.time() if now is None else now))
+    try:
+        while True:
+            done, _ = await asyncio.wait({job}, timeout=0.1)
+            if done:
+                return job.result()
             if cancel_event is not None and cancel_event.is_set():
-                return {"performed": False, "reason": "cancelled"}
-            async with client.stream("POST", root + f"/slots/{candidate.slot}",
-                                     params={"action": action, "model": candidate.model},
-                                     headers={**headers, "Content-Type": "application/json"},
-                                     json={"filename": candidate.filename}) as response:
-                if response.status_code != 200:
-                    return {"performed": False, "reason": "unsupported_or_missing"}
-                parts, total = [], 0
-                async for chunk in response.aiter_bytes():
-                    total += len(chunk)
-                    if total > MAX_REPLY_BYTES:
-                        return {"performed": False, "reason": "reply_too_large"}
-                    parts.append(chunk)
-                payload = json.loads(b"".join(parts))
-                key = "n_saved" if action == "save" else "n_restored"
-                byte_key = "n_written" if action == "save" else "n_read"
-                count, byte_count = payload.get(key), payload.get(byte_key)
-                if (type(payload.get("id_slot")) is not int or payload["id_slot"] != candidate.slot
-                        or payload.get("filename") != candidate.filename
-                        or type(count) is not int or count <= 0 or count > 10_000_000
-                        or type(byte_count) is not int or byte_count <= 0
-                        or byte_count > MAX_SNAPSHOT_BYTES):
-                    return {"performed": False, "reason": "invalid_receipt"}
-                return {"performed": True, "tokens": count, "bytes": byte_count}
-    except (httpx.HTTPError, OSError, ValueError, TypeError, KeyError):
-        return {"performed": False, "reason": "unavailable"}
-
-
-async def restore(settings, home: Path, candidate: BankPlan, *,
-                  transport=None, cancel_event=None, now=None) -> dict:
-    """Skip unknown/stale/incompatible banks; never guess whether a slot save exists."""
-    current = time.time() if now is None else now
-    if not _has_matching_receipt(home, candidate, now=current):
-        return {"performed": False, "reason": "not_cached"}
-    return await _post(settings, candidate, action="restore",
-                       transport=transport, cancel_event=cancel_event)
-
-
-async def save(settings, home: Path, candidate: BankPlan, *,
-               transport=None, cancel_event=None, now=None) -> dict:
-    """Call only after a successfully primed response, and record verified saves."""
-    result = await _post(settings, candidate, action="save",
-                         transport=transport, cancel_event=cancel_event)
-    if result.get("performed"):
-        try:
-            _record(home, candidate, now=time.time() if now is None else now,
-                    n_saved=result["tokens"])
-        except (OSError, PermissionError, ValueError):
-            return {"performed": False, "reason": "index_write_failed"}
-    return result
+                return {"bank": "skipped", "reason": "cancelled"}
+    except (httpx.HTTPError, OSError, PermissionError, ValueError, TypeError, KeyError, AttributeError):
+        return {"bank": "skipped", "reason": "unavailable"}
+    finally:
+        if not job.done():
+            job.cancel()   # closes the connection; the server stops after the batch it is reading
+            await asyncio.gather(job, return_exceptions=True)

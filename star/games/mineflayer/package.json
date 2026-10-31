@@ -1,0 +1,10 @@
+{
+  "name": "star-minecraft-client",
+  "private": true,
+  "description": "STAR's Minecraft client (Mineflayer), driven by star/games/minecraft.py",
+  "main": "bot.js",
+  "dependencies": {
+    "mineflayer": "^4.23.0",
+    "mineflayer-pathfinder": "^2.4.5"
+  }
+}

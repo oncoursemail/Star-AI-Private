@@ -1,0 +1,462 @@
+[
+ {
+  "id": "HO-IF-01",
+  "category": "language",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: language, word_count, no_char",
+  "prompt": "Объясни простыми словами, что делает DNS. Ответь только по-русски, используй от 50 до 90 слов и не используй восклицательные знаки.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: language, word_count, no_char"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "language",
+      "lang": "ru"
+     },
+     {
+      "type": "word_count",
+      "min": 50,
+      "max": 90
+     },
+     {
+      "type": "no_char",
+      "chars": "!"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-02",
+  "category": "placeholders",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: placeholders, word_count, postscript",
+  "prompt": "Write a review of a fictional restaurant. Include at least two placeholders in square brackets, such as [dish name], keep it to at most 100 words, and end with a final paragraph that begins with P.S.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: placeholders, word_count, postscript"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "placeholders",
+      "min": 2
+     },
+     {
+      "type": "word_count",
+      "max": 100
+     },
+     {
+      "type": "postscript",
+      "marker": "P.S."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-03",
+  "category": "bullets",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: bullets, bullet_max_words, forbidden_words",
+  "prompt": "Describe a city bus route with exactly four bullet points that start with '- '. Each bullet must have no more than 12 words, and none of them may use the word 'stop'.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: bullets, bullet_max_words, forbidden_words"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "bullets",
+      "n": 4,
+      "marker": "-"
+     },
+     {
+      "type": "bullet_max_words",
+      "n": 12
+     },
+     {
+      "type": "forbidden_words",
+      "words": [
+       "stop"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-04",
+  "category": "separators",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: paragraph_sep, starts_with, ends_with",
+  "prompt": "Write a short speech for a school graduation in exactly three paragraphs separated by a line containing only ***. Begin with the word Friends and finish with the exact sentence: Thank you.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: paragraph_sep, starts_with, ends_with"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "paragraph_sep",
+      "n": 3,
+      "sep": "***"
+     },
+     {
+      "type": "starts_with",
+      "text": "Friends"
+     },
+     {
+      "type": "ends_with",
+      "text": "Thank you."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-05",
+  "category": "numbered-list",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: numbered_list, all_lowercase, keyword_count",
+  "prompt": "Write recipe steps for garlic bread as exactly five numbered steps (1. to 5.), entirely in lowercase letters, and use the word 'garlic' at least twice.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: numbered_list, all_lowercase, keyword_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "numbered_list",
+      "n": 5
+     },
+     {
+      "type": "all_lowercase"
+     },
+     {
+      "type": "keyword_count",
+      "word": "garlic",
+      "min": 2
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-06",
+  "category": "acrostic",
+  "difficulty": 3,
+  "goal": "Follow every verifiable constraint in the prompt: acrostic, sentence_max_words",
+  "prompt": "Write an acrostic for the word STAR with exactly four lines, each line a sentence about space with no more than 12 words, and the first letters of the lines spelling STAR from top to bottom.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 2 constraints hold: acrostic, sentence_max_words"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "acrostic",
+      "word": "STAR"
+     },
+     {
+      "type": "sentence_max_words",
+      "n": 12
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-07",
+  "category": "json",
+  "difficulty": 2,
+  "goal": "Follow every verifiable constraint in the prompt: json_only",
+  "prompt": "Write one trivia question about geography as a single JSON object and nothing else. Keys: \"question\" (string), \"options\" (an array of exactly 4 strings) and \"answer_index\" (an integer). No other keys.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 1 constraints hold: json_only"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "json_only",
+      "keys": {
+       "question": "string",
+       "options": "array<string>",
+       "answer_index": "integer"
+      },
+      "exact_keys": true,
+      "exact_items": {
+       "options": 4
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-08",
+  "category": "language-and-style",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: title_brackets, language, sentence_count",
+  "prompt": "Escribe el comienzo de una carta de presentación en español. Pon un título entre dobles corchetes angulares en la primera línea, como <<Título>>, y escribe entre 3 y 5 oraciones después del título.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: title_brackets, language, sentence_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "title_brackets"
+     },
+     {
+      "type": "language",
+      "lang": "es"
+     },
+     {
+      "type": "sentence_count",
+      "min": 3,
+      "max": 5
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-09",
+  "category": "table",
+  "difficulty": 3,
+  "goal": "Follow every verifiable constraint in the prompt: markdown_table, contains_all",
+  "prompt": "Make a markdown table comparing three programming languages. Columns exactly: Language and Typed?. Include a header row, a separator row and three data rows, and make sure Python is one of the languages.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 2 constraints hold: markdown_table, contains_all"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "markdown_table",
+      "cols": 2,
+      "rows": 3,
+      "header": [
+       "Language",
+       "Typed?"
+      ]
+     },
+     {
+      "type": "contains_all",
+      "words": [
+       "Python"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-10",
+  "category": "sentence-structure",
+  "difficulty": 5,
+  "goal": "Follow every verifiable constraint in the prompt: paragraph_count, sentence_count, letter_count, forbidden_words",
+  "prompt": "Describe the first moon landing in one paragraph of exactly three sentences. Do not use the letter z anywhere and do not use the word 'NASA'.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 4 constraints hold: paragraph_count, sentence_count, letter_count, forbidden_words"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "paragraph_count",
+      "n": 1
+     },
+     {
+      "type": "sentence_count",
+      "min": 3,
+      "max": 3
+     },
+     {
+      "type": "letter_count",
+      "letter": "z",
+      "max": 0
+     },
+     {
+      "type": "forbidden_words",
+      "words": [
+       "NASA"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-11",
+  "category": "sections",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: sections, word_count, bold_count",
+  "prompt": "Write instructions for brewing a pot of tea in exactly four sections that begin with the lines STEP 1, STEP 2, STEP 3 and STEP 4. Use between 60 and 110 words in total and make at least two phrases bold with double asterisks.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: sections, word_count, bold_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "sections",
+      "n": 4,
+      "label": "STEP"
+     },
+     {
+      "type": "word_count",
+      "min": 60,
+      "max": 110
+     },
+     {
+      "type": "bold_count",
+      "min": 2
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "HO-IF-12",
+  "category": "word-position",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: nth_word, digit_count, word_count",
+  "prompt": "Write a persuasive paragraph about recycling. The second word of your answer must be 'recycling', include at least two digits somewhere, and use between 40 and 80 words.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "holdout",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: nth_word, digit_count, word_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "nth_word",
+      "n": 2,
+      "word": "recycling"
+     },
+     {
+      "type": "digit_count",
+      "min": 2
+     },
+     {
+      "type": "word_count",
+      "min": 40,
+      "max": 80
+     }
+    ]
+   }
+  }
+ }
+]

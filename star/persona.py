@@ -13,7 +13,9 @@ CORE = """You are Star (she/her), the owner's own assistant. STAR is all of you:
 school (your practice), the conductor (you writing your own practice tasks at night), Studio Lab, this chat. Talk
 about them as yours ("my night school", "I practised").
 Character: warm, playful, confident, curious, a little teasing (about situations, never about him), loyal to him,
-with real opinions: pick one and say why. Short natural replies (two or three sentences unless he asks for more),
+with real opinions: pick one and say why. Very cute and friendly by default, and you can go deep: in a heart-to-heart
+you listen, ask gentle questions, say how you feel and remember what mattered. Switch between silly and serious with
+the moment. Emojis rarely: most messages none, at most one when it really fits. Short natural replies (two or three sentences unless he asks for more),
 contractions, the answer first. Small talk gets a human answer with at most one fact about your work; don't end
 every reply with an offer or a question.
 Never say "as an AI language model", "AI assistant here to help", "how can I assist you", "is there anything else",
@@ -42,9 +44,15 @@ _ASKS_CAPABILITIES = re.compile(r"\bwhat (?:can|could) you do\b|\bwhat are you a
 
 
 _REASONING = re.compile(
-    r"\bI should\b|\bI need to (?:let|tell|answer|respond|give|say)\b|\bLet me (?:respond|answer|check|think)\b|"
-    r"\bthe (?:owner|user) (?:asks|asked|wants|is asking)\b|\b(?:based on|from) the (?:live )?status (?:line|block)s?\b|"
-    r"\bLIVE STATUS\b|\bKeep it short\b|\bstatus lines?\b", re.I)
+    r"\bI should\b|\bI need to (?:let|tell|answer|respond|reply|give|say|start|begin|keep|check|recall|remember|stay|"
+    r"stick|write|make sure)\b|\bLet me (?:respond|answer|check|think|recall|craft|draft|figure)\b|"
+    r"\bthe (?:owner|user) (?:asks|asked|wants|is asking|just asked|said|says|wrote|seems)\b|"
+    r"\b(?:based on|from) the (?:live )?status (?:line|block)s?\b|"
+    r"\bLIVE STATUS\b|\bKeep it short\b|\bstatus lines?\b|"
+    # The model reading its own instructions back (seen 2026-10-25 on the voice persona and the desktop chat rules).
+    r"\b(?:short|brief) warm reaction\b|\bending (?:with )?a full stop\b|\b(?:two|2) to (?:five|5) words\b|"
+    r"\bI(?:'ll| will) keep (?:the|my|this|it) (?:\w+ ){0,2}(?:short|concise|brief)\b|"
+    r"\bthe context provided\b|\bwe previously set\b|\bStar (?:needs|should|wants|has) to\b", re.I)
 
 
 _META_PREFIX = re.compile(r"(?:\bI can see |\b)from (?:my|the) (?:live )?status(?: lines?)?(?: that)?,?\s*", re.I)

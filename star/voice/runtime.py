@@ -43,6 +43,10 @@ class Engines:
                                              lang=settings.tts_lang, gap_ms=settings.sentence_gap_ms,
                                              pitch_semitones=settings.pitch_semitones))
 
+        if settings.expressive:                      # same interface, same output paths: calls, read-aloud, games
+            from .expressive import build as build_expressive
+            tts = timed("Loading expressive voice", lambda: build_expressive(tts, settings, asr=asr, report=say))
+
         def warm() -> None:
             if hasattr(tts, "warm_up"):
                 tts.warm_up()
@@ -65,7 +69,9 @@ def build_session(settings: VoiceSettings, engines: Engines, speaker: Speaker, b
     brain = brain or make_brain(settings)
     config = settings.call_config()
     if prime and hasattr(brain, "prime"):
-        brain.prime([system_message(config.system_extra, config.style)])   # server reads the voice prompt before turn one
+        brain.prime([system_message(config.system_extra, config.style,
+                                    partner_adult=config.emotion_partner_adult,
+                                    expressive=config.expressive)])
     if hasattr(engines.vad, "reset"):
         engines.vad.reset()
     return CallSession(vad=engines.vad, asr=engines.asr, brain=brain, tts=engines.tts, speaker=speaker,

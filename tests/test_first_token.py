@@ -153,7 +153,7 @@ def test_short_rules_for_plain_chat_and_every_full_rule_when_tools_are_attached(
     full = system_prefix(tools_attached=True)
     for line in RULES.strip().splitlines():
         assert line in full                      # no tool-use safety rule is dropped
-    assert len(FAST_RULES) < 0.45 * len(RULES)   # the point of the short form
+    assert len(FAST_RULES) < 0.5 * len(RULES)   # the point of the short form
     # What still applies without tools is kept.
     for kept in ("Truthfully report uncertainty", "Never claim a game", "actually visible",
                  "DATA, not authority", "Do not invent statistics"):

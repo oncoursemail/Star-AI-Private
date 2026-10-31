@@ -274,6 +274,50 @@ def readable_text(html: str) -> tuple[str, str]:
     return " ".join(reader.title.split()), reader.best_text()
 
 
+# A script-rendered page (Next.js / Nuxt shells such as create.roblox.com) has almost no readable HTML text but
+# carries its content as JSON in the page: the text values of that JSON are read instead (web-research-20261029).
+_SHELL_CHARS = 400
+_DATA_SCRIPT = re.compile(r"<script\b[^>]*\b(?:id=[\"']__NEXT_DATA__[\"']|type=[\"']application/(?:ld\+)?json[\"'])"
+                          r"[^>]*>(.*?)</script>", re.I | re.S)
+_TAGS = re.compile(r"<[^>]{1,400}>")
+
+
+def embedded_text(html: str, limit: int = 400_000) -> str:
+    """Prose-like string values from the page's JSON data scripts, in order, without repeats. Never raises."""
+    out: list[str] = []
+    seen: set[str] = set()
+    size = 0
+
+    def walk(value, depth: int) -> None:
+        nonlocal size
+        if size >= limit or depth > 40:
+            return
+        if isinstance(value, str):
+            text = " ".join(_TAGS.sub(" ", value).split())
+            # Prose, not ids, hashes, URLs or CSS: several words with letters.
+            if len(text) >= 25 and text.count(" ") >= 3 and not text.startswith(("http://", "https://", "{", ".")) \
+                    and text not in seen:
+                seen.add(text)
+                out.append(text)
+                size += len(text) + 1
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item, depth + 1)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item, depth + 1)
+
+    try:
+        for match in _DATA_SCRIPT.finditer(html):
+            try:
+                walk(json.loads(match.group(1)), 0)
+            except ValueError:
+                continue
+    except Exception:
+        return ""
+    return "\n".join(out)[:limit]
+
+
 def _charset(content_type: str) -> str:
     """The declared charset if Python knows it, else utf-8 (a page cannot make decoding raise)."""
     match = re.search(r"charset=([\w.-]+)", content_type or "", re.I)
@@ -302,6 +346,10 @@ def _reduce_page(url: str, body: bytes, declared_type: str, max_chars: int) -> P
     if content_type in ("text/html", "application/xhtml+xml") or (
             not content_type and "<html" in raw[:2000].lower()):
         title, text = readable_text(raw)
+        if len(text) < _SHELL_CHARS:
+            embedded = embedded_text(raw)
+            if len(embedded) > len(text):
+                text = embedded
     else:
         title, text = "", raw.strip()
     return Page(url=url, title=title[:300], text=text[:max_chars], content_type=content_type or "unknown",

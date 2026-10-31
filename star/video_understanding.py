@@ -80,6 +80,7 @@ class Evidence:
     audio_note: str = ''                # why there is no transcript, when there is none
     asr: str = ''                       # recogniser and where it ran, e.g. "small.en on cuda"
     timings: dict = field(default_factory=dict)
+    frame_sampling: str = 'uniform'      # facts about sampling, never an accuracy claim
 
     def transcript_text(self) -> str:
         text = '\n'.join(f'[{clock(start)}] {line}' for start, line in self.transcript)
@@ -103,21 +104,87 @@ def probe(path: Path, ffprobe: str) -> dict:
             'has_audio': any(s.get('codec_type') == 'audio' for s in streams)}
 
 
-def sample_frames(path: Path, destination: Path, count: int, duration: float, ffmpeg: str) -> tuple[list[Path], list[float]]:
+def sample_frames(path: Path, destination: Path, count: int, duration: float, ffmpeg: str, *,
+                  cancelled: Callable[[], bool] | None = None) -> tuple[list[Path], list[float]]:
     destination.mkdir(parents=True, exist_ok=True)
+    for old_index in range(1, MAX_FRAMES + 1):
+        (destination / f'frame_{old_index:02}.jpg').unlink(missing_ok=True)
     frames, times = [], []
     for index in range(count):
+        if cancelled is not None and cancelled():
+            raise RuntimeError('STAR task cancelled by user')
         at = duration * (index + 0.5) / count
         out = destination / f'frame_{index + 1:02}.jpg'
+        out.unlink(missing_ok=True)  # never mistake a previous turn's frame for this video
         _run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-ss', f'{at:.3f}', '-i', str(path),
               '-frames:v', '1', '-vf',
               f'scale={FRAME_SIDE}:{FRAME_SIDE}:force_original_aspect_ratio=decrease', '-q:v', '3',
               '-y', str(out)], 60)
+        if cancelled is not None and cancelled():
+            raise RuntimeError('STAR task cancelled by user')
         if out.is_file() and out.stat().st_size:
             frames.append(out)
             times.append(round(at, 1))
     if not frames:
         raise VideoError('FFmpeg could not decode any frame of this video.')
+    return frames, times
+
+
+def adaptive_frames(path: Path, destination: Path, count: int, duration: float, ffmpeg: str, *,
+                    cancelled: Callable[[], bool] | None = None) -> tuple[list[Path], list[float]]:
+    """Screen 3 tiny thumbnails per window, decode only representative frames at full size.
+
+    The model sees no more than count images; nearly unchanged windows may produce
+    fewer. No transcription, semantics or events between the samples are inferred.
+    Uniform sampling remains the default and is the fallback when previews fail.
+    """
+    import tempfile
+    from .video_sampling import candidate_times, inspect_candidate, choose_keyframes
+
+    destination.mkdir(parents=True, exist_ok=True)
+    for old_index in range(1, MAX_FRAMES + 1):
+        (destination / f'frame_{old_index:02}.jpg').unlink(missing_ok=True)
+    previews = []
+    with tempfile.TemporaryDirectory(prefix='star-keyframes-', dir=destination) as folder:
+        folder_path = Path(folder)
+        for index, (window, second) in enumerate(candidate_times(duration, count)):
+            if cancelled is not None and cancelled():
+                raise RuntimeError('STAR task cancelled by user')
+            thumbnail = folder_path / f'candidate_{index:02}.jpg'
+            _run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-ss', f'{second:.3f}',
+                  '-i', str(path), '-frames:v', '1',
+                  '-vf', 'scale=160:160:force_original_aspect_ratio=decrease',
+                  '-q:v', '8', '-y', str(thumbnail)], 25)
+            if cancelled is not None and cancelled():
+                raise RuntimeError('STAR task cancelled by user')
+            if thumbnail.is_file() and thumbnail.stat().st_size:
+                try:
+                    previews.append(inspect_candidate(window, second, thumbnail))
+                except (OSError, ValueError):
+                    continue  # corrupt preview is not evidence
+        if len({preview.window for preview in previews}) < max(1, count // 2):
+            return sample_frames(path, destination, count, duration, ffmpeg, cancelled=cancelled)
+        picks = choose_keyframes(previews, count)
+        if not picks:
+            return sample_frames(path, destination, count, duration, ffmpeg, cancelled=cancelled)
+        frames, times = [], []
+        for candidate in picks:
+            if cancelled is not None and cancelled():
+                raise RuntimeError('STAR task cancelled by user')
+            out = destination / f'frame_{len(frames) + 1:02}.jpg'
+            out.unlink(missing_ok=True)
+            _run([ffmpeg, '-hide_banner', '-loglevel', 'error', '-ss', f'{candidate.second:.3f}',
+                  '-i', str(path), '-frames:v', '1', '-vf',
+                  f'scale={FRAME_SIDE}:{FRAME_SIDE}:force_original_aspect_ratio=decrease',
+                  '-q:v', '3', '-y', str(out)], 60)
+            if cancelled is not None and cancelled():
+                raise RuntimeError('STAR task cancelled by user')
+            if out.is_file() and out.stat().st_size:
+                frames.append(out)
+                times.append(round(candidate.second, 1))
+    if not frames:
+        # Failed full-size extraction should not turn preview bytes into evidence.
+        return sample_frames(path, destination, count, duration, ffmpeg, cancelled=cancelled)
     return frames, times
 
 
@@ -154,7 +221,7 @@ def transcribe(wav: Path, asr, *, cancelled: Callable[[], bool] | None = None) -
 
 
 def prepare(path: Path, workdir: Path, *, frames: int = 4, ffmpeg_dir: str = '', asr=None,
-            cancelled: Callable[[], bool] | None = None) -> Evidence:
+            cancelled: Callable[[], bool] | None = None, frame_sampling: str = 'uniform') -> Evidence:
     """Open a local video and collect what the model will be given. Raises VideoError with the reason."""
     import time
     path = Path(path).expanduser().resolve(strict=True)
@@ -162,16 +229,21 @@ def prepare(path: Path, workdir: Path, *, frames: int = 4, ffmpeg_dir: str = '',
         raise VideoError('Unsupported video type. Use MP4, MOV, MKV, WebM or AVI.')
     if path.stat().st_size > MAX_BYTES:
         raise VideoError('This video is larger than 700 MB.')
-    if not 1 <= frames <= MAX_FRAMES:
+    if type(frames) is not int or not 1 <= frames <= MAX_FRAMES:
         raise ValueError(f'Use 1-{MAX_FRAMES} frames')
+    if frame_sampling not in ('uniform', 'adaptive'):
+        raise ValueError('Video frame sampling must be uniform or adaptive')
     ffmpeg, ffprobe = ffmpeg_tools(ffmpeg_dir)
     facts = probe(path, ffprobe)
     if not 0 < facts['duration'] <= MAX_DURATION:
         raise VideoError('Video length is outside the supported range (up to 90 minutes).')
     evidence = Evidence(name=path.name, duration=facts['duration'], width=facts['width'],
                         height=facts['height'], has_audio=facts['has_audio'])
+    evidence.frame_sampling = frame_sampling
     started = time.monotonic()
-    evidence.frames, evidence.times = sample_frames(path, workdir / 'frames', frames, facts['duration'], ffmpeg)
+    sampler = adaptive_frames if frame_sampling == 'adaptive' else sample_frames
+    evidence.frames, evidence.times = sampler(path, workdir / 'frames', frames, facts['duration'], ffmpeg,
+                                             cancelled=cancelled)
     evidence.timings['frames_seconds'] = round(time.monotonic() - started, 2)
     if not facts['has_audio']:
         evidence.audio_note = 'The file has no sound track.'
@@ -205,6 +277,10 @@ def evidence_text(evidence: Evidence) -> str:
              f'You are given {count} still frame{"s" if count != 1 else ""} sampled at '
              + ', '.join(clock(t) for t in evidence.times)
              + ' (attached as images, in that order). You have NOT seen what happens between them.']
+    if evidence.frame_sampling == 'adaptive':
+        parts.append('Adaptive screening considered low-resolution thumbnail candidates; uniform spacing '
+                     'may be used as a fallback if previews cannot be decoded. Neither method establishes '
+                     'which moments matter.')
     if evidence.transcript:
         covered = min(evidence.audio_seconds, evidence.duration)
         parts.append(f'Machine transcript of the first {clock(covered)} of the sound '

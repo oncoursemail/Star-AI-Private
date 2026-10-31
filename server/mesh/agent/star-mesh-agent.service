@@ -1,0 +1,34 @@
+[Unit]
+Description=STAR Litha agent mode (server/mesh/agent): litha-agent on 127.0.0.1:8104, sibling of star-mesh
+After=network-online.target star-mesh.service star-mesh-verify.service
+Wants=network-online.target
+
+[Service]
+User=starmesh
+Group=starmesh
+Environment=PYTHONPATH=/opt/star-agent/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=STAR_AGENT_CONFIG=/etc/star-agent/agent.json
+WorkingDirectory=/opt/star-agent
+ExecStart=/usr/bin/python3 -m mesh.agent.service
+Restart=always
+RestartSec=2
+Nice=5
+MemoryMax=150M
+TasksMax=64
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

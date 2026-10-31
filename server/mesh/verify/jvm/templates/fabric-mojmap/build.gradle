@@ -1,0 +1,19 @@
+// Fabric mod template (official fabric-example-mod layout, 1.21.11, server+client in one source set)
+// `gradle cpOut` copies the named (remapped) compile classpath to /opt/mcp/cp/fabric-mojmap; `gradle remapJar` builds the mod
+plugins { id 'net.fabricmc.fabric-loom-remap' version '1.19.3' }
+version = '1.0.0'
+group = 'com.example'
+base { archivesName = 'testmod' }
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.11'
+    mappings loom.officialMojangMappings()
+    modImplementation 'net.fabricmc:fabric-loader:0.20.1'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.141.6+1.21.11'
+}
+java { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
+tasks.withType(JavaCompile).configureEach { it.options.release = 21 }
+tasks.register('cpOut', Copy) { from(sourceSets.main.compileClasspath); into('/opt/mcp/cp/fabric-mojmap') }
+processResources {      // as the official template: ${version} in fabric.mod.json
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand 'version': project.version }
+}

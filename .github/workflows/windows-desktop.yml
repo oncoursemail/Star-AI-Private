@@ -97,7 +97,7 @@ jobs:
         with:
           persist-credentials: false
       # No `cache: pip`: restoring it downloaded a 526 MB archive (~30 s) that the base venv makes useless.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
       # main (release) and requested previews: clean install, clean build, maximum compression.
@@ -197,7 +197,7 @@ jobs:
           } | ConvertTo-Json -Compress
           [System.IO.File]::WriteAllText('star/build-info.json', $payload, (New-Object System.Text.UTF8Encoding $false))
       # No `cache: pip`: restoring it downloaded a 526 MB archive (~30 s) that the base venv makes useless.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
       # main (release) and requested previews: clean install, clean build, maximum compression.
@@ -290,7 +290,7 @@ jobs:
           } else { '-m', 'PyInstaller' }
           python @pyinstaller --noconfirm --clean --onedir --windowed --name STAR `
             --icon assets/star.ico `
-            --add-data 'frontend/dist;frontend/dist' --add-data 'star/build-info.json;star' --add-data 'star/skill_packs;star/skill_packs' --add-data 'star/data;star/data' --add-data 'star/studio_lab_specs;star/studio_lab_specs' --add-data 'star/player_twins/luau;star/player_twins/luau' --add-data 'star/player_twins/games;star/player_twins/games' --add-data 'star/voice/voices.json;star/voice' --add-data 'star/blender_worker.py;star' --add-data 'star/blender_animation_worker.py;star' `
+            --add-data 'frontend/dist;frontend/dist' --add-data 'star/build-info.json;star' --add-data 'star/skill_packs;star/skill_packs' --add-data 'star/data;star/data' --add-data 'star/studio_lab_specs;star/studio_lab_specs' --add-data 'star/player_twins/luau;star/player_twins/luau' --add-data 'star/player_twins/games;star/player_twins/games' --add-data 'star/voice/voices.json;star/voice' --add-data 'star/games/mineflayer/bot.js;star/games/mineflayer' --add-data 'star/games/mineflayer/package.json;star/games/mineflayer' --add-data 'star/play/minecraft/skill_runner.js;star/play/minecraft' --add-data 'star/blender_worker.py;star' --add-data 'star/blender_animation_worker.py;star' `
             --hidden-import PySide6.QtWebEngineWidgets --hidden-import PySide6.QtWebChannel `
             --hidden-import mcp.client.session --hidden-import mcp.client.stdio `
             --hidden-import mcp.types --collect-all faster_whisper `
@@ -468,7 +468,7 @@ jobs:
       attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
       - name: Download tested Windows packages

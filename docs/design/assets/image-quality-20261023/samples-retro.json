@@ -1,0 +1,8 @@
+{
+ "retro": {
+  "before_s": 22.6,
+  "after_s": 310.2,
+  "answer": "Image generated on this PC in 310.1 s \u00b7 Z-Image Turbo (bf16), 1280 x 720, seed 4244 \u00b7 prompt expanded by STAR \u00b7 5 drafts judged blind, #3 picked (anatomy ok, prompt match 2/3, all drafts failed the judge, best one kept) \u00b7 one repair round \u00b7 text drawn by STAR: \"SCORE 0420\", \"LIVES 3\" (exact letters) \u00b7 original saved in STAR/generated-images",
+  "rewritten": "A retro 8-bit video game screenshot featuring a pixelated hero character standing on a grassy platform. The hero holds a sword and faces right. The background shows a dark blue sky with pixelated clouds and distant mountains. The scene is framed as a standard arcade game view. The top portion of the screen is reserved for the user interface, remaining clear of gameplay elements to accommodate the score and lives display. The lighting is flat and consistent with classic 8-bit graphics."
+ }
+}

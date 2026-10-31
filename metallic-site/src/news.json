@@ -1,0 +1,16 @@
+{
+ "posts": [
+  {
+   "date": "2026-10-26",
+   "slug": "signed-updates",
+   "title": "How Metallic updates itself",
+   "body": "The launcher gets updates from a release channel: one signed file that lists every file in the new version and its checksum. The launcher checks the signature first, downloads only the files that changed, checks each one again, and installs the new version next to the old one. If the new version cannot start, it switches back by itself. There are two channels: stable, and beta for early builds.\n\nNothing is published yet. This is how it will work when the first build goes out."
+  },
+  {
+   "date": "2026-10-26",
+   "slug": "reading-progress",
+   "title": "What \"tested\" means on the progress page",
+   "body": "Every item on the progress page has one of five states. Planned means it is written down. Implemented means the code exists. Tested means our own checks passed. Accepted means a person confirmed it works in a real run. Released means you can download it.\n\nWe do not turn ticket counts into a percentage, because closing tickets is not the same as finishing a game. Each item also shows the date we last confirmed its state."
+  }
+ ]
+}

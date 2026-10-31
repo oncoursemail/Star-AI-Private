@@ -87,6 +87,10 @@ AGENTS: tuple[AgentSpec, ...] = (
     _spec("pi", "Pi coding agent", "coding_agent", "rpc", "bring_your_own_model",
           "code review", "https://github.com/badlogic/pi-mono",
           "JSONL RPC and SDK; extensions can run arbitrary code if installed."),
+    _spec("omp", "Oh My Pi (OMP)", "coding_agent", "rpc", "bring_your_own_model",
+          "code review research mcp", "https://github.com/can1357/oh-my-pi",
+          "Optional Python RPC client; LSP/DAP and edits need installed adapters and scoped execution. "
+          "Catalog entry is not an installed worker or a free model entitlement."),
     _spec("swe_agent", "SWE-agent", "coding_agent", "cli", "bring_your_own_model",
           "code review", "https://github.com/SWE-agent/SWE-agent",
           "Research/software-repair agent; assess isolation and licensing per revision."),

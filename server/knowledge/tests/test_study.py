@@ -200,8 +200,19 @@ def test_mode_names():
     assert parse_mode("vector+q+fallback") == ("vector", {"fallback": True, "questions": True, "facets": False})
     assert parse_mode("hybrid+rerank") == ("hybrid+rerank", {"fallback": False, "questions": False, "facets": False})
     assert parse_mode("vector+f")[1]["facets"] is True and parse_mode("bm25+frrf")[1]["facet_merge"] == "rrf"
+    assert parse_mode("hybrid+lw0.3+rr")[1] == {"fallback": False, "questions": False, "facets": False,
+                                                "remote_rerank_n": 10, "lexical_weight": 0.3}
     with pytest.raises(ValueError):
         parse_mode("bm25+magic")
+    with pytest.raises(ValueError):
+        parse_mode("hybrid+lwx")
+
+
+def test_weighted_rrf_lets_the_vector_list_win_ties():
+    lexical, dense = [(1, 9.0), (2, 8.0)], [(2, 0.9), (1, 0.8)]
+    assert search.Searcher.rrf(lexical, dense)[0][1] == search.Searcher.rrf(dense, lexical)[0][1]   # plain RRF: a tie
+    assert [cid for cid, _ in search.Searcher.rrf(lexical, dense, weights=(0.1, 1.0))] == [2, 1]
+    assert [cid for cid, _ in search.Searcher.rrf(lexical, dense, weights=(1.0, 0.1))] == [1, 2]
 
 
 def test_long_prompts_are_also_searched_sentence_by_sentence(tmp_path):

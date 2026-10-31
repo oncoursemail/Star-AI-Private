@@ -131,6 +131,35 @@ def test_actions_are_looked_up_never_built_from_text():
     assert gate.action_command("restart:star-brain", CFG) is None
     assert gate.action_command("runner-start:github", CFG) is None
     assert gate.action_command("ns-pause; rm -rf /", CFG) is None
+    assert gate.action_command("litha-brain:off", CFG) is None
+    on = {**CFG, "actions": ["litha-brain:on", "litha-brain:off"]}
+    helper = str(GATE.with_name("litha_brain.py"))
+    assert gate.action_command("litha-brain:off", on) == ["/usr/bin/python3", helper, "off"]
+    assert gate.action_command("litha-brain:on", on) == ["/usr/bin/python3", helper, "on"]
+
+
+def test_litha_brain_switches_router_and_model_in_a_safe_order(monkeypatch, capsys):
+    spec = importlib.util.spec_from_file_location("litha_brain", GATE.with_name("litha_brain.py"))
+    lb = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lb)
+    ran = []
+
+    def fake_run(container, args, timeout=130):
+        ran.append((container, args[-1] if args[0] == "python3" else " ".join(args)))
+        out = {lb.MESH: "off\n", lb.BRAIN: "unloaded\n"}.get(container, "") if args[0] == "python3" else ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+    monkeypatch.setattr(lb, "_run", fake_run)
+    assert lb.main("off") == 0
+    # router first (no request reloads the model), then the unload
+    assert ran == [(lb.MESH, "off"), (lb.MESH, "systemctl restart star-mesh"), (lb.BRAIN, "off")]
+    assert json.loads(capsys.readouterr().out) == {
+        "ok": True, "text": "litha-26b on brain 1: unloaded; router brain fallback: off"}
+    ran.clear()
+    assert lb.main("on") == 0
+    assert ran == [(lb.BRAIN, "on"), (lb.MESH, "on"), (lb.MESH, "systemctl restart star-mesh")]
+    capsys.readouterr()
+    assert lb.main("rm") == 2 and not json.loads(capsys.readouterr().out)["ok"]
 
 
 def test_act_and_main_refuse_without_running_anything(monkeypatch, capsys):

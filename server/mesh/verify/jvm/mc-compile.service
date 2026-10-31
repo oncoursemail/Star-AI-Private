@@ -1,0 +1,16 @@
+# Warm javac service for Minecraft plugin/mod answers, inside the throwaway mc-plugins LXD container (not star-mesh)
+[Unit]
+Description=STAR mc-plugins warm javac (CompileServer)
+After=network-online.target
+
+[Service]
+User=mcp
+WorkingDirectory=/opt/mcp/svc
+ExecStart=/usr/lib/jvm/java-21-openjdk-amd64/bin/java -Xms512m -Xmx3g -XX:+UseSerialGC -XX:TieredStopAtLevel=4 -cp /opt/mcp/svc/classes:/opt/mcp/svc/gson.jar CompileServer --port 8105 --token-file /opt/mcp/token --cp-root /opt/mcp/cp --deprecations /opt/mcp/index/deprecations.json
+Restart=on-failure
+RestartSec=5
+Nice=5
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

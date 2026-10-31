@@ -76,7 +76,7 @@ describe('model fleet settings',()=>{
   render(<App/>)
   await screen.findByRole('textbox',{name:/message star/i})
   await user.click(screen.getByRole('button',{name:/^settings/i}))
-  await user.click(await screen.findByRole('tab',{name:'Model'}))
+  await user.click(await screen.findByRole('tab',{name:'Advanced'}))
   const fleet=within(await screen.findByRole('region',{name:'STAR model fleet'}))
   fireEvent.change(fleet.getByRole('combobox',{name:'Fast answers'}),{target:{value:'fast-specialist'}})
   await user.click(screen.getByRole('button',{name:'Save settings'}))

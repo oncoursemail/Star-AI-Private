@@ -57,7 +57,7 @@ PRODUCT_FAILURES = ("Model-call limit exceeded", "streamed no visible answer", "
 LOCK_LIMIT_SECONDS = 3 * 3600
 _PRIVATE_IP = re.compile(r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b")
 _KEEP_EVENTS = {"route_selected", "knowledge_finished", "luau_check_finished", "skill_packs", "api_hints",
-                "slop_repair"}
+                "slop_repair", "verify_finished"}
 
 
 def _lf(data):
@@ -178,10 +178,13 @@ def summarize(tasks: dict) -> dict:
                if slops else {})}
 
 
+GRADER_FILES = ("eval_checks.py", "eval_runner.py", "eval_sandbox.py", "knowledge_checks.py")
+
+
 def grader_sha256(root: Path = ROOT) -> str:
     """Fingerprint code that computes grades, not just the answers being rescored."""
     digest = hashlib.sha256()
-    for name in ("eval_checks.py", "eval_runner.py", "eval_sandbox.py"):
+    for name in GRADER_FILES:
         path = root / "star" / name
         digest.update(name.encode("utf-8") + b"\\0")
         digest.update(_lf(path.read_bytes()))
@@ -501,7 +504,9 @@ class PlannedSandbox:
         return self.default.lock_present(*args, **kwargs)
 
 
-_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check"})
+_SETTABLE = frozenset({"api_hints_enabled", "luau_retry_ladder", "slop_check", "prefill_while_typing", "fixed_roblox_tools",
+                       "verify_ladder", "verify_rounds", "verify_budget_s", "verify_retry", "mistake_memory",
+                       "thinking_budget"})
 
 
 def parse_sets(pairs: list[str]) -> dict:
@@ -513,7 +518,7 @@ def parse_sets(pairs: list[str]) -> dict:
         name, value = name.strip(), value.strip()
         if not sep or name not in _SETTABLE:
             raise SystemExit(f"--set {pair!r}: expected NAME=VALUE with NAME one of {', '.join(sorted(_SETTABLE))}")
-        out[name] = {"true": True, "false": False}.get(value.lower(), value)
+        out[name] = int(value) if value.isdigit() else {"true": True, "false": False}.get(value.lower(), value)
     return out
 
 
@@ -548,6 +553,10 @@ def build_real(args, log=print):
     # The Luau VM runs (sandbox) may go to another STAR container (brain 2: CPU work off the model machine); the
     # quiet-lock probe always asks brain 1.
     sandbox_ssh = getattr(args, "sandbox_ssh", "") or os.environ.get("STAR_EVAL_SANDBOX_SSH", "") or ssh
+    # Python / JavaScript tasks run in the star-judge container (no network) on the host that has it.
+    judge_ssh = getattr(args, "judge_ssh", "") or os.environ.get("STAR_EVAL_JUDGE_SSH", "")
+    from .eval_sandbox import JudgeSandbox
+    judge = JudgeSandbox(judge_ssh) if judge_ssh else None
     sandbox = ContainerSandbox(sandbox_ssh) if sandbox_ssh else None
     lock_box = ContainerSandbox(ssh) if ssh else None
     if sandbox is not None and lock_box is not None and sandbox_ssh != ssh:
@@ -578,7 +587,7 @@ def build_real(args, log=print):
 
     def scorer(task: dict, answer: str) -> checks.TaskScore:
         return checks.score_answer(task, answer, luau_check=luau_check, sandbox=sandbox,
-                                   prelude=suite.prelude, test_body=suite.test_body(task))
+                                   prelude=suite.prelude, test_body=suite.test_body(task), judge=judge)
 
     served = served_models(server, key)
     fingerprint_source = {"mode": args.mode, "model": args.model, "packs": args.packs, "provider": "star_server",
@@ -595,7 +604,8 @@ def build_real(args, log=print):
     }
     probe = lock_box.lock_present if lock_box else None
     return run_info, ask, scorer, probe, [key, server, ssh, ssh.split("@")[-1] if ssh else "",
-                                          sandbox_ssh, sandbox_ssh.split("@")[-1] if sandbox_ssh else ""]
+                                          sandbox_ssh, sandbox_ssh.split("@")[-1] if sandbox_ssh else "",
+                                          judge_ssh, judge_ssh.split("@")[-1] if judge_ssh else ""]
 
 
 def rescore(suite: Suite, result: dict, scorer, *, log=print) -> dict:
@@ -696,6 +706,8 @@ def add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ssh", default="", help="user@host of the server's LXD host (or STAR_EVAL_SSH)")
     parser.add_argument("--sandbox-ssh", default="", help="user@host whose STAR container runs the Luau VM checks "
                         "(or STAR_EVAL_SANDBOX_SSH; default: --ssh). Brain 2 takes this CPU work off the model machine")
+    parser.add_argument("--judge-ssh", default="", help="user@host whose star-judge container runs Python/JavaScript "
+                        "task tests (or STAR_EVAL_JUDGE_SSH)")
     parser.add_argument("--key-file", default=str(DEFAULT_KEY_FILE))
     parser.add_argument("--model", default="star-fast")
     parser.add_argument("--mode", default="auto", choices=["auto", "fast", "agent"])

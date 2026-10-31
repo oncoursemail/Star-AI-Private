@@ -116,6 +116,7 @@ class IdleGate:
         self.settings, self.watch, self._log, self._clock, self._sleep = settings, watch, log, clock, sleep
         self._last: dict | None = None          # the newest snapshot
         self._quiet_since: float | None = None  # start of the current quiet period
+        self.signs: list[str] = []              # the busy "model/slot"s of the newest look
         self._said = ""
         self._said_at = -1e9
 
@@ -135,6 +136,7 @@ class IdleGate:
     def look(self) -> str:
         """One look. "" when nothing speaks against working now, else the reason. Updates the quiet timer."""
         now = self._clock()
+        self.signs = []
         if Path(self.settings.hold_file).exists():
             self._quiet_since = None
             return "HOLD file present, paused"
@@ -150,6 +152,7 @@ class IdleGate:
         # worker's checks) are not somebody using the brain; every chat turn also shows on a chat model's slot.
         signs = activity(self._last if self._last is not None else {}, table, skip_helpers=True)
         self._last = table
+        self.signs = sorted(signs)[:4]         # who made the brain busy, for a log line that names it
         if signs:
             self._quiet_since = None
             return "brain busy, waiting"
@@ -293,6 +296,44 @@ class PlannedGate(IdleGate):
 
     def close(self) -> None:
         self._drop()
+
+
+class PriorityGate(IdleGate):
+    """For a brain URL behind STAR's priority proxy: the proxy pauses night school's generation when the owner needs
+    the slot and resumes it afterwards, so other clients are no reason to wait or to cancel. HOLD and the quiet lock
+    still are. When the proxy does not answer /priority/v1/status (looked at once a minute), this is the idle gate."""
+
+    def __init__(self, settings, watch: BrainWatch, *, recheck_s: float = 60.0, **kwargs):
+        super().__init__(settings, watch, **kwargs)
+        self._recheck_s, self._proxy_at, self._proxy = recheck_s, -1e18, False
+
+    def proxied(self) -> bool:
+        now = self._clock()
+        if now - self._proxy_at >= self._recheck_s:
+            self._proxy_at = now
+            try:
+                status = self.watch._fetch("/priority/v1/status")
+                self._proxy = isinstance(status, dict) and "classes" in status
+            except OSError:
+                self._proxy = False
+        return self._proxy
+
+    def look(self) -> str:
+        if Path(self.settings.hold_file).exists():
+            return "HOLD file present, paused"
+        if self.lock_held():
+            return "quiet lock held, waiting"
+        return "" if self.proxied() else super().look()
+
+    def intruder(self, own_slot: int) -> str:
+        if Path(self.settings.hold_file).exists():
+            return "HOLD file"
+        if self.lock_held():
+            return "quiet lock"
+        return "" if self.proxied() else super().intruder(own_slot)
+
+    def close(self) -> None:
+        return
 
 
 def make_planner(settings, key: str):

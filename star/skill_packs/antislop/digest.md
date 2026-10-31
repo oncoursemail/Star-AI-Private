@@ -1,0 +1,8 @@
+# Anti-slop core (anti-slop v3.2.21, MIT)
+- Purpose test: a technique is allowed only if you can say what it serves (hierarchy, identity, readability). "It looks modern" is not a reason. If the logo were swapped out and nothing would change, the result is too generic.
+- Hard bans: em dash characters in text you write (use comma, period, colon, parentheses); invented statistics, testimonials, names, features, compliance or speed claims ("SOC 2", "300% faster"); links, buttons or nav items that go nowhere. No real data means no claim; an empty section beats a fabricated one. A placeholder is labelled as one ([REAL DATA], "Coming soon").
+- Verify before delivering: run or build it, check the console, exercise every control. If you cannot run it, say so and check by reading the code. Report what you checked, element by element; never claim a click-through you did not do.
+- Build features in the source where they belong, never by a script that string-replaces files or CSS.
+- Every state works: empty, loading, error. If you ship dark and light themes, both must work. Mobile layout is part of the design: no horizontal overflow, 44px tap targets.
+- Typical slop to avoid: blue-purple gradients, glassmorphism and glow on everything, pill-shaped everything, identical feature cards, generic CTAs (Get Started, Learn More), buzzwords (Seamless, Revolutionary, AI-powered), sparkle icons, eyebrow badges, a fake terminal as the hero, the same fade-up animation on every element.
+- Do not over-sterilize either: no identity is also slop. Follow the owner's own style or brand direction; if none was given, say the result is a draft without direction.

@@ -1,0 +1,78 @@
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -2268,6 +2268,49 @@
+ }
+  // RAMForge: GGML_NUMA_BLOCK=1 -> threads [k*n/N, (k+1)*n/N) on node k
+
++// ---- RAMForge per-core pinning (GGML_RF_PIN=1, with --numa distribute + GGML_NUMA_BLOCK=1) ----
++// Thread k of a node runs on ONE cpu: the node's physical cores sorted by (L3 id, cpu), then their SMT siblings.
++static int rf_pin = -1;
++static int rf_pin_cpus[GGML_NUMA_MAX_NODES][GGML_NUMA_MAX_CPUS];
++static int rf_pin_n[GGML_NUMA_MAX_NODES];
++static pthread_once_t rf_pin_once = PTHREAD_ONCE_INIT;
++static int rf_read_int(const char * path) {
++    FILE * f = fopen(path, "r"); int v = -1;
++    if (f) { if (fscanf(f, "%d", &v) != 1) v = -1; fclose(f); }
++    return v;
++}
++static void rf_pin_init_once(void) {
++    const char * e = getenv("GGML_RF_PIN");
++    rf_pin = (e && atoi(e) > 0) ? 1 : 0;
++    if (!rf_pin) return;
++    char path[256];
++    for (uint32_t n = 0; n < g_state.numa.n_nodes; n++) {
++        struct ggml_numa_node * node = &g_state.numa.nodes[n];
++        int cnt = 0;
++        for (int pass = 0; pass < 2; pass++) {
++            int l3s[GGML_NUMA_MAX_CPUS], cpus[GGML_NUMA_MAX_CPUS], m = 0;
++            for (uint32_t i = 0; i < node->n_cpus; i++) {
++                const int c = (int) node->cpus[i];
++                snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", c);
++                const int primary = rf_read_int(path) == c;
++                if ((pass == 0) != primary) continue;
++                snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cache/index3/id", c);
++                l3s[m] = rf_read_int(path); cpus[m] = c; m++;
++            }
++            for (int a = 1; a < m; a++) {
++                const int l = l3s[a], c = cpus[a]; int b = a - 1;
++                while (b >= 0 && (l3s[b] > l || (l3s[b] == l && cpus[b] > c))) { l3s[b + 1] = l3s[b]; cpus[b + 1] = cpus[b]; b--; }
++                l3s[b + 1] = l; cpus[b + 1] = c;
++            }
++            for (int a = 0; a < m; a++) rf_pin_cpus[n][cnt++] = cpus[a];
++        }
++        rf_pin_n[n] = cnt;
++        fprintf(stderr, "ramforge pin: node %u cpus", n);
++        for (int a = 0; a < cnt; a++) fprintf(stderr, " %d", rf_pin_cpus[n][a]);
++        fprintf(stderr, "\n");
++    }
++}
++
+ static void set_numa_thread_affinity(int thread_n, int n_threads) {
+     if (!ggml_is_numa()) {
+         return;
+@@ -2291,7 +2334,24 @@
+             } else {
+                 node_num = thread_n % rf_nodes_n;
+             }
+-            node_num = rf_nodes_list[node_num];
++            {
++                const int idx = node_num;
++                node_num = rf_nodes_list[node_num];
++                pthread_once(&rf_pin_once, rf_pin_init_once);
++                if (rf_pin && ramforge_numa_block && n_threads > 0 && rf_pin_n[node_num] > 0) {
++                    const int first = (int) (((int64_t) idx * n_threads + rf_nodes_n - 1) / rf_nodes_n);
++                    const int li = thread_n - first < 0 ? 0 : thread_n - first;
++                    cpu_set_t * one = CPU_ALLOC(g_state.numa.total_cpus);
++                    CPU_ZERO_S(setsize, one);
++                    CPU_SET_S(rf_pin_cpus[node_num][li % rf_pin_n[node_num]], setsize, one);
++                    rv = pthread_setaffinity_np(pthread_self(), setsize, one);
++                    if (rv) {
++                        fprintf(stderr, "warning: pthread_setaffinity_np() failed: %s\n", strerror(rv));
++                    }
++                    CPU_FREE(one);
++                    return;
++                }
++            }
+             break;
+         case GGML_NUMA_STRATEGY_ISOLATE:
+             // run thread on current_node

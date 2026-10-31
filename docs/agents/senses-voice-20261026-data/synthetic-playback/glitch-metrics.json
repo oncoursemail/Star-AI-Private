@@ -1,0 +1,29 @@
+{
+ "streamed-20ms-chunks-prefill-80ms": {
+  "max_step_ratio": 1.0,
+  "underruns": 1,
+  "gaps_ms": [],
+  "joins_smoothed": 0,
+  "seconds": 5.77
+ },
+ "streamed-20ms-chunks-no-prefill": {
+  "max_step_ratio": 1.0,
+  "underruns": 4,
+  "gaps_ms": [
+   20,
+   10,
+   10
+  ],
+  "joins_smoothed": 0,
+  "seconds": 5.77
+ },
+ "whole-sentences-prefill-60ms": {
+  "max_step_ratio": 1.0,
+  "underruns": 2,
+  "gaps_ms": [
+   130
+  ],
+  "joins_smoothed": 0,
+  "seconds": 5.77
+ }
+}
