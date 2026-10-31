@@ -5,8 +5,8 @@ VRAM/game/voice telemetry are produced by an authenticated Windows host, not
 by an LLM or a viewer. This module does NOT connect to OBS, run work, change
 system settings, publish chat, or grant game/device permissions.
 
-A missing or non-progressing live OBS window must never be represented as a
-zero-lag (healthy) sample. One distinct OBS window can contribute to at most
+A missing or non-progressing live OBS window, or a stream output that is not
+independently confirmed active, must never count as healthy stream evidence. One distinct OBS window can contribute to at most
 one admitted live resource sample; repeated polling cannot fake recovery.
 """
 from __future__ import annotations
@@ -39,7 +39,8 @@ class StreamHealthBridge:
     """Fail-closed *advice* joining independent, authenticated sensor streams.
 
     Windows host sequence (no network access from this class):
-      enable -> offer_obs(GetStats) twice -> offer_host(telemetry) -> advise
+      enable -> offer_stream_status(GetStreamStatus) -> offer_obs(GetStats)
+      twice -> offer_host(telemetry) -> advise
     Refresh both feeds for each OBS interval. Always call obs_reset on OBS
     reconnect or stream/recording transition; disable on host session end.
 
@@ -61,9 +62,12 @@ class StreamHealthBridge:
         self._last_host_ms: float | None = None
         self._ready_host_ms: float | None = None
         self._last_live: bool | None = None
+        self._stream_status_ms: float | None = None
+        self._stream_active: bool | None = None
         self._counts = {
             "obs_windows": 0, "host_admitted": 0, "host_rejected": 0,
             "bridge_deferrals": 0, "obs_invalidated": 0,
+            "output_verified": 0, "output_invalidated": 0,
         }
 
     def _reset(self) -> None:
@@ -72,6 +76,8 @@ class StreamHealthBridge:
         self._last_host_ms = None
         self._ready_host_ms = None
         self._last_live = None
+        self._stream_status_ms = None
+        self._stream_active = None
         self._obs.reset()
 
     def enable(self, *, owner_approved: bool = False) -> None:
@@ -95,8 +101,52 @@ class StreamHealthBridge:
         with self._lock:
             self._obs.reset()
             self._latest = None
+            self._used_obs_ms = None
             self._ready_host_ms = None
+            self._stream_status_ms = None
+            self._stream_active = None
             self._counts["obs_invalidated"] += 1
+
+    def offer_stream_status(self, data: Mapping[str, object], *, host_ms: float,
+                            host_verified: bool = False) -> bool:
+        """Require independently attested OBS GetStreamStatus for live work.
+
+        GetStats counters can advance in preview without a live broadcast.
+        A status needs strict outputActive and outputReconnecting booleans.
+        Stop/reconnect/malformed trusted status invalidates previous evidence.
+        The authenticated host must enforce source identity/session binding.
+        """
+        at = _host_clock(host_ms)
+        if type(host_verified) is not bool:
+            raise ValueError("host_verified must be a strict boolean")
+        if not isinstance(data, Mapping):
+            raise TypeError("GetStreamStatus responseData must be a mapping")
+        with self._lock:
+            if not self._enabled or not host_verified:
+                return False
+            if self._stream_status_ms is not None and at <= self._stream_status_ms:
+                return False
+            active = data.get("outputActive")
+            reconnecting = data.get("outputReconnecting")
+            if type(active) is not bool or type(reconnecting) is not bool:
+                self._stream_status_ms = at
+                self._stream_active = None
+                self._obs.reset()
+                self._latest = None
+                self._ready_host_ms = None
+                self._counts["output_invalidated"] += 1
+                raise ValueError("OBS stream status requires strict active/reconnecting flags")
+            healthy = active and not reconnecting
+            previously_healthy = self._stream_active is True
+            self._stream_status_ms = at
+            self._stream_active = healthy
+            self._counts["output_verified"] += 1
+            if not healthy or not previously_healthy:
+                self._obs.reset()
+                self._latest = None
+                self._ready_host_ms = None
+                self._counts["output_invalidated"] += 1
+            return healthy
 
     def offer_obs(self, data: Mapping[str, object], *, host_ms: float,
                   host_verified: bool = False) -> ObsLagWindow | None:
@@ -150,6 +200,13 @@ class StreamHealthBridge:
             render = output = 0.0
             window = self._latest
             if telemetry.live:
+                # OBS preview counters alone do not prove an active stream.
+                if (self._stream_active is not True
+                        or self._stream_status_ms is None
+                        or self._stream_status_ms > at
+                        or at - self._stream_status_ms > self._max_obs_age_ms):
+                    self._counts["host_rejected"] += 1
+                    return False
                 if (window is None
                         or window.observed_ms > at
                         or at - window.observed_ms > self._max_obs_age_ms
@@ -193,9 +250,16 @@ class StreamHealthBridge:
                      or self._latest.observed_ms > now
                      or now - self._latest.observed_ms > self._max_obs_age_ms)
             )
+            live_status_missing = bool(
+                self._last_live is True
+                and (self._stream_active is not True
+                     or self._stream_status_ms is None
+                     or self._stream_status_ms > now
+                     or now - self._stream_status_ms > self._max_obs_age_ms)
+            )
             if (not self._enabled or self._ready_host_ms is None
                     or self._ready_host_ms != self._last_host_ms
-                    or live_window_missing):
+                    or live_window_missing or live_status_missing):
                 self._counts["bridge_deferrals"] += 1
                 return AdmissionAdvice(False, "deferred", 0.0,
                                        "obs_or_host_evidence_missing")
