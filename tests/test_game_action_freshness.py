@@ -139,3 +139,68 @@ def test_bounded_no_private_data_metrics():
     assert "stream_01" not in repr(result)
     assert "platformer_v1" not in repr(result)
     assert result["allowed"] == 1
+
+
+def test_higher_sequence_with_same_capture_time_is_not_a_new_scene():
+    g = gate()
+    assert g.assess(signal(seq=1, observed=100.0, decided=100.01),
+                    now_s=100.02).fresh
+    duplicate_capture = g.assess(
+        signal(seq=2, observed=100.0, decided=100.03), now_s=100.04,
+    )
+    assert not duplicate_capture.fresh
+    assert duplicate_capture.reason == "out_of_order_observation"
+    assert g.metrics()["accepted_samples"] == 1
+    # The rejected duplicate does not poison sequence or capture history.
+    assert g.assess(signal(seq=2, observed=100.05, decided=100.06),
+                    now_s=100.07).fresh
+
+
+def test_pre_dispatch_percentiles_separate_model_and_queue_delay():
+    g = gate()
+    for sequence, observed, decided, assessment in (
+        (1, 100.0, 100.01, 100.02),
+        (2, 100.3, 100.33, 100.34),
+        (3, 100.6, 100.64, 100.66),
+    ):
+        assert g.assess(
+            signal(seq=sequence, observed=observed, decided=decided),
+            now_s=assessment,
+        ).fresh
+    stats = g.metrics()
+    assert stats["accepted_samples"] == 3
+    assert stats["capture_to_assessment_p50_ms"] == pytest.approx(40.0)
+    assert stats["capture_to_assessment_p95_ms"] == pytest.approx(60.0)
+    assert stats["capture_to_decision_p50_ms"] == pytest.approx(30.0)
+    assert stats["capture_to_decision_p95_ms"] == pytest.approx(40.0)
+    assert stats["decision_to_assessment_p50_ms"] == pytest.approx(10.0)
+    assert stats["decision_to_assessment_p95_ms"] == pytest.approx(20.0)
+    assert "stream_01" not in repr(stats)
+    assert "platformer_v1" not in repr(stats)
+
+
+def test_denials_do_not_fabricate_latency_samples():
+    g = gate(age_ms=200.0)
+    assert g.metrics()["capture_to_assessment_p95_ms"] is None
+    assert g.assess(signal(verified=False), now_s=100.1).reason == "unverified"
+    assert g.assess(signal(scope="wrong"), now_s=100.1).reason == "wrong_session"
+    assert g.assess(signal(seq=1), now_s=100.3).reason == "stale"
+    assert g.assess(signal(seq=1), now_s=100.1).fresh
+    assert g.assess(signal(seq=1), now_s=100.12).reason == "replayed"
+    assert g.metrics()["accepted_samples"] == 1
+    assert g.metrics()["capture_to_assessment_p95_ms"] == pytest.approx(100.0)
+
+
+def test_episode_change_clears_pre_dispatch_latency_history():
+    g = gate()
+    assert g.assess(signal(), now_s=100.1).fresh
+    assert g.metrics()["accepted_samples"] == 1
+    g.disable()
+    assert g.metrics()["accepted_samples"] == 0
+    assert g.metrics()["capture_to_assessment_p95_ms"] is None
+    g.enable(owner_approved=True, session_id="stream_02", game_scope="platformer_v2")
+    assert g.metrics()["capture_to_decision_p50_ms"] is None
+    assert g.assess(
+        signal(session="stream_02", scope="platformer_v2"), now_s=100.1,
+    ).fresh
+    assert g.metrics()["accepted_samples"] == 1

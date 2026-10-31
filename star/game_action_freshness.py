@@ -8,6 +8,7 @@ identities, or action payloads are stored. The feature is OFF by default.
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 import math
 import re
@@ -33,6 +34,14 @@ def _id(value: object, field: str) -> str:
     if type(value) is not str or _ID.fullmatch(value) is None:
         raise ValueError(f"{field} must be a canonical bounded identifier")
     return value
+
+
+def _nearest_rank_ms(samples: deque[float], fraction: float) -> float | None:
+    """Anonymous nearest-rank latency percentile over at most 64 accepted actions."""
+    if not samples:
+        return None
+    values = sorted(samples)
+    return round(values[math.ceil(fraction * len(values)) - 1], 3)
 
 
 @dataclass(frozen=True)
@@ -89,6 +98,10 @@ class GameActionFreshnessGate:
         self._last_sequence = -1
         self._last_observed_at: float | None = None
         self._last_now: float | None = None
+        # PRE-dispatch timing only; never evidence of physical keypresses.
+        self._capture_to_assessment_ms: deque[float] = deque(maxlen=64)
+        self._capture_to_decision_ms: deque[float] = deque(maxlen=64)
+        self._decision_to_assessment_ms: deque[float] = deque(maxlen=64)
         self._counts = {
             "allowed": 0, "stale": 0, "replayed": 0,
             "unverified": 0, "wrong_session": 0, "bad_clock": 0,
@@ -110,6 +123,9 @@ class GameActionFreshnessGate:
             self._last_sequence = -1
             self._last_observed_at = None
             self._last_now = None
+            self._capture_to_assessment_ms.clear()
+            self._capture_to_decision_ms.clear()
+            self._decision_to_assessment_ms.clear()
 
     def disable(self) -> None:
         with self._lock:
@@ -118,6 +134,9 @@ class GameActionFreshnessGate:
             self._last_sequence = -1
             self._last_observed_at = None
             self._last_now = None
+            self._capture_to_assessment_ms.clear()
+            self._capture_to_decision_ms.clear()
+            self._decision_to_assessment_ms.clear()
 
     def assess(self, timing: GameActionTiming, *, now_s: float) -> ActionAgeVerdict:
         if not isinstance(timing, GameActionTiming):
@@ -140,23 +159,53 @@ class GameActionFreshnessGate:
             if timing.observation_seq <= self._last_sequence:
                 self._counts["replayed"] += 1
                 return ActionAgeVerdict(False, "replayed", None)
-            if (self._last_observed_at is not None
-                    and timing.observed_at_s < self._last_observed_at):
-                self._counts["out_of_order_observation"] += 1
-                return ActionAgeVerdict(False, "out_of_order_observation", None)
             age_ms = (now - timing.observed_at_s) * 1000.0
             if not math.isfinite(age_ms) or age_ms > self._max_age_ms:
                 self._counts["stale"] += 1
                 return ActionAgeVerdict(False, "stale", None)
+            # A larger queue sequence does not establish a newer capture.
+            if (self._last_observed_at is not None
+                    and timing.observed_at_s <= self._last_observed_at):
+                self._counts["out_of_order_observation"] += 1
+                return ActionAgeVerdict(False, "out_of_order_observation", None)
             self._last_sequence = timing.observation_seq
             self._last_observed_at = timing.observed_at_s
+            self._capture_to_assessment_ms.append(age_ms)
+            self._capture_to_decision_ms.append(
+                (timing.decided_at_s - timing.observed_at_s) * 1000.0,
+            )
+            self._decision_to_assessment_ms.append(
+                (now - timing.decided_at_s) * 1000.0,
+            )
             self._counts["allowed"] += 1
             return ActionAgeVerdict(True, "fresh", round(age_ms, 3))
 
-    def metrics(self) -> dict[str, int | bool]:
-        """Bounded, anonymous operational counters; no per-event identifiers."""
+    def metrics(self) -> dict[str, int | bool | float | None]:
+        """Accepted pre-dispatch age attribution, not physical input timestamps."""
         with self._lock:
-            return {**self._counts, "enabled": self._enabled}
+            return {
+                **self._counts,
+                "enabled": self._enabled,
+                "accepted_samples": len(self._capture_to_assessment_ms),
+                "capture_to_assessment_p50_ms": _nearest_rank_ms(
+                    self._capture_to_assessment_ms, 0.50,
+                ),
+                "capture_to_assessment_p95_ms": _nearest_rank_ms(
+                    self._capture_to_assessment_ms, 0.95,
+                ),
+                "capture_to_decision_p50_ms": _nearest_rank_ms(
+                    self._capture_to_decision_ms, 0.50,
+                ),
+                "capture_to_decision_p95_ms": _nearest_rank_ms(
+                    self._capture_to_decision_ms, 0.95,
+                ),
+                "decision_to_assessment_p50_ms": _nearest_rank_ms(
+                    self._decision_to_assessment_ms, 0.50,
+                ),
+                "decision_to_assessment_p95_ms": _nearest_rank_ms(
+                    self._decision_to_assessment_ms, 0.95,
+                ),
+            }
 
 
 __all__ = ["GameActionTiming", "ActionAgeVerdict", "GameActionFreshnessGate"]
