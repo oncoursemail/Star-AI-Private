@@ -102,6 +102,7 @@ def hunt(head: Path, base: Path, changed: dict[str, set[int]], python: str, aske
                 risk = {"file": path, "line": line, "severity": "high", "why": why}
                 proof = prove(head, risk, python, asker, base=base)
                 if proof.get("proven"):
-                    found.append({**risk, "proof": {k: v for k, v in proof.items() if k != "test"}})
+                    found.append({**risk, "test": proof.get("test", ""),
+                                  "proof": {k: v for k, v in proof.items() if k != "test"}})
                     break                                   # one proven bug per function is enough to hold
     return found

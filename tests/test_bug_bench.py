@@ -102,7 +102,8 @@ def test_hunt_keeps_only_proven_flags_on_changed_functions(tmp_path):
     proven = lambda tree, risk, py, asker, base=None: {"proven": risk["line"] == 6, "test": "t"}  # noqa: E731
     found = H.hunt(head, head, {"star/calc.py": {6}, "tests/x.py": {1}}, sys.executable, ask, proven)
     assert len(asked) == 1 and ">> 6:" in asked[0] and "return x + 1" not in asked[0]
-    assert found == [{"file": "star/calc.py", "line": 6, "severity": "high", "why": "should be >=", "proof": {"proven": True}}]
+    assert found == [{"file": "star/calc.py", "line": 6, "severity": "high", "why": "should be >=", "test": "t",
+                      "proof": {"proven": True}}]                       # the test travels on to her fixer
     off = lambda p: json.dumps({"bug": True, "line": 2, "why": "outside the function"})  # noqa: E731
     assert H.hunt(head, head, {"star/calc.py": {6}}, sys.executable, off, proven) == []
 

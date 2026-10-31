@@ -448,14 +448,16 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     return row
 
 
-def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
+def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None = None) -> dict:
+    """found = a bug her merger hunt PROVED in this PR ({file, line, why, test}): her proof test is the failing test,
+    and it ships with the fix as a regression test."""
     sha, number = pr["headRefOid"], pr["number"]
-    log = failed_logs(sha)
+    log = "" if found else failed_logs(sha)
     fails = failures(log)
-    if not log.strip():                   # logs expire on GitHub: run the failed jobs again, look next time
+    if not found and not log.strip():     # logs expire on GitHub: run the failed jobs again, look next time
         return {"pr": number, "result": "rerun", "why": f"failed logs expired; reran {rerun_failed(sha, number)} run(s)"}
     linting = not fails and bool(RUFF_CI.search(log))
-    if not fails and not linting:         # timeout, lost runner, setup step (seen: #700 died after 9 h): one rerun
+    if not found and not fails and not linting:   # timeout, lost runner, setup (seen: #700 died after 9 h): one rerun
         return {"pr": number, "result": "flaky-rerun",
                 "why": f"no test or lint failure in the failed logs; reran {rerun_failed(sha, number)} failed run(s) once"}
     day = dt.date.today().strftime("%Y%m%d")
@@ -467,7 +469,14 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         return {"pr": number, "result": "skip", "why": "fetch failed: " + got.stderr[-200:]}
     sh(["git", "-C", str(CLONE), "worktree", "add", "-q", str(tree), branch])
     tests = sorted({f["test"].split("::")[0] for f in fails})     # whole files: a second bug must fail too
-    if fails:
+    if found:
+        tests = [f"tests/test_litha_found_{number}.py"]
+        (tree / tests[0]).write_bytes(str(found["test"]).encode("utf-8"))
+        ok, out = run_tests(tree, tests, python)
+        if ok:
+            return {"pr": number, "result": "skip", "why": "her proof test no longer fails on this head"}
+        fails = failures(out) or [{"test": tests[0], "section": out[-2500:]}]
+    elif fails:
         ok, out = run_tests(tree, tests, python)
         if ok:                            # flaky or CI-only (seen: a 0.6 s timing limit missed by 8 ms): one rerun
             return {"pr": number, "result": "flaky-rerun", "tests": tests,
@@ -475,7 +484,7 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     if str(pr.get("headRefName", "")).startswith("litha/"):
         return {"pr": number, "result": "skip", "why": "her own fix branch fails for real: no fix on top of a fix"}
     names = gh("pr", "diff", str(number), "--repo", REPO, "--name-only", timeout=300).split()
-    if names and all(DEP_FILE.match(n) for n in names) and (tree / LOCK_TOOL).is_file():
+    if not found and names and all(DEP_FILE.match(n) for n in names) and (tree / LOCK_TOOL).is_file():
         ok, why = fix_lock(tree, python)
         round_no, tests = 1, ["tests/test_home_installer.py"]
     elif linting:
@@ -500,8 +509,10 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     p = sh(["git", "push", "-q", "-u", "origin", branch], cwd=tree)
     if p.returncode:
         return {**row, "result": "failed", "why": "push failed: " + p.stderr[-200:]}
-    body = (f"Litha's fix for #{number} (her own branch; the original PR is unchanged).\n\nCause: {why}\n"
-            f"Failing tests from CI now pass locally: {', '.join(tests)} (and their whole files).\n"
+    seen = (f"Her review found and PROVED a bug at {found['file']}:{found['line']}: {found['why']}\nHer proof test is "
+            f"added as {tests[0]} (fails before this fix, passes after).\n") if found else ""
+    body = (f"Litha's fix for #{number} (her own branch; the original PR is unchanged).\n\n{seen}Cause: {why}\n"
+            f"Failing tests now pass locally: {', '.join(tests)} (and their whole files).\n"
             f"Contains #{number}'s commits plus her fix; merging this lands both.")
     try:
         row["fix_pr"] = gh("pr", "create", "--repo", REPO, "--base", BASE, "--head", branch,
@@ -522,6 +533,23 @@ def main(argv: list[str] | None = None) -> int:
     STATE.parent.mkdir(parents=True, exist_ok=True)
     tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
     done = 0
+    from star.pr_merger import HUNTED
+    hunted = json.loads(HUNTED.read_text(encoding="utf-8")) if HUNTED.exists() else {}
+    for pr in open_prs(a.pr):                           # first: bugs her review proved -> her fix with her test
+        item = hunted.pop(str(pr["number"]), None)
+        if done >= a.max or not item or item.get("head") != pr["headRefOid"] or not item.get("test"):
+            continue
+        t = time.time()
+        try:
+            row = fix(pr, a.python, a.dry, found=item)
+        except Exception as e:  # noqa: BLE001 - one PR must not stop the others
+            row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
+        row["seconds"], row["kind"] = round(time.time() - t), "hunted"
+        HUNTED.write_text(json.dumps(hunted), encoding="utf-8")
+        with LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"ts": round(t), **row}) + "\n")
+        print(json.dumps(row), flush=True)
+        done += 1
     for pr in open_prs(a.pr):
         if done >= a.max:
             break

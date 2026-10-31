@@ -321,6 +321,9 @@ def prove_high_risks(pr: dict, rev: dict, ask=ask_litha, limit: int = 3) -> None
     rev["verdict"] = "hold" if any(r["severity"] == "high" for r in rev["risks"]) else "merge"
 
 
+HUNTED = Path.home() / ".star" / "pr-fixer" / "hunted.json"
+
+
 def hunt_pr(pr: dict, files: dict, rev: dict) -> None:
     """Last look before a merge: hunt each changed function for a bug; a proven regression holds the PR."""
     from star import bug_hunt
@@ -331,9 +334,13 @@ def hunt_pr(pr: dict, files: dict, rev: dict) -> None:
         intent = f"{pr.get('title', '')}\n{pr.get('body') or ''}"
         found = bug_hunt.hunt(tree, base, changed, sys.executable, intent=intent)
     for r in found:
-        rev["risks"].append({**r, "why": "hunt: " + r["why"]})
+        rev["risks"].append({**{k: v for k, v in r.items() if k != "test"}, "why": "hunt: " + r["why"]})
     if found:
         rev["verdict"] = "hold"
+        HUNTED.parent.mkdir(parents=True, exist_ok=True)                 # the fixer turns her proof into a fix
+        queue = json.loads(HUNTED.read_text(encoding="utf-8")) if HUNTED.exists() else {}
+        queue[str(pr["number"])] = {"head": pr["headRefOid"], **found[0]}
+        HUNTED.write_text(json.dumps(queue), encoding="utf-8")
 
 
 def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_fn=prove_high_risks,

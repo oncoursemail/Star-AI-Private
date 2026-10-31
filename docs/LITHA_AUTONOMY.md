@@ -115,6 +115,21 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - False holds: `python -m star.pr_merger --replay-hunt 8` on merged PRs #816-#847: 0/7 flagged (one had no Python
   change).
 
+## 4b. Added 2026-10-31 evening (measured where it says so)
+
+- Runs every 10 min (task "Litha PR merger", overlapping runs are skipped), was 30.
+- Flaky / CI-only: a failure that passes locally, or a failed job with no test/lint failure (timeout, lost runner),
+  gets ONE rerun per head; when GitHub refuses ("cannot be retried"), close+reopen starts a fresh run (#700).
+  Also on her own litha/ PRs (#850 merged after a 0.6 s timing test flaked); never a fix on top of her own fix.
+- Conflicts: `resolve()` merges star/next into a copy of the PR on `litha/merge-<n>-<date>`; lock files are taken
+  from star/next and rebuilt, code conflicts (max 4 files, 8 blocks each) are resolved block by block by her, must
+  compile, no markers, touched tests pass, then her own PR. Live: #756 -> #852 (53 s), #549 -> #853 (33 s).
+  Frontend files are only checked by CI (tsc/vitest), not locally.
+- Hunt -> fix: a bug her merger hunt PROVES goes to `~/.star/pr-fixer/hunted.json`; next run the fixer adds her
+  proof test as `tests/test_litha_found_<n>.py` (she cannot edit it), repairs the code until it passes, and opens
+  her fix PR with the test as a regression test. Not yet seen live (no proven find on a real PR so far).
+- Merger: honours the reviewed `star:allow` marker like star commit; holds MAJOR bumps of STAR Home packages.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
