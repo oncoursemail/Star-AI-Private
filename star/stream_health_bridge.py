@@ -181,6 +181,11 @@ class StreamHealthBridge:
                     data, host_ms=host_ms, host_verified=host_verified,
                 )
             except (ValueError, TypeError):
+                # A malformed *verified* reading breaks the continuity of
+                # the OBS counter epoch. Demand two new valid samples rather
+                # than silently using the pre-error baseline for recovery.
+                if host_verified is True:
+                    self._obs.reset()
                 self._latest = None
                 self._ready_host_ms = None
                 self._counts["obs_invalidated"] += 1
