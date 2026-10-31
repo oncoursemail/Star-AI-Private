@@ -104,3 +104,15 @@ def test_a_dependency_bump_gets_its_lock_regenerated_by_the_project_tool(tmp_pat
         "def test_pin():\n    assert 'yt-dlp==2' in open('requirements-home.txt').read()\n", encoding="utf-8")
     ok, why = F.fix_lock(tmp_path, sys.executable)
     assert not ok and "needs review" in why
+
+
+def test_conflicts_are_resolved_block_by_block_and_must_compile():
+    text = ("import os\n<<<<<<< HEAD\nA = 1\n=======\nB = 2\n>>>>>>> origin/star/next\n\nx = 3\n"
+            "<<<<<<< HEAD\ny = 1\n=======\ny = 2\n>>>>>>> origin/star/next\n")
+    answers = iter([json.dumps({"resolved": "A = 1\nB = 2\n"}), json.dumps({"resolved": "y = 2"})])
+    merged, why = F.resolve_text("star/m.py", text, "t", lambda p: next(answers))
+    assert merged == "import os\nA = 1\nB = 2\n\nx = 3\ny = 2\n" and why == ""
+    broken = iter([json.dumps({"resolved": "def f(:\n"}), json.dumps({"resolved": "y = 2"})])
+    assert F.resolve_text("star/m.py", text, "t", lambda p: next(broken))[0] is None      # must compile
+    marked = iter([json.dumps({"resolved": "<<<<<<< HEAD"})] * 2)
+    assert F.resolve_text("star/m.py", text, "t", lambda p: next(marked))[0] is None      # no markers left

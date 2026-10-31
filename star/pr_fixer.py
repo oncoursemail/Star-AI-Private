@@ -331,6 +331,123 @@ def rerun_failed(sha: str, number: int | None = None) -> int:
     return done
 
 
+CONFLICT = re.compile(r"^<<<<<<< [^\n]*\n.*?^>>>>>>> [^\n]*\n", re.M | re.S)
+MERGE_PROMPT = """You are Litha, resolving a git merge conflict in STAR's repository so a pull request can merge.
+Pull request: {title}
+Between <<<<<<< and ======= is the PR's version; between ======= and >>>>>>> is the newest star/next.
+Keep BOTH sides' intent: the PR's change AND everything star/next added. Never drop a feature, import, test or
+setting from either side; when both changed the same line, combine them.
+File {path}, conflict {i} of {n} (with the lines around it, which stay as they are):
+{context}
+{feedback}Answer only JSON: {{"resolved": "<the exact text that replaces the whole conflict block, without markers>"}}"""
+
+
+def resolve_text(path: str, text: str, title: str, asker=ask) -> tuple[str | None, str]:
+    """Every conflict block of one file resolved by her; (None, why) when she cannot make valid code of it."""
+    blocks = list(CONFLICT.finditer(text))
+    if not blocks or len(blocks) > 8:
+        return None, f"{path}: {len(blocks)} conflict blocks (1-8 handled)"
+    out, last, feedback = [], 0, ""
+    for i, m in enumerate(blocks, 1):
+        before = text[max(0, m.start() - 1500):m.start()].split("\n", 1)[-1]
+        after = text[m.end():m.end() + 1500].rsplit("\n", 1)[0]
+        for _ in range(2):
+            try:
+                ans = json.loads(asker(MERGE_PROMPT.format(title=title, path=path, i=i, n=len(blocks), feedback=feedback,
+                                                           context=before + m.group(0) + after)))
+                new = str(ans["resolved"])
+            except (ValueError, TypeError, KeyError):
+                feedback = "Your last answer was not valid JSON with a \"resolved\" string.\n"
+                continue
+            if "<<<<<<<" in new or ">>>>>>>" in new or "\n=======\n" in f"\n{new}\n":
+                feedback = "Your answer still had conflict markers. Give the merged text only.\n"
+                continue
+            break
+        else:
+            return None, f"{path}: no usable answer for conflict {i}"
+        out += [text[last:m.start()], new if new.endswith("\n") or not new else new + "\n"]
+        last, feedback = m.end(), ""
+    merged = "".join(out) + text[last:]
+    if path.endswith(".py"):
+        try:
+            compile(merged, path, "exec")
+        except SyntaxError as e:
+            return None, f"{path}: merged code does not compile (line {e.lineno}: {e.msg})"
+    return merged, ""
+
+
+def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
+    """A PR that conflicts with star/next: merge star/next into a copy of it on HER branch, resolve (lock files are
+    taken from star/next and rebuilt; code conflicts are hers), prove nothing broke, open her own PR."""
+    number = pr["number"]
+    day = dt.date.today().strftime("%Y%m%d")
+    branch, tree = f"litha/merge-{number}-{day}", WORK / f"litha-merge-{number}"
+    if tree.exists():
+        sh(["git", "-C", str(CLONE), "worktree", "remove", "--force", str(tree)])
+    sh(["git", "-C", str(CLONE), "fetch", "-q", "origin", BASE])
+    got = sh(["git", "-C", str(CLONE), "fetch", "-q", "origin", f"pull/{number}/head:{branch}", "--force"])
+    if got.returncode:
+        return {"pr": number, "result": "skip", "why": "fetch failed: " + got.stderr[-200:]}
+    sh(["git", "-C", str(CLONE), "worktree", "add", "-q", str(tree), branch])
+    m = sh(["git", "-c", "user.name=oncoursemail", "-c", "user.email=84545815+oncoursemail@users.noreply.github.com",
+            "merge", "--no-ff", "--no-commit", f"origin/{BASE}"], cwd=tree)    # per-command identity, never configured
+    conflicted = sh(["git", "diff", "--name-only", "--diff-filter=U"], cwd=tree).stdout.split()
+    if m.returncode and not conflicted:
+        return {"pr": number, "result": "failed", "why": "git merge failed: " + (m.stdout + m.stderr)[-200:]}
+    locks = [c for c in conflicted if DEP_FILE.match(c) and c.endswith(".txt")]
+    code = [c for c in conflicted if c not in locks]
+    if len(code) > 4 or any(NO_TOUCH.search(c) and not DEP_FILE.match(c) for c in code):
+        sh(["git", "merge", "--abort"], cwd=tree)
+        return {"pr": number, "result": "failed", "why": f"conflicts she does not resolve alone: {code[:8]}"}
+    for c in locks:                                         # generated files: star/next's copy, rebuilt below
+        sh(["git", "checkout", "--theirs", "--", c], cwd=tree)
+    tests: set[str] = set()
+    for c in code:
+        merged, why = resolve_text(c, (tree / c).read_text(encoding="utf-8", errors="replace"), pr.get("title", ""), asker)
+        if merged is None:
+            sh(["git", "merge", "--abort"], cwd=tree)
+            return {"pr": number, "result": "failed", "why": why}
+        (tree / c).write_bytes(merged.encode("utf-8"))
+        if c.startswith("tests/") and c.endswith(".py"):
+            tests.add(c)
+        elif c.endswith(".py"):
+            from star.bug_bench import tests_for
+            tests.update(tests_for(c[:-3].replace("/", "."), tree / "tests", {})[:3])
+    if locks and (tree / LOCK_TOOL).is_file():
+        r = sh([python, LOCK_TOOL], cwd=tree, timeout=1800)
+        if r.returncode:
+            sh(["git", "merge", "--abort"], cwd=tree)
+            return {"pr": number, "result": "failed", "why": "lock tool failed: " + (r.stdout + r.stderr)[-200:]}
+        tests.add("tests/test_home_installer.py")
+    sh(["git", "add", "--", *conflicted], cwd=tree)
+    ok, out = run_tests(tree, sorted(tests)[:6], python) if tests else (True, "")
+    row = {"pr": number, "result": "fixed" if ok else "failed", "kind": "merge", "files": conflicted,
+           "tests": sorted(tests)[:6], "why": "merged star/next and resolved " + ", ".join(conflicted)}
+    if not ok:
+        sh(["git", "merge", "--abort"], cwd=tree)
+        return {**row, "why": "after resolving, tests fail: " + " ".join(FAILED.findall(out))[:250]}
+    if dry:
+        return row
+    c = sh([str(CLONE.parent / "star.cmd"), "commit", "--owner", "claude", "--worktree",
+            str(tree.relative_to(CLONE.parent)), "-m", f"[litha] merge star/next into #{number}: {', '.join(conflicted)}"],
+           cwd=CLONE.parent)
+    if c.returncode:
+        return {**row, "result": "failed", "why": "commit refused: " + (c.stdout + c.stderr)[-300:]}
+    if sh(["git", "push", "-q", "-u", "origin", branch], cwd=tree).returncode:
+        return {**row, "result": "failed", "why": "push failed"}
+    body = (f"Litha brought #{number} up to date with star/next (her own branch; the original PR is unchanged).\n\n"
+            f"Conflicts resolved: {', '.join(conflicted)}. Lock files were taken from star/next and rebuilt with "
+            f"{LOCK_TOOL}.\nTests run after resolving: {', '.join(sorted(tests)[:6]) or 'none touched'}.\n"
+            f"Contains #{number}'s commits plus the merge; merging this lands both.")
+    try:
+        row["fix_pr"] = gh("pr", "create", "--repo", REPO, "--base", BASE, "--head", branch,
+                           "--title", f"[litha] up to date: #{number} {pr.get('title', '')[:60]}", "--body", body).strip()
+        gh("pr", "comment", str(number), "--repo", REPO, "--body", f"Litha resolved the conflicts in {row['fix_pr']}")
+    except RuntimeError as e:
+        row["why"] += f" (PR create: {str(e)[:150]})"
+    return row
+
+
 def fix(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     sha, number = pr["headRefOid"], pr["number"]
     log = failed_logs(sha)
@@ -408,8 +525,23 @@ def main(argv: list[str] | None = None) -> int:
     for pr in open_prs(a.pr):
         if done >= a.max:
             break
-        if (pr.get("isDraft") or pr.get("baseRefName") != BASE or pr.get("mergeable") != "MERGEABLE"
-                or tried.get(str(pr["number"])) == pr["headRefOid"]):       # her own branches too: flaky reruns
+        if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(str(pr["number"])) == pr["headRefOid"]:
+            continue
+        if pr.get("mergeable") == "CONFLICTING" and not str(pr.get("headRefName", "")).startswith("litha/"):
+            t = time.time()
+            try:
+                row = resolve(pr, a.python, a.dry)
+            except Exception as e:  # noqa: BLE001 - one PR must not stop the others
+                row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
+            row["seconds"] = round(time.time() - t)
+            tried[str(pr["number"])] = pr["headRefOid"]
+            STATE.write_text(json.dumps(tried), encoding="utf-8")
+            with LOG.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": round(t), **row}) + "\n")
+            print(json.dumps(row), flush=True)
+            done += 1
+            continue
+        if pr.get("mergeable") != "MERGEABLE":                 # her own branches too: flaky reruns
             continue
         checks = head_checks(pr["headRefOid"])
         if not any(c["conclusion"] == "FAILURE" for c in checks) or any(c["status"] != "completed" for c in checks):
