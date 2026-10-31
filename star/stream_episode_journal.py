@@ -147,10 +147,13 @@ class StreamEpisodeJournal:
         if not isinstance(moment, GameMoment) or type(host_observed) is not bool:
             raise TypeError("structured GameMoment and explicit host flag required")
         with self._lock:
-            now = self._advance(now_s)
+            # An unattested viewer/model claim must not move the session
+            # clock, expire legitimate memories or poison future host calls.
+            # Reject it before _advance() mutates timestamp/retention state.
             if not self._enabled or not host_observed:
                 self._counts["rejected"] += 1
                 return False
+            now = self._advance(now_s)
             # Event identifiers are local to their trusted game scope. Two
             # games may independently emit the same observation sequence ID.
             key = (moment.game_scope, moment.moment_id)
