@@ -176,10 +176,21 @@ def source_diff(diff: str) -> str:
     return "".join(p for p in parts if not re.match(r"diff --git a/tests/", p))
 
 
-def run_tests(tree: Path, tests: list[str], python: str) -> tuple[bool, str]:
+def run_tests(tree: Path, tests: list[str], python: str, extra: tuple[str, ...] = ()) -> tuple[bool, str]:
     env = dict(os.environ, APPDATA=tempfile.mkdtemp(prefix="litha-fix-"))
-    r = sh([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf", *tests], cwd=tree, timeout=900, env=env)
+    r = sh([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf", *extra, *tests], cwd=tree, timeout=900,
+           env=env)
     return r.returncode == 0, (r.stdout + r.stderr)[-3000:]
+
+
+def deep_failure(tree: Path, fails: list[dict], python: str) -> str:
+    """No diff to point at the cause: rerun the first failing test with the values of every local (-l) and full
+    tracebacks, so she sees WHICH value is wrong, not only that an assert failed."""
+    first = fails[0]["test"] if fails else ""
+    if "::" not in first:
+        return ""
+    _, out = run_tests(tree, [first], python, ("--tb=long", "-l", "-x"))
+    return out[-3500:]
 
 
 def ask(prompt: str) -> str:
@@ -194,6 +205,10 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
     """Up to ROUNDS rounds of Litha's edits + the tests; progress (fewer failures) is kept between rounds."""
     ok, round_no = False, 0
     feedback, why, best, kept_edits = "", "", len(FAILED.findall(out)) or 99, []
+    if not diff.strip():                                     # blind: show the wrong values instead of a diff
+        deep = deep_failure(tree, fails, python)
+        if deep:
+            fails = [{"test": fails[0]["test"], "section": deep}] + fails[1:]
     for round_no in range(1, ROUNDS + 1):
         sections = "\n\n".join(f"{f['test']}\n{f['section']}" for f in fails) + "\n\nlocal run now:\n" + out[-1500:]
         prompt = PROMPT.format(title=title, failures=sections[:6000],

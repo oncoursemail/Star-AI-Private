@@ -40,6 +40,7 @@ def test_lessons_remember_misses_and_show_the_weakest(tmp_path, monkeypatch):
 
 def test_sft_pairs_hold_the_real_answer(tmp_path, monkeypatch):
     monkeypatch.setattr(B, "SFT", tmp_path / "sft.jsonl")
+    monkeypatch.setattr(B, "bank_row", lambda *a, **k: None)          # never the real nightly bank in a test
     B.save_sft("prompt", {"kind": "and-or", "file": "a.py", "bad": "    if a or b:", "orig": "    if a and b:"})
     row = json.loads((tmp_path / "sft.jsonl").read_text(encoding="utf-8"))
     edit = json.loads(row["messages"][1]["content"])["edits"][0]
@@ -67,3 +68,14 @@ def test_a_proof_must_fail_on_an_assert_after_the_pr_and_pass_before(tmp_path):
     ask = lambda prompt: json.dumps({"possible": True, "test": proof})          # noqa: E731
     assert P.prove(bad, risk, sys.executable, ask, base=good)["proven"] is True
     assert P.prove(bad, risk, sys.executable, ask, base=bad)["proven"] is False  # fails before too: her expectation
+
+
+def test_bank_rows_go_to_the_nightly_work_dir(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"work_dir": str(work), "system_prompt": "You are Litha"}), encoding="utf-8")
+    B.bank_row("p", {"edits": []}, {"kind": "and-or"}, cfg)
+    row = json.loads((work / "bank-litha-fixes.jsonl").read_text(encoding="utf-8"))
+    assert row["kind"] == "corrected" and [m["role"] for m in row["messages"]] == ["system", "user", "assistant"]
+    B.bank_row("p", {}, {}, tmp_path / "missing.json")                # no nightly here: nothing written, no error

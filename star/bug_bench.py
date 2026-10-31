@@ -237,6 +237,26 @@ def save_sft(prompt: str, item: dict) -> None:
         f.write(json.dumps({"messages": [{"role": "user", "content": prompt},
                                          {"role": "assistant", "content": json.dumps(answer)}],
                             "source": "bug_bench", "kind": item["kind"]}) + "\n")
+    bank_row(prompt, answer, item)
+
+
+def bank_row(prompt: str, answer: dict, item: dict, config: Path = Path.home() / ".star" / "nightly" / "config.json"):
+    """The same pair in the nightly trainer's bank (it trains on every work_dir/bank*.jsonl; kind "corrected" rows
+    count double: they carry what she got wrong). Skipped when the nightly is not set up on this machine."""
+    try:
+        cfg = json.loads(config.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    import hashlib
+    work = Path(str(cfg.get("work_dir", ""))).expanduser()
+    if not work.is_dir():
+        return
+    row = {"id": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16], "group": "g:pr-fix",
+           "source": "bug_bench (real answer)", "night": dt.date.today().isoformat(), "kind": "corrected",
+           "messages": [{"role": "system", "content": cfg.get("system_prompt", "")},
+                        {"role": "user", "content": prompt}, {"role": "assistant", "content": json.dumps(answer)}]}
+    with (work / "bank-litha-fixes.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 # ---------------------------------------------------------------- the benchmark
