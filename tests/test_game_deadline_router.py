@@ -1,4 +1,6 @@
 """Offline, adversarial real-time game routing tests; no game/device I/O."""
+from threading import Event, RLock, Thread
+
 import pytest
 
 from star.game_deadline_router import GameDeadlineRouter
@@ -249,3 +251,73 @@ def test_live_route_requires_host_clock_and_valid_sample_age():
     for bad in (1, 240, float("nan"), 60001, True):
         with pytest.raises(ValueError):
             GameDeadlineRouter(max_latency_sample_age_ms=bad)
+
+
+def test_host_clock_rollback_does_not_revive_expired_game_speed_profile():
+    gate = router()
+    train(gate)
+    assert decide(gate, now_host_ms=1000).route == "reactive"
+    assert decide(gate, now_host_ms=18000).reason == "insufficient_recent_latency_samples"
+    # A broken/restarted host clock must not turn old samples into fresh ones.
+    assert decide(gate, now_host_ms=1000).reason == "host_clock_reversed"
+    assert decide(gate, now_host_ms=18001).reason == "insufficient_recent_latency_samples"
+    # Session re-enablement explicitly clears clock history and old samples.
+    gate.disable()
+    gate.enable(owner_approved=True, game_scope="obby:v2")
+    train(gate)
+    assert decide(gate, now_host_ms=1000).route == "reactive"
+
+
+def test_session_enable_cannot_erase_a_racing_latency_sample_timestamp():
+    class _PauseAfterUnlock:
+        def __init__(self):
+            self.inner = RLock()
+            self.released = Event()
+            self.resume = Event()
+            self.pause_once = True
+
+        def __enter__(self):
+            self.inner.acquire()
+            return self
+
+        def __exit__(self, _type, _value, _traceback):
+            self.inner.release()
+            if self.pause_once:
+                self.pause_once = False
+                self.released.set()
+                if not self.resume.wait(timeout=3):
+                    raise AssertionError("test failed to release enable")
+
+    gate = GameDeadlineRouter()
+    lock = _PauseAfterUnlock()
+    # Instrument the lock boundary to make the previously narrow race
+    # deterministic, rather than relying on scheduling luck.
+    gate.__dict__["_lock"] = lock
+    errors = []
+
+    def enable_in_thread():
+        try:
+            gate.enable(owner_approved=True, game_scope="obby:v2")
+        except Exception as exc:
+            errors.append(exc)
+
+    thread = Thread(target=enable_in_thread, daemon=True)
+    thread.start()
+    try:
+        assert lock.released.wait(timeout=3)
+        assert gate.record_reactive_latency(
+            game_scope="obby:v2", sample_id=1, sample_host_ms=100,
+            duration_ms=50, host_measured=True,
+        )
+    finally:
+        lock.resume.set()
+        thread.join(timeout=3)
+    assert not thread.is_alive()
+    assert not errors
+    # Previously the timestamp reset OUTSIDE enable's lock, so a second
+    # sample could be accepted with a smaller time and a larger sample ID.
+    assert not gate.record_reactive_latency(
+        game_scope="obby:v2", sample_id=2, sample_host_ms=90,
+        duration_ms=40, host_measured=True,
+    )
+    assert gate.metrics()["replays"] == 1
