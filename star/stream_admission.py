@@ -144,10 +144,11 @@ class StreamAdmissionGate:
             if not self._enabled:
                 return False
             last = self._last
+            # Metric collectors may publish with modest delay relative to
+            # advise() calls. Reject ordering relative to the prior *sample*,
+            # not relative to the last query; age is checked at advise().
             if (not sample.host_verified or
-                    (last is not None and sample.observed_ms <= last.observed_ms) or
-                    (self._last_query_ms is not None and
-                     sample.observed_ms < self._last_query_ms)):
+                    (last is not None and sample.observed_ms <= last.observed_ms)):
                 self._counts["rejected"] += 1
                 return False
             self._last = sample
