@@ -73,7 +73,7 @@ class PracticeSummary(Protocol):
 class PracticeEvidenceSource(Protocol):
     def practice_evidence(self, game_id: str, game_version: str,
                           objective_id: str, situation_id: str, *,
-                          now_unix_s: int) -> Sequence[PracticeSummary]: ...
+                          now_unix_s: int, max_age_s: int) -> Sequence[PracticeSummary]: ...
 
 
 @dataclass(frozen=True)
@@ -140,7 +140,11 @@ def recommend_practice(
     # row before disclosing practice summaries and excludes validation entirely.
     scopes: dict[str, dict[str, PracticeSummary]] = {}
     for situation in sorted(situations):
-        summaries = bank.practice_evidence(*anchor, situation, now_unix_s=now)
+        # Scope every signed result to the SAME recent assessment window.
+        # Checking only the last signed timestamp cannot establish retention:
+        # one fresh failure must never revive months of historic successes.
+        summaries = bank.practice_evidence(*anchor, situation, now_unix_s=now,
+                                           max_age_s=max_evidence_age_s)
         if not isinstance(summaries, (list, tuple)) or len(summaries) > _MAX_AGGREGATES:
             raise ValueError("invalid or oversized signed-practice summary")
         by_action: dict[str, PracticeSummary] = {}
@@ -161,7 +165,7 @@ def recommend_practice(
         successes = item.successes if item is not None else 0
         recent = item.most_recent_unix_s if item is not None else 0
         lower = _lower_bound(successes, attempts)
-        # A lifetime aggregate with no recent practice cannot establish that
+        # A signed aggregate outside the requested recent practice window cannot establish that
         # a skill was retained. We cannot infer recent win rate from a single
         # last-seen timestamp: request independent reassessment instead of
         # silently unlocking higher stages or reusing old successes.
