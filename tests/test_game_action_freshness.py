@@ -71,6 +71,20 @@ def test_replay_and_out_of_order_observations_are_rejected():
     assert g.metrics()["replayed"] == 2
 
 
+
+def test_new_sequence_cannot_use_older_observation_snapshot():
+    g = gate(age_ms=250.0)
+    assert g.assess(signal(seq=1, observed=100.10, decided=100.11),
+                    now_s=100.13).fresh
+    out_of_order = g.assess(
+        signal(seq=2, observed=100.09, decided=100.14), now_s=100.15,
+    )
+    assert out_of_order.reason == "out_of_order_observation"
+    assert g.metrics()["out_of_order_observation"] == 1
+    assert g.assess(signal(seq=2, observed=100.16, decided=100.17),
+                    now_s=100.18).fresh
+
+
 def test_no_chat_attestation_and_no_cross_game_or_cross_session_replay():
     g = gate()
     assert g.assess(signal(verified=False), now_s=999_999).reason == "unverified"
