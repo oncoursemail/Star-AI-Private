@@ -128,3 +128,24 @@ def test_the_prover_sees_the_module_shape_and_a_real_test_and_retries_a_wrong_ex
     got = P.prove(bad, risk, sys.executable, ask, base=good)
     assert got["proven"] is True and got["tries"] == 2
     assert "class Calc:" in prompts[0] and "BEFORE the change too" in prompts[1]
+
+
+def test_hunt_tries_the_second_suspect_and_shows_how_tests_call_the_function(tmp_path):
+    from star import bug_hunt as H
+    src = "def score(x):\n    y = x * 2\n    return y + 1\n"
+    head = _tree(tmp_path, "head", src)
+    (head / "tests" / "test_calc.py").write_text("from star.calc import score\n\n\ndef test_s():\n    assert score(1) == 3\n",
+                                                 encoding="utf-8")
+    prompts, proved = [], []
+
+    def ask(prompt):
+        prompts.append(prompt)
+        return json.dumps({"suspects": [{"line": 2, "why": "a"}, {"line": 3, "why": "b"}]})
+
+    def prove(tree, risk, py, asker, base=None):
+        proved.append(risk["line"])
+        return {"proven": risk["line"] == 3}
+
+    found = H.hunt(head, head, {"star/calc.py": {2, 3}}, sys.executable, ask, prove)
+    assert proved == [2, 3] and [f["line"] for f in found] == [3]
+    assert "assert score(1) == 3" in prompts[0]
