@@ -99,7 +99,13 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 
 ## 3b. Hunt measured
 
-(filled in from `~/.star/litha/bench.jsonl`, mode "hunt")
+- Seed 3, first version: 0/6. Cause seen in the log: right line and reason, but the proof imported an invented
+  class. Fix: the prover gets the module outline + a real test of the module, and retries when her test also fails
+  on the old code. Then 1/6 caught, 0 wrong-line flags (different mutants: 10 kinds were added in between).
+- Then the hunt also sees how the tests call the function and names up to 2 suspects (each proven): see
+  `bench.jsonl` for the latest.
+- False holds: `python -m star.pr_merger --replay-hunt 8` on merged PRs #816-#847: 0/7 flagged (one had no Python
+  change).
 
 ## 5. Rules that stay (do not remove)
 
