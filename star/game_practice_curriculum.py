@@ -93,6 +93,7 @@ def recommend_practice(
     now_unix_s: int, owner_approved: bool = False,
     min_trials: int = 8, minimum_lower_bound: float = 0.55,
     max_trials_before_review: int = 40,
+    max_evidence_age_s: int = 7 * 24 * 3600,
 ) -> PracticeAdvice:
     """Propose *one* next practice exercise without leaking validation.
 
@@ -108,6 +109,7 @@ def recommend_practice(
     now = _integer(now_unix_s, "now_unix_s", 1, 10**11)
     _integer(min_trials, "min_trials", 5, 100)
     _integer(max_trials_before_review, "max_trials_before_review", 10, 1000)
+    _integer(max_evidence_age_s, "max_evidence_age_s", 60, 30 * 24 * 3600)
     if max_trials_before_review <= min_trials:
         raise ValueError("review budget must exceed minimum evidence count")
     if (type(minimum_lower_bound) not in (int, float)
@@ -152,16 +154,22 @@ def recommend_practice(
             by_action[action] = item
         scopes[situation] = by_action
 
-    pending: list[tuple[PracticeTarget, int, int, float, int]] = []
+    pending: list[tuple[PracticeTarget, int, int, float, int, bool]] = []
     for target in targets:
         item = scopes[target.situation_id].get(target.action_id)
         attempts = item.trials if item is not None else 0
         successes = item.successes if item is not None else 0
         recent = item.most_recent_unix_s if item is not None else 0
         lower = _lower_bound(successes, attempts)
-        mastered = attempts >= min_trials and lower >= minimum_lower_bound
+        # A lifetime aggregate with no recent practice cannot establish that
+        # a skill was retained. We cannot infer recent win rate from a single
+        # last-seen timestamp: request independent reassessment instead of
+        # silently unlocking higher stages or reusing old successes.
+        stale = item is not None and now - recent > max_evidence_age_s
+        mastered = (attempts >= min_trials and
+                    lower >= minimum_lower_bound and not stale)
         if not mastered:
-            pending.append((target, attempts, successes, lower, recent))
+            pending.append((target, attempts, successes, lower, recent, stale))
     if not pending:
         return PracticeAdvice("complete", None,
                               "practice_only_complete_requires_independent_validation")
@@ -170,6 +178,17 @@ def recommend_practice(
     # strong result on one easy map can hide a failure on another map.
     frontier = min(item[0].difficulty for item in pending)
     candidates = [item for item in pending if item[0].difficulty == frontier]
+    # Old lifetime wins must not imply current skill retention. The host must
+    # start an independently verified fresh assessment window; adding one
+    # fresh event to a lifetime count is not sufficient evidence of retention.
+    expired = [item for item in candidates if item[5]]
+    if expired:
+        target, attempts, successes, lower, _, _ = min(
+            expired, key=lambda item: (item[0].situation_id, item[0].action_id)
+        )
+        return PracticeAdvice("review_required", target,
+                              "practice_evidence_stale_requires_fresh_assessment",
+                              attempts, successes, round(lower, 4))
     # Stop infinite ineffective self-play after a bounded failure budget.
     stalled = [item for item in candidates if item[1] >= max_trials_before_review]
     if stalled:
