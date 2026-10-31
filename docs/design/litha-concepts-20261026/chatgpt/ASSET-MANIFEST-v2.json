@@ -1,0 +1,204 @@
+{
+  "schema": 1,
+  "kind": "review_concepts",
+  "generator": "built-in ChatGPT image generation",
+  "owner_approved": false,
+  "original_reference_files_modified": false,
+  "active_identity": "Solstice Architect per issue682 owner comment6429859220",
+  "historical_sun_engineer_set_superseded": true,
+  "postprocessed": false,
+  "files": [
+    {
+      "path": "docs/design/litha-concepts-20261026/chatgpt/litha-a-sun-engineer-sheet.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "alpha_extrema": null,
+      "sha256": "eb493ef6b4bf00728e11c9b0874f6aa9a87f1c638e2c3822b2a6699330a69bd9",
+      "bytes": 2095661
+    },
+    {
+      "path": "docs/design/litha-concepts-20261026/chatgpt/litha-b-solstice-architect-sheet.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "alpha_extrema": null,
+      "sha256": "8c1dfd671d41b6918a083bd527b244221737d23de7af1e827de20249a13d6124",
+      "bytes": 2458914
+    },
+    {
+      "path": "docs/design/litha-concepts-20261026/chatgpt/litha-c-light-weaver-sheet.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "alpha_extrema": null,
+      "sha256": "d3719a1d138cd661ac7ca03a0481a9aa56085e6b634d748842d2618f47c168eb",
+      "bytes": 2170954
+    },
+    {
+      "path": "docs/design/litha-concepts-20261026/chatgpt/litha-solstice-architect-improved-v1.png",
+      "width": 1037,
+      "height": 1516,
+      "mode": "RGB",
+      "alpha_extrema": null,
+      "sha256": "8a6e2227cbfdd8696ff6b2c3805fe2db97ae9f11a840ac56510908aecc23135b",
+      "bytes": 1571865
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha/litha-cheering.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "b3674dc1bcaeb107d7b8e880eb242fcbee5bf0317e177316e52090452b6e2c51",
+      "bytes": 1381528
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha/litha-fullbody.png",
+      "width": 1024,
+      "height": 1536,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        254
+      ],
+      "sha256": "13868ab7e11270ec7004b6c4ae9962d59a0f412dfc900f97d8c46ec128100622",
+      "bytes": 1959536
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha/litha-sleepy.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "63f281b021b5415971f71d6f2fa38537e88f177c88d689b686b592844ce3dc45",
+      "bytes": 1295951
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha/litha-surprised.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "b2a5df5a89e57983ee4b886e23b7089316c4a54fe284e04d95d1633b2422338d",
+      "bytes": 1386295
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha/litha-thinking.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "79eb5a4e39aef177d84bb4c423f546a36a1112d15fb1da28b891f17fad9aa3a4",
+      "bytes": 1325690
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha/litha-typing.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "dfd77d84d618e5472555f12851b907fcf64c91790481f1f8d05453cca064aee2",
+      "bytes": 1353577
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha/litha-wave.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "aa3cf9e6dfded6afe8c42bca6f898355f0a71a5a85d69b784dc67efdc982f5b8",
+      "bytes": 1388173
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha-solstice/litha-solstice-cheering.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "505de6ae0ad23ceb355cb7b3926073af06bf4bbede2be7fd28f8f71adfc11e8e",
+      "bytes": 1182442
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha-solstice/litha-solstice-sleepy.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "aaca40b333eafd05f6865ce760a4226be0a3f7cee5c46020e77f3ac3e45cc7b2",
+      "bytes": 1171775
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha-solstice/litha-solstice-surprised.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "32edc940f5f09a155ff3ff9f5aeed0b762fdafe47315b833b1439949a507f9c6",
+      "bytes": 1374734
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha-solstice/litha-solstice-thinking.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "49046590ed247bd25cb0ef8e6cf9ffb89059105e92efaff67675f53618d572a5",
+      "bytes": 1179017
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha-solstice/litha-solstice-typing.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "a050d6ff69e39a9d3d32f46df4860a4b06ed150cc4cd0d631e608ea65b3a0329",
+      "bytes": 1270372
+    },
+    {
+      "path": "docs/design/metallic-art-20261026/litha-solstice/litha-solstice-wave.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "alpha_extrema": [
+        0,
+        255
+      ],
+      "sha256": "be8af385948c2bf104b3e1c098a78c2329811cf93c5e935561854913bfe0e321",
+      "bytes": 1265874
+    }
+  ]
+}
