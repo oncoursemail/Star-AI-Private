@@ -102,7 +102,7 @@ class StreamKnowledgeTests(unittest.TestCase):
         p = self.packet("checkpoint", [ident])
         self.assertIsNotNone(p)
         self.assertNotIn(secret_revision, p.context_record)
-        self.assertNotIn("\\\"revision\\\"", p.context_record)
+        self.assertNotIn('"revision":', p.context_record)
         self.assertIn("source_digest", p.context_record)
 
     def test_oversized_ranked_fact_does_not_starve_shorter_approved_fact(self):
