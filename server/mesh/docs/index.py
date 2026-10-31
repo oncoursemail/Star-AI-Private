@@ -12,6 +12,8 @@ budget (default ~500 tokens, counted as chars / 3.6).
 from __future__ import annotations
 
 import array
+import heapq
+import importlib
 import json
 import math
 import operator
@@ -22,6 +24,9 @@ import time
 
 CHARS_PER_TOKEN = 3.6
 _dot = getattr(math, "sumprod", None) or (lambda a, b: sum(map(operator.mul, a, b)))
+MAX_VECTOR_DIMENSION = 65_536
+MAX_VECTOR_ROWS = 1_000_000
+DEFAULT_VECTOR_BYTES = 512 * 1024 * 1024
 
 STOP = set("""a an and are as at be but by can could do does doing done for from get gets getting got have how i if in
 into is it its it's like make makes making me my of on or so that the then there this to u up use using want was way
@@ -63,7 +68,12 @@ def content_words(text: str) -> list[str]:
 
 
 class DocsIndex:
-    def __init__(self, path: str, load_vectors: bool = True):
+    def __init__(self, path: str, load_vectors: bool = True, *, dense_backend: str = "python",
+                 dense_max_vector_bytes: int = DEFAULT_VECTOR_BYTES):
+        if dense_backend not in ("python", "rust"):
+            raise ValueError("dense_backend must be 'python' or 'rust'")
+        if type(dense_max_vector_bytes) is not int or dense_max_vector_bytes <= 0:
+            raise ValueError("dense_max_vector_bytes must be a positive integer")
         self.path = path
         self.db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
         self.lock = threading.Lock()               # one connection, used by the service's request threads
@@ -84,11 +94,70 @@ class DocsIndex:
                     self.lower_types.setdefault(row["name"].lower(), row["name"])
         self.supers = dict(self.db.execute("SELECT cls, super FROM supers"))
         self.vectors: list[tuple[int, array.array]] = []
+        self._native_vectors = None
+        self.dense_backend_requested = dense_backend
+        self.dense_backend = "python"
+        self.dense_backend_reason = ""
+        self.vector_dimension = 0
+        self.invalid_vectors = 0
         if load_vectors:
-            for pid, blob in self.db.execute("SELECT id, emb FROM passages WHERE emb IS NOT NULL"):
-                v = array.array("f")
-                v.frombytes(blob)
-                self.vectors.append((pid, v))
+            native = None
+            if dense_backend == "rust":
+                try:
+                    native = importlib.import_module("litha_search")
+                    if getattr(native, "API_VERSION", None) != 1 or not hasattr(native, "DenseIndex"):
+                        native = None
+                        self.dense_backend_reason = "native_api_mismatch"
+                except (ImportError, OSError):
+                    self.dense_backend_reason = "native_unavailable"
+            rows = self.db.execute("SELECT id, emb FROM passages WHERE emb IS NOT NULL ORDER BY id")
+            try:
+                if native is not None:
+                    self._native_vectors = native.DenseIndex(rows, dense_max_vector_bytes)
+                    self.dense_backend = "rust"
+                    self.vector_dimension = self._native_vectors.dimension
+                    self.invalid_vectors = self._native_vectors.skipped_rows
+                else:
+                    payload_bytes = 0
+                    for seen, (pid, blob) in enumerate(rows):
+                        if seen >= MAX_VECTOR_ROWS:
+                            raise ValueError("dense vector row limit exceeded")
+                        if not isinstance(blob, bytes) or not blob or len(blob) % 4 or \
+                                len(blob) // 4 > MAX_VECTOR_DIMENSION:
+                            self.invalid_vectors += 1
+                            continue
+                        v = array.array("f")
+                        v.frombytes(blob)
+                        if (self.vector_dimension and len(v) != self.vector_dimension) or \
+                                not all(math.isfinite(x) for x in v):
+                            self.invalid_vectors += 1
+                            continue
+                        payload_bytes += len(blob) + 8
+                        if payload_bytes > dense_max_vector_bytes:
+                            raise ValueError("dense vector payload budget exceeded")
+                        self.vector_dimension = len(v)
+                        self.vectors.append((pid, v))
+            except (ValueError, MemoryError):
+                # Never serve an incomplete vector corpus when a resource limit
+                # is reached. Exact lookup and BM25 remain available.
+                self._native_vectors = None
+                self.vectors.clear()
+                self.vector_dimension = 0
+                self.dense_backend = "disabled"
+                self.dense_backend_reason = "vector_resource_limit"
+            finally:
+                rows.close()
+
+    @property
+    def vector_count(self) -> int:
+        return self._native_vectors.count if self._native_vectors is not None else len(self.vectors)
+
+    @property
+    def vector_bytes(self) -> int:
+        """Packed vector + int64 ID payload; excludes allocator/Python/SQLite overhead."""
+        if self._native_vectors is not None:
+            return self._native_vectors.storage_bytes
+        return sum(len(v) * v.itemsize + 8 for _, v in self.vectors)
 
     # ---- exact lookup ------------------------------------------------------------------------------------------------
     def chain(self, cls: str) -> list[str]:
@@ -174,13 +243,32 @@ class DocsIndex:
         return [(r[0], -r[1]) for r in rows]
 
     def dense(self, vec, k: int = 8) -> list[tuple[int, float]]:
-        if not self.vectors or not vec:
+        if not self.vector_count or vec is None or type(k) is not int or k <= 0:
             return []
-        n = math.sqrt(math.fsum(x * x for x in vec)) or 1.0
-        q = array.array("f", (x / n for x in vec))
-        scored = [(pid, _dot(q, v)) for pid, v in self.vectors]
-        scored.sort(key=lambda t: -t[1])
-        return scored[:k]
+        try:
+            if len(vec) != self.vector_dimension or len(vec) > MAX_VECTOR_DIMENSION:
+                return []
+            values = [float(x) for x in vec]
+            if not all(math.isfinite(x) for x in values):
+                return []
+            try:
+                n = math.sqrt(math.fsum(x * x for x in values)) or 1.0
+            except OverflowError:
+                n = math.inf
+            if not math.isfinite(n):
+                # A finite but very large vector can overflow x*x; rescale first.
+                scale = max(abs(x) for x in values)
+                values = [x / scale for x in values]
+                n = math.sqrt(math.fsum(x * x for x in values)) or 1.0
+            q = array.array("f", (x / n for x in values))
+        except (TypeError, ValueError, OverflowError):
+            return []
+        limit = min(k, self.vector_count)
+        if self._native_vectors is not None:
+            return self._native_vectors.search(q.tobytes(), limit)
+        # Same exact scores and stable corpus-order ties as the previous sort,
+        # while retaining only k results rather than one tuple per passage.
+        return heapq.nlargest(limit, ((pid, _dot(q, v)) for pid, v in self.vectors), key=lambda t: t[1])
 
     def passage(self, pid: int) -> dict:
         with self.lock:

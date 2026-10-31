@@ -1450,20 +1450,53 @@ class Router:
             self.counters["embed_failed"] += 1
             return None
 
-    async def verify_ok(self, answer: str) -> bool | None:
-        """True when the verifier finds no error and no warning, False otherwise, None when it cannot be reached."""
+    async def verify_ok(self, answer: str, question: str | None = None) -> bool | None:
+        """True for a clean check, False for problems, None for unavailable/incomplete Rust verification."""
+        request = {"answer": answer}
+        if question is not None:
+            request["question"] = question
+        rust_expected = bool(re.search(r"(?mi)^[ \t]{0,3}(?:`{3,}|~{3,})[ \t]*(?:rust|rs)\b", answer))
+        rust_question = bool(re.search(r"\brust\b", question or "", re.I))
+        has_fence = bool(re.search(r"(?m)^[ \t]{0,3}(?:`{3,}|~{3,})", answer))
+        raw_rust = bool(re.search(
+            r"(?m)^\s*(?:(?:pub(?:\([^)]*\))?|async|unsafe)\s+)*"
+            r"(?:fn|struct|enum|impl|trait|use|mod|const|static|type|macro_rules|extern|let)\b|"
+            r"(?m:^.*(?:;\s*$|!\s*[({\[]))", answer))
+        code_request = bool(re.search(r"\b(write|implement|program|snippet|code|example)\b", question or "", re.I))
+        if rust_question and (has_fence or raw_rust or code_request):
+            # The verifier treats unfenced answers as prose unless the caller
+            # identifies a language. This also identifies a single unlabelled
+            # code fence. An ambiguous multi-block answer remains unverified.
+            request["language"] = "rust"
+            rust_expected = True
         try:
             up = await open_upstream(self.cfg["verify_url"].rstrip("/") + "/mesh/verify", "POST",
-                                     json.dumps({"answer": answer}).encode(),
+                                     json.dumps(request).encode(),
                                      {"Content-Type": "application/json",
                                       "Authorization": f"Bearer {self.keys.first()}"}, idle_s=30)
-            raw = await asyncio.wait_for(up.body(), 30)
-            up.close()
+            try:
+                raw = await asyncio.wait_for(up.body(), 30)
+            finally:
+                up.close()
             if up.status != 200:
                 return None
             report = json.loads(raw)                     # warnings (deprecated API ...) also keep it out
-            return bool(report.get("ok")) and not report.get("needs_fix")
-        except (UpstreamError, asyncio.TimeoutError, ValueError, AttributeError):
+            if (not isinstance(report, dict) or type(report.get("ok")) is not bool
+                    or type(report.get("needs_fix")) is not bool
+                    or not isinstance(report.get("blocks"), list)
+                    or any(not isinstance(block, dict) for block in report["blocks"])):
+                return None
+            if not report["ok"] or report["needs_fix"]:
+                return False
+            # The verifier deliberately distinguishes "no known problem" from
+            # "compiled". A missing crate, timeout or unsupported Rust edition
+            # must not promote an unverified answer into the checked cache.
+            rust_blocks = [block for block in report["blocks"] if block.get("language") == "rust"]
+            if ((rust_expected and not rust_blocks)
+                    or any(block.get("checked") is not True for block in rust_blocks)):
+                return None
+            return True
+        except (UpstreamError, asyncio.TimeoutError, ValueError, AttributeError, TypeError):
             return None
 
     async def cache_candidates(self, text: str, context: str) -> tuple[list[dict], float]:
@@ -1584,7 +1617,7 @@ class Router:
         self.counters["cache_hit"] += 1
         self.cache.hit(row["id"])
         if time.time() - row["verified_at"] > self.cfg["cache_reverify_s"]:
-            asyncio.get_running_loop().create_task(self._reverify(row["id"], row["answer"]))
+            asyncio.get_running_loop().create_task(self._reverify(row["id"], row["answer"], row["question"]))
         hdr = {"X-Mesh-Backend": "cache", "X-Mesh-Cache": "hit", "X-Mesh-Cache-Match": how,
                "X-Mesh-Cache-Id": str(row["id"]), "X-Mesh-Cache-Ms": str(lookup_ms)}
         if sim is not None:
@@ -1600,8 +1633,8 @@ class Router:
                                "chosen": "cache", "entry": row["id"], "outcome": "ok", "stage2": stage2 or None,
                                "total_ms": round((time.monotonic() - t0) * 1000, 1)})
 
-    async def _reverify(self, rid: int, answer: str):
-        ok = await self.verify_ok(answer)
+    async def _reverify(self, rid: int, answer: str, question: str | None = None):
+        ok = await self.verify_ok(answer, question)
         if ok is True:
             self.cache.reverified(rid)
         elif ok is False:
@@ -1635,9 +1668,9 @@ class Router:
         q, why = instant.cache_question({"messages": [{"role": "user", "content": question}]})
         if q is None:
             return 422, err(f"not cacheable: {why}")
-        ok = await self.verify_ok(answer)
+        ok = await self.verify_ok(answer, question)
         if ok is None:
-            return 503, err("verifier unreachable; nothing cached unverified")
+            return 503, err("verification unavailable or incomplete; nothing cached unverified")
         if not ok:
             return 422, err("the verifier found problems in this answer")
         emb = await self.embed(q)
