@@ -28,6 +28,9 @@ def test_mutations_hit_code_lines_only_and_stay_valid_python():
     assert B.mutate(src, 3, "drop-return").split("\n")[2] == "        pow(a, b) + xs[0]"
     assert B.mutate(src, 3, "swap-args").split("\n")[2] == "        return pow(b, a) + xs[0]"
     assert B.mutate(src, 2, "any-all").split("\n")[1] == "    if all(xs):"
+    uni = "def g(a, b):\n    s = 'é' + str(a)\n    return s\n"
+    assert B.mutate(uni, 2, "wrong-var").split("\n")[1] == "    s = 'é' + str(b)"   # byte offsets, not chars
+    assert B.mutate(uni, 3, "wrong-var") is None                     # `s` is not a parameter
 
 
 def test_lessons_remember_misses_and_show_the_weakest(tmp_path, monkeypatch):

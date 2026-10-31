@@ -12,6 +12,7 @@ anything here; every rule below exists because a measured run needed it.
 | `pr_fixer.py` | failing PR -> CI log -> her edits -> failing test files pass locally -> her own branch + PR | task "Litha PR merger", every 30 min, 1 PR per run |
 | `pr_merger.py` | open PRs into `star/next`: hard gates, her review, proofs, merge | same task, after the fixer |
 | `bug_proof.py` | a blocking claim must be shown by a test that fails after the PR and passes before it | called by the merger |
+| `bug_hunt.py` | last look before a merge: she reads each changed function alone and names a bug; kept only if `bug_proof` proves it | called by the merger |
 | `pr_promote.py` | `star/next` -> `main` (auto-publishes a release) only with all release receipts | same task, last |
 | `release_receipt.py` | runs a release check and writes its receipt | by whoever runs acceptance / install |
 | `bug_bench.py` | plants real bugs in the real repo, she fixes them, lessons + training pairs + score history | task "Litha bug bench", 03:10 daily |
@@ -37,6 +38,9 @@ per module (`ask` / `ask_litha`).
 4. Then `bug_proof.prove()`: she writes one pytest test; it must FAIL on an assert on the PR's code AND PASS on the
    code before the PR (`origin/star/next`). Safety claims (secrets, injection, deletion, leaks) stay blocking without
    a test. Unproven claims do not block.
+5. Before a merge the review allowed, `hunt_pr()` runs `bug_hunt.hunt()` on every changed function (max 6) with the
+   PR's title and body as the author's intent ("a change the author says they meant is not a bug"). A find that is
+   PROVEN (fails on the PR, passes on `star/next`) holds the PR with reason `hunt: ...`.
 Why: measured on 6 merged PRs, her raw review held 4 good PRs on invented problems (2/6 agreement); with step 3,
 5/6. A self-written test "proved" a false claim until the before-PR comparison was added.
 
@@ -48,6 +52,9 @@ lessons -> search/replace edits (must match exactly once; `tests/`, `.github/`, 
 spec) -> the failing test FILES rerun. Fewer failures = edits kept; otherwise back to the kept state. Success ->
 `star commit` (secret checks) -> push HER branch (never the author's, never force) -> PR into `star/next` + comment
 on the original. Expired / unreadable logs -> `gh run rerun --failed` (one per run: there is one CI runner).
+Blind (no diff): the first failing test is rerun with `--tb=long -l` so she sees the wrong VALUES.
+Lint: CI runs `ruff check star` before pytest, so a lint failure shows no pytest output. `fix_lint()` runs ruff's
+safe autofixes, then up to 5 rounds of her edits (a round that does not lower the error count is undone).
 
 **Promotion** (`pr_promote.py`): merges the open `star/next -> main` PR only when, for the exact head: every check
 passed incl. a Windows build; receipts `acceptance.json` and `install.json` say ok for that sha; `notes.md` exists;
@@ -62,29 +69,37 @@ no open proven high-risk hold. These are the ledger's release checks (owner OK 2
   clean file -> review is NOT a bug detector yet; tests/CI + receipts are the safety.
 - Fixer, planted bugs: 1 bug round 1 (5 s); 2 bugs in one PR: 1/2 without the diff, 2/2 with diff + kept progress.
 - **Bug bench on the real repo, seed 1, with diff: 8/8 solved** (add-not, and-or, drop-not, eq-flip, false-true,
-  lt-edge, ne-flip, or-and; 17-84 s each, 1-2 rounds). Blind runs: see `~/.star/litha/bench.jsonl`.
+  lt-edge, ne-flip, or-and; 17-84 s each, 1-2 rounds).
+- **Blind (failing tests only, no diff), seed 2: 8/8 solved** (add-not, and-or, drop-not, eq-flip, gt-edge,
+  in-notin, ne-flip, or-and; 9-78 s, 1-2 rounds). This run was before `deep_failure` was added.
+- Hunt (find AND prove a planted bug, no failing test given), seed 3: see section 3b.
 - Proofs: false claim rejected by the before-PR comparison; one real planted bug she could not prove with a test
   (unproven claims do not block, so this costs nothing but leaves review weak).
 
 ## 4. Not done yet, in order (each is a self-contained next task)
 
-1. **Blind fixing**: bugs NOT in a PR diff (pre-existing, CI-only). Measure with `bug_bench run --blind` and raise
-   it: give her `git log -p` of the touched function, run the single failing test with `-l` (locals), let her add a
-   print-debug round (temporary prints, rerun, read, remove) before editing.
-2. **Review that finds bugs**: per-function hunt + differential proof as the filter (the hunt's false flags die
-   when the test passes before AND after). Measure with planted bugs in diffs: catch rate AND false-flag rate on
-   clean diffs; ship only when false flags are ~0.
-3. **More bug kinds** in `bug_bench.OPS`: wrong variable, missing `await`, dropped `return`, swapped arguments,
-   off-by-one slices, exception swallowed, wrong default, removed `.strip()` - plus multi-line bugs.
-4. **Other failure types for the fixer**: pyright (parse `error:` lines, file:line), vitest/tsc (frontend), ruff.
-5. **Training**: `~/.star/litha/sft/pr-fix.jsonl` holds prompt -> correct edit pairs from the bench (her own
-   prompts, the real answers, never another model's text). Feed it to the nightly trainer
-   (`server/training/nightly`, harvest step) and gate the adapter on `bug_bench` score: ship only if it rises on a
-   held-out seed.
+Done 2026-10-31: blind fixing (8/8), the proven bug hunt in the merger, 32 bug kinds, ruff failures in the fixer,
+bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "corrected").
+
+1. **Hunt catch rate**: `python -m star.bug_bench hunt --n 10` (runs nightly too). Raise it: give the hunt the
+   function's callers and its tests, ask for 2 candidate lines instead of 1, prove each.
+2. **Hunt false flags on real PRs**: the proof cannot flag identical code, but an INTENDED behaviour change looks
+   like a regression. Replay the hunt on the last 20 merged PRs (`pr_merger.replay` style) and count holds; if any,
+   compare the claim with the PR body before holding.
+3. **Multi-line bugs** in the bench (swallowed exception, wrong variable, missing `await`): mutate an AST node,
+   not a line regex.
+4. **Pyright / vitest / tsc failures for the fixer** (pyright: parse `file:line - error:` lines like ruff).
+5. **Gate the nightly adapter on the bench**: the nightly gate (server/training/nightly, PR #847) scores
+   game-building answers only. Before `auto_deploy`, serve the candidate adapter and run
+   `bug_bench run --n 10 --seed <held-out>` against it; ship only if the solved count does not drop.
 6. **Receipts automatically on STAR's own PC**: run shell + Windows acceptance there for each green `star/next` head
    and write the receipts, so `main` moves with nobody involved (STAR's PC is hers: full admin, no prompts).
 7. **Dependency PRs**: let the fixer run the project's lock tool (requirements-home) instead of editing locks.
 8. **Codex's stacked drafts**: once marked ready, walk them bottom-up (base first), one per run.
+
+## 3b. Hunt measured
+
+(filled in from `~/.star/litha/bench.jsonl`, mode "hunt")
 
 ## 5. Rules that stay (do not remove)
 

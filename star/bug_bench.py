@@ -98,6 +98,30 @@ def code_lines(text: str) -> set[int]:
     return lines
 
 
+def wrong_var_edits(text: str) -> dict[int, str]:
+    """{line: that line with its first use of a parameter swapped for the function's next parameter}: the
+    "wrong variable" bug a line regex cannot plant."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return {}
+    lines, out = text.split("\n"), {}
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        params = [a.arg for a in [*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs]
+                  if a.arg not in ("self", "cls")]
+        if len(params) < 2:
+            continue
+        for sub in ast.walk(fn):
+            if (isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Load) and sub.id in params
+                    and sub.lineno == sub.end_lineno and sub.lineno not in out):
+                other = params[(params.index(sub.id) + 1) % len(params)]
+                raw = lines[sub.lineno - 1].encode("utf-8")       # ast offsets count UTF-8 bytes
+                out[sub.lineno] = (raw[:sub.col_offset] + other.encode() + raw[sub.end_col_offset:]).decode("utf-8")
+    return out
+
+
 def tests_for(module: str, tests_dir: Path, cache: dict[str, str]) -> list[str]:
     """Test files that import this module (star.x.y / from star.x import y)."""
     if not cache:
@@ -133,6 +157,7 @@ def candidates(tree: Path, kinds: list[str] | None = None, rng: random.Random | 
             continue
         scanned += 1
         lines = text.splitlines()
+        wrong = wrong_var_edits(text) if not kinds or "wrong-var" in kinds else {}
         for no in sorted(live):
             line = lines[no - 1]
             code = line.split("#", 1)[0]
@@ -141,17 +166,25 @@ def candidates(tree: Path, kinds: list[str] | None = None, rng: random.Random | 
                     continue
                 if re.search(pat, code) and not re.match(r"\s*(\"|')", code):
                     out.append({"file": rel, "line": no, "kind": kind, "tests": tests[:3], "orig": line})
+            if no in wrong:
+                out.append({"file": rel, "line": no, "kind": "wrong-var", "tests": tests[:3], "orig": line})
     return out
 
 
 def mutate(text: str, line: int, kind: str) -> str | None:
     lines = text.split("\n")
-    pat, rep = OPS[kind]
-    code, sep, comment = lines[line - 1].partition("#")
-    new = re.sub(pat, rep, code, count=1)
-    if new == code:
-        return None
-    lines[line - 1] = new + sep + comment
+    if kind == "wrong-var":
+        new = wrong_var_edits(text).get(line)
+        if new is None:
+            return None
+        lines[line - 1] = new
+    else:
+        pat, rep = OPS[kind]
+        code, sep, comment = lines[line - 1].partition("#")
+        new = re.sub(pat, rep, code, count=1)
+        if new == code:
+            return None
+        lines[line - 1] = new + sep + comment
     out = "\n".join(lines)
     try:
         ast.parse(out)
@@ -223,6 +256,7 @@ HINTS = {
     "first-last": "[-1] where [0] is meant (last vs first)", "any-all": "all() where any() is meant",
     "all-any": "any() where all() is meant", "starts-ends": "endswith where startswith is meant",
     "lower-upper": ".upper() where .lower() is meant", "add-sub": "a + that became -",
+    "wrong-var": "the wrong variable: one parameter used where another was meant",
 }
 
 
