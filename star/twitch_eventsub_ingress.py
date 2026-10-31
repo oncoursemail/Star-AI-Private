@@ -1,21 +1,24 @@
 """Offline, opt-in Twitch EventSub chat ingress for Star's VTuber.
 
 Twitch notifications are delivered at least once and may be redelivered after
-WebSocket reconnection. This bounded adapter rejects both repeated transport
-message IDs and repeated chat message IDs BEFORE they reach StreamDirector.
+WebSocket reconnection. This bounded adapter rejects stale UTC events and
+repeated transport/chat message IDs BEFORE they reach StreamDirector.
 
 An authenticated, consented host must parse Twitch TLS/WebSocket traffic,
-validate OAuth subscriptions and moderate all text. host_verified/moderated
-are host attestations, not cryptographic checks. Viewer text is ALWAYS data;
+validate OAuth subscriptions, and pass independently approved replacement text.
+host_verified/moderated are host attestations, not cryptographic checks. Viewer text is ALWAYS data;
 this module never sends chat, speaks, controls games, stores raw text, or
 connects to the internet. It is disabled by default.
 """
 from __future__ import annotations
 
 from collections import OrderedDict
+from datetime import datetime, timezone
 import hashlib
+import hmac
 import math
 import re
+import secrets
 from threading import RLock
 from typing import Mapping, cast
 
@@ -57,8 +60,22 @@ def _part(value: object, label: str) -> Mapping[str, object]:
     return value
 
 
-def _digest(prefix: str, ident: str) -> str:
-    return hashlib.sha256((prefix + "\x00" + ident).encode("utf-8")).hexdigest()
+def _timestamp_utc(value: object) -> float | None:
+    """Parse the UTC RFC3339 EventSub timestamp, including nanosecond fractions."""
+    if type(value) is not str or not 20 <= len(value) <= 48 or not value.endswith("Z"):
+        return None
+    try:
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if result.tzinfo is None:
+            return None
+        return result.astimezone(timezone.utc).timestamp()
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def _digest(secret: bytes, prefix: str, ident: str) -> str:
+    return hmac.new(secret, (prefix + "\x00" + ident).encode("utf-8"),
+                    hashlib.sha256).hexdigest()
 
 
 class TwitchEventSubIngress:
@@ -83,6 +100,7 @@ class TwitchEventSubIngress:
         self._seen: OrderedDict[str, float] = OrderedDict()
         self._enabled = False
         self._broadcaster = ""
+        self._session_salt: bytes | None = None
         self._last_now: float | None = None
         self._counts = {"accepted": 0, "rejected": 0, "duplicates": 0}
 
@@ -96,6 +114,7 @@ class TwitchEventSubIngress:
                 raise RuntimeError("disable before switching stream sessions")
             self._seen.clear()
             self._broadcaster = broadcaster
+            self._session_salt = secrets.token_bytes(32)
             self._last_now = None
             self._enabled = True
 
@@ -103,6 +122,7 @@ class TwitchEventSubIngress:
         with self._lock:
             self._enabled = False
             self._broadcaster = ""
+            self._session_salt = None
             self._last_now = None
             self._seen.clear()
 
@@ -112,22 +132,26 @@ class TwitchEventSubIngress:
             self._seen.popitem(last=False)
 
     def offer(self, notification: Mapping[str, object], *,
-              now_s: float, host_verified: bool = False,
-              moderated: bool = False, kind: str = "viewer_comment") -> StreamSignal | None:
-        """Return a moderated StreamSignal; Stage.offer still rechecks moderation.
+              now_s: float, now_unix_s: float, host_verified: bool = False,
+              moderated: bool = False, moderated_text: str | None = None,
+              kind: str = "viewer_comment") -> StreamSignal | None:
+        """Return a fresh, independently moderated chat signal, never raw chat.
 
-        Only authenticated EventSub `channel.chat.message` notifications qualify.
-        Twitch metadata.message_id and event.message_id are independently
-        deduplicated; reconnect does not clear history. No authorization,
-        prediction or subscriber operation can be derived from viewer text.
+        The trusted host supplies separate monotonic and Unix clocks; EventSub's
+        RFC3339 timestamp is checked against Unix time, never monotonic time.
+        A boolean moderation attestation alone is NOT sufficient: the approved
+        replacement text must be passed explicitly. Duplicate replay protection
+        persists during reconnects but resets on a separately approved session.
         """
         now = _host_seconds(now_s)
+        now_unix = _host_seconds(now_unix_s)
         if type(host_verified) is not bool or type(moderated) is not bool:
             raise ValueError("host_verified/moderated must be strict booleans")
         if type(kind) is not str or kind not in _CHAT_KINDS:
             raise ValueError("kind must be a viewer speech category")
         with self._lock:
-            if not self._enabled or not host_verified or not moderated:
+            if (not self._enabled or not host_verified or not moderated
+                    or moderated_text is None):
                 self._counts["rejected"] += 1
                 return None
             if self._last_now is not None and now < self._last_now:
@@ -142,9 +166,20 @@ class TwitchEventSubIngress:
             subscription = _part(payload.get("subscription"), "subscription")
             event = _part(payload.get("event"), "event")
             message = _part(event.get("message"), "message")
+            condition = _part(subscription.get("condition"), "subscription condition")
+            transport = _part(subscription.get("transport"), "subscription transport")
+            sent = _timestamp_utc(metadata.get("message_timestamp"))
             if (metadata.get("message_type") != "notification"
                     or metadata.get("subscription_type") != "channel.chat.message"
-                    or subscription.get("type") != "channel.chat.message"):
+                    or metadata.get("subscription_version") != "1"
+                    or subscription.get("type") != "channel.chat.message"
+                    or subscription.get("version") != "1"
+                    or subscription.get("status") != "enabled"
+                    or condition.get("broadcaster_user_id") != self._broadcaster
+                    or transport.get("method") != "websocket"
+                    or type(transport.get("session_id")) is not str
+                    or _ID.fullmatch(transport["session_id"]) is None
+                    or sent is None or not -2.0 <= now_unix - sent <= 15.0):
                 self._counts["rejected"] += 1
                 return None
             envelope_id = _bounded_id(metadata.get("message_id"), "message_id")
@@ -154,20 +189,25 @@ class TwitchEventSubIngress:
             if broadcaster != self._broadcaster:
                 self._counts["rejected"] += 1
                 return None
-            detail = message.get("text")
-            if type(detail) is not str or not 1 <= len(detail) <= 500:
-                raise ValueError("moderated chat text must be 1..500 characters")
+            raw = message.get("text")
+            if type(raw) is not str or not 1 <= len(raw.strip()) <= 1000:
+                raise ValueError("invalid original chat text")
+            detail = moderated_text
+            if type(detail) is not str or not 1 <= len(detail.strip()) <= 500:
+                raise ValueError("approved moderated chat must be 1..500 characters")
             if any(ord(ch) < 32 and ch not in "\n\t" for ch in detail):
                 raise ValueError("control characters cannot be narrated")
-            envelope_hash = _digest("delivery", envelope_id)
-            chat_hash = _digest("chat", chat_id)
+            assert self._session_salt is not None
+            envelope_hash = _digest(self._session_salt, "delivery", envelope_id)
+            chat_hash = _digest(self._session_salt, "chat", chat_id)
             if envelope_hash in self._seen or chat_hash in self._seen:
                 self._counts["duplicates"] += 1
                 return None
             signal = StreamSignal(
-                signal_id="tw_" + hashlib.sha256(chat_id.encode("utf-8")).hexdigest()[:32],
+                signal_id="tw_" + _digest(self._session_salt, "signal", chat_id)[:32],
                 kind=kind, timestamp=now, detail=detail,
-                speaker_id="twitch:" + chatter, evidence="reported",
+                speaker_id="twv_" + _digest(self._session_salt, "viewer", chatter)[:32],
+                evidence="reported",
             )
             self._seen[envelope_hash] = now + self._retention
             self._seen[chat_hash] = now + self._retention
