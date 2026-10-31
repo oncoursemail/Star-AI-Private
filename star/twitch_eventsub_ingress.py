@@ -178,7 +178,7 @@ class TwitchEventSubIngress:
                     or condition.get("broadcaster_user_id") != self._broadcaster
                     or transport.get("method") != "websocket"
                     or type(transport.get("session_id")) is not str
-                    or _ID.fullmatch(transport["session_id"]) is None
+                    or _ID.fullmatch(cast(str, transport["session_id"])) is None
                     or sent is None or not -2.0 <= now_unix - sent <= 15.0):
                 self._counts["rejected"] += 1
                 return None
