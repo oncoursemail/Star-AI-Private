@@ -11,6 +11,8 @@ An unloaded inference benchmark misses GPU contention, OBS frame loss, audio-sta
 
 ### New implementation
 
+`star/obs_stats_window.py` is a pure in-process **OBS WebSocket v5 GetStats counter adapter**. A trusted, authenticated loopback Windows host feeds only four frame counters: `renderSkippedFrames`, `renderTotalFrames`, `outputSkippedFrames`, and `outputTotalFrames`. The adapter takes two strictly ordered host-timestamped snapshots and converts **deltas** to bounded render/output skip percentages. It re-baselines on OBS counter reset or a long gap, rejects malformed/unverified values, and never stores arbitrary GetStats fields. The `outputSkippedFrames` signal is a proxy for output/encoding pressure, **not** an isolated hardware encoder diagnostic. Official [obs-websocket GetStats implementation](https://github.com/obsproject/obs-websocket/blob/master/src/requesthandler/RequestHandler_General.cpp) and [v5 protocol](https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md) define the fields. The host must separately protect the websocket password and check actual OBS logs/recordings.
+
 `star/stream_admission.py` extends the existing stateless `star/stream_budget.py` policy:
 
 - An authorized Windows host supplies strictly validated monotonic timestamps, existing `StreamTelemetry`, and **windowed** OBS render/encode lag percentages. The module does not poll OBS itself.
@@ -92,9 +94,9 @@ Suggested distinct evaluations: new factual questions with citations, coding on 
 
 ## 7. Deployment gates and next experiments
 
-**Gate A (already implemented offline):** deterministic unit tests for overload trips, slow recovery, strict opt-in, stale clocks, bounded anonymous counters and non-authorization. Synthetic 8 GB values are fixtures, not physical measurements.
+**Gate A (already implemented offline):** deterministic unit tests for overload trips, slow recovery, strict opt-in, stale clocks, bounded anonymous counters and non-authorization. Also tested real-shape synthetic OBS GetStats counter windows for skips, resets, low frame counts, malicious fields and the resulting deferral signal. The combined focused local suite passed 33 tests; synthetic 8 GB values are fixtures, not physical measurements.
 
-**Gate B (next):** connect host telemetry collector to StreamAdmissionGate with dry-run decisions only; benchmark a recording while game, OBS, streaming TTS and vision run concurrently. Verify lost-sample fail-closed behavior and absence of scheduling oscillation.
+**Gate B (next):** connect an authenticated local OBS WebSocket v5 GetStats *read-only* collector to ObsStatsWindow, and host game/VRAM/audio telemetry to StreamAdmissionGate with dry-run decisions only; benchmark a recording while game, OBS, streaming TTS and vision run concurrently. Verify lost-sample fail-closed behavior and absence of scheduling oscillation.
 
 **Gate C:** gate background training/research through the trusted Windows job scheduler only after dry-run evidence. Do not let the advisory class directly control processes or permissions.
 
