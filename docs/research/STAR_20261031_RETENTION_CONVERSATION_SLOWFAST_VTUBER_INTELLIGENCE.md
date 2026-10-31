@@ -88,6 +88,27 @@ Persona specifications:
 - Natural laughter uses situation-appropriate expressive timing plus audio-aware animation; avoid inserting laughter in every sentence.
 - Add post-stream viewer-rated samples (with opt-in): perceived latency, conversational naturalness, awkward interruption count, repetitive phrases, inappropriate overtalk and facial sync errors.
 
+### Avatar, gaze and hair-physics implementation path
+
+A convincing model is a synchronized interactive character, not a constant stream of random gestures. STAR should use one monotonic playback clock as the source of truth for lip shapes, glances, blink timing, pupil travel, head angle, breathing, tail movement and the approved Star/Astro/Amber companion reactions. Scripted facial animation is a host-controlled performance layer, not evidence of genuine emotional experience.
+
+Live2D Cubism physics settings are exported in physics3.json and evaluated by the Cubism runtime. Physics responses can be driven by head/body motion and parameterized gravity/wind; use the approved twin-tail shape and ribbon as visually checked constraints. A rig-quality test should render neutral, whisper, laugh, surprised and look-left/right key poses, then verify the hair remains attached and does not cross the face or shoulders unnaturally.
+
+Source: https://docs.live2d.com/en/cubism-sdk-manual/physics/
+Source: https://github.com/Live2D/CubismSpecs/blob/master/FileFormats/physics3.json.md
+
+VTube Studio's documented local plugin API supports triggered hotkeys and injecting custom facial/body parameters through WebSocket. The host can make typed, bounded parameter updates based on audible phoneme/viseme timing and game events. Keep the API on loopback, require the user-enabled plugin access and token authentication, do not put credentials in public GitHub, and never allow chat text to become unvalidated parameter IDs, hotkey names or commands.
+
+Source: https://github.com/DenchiSoft/VTubeStudio/blob/master/README.md
+
+Proposed playback and animation contract:
+- An utterance has an immutable stage ID, playback ID, monotonic start time and cancellation generation. Sample the actual audio buffer clock; text generation timestamps are only estimates.
+- Lip shapes and jaw opening follow real audible amplitude/phoneme cues. A cancelled utterance invalidates every queued mouth pose and caption after the host acknowledges cancellation.
+- Eye micro-saccades and blinks have individually seeded, bounded timing; surprise, confusion, concentration and laughter use authored poses rather than arbitrary parameter noise.
+- Hair/ribbon springs react to actual angular motion; excessive wobbles are suppressed in low-motion mode. Check geometry clipping and mouth-to-audio lead/lag in a rendered 30-minute rehearsal.
+- Star/Astro/Amber interactions are coordinated with separate animation layers and ownership of the conversation turn. An off-screen companion must not interrupt the owner or represent unverified viewer speech.
+- Character costumes, proportions and silhouettes follow the owner's accepted direction; tools must compare generated rigs to approved art references rather than guessing.
+
 ## 5. Game creation: verified artifacts instead of attractive screenshots
 
 STAR's Studio pipeline should be inspect -> specify scene graph -> generate Luau/assets -> validate syntax/API -> place -> run Studio multiplayer simulation -> inspect gameplay visuals -> repair -> rerun -> promote artifact.
