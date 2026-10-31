@@ -255,20 +255,28 @@ SAFETY = re.compile(r"secret|token|password|credential|injection|rm -rf|delet|da
 
 @contextlib.contextmanager
 def pr_trees(pr: dict):
-    """(PR head, star/next) checkouts under worktrees/: the code after and before the PR, removed afterwards."""
+    """(PR head, merge-base) checkouts under worktrees/: the code after and before the PR, removed afterwards.
+    The merge-base, not today's star/next: for a PR that is behind, star/next holds later fixes the PR never had,
+    and a test of those would look like a bug the PR made. A merged PR (replay): star/next after vs before its merge."""
     from star import pr_fixer
     tree = pr_fixer.WORK / f"litha-proof-{pr['number']}"
     branch = f"litha/proof-{pr['number']}"
-    if tree.exists():
-        pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "remove", "--force", str(tree)])
-    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "fetch", "-q", "origin", f"pull/{pr['number']}/head:{branch}",
-                 "--force"])
-    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "add", "-q", str(tree), branch])
     base = pr_fixer.WORK / f"litha-base-{pr['number']}"               # the code before the PR (differential proof)
-    if base.exists():
-        pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "remove", "--force", str(base)])
+    for wt in (tree, base):
+        if wt.exists():
+            pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "remove", "--force", str(wt)])
     pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "fetch", "-q", "origin", BASE])
-    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "add", "-q", "--detach", str(base), f"origin/{BASE}"])
+    merged = (pr.get("mergeCommit") or {}).get("oid")
+    if merged:
+        head, before = merged, f"{merged}^1"
+    else:
+        pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "fetch", "-q", "origin", f"pull/{pr['number']}/head:{branch}",
+                     "--force"])
+        head = branch
+        before = pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "merge-base", branch, f"origin/{BASE}"]).stdout.strip()
+    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "add", "-q", "--detach", str(tree), head])
+    pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "worktree", "add", "-q", "--detach", str(base),
+                 before or f"origin/{BASE}"])
     try:
         yield tree, base
     finally:
@@ -359,12 +367,48 @@ def replay(n: int) -> dict:
     return score
 
 
+def replay_hunt(n: int) -> dict:
+    """The hunt's false holds: run it on merged PRs (star/next just before vs just after each merge). Each proven
+    find is a hold on a PR the project kept: read it, then it is either a real bug or a hunt mistake to fix."""
+    from star import bug_hunt, pr_fixer
+    rows = json.loads(gh("pr", "list", "--repo", REPO, "--base", BASE, "--state", "merged", "--limit", str(n),
+                         "--json", "number,title,body,mergeCommit"))
+    score = {"n": 0, "flagged": 0}
+    for pr in rows:
+        oid = (pr.get("mergeCommit") or {}).get("oid")
+        if not oid:
+            continue
+        pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "fetch", "-q", "origin", BASE])
+        files = parse_diff(pr_fixer.sh(["git", "-C", str(pr_fixer.CLONE), "diff", f"{oid}^1", oid]).stdout)
+        changed = {p: set(f["added"]) for p, f in files.items()
+                   if f["added"] and p.endswith(".py") and not p.startswith("tests/")}
+        if not changed:
+            continue
+        try:
+            with pr_trees(pr) as (tree, base):
+                found = bug_hunt.hunt(tree, base, changed, sys.executable,
+                                      intent=f"{pr.get('title', '')}\n{pr.get('body') or ''}")
+        except Exception as e:  # noqa: BLE001 - one bad PR must not end the replay
+            print(f"#{pr['number']} skipped: {e}", flush=True)
+            continue
+        score["n"] += 1
+        score["flagged"] += bool(found)
+        log({"replay_hunt": True, "pr": pr["number"], "found": found})
+        print(f"#{pr['number']} {'FLAGGED ' + found[0]['file'] + ':' + str(found[0]['line']) + ' ' + found[0]['why'][:120] if found else 'clean'}",
+              flush=True)
+    return score
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m star.pr_merger")
     ap.add_argument("--apply", action="store_true", help="really merge the PRs that pass (default: dry run)")
     ap.add_argument("--pr", type=int, help="only this PR")
     ap.add_argument("--replay", type=int, help="blind replay on this many closed PRs")
+    ap.add_argument("--replay-hunt", type=int, help="false holds of the bug hunt on this many merged PRs")
     a = ap.parse_args(argv)
+    if a.replay_hunt:
+        print(json.dumps(replay_hunt(a.replay_hunt)))
+        return 0
     if a.replay:
         print(json.dumps(replay(a.replay)))
         return 0
