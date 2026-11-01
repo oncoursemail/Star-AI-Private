@@ -91,8 +91,40 @@ TOOLS = [
          "required_genre": {"type": "string"}},
          "required": ["candidates"], "additionalProperties": False}},
 ]
-TOOL_NAMES = {t['name'] for t in TOOLS}
+# Keep the shipping catalogue stable; experimental tools are selected at request
+# time, so changing the environment never mutates a module-global schema.
+BATCH_SEARCH_TOOL = {
+    "name": "workspace_search_batch",
+    "description": (
+        "Read-only search for 1-8 independent text patterns or code symbols in one workspace scan. "
+        "Use for related discovery questions known in advance; results share a bounded output budget. "
+        "Read selected files before editing. Results are navigation hints, not test evidence."
+    ),
+    "inputSchema": {
+        "type": "object", "additionalProperties": False,
+        "properties": {
+            "queries": {
+                "type": "array", "minItems": 1, "maxItems": 8,
+                "items": {
+                    "type": "object", "additionalProperties": False,
+                    "properties": {
+                        "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                        "mode": {"type": "string", "enum": ["text", "symbols"], "default": "text"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        "required": ["queries"],
+    },
+}
+TOOL_NAMES = {t['name'] for t in TOOLS} | {BATCH_SEARCH_TOOL['name']}
 WRITE_TOOLS = frozenset({'workspace_write', 'workspace_edit'})
+
+
+def tool_definitions() -> list[dict]:
+    """Return the current catalogue; batch discovery is explicitly off by default."""
+    return TOOLS + ([BATCH_SEARCH_TOOL] if os.environ.get('STAR_CODE_SEARCH_BATCH') == 'on' else [])
 
 
 class Workspace:
@@ -131,8 +163,13 @@ class Workspace:
             raise ValueError('Unknown workspace tool')
         if not isinstance(args, dict):
             raise ValueError('Arguments must be an object')
+        if name == BATCH_SEARCH_TOOL['name'] and os.environ.get('STAR_CODE_SEARCH_BATCH') != 'on':
+            raise PermissionError('Workspace search batching is switched off')
         from jsonschema import validate, ValidationError
-        schema = next(t['inputSchema'] for t in TOOLS if t['name'] == name)
+        # Schema lookup is static after the explicit gate: a concurrent switch
+        # change must not turn a known tool into an uncaught StopIteration.
+        schema = (BATCH_SEARCH_TOOL['inputSchema'] if name == BATCH_SEARCH_TOOL['name']
+                  else next(t['inputSchema'] for t in TOOLS if t['name'] == name))
         try:
             validate(args, schema)
         except ValidationError:
@@ -184,6 +221,11 @@ class Workspace:
         if name == 'workspace_search':
             from .code_navigation import search_workspace
             return search_workspace(self, args['query'], mode=args.get('mode', 'text'))
+        if name == BATCH_SEARCH_TOOL['name']:
+            if os.environ.get('STAR_CODE_SEARCH_BATCH') != 'on':
+                raise PermissionError('Workspace search batching is switched off')
+            from .code_search_batch import batch_search_workspace
+            return batch_search_workspace(self, args['queries'])
         if not allow_write:
             raise PermissionError('Workspace editing is switched off')
         if name == 'workspace_edit':
