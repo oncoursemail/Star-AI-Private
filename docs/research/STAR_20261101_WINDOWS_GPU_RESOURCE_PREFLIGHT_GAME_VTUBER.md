@@ -25,6 +25,8 @@ Do not interpret this single snapshot as a representative high-water mark, a str
 
 This plugs the previous engineering-process gap: the project had many latency/QoS evaluators but lacked a cheap local check that **rejected running a gaming/VTube/LLM rehearsal on an already saturated 8-GB GPU**.
 
+**Actual Windows smoke test (Main, 2026-11-01):** Running a temporary exact copy of the module exposed a real OS-specific edge case: normal Windows system processes can have PID 0, empty names or unavailable creation times. The first version correctly rejected the invalid snapshot, but was too conservative for ordinary Windows. We reproduced the offending *counts without disclosing identities*, adjusted the OS enumerator to skip only non-witness system entries, and added a regression test. The revised module then ran successfully on Windows, returned `status="deferred"` with `model_process_seen=true`, `gpu_total_mib=8192`, `gpu_free_mib=414`, `gpu_utilization_pct=0`, and explicit reasons for missing OBS, avatar, pinned game and free VRAM. It granted neither gaming nor broadcast permissions. The temporary test module was deleted after the smoke test. This validates the **read-only host preflight**—not a full gaming, audio or OBS rehearsal.
+
 ### Practical Windows next step
 
 The next host integration should preserve a GPU reserve for the game and voice before any model inference is admitted. **Do not terminate the already running llama-server** to free memory without an owner-approved handover. Instead use an isolated alternate profile and a **paired**, reversible experiment:
@@ -93,4 +95,4 @@ Aim for natural **behavior** rather than unsupported claims of consciousness or 
 - VTube Studio public API: https://github.com/DenchiSoft/VTubeStudio
 - OBS WebSocket 5 protocol: https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md
 
-**Boundaries:** This branch implements the preflight *and its automated tests*. The GPU finding comes from a point-in-time read-only Windows probe, not a deployed version of the new Python module. No active inference process was moved or stopped, no live game was played, no OBS/VTube Studio process launched, and no measured game-win/voice/intelligence improvement is claimed.
+**Boundaries:** This branch implements the preflight and automated tests, plus a successful read-only Windows smoke test from a temporary module copy. It is *not* installed as a service or integrated with streaming/game/audio callbacks. The GPU finding remains a point-in-time snapshot. No active inference process was moved or stopped, no live game was played, no OBS/VTube Studio process launched, and no measured game-win/voice/intelligence improvement is claimed.

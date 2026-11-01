@@ -72,8 +72,13 @@ def enumerate_windows_processes() -> Iterable[ProcessWitness]:
         name = info.get("name")
         pid = info.get("pid")
         created = info.get("create_time")
-        if (type(name) is str and type(pid) is int
-                and type(created) in (int, float)):
+        # Windows exposes special system processes with PID 0, empty names
+        # or unknown creation times. They are not usable app witnesses; skip
+        # them rather than letting ordinary OS metadata poison the snapshot.
+        if (type(name) is str and 1 <= len(name) <= 256
+                and type(pid) is int and 0 < pid <= 2**31 - 1
+                and type(created) in (int, float)
+                and math.isfinite(float(created)) and 0 < created <= 10**11):
             yield ProcessWitness(name, pid, float(created))
 
 

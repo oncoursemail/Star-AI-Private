@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import subprocess
+import sys
+import types
 import unittest
 from unittest.mock import patch
 
 from star.stream_windows_rehearsal_preflight import (
-    GpuHeadroom, ProcessWitness, evaluate_preflight,
-    probe_windows_rehearsal, query_nvidia_gpu,
+    GpuHeadroom, ProcessWitness, enumerate_windows_processes,
+    evaluate_preflight, probe_windows_rehearsal, query_nvidia_gpu,
 )
 
 
@@ -156,6 +158,24 @@ class TestWindowsRehearsalPreflight(unittest.TestCase):
                 return_value=subprocess.CompletedProcess([], 0, stdout=value, stderr=""),
             ), self.assertRaises((ValueError, RuntimeError)):
                 query_nvidia_gpu()
+
+    def test_windows_special_system_processes_are_filtered(self):
+        # Reproduced on Main: PID 0, missing create_time and empty names
+        # are normal Windows OS metadata, not a corrupt host snapshot.
+        data = [
+            {"name": "Idle", "pid": 0, "create_time": 100.0},
+            {"name": "System", "pid": 4, "create_time": 0.0},
+            {"name": "", "pid": 5, "create_time": 90.0},
+            {"name": "RealApp.exe", "pid": 13, "create_time": 103.0},
+        ]
+        fake = types.SimpleNamespace(
+            process_iter=lambda attrs, ad_value: (
+                types.SimpleNamespace(info=row) for row in data
+            ),
+        )
+        with patch.dict(sys.modules, {"psutil": fake}):
+            observed = tuple(enumerate_windows_processes())
+        self.assertEqual(observed, (ProcessWitness("RealApp.exe", 13, 103.0),))
 
     def test_invalid_snapshot_raises_in_pure_evaluator(self):
         with self.assertRaises(ValueError):
