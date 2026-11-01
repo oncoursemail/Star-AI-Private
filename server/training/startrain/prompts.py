@@ -161,13 +161,30 @@ Keep all requested names, signatures, edge cases and current-API rules. The veri
 overfit to one error. Never print, require another module, use loadstring, disable checking, or claim that tests pass."""
 
 
-def repair_messages(prompt: str, previous_response: str, mode: str, gate: str, code: str, detail: str) -> list[dict]:
+def repair_messages(
+    prompt: str,
+    previous_response: str | None,
+    mode: str,
+    gate: str,
+    code: str,
+    detail: str,
+) -> list[dict]:
     feedback = " ".join(str(detail).split())[:500] or "The independent verifier rejected the solution."
     system = REPAIR_SYSTEM + "\n" + MODE_RULE[mode]
+    previous = (
+        "PREVIOUS SOLUTION (replace it; do not patch around the verifier):\n"
+        + previous_response[:12000]
+        + "\n\n"
+        if previous_response
+        else (
+            "FRESH RE-EXPLORATION: the earlier failed solution is intentionally hidden to reduce anchoring. "
+            "Derive a new solution from the task and verifier symptom.\n\n"
+        )
+    )
     user = (
         "TASK (authoritative):\n" + prompt + "\n\n"
-        "PREVIOUS SOLUTION (replace it, do not patch around the verifier):\n" + previous_response[:12000] + "\n\n"
-        f"VERIFIER FEEDBACK:\ngate={gate}\ncode={code}\ndetail={feedback}\n\n"
-        "Re-solve the task and return the complete corrected solution now."
+        + previous
+        + f"VERIFIER FEEDBACK:\ngate={gate}\ncode={code}\ndetail={feedback}\n\n"
+        + "Re-solve the task and return the complete corrected solution now."
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
