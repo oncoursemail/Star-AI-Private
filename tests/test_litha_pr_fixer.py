@@ -208,3 +208,10 @@ def test_an_addition_next_to_the_other_sides_change_merges_without_her_model():
                                     "};\nmod b;\n")                                    # Studio #317's real shape
     assert F.adjacent("x\n", "x\n", "x\ny\n") is None                                # nothing changed on one side
     assert F.adjacent("y\nx\n", "x\n", "x\nz\n") is None                             # both only added: order unknown
+
+
+def test_a_conflict_too_big_for_her_window_is_refused_without_asking_her():
+    side = "".join(f"- line {i} of a long design note\n" for i in range(400))
+    text = f"<<<<<<< pr\n{side}A\n||||||| base\n{side}\n=======\n{side}B\n>>>>>>> main\n"
+    merged, why = F.resolve_text("ARCHITECTURE.md", text, "t", asker=lambda p: pytest.fail("no model call"))
+    assert merged is None and "too big for her 4096-token window" in why

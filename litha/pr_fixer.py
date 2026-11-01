@@ -474,6 +474,9 @@ def slips(path: str, block: str, new: str, before: str = "", after: str = "") ->
     return ""
 
 
+WINDOW = 4096                       # litha-fast's context (prompt + answer); ~3.5 characters per token for code
+
+
 def adjacent(ours: str, base: str, theirs: str) -> str | None:
     """Git calls edits that touch neighbouring lines a conflict. When one side only ADDED lines before and/or after the
     untouched ancestor and the other side changed the ancestor, the merge is mechanical: the additions around the
@@ -514,6 +517,9 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") ->
             out += [text[last:m.start()], near]        # one side only added next to what the other changed
             last = m.end()
             continue
+        need = (len(MERGE_PROMPT) + len(before) + len(m.group(0)) + len(after) + len(ours) + len(theirs)) / 3.5
+        if need > WINDOW:                              # it cannot fit her model's context: say so, do not burn tries
+            return None, f"{path}: conflict {i} is too big for her {WINDOW}-token window (~{need:.0f} tokens)"
         for _ in range(3):
             try:
                 ans = json.loads(asker(MERGE_PROMPT.format(repo=REPO, base=BASE, title=title, path=path, i=i,
