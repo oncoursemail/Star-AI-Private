@@ -239,3 +239,28 @@ def test_a_build_without_a_graph_keeps_the_last_code_map(built):
     manifest = brain_vault.build(out, workspace=workspace, repo=repo, now=NOW)
     assert (out / "code/star/slop_py.md").is_file() and manifest["code"]["files"] == 2
     assert "Code map: 2 source files" in (out / "Home.md").read_text(encoding="utf-8")
+
+
+def test_code_map_keeps_repository_paths_if_host_login_matches_root(tmp_path, monkeypatch):
+    """Real host login 'star' must not destroy source paths or Obsidian links."""
+    from collections import Counter
+
+    monkeypatch.setattr(brain_vault.getpass, "getuser", lambda: "star")
+    graph = tmp_path / "graph.json"
+    graph.write_text(json.dumps(GRAPH), encoding="utf-8")
+    out = tmp_path / "map"
+    out.mkdir()
+    counts = Counter()
+    result = brain_vault.build_code_map(out, graph, counts)
+    content = (out / "code/star/slop_py.md").read_text(encoding="utf-8")
+    assert result["files"] >= 2
+    assert "# star/slop.py" in content
+    assert "[[code/star/agent_py|star/agent.py]]" in content
+    assert "star/code" in content
+    assert "star/slop.py" in (out / "code/star/_overview.md").read_text(encoding="utf-8")
+    # Only code-map paths have the exception, not general private data.
+    private, _ = redact("owner star /home/star/key star/agent.py", names=("star",))
+    assert "owner [user]" in private and "/home/[user]/key" in private
+    special, _ = redact("owner star /home/star/key star/agent.py", names=("star",), code_root="star")
+    assert "owner [user]" in special and "/home/[user]/key" in special
+    assert "star/agent.py" in special

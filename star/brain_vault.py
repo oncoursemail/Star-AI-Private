@@ -110,9 +110,16 @@ def private_names() -> tuple[str, ...]:
     return tuple(dict.fromkeys(n for n in found if n))
 
 
-def redact(text: str, *, names: tuple[str, ...] | None = None) -> tuple[str, Counter]:
+def redact(text: str, *, names: tuple[str, ...] | None = None,
+           code_root: str | None = None) -> tuple[str, Counter]:
     """(text with private values replaced, counts per kind). Applying it twice changes nothing more.
-    `names` (default: private_names()) are replaced as whole words."""
+
+    Names are redacted as whole words. Within generated CODE MAPS only,
+    preserve a recognized repository source root when it is followed by '/'
+    (e.g. star/agent.py). A host account can also be named "star"; it must
+    not break source references and Obsidian wiki links. Ordinary prose,
+    absolute home paths and other sensitive values are still redacted.
+    """
     found: Counter = Counter()
     names = private_names() if names is None else names
 
@@ -139,7 +146,10 @@ def redact(text: str, *, names: tuple[str, ...] | None = None) -> tuple[str, Cou
     text = sub("user-name", _USER_AT, "[user]@", text)
     text = sub("user-name", _WIN_USER, lambda m: m.group(1) + "[user]", text)
     for name in names:
-        text = sub("user-name", re.compile(r"(?<![A-Za-z0-9])" + re.escape(name) + r"(?![A-Za-z0-9])", re.I),
+        # 'star' is both a common Linux login and STAR's source package.
+        # Exempt only repository-root path segments, only in code-map output.
+        ending = r"(?![A-Za-z0-9/])" if code_root and name.casefold() == code_root.casefold() else r"(?![A-Za-z0-9])"
+        text = sub("user-name", re.compile(r"(?<![A-Za-z0-9])" + re.escape(name) + ending, re.I),
                    "[user]", text)
     text = sub("email", _EMAIL, "[email]", text)
     return text, found
@@ -373,7 +383,8 @@ def build_code_map(out: Path, graph_file: Path, totals: Counter) -> dict:
                 body.append("")
         target = out / f"{_code_name(path)}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(redact_counted("\n".join(body), totals), encoding="utf-8", newline="\n")
+        target.write_text(redact_counted("\n".join(body), totals, code_root=path.split("/", 1)[0]),
+                          encoding="utf-8", newline="\n")
         overview[path.rsplit("/", 1)[0]].append((path, doc))
     for folder, items in overview.items():
         lines = [_frontmatter(title=f"Code overview: {folder}", kind="code-overview", tags=["star/code"]),
@@ -382,7 +393,8 @@ def build_code_map(out: Path, graph_file: Path, totals: Counter) -> dict:
             lines.append(f"- {link(path)}" + (f" - {doc[:140]}" if doc else ""))
         target = out / "code" / folder / "_overview.md"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(redact_counted("\n".join(lines) + "\n", totals), encoding="utf-8", newline="\n")
+        target.write_text(redact_counted("\n".join(lines) + "\n", totals, code_root=folder.split("/", 1)[0]),
+                          encoding="utf-8", newline="\n")
     return {"files": len(files), "folders": len(overview), "graph_nodes": len(nodes), "graph_edges": len(edges)}
 
 
