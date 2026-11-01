@@ -17,6 +17,8 @@ screenshots (actionlog.py).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
+import time
 from typing import Callable
 
 from . import gates, identity
@@ -78,6 +80,7 @@ class StepResult:
     source: str = ""
     attempts: int = 0
     gated: str = ""
+    outcome_uncertain: bool = False
 
     @property
     def verified(self) -> bool:
@@ -88,7 +91,8 @@ class Driver:
     def __init__(self, computer, *, home, chain: GroundingChain | None = None, limits: RateLimits | None = None,
                  log: ActionLog | None = None, switch: StopSwitch | None = None,
                  read_guid: Callable[[], str] = identity.machine_guid, settle_s: float | None = None,
-                 sleep: Callable[[float], None] | None = None) -> None:
+                 sleep: Callable[[float], None] | None = None,
+                 verification_poll_s: float | None = None) -> None:
         identity.require(home, read_guid)                  # never on the owner's PC: raises WrongMachine
         self.c, self.home = computer, home
         self.switch = switch or StopSwitch(home)
@@ -96,8 +100,18 @@ class Driver:
         self.chain = chain or GroundingChain([UiaFinder()])
         self.limits = limits or RateLimits(computer.cfg.get("limits") if isinstance(computer.cfg, dict) else None)
         self.log = log or ActionLog(home)
-        self.settle_s = float(computer.cfg.get("settle_s", 0.5)) if settle_s is None else settle_s
+        settle = computer.cfg.get("settle_s", 0.5) if settle_s is None else settle_s
+        if type(settle) not in (int, float) or not math.isfinite(settle) or settle < 0:
+            raise ValueError("settle_s must be a finite nonnegative number")
+        self.settle_s = float(settle)
         self.sleep = sleep or computer.sleep
+        self.clock = getattr(computer, "clock", time.monotonic)
+        interval = (computer.cfg.get("verification_poll_s", 0.0)
+                    if verification_poll_s is None else verification_poll_s)
+        if (type(interval) not in (int, float) or not math.isfinite(interval)
+                or not (interval == 0 or 0.01 <= interval <= 1.0)):
+            raise ValueError("verification_poll_s must be 0 (disabled) or a finite number from 0.01 to 1.0")
+        self.verification_poll_s = float(interval)
 
     # ---- observe ------------------------------------------------------------------------------------------
     def observe(self) -> Observation:
@@ -140,6 +154,69 @@ class Driver:
                 typed and after.screen.has_text(typed[-40:])):
             misses.append("no visible effect")
         return (not misses), ("; ".join(misses) or "as expected")
+
+    def _sleep_checked(self, seconds: float) -> None:
+        """Interrupt driver waits without changing input pacing or cancelling an in-flight backend call."""
+        if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0:
+            raise ValueError("driver wait must be finite and nonnegative")
+        deadline = self.clock() + seconds
+        if not math.isfinite(deadline):
+            raise ValueError("driver wait deadline must be finite")
+        while True:
+            if self.switch.is_set():
+                raise Stopped("the owner's stop is on")
+            now = self.clock()
+            if not math.isfinite(now):
+                raise ValueError("driver wait clock must be finite")
+            remaining = deadline - now
+            if remaining <= 0:
+                return
+            self.sleep(min(0.05, remaining))
+
+    def _verify_after(self, step: Step, before: Observation, el: Element | None,
+                      delay_s: float) -> tuple[Observation, bool, str]:
+        """Optionally poll a new positive postcondition, within the existing wait budget.
+
+        Absence predicates and already-satisfied predicates retain the fixed wait.
+        The deadline bounds scheduled waits, not blocking native snapshot calls.
+        At most 32 observations are made per wait phase; this is not an event watcher.
+        """
+        expect = step.expect
+        typed = step.text if step.do == "type" else ""
+        positive = bool(expect.text or expect.window or expect.window_open or expect.focused or expect.toggle >= 0)
+        poll = (self.verification_poll_s > 0 and positive and not expect.gone and not expect.window_closed
+                and not self.verify(expect, before, before, el, typed)[0])
+        if not poll:
+            self._sleep_checked(delay_s)
+            after = self.observe()
+            self._sleep_checked(0)
+            ok, why = self.verify(expect, before, after, el, typed)
+            self._sleep_checked(0)
+            return after, ok, why
+        deadline = self.clock() + delay_s
+        if not math.isfinite(deadline):
+            raise ValueError("verification deadline must be finite")
+        for sample in range(32):
+            self._sleep_checked(0)
+            after = self.observe()
+            self._sleep_checked(0)
+            ok, why = self.verify(expect, before, after, el, typed)
+            self._sleep_checked(0)
+            if ok:
+                return after, ok, why
+            remaining = deadline - self.clock()
+            if remaining <= 0 or sample == 31:
+                return after, ok, why
+            # Reserve the final observation for the deadline instead of busy-polling a slow app.
+            self._sleep_checked(remaining if sample == 30 else min(self.verification_poll_s, remaining))
+        raise AssertionError("bounded verification loop did not return")
+
+    def _uncertain(self, step: Step, attempt: int, target: str, source: str, tried,
+                   before: Observation, detail: str, after: Observation | None = None) -> StepResult:
+        detail = f"outcome uncertain after dispatch; inspect current state before repeating: {detail}"
+        self._record(step, attempt, target, source, tried, False, detail, before, after,
+                     outcome_uncertain=True)
+        return StepResult(False, detail, source, attempt, outcome_uncertain=True)
 
     # ---- act ----------------------------------------------------------------------------------------------
     def _aim(self, el: Element) -> tuple[int, int]:
@@ -225,7 +302,9 @@ class Driver:
                 raise Stopped("the owner's stop is on")
             target = str(targets[min(index, len(targets) - 1)])
             before = self.observe()
+            self._sleep_checked(0)
             el, tried = None, []
+            dispatched = False
             try:
                 self._pace()
                 if self._needs_element(step):
@@ -235,43 +314,59 @@ class Driver:
                         detail = f"{target!r} not found ({', '.join(f'{n}: {s}' for n, s in tried)})"
                         self._record(step, attempt, target, "", tried, False, detail, before, None)
                         index += 1 if index + 1 < len(targets) else 0
-                        self.sleep(self.settle_s * attempt)
+                        self._sleep_checked(self.settle_s * attempt)
                         continue
                     el, source = found.hit.element, found.hit.source
                 self._gate(step, before, el, target)
+                self._sleep_checked(0)
+                dispatched = True
                 did = self._perform(step, before, el)
             except Gated as why:
+                if dispatched:
+                    return self._uncertain(step, attempt, target, source, tried, before,
+                                           f"action interrupted ({type(why).__name__})")
                 return self._refused(step, why, target, before)
             except Limited as why:
+                if dispatched:
+                    return self._uncertain(step, attempt, target, source, tried, before,
+                                           f"action interrupted ({type(why).__name__})")
                 detail = str(why)
                 self._record(step, attempt, target, source, tried, False, detail, before, None)
                 if why.retry_after > 10:
                     break
-                self.sleep(why.retry_after)
+                self._sleep_checked(why.retry_after)
                 continue
             except Stopped:
                 raise
-            except (RuntimeError, ValueError, TypeError) as why:
+            except Exception as why:
+                if dispatched:
+                    return self._uncertain(step, attempt, target, source, tried, before,
+                                           f"action backend failed ({type(why).__name__})")
+                if not isinstance(why, (RuntimeError, ValueError, TypeError)):
+                    raise
                 detail = str(why)
                 self._record(step, attempt, target, source, tried, False, detail, before, None)
-                self.sleep(self.settle_s * attempt)
+                self._sleep_checked(self.settle_s * attempt)
                 continue
-            self.sleep(self.settle_s * attempt)
-            after = self.observe()
-            ok, why = self.verify(step.expect, before, after, el, step.text if step.do == "type" else "")
-            if not ok and step.expect.specific() and self._changed(before, after):
-                self.sleep(self.settle_s * 3 + 0.5)                     # it did something: maybe just slow
-                after = self.observe()
-                ok, why = self.verify(step.expect, before, after, el, step.text if step.do == "type" else "")
+            try:
+                after, ok, why = self._verify_after(step, before, el, self.settle_s * attempt)
+                if not ok and step.expect.specific() and self._changed(before, after):
+                    after, ok, why = self._verify_after(step, before, el, self.settle_s * 3 + 0.5)
+                changed = self._changed(before, after) if not ok else False
+            except Stopped:
+                raise
+            except Exception as error:
+                return self._uncertain(step, attempt, target, source, tried, before,
+                                       f"verification unavailable ({type(error).__name__})")
             detail = f"{did}: {why}"
+            if not ok and (step.do == "type" or (changed and step.do in ("click", "double", "right", "key"))):
+                return self._uncertain(step, attempt, target, source, tried, before, detail, after)
             self._record(step, attempt, target, source, tried, ok, detail, before, after)
+            self._sleep_checked(0)
             if ok:
                 return StepResult(True, detail, source, attempt)
-            changed = self._changed(before, after)
             if index + 1 < len(targets):
                 index += 1                                              # replan: the next alternative target
-            elif changed and step.do in ("click", "double", "right", "key"):
-                break                                                   # never repeat a click that changed something
             elif before.screen.hwnd:
                 self.c.windows.focus(before.screen.hwnd)                # recover: her window back in front
         return StepResult(False, detail, source, attempt)
@@ -285,9 +380,9 @@ class Driver:
         return StepResult(False, f"refused: {why.reason}", gated=why.reason)
 
     def _record(self, step: Step, attempt: int, target: str, source: str, tried, ok: bool, detail: str,
-                before: Observation | None, after: Observation | None) -> None:
+                before: Observation | None, after: Observation | None, *, outcome_uncertain: bool = False) -> None:
         self.log.step(do=step.do, target=target, keys=step.keys, text=step.text[:30], attempt=attempt, source=source,
-                      tried=[f"{n}: {s}" for n, s in tried], ok=ok, detail=detail,
+                      tried=[f"{n}: {s}" for n, s in tried], ok=ok, detail=detail, outcome_uncertain=outcome_uncertain,
                       window=before.screen.window if before else "",
                       before=self.log.shot(before.image, "before") if before else "",
                       after=self.log.shot(after.image, "after") if after else "")
@@ -301,3 +396,4 @@ class Driver:
             if not result.ok:
                 return False, done
         return True, done
+
