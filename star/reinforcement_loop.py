@@ -10,9 +10,9 @@ such as "tests passed" are never promotion evidence.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import hashlib
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Iterable
 
 Generator = Callable[[str, int], str]
 Critic = Callable[[str, str, "Verification"], str]
