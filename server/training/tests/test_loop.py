@@ -76,10 +76,15 @@ class ScriptedBrain:
 
 
 class RepairBrain(ScriptedBrain):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.repair_users: list[str] = []
+
     def chat(self, model, messages, *, max_tokens, temperature=0.6, top_p=0.95,
              should_yield=lambda: "", seed=None):
         if messages[0]["content"].startswith(prompts.REPAIR_SYSTEM):
             self.requests.append("repair")
+            self.repair_users.append(messages[-1]["content"])
             return {"text": SOLUTION_REPLY, "finish": "stop", "prompt_tokens": 100,
                     "completion_tokens": 50, "seconds": 0.1}
         return super().chat(
@@ -130,7 +135,10 @@ def test_optional_verifier_repair_turns_fixable_failure_into_kept(env):
     assert "gate" not in row, row
     assert row["generation_mode"] == "verifier-repair"
     assert row["repairs"][0]["trigger"] == "G3:assertion_failed"
+    assert row["repairs"][0]["strategy"] == "fresh_reexplore"
     assert row["repairs"][0]["result"] == "candidate"
+    assert "FRESH RE-EXPLORATION" in brain.repair_users[0]
+    assert "function Stack.popp" not in brain.repair_users[0]
     assert len(row["repairs"][0]["feedback_sha256"]) == 64
     assert row["tokens_repairs"] == 50
     assert brain.requests[-1] == "repair"
