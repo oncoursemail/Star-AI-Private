@@ -296,8 +296,14 @@ class RealtimeGameLoop:
             self._lease = None
             self._lease_frame = None
             if not host_verified:
+                # Losing trust in a purported completion is not proof that
+                # the underlying inference process has actually exited.
+                self._worker_stop_pending = True
                 return reject("trusted_completion_missing")
             if self._last_host_ms is not None and now < self._last_host_ms:
+                # A reversed host clock also makes completion unverifiable.
+                # Keep the worker quarantined until host termination proof.
+                self._worker_stop_pending = True
                 return reject("host_clock_reversed")
             self._last_host_ms = now
             if lease.expires_ms is None or now >= lease.expires_ms:
