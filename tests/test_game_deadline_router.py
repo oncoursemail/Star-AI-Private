@@ -4,6 +4,7 @@ from threading import Event, RLock, Thread
 import pytest
 
 from star.game_deadline_router import GameDeadlineRouter
+from star.stream_load_governor import StreamLoadGovernor, StreamLoadSample
 
 
 def router(*, device="cpu", warmup=8):
@@ -25,6 +26,92 @@ def decide(gate, **kwargs):
                   observation_age_ms=120, now_host_ms=1000, host_verified=True)
     params.update(kwargs)
     return gate.advise(**params)
+
+
+def _load_sample(sample_id: str, at: float, *, encoder_pct: float = 0.0) -> StreamLoadSample:
+    return StreamLoadSample(
+        sample_id=sample_id, measured_at_s=at,
+        game_p95_frame_ms=16.0, game_target_fps=60.0,
+        obs_render_missed_pct=0.0, obs_encode_skipped_pct=encoder_pct,
+        obs_network_dropped_pct=0.0,
+        gpu_vram_used_mb=4096.0, gpu_vram_total_mb=8192.0,
+        tts_first_audio_p95_ms=100.0,
+    )
+
+
+def _warm_stream() -> StreamLoadGovernor:
+    governor = StreamLoadGovernor(max_sample_age_s=3.0)
+    governor.enable(owner_approved=True)
+    for second in (10, 11, 12):
+        assert governor.ingest(
+            _load_sample(f"fresh-{second}", second),
+            now_s=second, host_verified=True,
+        )
+    assert governor.recommend(now_s=12.0).profile == "normal"
+    return governor
+
+
+def test_live_stream_blocks_offline_teacher_even_between_game_attempts():
+    gate = router()
+    result = decide(gate, game_active=False, offline_teacher_approved=True, stream_live=True)
+    assert result.reason == "live_stream_precludes_offline_teacher"
+    assert gate.metrics()["offline_teacher"] == 0
+    assert decide(gate, game_active=False, offline_teacher_approved=True).route == "teacher_offline"
+
+
+def test_live_gpu_inference_needs_current_stream_telemetry():
+    gate = router(device="gpu")
+    train(gate)
+    assert decide(gate, now_host_ms=12_100, stream_live=True).reason == "stream_telemetry_missing"
+    governor = _warm_stream()
+    assert decide(gate, now_host_ms=12_100, stream_live=True,
+                  stream_governor=governor).route == "reactive"
+    # A cached normal recommendation is NOT reused after OBS telemetry expires.
+    assert decide(gate, now_host_ms=16_000, stream_live=True,
+                  stream_governor=governor).reason == "stream_gpu_headroom_unverified"
+
+
+def test_critical_broadcast_pressure_blocks_reactive_inference():
+    governor = _warm_stream()
+    assert governor.ingest(
+        _load_sample("encoder-overloaded", 13.0, encoder_pct=3.0),
+        now_s=13.0, host_verified=True,
+    )
+    assert governor.recommend(now_s=13.0).profile == "critical"
+    for device in ("cpu", "gpu"):
+        gate = router(device=device)
+        train(gate)
+        result = decide(gate, now_host_ms=13_100, stream_live=True,
+                        stream_governor=governor)
+        assert result.reason == "stream_critical_pressure"
+        assert result.route == "skip"
+        assert not result.authorizes_model_launch
+
+
+def test_cpu_reactive_path_preserved_when_stream_telemetry_missing():
+    gate = router(device="cpu")
+    train(gate)
+    assert decide(gate, stream_live=True).route == "reactive"
+    assert decide(gate, stream_live=True, cpu_pressure=True).reason == "hardware_pressure"
+
+
+def test_broadcast_clock_mismatch_fails_closed_without_reviving_old_samples():
+    governor = _warm_stream()
+    assert governor.recommend(now_s=30.0).profile == "telemetry_stale"
+    gate = router(device="gpu")
+    train(gate)
+    result = decide(gate, stream_live=True, stream_governor=governor,
+                    now_host_ms=12_100)
+    assert result.reason == "stream_clock_mismatch"
+    assert decide(gate, stream_live=True, now_host_ms=1000).reason == "host_clock_reversed"
+
+
+def test_stream_flags_and_governor_type_are_strict():
+    gate = router()
+    with pytest.raises(ValueError):
+        decide(gate, stream_live=1)
+    with pytest.raises(TypeError):
+        decide(gate, stream_live=True, stream_governor=object())
 
 
 def test_disabled_by_default_and_requires_host_permission():
