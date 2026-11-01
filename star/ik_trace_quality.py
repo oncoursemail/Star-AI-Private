@@ -54,7 +54,7 @@ def _object(value: object, required: set[str], optional: set[str], label: str) -
 
 
 def _number(value: object, label: str, minimum: float = -1e9, maximum: float = 1e9) -> float:
-    if type(value) not in (int, float) or not minimum <= value <= maximum:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not minimum <= value <= maximum:
         raise ValueError(f"{label} must be a finite number in {minimum}..{maximum}")
     return float(value)
 
@@ -179,6 +179,7 @@ def _chain_report(raw: dict, scale: float, index: int) -> dict:
             same_span = (previous is not None and "contact_position" in previous
                          and previous["contact_frame"] == frame["contact_frame"])
             if same_span:
+                assert previous is not None and dt is not None and first_contact_position is not None
                 if anchor != previous["contact_anchor"]:
                     raise ValueError("contact_anchor must stay fixed within a continuous support-frame span")
                 values["contact_drift_rig"].append(_distance(position, first_contact_position) / scale)
@@ -190,6 +191,7 @@ def _chain_report(raw: dict, scale: float, index: int) -> dict:
         else:
             first_contact_position = None
         previous = frame
+    assert first_time is not None and last_time is not None     # samples are validated as non-empty
     return {
         "name": raw["name"], "sample_count": len(raw["samples"]),
         "duration_seconds": last_time - first_time,
