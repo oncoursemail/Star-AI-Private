@@ -19,6 +19,8 @@ import re
 from threading import RLock
 from typing import cast
 
+from .stream_load_governor import StreamLoadGovernor
+
 _SCOPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}\Z")
 _MAX_TIME_MS = 1e7
 
@@ -176,18 +178,31 @@ class GameDeadlineRouter:
         host_verified: bool = False,
         cpu_pressure: bool = False, gpu_pressure: bool = False,
         offline_teacher_approved: bool = False,
+        stream_live: bool = False,
+        stream_governor: StreamLoadGovernor | None = None,
     ) -> DeadlineAdvice:
         """Pre-inference advisory. The host rechecks fresh data at input time.
 
         For live play, success means the profiled p95 PLUS dispatch reserve is
         strictly within the remaining *scene* lifetime. These are anonymous
         timing statistics, not a guarantee or a game input permit.
+
+        stream_live is an independently attested OBS broadcast state. A
+        provided governor must use the SAME host monotonic clock epoch as
+        now_host_ms (seconds versus milliseconds); its recommendation is
+        recomputed at decision time, never reused from an old snapshot.
+        Offline teacher study is not eligible during a live broadcast, even
+        when game_active is False. The live GPU fast path requires fresh,
+        normal stream telemetry; CPU fast play can continue through missing
+        stream telemetry unless independent CPU pressure forbids it.
         """
         if any(type(flag) is not bool for flag in (
             game_active, host_verified, cpu_pressure, gpu_pressure,
-            offline_teacher_approved,
+            offline_teacher_approved, stream_live,
         )):
             raise ValueError("flags must be strict booleans")
+        if stream_governor is not None and not isinstance(stream_governor, StreamLoadGovernor):
+            raise TypeError("stream_governor must be a StreamLoadGovernor")
         if type(game_scope) is not str or _SCOPE.fullmatch(game_scope) is None:
             raise ValueError("invalid game scope")
         with self._lock:
@@ -204,6 +219,8 @@ class GameDeadlineRouter:
             # only after *separate* host approval. Never conflate teacher
             # research with permission to update a game agent.
             if not game_active:
+                if stream_live:
+                    return skip("live_stream_precludes_offline_teacher")
                 if not offline_teacher_approved:
                     return skip("offline_teacher_not_approved")
                 if cpu_pressure or gpu_pressure:
@@ -236,6 +253,23 @@ class GameDeadlineRouter:
                 return skip("host_clock_missing", remaining=remaining)
             if self._last_sample_ms is not None and now < self._last_sample_ms:
                 return skip("host_clock_before_samples", remaining=remaining)
+            if stream_live:
+                if stream_governor is None:
+                    if self._device == "gpu":
+                        return skip("stream_telemetry_missing", remaining=remaining)
+                else:
+                    # Query fresh pressure using the host's shared monotonic
+                    # clock. Cached "normal" status may outlive OBS stability.
+                    # A mismatch fails closed for GPU inference rather than
+                    # crashing the game or falsely treating telemetry as fresh.
+                    try:
+                        stream_advice = stream_governor.recommend(now_s=now / 1000.0)
+                    except ValueError:
+                        return skip("stream_clock_mismatch", remaining=remaining)
+                    if stream_advice.profile == "critical":
+                        return skip("stream_critical_pressure", remaining=remaining)
+                    if self._device == "gpu" and stream_advice.profile != "normal":
+                        return skip("stream_gpu_headroom_unverified", remaining=remaining)
             fresh = [duration for at, duration in self._reactive
                      if 0 <= now - at <= self._max_latency_age]
             if len(fresh) < self._minimum:
