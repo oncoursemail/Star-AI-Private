@@ -167,36 +167,38 @@ class StreamHealthBridge:
 
     def offer_obs(self, data: Mapping[str, object], *, host_ms: float,
                   host_verified: bool = False) -> ObsLagWindow | None:
-        """Consume only the four OBS counters; an incomplete window is unknown.
+        """Consume trusted OBS counter windows without accepting untrusted resets.
 
-        A verified yet malformed, reset, idle, too-short or long-gap reading
-        invalidates live readiness. Never silently convert missing output to
-        0% skip rate.
+        An unauthenticated payload can be malformed (or carry a nonsensical
+        timestamp). It must be discarded *before* calling the counter parser;
+        otherwise its parse error can invalidate a previous verified window
+        and needlessly stall the stream's optional work. A malformed VERIFIED
+        sample still invalidates the current counter epoch and requires two
+        fresh good measurements before any new live admission.
         """
+        if type(host_verified) is not bool:
+            raise ValueError("host_verified must be a strict boolean")
         with self._lock:
-            if not self._enabled:
+            if not self._enabled or not host_verified:
                 return None
             try:
                 window = self._obs.ingest(
-                    data, host_ms=host_ms, host_verified=host_verified,
+                    data, host_ms=host_ms, host_verified=True,
                 )
             except (ValueError, TypeError):
-                # A malformed *verified* reading breaks the continuity of
-                # the OBS counter epoch. Demand two new valid samples rather
-                # than silently using the pre-error baseline for recovery.
-                if host_verified is True:
-                    self._obs.reset()
+                # Only independently verified failures may invalidate an
+                # existing OBS baseline. Never let an unverified input do so.
+                self._obs.reset()
                 self._latest = None
                 self._ready_host_ms = None
                 self._counts["obs_invalidated"] += 1
                 raise
-            if host_verified is True:
-                self._latest = window
-                self._ready_host_ms = None
-                if window is None:
-                    self._counts["obs_invalidated"] += 1
-                else:
-                    self._counts["obs_windows"] += 1
+            self._latest = window
+            self._ready_host_ms = None
+            if window is None:
+                self._counts["obs_invalidated"] += 1
+            else:
+                self._counts["obs_windows"] += 1
             return window
 
     def offer_host(self, telemetry: StreamTelemetry, *, host_ms: float,
