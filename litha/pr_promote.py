@@ -86,6 +86,14 @@ def main(argv: list[str] | None = None) -> int:
                  "Opened by Litha. Merged only when the release checks in litha/pr_promote.py hold for the exact head.")
         number = int(url.strip().rsplit("/", 1)[-1])
     if why:
+        if a.apply and any(w.endswith(" failure") for w in why):   # star/next itself red: one rerun per head
+            seen = RELEASE / "reran.json"                           # (seen: a SIGTERM timing test flaked after #850)
+            done = json.loads(seen.read_text(encoding="utf-8")) if seen.exists() else []
+            if sha not in done:
+                from litha.pr_fixer import rerun_failed
+                why.append(f"reran {rerun_failed(sha)} failed run(s) once")
+                seen.parent.mkdir(parents=True, exist_ok=True)
+                seen.write_text(json.dumps((done + [sha])[-50:]), encoding="utf-8")
         print(f"main: HOLD star/next {sha[:8]} (PR #{number}): " + "; ".join(why))
         return 0
     if not a.apply:
