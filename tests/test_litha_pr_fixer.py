@@ -197,3 +197,14 @@ def test_merged_rust_must_parse_when_the_base_copy_does(tmp_path):
         subprocess.run(["git", *F.IDENTITY, "commit", "-qam", "y"], cwd=tmp_path, check=True)
         subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=tmp_path, check=True)
         assert F.tidy(tmp_path, "lib.rs", "fn  a() {}\nfn b() {\n    \n}\n") == "fn  a() {}\nfn b() {\n    \n}\n"
+
+
+def test_an_addition_next_to_the_other_sides_change_merges_without_her_model():
+    text = ("mod a;\n<<<<<<< pr\npub use instance::edit;\npub use instance::{Changes, World};\n||||||| base\n"
+            "pub use instance::{Changes, World};\n=======\npub use instance::{\n    Changes, TagChange, World,\n};\n"
+            ">>>>>>> main\nmod b;\n")
+    merged, why = F.resolve_text("crates/core/src/lib.rs", text, "t", asker=lambda p: pytest.fail("no model needed"))
+    assert why == "" and merged == ("mod a;\npub use instance::edit;\npub use instance::{\n    Changes, TagChange, World,\n"
+                                    "};\nmod b;\n")                                    # Studio #317's real shape
+    assert F.adjacent("x\n", "x\n", "x\ny\n") is None                                # nothing changed on one side
+    assert F.adjacent("y\nx\n", "x\n", "x\nz\n") is None                             # both only added: order unknown

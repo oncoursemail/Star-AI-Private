@@ -474,6 +474,24 @@ def slips(path: str, block: str, new: str, before: str = "", after: str = "") ->
     return ""
 
 
+def adjacent(ours: str, base: str, theirs: str) -> str | None:
+    """Git calls edits that touch neighbouring lines a conflict. When one side only ADDED lines before and/or after the
+    untouched ancestor and the other side changed the ancestor, the merge is mechanical: the additions around the
+    changed text (seen: #317, one `pub use` line added above a rewritten import list). None when it is not that case."""
+    ours, base, theirs = (s if s.endswith("\n") or not s else s + "\n" for s in (ours, base, theirs))
+    b = base.splitlines(keepends=True)                  # (sides() may drop a part's last newline)
+    if not b:
+        return None
+    for adder, changer in ((theirs, ours), (ours, theirs)):
+        a, c = adder.splitlines(keepends=True), changer.splitlines(keepends=True)
+        starts = [i for i in range(len(a) - len(b) + 1) if a[i:i + len(b)] == b]
+        if len(starts) == 1 and len(a) > len(b) and c != b and base not in changer:
+            i = starts[0]
+            body = "".join(c)
+            return "".join(a[:i]) + (body if body.endswith("\n") or not body else body + "\n") + "".join(a[i + len(b):])
+    return None
+
+
 def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") -> tuple[str | None, str]:
     """Every conflict block of one file resolved by her; (None, why) when she cannot make valid code of it. A hint is a
     checker's complaint about her previous attempt at this file."""
@@ -489,6 +507,11 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") ->
         if not hint and "\n|||||||" in m.group(0) and not base.strip() and union \
                 and not slips(path, m.group(0), union, before, after):
             out += [text[last:m.start()], union]       # both sides only ADDED here: keep both, exactly as written
+            last = m.end()
+            continue
+        near = adjacent(ours, base, theirs) if not hint and "\n|||||||" in m.group(0) else None
+        if near is not None and not slips(path, m.group(0), near, before, after):
+            out += [text[last:m.start()], near]        # one side only added next to what the other changed
             last = m.end()
             continue
         for _ in range(3):
