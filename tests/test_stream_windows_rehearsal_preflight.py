@@ -141,14 +141,14 @@ class TestWindowsRehearsalPreflight(unittest.TestCase):
             evaluate_preflight(witnesses(), None, pinned_game_identity=None, gpu_reserve_mib=0)
 
     def test_gpu_query_is_bounded_and_read_only(self):
-        good = subprocess.CompletedProcess([], 0, stdout="8192, 5000, 13\n", stderr="")
+        good = subprocess.CompletedProcess([], 0, stdout="GPU-11111111-2222-3333-4444-555555555555, 8192, 5000, 13\n", stderr="")
         with patch("star.stream_windows_rehearsal_preflight.subprocess.run", return_value=good) as call:
             gpu = query_nvidia_gpu(0)
         self.assertEqual((gpu.total_mib, gpu.free_mib, gpu.utilization_pct),
                          (8192, 5000, 13))
         args, kwargs = call.call_args
         self.assertEqual(args[0][0], "nvidia-smi")
-        self.assertIn("--query-gpu=memory.total,memory.free,utilization.gpu", args[0])
+        self.assertIn("--query-gpu=uuid,memory.total,memory.free,utilization.gpu", args[0])
         self.assertFalse(kwargs["check"])
         self.assertLessEqual(kwargs["timeout"], 3)
         self.assertNotIn("shell", kwargs)
