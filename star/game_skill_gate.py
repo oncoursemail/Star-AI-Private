@@ -95,13 +95,18 @@ def _key(t: GamePerformanceTrial) -> tuple[str, str, int, str]:
     return (t.game_scope, t.scenario_id, t.seed, t.mode)
 
 
-def _index(rows: Sequence[GamePerformanceTrial]) -> dict[tuple[str, str, int, str], GamePerformanceTrial]:
+def _index(rows: Sequence[GamePerformanceTrial]) -> tuple[
+    dict[tuple[str, str, int, str], GamePerformanceTrial],
+    set[tuple[str, str, int]], set[tuple[str, str, int]],
+]:
     """Reject duplicates and any replay of a practice map/seed in holdouts."""
     if not isinstance(rows, (list, tuple)) or len(rows) > 2048:
         raise ValueError("trials must be a bounded list/tuple")
     found: dict[tuple[str, str, int, str], GamePerformanceTrial] = {}
     seen_cases: set[str] = set()
     seeds_by_split: dict[tuple[str, str, int], str] = {}
+    practice_seeds: set[tuple[str, str, int]] = set()
+    holdout_seeds: set[tuple[str, str, int]] = set()
     for t in rows:
         if not isinstance(t, GamePerformanceTrial) or not t.host_verified:
             raise ValueError("all trials need structured host attestation")
@@ -113,11 +118,14 @@ def _index(rows: Sequence[GamePerformanceTrial]) -> dict[tuple[str, str, int, st
         if old_split != t.split:
             raise ValueError("training/holdout map and seed overlap")
         if t.split == "holdout":
+            holdout_seeds.add(seed_key)
             key = _key(t)
             if key in found:
                 raise ValueError("duplicate holdout")
             found[key] = t
-    return found
+        else:
+            practice_seeds.add(seed_key)
+    return found, practice_seeds, holdout_seeds
 
 
 def _p95(values: list[float]) -> float:
@@ -158,8 +166,15 @@ def compare_game_skill(
         )
 
     try:
-        bindex, cindex = _index(baseline), _index(candidate)
+        bindex, bpractice, bholdout = _index(baseline)
+        cindex, cpractice, choldout = _index(candidate)
     except (TypeError, ValueError):
+        return verdict(("invalid_evidence",))
+    # A test seed practiced by EITHER variant is not unseen for EITHER arm.
+    # Checking each arm independently misses cross-variant/mode leakage.
+    # Cross-split contamination is invalid even if the practiced run was
+    # paused and the held-out trial was in real-time mode (or vice versa).
+    if (bpractice | cpractice) & (bholdout | choldout):
         return verdict(("invalid_evidence",))
     bkeys = {key for key in bindex if key[3] == mode}
     ckeys = {key for key in cindex if key[3] == mode}
@@ -217,6 +232,25 @@ def compare_game_skill(
     faster = bool(b and b95 > 0 and n95 <= 0.90 * b95 and b95 - n95 >= 10)
     if not (wins or progress or faster):
         reasons.append("no_verified_improvement")
+    else:
+        # A single lucky map seed must not qualify a supposedly smarter
+        # real-time player. Demand repeated, material paired benefits on at
+        # least two independently named scenarios, rather than a global mean
+        # inflated by one outlier. This is a conservative screening rule,
+        # not a statistical proof of transfer or authority to deploy.
+        benefited = [
+            (old.game_scope, old.scenario_id)
+            for old, new in zip(b, n)
+            if (new.success and not old.success
+                or new.progress >= old.progress + 0.02 - 1e-9
+                or (old.action_delay_ms >= 10
+                    and old.action_delay_ms - new.action_delay_ms >= 10
+                    and new.action_delay_ms <= old.action_delay_ms * 0.9))
+        ]
+        if len(benefited) < 5:
+            reasons.append("insufficient_repeated_improvement")
+        if len(set(benefited)) < 2:
+            reasons.append("improvement_not_cross_scenario")
     return verdict(tuple(reasons), b, n)
 
 

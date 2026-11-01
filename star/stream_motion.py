@@ -125,20 +125,24 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
                 cues: tuple[ExpressionCue, ...] | list[ExpressionCue] = (),
                 mode: str = "normal", fps: int = 30,
                 reduced_motion: bool = False, seed: int = 7,
+                natural_gaze: bool = False,
                 cancelled: Callable[[], bool] | None = None) -> tuple[MotionFrame, ...]:
     """Generate deterministic local rig targets at 15/30/60 Hz, max 15 seconds.
 
     For live playback, synchronize returned timestamps with *actual output
-    audio*, not wall clock or model text-generation timestamps. This heuristic
-    does not produce phoneme-perfect lipsync or simulate Live2D hair physics.
+    audio*, not wall clock or model text-generation timestamps. Opt-in
+    natural_gaze smooths host-verified focus movements rather than creating
+    ungrounded looks. This heuristic does not produce phoneme-perfect lipsync
+    or simulate Live2D hair physics.
     """
     duration_s = _finite(duration_s, "duration", 0.001, MAX_DURATION_S)
     if not isinstance(mode, str) or mode not in MODES:
         raise ValueError("mode must be normal, cat, or puppy")
     if type(fps) is not int or fps not in (15, 30, 60):
         raise ValueError("fps must be 15, 30 or 60")
-    if type(reduced_motion) is not bool or type(seed) is not int or not 0 <= seed <= 2**32 - 1:
-        raise ValueError("reduced_motion must be bool and seed must be a 32-bit unsigned int")
+    if (type(reduced_motion) is not bool or type(natural_gaze) is not bool
+            or type(seed) is not int or not 0 <= seed <= 2**32 - 1):
+        raise ValueError("motion toggles must be bool and seed must be a 32-bit unsigned int")
     audio_levels = _ordered(audio_levels, AudioLevel, MAX_AUDIO_SAMPLES, duration_s, "audio_levels")
     cues = _ordered(cues, ExpressionCue, MAX_CUES, duration_s, "cues")
     if cancelled is not None and not callable(cancelled):
@@ -151,6 +155,13 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
     blink_intervals = _blink_intervals(duration_s, seed)
     cursor, blink_cursor = 0, 0
     mouth = 0.0
+    # Opt-in focus easing: avoid an instant eye jump when an independently
+    # grounded game/speech focus cue arrives. Disabled by default; compare
+    # visually before mapping to a real Live2D model. These factors are
+    # precomputed to keep the renderer's hot loop allocation-free.
+    gaze_position = 0.0
+    gaze_engage = 1 - math.exp(-1 / (fps * 0.07))
+    gaze_release = 1 - math.exp(-1 / (fps * 0.12))
     phase = (seed % 997) / 997.0 * 2 * math.pi
     frames: list[MotionFrame] = []
     count = math.floor(duration_s * fps)
@@ -202,6 +213,11 @@ def plan_motion(*, duration_s: float, audio_levels: tuple[AudioLevel, ...] | lis
                 gaze = cue.target_x * strength * math.exp(-age / 1.1)
             elif cue.kind == "nod":
                 nod += strength * math.exp(-age / 0.5) * math.sin(age * math.pi * 3)
+
+        if natural_gaze:
+            response = gaze_engage if abs(gaze) > abs(gaze_position) else gaze_release
+            gaze_position += (gaze - gaze_position) * response
+            gaze = gaze_position
 
         while blink_cursor < len(blink_intervals) and t > blink_intervals[blink_cursor][1]:
             blink_cursor += 1
