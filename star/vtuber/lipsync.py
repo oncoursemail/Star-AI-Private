@@ -164,6 +164,7 @@ class LocalFeed:
 
     def clear(self) -> None:
         self.timeline.clear()
+        self.on_event("owner_interrupt", 1.0)
 
     def event(self, kind: str, strength: float = 1.0) -> None:
         self.on_event(kind, strength)

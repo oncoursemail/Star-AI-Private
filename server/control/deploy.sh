@@ -123,6 +123,7 @@ gate_install() {   # gate_install HOST GATE_JSON_FILE
   home=$(ssh -o BatchMode=yes "$host" 'echo $HOME')
   ssh -o BatchMode=yes "$host" "mkdir -p ~/.local/share/metallic-control ~/.local/bin"
   scp -q server/control/metallic_control_gate.py "$host:.local/share/metallic-control/metallic_control_gate.py"
+  scp -q server/control/litha_brain.py "$host:.local/share/metallic-control/litha_brain.py"
   scp -q "$2" "$host:.local/share/metallic-control/gate.json"
   ssh -o BatchMode=yes "$host" "printf '#!/bin/sh\n# Metallic Control host gate: forced command for the collector key (server/control/deploy.sh gate)\nexec /usr/bin/python3 %s/.local/share/metallic-control/metallic_control_gate.py --config %s/.local/share/metallic-control/gate.json\n' $home $home > ~/.local/bin/metallic-control-gate && chmod 755 ~/.local/bin/metallic-control-gate"
   pub=$(ct cat "$ETC/ssh/id_ed25519.pub" | tr -d '\r')

@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - name: Check the pull request diff with the base branch's guard
@@ -60,7 +60,7 @@ jobs:
           mapfile -d '' -t changed < "$RUNNER_TEMP/changed.nul"
           files=()
           for path in "${changed[@]}"; do files+=("./$path"); done
-          python "$RUNNER_TEMP/guard.py" --branch="$HEAD_BRANCH" --labels="$LABELS" --files "${files[@]}"
+          python "$RUNNER_TEMP/guard.py" --branch="$HEAD_BRANCH" --labels="$LABELS" --base-sha="$BASE_SHA" --head-sha="$HEAD_SHA" --files "${files[@]}"
       - name: Check a pushed generator branch against trusted integration ancestry
         if: github.event_name == 'push'
         env:

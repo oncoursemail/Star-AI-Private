@@ -31,7 +31,7 @@ CLOSE_DAYS = 30
 LIVE_CHAT_S = 20 * 60
 MIN_GAP_H = 3.0
 PERSON_GAP_H = 48.0
-KINDS = {"followup": 1.0, "share": 0.8, "dream": 0.7}
+KINDS = {"followup": 1.0, "promise": 1.0, "online": 0.9, "share": 0.8, "dream": 0.7, "miss": 0.65}   # social/initiative.py adds promise/online/miss
 MAX_TEXT = 200
 
 GUILT = re.compile(
@@ -53,8 +53,7 @@ class Outgoing:
 
 
 def _moments(memory, person, since: float = 0.0) -> list[tuple[str, str, float]]:
-    return memory._db.execute("SELECT platform, line, ts FROM moments WHERE person_id = ? AND ts >= ? ORDER BY id",
-                              (person.id, since)).fetchall()
+    return [(platform, line, ts) for _, platform, line, ts in memory.moment_records(person) if ts >= since]
 
 
 def is_close(memory, person, now: float) -> bool:
@@ -130,7 +129,7 @@ def add_seed(store: InnerStore, memory, person, text: str, *, kind: str = "follo
     with store._lock:
         cur = store.db.execute(
             "INSERT INTO seeds (pkey, kind, text, reason, created, not_before, expires, platform) VALUES (?,?,?,?,?,?,?,?)",
-            (pkey, kind, text, reason[:120], now, start, start + max(0.5, ttl_days) * 86400, platform))
+            (pkey, kind, text, reason[:120], now, start, start + max(0.04, ttl_days) * 86400, platform))
         store.db.commit()
     return cur.lastrowid
 
@@ -143,7 +142,8 @@ def expire(store: InnerStore, now: float) -> int:
 
 
 def sent_since(store: InnerStore, since: float, pkey: str | None = None) -> list[tuple[str, float]]:
-    sql, args = "SELECT pkey, sent_at FROM seeds WHERE state = 'sent' AND sent_at >= ?", [since]
+    sql = "SELECT pkey, sent_at FROM seeds WHERE state = 'sent' AND sent_at >= ?"
+    args: list = [since]
     if pkey is not None:
         sql += " AND pkey = ?"
         args.append(pkey)

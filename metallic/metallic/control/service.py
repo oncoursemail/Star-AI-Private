@@ -52,6 +52,20 @@ def write_token(path: str | Path) -> None:
         handle.write(new_token() + "\n")
 
 
+def app_auth_options(conf: dict) -> dict:
+    """The desktop app door's config: `app_code_file`, `app_token_secret_file`, `app_token_hours` (default 8).
+
+    A key that names a file which is missing or empty refuses to start (never a silent fallback to a weaker code)."""
+    opts: dict = {"app_hours": float(conf.get("app_token_hours", 8))}
+    for key, name in (("app_code_file", "app_code"), ("app_token_secret_file", "app_secret")):
+        if conf.get(key):
+            value = _read_secret(conf[key])
+            if not value:
+                raise ValueError(f"{key} is set but the file is missing or empty")
+            opts[name] = value
+    return opts
+
+
 def run(config_path: str) -> int:
     conf = load_config(config_path)
     store = Store(conf.get("db", "control.sqlite3"))
@@ -59,11 +73,17 @@ def run(config_path: str) -> int:
     base = ssh_base(conf)
     runner = Runner(store, machines, base, conf.get("audit_file"))
     collector = Collector(conf, store, runner)
-    auth = Auth(_read_secret(conf["login_token_file"]), _read_secret(conf["push_token_file"]))
+    auth = Auth(_read_secret(conf["login_token_file"]), _read_secret(conf["push_token_file"]), **app_auth_options(conf))
     host = conf.get("listen", "0.0.0.0")
-    servers = [serve(App(collector, store, runner, auth, machines, conf.get("ui")), host, int(conf.get("port", 8470)))]
+    link = None
+    if conf.get("accounts_url"):            # Metallic accounts: owner/admin accounts open the Star app door
+        from ..accounts.link import AccountLink
+        link = AccountLink(conf["accounts_url"], fingerprint=conf.get("accounts_fingerprint"))
+    servers = [serve(App(collector, store, runner, auth, machines, conf.get("ui"), account_link=link), host,
+                     int(conf.get("port", 8470)))]
     if conf.get("tls_port") and conf.get("tls_cert") and conf.get("tls_key"):
-        servers.append(serve(App(collector, store, runner, auth, machines, conf.get("ui"), secure_cookie=True), host,
+        servers.append(serve(App(collector, store, runner, auth, machines, conf.get("ui"), secure_cookie=True,
+                                 account_link=link), host,
                              int(conf["tls_port"]), (conf["tls_cert"], conf["tls_key"])))
     collector.start(base)
     print(f"metallic control: listening on {host}:{conf.get('port', 8470)}"

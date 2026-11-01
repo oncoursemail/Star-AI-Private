@@ -211,8 +211,10 @@ def _simple_home(home, outcome, interest="research"):
 
 def test_emotion_hook_passes_a_kind_string_not_a_dict(home, monkeypatch):
     from star import emotion
+    import star.life
     seen = []
     monkeypatch.setattr(emotion, "on_event", lambda kind, **kw: seen.append((kind, kw)))
+    monkeypatch.setattr(star.life, "flag", lambda name, home=None: False)   # her goals feel on their own (random); not under test here
     for outcome, interest, expected in (
             ({"ok": True, "verified": True, "summary": "drew it", "evidence": ["x"]}, "drawing", "creative_done"),
             ({"ok": True, "verified": True, "summary": "read it", "evidence": ["x"]}, "research", "learned_something"),
@@ -1085,6 +1087,19 @@ def test_star_vtuber_is_a_plugin_and_her_speaker_is_wrapped_for_lip_sync(monkeyp
     assert voicestack.attach_lipsync("speaker") == "speaker"               # a broken camera never silences her
     monkeypatch.setitem(sys.modules, "star.vtuber", None)                   # not installed
     assert voicestack.attach_lipsync("speaker") == "speaker"
+
+
+def test_the_check_reports_a_ready_cable_as_ok_instead_of_a_type_error(monkeypatch):
+    pytest.importorskip("numpy")
+    from star.home import voicestack
+    from star.senses import routes
+    device = {"name": "STAR Microphone", "kind": "input"}
+    ready = routes.VirtualMicRoute({"name": "CABLE Input", "kind": "output"}, device, True)
+    monkeypatch.setattr(routes, "query_devices", lambda sd=None: [])
+    monkeypatch.setattr(routes, "find_route", lambda devices: ready)
+    assert voicestack.build_status()["STAR Microphone cable"] == "ok"
+    monkeypatch.setattr(routes, "find_route", lambda devices: routes.VirtualMicRoute(None, None))
+    assert "Virtual cable not found" in voicestack.build_status()["STAR Microphone cable"]
 
 
 def _camera_runtime(home, memory, config, registry_items=True):

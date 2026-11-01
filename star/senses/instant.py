@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Any, cast
 
 from ..voice.runtime import Engines, build_session, make_brain
 from ..voice.settings import VoiceSettings
@@ -101,7 +102,7 @@ def build_pc_session(settings: VoiceSettings, engines: Engines, speaker, *, hub:
         fast_brain = ContextBrain(fast_brain, hub) if fast_brain is not None else None
     if fast_brain is not None and settings.fast_profile != "off":
         brain = RoutedBrain(fast_brain, brain, mode="auto")
-    session = build_session(settings, engines, speaker, brain=brain, on_event=on_event)
+    session = build_session(settings, engines, cast(Any, speaker), brain=brain, on_event=on_event)
     warm = None
     if settings.keep_warm:
         warm = KeepWarm(tts=engines.tts, asr=engines.asr, brain=fast_brain, session=session).start()   # not brain 1: it is shared

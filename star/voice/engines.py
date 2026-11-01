@@ -229,13 +229,18 @@ class FasterWhisperASR:
         self.device, self.language, self.prompt = device, language, prompt
         self.model_name = model
         self._lock = threading.Lock()
+        local_model = model
+        from ..home.paths import root
+        if root() is not None:
+            from ..senses.setup import installed_asr_path
+            local_model = installed_asr_path(model) or model
         try:
-            self._model = WhisperModel(model, device=device, compute_type="float16" if device == "cuda" else "int8")
+            self._model = WhisperModel(local_model, device=device, compute_type="float16" if device == "cuda" else "int8")
         except Exception:
             if device != "cuda":
                 raise
             self.device = "cpu"          # no usable CUDA runtime: carry on slower instead of failing the call
-            self._model = WhisperModel(model, device="cpu", compute_type="int8")
+            self._model = WhisperModel(local_model, device="cpu", compute_type="int8")
 
     def transcribe(self, pcm: bytes, sample_rate: int = SAMPLE_RATE) -> str:
         audio = pcm16_to_float(pcm)

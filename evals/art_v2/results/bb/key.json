@@ -1,0 +1,50 @@
+{
+ "n01": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "n02": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "n03": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "n04": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "n05": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "n06": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "n07": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "n08": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "n09": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "n10": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "n11": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "n12": {
+  "A": "v2",
+  "B": "baseline"
+ }
+}

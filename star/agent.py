@@ -13,7 +13,7 @@ from .media import image_part, mcp_images
 from .redact import redact_text
 from .policy import allowed_registry, enforce, READ_TOOLS as STUDIO_READ_TOOLS
 from .memory import compact
-from .workspace import TOOLS, TOOL_NAMES, WRITE_TOOLS as WORKSPACE_WRITE_TOOLS
+from .workspace import TOOL_NAMES, WRITE_TOOLS as WORKSPACE_WRITE_TOOLS, tool_definitions as workspace_tools
 from . import code_answer_completion
 from .self_model import SELF_TOOL, TurnSelfModel, wants_self_inspection
 from .incremental_repair import RepairController, RepairDeferred, RepairsOff
@@ -57,7 +57,9 @@ UNTRUSTED_SOURCE_TOOLS = frozenset({
     "star_roblox_game_image", "search_asset",
     "star_github_tree", "star_github_read", "star_mcp_search", "star_mcp_call", "star_delegate_research",
     "star_debug_report", "star_debug_compare", "star_debug_source",
-    "workspace_minecraft_audit", "workspace_minecraft_inspect", "star_identify_song",
+    "workspace_minecraft_audit", "workspace_minecraft_inspect", "workspace_minecraft_model_check",
+    "workspace_asset3d_check",
+    "star_identify_song",
     "star_game_video_study", "star_game_experience_search", "star_game_episode_analyze",
     "star_api_catalog_search",
 })
@@ -294,6 +296,10 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
             from . import reasoning_guard
             raw += text
             visible = reasoning_guard.strip_think(raw)
+            if not calls and len(raw) - emitted > reasoning_guard.MAX_BUFFERED_CHARS:
+                if not chunks:
+                    raise reasoning_guard.ReasoningLoop('guarded response buffer exceeded its limit')
+                break
             if not calls and not chunks and reasoning_guard.starts_as_reasoning(visible):
                 raise reasoning_guard.ReasoningLoop(visible[:200])
             if not calls and reasoning_guard.is_looping(visible):
@@ -305,13 +311,17 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
                 already = len(whole) - len(pending)
                 pending = kept[already:] if len(kept) > already else ''
                 break
-            # Show whole sentences only (an unfinished one is held back for a few words), so a sentence in which the
+            # Hold unfinished prose until its sentence is classifiable, so a sentence in which the
             # model plans its reply (persona.leaked_reasoning) is never shown: nothing shown before it sends the turn
             # to the main model, otherwise the reply ends at the sentence before it.
             prose = reasoning_guard.prose_only(visible)
             plan = None if calls else reasoning_guard.plan_start(prose)
             if plan is not None and not chunks and not visible[:plan].strip():
                 raise reasoning_guard.ReasoningLoop(visible[:200])
+            if not calls and reasoning_guard.unfinished_too_long(prose):
+                if not chunks:
+                    raise reasoning_guard.ReasoningLoop('unfinished prose exceeded the guarded buffer')
+                stop = True
             end = max(emitted, len(visible) if calls else len(visible[:plan].rstrip()) if plan is not None else reasoning_guard.safe_end(prose))
             text = visible[emitted:end]
             emitted = end
@@ -340,8 +350,14 @@ async def read_stream(stream, event, *, lead: str = '', call_prefix: str = 'call
         if stop:
             break
     else:
-        if guard and emitted < len(visible):   # the unfinished last sentence (no plan in it: checked above)
-            tail = visible[emitted:]
+        if guard and emitted < len(visible):
+            from . import reasoning_guard
+            prose = reasoning_guard.prose_only(visible)
+            plan = None if calls else reasoning_guard.plan_start(prose)
+            unsafe = not calls and (plan is not None or reasoning_guard.unfinished_too_long(prose))
+            if unsafe and not chunks:
+                raise reasoning_guard.ReasoningLoop('unfinished response did not pass the guarded final check')
+            tail = '' if unsafe else visible[emitted:]
             if not chunks and lead:
                 pending += lead
             chunks.append(tail)
@@ -369,7 +385,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                   history=None, turn_sections=None, mode="", guidance="",
                   turn_context_chars=10000, request_extras=None, sampling=None, today=None,
                   tool_memory=None, helper_client=None, document_tools=None, image_max_side=None,
-                  reverse_engineering=None, debug_evidence=None, song_lookup=None, minecraft_tools=None, live_show=None,
+                  reverse_engineering=None, debug_evidence=None, song_lookup=None, minecraft_tools=None, asset3d_tools=None, live_show=None,
                   preserve_history=False, complete_code_answers=None,
                   tool_discovery_enabled=False, candidate_code_team_enabled=False, now=None,
                   web_settings=None, on_first_request=None, incremental_repair=None):
@@ -416,6 +432,13 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         definitions.append({"type": "function", "function": {"name": CLOCK_TOOL["name"],
                             "description": CLOCK_TOOL["description"],
                             "parameters": CLOCK_TOOL["inputSchema"]}})
+    # Like the clock: offered only to a prompt about her own machines, speed, code or learning (star/system_view.py).
+    from .system_view import TOOL as SYSTEM_TOOL, wants_system
+    system_enabled = any(wants_system(text) for text in (prompt, *pinned))
+    if system_enabled:
+        definitions.append({"type": "function", "function": {"name": SYSTEM_TOOL["name"],
+                            "description": SYSTEM_TOOL["description"],
+                            "parameters": SYSTEM_TOOL["inputSchema"]}})
     if github_enabled:
         definitions.extend([
             {"type": "function", "function": {
@@ -497,7 +520,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
             "parameters": tool["inputSchema"]}} for tool in code_team_tools)
     code_team_enabled = bool(code_team_tools)
     if workspace is not None:
-        definitions.extend({"type": "function", "function": {"name": tool['name'], "description": tool['description'], "parameters": tool['inputSchema']}} for tool in TOOLS if workspace_edit or tool['name'] not in WORKSPACE_WRITE_TOOLS)
+        definitions.extend({"type": "function", "function": {"name": tool['name'], "description": tool['description'], "parameters": tool['inputSchema']}} for tool in workspace_tools() if workspace_edit or tool['name'] not in WORKSPACE_WRITE_TOOLS)
     def selected(source) -> list[dict]:
         # The prompt-gated sources. With a tool memory, what earlier prompts of this
         # conversation selected stays selected (re-checked against today's settings).
@@ -565,6 +588,11 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
                        for tool in minecraft_definitions)
     enabled_minecraft = {tool["name"] for tool in minecraft_definitions}
+    asset3d_definitions = selected(asset3d_tools)
+    definitions.extend({"type": "function", "function": {"name": tool["name"],
+                       "description": tool["description"], "parameters": tool["inputSchema"]}}
+                       for tool in asset3d_definitions)
+    enabled_asset3d = {tool["name"] for tool in asset3d_definitions}
     song_definitions = selected(song_lookup)
     definitions.extend({"type": "function", "function": {"name": tool["name"],
                        "description": tool["description"], "parameters": tool["inputSchema"]}}
@@ -629,7 +657,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
         # This classifies effects only to PAUSE actions. Existing authorization
         # above dispatch remains authoritative; this never grants a capability.
         read_only = ((TOOL_NAMES - WORKSPACE_WRITE_TOOLS) | STUDIO_READ_TOOLS | {
-            'star_self_state', 'star_evidence_read', 'star_calculate', 'star_clock', 'star_web_fetch',
+            'star_self_state', 'star_evidence_read', 'star_calculate', 'star_clock', 'star_system', 'star_web_fetch',
             'star_web_search', 'star_github_tree', 'star_github_read', 'star_delegate',
             'star_mcp_registry_search', 'star_candidate_code_team',
             'star_self_capabilities', 'star_self_improvement_plan',
@@ -911,6 +939,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif name == 'star_clock':
                         if not clock_enabled or not isinstance(args, dict):
                             raise PermissionError('Clock not authorized for this task')
+                    elif name == 'star_system':
+                        if not system_enabled or not isinstance(args, dict):
+                            raise PermissionError('System self-model not authorized for this task')
                     elif name == 'star_web_fetch':
                         if not web_search_enabled or not isinstance(args, dict) or set(args) != {'url'}:
                             raise PermissionError('Web page reading is not authorized')
@@ -976,6 +1007,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                     elif minecraft_tools is not None and minecraft_tools.owns(name):
                         if name not in enabled_minecraft:
                             raise PermissionError("Minecraft tool not authorized for this task")
+                    elif asset3d_tools is not None and asset3d_tools.owns(name):
+                        if name not in enabled_asset3d:
+                            raise PermissionError("3D asset tool not authorized for this task")
                     elif song_lookup is not None and song_lookup.owns(name):
                         if name not in enabled_song:
                             raise PermissionError("Song recognition not authorized for this message")
@@ -1036,6 +1070,9 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                                 raise
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Clock tool failed: {type(exc).__name__}"}]}
+                    elif name == 'star_system':
+                        from .system_view import tool_result as system_result
+                        data = await system_result(args)   # never raises: an unreachable self-model is an isError result
                     elif name == 'star_web_fetch':
                         try:
                             from .web_fetch import tool_result as fetch_result
@@ -1179,6 +1216,14 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
                         except (ValueError, PermissionError, OSError, UnicodeError) as exc:
                             data = {"isError": True, "content": [{"type": "text",
                                     "text": f"Minecraft tool failed: {type(exc).__name__}: {exc}"}]}
+                    elif asset3d_tools is not None and asset3d_tools.owns(name):
+                        try:
+                            local_output = await asyncio.to_thread(asset3d_tools.call, name, args, enabled=enabled_asset3d)
+                            data = {"isError": False, "content": [{"type": "text",
+                                    "text": json.dumps(local_output, ensure_ascii=False)}]}
+                        except (ValueError, PermissionError, OSError, UnicodeError, RuntimeError) as exc:
+                            data = {"isError": True, "content": [{"type": "text",
+                                    "text": f"3D asset tool failed: {type(exc).__name__}: {exc}"}]}
                     elif song_lookup is not None and song_lookup.owns(name):
                         # One lookup the owner approved for an attached WAV (star/music_recognition.py).
                         from .music_recognition import LookupFailed

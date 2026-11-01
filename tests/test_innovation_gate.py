@@ -20,7 +20,7 @@ def arms(base_statuses, cand_statuses, base_s, cand_s):
 def test_speed_change_needs_a_significant_saving_and_no_quality_regression():
     report = ig.review(*arms(BETTER, BETTER, 10.0, 7.0), objective="speed")
     assert report["recommendation"] == ig.REVIEW
-    assert report["quality"]["paired"]["decision"] == "INCONCLUSIVE"       # same answers: quality unchanged
+    assert report["quality"]["paired"]["decision"] in ("INCONCLUSIVE", "UNDERPOWERED")   # same answers: no quality verdict either way
     assert report["time"]["faster"] == 12 and report["time"]["change"] == -0.3
     assert ig.review(*arms(BETTER, BETTER, 10.0, 9.5), objective="speed")["recommendation"] == ig.MORE
     assert ig.review(*arms(BETTER, BETTER, 10.0, 12.0), objective="speed")["recommendation"] == ig.REJECT

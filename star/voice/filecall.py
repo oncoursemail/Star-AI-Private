@@ -34,6 +34,7 @@ from typing import Callable
 from .call import CallSession
 from .metrics import latency_table
 from .pcm import FRAME_BYTES, FRAME_SAMPLES, SAMPLE_RATE, frames, rms, samples
+from .turn import TurnDetector
 
 
 def read_wav(path: str | Path) -> tuple[bytes, int]:
@@ -282,9 +283,12 @@ class FileCall:
                     self.result.said.append((step["say"], time.monotonic() - self._origin))
                 elif step.get("wait") == "reply_done":
                     done_before = len(session.turns)
+                    # The caller's own words must be fully heard too (turn detector idle): a barge-in finishes the
+                    # interrupted reply while the interrupter is still talking, which is not "the reply is done".
                     self._silence_until(
                         lambda: len(session.turns) > done_before and not session.busy()
-                        and self.speaker.pending_seconds() == 0, float(step.get("timeout", self.step_timeout)))
+                        and self.speaker.pending_seconds() == 0
+                        and session.detector.state == TurnDetector.IDLE, float(step.get("timeout", self.step_timeout)))
                     self._silence_for(float(step.get("then_seconds", 0.4)))
                 elif step.get("wait") == "speaking":
                     self._silence_until(lambda: session.state == "speaking",

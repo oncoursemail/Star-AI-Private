@@ -104,10 +104,57 @@ class StreamLatencyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             LiveTurn(started_ms=1000000, first_audible_ms=120, status="completed")
 
+    def test_fast_survivors_do_not_hide_failed_and_cancelled_turns(self):
+        window = LatencyWindow(minimum_samples=20, minimum_completion_ratio=0.95)
+        for _ in range(20):
+            window.add(sample(100))
+        for _ in range(10):
+            window.add(LiveTurn(started_ms=100, status="failed"))
+        for _ in range(10):
+            window.add(LiveTurn(started_ms=100, status="cancelled"))
+        report = window.summary()
+        self.assertEqual(report["first_audible_p95_ms"], 100)
+        self.assertEqual(report["completion_ratio"], 0.5)
+        self.assertEqual(report["first_audible_budget_success_ratio"], 0.5)
+        self.assertEqual(report["assessment"], "incomplete_audible_coverage")
+        self.assertIn("conditional on completed", report["basis"])
+
+    def test_one_acceptable_interruption_does_not_disqualify_reliable_session(self):
+        window = LatencyWindow(minimum_samples=20, minimum_completion_ratio=.95)
+        for _ in range(20):
+            window.add(sample(200))
+        window.add(LiveTurn(started_ms=123, status="cancelled"))
+        report = window.summary()
+        self.assertEqual(report["assessment"], "first_audible_latency_within_target")
+        self.assertEqual(report["completion_ratio"], 0.9524)
+        self.assertEqual(report["first_audible_budget_success_ratio"], 0.9524)
+
+    def test_budget_success_ratio_counts_slow_audible_and_failed_attempts(self):
+        window = LatencyWindow(minimum_samples=2, minimum_completion_ratio=.5)
+        window.add(sample(100))
+        window.add(sample(1200))
+        window.add(LiveTurn(started_ms=10, status="failed"))
+        window.add(LiveTurn(started_ms=10, status="cancelled"))
+        report = window.summary()
+        self.assertEqual(report["completion_ratio"], .5)
+        self.assertEqual(report["first_audible_budget_success_ratio"], .25)
+        self.assertEqual(report["assessment"], "first_audible_latency_above_target")
+
+    def test_completion_reliability_requires_nonempty_actual_observations(self):
+        report = LatencyWindow(minimum_samples=1).summary()
+        self.assertEqual(report["completion_ratio"], 0.0)
+        self.assertEqual(report["first_audible_budget_success_ratio"], 0.0)
+        self.assertEqual(report["assessment"], "insufficient_completed_samples")
+
     def test_invalid_window_params(self):
         for kwargs in ({"capacity": 0}, {"capacity": True},
                        {"minimum_samples": 0}, {"minimum_samples": 9999},
-                       {"speech_budget_ms": math.inf}, {"speech_budget_ms": 0}):
+                       {"speech_budget_ms": math.inf}, {"speech_budget_ms": 0},
+                       {"minimum_completion_ratio": math.nan},
+                       {"minimum_completion_ratio": math.inf},
+                       {"minimum_completion_ratio": True},
+                       {"minimum_completion_ratio": .49},
+                       {"minimum_completion_ratio": 1.01}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 LatencyWindow(**kwargs)
         with self.assertRaises(TypeError):

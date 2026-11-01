@@ -114,6 +114,7 @@ def bench_real_capture(frames: int, width: int, height: int) -> dict:  # pragma:
     for _ in range(frames):
         t0 = time.perf_counter()
         frame = source.grab()
+        assert frame is not None          # the synthetic source always yields a frame
         t1 = time.perf_counter()
         detector.detect(frame.image)
         t2 = time.perf_counter()

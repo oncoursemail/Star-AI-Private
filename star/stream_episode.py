@@ -179,11 +179,13 @@ class StreamEpisode:
             for m in matching:
                 groups.setdefault(m.action_id, []).append(m)
             facts: list[dict[str, object]] = []
+            action_ids: list[str] = []
             for action, group in sorted(
                 groups.items(),
                 key=lambda pair: (-max(m.observed_unix_s for m in pair[1]), pair[0]),
             )[:limit]:
                 latest = max(group, key=lambda m: (m.observed_unix_s, m.digest))
+                action_ids.append(action)
                 facts.append({
                     "action_id": action,
                     "practice_attempts_this_session": len(group),
@@ -205,7 +207,7 @@ class StreamEpisode:
             if len(record) > _MAX_PACKET:
                 return None
             self._counts["packets"] += 1
-            return EpisodePacket(tuple(f["action_id"] for f in facts), record)
+            return EpisodePacket(tuple(action_ids), record)
 
     def metrics(self) -> dict[str, int | bool]:
         """No raw IDs, receipts, on-air text, players, screenshots or timestamps."""

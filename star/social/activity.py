@@ -56,15 +56,40 @@ class HostAgent(Protocol):
 
 
 class HumanPace:
-    """Reading, thinking and typing at a person's speed (also keeps her far from anything that looks automated)."""
+    """Reading, thinking and typing at a person's speed: about 0.3 s per character (36 WPM) and at most 10 s a line,
+    0.5-2.5 s of thinking plus 0.03 s per character they wrote, 1-3 s between the lines of one burst (pacing.py)."""
 
-    def __init__(self, *, cps: float = 7.0, max_typing_s: float = 20.0, sleep: Callable[[float], None] = time.sleep,
+    def __init__(self, *, cps: float = 3.3, max_typing_s: float = 10.0, sleep: Callable[[float], None] = time.sleep,
                  rng: random.Random | None = None) -> None:
         self.cps, self.max_typing_s, self._sleep = cps, max_typing_s, sleep
         self._rng = rng or random.Random()
 
     def read(self, incoming: str) -> None:
-        self._sleep(min(6.0, 0.8 + len(incoming) / 40.0) * self._rng.uniform(0.8, 1.3))
+        from . import pacing
+        self._sleep(pacing.think(incoming, self._rng))
+
+    def gap(self) -> None:
+        """The pause between two lines of one burst."""
+        from . import pacing
+        self._sleep(pacing.gap(self._rng))
+
+    def send_lines(self, host: HostAgent, lines: list[str], *, before_each: Callable[[], None] | None = None,
+                   after_each: Callable[[], None] | None = None, still_ok: Callable[[], bool] | None = None) -> int:
+        """Type and send a burst of short lines one after the other (`before_each` opens the box, `after_each` presses
+        Enter), a short gap between them. Stops if `still_ok()` turns false (the window lost focus). Returns lines sent."""
+        sent = 0
+        for index, line in enumerate(lines):
+            if still_ok is not None and not still_ok():
+                break
+            if index:
+                self.gap()
+            if before_each is not None:
+                before_each()
+            self.type(host, line)
+            if after_each is not None:
+                after_each()
+            sent += 1
+        return sent
 
     def type(self, host: HostAgent, text: str) -> None:
         """Types in word chunks with small pauses; long messages speed up so one never takes over max_typing_s."""
@@ -112,9 +137,11 @@ def settings_path() -> Path:
 
 DEFAULT_SETTINGS = {
     "my_names": ["Star"],
-    "discord": {"enabled": False, "window_title": "Discord"},
-    "roblox": {"enabled": False, "experiences": []},       # [{"place_id": 123, "name": "...", "weight": 1, "kids": false}]
+    "discord": {"enabled": False, "window_title": "Discord", "friend_requests": False},
+    "roblox": {"enabled": False, "experiences": [],        # [{"place_id": 123, "name": "...", "weight": 1, "kids": false}]
+               "friend_requests": False},                   # the friend-request desk (UI clicks); off until the owner checks it
     "minecraft": {"enabled": False, "servers": []},         # see star/games/minecraft.py MinecraftServer
+    "friends": {},                                          # daily caps, e.g. {"roblox": {"accept": 5, "send": 2, "ask": 2}}
 }
 
 
@@ -139,12 +166,17 @@ def available_activities(host: HostAgent, *, settings: dict | None = None, chat=
     if chat is None:
         from .chat import SocialChat
         from .friends import FriendMemory
-        chat = SocialChat(FriendMemory())
+        chat = SocialChat(FriendMemory(), my_names=[str(n) for n in cfg.get("my_names") or ["Star"]])
+        chat.requests.caps = {k: {**v, **((cfg.get("friends") or {}).get(k) or {})} for k, v in chat.requests.caps.items()}
     names = [str(n) for n in cfg.get("my_names") or ["Star"]]
     out: list[Activity] = []
     if cfg["discord"].get("enabled"):
         from .discord_desktop import DiscordDesktop
         out.append(DiscordDesktop(host, chat, my_names=names, window_title=cfg["discord"].get("window_title", "Discord")))
+    for platform in ("roblox", "discord"):
+        if cfg[platform].get("enabled") and cfg[platform].get("friend_requests"):
+            from .requests import FriendDesk
+            out.append(FriendDesk(host, chat.requests, platform, window_title=cfg[platform].get("window_title")))
     if cfg["roblox"].get("enabled") and cfg["roblox"].get("experiences"):
         from ..games.roblox import Experience, RobloxPlay
         out.append(RobloxPlay(host, chat, [Experience(**e) for e in cfg["roblox"]["experiences"]], my_names=names))

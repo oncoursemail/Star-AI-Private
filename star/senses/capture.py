@@ -12,6 +12,9 @@ canceller and the rolling buffer rely on.
 from __future__ import annotations
 
 import queue
+from contextlib import contextmanager
+import ctypes
+import os
 import threading
 import time
 from typing import Iterator
@@ -19,6 +22,27 @@ from typing import Iterator
 import numpy as np
 
 from .audio import FRAME, RATE, Rechunker, StreamResampler
+
+
+@contextmanager
+def _audio_apartment():
+    """WASAPI COM interfaces must be initialized on the thread that opens them."""
+    if os.name != 'nt':
+        yield
+        return
+    ole32 = ctypes.WinDLL('ole32')
+    initialize = ole32.CoInitializeEx
+    initialize.argtypes, initialize.restype = [ctypes.c_void_p, ctypes.c_ulong], ctypes.c_long
+    ole32.CoUninitialize.argtypes, ole32.CoUninitialize.restype = [], None
+    result = initialize(None, 0)
+    owned = result in (0, 1)
+    if not owned and result & 0xffffffff != 0x80010106:  # an existing apartment is also usable
+        raise RuntimeError(f'Audio COM initialization failed (0x{result & 0xffffffff:08x})')
+    try:
+        yield
+    finally:
+        if owned:
+            ole32.CoUninitialize()
 
 
 class LoopbackSource:
@@ -36,18 +60,20 @@ class LoopbackSource:
         self.rate, self.block = capture_rate, block
         self._blocks: queue.Queue = queue.Queue(maxsize=200)
         self._stop = threading.Event()
+        self._error: Exception | None = None
         self._thread = threading.Thread(target=self._read, name="star-loopback", daemon=True)
 
     def _read(self) -> None:
         try:
-            with self._mic.recorder(samplerate=self.rate, channels=2, blocksize=self.block) as recorder:
+            with _audio_apartment(), self._mic.recorder(samplerate=self.rate, channels=2, blocksize=self.block) as recorder:
                 while not self._stop.is_set():
                     data = recorder.record(numframes=self.block)
                     try:
                         self._blocks.put_nowait(np.asarray(data, dtype=np.float32))
                     except queue.Full:
                         pass
-        except Exception:
+        except Exception as error:
+            self._error = error
             self._stop.set()
 
     def frames(self) -> Iterator[bytes]:
@@ -64,6 +90,8 @@ class LoopbackSource:
                 samples = np.zeros(int((now - last) * RATE), dtype=np.float32)    # quiet device: keep the clock
                 last = now
             yield from chunker.push(samples)
+        if self._error is not None:
+            raise RuntimeError(f'PC audio capture failed ({type(self._error).__name__})') from self._error
 
     def close(self) -> None:
         self._stop.set()

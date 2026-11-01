@@ -95,6 +95,16 @@ def test_every_step_is_declared_documented_and_reported():
     assert SETUP.count("Mark-Failed") >= 15 and "SKIPPED" in SETUP and "DRY-RUN" in SETUP
 
 
+def test_her_pc_enrols_itself_for_computer_use_with_the_installers_own_home():
+    step = SETUP[SETUP.index("Invoke-Step 'enroll'"):SETUP.index("Invoke-Step 'task'")]
+    assert "'-m', 'star.computer', 'enroll', '--star-pc', '--home', $Data" in step   # the same home her loop uses
+    assert "'check-machine'" in step and "already enrolled" in step                  # idempotent: no second write
+    assert "if ($DryRun)" in step and step.index("if ($DryRun)") < step.index("'enroll', '--star-pc'")
+    assert "needs the venv" in step                                                  # skipped, not failed, before the venv exists
+    ids = re.findall(r"(?m)^Invoke-Step '([a-z]+)'", SETUP)
+    assert ids.index("config") < ids.index("enroll") < ids.index("task")             # her home folder exists first
+
+
 def test_scripts_are_plain_ascii_and_the_cmd_files_keep_crlf():
     for path in (HOME / "setup.ps1", HOME / "setup.cmd", ROOT / "installer" / "star-camera" / "install-camera.ps1",
                  ROOT / "installer" / "star-camera" / "install-camera.cmd", HOME / "pins.json"):
@@ -123,10 +133,11 @@ def test_powershell_parses_every_installer_script():
 def test_dry_run_changes_nothing_and_prints_the_plan(tmp_path):
     root = tmp_path / "STAR"
     out = subprocess.run([POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(HOME / "setup.ps1"), "-DryRun", "-Yes",
-                          "-Root", str(root), "-Only", "files,config,task,controls,cable,camera,grounder", "-Grounder", "ui-tars-2b"],
+                          "-Root", str(root), "-Only", "files,config,enroll,task,controls,cable,camera,grounder", "-Grounder", "ui-tars-2b"],
                          capture_output=True, text=True, timeout=300, cwd=tmp_path)
     assert out.returncode == 0, out.stdout + out.stderr
-    for line in ("DRY RUN: nothing on this PC will be changed", "DRY-RUN  files", "DRY-RUN  cable", "DRY-RUN  grounder",
+    for line in ("DRY RUN: nothing on this PC will be changed", "DRY-RUN  files", "DRY-RUN  cable", "DRY-RUN  grounder", "DRY-RUN  enroll",
                  "SKIPPED  python      not selected (-Only)", "nothing was changed, downloaded or installed"):
         assert line in out.stdout, line
     assert not root.exists()                                                      # not even the folder was created
+    assert not (root / "home" / "machine.json").exists()                          # a dry run never enrolls the PC

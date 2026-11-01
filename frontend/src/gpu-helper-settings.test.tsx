@@ -27,7 +27,7 @@ async function openPanel() {
   await screen.findByRole('textbox', {name: /message star/i})
   await waitFor(() => expect(desktop.sent('bootstrap').length).toBeGreaterThan(0))
   await user.click(screen.getByRole('button', {name: /^settings/i}))
-  const tab = await screen.findByRole('tab', {name: 'Model'})
+  const tab = await screen.findByRole('tab', {name: 'Models & speed'})
   if (tab.getAttribute('aria-selected') !== 'true') await user.click(tab)
   return {user, box: await screen.findByRole('region', {name: 'Use my GPU'})}
 }

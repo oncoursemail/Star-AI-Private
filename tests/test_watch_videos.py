@@ -287,6 +287,7 @@ def test_caption_hearing_releases_lines_as_the_position_passes():
 
 
 def test_hub_hearing_puts_heard_speech_on_the_video_clock():
+    pytest.importorskip("numpy")
     from star.senses.hearing import HeardLine
 
     class Hub:

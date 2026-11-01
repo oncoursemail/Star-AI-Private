@@ -147,7 +147,7 @@ class ExecutorUi:                                                      # pragma:
 
     def foreground_title(self) -> str:
         import ctypes
-        user32 = ctypes.windll.user32
+        user32 = ctypes.windll.user32  # pyright: ignore[reportAttributeAccessIssue]
         buf = ctypes.create_unicode_buffer(512)
         user32.GetWindowTextW(user32.GetForegroundWindow(), buf, 512)
         return buf.value
@@ -155,10 +155,10 @@ class ExecutorUi:                                                      # pragma:
     def focus(self, title_part: str) -> bool:
         import ctypes
         from ctypes import wintypes
-        user32 = ctypes.windll.user32
+        user32 = ctypes.windll.user32  # pyright: ignore[reportAttributeAccessIssue]
         found: list[int] = []
 
-        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)  # pyright: ignore[reportAttributeAccessIssue]
         def visit(hwnd, _):
             if user32.IsWindowVisible(hwnd):
                 buf = ctypes.create_unicode_buffer(512)

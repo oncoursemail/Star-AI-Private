@@ -226,7 +226,8 @@ def parse_carry(text: str, style: str = "neutral", intensity: float = DEFAULT_IN
     open by the previous sentence, and the second value returned is what this text leaves open (None = back to the
     default), to pass in with the next sentence of the same reply."""
     base = (style if style in STYLES else "neutral", intensity)
-    state = _State(*(carry or base))
+    open_style, open_intensity = carry or base
+    state = _State(open_style, open_intensity)
     segments: list[Segment] = []
     words: list[str] = []
     sentence_open = False            # True once the current sentence has words

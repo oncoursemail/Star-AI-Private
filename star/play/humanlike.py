@@ -18,7 +18,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol, cast
 
 
 @dataclass(frozen=True)
@@ -234,13 +234,18 @@ class Actuator:
         self._buttons: set[str] = set()
         self._lock = threading.Lock()
         self._stop = threading.Event()
-        self.fired = 0
+        self.fired = 0  # Completed sink calls; native acceptance is reported separately by native sinks.
+        self.attempted = 0
+        self.failures = 0
+        self.failure = ""
         self.first_fire_lag: list[float] = []               # how late events fired versus their planned time
 
     def submit(self, events: list[Event]) -> None:
-        if not events:
+        if not events or self._stop.is_set():
             return
         with self._lock:
+            if self._stop.is_set():
+                return
             if any(e.channel == "mouse" for e in events):
                 self._pending = [e for e in self._pending if e.channel != "mouse"]
             for key_channel in {e.channel for e in events if e.channel.startswith("key:")}:
@@ -256,34 +261,70 @@ class Actuator:
             self._pending.sort(key=lambda e: e.t)
 
     def pump(self, now: float | None = None) -> int:
-        now = self.clock() if now is None else now
+        began = self.clock()
+        now = began if now is None else now
+        if self._stop.is_set():
+            return 0
         with self._lock:
             due = [e for e in self._pending if e.t <= now]
             self._pending = [e for e in self._pending if e.t > now]
         for e in due:
-            self._fire(e)
-            self.first_fire_lag.append(now - e.t)
+            if self._stop.is_set():
+                break
+            emitted = now + max(0.0, self.clock() - began)
+            try:
+                self._fire(e)
+            except Exception:
+                self._stop.set()
+                with self._lock:
+                    self._pending.clear()
+                raise
+            self.first_fire_lag.append(emitted - e.t)
         if len(self.first_fire_lag) > 2000:
             del self.first_fire_lag[:1000]
         return len(due)
 
-    def _fire(self, e: Event) -> None:
+    def _fire(self, e: Event, *, cleanup: bool = False) -> None:
+        held = None
+        down = False
+        emit: Callable[..., object]
+        args: tuple
         if e.kind == "move_to":
-            self.sink.move_to(int(e.a), int(e.b))
+            emit, args = self.sink.move_to, (int(cast(Any, e.a)), int(cast(Any, e.b)))
         elif e.kind == "move_rel":
-            self.sink.move_rel(int(e.a), int(e.b))
+            emit, args = self.sink.move_rel, (int(cast(Any, e.a)), int(cast(Any, e.b)))
         elif e.kind in ("button_down", "button_up"):
             down = e.kind == "button_down"
             if down == (e.a in self._buttons):
                 return
-            (self._buttons.add if down else self._buttons.discard)(e.a)
-            self.sink.button(str(e.a), down)
+            held = self._buttons
+            release = getattr(self.sink, "release_button", None) if cleanup and not down else None
+            emit, args = (release, (str(e.a),)) if callable(release) else (self.sink.button, (str(e.a), down))
         elif e.kind in ("key_down", "key_up"):
             down = e.kind == "key_down"
             if down == (e.a in self._down):
                 return
-            (self._down.add if down else self._down.discard)(e.a)
-            self.sink.key(str(e.a), down)
+            held = self._down
+            release = getattr(self.sink, "release_key", None) if cleanup and not down else None
+            emit, args = (release, (str(e.a),)) if callable(release) else (self.sink.key, (str(e.a), down))
+        else:
+            raise ValueError("unknown input event")
+        if held is not None and down:
+            held.add(str(e.a))
+        self.attempted += 1
+        try:
+            emit(*args)
+        except Exception as error:
+            if held is not None and down and getattr(error, "accepted", None) == 0:
+                held.discard(str(e.a))
+            self.failures += 1
+            self.failure = type(error).__name__
+            self._stop.set()
+            with self._lock:
+                self._pending.clear()
+            raise
+        if held is not None and not down:
+            held.discard(str(e.a))
         self.fired += 1
 
     def held(self) -> set[str]:
@@ -292,16 +333,31 @@ class Actuator:
     def release_all(self) -> None:
         with self._lock:
             self._pending.clear()
-        for key in list(self._down):
-            self._fire(Event(0, "key_up", key))
-        for button in list(self._buttons):
-            self._fire(Event(0, "button_up", button))
+        failed = None
+        for event in ([Event(0, "key_up", key) for key in list(self._down)] +
+                      [Event(0, "button_up", button) for button in list(self._buttons)]):
+            try:
+                self._fire(event, cleanup=True)
+            except BaseException as error:
+                failed = failed or error
+        if failed is not None:
+            raise failed
 
     def run(self, period: float = 0.002) -> None:
-        while not self._stop.is_set():
-            self.pump()
-            self._sleep(period)
-        self.release_all()
+        try:
+            while not self._stop.is_set():
+                self.pump()
+                self._sleep(period)
+        except Exception as error:
+            if not self.failure:
+                self.failures += 1
+                self.failure = type(error).__name__
+            self._stop.set()
+        finally:
+            try:
+                self.release_all()
+            except Exception:
+                pass  # _fire retained the failure and unresolved held state for the session report.
 
     def stop(self) -> None:
         self._stop.set()

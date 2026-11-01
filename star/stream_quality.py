@@ -81,6 +81,12 @@ def _summary(rows: list[StreamAuditTurn]) -> dict:
         "cases": len(rows),
         "reply_opportunities": len(needed),
         "useful_replies": sum(r.result == "spoken" and r.grounding == "supported" for r in needed),
+        "useful_reply_ratio": round(
+            sum(r.result == "spoken" and r.grounding == "supported" for r in needed) / len(needed),
+            4,
+        ) if needed else 0.0,
+        "failed_reply_opportunities": sum(r.result == "failed" for r in needed),
+        "cancelled_reply_opportunities": sum(r.result == "cancelled" for r in needed),
         "unexpected_speech": sum(r.result == "spoken" for r in rows if not r.should_reply),
         "unsupported_speech": sum(r.grounding == "unsupported" for r in audible),
         "speech_overlaps": sum(r.overlap_ms > 0 for r in audible),
@@ -93,7 +99,8 @@ def _summary(rows: list[StreamAuditTurn]) -> dict:
 
 def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
                             min_cases: int = 20, min_spoken: int = 10,
-                            min_relative_latency_gain: float = .05) -> dict:
+                            min_relative_latency_gain: float = .05,
+                            min_useful_reply_ratio: float = .90) -> dict:
     """Strict paired evaluation. Unreviewed/changed cases fail closed.
 
     A candidate may only be *recommended for human review*, never promoted.
@@ -111,6 +118,10 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
             not math.isfinite(min_relative_latency_gain) or
             not 0 < min_relative_latency_gain <= .5):
         raise ValueError("gain must be within (0, .5]")
+    if (type(min_useful_reply_ratio) not in (float, int)
+            or not math.isfinite(float(min_useful_reply_ratio))
+            or not 0.5 <= min_useful_reply_ratio <= 1):
+        raise ValueError("min_useful_reply_ratio must be 0.5..1")
     if len(rows) > 20000:
         raise ValueError("bounded offline audit accepts at most 20000 turns")
     groups: dict[str, dict[str, StreamAuditTurn]] = {"baseline": {}, "candidate": {}}
@@ -139,6 +150,11 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
     reasons: list[str] = []
     if before["audible_turns"] < min_spoken or after["audible_turns"] < min_spoken:
         reasons.append("insufficient_audible_samples")
+    # A statistically faster stream that is helpful only half the time is not
+    # a successful human-natural companion. Require an absolute floor, not
+    # merely non-regression against an already-poor baseline.
+    if after["useful_reply_ratio"] < min_useful_reply_ratio:
+        reasons.append("useful_reply_coverage_below_target")
     # Comparing only aggregate reply counts lets a candidate replace a missed
     # important answer with a different reply. Protect each supported baseline
     # opportunity, not just the total number of utterances.
@@ -150,7 +166,8 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
     if after["useful_replies"] < before["useful_replies"] or missed_supported:
         reasons.append("fewer_grounded_replies")
     for metric in ("unsupported_speech", "unexpected_speech", "speech_overlaps",
-                   "total_overlap_ms", "game_stalls_over_50ms"):
+                   "total_overlap_ms", "game_stalls_over_50ms",
+                   "failed_reply_opportunities", "cancelled_reply_opportunities"):
         if after[metric] > before[metric]:
             reasons.append("increased_" + metric)
     # A faster result obtained by silently dropping the slowest opportunities
@@ -171,6 +188,7 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
         "owner_review_required": True, "promoted": False,
         "baseline": before, "candidate": after,
         "p95_relative_latency_gain": gain,
+        "min_useful_reply_ratio": min_useful_reply_ratio,
         "matched_audible_cases": len(matched),
         "matched_baseline_p95_ms": old,
         "matched_candidate_p95_ms": new,

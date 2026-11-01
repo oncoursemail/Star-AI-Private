@@ -29,14 +29,32 @@ def _result(ok: bool, verified: bool, summary: str, evidence: list[str], failure
 
 def camera_on(ctx, *, video: DiscordVideo | None = None, ctl=control) -> dict:
     """Start the STAR Camera process, then switch the camera on in the call and pick "STAR Camera" there."""
+    from ..home import control as home_control
+    if getattr(getattr(ctx, "executor", None), "dry_run", False):
+        return _result(True, False, "dry run: no camera process or call camera started", [])
+    home = getattr(ctx, "home", None) or home_control.home_dir()
+    interrupt = getattr(ctx, "interrupt", None)
+    cancelled = lambda: (home_control.stopped(home) or (interrupt is not None and interrupt.is_set())
+                         or bool(getattr(getattr(ctx, "executor", None), "dry_run", False)))
+    if cancelled():
+        return _result(False, False, "camera startup stopped", [])
     folder = ctl.data_dir()
     status = ctl.start(folder)
+    if cancelled():
+        ctl.stop(folder)
+        return _result(False, False, "camera startup stopped", [])
     if not status.get("alive") or status.get("error"):
         why = status.get("error") or "the camera process did not start"
         return _result(False, False, f"STAR Camera is not running: {why}", [str(status)[:200]],
                        [f"vtuber: {why}"])
     step = (video or _video(ctx)).ensure("camera_on")
+    if cancelled():
+        ctl.stop(folder)
+        return _result(False, False, "camera startup stopped", [])
     flowing = ctl.frames_flowing(folder)
+    if cancelled():
+        ctl.stop(folder)
+        return _result(False, False, "camera startup stopped", [])
     evidence = [*step["evidence"], f"camera process frames flowing: {flowing}"]
     verified = bool(step["verified"] and flowing)
     return _result(bool(step["ok"] and flowing), verified, step["summary"], evidence,
@@ -67,6 +85,9 @@ def stop_sharing(ctx, *, video: DiscordVideo | None = None, ctl=control) -> dict
 
 
 def register_home_activities(registry) -> None:
+    track = getattr(registry.runtime, "track_activity", None)
+    if callable(track):
+        track("avatar.camera", lambda: control.stop(control.data_dir()))
     table: list[tuple[str, Callable, str]] = [
         ("camera on", camera_on, "turn on the STAR Camera (her VTuber avatar) in the Discord call she is in"),
         ("camera off", camera_off, "turn the camera off in the call and release the virtual camera"),

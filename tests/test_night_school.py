@@ -383,7 +383,8 @@ def test_a_win_below_the_noise_floor_is_inconclusive_never_promotes_and_waits_fo
     engine.run_batch()                                          # H-1, H-2 fixed: the gate runs
     lesson = store.state["lessons"]["L1"]
     assert lesson["status"] == "candidate" and lesson["gated_at_fixes"] == 2
-    assert lesson["gates"][0]["gate"]["decision"] == "INCONCLUSIVE"
+    # a small slice cannot resolve the noise floor: UNDERPOWERED (#608) is the same "no decision, wait" as INCONCLUSIVE
+    assert lesson["gates"][0]["gate"]["decision"] in ("INCONCLUSIVE", "UNDERPOWERED")
     assert (lesson["gates"][0]["gate"]["wins"], lesson["gates"][0]["gate"]["losses"]) == (2, 0)
     assert store.state["counters"]["lessons_inconclusive"] == 1 and engine.active() == []
     calls = len(script.calls)
@@ -441,7 +442,7 @@ def test_a_small_drop_at_recheck_retires_nothing(tmp_path):
     engine._solve = one_flaky
     engine.run_batch(1)
     lesson = store.state["lessons"]["L1"]
-    assert lesson["status"] == "active" and lesson["rechecks"][-1]["decision"] == "INCONCLUSIVE"
+    assert lesson["status"] == "active" and lesson["rechecks"][-1]["decision"] in ("INCONCLUSIVE", "UNDERPOWERED")
     assert "lessons_retired" not in store.state["counters"]
 
 

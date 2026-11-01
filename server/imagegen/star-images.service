@@ -1,0 +1,37 @@
+[Unit]
+Description=STAR image service (server/imagegen): SANA-Sprint text to image on the CPU, :8095, brain key
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=starimages
+Group=starimages
+Environment=STAR_IMAGES_CONFIG=/etc/star-images/config.json
+Environment=HF_HUB_OFFLINE=1
+Environment=OPENVINO_TELEMETRY_OPT_OUT=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/cache/star-images
+WorkingDirectory=/var/cache/star-images
+ExecStart=/data/star/imagegen/venv/bin/python -I /opt/star-images/app/service.py
+Restart=always
+RestartSec=5
+Nice=10
+MemoryMax=30G
+TasksMax=256
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/cache/star-images
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

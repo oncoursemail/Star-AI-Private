@@ -325,16 +325,16 @@ class RawInputSource:  # pragma: no cover - needs a Windows desktop and real dev
     def stop(self) -> None:
         import ctypes
         if self._tid:
-            ctypes.windll.user32.PostThreadMessageW(self._tid, 0x0012, 0, 0)     # WM_QUIT
+            ctypes.windll.user32.PostThreadMessageW(self._tid, 0x0012, 0, 0)     # WM_QUIT  # pyright: ignore[reportAttributeAccessIssue]
         if self._thread is not None:
             self._thread.join(3)
 
     def _run(self) -> None:
         import ctypes
         import ctypes.wintypes as wt
-        user32, kernel32 = ctypes.WinDLL("user32", use_last_error=True), ctypes.windll.kernel32
+        user32, kernel32 = ctypes.WinDLL("user32", use_last_error=True), ctypes.windll.kernel32  # pyright: ignore[reportAttributeAccessIssue]
         LRESULT = ctypes.c_ssize_t
-        WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
+        WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)  # pyright: ignore[reportAttributeAccessIssue]
 
         class WNDCLASSW(ctypes.Structure):
             _fields_ = [("style", wt.UINT), ("lpfnWndProc", WNDPROC), ("cbClsExtra", ctypes.c_int),
@@ -398,7 +398,7 @@ class RawInputSource:  # pragma: no cover - needs a Windows desktop and real dev
         devices = (RAWINPUTDEVICE * 2)(RAWINPUTDEVICE(0x01, 0x02, 0x00000100, hwnd),
                                        RAWINPUTDEVICE(0x01, 0x06, 0x00000100, hwnd))
         if not hwnd or not user32.RegisterRawInputDevices(devices, 2, ctypes.sizeof(RAWINPUTDEVICE)):
-            self.error = f"raw input registration failed (error {ctypes.get_last_error()})"
+            self.error = f"raw input registration failed (error {ctypes.get_last_error()})"  # pyright: ignore[reportAttributeAccessIssue]
             self.ready.set()
             return
         self._tid = kernel32.GetCurrentThreadId()

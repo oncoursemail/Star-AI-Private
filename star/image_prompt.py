@@ -27,9 +27,12 @@ Fields:
 "aspect": "square", "wide" (screens, scenes, landscapes) or "tall" (portraits, posters).
 "overlays": a list of text the picture must show, exactly as the owner wants it, [] when none. Each item:
   {"text": "exact words", "where": one of top, center, bottom, top-left, top-right, bottom-left, bottom-right,
-   "style": pixel (retro games, HUD, arcade), bold (titles, signs, posters) or plain}.
-  When overlays exist, the "prompt" must describe the picture WITHOUT the text and say which area stays plain and empty
-  (for example "the top band is an empty dark sky"). Game screenshots: draw the scene, put scores and labels in overlays.
+   "style": pixel (retro games, HUD, arcade), bold (titles, signs, posters) or plain,
+   "scene": true when the words are written ON an object inside the picture (a neon sign, a shop sign, a book cover, a
+   t-shirt) and are at most 4 short words, false for HUD, scores, captions and titles added on top of the picture}.
+  When overlays exist, the "prompt" must describe the picture WITHOUT the words and say which area stays plain and empty
+  (for example "the top band is an empty dark sky", "a blank neon tube sign"). Game screenshots: draw the scene, put
+  scores and labels in overlays.
 "checks": exactly 3 short yes/no questions a careful viewer can answer from the picture alone (subject, key objects, setting,
   style). No questions about text or about empty or plain areas.
 Keep every fact the owner stated. Do not add people or animals they did not ask for. No explanations."""
@@ -43,6 +46,7 @@ class Overlay:
     text: str
     where: str = 'bottom'
     style: str = 'bold'
+    scene: bool = False         # the words belong ON an object in the picture: the image model draws them and STAR reads them back
 
 
 @dataclass(frozen=True)
@@ -112,7 +116,8 @@ def parse_plan(request: str, reply: str) -> Plan | None:
             continue
         where = _clean(item.get('where'), 20).lower()
         style = _clean(item.get('style'), 10).lower()
-        overlays.append(Overlay(text, where if where in WHERES else 'bottom', style if style in STYLES else 'bold'))
+        scene = item.get('scene') is True and len(text.split()) <= 4 and len(text) <= 30
+        overlays.append(Overlay(text, where if where in WHERES else 'bottom', style if style in STYLES else 'bold', scene))
     checks = tuple(q for q in (_clean(x, 160) for x in (data.get('checks') or [])[:6] if isinstance(x, str)) if q)
     aspect = _clean(data.get('aspect'), 10).lower()
     return Plan(request, prompt, aspect if aspect in ('square', 'wide', 'tall') else '', tuple(overlays[:6]),
@@ -172,6 +177,15 @@ def rewrite(settings, request: str, *, ask=brain_text, use_cache: bool = True) -
         while len(_CACHE) > _CACHE_MAX:
             _CACHE.popitem(last=False)
     return plan
+
+
+def scene_prompt(plan: Plan) -> str:
+    """The picture prompt with the in-scene words spelled out in quotes (Z-Image can write them; STAR checks the result)."""
+    words = [o.text for o in plan.overlays if o.scene]
+    if not words:
+        return plan.prompt
+    said = ' and '.join(f'"{w}"' for w in words)
+    return (plan.prompt + f' The visible lettering reads exactly {said}, in clear, large, correctly spelled letters.')[:MAX_PROMPT]
 
 
 def repaired(plan: Plan, issues: list[str]) -> Plan:

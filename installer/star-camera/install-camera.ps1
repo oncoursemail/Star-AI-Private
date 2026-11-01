@@ -6,9 +6,9 @@
 #   3. installs pyvirtualcam + numpy into STAR Home's venv (<root>\venv) and writes a default camera config
 #   4. self-test: starts the camera process, waits for frames, stops it
 # -Root D:\STAR  the STAR install root (default: the machine's STAR_ROOT variable that setup.cmd sets, else C:\STAR)
+# Camera config, status and logs use STAR_VTUBER_DIR when set, otherwise <root>\home\vtuber. Existing files stay in place.
 # -DryRun        print what would happen and change nothing (no download, no registration, no pip)
-# -Uninstall unregisters the filter. Nothing is installed outside <root>\camera, the registry entries regsvr32 makes
-# for the filter, and the venv packages.
+# -Uninstall unregisters the filters and preserves the camera config, logs and downloaded files.
 param([switch]$Uninstall, [switch]$DryRun, [string]$Root = '')
 $ErrorActionPreference = 'Stop'
 if (-not $Root) { $Root = [Environment]::GetEnvironmentVariable('STAR_ROOT', 'Machine') }
@@ -22,7 +22,7 @@ $Files = @{
 $Dir  = "$Root\camera\unitycapture"
 $Name = 'STAR Camera'
 $Venv = "$Root\venv"
-$Data = Join-Path ($env:ProgramData) 'STAR\vtuber'
+$Data = if ($env:STAR_VTUBER_DIR) { $env:STAR_VTUBER_DIR } else { Join-Path $Root 'home\vtuber' }
 $Reg64 = "$env:SystemRoot\System32\regsvr32.exe"
 $Reg32 = "$env:SystemRoot\SysWOW64\regsvr32.exe"
 
@@ -32,14 +32,34 @@ function Get-GitBlobSha1([byte[]]$Bytes) {
   ($sha.ComputeHash($head + $Bytes) | ForEach-Object { $_.ToString('x2') }) -join ''
 }
 
+function Invoke-CameraRegsvr32([string]$Executable, [string]$Library, [switch]$Unregister) {
+  $arguments = @('/s')
+  if ($Unregister) { $arguments += '/u' }
+  $arguments += '"' + $Library + '"'
+  if (-not $Unregister) { $arguments += '"/i:UnityCaptureName=' + $Name + '"' }
+  $process = Start-Process -FilePath $Executable -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
+  if ($null -eq $process.ExitCode) { throw 'regsvr32 did not report an exit code; registration outcome is unknown.' }
+  return $process.ExitCode
+}
+
 if ($Uninstall) {
-  if (Test-Path "$Dir\UnityCaptureFilter64.dll") { & $Reg64 /s /u "$Dir\UnityCaptureFilter64.dll" }
-  if (Test-Path "$Dir\UnityCaptureFilter32.dll") { & $Reg32 /s /u "$Dir\UnityCaptureFilter32.dll" }
+  if ($DryRun) { Write-Host '[dry-run] would unregister both camera filters; keep config, logs and downloaded files'; return }
+  $failures = @()
+  if (Test-Path "$Dir\UnityCaptureFilter64.dll") {
+    $code = Invoke-CameraRegsvr32 $Reg64 "$Dir\UnityCaptureFilter64.dll" -Unregister
+    if ($code -ne 0) { $failures += "64-bit exit $code" }
+  }
+  if (Test-Path "$Dir\UnityCaptureFilter32.dll") {
+    $code = Invoke-CameraRegsvr32 $Reg32 "$Dir\UnityCaptureFilter32.dll" -Unregister
+    if ($code -ne 0) { $failures += "32-bit exit $code" }
+  }
+  if ($failures.Count) { throw "Camera unregistration failed: $($failures -join '; ')." }
   Write-Host "STAR Camera filter unregistered. Delete $Root\camera to remove the files."
   return
 }
 
 if ($DryRun) {
+  Write-Host "[dry-run] camera config and status folder: $Data (existing files kept)"
   foreach ($file in $Files.Keys) {
     $path = "$Dir\$file"
     $have = (Test-Path $path) -and ((Get-GitBlobSha1 ([IO.File]::ReadAllBytes($path))) -eq $Files[$file].sha1)
@@ -65,11 +85,11 @@ foreach ($file in $Files.Keys) {
 }
 
 # Same call as Unity Capture's own InstallCustomName.bat, once per bitness (the 32-bit filter needs the 32-bit regsvr32).
-& $Reg64 /s "$Dir\UnityCaptureFilter64.dll" "/i:UnityCaptureName=$Name"
-if ($LASTEXITCODE -ne 0) { throw 'registering the 64-bit filter failed.' }
+$code64 = Invoke-CameraRegsvr32 $Reg64 "$Dir\UnityCaptureFilter64.dll"
+if ($code64 -ne 0) { throw "registering the 64-bit filter failed (exit $code64)." }
 if (Test-Path $Reg32) {
-  & $Reg32 /s "$Dir\UnityCaptureFilter32.dll" "/i:UnityCaptureName=$Name"
-  if ($LASTEXITCODE -ne 0) { Write-Warning 'registering the 32-bit filter failed (a 32-bit Discord would not list the camera).' }
+  $code32 = Invoke-CameraRegsvr32 $Reg32 "$Dir\UnityCaptureFilter32.dll"
+  if ($code32 -ne 0) { Write-Warning "registering the 32-bit filter failed (exit $code32; a 32-bit Discord would not list the camera)." }
 }
 Write-Host "Registered the virtual camera '$Name'."
 

@@ -19,6 +19,7 @@ import time
 from typing import Callable
 
 from .lipsync import LocalFeed, Timeline
+from .expressions import ExpressionTimeline
 from .model import AvatarModel
 from .rig import LiveRig
 
@@ -35,6 +36,7 @@ class StarCamera:
         self.pose_sinks = list(pose_sinks)
         self.timeline = timeline or Timeline(clock)
         self.rig = rig or LiveRig()
+        self.expressions = ExpressionTimeline(clock=clock)
         self.feed = LocalFeed(self.timeline, on_event=self._on_event)
         self.fps = float(fps)
         self.base_fps = float(fps)
@@ -45,7 +47,8 @@ class StarCamera:
         self._thread: threading.Thread | None = None
         self._next_mood = 0.0
         self._lock = threading.Lock()
-        self._events: list[tuple[str, float]] = []
+        self._events: list[tuple[str, float, float]] = []
+        self._pending_mode: str | None = None
         self._render_ms: list[float] = []
         self.frames = 0
         self.dropped = 0
@@ -54,9 +57,22 @@ class StarCamera:
         self.last_pose = None
 
     # events may come from any thread (a UDP listener): they are applied on the camera thread
-    def _on_event(self, kind: str, strength: float) -> None:
+    def set_mode(self, mode: str) -> None:
+        if mode not in ("normal", "cat", "puppy"):
+            raise ValueError("unknown avatar motion mode")
         with self._lock:
-            self._events.append((kind, strength))
+            self._pending_mode = mode
+
+    def _on_event(self, kind: str, strength: float) -> None:
+        if self._stop.is_set():
+            return
+        received_at = self.clock()
+        self.expressions.event(kind, strength, now=received_at)
+        with self._lock:
+            if self._stop.is_set():
+                self.expressions.clear()
+                return
+            self._events.append((kind, strength, received_at))
             del self._events[:-16]
 
     def tick(self, now: float | None = None):
@@ -64,8 +80,14 @@ class StarCamera:
         now = self.clock() if now is None else now
         with self._lock:
             events, self._events = self._events, []
-        for kind, strength in events:
-            self.rig.react(kind, strength, now=now)
+            mode, self._pending_mode = self._pending_mode, None
+        if mode is not None:
+            self.rig.mode = mode
+        for kind, strength, received_at in events:
+            if kind == "owner_interrupt":
+                self.rig.neutral(now)
+            else:
+                self.rig.react(kind, strength, now=received_at)
         if self.mood_source is not None and now >= self._next_mood:
             self._next_mood = now + self.mood_every_s
             try:
@@ -75,6 +97,7 @@ class StarCamera:
                 state = None
             self.rig.set_mood(state)
         pose = self.rig.step(now, self.timeline.at(now))
+        pose = self.expressions.apply(pose, now=now)
         began = self.clock()
         frame = self.model.render(pose)
         for sink in self.sinks:
@@ -136,6 +159,9 @@ class StarCamera:
 
     def stop(self, timeout: float = 3.0) -> None:
         self._stop.set()
+        self.expressions.clear()
+        with self._lock:
+            self._events.clear()
         if self._thread:
             self._thread.join(timeout)
         for sink in [*self.sinks, *self.pose_sinks]:
@@ -145,5 +171,9 @@ class StarCamera:
                 pass
 
     def stats(self) -> dict:
+        bound = {rule["param"] for layer in getattr(self.model, "layers", ()) for rule in layer.bind.values()}
         return {"frames": self.frames, "dropped": self.dropped, "fps": self.fps, "quality": self.model.quality,
+                "mode": self.rig.mode, "ear_layers_bound": {"ear_left", "ear_right"}.issubset(bound),
+                "tail_layer_bound": "tail_sway" in bound,
+                "expression": self.expressions.status(),
                 "degraded": list(self.degraded), "sink_errors": self.sink_errors}

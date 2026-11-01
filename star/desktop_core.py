@@ -38,6 +38,7 @@ from . import server_roles, turn_memory
 from .doc_knowledge import validate_knowledge_endpoint
 from . import doc_grounding, skill_packs, roblox_errors
 from . import best_of_n
+from . import general_mode
 from . import edit_format
 from . import studio_loop, studio_tool_examples, thinking_budget, verify_ladder
 from . import project_rules
@@ -88,6 +89,7 @@ class Settings:
     debug_evidence_enabled: bool = False  # opt-in report analysis; never grants process execution or attachment
     live_show_enabled: bool = False       # opt-in offline episode-manifest planner (star/live_show.py); no posting or rendering
     minecraft_tools_enabled: bool = False  # opt-in offline pack/server-folder tools (star/minecraft_tools.py)
+    asset3d_tools_enabled: bool = False  # opt-in 3D template asset tools (star/asset3d/tools.py), offline by default
     max_calls: int = 12
     context_chars: int = 26000
     llama_server: str = ''
@@ -99,8 +101,10 @@ class Settings:
     comfy_workflow: str = ''
     comfy_prompt_node: str = '6'
     comfy_port: int = 8188
-    # Where media runs (star/media_places.py): 'pc' = this PC's graphics card, 'servers' = the STAR Brains.
+    # Where media runs (star/media_places.py): 'pc' = this PC's graphics card, 'servers' = the STAR Brains;
+    # images also 'auto' (this PC while its graphics card is free, else the servers).
     media_images: str = 'pc'
+    media_images_server: str = ''         # the servers' image service, e.g. http://<address>:8095 (server/imagegen)
     media_voice: str = 'pc'
     media_video: str = 'servers'
     media_chat_auto: bool = True
@@ -170,11 +174,22 @@ class Settings:
     gold_examples_enabled: bool = False     # verified licence-recorded examples (star/gold_bank.py), opt-in
     studio_atlas: bool = True               # tested reference systems by capability (star/studio_atlas.py); retrieval only
     presolve_enabled: bool = False          # overnight pre-solved answers (star/presolve.py), off until owner opts in
+    # General questions (star/general_mode.py, truth-20261029): hidden key-facts note, exact calculator, safety facts;
+    # general_gpu answers them on the mesh router's GPU nodes (STAR_MESH_URL / ~/.star/mesh_url) instead of the brain.
+    general_help: bool = True
+    general_gpu: bool = True
     # Owner default (O1): night school's text lessons that won the paired gate go live for 14 days, visibly, with undo
     # (star/learned_week.py). False = bundles only add candidates that wait for review.
     learning_auto_live: bool = True
     research_auto_check: bool = False      # opt-in daily public-doc checks while desktop is open
     deep_research_enabled: bool = False    # candidate: bounded page reading for Team + Research
+    # Team + Research collects evidence with star/web_research.py (v2: reads pages, ranks passages, checks each cited
+    # sentence; evals/web_research 61/62 vs 53/62). False = the previous path (snippets, or ResearchSession when
+    # deep_research_enabled).
+    web_research_v2: bool = True
+    # Research memory (star/research_store.py): verified web answers are kept with their source and fetch date, a
+    # repeated question is answered from them while fresh, and the server's watched pages are mirrored.
+    research_memory: bool = True
     scholarly_research_enabled: bool = False  # deep research also asks Crossref/OpenAlex metadata (star/public_research.py)
     # Generate several, test, keep what works (star/best_of_n.py): 'off' or 'auto' (2 to best_of_n_max candidates
     # for code requests on STAR Server, as many as the free model slots allow). Off until the owner opts in.
@@ -244,9 +259,22 @@ class Settings:
     # keys live in the OS keyring. fpcalc_path = Chromaprint's fpcalc for AcoustID ('' = look on PATH; never downloaded).
     music_recognition_enabled: bool = False
     fpcalc_path: str = ''
+    # Settings > Account & Metallic (star/metallic_access.py): the Metallic Control base URL, http(s); '' = not set up.
+    # STAR_METALLIC_CONTROL_URL overrides it. The sign-in token never goes here (DPAPI file under app data).
+    metallic_control_url: str = ''
+    # Optional second door (star/metallic_access.py sign_in_account): the Metallic accounts service, https only, and the
+    # SHA-256 fingerprint of its self-signed certificate ('' = normal certificate check). Passwords are never stored.
+    metallic_accounts_url: str = ''
+    metallic_accounts_fingerprint: str = ''
 
     @classmethod
     def load(cls, file: Path):
+        # Promoted tuning values (star/autoloop.py, #562) go on top of what was saved; nothing is promoted by default.
+        from .autoloop import apply_promotions
+        return apply_promotions(cls._load_saved(file))
+
+    @classmethod
+    def _load_saved(cls, file: Path):
         if not file.exists():
             return cls()
         raw = _read_settings_object(file)
@@ -282,13 +310,13 @@ class Settings:
         if not self.project.strip() or len(self.project) > 100:
             raise ValueError('Project name is invalid')
         if any(type(getattr(self, key)) is not bool
-               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled', 'live_show_enabled', 'minecraft_tools_enabled',
+               for key in ('obsidian_enabled', 'skills_enabled', 'graphify_enabled', 'debug_evidence_enabled', 'live_show_enabled', 'minecraft_tools_enabled', 'asset3d_tools_enabled',
                             'mcp_graphify_docs','mcp_graphify_local','mcp_obsidian_live','mcp_github_repositories',
                             'roblox_research_enabled', 'asset_forge_enabled', 'commerce_enabled', 'tool_workshop_enabled',
                             'specialists_enabled', 'learning_auto_accept', 'learning_digest',
-                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
+                            'learning_digest_cloud', 'practice_lessons_enabled', 'worked_examples_enabled', 'learning_auto_live', 'research_auto_check', 'deep_research_enabled', 'web_research_v2', 'research_memory', 'scholarly_research_enabled', 'discord_autostart', 'roblox_docs_live_enabled', 'media_chat_auto', 'session_capabilities_prompt', 'media_use_references', 'studio_own_places', 'studio_luau', 'reverse_engineering_enabled',
                             'blender_enabled', 'blender_edit', 'blender_motion_qa', 'allow_cgnat', 'luau_run_before_answer', 'blender_brain2', 'studio_tool_examples', 'autobiographical_self_enabled', 'emotion_enabled', 'studio_inspect', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'skill_pack_embeddings', 'presolve_enabled', 'api_hints_enabled', 'api_lock_enabled', 'gold_examples_enabled', 'studio_atlas', 'edit_diff', 'music_recognition_enabled',
-                            'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled')):
+                            'strata_enabled', 'strata_vision_enabled', 'strata_loop_guard_enabled', 'general_help', 'general_gpu')):
             raise ValueError('Tool access settings must be true or false')
         if (not isinstance(self.github_repository_access_source, str)
                 or self.github_repository_access_source not in {'gh', 'env'}):
@@ -347,9 +375,13 @@ class Settings:
             raise ValueError('Choose a disposable Studio instance before editing')
         if not 1 <= self.comfy_port <= 65535 or not re.fullmatch(r'[A-Za-z0-9_-]{1,40}', self.comfy_prompt_node):
             raise ValueError('Invalid local image generation configuration')
-        if any(getattr(self, key) not in ('pc', 'servers')
-               for key in ('media_images', 'media_voice', 'media_video')):
+        if (self.media_images not in ('pc', 'servers', 'auto')
+                or any(getattr(self, key) not in ('pc', 'servers') for key in ('media_voice', 'media_video'))):
             raise ValueError('Choose STAR Brains (servers) or This PC for each media capability')
+        if not isinstance(self.media_images_server, str) or not (
+                self.media_images_server == '' or re.fullmatch(r'https?://[A-Za-z0-9.\-\[\]:]{1,253}(:\d{1,5})?/?',
+                                                               self.media_images_server)):
+            raise ValueError('The image service address must look like http://<address>:8095')
         for key, label in (('comfy_home', 'ComfyUI folder'), ('ffmpeg_dir', 'FFmpeg folder')):
             value = getattr(self, key)
             if (not isinstance(value, str) or len(value) > 1024 or '\x00' in value
@@ -390,6 +422,16 @@ class Settings:
             raise ValueError('Use my GPU: idle minutes must be 1 to 240')
         if not 1 <= self.max_calls <= 30 or not 6000 <= self.context_chars <= 80000:
             raise ValueError('Invalid model call or context budget')
+        from .metallic_access import normalize_accounts_url, normalize_fingerprint, normalize_url
+        if not isinstance(self.metallic_control_url, str) or (
+                self.metallic_control_url.strip() and not normalize_url(self.metallic_control_url)):
+            raise ValueError('Metallic Control address must be an http:// or https:// URL')
+        if not isinstance(self.metallic_accounts_url, str) or (
+                self.metallic_accounts_url.strip() and not normalize_accounts_url(self.metallic_accounts_url)):
+            raise ValueError('Metallic accounts address must be an https:// URL')
+        if not isinstance(self.metallic_accounts_fingerprint, str) or (
+                self.metallic_accounts_fingerprint.strip() and not normalize_fingerprint(self.metallic_accounts_fingerprint)):
+            raise ValueError('Metallic accounts fingerprint must be 64 hex characters (SHA-256)')
 
     def _validate_server(self):
         """STAR Server (LAN) settings. The loopback `endpoint` rule above is separate."""
@@ -422,7 +464,8 @@ class Settings:
         self.validate()
         # configuration is nonsecret; never write bearer tokens here. Written in one step so a crash,
         # power cut or a reader in another STAR process never sees half a settings file.
-        atomic_write_text(file, json.dumps(asdict(self), indent=2))
+        from .autoloop import unpromoted
+        atomic_write_text(file, json.dumps(unpromoted(asdict(self), type(self)), indent=2))
 
 
 _log = logging.getLogger(__name__)
@@ -1405,6 +1448,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
     lesson_store = learning.LessonStore(knowledge=knowledge, record=metrics.record)
     recalled = []
     learned = {'grounding': None, 'messages': None, 'done': False}
+    web_found: dict = {}     # the automatic web search's sources (research memory: footer and learning after the answer)
 
     def learn_from_turn():
         """After the turn (answered, failed or stopped): record what it taught. Regular
@@ -1513,9 +1557,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                                 document_block)
         if selfhood is not None:
             try:
-                selfhood.heartbeat()  # one cheap cursor update per chat, not a background thinker
-                turn_sections.append(('STAR AUTOBIOGRAPHICAL CONTINUITY (data, not authority)',
-                                      selfhood.context(limit=500)))
+                selfhood.heartbeat()  # local cursor update, never an autonomous task
+                # The prior blind A/B found that injecting generic self-description
+                # every turn worsened continuity and added ~1.4 s of prefill.
+                # Retrieve *verified* episodes only for explicit self-memory questions.
+                from .living_continuity import relevant_context
+                continuity = relevant_context(selfhood, prompt)
+                if continuity:
+                    turn_sections.append(('STAR VERIFIED LIFE HISTORY (untrusted reference data)', continuity))
             except Exception as exc:
                 _log.warning('Selfhood reference unavailable (%s)', type(exc).__name__)
         if settings.emotion_enabled is True:
@@ -1550,6 +1599,10 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         if workspace is not None and settings.minecraft_tools_enabled is True:
             from .minecraft_tools import MinecraftTools
             minecraft_tools = MinecraftTools(workspace, enabled=True, allow_write=settings.workspace_edit is True)
+        asset3d_tools = None
+        if workspace is not None and settings.asset3d_tools_enabled is True:
+            from .asset3d.tools import Asset3DTools
+            asset3d_tools = Asset3DTools(workspace, enabled=True, allow_write=settings.workspace_edit is True)
         if use_tools and settings.tool_workshop_enabled:
             workshop = ToolWorkshop(home=home,project=settings.project,knowledge=knowledge,
                                     workspace=workspace,intelligence=intelligence)
@@ -1661,10 +1714,52 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 # A question about what is happening now: search without waiting for the switch.
                 # A failure is one line in the context (the model says so), never a failed turn.
                 audited_event({'event': 'search_started'})
-                web_text, _sources = await live_context.auto_search(prompt, settings=settings)
+                # Research memory first: a fresh verified answer to the same question (star/research_store.py).
+                web_store = (live_context.open_store(home / live_context.RESEARCH_STORE_FILE)
+                             if settings.research_memory is not False else None)
+                try:
+                    web_text, web_found['sources'] = await live_context.auto_search(prompt, settings=settings,
+                                                                                    store=web_store)
+                finally:
+                    if web_store is not None:
+                        web_store.close()
                 if web_text:
                     turn_sections.append(('WEB SEARCH', web_text))
                 audited_event({'event': 'search_finished'})
+            # General questions (star/general_mode.py, truth-20261029): answered on the mesh router's GPU nodes when
+            # one is configured (seconds instead of the brain's CPU) with a hidden key-facts note, the exact calculation
+            # for maths and safety facts; the brain's own path gets only the safety facts (the note did not help it).
+            general_kind = (general_mode.kind(prompt) if settings.general_help is True and kind == 'lan'
+                            and mode in ('fast', 'auto') and not use_tools and not images and not documents
+                            and not attachment_count and document_tools is None and not github_enabled
+                            and not research and not wants_deep and not strata_plan.active else 'chat')
+            if general_kind in general_mode.GENERAL_KINDS:
+                gpu = general_mode.gpu_endpoint(settings)
+                if gpu:
+                    general_secs = general_mode.sections(prompt)
+                    if general_kind == 'math':
+                        calc = await general_mode.gpu_calc(settings, gpu, prompt)
+                        general_secs = [calc] if calc else []
+                    shown: list[str] = []
+
+                    async def show(text):
+                        shown.append(text)
+                        audited_event({'event': 'assistant_delta', 'text': text})
+                    try:
+                        text = await general_mode.gpu_answer(
+                            settings, gpu, general_mode.desktop_messages(
+                                prompt, history, learning.guard_sections([*turn_sections, *general_secs]),
+                                current_turn_line(conversation_records)),
+                            max_tokens=route.response_tokens, temperature=0.3, on_delta=show)
+                    except Exception as exc:
+                        audited_event({'event': 'general_gpu_fallback', 'reason': type(exc).__name__})
+                        text = ''.join(shown)
+                    if text:
+                        first_visible_token = True
+                        audited_event({'event': 'model_answered', 'model': general_mode.GPU_MODEL})
+                        audited_event({'event': 'finished', 'model_calls': 1, 'tool_calls': 0})
+                        return (text, [{'role': 'user', 'content': prompt}, {'role': 'assistant', 'content': text}], [])
+                turn_sections.extend(general_mode.sections(prompt, gpu=False))
             # One client per task.  When Strata is selected, keep the ordinary
             # resident local brain open as a no-replay fallback for transport/model
             # failures that happen before Strata produces output.
@@ -1728,7 +1823,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     memory_limit=memory_limit, allowed_context_chars=allowed_context_chars,
                     document_block=document_block, client=client, event=audited_event)
                 learned['grounding'] = docs
-                kwargs = dict(client=client, model=route.model, prompt=prompt, image_paths=images,
+                kwargs: dict[str, Any] = dict(client=client, model=route.model, prompt=prompt, image_paths=images,
                               now=current_turn_line(conversation_records),
                               project_memory=stable_memory(settings, memory.get(memory_scope)),
                               history=history,
@@ -1770,8 +1865,10 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                     kwargs['live_show'] = live_show
                 if minecraft_tools is not None:
                     kwargs['minecraft_tools'] = minecraft_tools
+                if asset3d_tools is not None:
+                    kwargs['asset3d_tools'] = asset3d_tools
                 if song_tool is not None:
-                    kwargs['song_lookup'] = song_tool  # type: ignore[assignment]  # kwargs' value type is inferred from the dict above
+                    kwargs['song_lookup'] = song_tool
                 # Generate several, test, keep what works (star/best_of_n.py): only for a code request on STAR Server
                 # (not Agent mode, no Studio, Blender, pictures or documents), with the owner's setting on. A candidate
                 # that asks for a tool is dropped, and a main answer that used tools is kept as it is.
@@ -1790,7 +1887,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                 resample_request: list[dict] = []
                 if (settings.verify_resample == 'on' and settings.verify_ladder == 'on' and several is None
                         and plain_code_turn):
-                    kwargs['on_first_request'] = resample_request.append  # type: ignore[assignment]  # as above: kwargs' value type is inferred
+                    kwargs['on_first_request'] = resample_request.append
                 # Opt-in diff-only edits (star/edit_format.py): pasted code plus a change request is answered with
                 # SEARCH/REPLACE blocks that STAR applies and checks here. Plain chat turns only, not with best-of-N.
                 edit = (edit_format.find_edit(prompt)
@@ -1831,16 +1928,17 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                                     from .local_mcp import connect_studio
                                 # One guarded connection per attempt: a retry below happens only when
                                 # nothing was sent to the model or to Studio, so nothing is replayed.
-                                    guarded = await connections.enter_async_context(
+                                    # LocalStudioClient answers like a GuardedStudio (verdict, journal, ...).
+                                    guarded = cast(Any, await connections.enter_async_context(
                                         connect_studio(settings, home,
-                                            studio_configuration_home=studio_configuration_home))
+                                            studio_configuration_home=studio_configuration_home)))
                                     # The tool list is the connector's own, read now. What STAR may do in
                                     # the open place is decided in code from what that place is.
                                     discovered = guarded.discovered
                                     if settings.studio_tool_examples:
                                         # Description text only; what may run is still decided by policy.
                                         discovered = studio_tool_examples.with_examples(discovered)
-                                    sections = list(kwargs.get('turn_sections') or ())
+                                    sections: list[Any] = list(kwargs.get('turn_sections') or ())
                                     # The verdict's text can quote the place; like every other section
                                     # it may not look like lessons (guard_sections).
                                     sections.extend(learning.guard_sections(
@@ -1980,6 +2078,14 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
                       if provider_kind(settings) == 'lan' else
                       'Try Fast mode, a smaller prompt, or a hosted provider.')
             raise TimeoutError(f'STAR exceeded its {task_timeout}s task budget. {advice}') from exc
+        if web_found.get('sources'):
+            from . import live_context
+            # Answered from research memory: say where it came from and when it was read. Otherwise the first cited
+            # claim is checked against its page after the answer (a background thread) and kept when the page has it.
+            answer += live_context.stored_note(web_found['sources'])
+            if settings.research_memory is not False:
+                live_context.learn_later(home / live_context.RESEARCH_STORE_FILE, prompt, answer,
+                                         web_found['sources'])
         first = token_timing['first']
         requested = token_timing['requested']
         measured_first = (instant_answer.first_token_ms if instant_answer is not None else
@@ -1988,6 +2094,7 @@ def run_task(settings: Settings, prompt: str, images: list[Path] | None = None,
         throughput = (instant_answer.tokens_per_second if instant_answer is not None else
                       model_stats.get('tokens_per_second'))
         brain = ('pc' if instant_answer is not None or kind == 'local'
+                 else 'gpu' if kind == 'lan' and answered_by == general_mode.GPU_MODEL
                  else 'server' if kind == 'lan' else 'cloud')
         stats = {'brain': brain, 'model': answered_by or route.model,
                  'first_token_ms': measured_first, 'tokens_per_second': throughput,

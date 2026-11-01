@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import random
 import threading
+from typing import Any
 from dataclasses import dataclass, field, replace
 
 from . import styles as S
@@ -60,7 +61,7 @@ class _Shift:                               # what KokoroTTS.synthesize accepts 
 
 @dataclass
 class Rendered:
-    samples: object
+    samples: Any
     rate: int
     engine: str
     report: object = None
@@ -189,19 +190,22 @@ class ExpressiveTTS:
         """Quality path: neural engine with the style instruction (only engines that follow one get it), guarded; None
         when every attempt failed."""
         from .guard import GuardedTTS
+        neural = self.neural
+        if neural is None:
+            return None
         spec = S.STYLES.get(seg.style, S.STYLES["neutral"])
         follows = getattr(self.neural, "follows_instruct", False)
         instruct = spec.instruct if follows and seg.style != "neutral" else None
         try:
             if self.guard is not None and self.config.guard != "off":
-                runner = GuardedTTS(self.neural, self.guard, self.config.guard_attempts, self.stats,
-                                    reference=getattr(self.neural, "reference_embedding", None),
-                                    name=getattr(self.neural, "name", "neural"))
+                runner = GuardedTTS(neural, self.guard, self.config.guard_attempts, self.stats,
+                                    reference=getattr(neural, "reference_embedding", None),
+                                    name=getattr(neural, "name", "neural"))
                 samples, sr, report = runner.render(seg.text, instruct=instruct)
                 if not report.ok:
                     return None
             else:
-                samples, sr = self.neural.synthesize_float(seg.text, seed=0, instruct=instruct)
+                samples, sr = neural.synthesize_float(seg.text, seed=0, instruct=instruct)
                 report = None
         except Exception:
             return None

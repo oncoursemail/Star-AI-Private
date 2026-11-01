@@ -68,7 +68,8 @@ SHARED_BRAIN = ["shared_brain_query", "shared_brain_stats"]
 # of the ordered general-prompt lists below (tests/test_design_roblox_tools.py covers their gating; the opt-in
 # Studio lab tool: tests/test_studio_lab.py).
 DESIGN_MAPS = ["star_design_search", "star_design_md", "star_roblox_map_plan", "star_roblox_studio_lab",
-               "star_roblox_docs_live_search", "star_roblox_docs_live_page", "star_roblox_vfx_make"]
+               "star_roblox_docs_live_search", "star_roblox_docs_live_page", "star_roblox_vfx_make",
+               "star_roblox_ui_make"]
 # Opt-in, prompt-scoped game study; recording access is limited to a selected workspace.
 GAME_EXPERIENCE = ["star_game_episode_analyze", "star_game_episode_save", "star_game_experience_search"]
 VIDEO_STUDY = ["star_game_video_study"]

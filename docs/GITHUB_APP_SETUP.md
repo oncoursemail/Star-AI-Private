@@ -1,6 +1,6 @@
 # STAR GitHub access — private development and public distribution
 
-**Development source:** [`oncoursemail/Star-AI-Private`](https://github.com/oncoursemail/Star-AI-Private).
+**Development source:** [`oncoursemail/Star-AI-Project`](https://github.com/oncoursemail/Star-AI-Project) (renamed from Star-AI-Private on 2026-10-31).
 **Public downloads and support:** [`oncoursemail/Star-AI`](https://github.com/oncoursemail/Star-AI).
 The public repository distributes reviewed installers and public materials; it is
 not a destination for STAR's development source, internal research, or private data.
@@ -71,7 +71,7 @@ For a reviewed writer that supports the private development repository:
    Keep its private key outside every repository, and record only the key's local
    path in ignored operator configuration.
 3. Configure the real App ID, installation ID, key path,
-   `STAR_GITHUB_REPO=oncoursemail/Star-AI-Private`, and an existing
+   `STAR_GITHUB_REPO=oncoursemail/Star-AI-Project`, and an existing
    `STAR_GITHUB_BASE_BRANCH=star/<work-branch>` that the writer permits.
 4. Verify read access before proposing a draft change. Retain the installed
    restrictions on branch names, allowed upload paths, and review requirements.

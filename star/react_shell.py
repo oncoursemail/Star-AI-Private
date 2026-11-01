@@ -9,6 +9,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 import hashlib
 import json
 import os
@@ -66,6 +67,8 @@ from .chat_media import prepare_turn
 from .roblox_cloud import (ROBLOX_ACTIONS, ROBLOX_NETWORK_ACTIONS, RobloxCloud,
                            handle_action as handle_roblox_action)
 from .research_activity import sanitize_research_event
+from .metallic_access import METALLIC_ACTIONS, check_account_login, check_code as check_metallic_code, for_home as metallic_for_home
+from .metallic_access import status_for as metallic_status
 
 ALLOWED_ACTIONS = frozenset({
     'bootstrap','brainSnapshot','plannerStatus','switchProject','pickFiles','sendMessage','saveSettings',
@@ -108,6 +111,9 @@ ALLOWED_ACTIONS = ALLOWED_ACTIONS | STUDIO_HOST_ACTIONS
 # Settings > Discord: status, Start/Stop and the opt-in autostart for the Discord bot process
 # (star/discord_supervisor.py). Never carries the token, the owner's IDs or any key.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | DISCORD_ACTIONS
+# Metallic sign-in and read-only stats (star/metallic_access.py): the code goes to Metallic Control once and is
+# never stored; the token is kept with Windows DPAPI. No action here can run anything on Metallic.
+ALLOWED_ACTIONS = ALLOWED_ACTIONS | METALLIC_ACTIONS
 # STAR Clips only accepts explicit desktop UI clicks; never model tool calls.
 ALLOWED_ACTIONS = ALLOWED_ACTIONS | CLIP_ACTIONS
 # Optional read-only clip folders and developer-owned SteelSeries Moments events.
@@ -151,7 +157,7 @@ PERMITTED_SETTINGS = frozenset({
     'strata_context_tokens','strata_timeout','strata_vision_enabled','strata_loop_guard_enabled',
     'router_models_dir','router_context','gpu_layers','roblox_research_enabled','asset_forge_enabled','commerce_enabled',
     'tool_workshop_enabled','specialists_enabled','specialist_parallelism','provider',
-    'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','debug_evidence_enabled','minecraft_tools_enabled','live_show_enabled','max_calls',
+    'project','workspace','studio_target','studio_edit','studio_own_places','studio_luau','studio_tool_examples','workspace_edit','debug_evidence_enabled','minecraft_tools_enabled','asset3d_tools_enabled','live_show_enabled','max_calls',
     'context_chars','reduced_motion','comfy_workflow','comfy_prompt_node','comfy_port',
     'obsidian_vault','obsidian_enabled','skills_enabled','graphify_enabled',
     'mcp_graphify_docs','mcp_graphify_local','mcp_graphify_port','mcp_obsidian_live',
@@ -160,8 +166,8 @@ PERMITTED_SETTINGS = frozenset({
     'server_endpoint','server_timeout','server_parallel','server_context_tokens','allow_cgnat',
     'instant_route_enabled','web_auto_search',
     'knowledge_endpoint','luau_run_before_answer',
-    'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','deep_research_enabled','scholarly_research_enabled','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'presolve_enabled',
-    'media_images','media_voice','media_video','media_chat_auto','session_capabilities_prompt','media_use_references','comfy_home','ffmpeg_dir',
+    'learning_auto_accept','learning_digest','learning_digest_cloud','practice_lessons_enabled','worked_examples_enabled','learning_auto_live','research_auto_check','deep_research_enabled','web_research_v2','research_memory','scholarly_research_enabled','skill_pack_embeddings','roblox_docs_live_enabled', 'project_rules_enabled', 'luau_retry_ladder', 'incremental_repair', 'presolve_enabled',
+    'media_images','media_images_server','media_voice','media_video','media_chat_auto','session_capabilities_prompt','media_use_references','comfy_home','ffmpeg_dir',
     'picture_max_side','image_quality','image_drafts','image_engine',
     'best_of_n','best_of_n_max',
     # Use my GPU: where its files are and when it unloads. The switch itself is `gpuHelperSet`, saved at once.
@@ -170,6 +176,8 @@ PERMITTED_SETTINGS = frozenset({
     'fixed_roblox_tools',     # star/turn_memory.py: one fixed tool list for Roblox chats (prompt cache reuse), on
     'edit_diff',              # star/edit_format.py: changed lines only for pasted-code edits, off by default
     'music_recognition_enabled','fpcalc_path',   # star/music_recognition.py, off by default
+    'metallic_control_url',   # star/metallic_access.py: the Metallic Control address (never the code or token)
+    'metallic_accounts_url','metallic_accounts_fingerprint',   # the Metallic accounts address and its pinned certificate
 })
 
 # Settings > Media "session capabilities" line: put before the owner's words of every turn (and of a draft warm-up).
@@ -382,6 +390,7 @@ def sanitize_event(event: dict) -> dict:
     passed authorization. Goals, arguments, outputs and model-authored task ids
     are never included.
     """
+    activity: dict[str, Any]
     kind = str(event.get('event', 'working'))[:36]
     research_activity = sanitize_research_event(event)
     if research_activity is not None:
@@ -458,7 +467,7 @@ def sanitize_event(event: dict) -> dict:
         if first is not None:
             activity['first_token_ms'] = first
         rate = event.get('tokens_per_second')
-        if type(rate) in (int, float) and 0 <= rate <= 10000:
+        if isinstance(rate, (int, float)) and type(rate) in (int, float) and 0 <= rate <= 10000:
             activity['tokens_per_second'] = round(float(rate), 1)
         activity['estimated_tokens'] = event.get('estimated_tokens') is True
         return {'phase': 'Answer complete', 'activity': activity}
@@ -770,6 +779,7 @@ def _get_state(settings_file: Path, runtime: Runtime, busy: bool = False, studio
         'lesson_bundle':lesson_bundle,
         'learning_bundle':learning_bundle,
         'credentials':credential_status(),
+        'metallic':metallic_status(home,settings.metallic_control_url,settings.metallic_accounts_url),
         'server':server_status(settings),
         'roblox':roblox_state(home),
         'intelligence':for_settings(settings,home).status(),
@@ -1179,11 +1189,15 @@ def launch():
                 if source is None:
                     raise ValueError('The previous picture is no longer available to edit.')
             # The chosen place first: a choice that cannot make pictures fails here, before ComfyUI is started.
-            media_places.require(settings,'images',home)
-            if settings.media_images=='pc':
+            # 'auto' = this PC while its graphics card is free, else the servers; changing a picture stays on this PC.
+            chosen=media_places.require(settings,'images',home)
+            place='pc' if chosen=='auto' and source is not None else media_places.resolve(settings,'images',home)
+            if place=='servers':
+                self._emit(request_id,'progress',{'phase':'Creating your image on the STAR Brains (servers)...'})
+            else:
                 # Never two big models on the card: Use my GPU unloads before the picture is made.
                 gpu_helper.HELPER.yield_to('the image engine is making a picture')
-            if not image_gen.status(settings)['running']:
+            if place=='pc' and not image_gen.status(settings)['running']:
                 if not effective_comfy_home(settings):
                     raise ComfyError('not_running', 'No image engine is set up: pictures are made by ComfyUI on this PC, it is not '
                                      'running, and STAR found no ComfyUI folder to start it from. Choose that folder in Settings → '
@@ -1195,7 +1209,7 @@ def launch():
                 self._emit(request_id,'progress',{'phase':'Creating your image on this PC...'})
             result=generate_chat_image(settings,prompt,home,cancel_event=self.cancel_chat,size=size,
                                        source=source,
-                                       mask=files[1] if len(files)>1 else None)
+                                       mask=files[1] if len(files)>1 else None,place=place)
             chats=Conversations(home/'conversations.sqlite3')
             try:
                 chats.add(settings.project,'assistant',result['message'],chat_id=chat_id)
@@ -1348,6 +1362,26 @@ def launch():
                         saved.discord_autostart=enabled
                         saved.save(self.settings_file)
                     return json.dumps({'ok':True,'data':handle_discord_action(action,self.discord,autostart=saved.discord_autostart)})
+                if action in METALLIC_ACTIONS:
+                    # The network calls run off the Qt thread; status and sign-out only touch the local file.
+                    metallic=metallic_for_home(app_data())
+                    saved_metallic=Settings.load(self.settings_file)
+                    url_setting=saved_metallic.metallic_control_url
+                    if action=='metallicStatus':
+                        return json.dumps({'ok':True,'data':metallic.status(url_setting,saved_metallic.metallic_accounts_url)})
+                    if action=='metallicSignOut':
+                        return json.dumps({'ok':True,'data':metallic.sign_out(url_setting)})
+                    if action=='metallicSignIn':
+                        code=check_metallic_code(body.get('code'))
+                        self._run(rid,action,lambda:metallic.sign_in(code,url_setting))
+                    elif action=='metallicAccountSignIn':
+                        login=check_account_login(body)
+                        self._run(rid,action,lambda:metallic.sign_in_account(login,url_setting,saved_metallic.metallic_accounts_url,saved_metallic.metallic_accounts_fingerprint))
+                    else:
+                        rng=body.get('range','hour')
+                        if rng not in ('hour','day','week'):raise ValueError('Range is hour, day or week')
+                        self._run(rid,action,lambda:metallic.state(url_setting,rng))
+                    return json.dumps({'ok':True,'pending':True,'requestId':rid})
                 if action == 'gameLabCatalog' or action in CLIP_INTEROP_ACTIONS or action in CLIP_ACTIONS:
                     return self._clip_action(action, body, rid)
                 if action in MUSIC_ACTIONS:
@@ -1590,13 +1624,13 @@ def launch():
                             raise RuntimeError('Could not capture current screen')
                         screenshot=bytes(buffer.data())
                         buffer.close()
-                    def worker():
+                    def export_worker():
                         result=export_review_bundle(
                             app_data(),Settings.load(self.settings_file),destination,
                             runtime_status=self.runtime.status(),screenshot_png=screenshot)
                         return {'filename':result.name,'screenshot_included':bool(screenshot),
                                 'saved_to_user_selected_location':True}
-                    self._run(rid,action,worker)
+                    self._run(rid,action,export_worker)
                     return json.dumps({'ok':True,'pending':True,'requestId':rid})
                 if action=='openLegacy':
                     raise PermissionError('The legacy UI is diagnostic-only; start STAR.exe --legacy-ui explicitly if necessary.')
@@ -1735,8 +1769,8 @@ def launch():
                     # timings and model IDs go back to the interface.
                     self._run(rid,action,lambda:probe_server(Settings.load(self.settings_file)))
                 elif action=='listModels':
-                    def worker():return {'models':query_models(Settings.load(self.settings_file))}
-                    self._run(rid,action,worker)
+                    def models_worker():return {'models':query_models(Settings.load(self.settings_file))}
+                    self._run(rid,action,models_worker)
                 elif action=='repairStrataConfig':
                     return json.dumps({'ok': True, 'data': _repair_strata_config(self.host, self.active_task)})
                 elif action=='testStrata':

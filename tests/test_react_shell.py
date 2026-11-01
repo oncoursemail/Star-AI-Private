@@ -33,3 +33,13 @@ def test_windows_workflow_builds_react_assets():
     assert 'frontend/dist' in workflow
     assert 'npm run build' in workflow
     assert '--add-data' in workflow
+
+
+def test_answer_stats_event_keeps_only_a_plain_bounded_speed():
+    from star.react_shell import sanitize_event
+    def speed(value):
+        event = {"event": "answer_stats", "tokens_per_second": value}
+        return sanitize_event(event)["activity"].get("tokens_per_second")
+    assert speed(31.26) == 31.3 and speed(8) == 8.0
+    assert speed(None) is None and speed(True) is None and speed("9") is None
+    assert speed(-1) is None and speed(10001) is None

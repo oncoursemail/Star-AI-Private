@@ -278,7 +278,7 @@ def suite_kind(path: Path) -> str:
     except (OSError, ValueError):
         return ""
     kinds = {((t.get("auto") or {}).get("breadth") or {}).get("kind") for t in tasks if isinstance(t, dict)} if isinstance(tasks, list) else set()
-    return kinds.pop() if len(kinds) == 1 and next(iter(kinds)) in KINDS else ""
+    return str(kinds.pop()) if len(kinds) == 1 and next(iter(kinds)) in KINDS else ""
 
 
 def breadth_problems(tasks: list[dict], directory: Path) -> list[str]:

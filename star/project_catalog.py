@@ -26,8 +26,8 @@ PROJECTS = (
                     "oncoursemail/Metallic-RB"),
     ProjectIdentity("Metallic-PX", "Progress", 1410841343,
                     "oncoursemail/Metallic-PX"),
-    ProjectIdentity("STAR development", "Private STAR source and development", 1412474221,
-                    "oncoursemail/Star-AI-Private"),
+    ProjectIdentity("STAR development", "STAR source and development", 1412474221,
+                    "oncoursemail/Star-AI-Project"),
     ProjectIdentity("STAR distribution", "Public STAR distribution", 1424898960,
                     "oncoursemail/Star-AI"),
 )

@@ -67,6 +67,8 @@ class RobloxPlay:
         return self._rng.choices(self.experiences, weights=weights, k=1)[0]
 
     def ready(self) -> tuple[bool, str]:
+        if self.chat.killed("roblox"):
+            return False, "the owner's kill switch is on for roblox"
         return True, "ok"
 
     def start(self) -> StepResult:
@@ -90,20 +92,24 @@ class RobloxPlay:
         view = self.reader(self.host.screenshot())
         if not view.get("in_game", True):
             return StepResult(True, "loading or in a menu")
+        for item in view.get("chat") or []:             # whoever speaks here is in this game with her
+            if isinstance(item, dict) and item.get("author") and str(item["author"]).lower() not in self.my_names:
+                self.chat.played_with("roblox", str(item["author"]), self.current.name)
         acted, notes = False, []
         line = self._addressed(view.get("chat") or [])
         if line is not None:
             author, text = line
             history = [(str(c.get("author")), str(c.get("text"))) for c in view.get("chat") or [] if isinstance(c, dict)]
             reply = self.chat.handle("roblox", author, text, name=author, public=True,
-                                     kids_place=self.current.kids, history=history)
-            if reply is not None and self.pacer.allow("roblox", reply.text) and self._front():
+                                     kids_place=self.current.kids, history=history, game=self.current.name)
+            lines = list(reply.to_send)[:2] if reply is not None else []      # public kid-heavy chat: at most 2 short lines
+            if lines and self.pacer.allow_burst("roblox", lines, max_lines=2) and self._front():
                 self.pace.read(text)
-                self.host.key("/")
-                self.pace.type(self.host, reply.text)
-                self.host.key("enter")
-                self.pacer.sent("roblox", reply.text)
-                acted = True
+                sent = self.pace.send_lines(self.host, lines, before_each=lambda: self.host.key("/"),
+                                            after_each=lambda: self.host.key("enter"), still_ok=self._front)
+                for line in lines[:sent]:
+                    self.pacer.sent("roblox", line)
+                acted = acted or sent > 0
                 notes.append(f"chatted with {author}")
         move = str(view.get("move") or "none")
         if move in KEYS and self._front():
@@ -122,7 +128,8 @@ class RobloxPlay:
             if not author or not text or author.lower() in self.my_names or (author, text) in self._seen:
                 continue
             self._seen.append((author, text))
-            if any(name in text.lower() for name in self.my_names):
+            self.chat.heard("roblox", author, text)
+            if self.chat.for_her("roblox", author, text)[0]:      # her name, an answer to her, a question in a small chat
                 found = (author, text)
         return found
 

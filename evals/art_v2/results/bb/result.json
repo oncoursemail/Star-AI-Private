@@ -1,0 +1,120 @@
+{
+ "all": {
+  "n": 12,
+  "v2": 3.97,
+  "baseline": 3.89,
+  "wins": 5,
+  "losses": 3,
+  "ties": 4,
+  "sign_p": 0.72656
+ },
+ "armor": {
+  "n": 1,
+  "v2": 4.0,
+  "baseline": 3.0,
+  "wins": 1,
+  "losses": 0,
+  "ties": 0,
+  "sign_p": 1.0
+ },
+ "block": {
+  "n": 1,
+  "v2": 2.0,
+  "baseline": 2.0,
+  "wins": 0,
+  "losses": 0,
+  "ties": 1,
+  "sign_p": 1.0
+ },
+ "entity": {
+  "n": 2,
+  "v2": 3.33,
+  "baseline": 3.5,
+  "wins": 1,
+  "losses": 1,
+  "ties": 0,
+  "sign_p": 1.0
+ },
+ "furniture": {
+  "n": 2,
+  "v2": 5.83,
+  "baseline": 5.83,
+  "wins": 0,
+  "losses": 0,
+  "ties": 2,
+  "sign_p": 1.0
+ },
+ "item": {
+  "n": 1,
+  "v2": 3.0,
+  "baseline": 2.67,
+  "wins": 1,
+  "losses": 0,
+  "ties": 0,
+  "sign_p": 1.0
+ },
+ "mob": {
+  "n": 5,
+  "v2": 4.07,
+  "baseline": 4.07,
+  "wins": 2,
+  "losses": 2,
+  "ties": 1,
+  "sign_p": 1.0
+ },
+ "per_judge_v2_better": [
+  3,
+  3,
+  3
+ ],
+ "per_brief": {
+  "n01": {
+   "v2": 4.0,
+   "baseline": 4.67
+  },
+  "n02": {
+   "baseline": 5.67,
+   "v2": 5.67
+  },
+  "n03": {
+   "baseline": 3.0,
+   "v2": 2.33
+  },
+  "n04": {
+   "v2": 6.33,
+   "baseline": 6.33
+  },
+  "n05": {
+   "baseline": 3.33,
+   "v2": 4.33
+  },
+  "n06": {
+   "baseline": 3.67,
+   "v2": 4.0
+  },
+  "n07": {
+   "v2": 4.33,
+   "baseline": 4.0
+  },
+  "n08": {
+   "baseline": 5.33,
+   "v2": 5.33
+  },
+  "n09": {
+   "baseline": 2.67,
+   "v2": 3.0
+  },
+  "n10": {
+   "baseline": 3.0,
+   "v2": 2.33
+  },
+  "n11": {
+   "v2": 2.0,
+   "baseline": 2.0
+  },
+  "n12": {
+   "v2": 4.0,
+   "baseline": 3.0
+  }
+ }
+}

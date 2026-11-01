@@ -315,6 +315,7 @@ def cmd_bench(out: Path, home: Path, engines: list[str], runs: int = 5) -> dict:
     if "qwen3-tts" in engines:
         import torch
         from ..voice_neural import QwenCloneTTS
+        assert ref is not None
         before = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
         q = QwenCloneTTS(ref)
         q.synthesize_float(first)                       # CUDA graphs captured on first use
@@ -336,6 +337,7 @@ def cmd_bench(out: Path, home: Path, engines: list[str], runs: int = 5) -> dict:
     if "chatterbox-turbo" in engines:
         import torch
         from ..voice_neural import ChatterboxTurbo
+        assert ref is not None
         c = ChatterboxTurbo(ref)
         c.synthesize_float(first)
         vram = torch.cuda.max_memory_allocated() / 1e9

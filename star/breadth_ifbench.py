@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import cast
 
 _WORD = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.U)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])[\"')\]]*\s+")
@@ -144,7 +145,7 @@ def sentence_max_words(t, **p):
 
 
 def distinct_sentence_starts(t, **p):
-    firsts = [re.search(r"[^\W\d_]", s).group(0).lower() for s in sentences(t) if re.search(r"[^\W\d_]", s)]
+    firsts = [m.group(0).lower() for s in sentences(t) if (m := re.search(r"[^\W\d_]", s))]
     return "" if len(firsts) >= 2 and len(set(firsts)) == len(firsts) else "two sentences start with the same letter"
 
 
@@ -165,7 +166,7 @@ def line_end(t, **p):
 
 
 def acrostic(t, **p):
-    initials = "".join((re.search(r"[^\W\d_]", ln) or re.match(r"", ln)).group(0).upper() for ln in lines(t))
+    initials = "".join(cast(re.Match[str], re.search(r"[^\W\d_]", ln) or re.match(r"", ln)).group(0).upper() for ln in lines(t))
     return "" if initials == p["word"].upper() else f"line initials spell {initials!r}, need {p['word'].upper()!r}"
 
 

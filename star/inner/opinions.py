@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from typing import cast
 
 from .store import InnerStore, overlap, tokens
 
@@ -79,7 +80,7 @@ def get(store: InnerStore, topic: str) -> dict | None:
 
 
 def all_opinions(store: InnerStore) -> list[dict]:
-    return [get(store, r[0]) for r in store.db.execute("SELECT topic FROM opinions ORDER BY topic").fetchall()]
+    return [cast(dict, get(store, r[0])) for r in store.db.execute("SELECT topic FROM opinions ORDER BY topic").fetchall()]
 
 
 def set_opinion(store: InnerStore, topic: str, stance: str, reason: str = "", *, valence: float = 0.5,
@@ -102,7 +103,7 @@ def experience(store: InnerStore, topic: str, evidence: float, reason: str, *, e
         text = stance or f"{_word(evidence)} {_topic(topic)}"
         set_opinion(store, topic, text, reason, valence=evidence, confidence=0.3, evidence=[evidence_id] if evidence_id else [],
                     now=now)
-        return get(store, topic)
+        return cast(dict, get(store, topic))
     agree = current["valence"] * evidence >= 0
     confidence = current["confidence"] + (0.08 if agree else -0.12) * abs(evidence)
     valence = current["valence"] + 0.15 * (evidence - current["valence"])
@@ -116,19 +117,21 @@ def experience(store: InnerStore, topic: str, evidence: float, reason: str, *, e
     ids = (current["evidence"] + [evidence_id])[-5:] if evidence_id else current["evidence"]
     set_opinion(store, topic, new_stance, new_reason, valence=valence, confidence=confidence, source=current["source"],
                 evidence=ids, now=now)
-    return get(store, topic)
+    return cast(dict, get(store, topic))
 
 
 def earn_from_history(store: InnerStore, rows: list[dict], *, now: float | None = None) -> int:
-    """Opinions about her activities from what really happened: a verified session is a good experience, a failed one a bad
-    one (smaller). `rows` are star/home/life.py history rows."""
+    """Activity reports as preference signals, without treating truthy strings as success receipts."""
     n = 0
     for row in rows:
+        if not isinstance(row, dict) or type(row.get("verified")) is not bool:
+            continue
         interest = str(row.get("interest") or "").replace("_", " ")
         if not interest:
             continue
-        good = bool(row.get("verified"))
-        experience(store, interest, 0.6 if good else -0.3, str(row.get("summary") or "")[:100],
+        good = row.get("verified") is True
+        reason = f"Activity report ({'success reported' if good else 'unverified'}): {str(row.get('summary') or '')}"
+        experience(store, interest, 0.6 if good else -0.3, reason[:100],
                    evidence_id=str(row.get("ts") or ""), now=now)
         n += 1
     return n

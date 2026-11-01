@@ -1,6 +1,7 @@
 """Opt-in workspace source-cache security, freshness and equivalence tests."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -51,6 +52,10 @@ def test_same_size_edit_invalidates_cache_and_old_search_disappears(tmp_path, mo
     before = workspace.call('workspace_search', {'query': 'start_wave', 'mode': 'symbols'})
     assert before['matches'][0]['name'] == 'start_wave'
     file.write_text('def clear_wave():\n    pass\n')  # same byte size
+    # A real edit lands at a later time; two writes inside one filesystem clock tick (Windows: ~16 ms) share an
+    # mtime and a size, which the cache cannot tell apart. Make the later time explicit so the test is not a race.
+    stamp = file.stat()
+    os.utime(file, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 50_000_000))
     assert workspace.call('workspace_search', {'query': 'start_wave', 'mode': 'symbols'})['matches'] == []
     updated = workspace.call('workspace_search', {'query': 'clear_wave', 'mode': 'symbols'})
     assert updated['matches'][0]['name'] == 'clear_wave'

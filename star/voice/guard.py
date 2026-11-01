@@ -259,6 +259,7 @@ class GuardedTTS:
         with self.stats._lock:
             self.stats.chunks += 1
             self.stats.gave_up += 1
+        assert best is not None        # attempts >= 1, so the first attempt either returned or became `best`
         return best
 
 

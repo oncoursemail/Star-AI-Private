@@ -1,8 +1,10 @@
-"""python -m star.vtuber  run | on | off | status | preview
+"""python -m star.vtuber  run | on | off | status | mode | preview
 
 run      the camera process itself (what `on` starts): model -> "STAR Camera" virtual camera, mouth frames on UDP 39541
 on/off   start or stop that process (hidden, below-normal priority)
 status   one line of JSON: alive, frames, fps, dropped, quality, device
+mode     normal | cat | puppy (dog accepted); motion mode, requires matching avatar art for visible ears/tail
+expression  a bounded facial cue; neutral releases it; does not start the camera
 preview  render frames of the avatar speaking a spoken test sentence to PNG files (no camera, no audio device)
 """
 from __future__ import annotations
@@ -70,6 +72,7 @@ def run(args) -> int:
     camera.start()
     try:
         while not control.stop_requested(folder):
+            camera.set_mode(control.load_config(folder).mode)
             control.write_status(folder, model=model.name, device=getattr(sink, "device", type(sink).__name__),
                                  feed_port=listener.port, **camera.stats())
             time.sleep(1.0)
@@ -95,6 +98,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("on")
     sub.add_parser("off")
     sub.add_parser("status")
+    p = sub.add_parser("mode")
+    p.add_argument("value", choices=("normal", "cat", "puppy", "dog"))
+    from .expressions import EXPRESSION_NAMES
+    p = sub.add_parser("expression")
+    p.add_argument("name", choices=EXPRESSION_NAMES)
+    p.add_argument("--seconds", type=float, default=None)
+    p.add_argument("--strength", type=float, default=1.0)
     p = sub.add_parser("preview")
     p.add_argument("--out", required=True)
     p.add_argument("--model", default="placeholder")
@@ -112,6 +122,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "status":
         print(json.dumps(control.read_status()))
+        return 0
+    if args.cmd == "mode":
+        print(json.dumps(control.set_mode(args.value)))
+        return 0
+    if args.cmd == "expression":
+        from . import emit_expression
+        try:
+            emit_expression(args.name, duration_s=args.seconds, strength=args.strength)
+        except ValueError as error:
+            parser.error(str(error))
+        print(json.dumps({"expression_requested": args.name, "camera_started": False, "delivery_verified": False}))
         return 0
     from .sample import render_sample
     print(json.dumps(render_sample(args.out, model_source=args.model, wav=args.wav or None, fps=args.fps)))

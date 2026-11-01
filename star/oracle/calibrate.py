@@ -80,7 +80,7 @@ def predict(model: dict | None, x: float) -> dict:
 
 
 def _agrees(verdict: str, full: str) -> bool:
-    return (full == "INCONCLUSIVE" or (verdict == "BETTER" and full == "PROMOTE")
+    return (full in ("INCONCLUSIVE", "UNDERPOWERED") or (verdict == "BETTER" and full == "PROMOTE")
             or (verdict == "WORSE" and full == "REJECT"))
 
 
@@ -122,7 +122,7 @@ def run(registry: list[dict], *, base_dir: Path) -> dict:
             "abs": len(rows), "with_l2": len(with_l2), "decided_at_l0_l2": len(decided),
             "decided_agree": sum(_agrees(r["loo"]["verdict"], r["full"]["decision"]) for r in decided),
             "agree_or_inconclusive": agree_all,
-            "full_inconclusive": sum(r["full"]["decision"] == "INCONCLUSIVE" for r in rows),
+            "full_inconclusive": sum(r["full"]["decision"] in ("INCONCLUSIVE", "UNDERPOWERED") for r in rows),
             "sign_match": f"{sign_ok}/{len(sign_rows)}",
             "spearman_l2_vs_observed": _spearman([p[0] for p in points], [p[1] for p in points]),
             # Other candidate predictors, reported (not used for the verdict) so a later fit can switch on evidence.

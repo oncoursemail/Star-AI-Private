@@ -132,3 +132,20 @@ Details and the failures found on the way: `docs/agents/computer-use-20261026.md
   Save As steps are Paint-specific. Not built, not tested.
 - Drawing quality is bounded by the model's plan (strokes on a 100x100 board); there is no feedback loop that looks at
   the painting and corrects it yet.
+
+## 7. Update (second lane, 10-26): newer 7B-class grounders and how to choose
+
+| Model | ScreenSpot-Pro | Other | Licence / base | Source |
+|---|---|---|---|---|
+| Holo1.5-7B | 57.94 | ScreenSpot-v2 93.31, OSWorld-G 66.27 | Apache-2.0, Qwen2.5-VL-7B | [model card](https://huggingface.co/Hcompany/Holo1.5-7B) |
+| Holo1.5-3B | 51.49 | ScreenSpot-v2 91.66, OSWorld-G 61.57 | Qwen licence | same card |
+| UI-Venus-Ground-7B | 50.8 | ScreenSpot-v2 94.1 | Qwen2.5-VL | [third-party page](https://featherless.ai/models/inclusionAI/UI-Venus-Ground-7B) |
+| GTA1-7B | 50.1 (2507) to 55.5 | OSWorld-G 55.1-60.1 | | [third-party page](https://featherless.ai/models/Salesforce/GTA1-7B) |
+| Fara-7B | n/a (a whole web agent) | WebVoyager 73.5% vs UI-TARS-1.5-7B 66.4% | MIT, Qwen2.5-VL-7B | [model card](https://huggingface.co/microsoft/Fara-7B) |
+
+Also named by the coordinator's research (docs/research/companion-life-20261026.md, not checked here): Holo3.1 4B/9B,
+Qwen3-VL-8B, and Holo3.1-35B-A3B as a possible server-hosted grounder. Published numbers conflict between pages and
+releases, so the choice is made by measurement: `star.computer.ground.bench` scores any grounder on 10-20 screenshots
+of STAR's own apps (hit = the point lands in the expected rectangle; hit rate and median seconds). Grounding order in
+the driver: UI Automation, then the GPU grounder, then STAR's remote image model (`star.vision.ask`). Discord exposes a
+usable UIA tree only when started with `--force-renderer-accessibility` (the installer's "Discord (STAR)" shortcut).

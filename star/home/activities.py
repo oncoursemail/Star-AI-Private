@@ -19,15 +19,15 @@ from dataclasses import dataclass, field
 import importlib
 import subprocess
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from . import brain
 
 # Each one is optional: a package that is not installed (star.computer, star.watch, star.vtuber are built in their own branches) is
 # skipped. A package that defines `register_home_activities` registers itself; star.social, star.play and star.senses
 # are wired by star.home.plugins (they predate this hook).
-PLUGIN_MODULES = ("star.games", "star.social", "star.play", "star.senses", "star.computer", "star.watch",
-                  "star.vtuber")
+PLUGIN_MODULES = ("star.games", "star.social", "star.play", "star.senses", "star.computer", "star.watch", "star.art_studio",
+                  "star.vtuber", "star.vtuber.modes", "star.home.streamchat", "star.life")
 BUILTIN_BRIEFS = {
     "game_making": "make or improve a small game and play-test it",
     "drawing": "draw or animate something and save it to your gallery folder",
@@ -51,13 +51,13 @@ class Context:
     and calls the activity again with `resume_state`. `situation.in_moment` tells the scheduler a round is running."""
     home: Path
     config: dict
-    executor: object
+    executor: Any
     life: object
     chat: Callable | None
     interest: str
     goal: dict | None
     practice_topic: str = ""
-    interrupt: object = field(default_factory=lambda: _NeverInterrupt())
+    interrupt: Any = field(default_factory=lambda: _NeverInterrupt())
     situation: object = None
     resume_state: dict = field(default_factory=dict)
     resumed: bool = False
@@ -141,7 +141,8 @@ def brain_activity(brief: str) -> Callable[[Context], dict]:
         return brain.run_session(ctx.chat, ctx.executor, ctx.life, interest=ctx.interest, brief=text, goal=ctx.goal,
                                  max_steps=int(ctx.config.get("max_steps", 12)),
                                  session_minutes=float(ctx.config.get("session_minutes", 20)),
-                                 stop=ctx.interrupt.is_set)
+                                 stop=ctx.interrupt.is_set,
+                                 recall_history=ctx.config.get("life_recall_enabled") is True)
     return run
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import math
 from pathlib import Path
 import random
 
@@ -47,6 +48,50 @@ def _parse(stamp: str) -> datetime | None:
         return datetime.strptime(stamp, _STAMP).replace(tzinfo=timezone.utc)
     except (TypeError, ValueError):
         return None
+
+
+def normalize_outcome(outcome, *, minutes: float = 0.0) -> dict:
+    """Validate the activity contract before it affects history, goals or learning."""
+    invalid = "result"
+    if isinstance(outcome, dict):
+        invalid = ""
+        for key in ("ok", "verified", "paused", "goal_done"):
+            if key in outcome and type(outcome[key]) is not bool:
+                invalid = key
+                break
+        for key in ("evidence", "failures"):
+            value = outcome.get(key, [])
+            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                invalid = invalid or key
+        steps = outcome.get("steps", 0)
+        duration = outcome.get("minutes", minutes)
+        if type(steps) is not int or not 0 <= steps <= 2**63 - 1:
+            invalid = invalid or "steps"
+        try:
+            valid_duration = type(duration) in (int, float) and math.isfinite(duration) and duration >= 0
+        except OverflowError:
+            valid_duration = False
+        if not valid_duration:
+            invalid = invalid or "minutes"
+        if not isinstance(outcome.get("summary", ""), str):
+            invalid = invalid or "summary"
+        if not invalid:
+            try:
+                for value in [outcome.get("summary", ""), *outcome.get("evidence", []), *outcome.get("failures", [])]:
+                    value.encode("utf-8")
+            except UnicodeEncodeError:
+                invalid = "text encoding"
+        if outcome.get("paused") is True and not isinstance(outcome.get("resume_state", {}), dict):
+            invalid = invalid or "resume_state"
+        if not invalid:
+            clean = dict(outcome)
+            clean.update(ok=outcome.get("ok") is True,
+                         verified=outcome.get("ok") is True and outcome.get("verified") is True,
+                         steps=steps, minutes=duration)
+            return clean
+    return {"ok": False, "verified": False, "steps": 0, "minutes": minutes,
+            "summary": f"activity returned invalid outcome ({invalid})", "evidence": [],
+            "failures": [f"activity: invalid outcome ({invalid})"]}
 
 
 class Life:
@@ -169,6 +214,7 @@ class Life:
 
     # ---- outcomes -----------------------------------------------------------------------------------------
     def record(self, interest: str, activity: str, outcome: dict, goal: dict | None = None) -> dict:
+        outcome = normalize_outcome(outcome)
         row = {"ts": self.clock().strftime(_STAMP), "interest": interest, "activity": activity,
                "goal": goal["id"] if goal else "", "claimed": bool(outcome.get("ok")),
                "verified": bool(outcome.get("verified")), "evidence": outcome.get("evidence", [])[:10],
@@ -185,7 +231,7 @@ class Life:
             for g in rows:
                 if g["id"] == goal["id"]:
                     g["tries"] = int(g.get("tries", 0)) + 1
-                    if row["verified"] and outcome.get("goal_done"):
+                    if row["verified"] and outcome.get("goal_done") is True:
                         g["status"] = "done"
             self._write("goals.json", rows)
         return row

@@ -11,6 +11,19 @@ dreams.py      sleeping dreams from the day's fragments, a morning fade, a mood 
 self_model.py  her self-description that she revises nightly within bounds, with a journal; fixed boundaries it cannot change
 night.py       the night job, `python -m star.inner tick`, the star-home plug-in hook
 
+Added 10-26 (docs/agents/brain-20261026.md; settings.py: default ON on her own PC, OFF elsewhere):
+stream.py        memory stream: every perception/chat/game event/thought, recency x importance x relevance, embeddings,
+                 bi-temporal facts (valid_from / invalid_at), inbox write path, forget + cascade
+embed.py         the brain's /v1/embeddings when reachable, else a local hash embedder
+structured.py    JSON-schema constrained model calls + tolerant parsing (dreams, cards, diary, audit, self review)
+insights.py      reflection on the stream: insights with evidence links
+planner.py       day plan (study/practise/play/social/create/rest), energy model, activity choice
+consolidate.py   night: replay, facts, lessons, emotional processing, dream fallback, prune/merge, morning note
+selfview.py      self-model view (identity, interests, calibrated skills, relationships, timeline) + summary line
+mind.py          the core that ties these into star-home (wrap_life), the night tick, social chat hooks
+journal_view.py  the owner's journal page / JSON
+memeval.py       a small LongMemEval-style memory test (recall, update, temporal, abstention)
+
 Notes and measurements: docs/agents/inner-life-20261026.md.
 """
 from .context import TurnContext, turn_context          # noqa: F401

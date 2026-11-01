@@ -13,7 +13,7 @@ import sys
 import urllib.error
 import urllib.request
 
-REPOSITORY = "oncoursemail/Star-AI-Private"
+REPOSITORY = "oncoursemail/Star-AI-Project"
 REPOSITORY_ID = 1412474221
 BUDGET_BYTES = 400_000_000
 ARCHIVE_RESERVE_BYTES = 10_000_000
