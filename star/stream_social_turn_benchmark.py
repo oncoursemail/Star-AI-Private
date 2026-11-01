@@ -105,6 +105,8 @@ class SocialTurnReport:
     baseline_question_p95_ms: float | None
     candidate_question_p95_ms: float | None
     candidate_stop_p95_ms: float | None
+    candidate_dropped_commentary: int = 0
+    candidate_late_commentary: int = 0
     authorized_to_stream: bool = False
     note: str = ("Offline operator-reviewed timing evidence, not authenticated media, "
                  "human-equivalence proof, automatic model promotion or broadcast permission")
@@ -126,6 +128,8 @@ def assess_social_turns(
     max_question_regression_ms: float = 100,
     max_pair_question_regression_ms: float = 250,
     max_pair_stop_regression_ms: float = 100,
+    max_commentary_first_audible_ms: float = 2000,
+    max_pair_commentary_regression_ms: float = 500,
 ) -> SocialTurnReport:
     """Conservative A/B gate for a *manual* gaming/VTuber rehearsal.
 
@@ -140,7 +144,9 @@ def assess_social_turns(
                         ("max_overlap_ms", max_overlap_ms),
                         ("max_question_regression_ms", max_question_regression_ms),
                         ("max_pair_question_regression_ms", max_pair_question_regression_ms),
-                        ("max_pair_stop_regression_ms", max_pair_stop_regression_ms)):
+                        ("max_pair_stop_regression_ms", max_pair_stop_regression_ms),
+                        ("max_commentary_first_audible_ms", max_commentary_first_audible_ms),
+                        ("max_pair_commentary_regression_ms", max_pair_commentary_regression_ms)):
         if not 0 < _millis(value, name) <= 10_000:
             raise ValueError(f"invalid {name}")
     data: dict[str, dict[str, SocialTurnMoment]] = {}
@@ -164,6 +170,7 @@ def assess_social_turns(
     new_regressions = 0
     pair_regressions = 0
     false_interruptions = missed_barge_ins = critical_speech = ungrounded_speech = 0
+    dropped_commentary = late_commentary = 0
     coverage = 0
     complete_pairs = 0
     reviewed = 0
@@ -177,8 +184,12 @@ def assess_social_turns(
                     w.overlap_ms is not None and w.overlap_ms <= max_overlap_ms
                     and w.grounded)
         if w.scenario == "gameplay_commentary":
+            # A speech-expected commentary moment is different from an
+            # explicitly silent, game-critical moment. Late audio is not a
+            # useful reaction after the action has already finished.
             return ((w.first_audible_ms is None or
-                     (w.overlap_ms is not None and w.overlap_ms <= max_overlap_ms))
+                     (w.first_audible_ms <= max_commentary_first_audible_ms
+                      and w.overlap_ms is not None and w.overlap_ms <= max_overlap_ms))
                     and (w.first_audible_ms is None or w.grounded))
         if w.scenario == "owner_barge_in":
             return (w.interrupted and w.playback_stop_ms is not None
@@ -208,6 +219,19 @@ def assess_social_turns(
                     and cand.first_audible_ms is not None
                     and cand.first_audible_ms - base.first_audible_ms
                     > max_pair_question_regression_ms):
+                pair_regressions += 1
+        elif cand.scenario == "gameplay_commentary":
+            # Without a paired coverage guard, a candidate that never speaks
+            # can appear 'more natural' by silently dropping every reaction.
+            # Explicitly silent moments belong in critical_gameplay instead.
+            if base.first_audible_ms is not None and cand.first_audible_ms is None:
+                dropped_commentary += 1
+                pair_regressions += 1
+            elif (base.first_audible_ms is not None
+                  and cand.first_audible_ms is not None
+                  and cand.first_audible_ms - base.first_audible_ms
+                  > max_pair_commentary_regression_ms):
+                late_commentary += 1
                 pair_regressions += 1
         elif cand.scenario == "owner_barge_in":
             if cand.playback_stop_ms is not None:
@@ -239,6 +263,7 @@ def assess_social_turns(
             candidate_failures, new_regressions, false_interruptions,
             missed_barge_ins, critical_speech, ungrounded_speech,
             pair_regressions, baseline_p95, candidate_p95, stop_p95,
+            dropped_commentary, late_commentary,
         )
     if (not data or any(len(v) != 2 for v in data.values())
             or coverage != len(data)
