@@ -407,7 +407,7 @@ def broken(tree: Path, path: str, text: str) -> str:
     def check(source: str) -> str:
         if tool == "rustfmt":
             cargo = (tree / "Cargo.toml").read_text(encoding="utf-8", errors="replace") if (tree / "Cargo.toml").exists() else ""
-            edition = (EDITION.search(cargo) or [None, "2021"])[1]
+            edition = m.group(1) if (m := EDITION.search(cargo)) else "2021"
             r = subprocess.run([exe, "--edition", edition], input=source, capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=120)
         else:
@@ -432,7 +432,7 @@ def tidy(tree: Path, path: str, text: str) -> str:
     if not path.endswith(".rs") or not Path(exe).exists():
         return text
     cargo = (tree / "Cargo.toml").read_text(encoding="utf-8", errors="replace") if (tree / "Cargo.toml").exists() else ""
-    edition = (EDITION.search(cargo) or [None, "2021"])[1]
+    edition = m.group(1) if (m := EDITION.search(cargo)) else "2021"
 
     def fmt(source: str) -> str | None:
         r = subprocess.run([exe, "--edition", edition], input=source, capture_output=True, text=True, cwd=tree,
