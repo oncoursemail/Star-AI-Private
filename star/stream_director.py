@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from threading import RLock
+
+from .stream_load_governor import StreamLoadAdvice
 import hashlib
 import math
 import re
@@ -311,10 +313,13 @@ class StreamDirector:
             return True
 
     def propose(self, *, now: float, voice_speaking: bool = False,
-                viewer_speaking: bool = False, gameplay_critical: bool = False) -> SpeechIntent | None:
+                viewer_speaking: bool = False, gameplay_critical: bool = False,
+                load_advice: StreamLoadAdvice | None = None) -> SpeechIntent | None:
         """Return one non-binding candidate, leaving the queue untouched."""
         with self._lock:
             now = _clock(now)
+            if load_advice is not None and not isinstance(load_advice, StreamLoadAdvice):
+                raise TypeError("load_advice must be an explicit StreamLoadAdvice")
             if not self.enabled:
                 return None
             self._expire(now)
@@ -322,6 +327,17 @@ class StreamDirector:
                 return None
             eligible = []
             for event in self._events:
+                # Host-provided pressure advice is a speech admission filter,
+                # never an OBS or game executor. Missing advice keeps legacy
+                # behavior; caller must explicitly wire the trusted governor.
+                if load_advice is not None:
+                    profile = load_advice.profile
+                    if (profile == "constrained" and event.kind in
+                            {"ambient", "viewer_comment", "game_observation"}):
+                        continue
+                    if (profile not in {"normal", "constrained"} and
+                            event.kind not in {"owner_interrupt", "game_danger"}):
+                        continue
                 # offer() tolerates up to 500 ms of source clock skew; that does
                 # not make a not-yet-observed event safe to narrate immediately.
                 if event.timestamp > now:
