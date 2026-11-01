@@ -5,7 +5,7 @@
 
 Star's next major bottleneck is **contention**, not simply model parameter count. The same 8 GB gaming GPU can be asked to draw a game, composite OBS scenes, encode frames, animate an avatar, perform vision inference, prefill an LLM, and possibly synthesize speech. Increasing standalone token throughput can make the *whole experience worse* if it disrupts frame pacing or the conversation. The next phase should use **measured priority admission**, then build fast-path gameplay and independently verified offline learning on that foundation.
 
-This work adds `star/stream_load_governor.py` and `tests/test_stream_load_governor.py`, an owner-opt-in, dependency-free, **advisory-only** pressure gate. It does not operate OBS, change settings, interrupt speech, start game inputs, manage secrets, or implicitly enable background learning.
+This work adds `star/stream_load_governor.py`, a backward-compatible `StreamDirector.propose(load_advice=...)` pressure-aware speech filter, and two offline test modules (22 focused synthetic tests passed locally on the authorized starai host). It is an owner-opt-in, dependency-free, **advisory-only** resource gate; the director selectively reduces optional speech when explicitly given its advice. It does not operate OBS, change settings, interrupt speech, start game inputs, manage secrets, or implicitly enable background learning.
 
 ## 1. New implemented component: stream load governor
 
@@ -21,13 +21,13 @@ This work adds `star/stream_load_governor.py` and `tests/test_stream_load_govern
 
 **Initial thresholds are conservative hypotheses, not benchmarks:** critical if OBS render missed >=3%, encode skipped >=2%, network dropped >=4%, game p95 >=1.8x frame budget, VRAM >=96%, or OBS disconnected. Constrained if render/encode >=0.5%, network >=1%, game p95 >=1.25x frame budget, VRAM >=86%, or first-audio p95 >=900ms. Tune only against labeled real hardware data, keeping separate network, encoder and rendering diagnoses.
 
-### Host integration sequence (NOT implemented here)
+### Host integration sequence (OBS/host scheduler adapter NOT implemented here)
 
 1. Authenticate to the local OBS websocket with its password, on loopback/private network. Record GetStats at regular intervals, and calculate *positive counter differences* divided by corresponding total-frame differences. Do not feed lifetime percentages as current load.
 2. On OBS reconnect, counter reset, device restart or missing denominators: discard the previous baseline, mark `obs_connected=False` or telemetry stale, and require fresh stable samples. Do not silently turn a counter reset into 0% frame loss.
 3. Use the same host monotonic clock for frame, voice and load snapshots. Only the trusted host may set `host_verified=True`. Call `enable(owner_approved=True)` only after stream/session consent.
 4. Feed `StreamLoadSample` to `ingest`; call `recommend`. Map recommendations through *independently owner-approved* scheduler capabilities, never general text instructions from chat. On constrained/critical: pause night-school jobs, avoid optional commentary, retain owner-interrupt and danger handling, and consider limiting high-memory vision/LLM experiments. Keep necessary TTS and OBS alive.
-5. Collect anonymized latency/quality metrics. **Never modify stream bitrate/resolution automatically** based on this advisory: network loss is not GPU overload, and abrupt settings changes can themselves break a broadcast.
+5. On the trusted stream host, pass the fresh recommendation into `StreamDirector.propose(now=..., load_advice=advice)`. In constrained mode the director suppresses small talk, ambient observations and optional game narration, but preserves moderated questions and independently verified successes; in critical/warming/stale modes only host-verified danger signals and authenticated owner interruptions remain eligible. Omitted advice preserves the previous behavior, so this does not silently activate itself. Collect anonymized latency/quality metrics. **Never modify stream bitrate/resolution automatically** based on this advisory: network loss is not GPU overload, and abrupt settings changes can themselves break a broadcast.
 
 The OBS websocket project's protocol exposes fields such as `renderSkippedFrames`, `renderTotalFrames`, `outputSkippedFrames`, `outputTotalFrames` and render time. OBS' own troubleshooting guidance emphasizes that scene complexity and output resolution affect resources. Do not assume the websocket Stats fields contain every network metric: combine with an independently verified streaming-output monitor, and validate semantics against the installed OBS version.
 
@@ -92,4 +92,4 @@ Expand general knowledge through structured, timestamped retrieval and targeted 
 
 ## Honest deployment state
 
-Only the opt-in **planning layer** and offline regressions were added this run. Do not claim verified inference speedups, better game wins, newly installed voice models, actual human consciousness, or a successful OBS/Twitch connection. Keep the PR draft, do not merge or deploy automatically, and avoid confidential recordings or tokens in this public repository.
+The opt-in **planning layer**, backward-compatible speech-director filter, and 22 passing local synthetic tests were added this run. Do not claim verified inference speedups, better game wins, newly installed voice models, actual human consciousness, or a successful OBS/Twitch connection. Keep the PR draft, do not merge or deploy automatically, and avoid confidential recordings or tokens in this public repository.
