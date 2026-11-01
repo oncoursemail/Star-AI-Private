@@ -58,6 +58,7 @@ export function MediaPlaces({settings,invoke,disabled=false,refresh}:{settings:A
  const [notice,setNotice]=useState('')
  const [folder,setFolder]=useState(settings.comfy_home||'')
  const [ffmpeg,setFfmpeg]=useState(settings.ffmpeg_dir||'')
+ const [imageServer,setImageServer]=useState(settings.media_images_server||'')
  const later=useLater()
  const load=useCallback(()=>{
    if(disabled)return
@@ -68,7 +69,7 @@ export function MediaPlaces({settings,invoke,disabled=false,refresh}:{settings:A
    })
  },[disabled,invoke,later])
  useEffect(()=>{load()},[load])
- useEffect(()=>{setFolder(settings.comfy_home||'');setFfmpeg(settings.ffmpeg_dir||'')},[settings.comfy_home,settings.ffmpeg_dir])
+ useEffect(()=>{setFolder(settings.comfy_home||'');setFfmpeg(settings.ffmpeg_dir||'');setImageServer(settings.media_images_server||'')},[settings.comfy_home,settings.ffmpeg_dir,settings.media_images_server])
  const save=async(changes:Record<string,unknown>)=>{
    if(disabled)return
    setNotice('')
@@ -135,6 +136,9 @@ export function MediaPlaces({settings,invoke,disabled=false,refresh}:{settings:A
        <label className="media-field">ComfyUI folder (the one that contains main.py)
          <input type="text" value={folder} placeholder={status.detected_home?'Found automatically (see below)':'Not set: start ComfyUI yourself'} onChange={event=>setFolder(event.target.value)} onBlur={()=>{if(folder!==(settings.comfy_home||''))void save({comfy_home:folder.trim()})}}/>
          <small><button type="button" className="learn-button" disabled={disabled} onClick={()=>void chooseFolder()}>Choose folder</button> STAR starts it for this PC only (127.0.0.1) and stops it when STAR closes.{!folder.trim()&&status.detected_home&&<> Found automatically: {status.detected_home}. STAR uses it until you choose another folder.</>}</small></label>
+       <label className="media-field">Image service on the servers
+         <input type="text" value={imageServer} placeholder="Not set, for example http://<server address>:8095" onChange={event=>setImageServer(event.target.value)} onBlur={()=>{if(imageServer!==(settings.media_images_server||''))void save({media_images_server:imageServer.trim()})}}/>
+         <small>Address of STAR's image service on your home network (it uses the STAR Server key). Needed for Images on the STAR Brains or Automatic.</small></label>
        <label className="media-field">FFmpeg folder (for video files)
          <input type="text" value={ffmpeg} placeholder="Not set: FFmpeg is looked up on PATH" onChange={event=>setFfmpeg(event.target.value)} onBlur={()=>{if(ffmpeg!==(settings.ffmpeg_dir||''))void save({ffmpeg_dir:ffmpeg.trim()})}}/>
          <small>{status.ffmpeg.message}</small></label>

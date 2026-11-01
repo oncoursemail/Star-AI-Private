@@ -1,0 +1,54 @@
+{
+  "research_date": "2026-10-31",
+  "timezone": "America/Chicago",
+  "repository": "oncoursemail/Star-AI-Project",
+  "base_branch": "star/next",
+  "base_commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+  "python": "3.12.14",
+  "validation_kind": "offline developer behavior checks and deterministic simulation, not native acceptance",
+  "independent_unittest_methods": 43,
+  "independent_exit_code": 0,
+  "baseline_regression_methods": 4,
+  "baseline_expected_failures_including_subcases": 6,
+  "baseline_exit_code": 1,
+  "baseline_fixture_error_count": 0,
+  "baseline_observed_replay_count": 4,
+  "corrected_observed_dispatch_count": 1,
+  "simulation_pairs": 33,
+  "simulation_driver_runs": 66,
+  "simulation_all_outcomes_and_effects_match": true,
+  "simulation_observation_costs_s": [
+    0,
+    0.02,
+    0.1
+  ],
+  "simulation_costs_are_hypothetical": true,
+  "targeted_compilation_exit_code": 0,
+  "new_polling_default": 0.0,
+  "native_performance_proven": false,
+  "deployment_performed": false,
+  "source_sha256": {
+    "star/computer/driver.py": "bef8bb5ed771ad9872bc4d0c811b40ff944225e9d545809ec7faa47f66ad0db8",
+    "star/computer/settings.py": "2c4d43ea29a327b26545f80e8570f9832a39ede647dd40e2ec9109c66f9dbb1b",
+    "benchmarks/verify_computer_driver_recovery.py": "f5f71a7932afe6d6e9d9010f352ec9cc3f18ff3da8ae65acab22e84649a3d5de",
+    "benchmarks/measure_computer_verification_waits.py": "6fe9c9e6cba4406a47cb4c7a4f920c35b8d9c0fca66cf7e726c44332e1fe2a10"
+  },
+  "not_run": [
+    "Full repository pytest suite: pytest and full application dependencies unavailable in focused snapshot",
+    "Native Windows focus/input/UIA/capture/packaged EXE acceptance",
+    "Roblox Studio or Blender execution",
+    "Paid provider/model evaluation",
+    "Target-machine speed or resource benchmark",
+    "Thirty proposed acceptance cases as a suite"
+  ],
+  "commands": [
+    "python benchmarks/verify_computer_driver_recovery.py -v",
+    "python benchmarks/measure_computer_verification_waits.py",
+    "python -m compileall -q star/computer/driver.py star/computer/settings.py benchmarks/verify_computer_driver_recovery.py benchmarks/measure_computer_verification_waits.py"
+  ],
+  "review_findings_resolved": [
+    "opaque backend exception payloads excluded from receipts",
+    "nonfinite settle/wait values rejected",
+    "STOP checked after observation, grounding, verification and logging before recovery focus"
+  ]
+}

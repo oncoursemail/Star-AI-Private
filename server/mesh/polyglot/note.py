@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+from .rust_edition import resolve as rust_edition
+
 DEFAULTS = {"polyglot_note": True}
 
 # (language id, pattern on the question). First match wins; Roblox/Minecraft/Unity questions never match (their own
@@ -85,11 +87,19 @@ def detect(text: str) -> str | None:
     return None
 
 
-def note(lang: str) -> str:
+def note(lang: str, context: str = "") -> str:
+    tip = TIPS[lang]
+    if lang == "rust":
+        try:
+            tip = tip.replace("Rust 2021 edition", f"Rust {rust_edition(context)} edition")
+        except ValueError:
+            # Do not override a migration/comparison or an unsupported target
+            # with the default edition. The compiler will report it unchecked.
+            tip = "Respect the target project's explicitly requested Rust edition; clarify conflicting targets."
     return (f"(Note for Litha, not from the user: this is a {NAMES[lang]} programming question. Litha helps with every "
             f"programming language and game engine, not only Roblox, Unity and Minecraft: answer it fully with "
             f"correct, complete, runnable {NAMES[lang]} code that follows the asked input/output exactly; never say "
-            f"it is outside your expertise. {TIPS[lang]})")
+            f"it is outside your expertise. {tip})")
 
 
 def apply(req: dict, cfg: dict | None = None) -> dict:
@@ -106,5 +116,5 @@ def apply(req: dict, cfg: dict | None = None) -> dict:
     lang = detect(text)
     if not lang:
         return {}
-    msgs[-1] = {**msgs[-1], "content": text + "\n\n" + note(lang)}
+    msgs[-1] = {**msgs[-1], "content": text + "\n\n" + note(lang, text)}
     return {"X-Mesh-Polyglot": lang}

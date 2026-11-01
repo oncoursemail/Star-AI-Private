@@ -1,0 +1,312 @@
+{
+  "schema_version": 1,
+  "research_date_local": "2026-10-31",
+  "timezone": "America/Chicago",
+  "repository": "oncoursemail/Star-AI-Project",
+  "baseline_commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+  "source_sha256": {
+    "star/agent.py": "c92f0f3c662e4a6640640f7657da2886897971038ead8708fb8a0aa270616cf6",
+    "star/workspace.py": "a845863ac7d606e9f7bc5c873cc2fe6f4c6257b39ece83a6a73c482dfa40823e",
+    "star/code_navigation.py": "44bfdd72ec8c74fd81153ca0d30570e6000f08a973560cb4ff24446e2493283f",
+    "star/code_search_batch.py": "672f19a9981933371773d72e3bfac6ede042d383b3718c50dfababb008204b71",
+    "star/repo_map.py": "0816d8096df2dd079c3b374bbe44dec090f5f81e120d2904d58e92cdf4473cb9",
+    "benchmarks/freebuff_context.py": "966851b94855e7d23e352bf694c1a04abe58db1a9e7d53ec5b98e95841372be8"
+  },
+  "dependencies": {
+    "pytest": "9.2.0",
+    "jsonschema": "4.26.0",
+    "openai": "2.54.0",
+    "mcp": "1.30.0",
+    "ruff": "0.17.3",
+    "pyright": "1.1.414"
+  },
+  "runs": [
+    {
+      "schema_version": 1,
+      "workload": {
+        "files": 60,
+        "source_bytes": 64740,
+        "queries_per_batch": 8,
+        "repeats": 7,
+        "query_modes": [
+          "symbols",
+          "text",
+          "symbols",
+          "text",
+          "symbols",
+          "text",
+          "symbols",
+          "text"
+        ]
+      },
+      "environment": {
+        "python": "3.12.14",
+        "platform": "Linux-6.18.57-x86_64-with-glibc2.39",
+        "machine": "x86_64"
+      },
+      "exact_result_parity": true,
+      "source_reads": {
+        "single_uncached": 480,
+        "batch_uncached": 60
+      },
+      "batch_result_bytes": 1997,
+      "timings": {
+        "single_uncached": {
+          "median_ms": 50.3213,
+          "p95_ms": 65.3477,
+          "samples_ms": [
+            49.4974,
+            50.3213,
+            48.7175,
+            50.5941,
+            46.1555,
+            56.5265,
+            65.3477
+          ]
+        },
+        "batch_uncached": {
+          "median_ms": 9.2465,
+          "p95_ms": 13.8404,
+          "samples_ms": [
+            10.1471,
+            9.0351,
+            9.2465,
+            8.9183,
+            8.7575,
+            9.7874,
+            13.8404
+          ]
+        },
+        "single_warm": {
+          "median_ms": 43.8095,
+          "p95_ms": 50.8599,
+          "samples_ms": [
+            45.7543,
+            43.8095,
+            40.7874,
+            41.0363,
+            41.5107,
+            50.8599,
+            45.5247
+          ]
+        },
+        "batch_warm": {
+          "median_ms": 7.7073,
+          "p95_ms": 9.3146,
+          "samples_ms": [
+            9.3146,
+            8.2923,
+            7.4735,
+            7.9806,
+            7.2912,
+            7.6877,
+            7.7073
+          ]
+        },
+        "map_uncached": {
+          "median_ms": 27.5624,
+          "p95_ms": 38.4019,
+          "samples_ms": [
+            27.7292,
+            27.5624,
+            29.9806,
+            24.7265,
+            24.8449,
+            25.1613,
+            38.4019
+          ]
+        },
+        "map_warm": {
+          "median_ms": 13.7512,
+          "p95_ms": 17.0021,
+          "samples_ms": [
+            13.7766,
+            13.7512,
+            14.2977,
+            13.4406,
+            13.0478,
+            13.0449,
+            17.0021
+          ]
+        }
+      },
+      "ratios": {
+        "uncached_batch_speedup": 5.4422,
+        "warm_batch_speedup": 5.6842,
+        "map_cache_speedup": 2.0044
+      },
+      "shared_cache": {
+        "entries": 60,
+        "bytes": 693060,
+        "max_entries": 3072,
+        "max_bytes": 25165824
+      },
+      "limitations": [
+        "Synthetic sparse eight-query discovery workload; not arbitrary query distributions.",
+        "Uncached means the application source cache is disabled, not cold filesystem pages.",
+        "Map scan uses its existing 320-file cap when the generated project exceeds it.",
+        "Warm-cache results assume unchanged files already resident in the bounded cache.",
+        "No inference, live task-success, Windows package, GPU, RSS or production measurement."
+      ]
+    },
+    {
+      "schema_version": 1,
+      "workload": {
+        "files": 300,
+        "source_bytes": 323700,
+        "queries_per_batch": 8,
+        "repeats": 9,
+        "query_modes": [
+          "symbols",
+          "text",
+          "symbols",
+          "text",
+          "symbols",
+          "text",
+          "symbols",
+          "text"
+        ]
+      },
+      "environment": {
+        "python": "3.12.14",
+        "platform": "Linux-6.18.57-x86_64-with-glibc2.39",
+        "machine": "x86_64"
+      },
+      "exact_result_parity": true,
+      "source_reads": {
+        "single_uncached": 2400,
+        "batch_uncached": 300
+      },
+      "batch_result_bytes": 1999,
+      "timings": {
+        "single_uncached": {
+          "median_ms": 206.7108,
+          "p95_ms": 252.4225,
+          "samples_ms": [
+            196.3991,
+            206.7108,
+            207.2696,
+            252.4225,
+            210.7377,
+            202.6457,
+            201.127,
+            203.8326,
+            206.994
+          ]
+        },
+        "batch_uncached": {
+          "median_ms": 30.5943,
+          "p95_ms": 43.9189,
+          "samples_ms": [
+            28.9189,
+            31.1018,
+            30.5943,
+            43.9189,
+            31.1368,
+            30.3676,
+            34.6933,
+            29.505,
+            27.925
+          ]
+        },
+        "single_warm": {
+          "median_ms": 177.2104,
+          "p95_ms": 208.496,
+          "samples_ms": [
+            177.2104,
+            176.4963,
+            171.4461,
+            174.6843,
+            191.8655,
+            203.6417,
+            208.496,
+            203.9927,
+            171.1215
+          ]
+        },
+        "batch_warm": {
+          "median_ms": 26.226,
+          "p95_ms": 31.0546,
+          "samples_ms": [
+            26.226,
+            25.8396,
+            25.8968,
+            25.4162,
+            27.1472,
+            27.8333,
+            29.1326,
+            31.0546,
+            24.9688
+          ]
+        },
+        "map_uncached": {
+          "median_ms": 129.9423,
+          "p95_ms": 137.1495,
+          "samples_ms": [
+            122.1176,
+            124.5039,
+            129.9286,
+            137.1495,
+            130.1289,
+            136.5636,
+            132.4421,
+            129.9423,
+            122.0612
+          ]
+        },
+        "map_warm": {
+          "median_ms": 66.6691,
+          "p95_ms": 70.7616,
+          "samples_ms": [
+            65.4552,
+            69.3546,
+            66.6691,
+            69.0377,
+            67.2862,
+            65.4494,
+            66.3636,
+            70.7616,
+            63.2004
+          ]
+        }
+      },
+      "ratios": {
+        "uncached_batch_speedup": 6.7565,
+        "warm_batch_speedup": 6.757,
+        "map_cache_speedup": 1.9491
+      },
+      "shared_cache": {
+        "entries": 300,
+        "bytes": 3465300,
+        "max_entries": 3072,
+        "max_bytes": 25165824
+      },
+      "limitations": [
+        "Synthetic sparse eight-query discovery workload; not arbitrary query distributions.",
+        "Uncached means the application source cache is disabled, not cold filesystem pages.",
+        "Map scan uses its existing 320-file cap when the generated project exceeds it.",
+        "Warm-cache results assume unchanged files already resident in the bounded cache.",
+        "No inference, live task-success, Windows package, GPU, RSS or production measurement."
+      ]
+    }
+  ],
+  "validation": {
+    "focused_pytest": {
+      "passed": 229,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 4.64
+    },
+    "focused_pytest_output": "........................................................................ [ 31%]\n........................................................................ [ 62%]\n........................................................................ [ 94%]\n.............                                                            [100%]\n229 passed in 4.64s\n",
+    "changed_helper_pyright": {
+      "filesAnalyzed": 3,
+      "errorCount": 0,
+      "warningCount": 0,
+      "informationCount": 0,
+      "timeInSec": 0.971
+    },
+    "additional_catalogue_test": "test_the_acceptance_prompt_is_offered_the_agent_skills_catalogue timed out at asyncio default-executor shutdown on both unchanged baseline and candidate. Not counted as passed.",
+    "typecheck_limit": "The large pre-existing agent.execute function reports a complexity diagnostic; compare baseline and candidate. No whole-repository typecheck pass claimed.",
+    "live_validation": "No real model, Windows EXE, Roblox Studio, GPU or live-host run."
+  }
+}

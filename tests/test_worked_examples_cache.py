@@ -8,6 +8,7 @@ def test_cached_terms_give_exactly_the_uncached_ranking(tmp_path):
     examples.import_file(export_file(tmp_path, [row(i + 1, t) for i, t in enumerate(TOPICS)]), home=home, project="STAR")
     queries = ["Could you implement " + topic + "?" for topic in TOPICS] + ["tween the shop menu", "hello there"]
     examples._DOCUMENTS.clear()
+    examples._compile_corpus.cache_clear()
     cold = [examples.select(home, "STAR", q) for q in queries]
     assert len(examples._DOCUMENTS) == len(TOPICS)          # every example tokenized once, kept in memory
     warm = [examples.select(home, "STAR", q) for q in queries]

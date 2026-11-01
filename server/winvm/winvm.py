@@ -500,7 +500,7 @@ def cmd_serve(a):
     """GitHub ephemeral runners: each VM gets one JIT runner (one job), then it is destroyed."""
     cfg = load_cfg()
     token = open(cfg.get("github_token_file", "/etc/winvm/github-token")).read().strip()
-    repo, label = cfg.get("github_repo", "oncoursemail/Star-AI-Private"), "star-win-vm"
+    repo, label = cfg.get("github_repo", "oncoursemail/Star-AI-Project"), "star-win-vm"
     labels = ["self-hosted", "windows", "X64", label]
     vms = {}  # id -> {"state": "ready"|"job", "proc": Popen}
     seq = 0

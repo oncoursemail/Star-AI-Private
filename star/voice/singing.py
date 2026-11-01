@@ -11,6 +11,10 @@ in PUBLIC_DOMAIN. Any other requested song gets a kind refusal plus an offer to 
 thing. She never reproduces copyrighted lyrics or melodies.
 
 Notation: "C4:1 D4:0.5 R:1" = note name + octave (or R for a rest) : length in beats.
+
+PAUSED (2026-10-27): the owner rated both songs 1/5, and no engine tested in the v2 round sings well
+(docs/agents/voice-v2-20261027.md). While SINGING_PAUSED is True can_sing() always declines with an offer to write
+the words instead, and ExpressiveTTS speaks <sing> lines. The composer and the WORLD singer stay for a future model.
 """
 from __future__ import annotations
 
@@ -84,9 +88,16 @@ PUBLIC_DOMAIN = {
 }
 
 
+SINGING_PAUSED = True
+PAUSED_ANSWER = ("My singing voice isn't good enough yet, so I'm not singing for now. I can write you the words of a "
+                 "little song of my own, though, or read them to you. Want that?")
+
+
 def can_sing(request: str) -> tuple[bool, str]:
     """(allowed, what to do). Allowed: an original song (anything asking her to make one up) or a listed public-domain
-    song. Otherwise she declines the cover and offers an original instead."""
+    song. Otherwise she declines the cover and offers an original instead. Always declined while SINGING_PAUSED."""
+    if SINGING_PAUSED:
+        return False, PAUSED_ANSWER
     low = re.sub(r"[^a-z ]", "", (request or "").lower())
     for key, song in PUBLIC_DOMAIN.items():
         if key in low:

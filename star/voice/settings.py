@@ -26,7 +26,7 @@ OUTPUT_MODES = ("headphones", "speakers")
 VOICE_ROUTES = ("default", "virtual-mic")           # virtual-mic: only into the virtual cable (star/senses/routes.py)
 FAST_PROFILES = ("off", "auto", "dedicated", "game", "game-tight")      # star/senses/fastpath.py
 CALL_MODES = ("push-to-talk", "hands-free")
-EXPRESSIVE_ENGINES = ("kokoro", "qwen3-tts", "chatterbox-turbo")    # star/voice/expressive.py; kokoro = live DSP styles only
+EXPRESSIVE_ENGINES = ("kokoro", "qwen3-tts", "qwen3-design")   # star/voice/expressive.py; kokoro = plain live voice
 ARTEFACT_GUARDS = ("off", "signal", "full")                          # star/voice/guard.py
 # The default "Star" persona voice: a warm, nurturing, mum-like blend of Kokoro stock voices (no real person),
 # chosen in the 2026-10-13 audition round (docs/STAR_VOICE_CALLS.md section 10, catalog id "star-mum").
@@ -36,6 +36,11 @@ STAR_SPEED = 0.80
 STAR_PITCH = 0.0
 STAR_GAP_MS = 120
 _VOICE_ID = re.compile(r"^[A-Za-z0-9_.:+\-]{1,120}$")
+
+
+def _star_voices():
+    from ..voice_neural import STAR_VOICES             # plain data; the module imports no packages at load time
+    return STAR_VOICES
 
 
 @dataclass
@@ -80,7 +85,8 @@ class VoiceSettings:
     emotion: bool = False                # star/emotion.py: mood-driven tone, small pitch/speed shifts, avatar events
     # Expressive voice (star/voice/expressive.py, docs/agents/voice-expressive-20261026.md). Off by default.
     expressive: bool = False             # tags in her words (<whisper>, <laugh>), tone follows the talk and her mood
-    expressive_engine: str = "kokoro"    # kokoro (live, DSP styles in the chosen voice) | qwen3-tts | chatterbox-turbo
+    expressive_engine: str = "kokoro"    # kokoro (live, plain) | qwen3-tts (clone, streams) | qwen3-design (emotions)
+    star_voice: str = ""                 # her designed voice (voice_neural.STAR_VOICES key); "" = DEFAULT_STAR_VOICE
     default_style: str = "warm"          # tone when nothing else decides (star/voice/styles.py STYLES)
     style_intensity: float = 0.6         # 0..1, how strongly the default tone is applied
     allowed_styles: str = ""             # comma list of styles she may use; "" = all
@@ -120,6 +126,7 @@ class VoiceSettings:
                   (len(self.input_device) <= 120 and len(self.output_device) <= 120, "Device name is too long"),
                   (len(self.system_extra) <= 1200, "Extra context is too long"),
                   (self.expressive_engine in EXPRESSIVE_ENGINES, "Unknown expressive engine"),
+                  (self.star_voice == "" or self.star_voice in _star_voices(), "Unknown Star voice"),
                   (self.default_style in STYLES, "Unknown default style"),
                   (0.0 <= float(self.style_intensity) <= 1.0, "style_intensity must be between 0 and 1"),
                   (all(s.strip() in STYLES for s in self.allowed_styles.split(",") if s.strip()), "Unknown style in allowed_styles"),

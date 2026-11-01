@@ -10,6 +10,7 @@ from collections import Counter
 import hashlib
 import json
 import math
+import os
 import re
 from typing import Any
 
@@ -31,16 +32,30 @@ _HEX = re.compile(r"#[0-9a-fA-F]{6}\Z")
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}\Z")
 
 
-def _read_json(workspace, name: str) -> tuple[dict, str]:
+def _unique_json_fields(pairs: list[tuple[str, Any]]) -> dict:
+    value: dict = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("Duplicate JSON evidence field")
+        value[key] = item
+    return value
+
+
+def _read_json(workspace, name: str, *, strict: bool = False) -> tuple[dict, str]:
     """Never follow a path outside the selected workspace or a forbidden file."""
     if not isinstance(name, str) or not name.lower().endswith(".json"):
         raise ValueError("Choose a JSON manifest inside the selected workspace")
     path = workspace.resolve(name)
-    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= MAX_JSON_BYTES:
+    if (path.is_symlink() or (strict and (workspace.root / name).is_symlink())
+            or not path.is_file() or not 0 < path.stat().st_size <= MAX_JSON_BYTES):
         raise ValueError("Manifest or trace must be a small regular JSON file")
-    raw = path.read_bytes()
+    with path.open("rb") as handle:
+        raw = handle.read(MAX_JSON_BYTES + 1)
+    if not 0 < len(raw) <= MAX_JSON_BYTES:
+        raise ValueError("Manifest or trace must be a small regular JSON file")
     try:
-        value = json.loads(raw, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+        value = json.loads(raw, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()),
+                           object_pairs_hook=_unique_json_fields if strict else dict)
     except (ValueError, UnicodeError, RecursionError) as exc:
         raise ValueError("Malformed JSON evidence") from exc
     if not isinstance(value, dict):
@@ -68,7 +83,7 @@ def _validate_source_paths(workspace, manifest: dict) -> None:
 
 
 def _finite(value: Any, *, low: float = 0, high: float = 1_000_000) -> float:
-    if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
+    if type(value) not in (int, float) or not low <= value <= high or not math.isfinite(value):
         raise ValueError("Evidence numbers must be finite and within the supported range")
     return float(value)
 
@@ -100,7 +115,9 @@ def _contrast(foreground: str, background: str) -> float:
         return sum(w * v for w, v in zip((0.2126, 0.7152, 0.0722), transformed))
 
     bright, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
-    return round((bright + 0.05) / (dark + 0.05), 3)
+    # WCAG thresholds apply to the unrounded ratio. Rounding 4.4995 to 4.5
+    # before comparison would incorrectly accept a failing text colour pair.
+    return (bright + 0.05) / (dark + 0.05)
 
 
 def _overlap(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
@@ -174,19 +191,31 @@ def rank_concepts(candidates: list, history: list | None = None, *, count: int =
             "note": "Only relative diversity against provided concepts; not proof of worldwide originality."}
 
 
-def audit(workspace, manifest_path: str) -> dict:
+def audit(workspace, manifest_path: str, *, ui_contract_path: str | None = None) -> dict:
     """Verify source + capture evidence, then independently inspect layout, motion and recorded events."""
-    manifest, manifest_sha = _read_json(workspace, manifest_path)
+    strict_ui = ui_contract_path is not None
+    contract = None
+    contract_sha = None
+    if ui_contract_path is not None:
+        if os.environ.get("STAR_UI_EVIDENCE", "").strip().lower() != "on":
+            raise ValueError("UI evidence contracts require STAR_UI_EVIDENCE=on; no contract was evaluated")
+        contract, contract_sha = _read_json(workspace, ui_contract_path, strict=True)
+    manifest, manifest_sha = _read_json(workspace, manifest_path, strict=strict_ui)
     _validate_source_paths(workspace, manifest)
     evidence = capture_evidence(workspace.root, manifest)
     findings: list[dict] = []
     checked = 0
     incomplete = 0
+    failures = 0
+    total_findings = 0
 
-    def finding(code: str, status: str, message: str, *, view: str = "") -> None:
+    def finding(code: str, status: str, message: str, *, view: str = "", **details) -> None:
+        nonlocal failures, total_findings
+        failures += status == "fail"
+        total_findings += 1
         if len(findings) < MAX_FINDINGS:
             findings.append({"code": code, "status": status, "message": message,
-                             **({"view": view} if view else {})})
+                             **({"view": view} if view else {}), **details})
 
     views = manifest["views"]
     # A screenshot proves only that an image was captured; a smooth dark screen
@@ -238,7 +267,7 @@ def audit(workspace, manifest_path: str) -> dict:
                 threshold = 3.0 if item.get("large_text", False) is True else 4.5
                 checked += 1
                 if ratio < threshold:
-                    finding("low_text_contrast", "fail", f"{name}: declared {ratio}:1 contrast; need {threshold}:1.",
+                    finding("low_text_contrast", "fail", f"{name}: declared {ratio:.6f}:1 contrast; need {threshold}:1.",
                             view=view)
         for i, (a_name, a_rect, a_spec) in enumerate(interactive):
             for b_name, b_rect, b_spec in interactive[i + 1:]:
@@ -256,10 +285,11 @@ def audit(workspace, manifest_path: str) -> dict:
     if not isinstance(motion, list) or len(motion) > MAX_CHECKS:
         raise ValueError("motion must be a bounded list")
     for test in motion:
-        if not isinstance(test, dict) or test.get("from") not in views or test.get("to") not in views:
+        if (not isinstance(test, dict) or not isinstance(test.get("from"), str)
+                or not isinstance(test.get("to"), str) or test["from"] not in views or test["to"] not in views):
             raise ValueError("Motion must name two captured views")
         expected = test.get("expected")
-        if expected not in {"moving", "static"}:
+        if not isinstance(expected, str) or expected not in {"moving", "static"}:
             raise ValueError("Motion expectation must be moving or static")
         a = workspace.resolve(views[test["from"]]["file"])
         b = workspace.resolve(views[test["to"]]["file"])
@@ -278,8 +308,9 @@ def audit(workspace, manifest_path: str) -> dict:
     trace_sha = None
     trace = None
     if "trace_file" in manifest:
-        trace, trace_sha = _read_json(workspace, manifest["trace_file"])
-        if trace.get("engine") not in ENGINES or type(trace.get("run_finished")) is not bool:
+        trace, trace_sha = _read_json(workspace, manifest["trace_file"], strict=strict_ui)
+        if (not isinstance(trace.get("engine"), str) or trace["engine"] not in ENGINES
+                or type(trace.get("run_finished")) is not bool):
             raise ValueError("Trace requires a recognized engine and run_finished flag")
         events = trace.get("events")
         if not isinstance(events, list) or len(events) > MAX_EVENTS:
@@ -328,11 +359,21 @@ def audit(workspace, manifest_path: str) -> dict:
         if measured > limit:
             finding("budget_exceeded", "fail", f"{key}: observed {measured}; maximum {limit}.")
 
-    failures = sum(f["status"] == "fail" for f in findings)
+    ui_coverage = None
+    if contract is not None:
+        from .ui_evidence import inspect_contract
+        ui_coverage = inspect_contract(contract, manifest, evidence, trace=trace, trace_sha256=trace_sha)
+        checked += ui_coverage["automated_check_count"]
+        incomplete += ui_coverage["unverified_count"]
+        # Keep actionable records once, in the existing bounded findings list.
+        # Counts include omitted findings, so a crowded report cannot hide failure.
+        for item in ui_coverage.pop("findings"):
+            finding(**item)
+
     status = ("automated_checks_failed" if failures else
               "insufficient_evidence" if incomplete or checked == 0 else
               "automated_checks_passed")
-    return {"project": evidence["project"], "artifact": evidence["artifact"],
+    result = {"project": evidence["project"], "artifact": evidence["artifact"],
             "status": status, "automated_check_count": checked, "failed_count": failures,
             "unverified_count": incomplete, "findings": findings, "captures": evidence["captures"],
             "source_sha256": evidence["source_sha256"], "evidence_key": evidence["evidence_key"],
@@ -340,3 +381,15 @@ def audit(workspace, manifest_path: str) -> dict:
             "runtime_executed_by_this_tool": False, "owner_approved": False,
             "warning": "Model/user-supplied bounds and traces are not trusted execution receipts; pixel change "
                        "is not animation quality. Artist approval and real engine tests remain separate."}
+    if total_findings > len(findings):
+        result["findings_omitted"] = total_findings - len(findings)
+    if ui_coverage is not None:
+        result["ui_coverage"] = ui_coverage
+        result["ui_contract_sha256"] = contract_sha
+        # The legacy evidence key covers source/image bytes. This additional key
+        # also changes when the required cases, their labels or the trace change.
+        identity = {"evidence_key": evidence["evidence_key"], "contract_sha256": contract_sha,
+                    "manifest_sha256": manifest_sha, "trace_sha256": trace_sha}
+        result["ui_audit_key"] = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return result

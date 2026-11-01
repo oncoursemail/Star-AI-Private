@@ -13,7 +13,7 @@ from .media import image_part, mcp_images
 from .redact import redact_text
 from .policy import allowed_registry, enforce, READ_TOOLS as STUDIO_READ_TOOLS
 from .memory import compact
-from .workspace import TOOLS, TOOL_NAMES, WRITE_TOOLS as WORKSPACE_WRITE_TOOLS
+from .workspace import TOOL_NAMES, WRITE_TOOLS as WORKSPACE_WRITE_TOOLS, tool_definitions as workspace_tools
 from . import code_answer_completion
 from .self_model import SELF_TOOL, TurnSelfModel, wants_self_inspection
 from .incremental_repair import RepairController, RepairDeferred, RepairsOff
@@ -520,7 +520,7 @@ async def execute(*, client, model: str, prompt: str, image_paths: list[Path], s
             "parameters": tool["inputSchema"]}} for tool in code_team_tools)
     code_team_enabled = bool(code_team_tools)
     if workspace is not None:
-        definitions.extend({"type": "function", "function": {"name": tool['name'], "description": tool['description'], "parameters": tool['inputSchema']}} for tool in TOOLS if workspace_edit or tool['name'] not in WORKSPACE_WRITE_TOOLS)
+        definitions.extend({"type": "function", "function": {"name": tool['name'], "description": tool['description'], "parameters": tool['inputSchema']}} for tool in workspace_tools() if workspace_edit or tool['name'] not in WORKSPACE_WRITE_TOOLS)
     def selected(source) -> list[dict]:
         # The prompt-gated sources. With a tool memory, what earlier prompts of this
         # conversation selected stays selected (re-checked against today's settings).

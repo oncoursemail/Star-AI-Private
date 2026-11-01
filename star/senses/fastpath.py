@@ -91,7 +91,7 @@ PROFILES = {
 
 # Expressive neural voice engines (star/voice_neural.py): allowed only when no game holds the card. In game modes the
 # expressive voice still works (Kokoro + DSP styles + pre-rendered sounds, all on the CPU side of the budget).
-EXPRESSIVE_GB = {"qwen3-tts": 2.9, "chatterbox-turbo": 3.2}      # torch peak allocated, measured 2026-10-27
+EXPRESSIVE_GB = {"qwen3-tts": 2.9, "qwen3-design": 4.7}         # torch peak allocated, measured 2026-10-27
 EXPRESSIVE_PROFILES = frozenset({"off", "dedicated"})
 
 

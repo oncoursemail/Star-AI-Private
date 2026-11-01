@@ -1,0 +1,848 @@
+{
+  "review_date": "2026-11-01",
+  "catalog_commit": "680b351764199b9b6b4352d3ea5af0bce927b6ed",
+  "method": "Read-only primary-source review dated 2026-11-01. All 64 catalog entries inventoried and reviewed through primary source files, pinned READMEs, official articles, product pages or terms. Source/terms/README depth is distinguished from code and runtime auditing. No upstream skill, installer, hook, MCP, authenticated export or executable was installed or run.",
+  "entries": [
+    {
+      "name": "Impeccable",
+      "category": "Skills",
+      "url": "https://impeccable.style/",
+      "kind": "Rules + local CLI/hooks",
+      "decision": "Adopt pattern",
+      "rationale": "Persistent product/design context; source and rendered checks. Defer engine, hooks and live editing integration.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "UserInterface.wiki Skill",
+      "category": "Skills",
+      "url": "https://www.userinterface.wiki/skill",
+      "kind": "Rule corpus",
+      "decision": "Adopt pattern",
+      "rationale": "Select motion/state/typography guidance; exclude narrow recipes and unsupported universal thresholds.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "UI UX Pro Max Skill",
+      "category": "Skills",
+      "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "kind": "Local data + Python search",
+      "decision": "Adopt pattern",
+      "rationale": "Bounded local retrieval and durable master/page overrides. Retain Litha's existing four-table subset; evaluate target-aware retrieval before a corpus refresh or generator dependency.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "Anthropic Frontend Design Skill",
+      "category": "Skills",
+      "url": "https://github.com/anthropics/skills/tree/main/skills/frontend-design",
+      "kind": "Prompt guidance",
+      "decision": "Adopt pattern",
+      "rationale": "Product-specific art direction, short plan, screenshot critique, purposeful motion.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "Make Interfaces Feel Better",
+      "category": "Skills",
+      "url": "https://github.com/jakubkrehel/make-interfaces-feel-better",
+      "kind": "Prompt + references",
+      "decision": "Adopt pattern",
+      "rationale": "Keep the incumbent styling system; inspect intermediate motion and interaction states.",
+      "review_depth": "Source read"
+    },
+    {
+      "name": "shadcn/ui Skills",
+      "category": "Skills",
+      "url": "https://ui.shadcn.com/docs/skills",
+      "kind": "Framework context + CLI",
+      "decision": "Adopt pattern",
+      "rationale": "Detect real installed configuration and compose existing primitives; do not run latest installers automatically.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "Web Design Guidelines Skill",
+      "category": "Skills",
+      "url": "https://github.com/vercel-labs/agent-skills/blob/main/skills/web-design-guidelines/SKILL.md",
+      "kind": "Remote-rule review wrapper",
+      "decision": "Reference only",
+      "rationale": "Use reviewed MIT underlying guidelines; wrapper has no license file and downloads mutable main each review.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "Emil Kowalski Skills",
+      "category": "Skills",
+      "url": "https://github.com/emilkowalski/skills",
+      "kind": "Motion diagnostics/rules",
+      "decision": "Adopt pattern",
+      "rationale": "Separate movement design from performance diagnostics; audit frequent interactions for unnecessary animation.",
+      "review_depth": "Source read"
+    },
+    {
+      "name": "Unslop Skill",
+      "category": "Skills",
+      "url": "https://github.com/cursor/plugins/blob/main/pstack/skills/unslop/SKILL.md",
+      "kind": "Writing rules",
+      "decision": "Reference only",
+      "rationale": "Useful UI-copy cleanup; not a UI engine or graphics library.",
+      "review_depth": "Source read"
+    },
+    {
+      "name": "Refactoring UI Skill",
+      "category": "Skills",
+      "url": "https://github.com/s0xDk/refactoring-ui-skill",
+      "kind": "Third-party design notes",
+      "decision": "Reference only",
+      "rationale": "Read original MIT notes as ideas; book rights explicitly excluded. Do not market imported rules as the book.",
+      "review_depth": "License/source read"
+    },
+    {
+      "name": "Taste Skill",
+      "category": "Skills",
+      "url": "https://www.tasteskill.dev/",
+      "kind": "Rules + Node/browser tools",
+      "decision": "Adopt pattern",
+      "rationale": "Before/after viewport inspection; use app-specific reasoning. Reject mandatory marketing motion/photo quotas for Litha.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "Designer Skills Collection",
+      "category": "Skills",
+      "url": "https://github.com/Owl-Listener/designer-skills",
+      "kind": "Large multi-repository prompt marketplace",
+      "decision": "Defer",
+      "rationale": "Select a specific unmet need; the marketplace aggregates other repositories, so its headline count does not describe one self-contained source tree.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/Owl-Listener/designer-skills/blob/9a6930cf84a822eb458624bd11c61aac5bbdf224/README.md"
+      ],
+      "primary_findings": "The README separates design-practice skills in this repository from four companion collections pulled through the marketplace. It provides task routing and workflow commands for research, state mapping, tokens and critique; these are guidance units, not independently validated product results.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "TypeUI Design Skills",
+      "category": "Skills",
+      "url": "https://www.typeui.sh/design-skills",
+      "kind": "Hosted/commercial design resources",
+      "decision": "Reference only",
+      "rationale": "EULA restricts standalone redistribution and competing registries/datasets; do not ship downloaded skills in Litha.",
+      "review_depth": "Primary site/terms"
+    },
+    {
+      "name": "YC Web Design Strategy Skill",
+      "category": "Skills",
+      "url": "https://github.com/maxbogo/yc-web-design-strategy-skill",
+      "kind": "Landing-page strategy guidance",
+      "decision": "Reference only",
+      "rationale": "Use for startup positioning or a marketing page; stage-aware conversion heuristics should not become editor or Roblox UI rules.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/maxbogo/yc-web-design-strategy-skill/blob/bf9e5ace80a958f25dbe60989762770bdcf3505f/README.md"
+      ],
+      "primary_findings": "The README describes a framework distilled from YC design-review videos: product stage, a five-second comprehension filter, messaging, calls to action and QA. Its stated scope is websites and landing pages.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "Swiss Design System",
+      "category": "Skills",
+      "url": "https://swiss.ziki.boo/",
+      "kind": "Fixed visual skill",
+      "decision": "Reference only",
+      "rationale": "Useful grid/restraint specimen; IBM Plex/stone/red and large spacing are a style choice, not Litha defaults.",
+      "review_depth": "Source read"
+    },
+    {
+      "name": "Bencium Marketplace",
+      "category": "Skills",
+      "url": "https://github.com/bencium/bencium-marketplace",
+      "kind": "Plugin marketplace with skills and hooks",
+      "decision": "Defer",
+      "rationale": "Avoid the whole marketplace; its design styles, always-ask protocol, hooks and unrelated tools have different scopes.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/bencium/bencium-marketplace/blob/5de46a39b4640fa419560cd0b67e4c4b50dac802/README.md"
+      ],
+      "primary_findings": "The README lists restrained and experimental design options, a visual-only audit, typography guidance and broader architecture/marketing utilities. It also includes an emotional-status hook and an external build-loop repository, so installing all is broader than adopting UI guidance.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "Three.js Skills",
+      "category": "Skills",
+      "url": "https://github.com/CloudAI-X/threejs-skills",
+      "kind": "Versioned browser 3D guidance",
+      "decision": "Defer",
+      "rationale": "Only for an explicit web 3D requirement, with target-version checks; no native Roblox UI support is established.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/CloudAI-X/threejs-skills/blob/0e181866f095b5f06d005133876e926515390d95/README.md"
+      ],
+      "primary_findings": "The README targets specific Three.js, React Three Fiber, drei and glTF-transform versions and separates fundamentals, rendering, WebGPU/TSL, performance and asset pipelines. Version-bounded API correction is useful, but the target remains browser rendering.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "Awesome DESIGN.md",
+      "category": "Skills",
+      "url": "https://github.com/VoltAgent/awesome-design-md/",
+      "kind": "Example design documents",
+      "decision": "Reference only",
+      "rationale": "Compare document structure; author Litha's identity from actual tokens rather than cloning another brand.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "StyleSeed",
+      "category": "Skills",
+      "url": "https://github.com/bitjaru/styleseed",
+      "kind": "Design-memory compiler and scored workflow",
+      "decision": "Evaluate pattern",
+      "rationale": "Project-local decisions and rendered review are relevant; defer another executable rules engine and treat its benchmark as self-reported.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/bitjaru/styleseed/blob/ce66f1dc1d14609ec43bc48eed1d97abb51489c8/README.md"
+      ],
+      "primary_findings": "The README describes STYLESEED.md decisions, source-hashed compiled rule bundles and a render-score-revise workflow. It explicitly says rules alone cannot block delivery and a score cannot replace human acceptance; its published benchmark is a claim of that project, not a Litha measurement.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "Claude Code Design Review Workflow",
+      "category": "Skills",
+      "url": "https://github.com/OneRedOak/claude-code-workflows/tree/main/design-review",
+      "kind": "Review templates + browser workflow",
+      "decision": "Adopt pattern",
+      "rationale": "Review changed routes with live interaction and screenshots; use Litha's own test harness and evidence schema.",
+      "review_depth": "Source read"
+    },
+    {
+      "name": "Huashu Design",
+      "category": "Skills",
+      "url": "https://github.com/alchaincyf/huashu-design",
+      "kind": "Local prototype/media export suite with optional cloud",
+      "decision": "Defer",
+      "rationale": "Useful later for prototypes/decks; broad render/export scripts and optional cloud features need a separate code review.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/alchaincyf/huashu-design/blob/9b01ee8751679724dd43d855a532944aaa2c2b59/README.en.md"
+      ],
+      "primary_findings": "The English README describes local HTML, PDF/PPTX, image and video outputs, local design-history records and optional cloud scripts. It reports MIT relicensing but identifies demo stickers under PolyForm Shield; asset rights are therefore not uniform.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "Nothing Design Skill",
+      "category": "Skills",
+      "url": "https://github.com/dominikmartn/nothing-design-skill",
+      "kind": "Brand-inspired style and platform mappings",
+      "decision": "Reference only",
+      "rationale": "Study coherent tokens and output mapping; do not automatically imitate another brand's type, dot motifs or progress treatment.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/dominikmartn/nothing-design-skill/blob/74affbb786af098b18503467b205c10a7df30126/README.md"
+      ],
+      "primary_findings": "The README maps one monochrome industrial design language to HTML/CSS, React/Tailwind and SwiftUI. Separate reference files cover tokens, components and platform mapping; Roblox is not listed.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "Hallmark",
+      "category": "Skills",
+      "url": "https://github.com/nutlope/hallmark",
+      "kind": "Design rules + browser gates",
+      "decision": "Evaluate pattern",
+      "rationale": "Useful separation of hard quality floor, overridable taste rules and polish. Theme roulette is not a default.",
+      "review_depth": "Source read"
+    },
+    {
+      "name": "Material Design 3 Skill",
+      "category": "Skills",
+      "url": "https://github.com/hamen/material-3-skill",
+      "kind": "Third-party Material platform guidance",
+      "decision": "Reference only",
+      "rationale": "Select only when Material is the product's chosen system; verify exact APIs in official platform documentation.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/hamen/material-3-skill/blob/14385f2bf3804d8779f8b4db2604211f1e70b4c1/README.md"
+      ],
+      "primary_findings": "The README prioritizes Jetpack Compose, gives Flutter a secondary role and marks its web path limited with no full Expressive parity. It calls itself a best-effort distillation that can drift and directs exact API checks to official documentation.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "Scandinavian Design Skill",
+      "category": "Skills",
+      "url": "https://github.com/ericzakariasson/scandinavian-design",
+      "kind": "Fixed style with screenshot tooling",
+      "decision": "Reference only",
+      "rationale": "No license file found in the pinned tree; visual restraint is relevant but does not authorize vendoring or installing its scripts.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/ericzakariasson/scandinavian-design/blob/295742307b97fa0fb848f9be2d6e229ca517c736/README.md"
+      ],
+      "primary_findings": "The README describes a black/white visual style and ten demonstration sites evaluated through desktop/mobile captures and a CSS-override fallback. Its installation also includes npm script dependencies, so it is more than a static prompt.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "21st.dev",
+      "category": "Apps",
+      "url": "https://21st.dev/home",
+      "kind": "Hosted component marketplace",
+      "decision": "Defer",
+      "rationale": "Component discovery candidate; review each resource license and dependencies, not the entire marketplace.",
+      "review_depth": "Catalog + 21st source"
+    },
+    {
+      "name": "AI Website Cloner",
+      "category": "Apps",
+      "url": "https://github.com/JCodesMore/ai-website-cloner-template",
+      "kind": "Next.js recreation template and observation workflow",
+      "decision": "Reject default",
+      "rationale": "Adopt matched-state observation only for authorized reference work; arbitrary website cloning is not Litha's design identity.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/JCodesMore/ai-website-cloner-template/blob/ee3f5a2f31fd549b9593fa4f7cf6d2955ee593bb/README.md"
+      ],
+      "primary_findings": "The README describes route mapping, desktop/mobile and alternate-state inspection, editable components and matched-size comparison. It uses a Next.js/React/shadcn/Tailwind stack and distinguishes owned-site migration from impersonation or copying protected branding.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "Superdesign",
+      "category": "Apps",
+      "url": "https://app.superdesign.dev/",
+      "kind": "Hosted design canvas + coding-agent skill",
+      "decision": "Defer",
+      "rationale": "Editable HTML and repo adaptation are useful; current product is proprietary and distinct from its unmaintained open-source IDE extension.",
+      "review_depth": "Primary product articles",
+      "inspected_urls": [
+        "https://superdesign.dev/blog/ai-ui-generator-exports-code",
+        "https://superdesign.dev/blog/how-to-build-ai-landing-page"
+      ],
+      "primary_findings": "The current web workflow retains side-by-side design variants and exports editable HTML; its skill hands that output to a coding agent working in the target repository. The provider expressly distinguishes its current non-open-source product from the older unmaintained IDE extension.",
+      "limitations": "Homepage yielded no readable content; primary product articles reviewed. No authenticated export, API contract, privacy audit or code quality test.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Variant",
+      "category": "Apps",
+      "url": "https://variant.com/",
+      "kind": "Hosted variation service",
+      "decision": "Defer",
+      "rationale": "Public terms restrict service use to personal noncommercial purposes, prohibit AI-system improvement from outputs, and require permission for interacting applications.",
+      "review_depth": "Primary terms; UI inaccessible",
+      "inspected_urls": [
+        "https://variant.com/",
+        "https://variant.com/terms-and-privacy"
+      ],
+      "primary_findings": "The public terms grant the provider broad ongoing rights to use Materials and Output for operating and improving its offerings. They also bar unauthorized scraping/integrations and AI-system creation, training, testing or improvement from outputs. The service-access license is personal and noncommercial.",
+      "limitations": "Homepage exposed no readable interface. Export formats and an approved integration API were not verified; commercial use would require resolving the public terms with the provider.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Stitch by Google",
+      "category": "Apps",
+      "url": "https://stitch.withgoogle.com/",
+      "kind": "Hosted design service",
+      "decision": "Defer service",
+      "rationale": "Adopt portable design-document concept; hosted generation stays optional and separately authorized.",
+      "review_depth": "Official format source"
+    },
+    {
+      "name": "Open Design",
+      "category": "Apps",
+      "url": "https://github.com/nexu-io/open-design",
+      "kind": "Desktop/local + cloud workspace",
+      "decision": "Reference only",
+      "rationale": "Borrow portable design packages/preview architecture; current source has always-on reliability telemetry and much wider runtime scope.",
+      "review_depth": "Source/license read"
+    },
+    {
+      "name": "Khroma",
+      "category": "Apps",
+      "url": "https://www.khroma.co/",
+      "kind": "Browser-local palette exploration",
+      "decision": "Reference only",
+      "rationale": "Provider describes preference learning in the browser and CSS/color exports; useful palette aid, not a whole-interface accessibility result.",
+      "review_depth": "Primary feature page",
+      "inspected_urls": [
+        "https://www.khroma.co/"
+      ],
+      "primary_findings": "The site says its preference-learning color algorithm runs in the browser. It supports palette, type and gradient views, hue/value and color filters, saved combinations, CSS/RGB/hex output and WCAG ratings for color pairs.",
+      "limitations": "Local-processing statement is vendor documentation, not a network audit. No supported automation API or underlying-code reuse license verified.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Noyzzi",
+      "category": "Apps",
+      "url": "https://noyzzi.com/",
+      "kind": "Interactive design and prompt gallery",
+      "decision": "Reference only",
+      "rationale": "Use public examples as references; inspected privacy policy does not supply a license to bundle prompts or visuals.",
+      "review_depth": "Primary gallery/privacy",
+      "inspected_urls": [
+        "https://noyzzi.com/",
+        "https://noyzzi.com/privacy/"
+      ],
+      "primary_findings": "The gallery presents interactive designs alongside prompts. Its privacy policy describes an anonymous localStorage identifier for likes, server-side counts, Cloudflare hosting and Microsoft Clarity session analytics only after cookie consent.",
+      "limitations": "No account or code was used. No reuse grant was found on the inspected gallery/privacy pages; that is not proof no other license exists.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Design Resources for AI Agents",
+      "category": "Apps",
+      "url": "https://styles.refero.design/ai-agents/design-resources",
+      "kind": "Hosted reference directory",
+      "decision": "Reference only",
+      "rationale": "Use to find examples; does not establish a license for referenced sites or a machine-enforced standard.",
+      "review_depth": "Primary site"
+    },
+    {
+      "name": "prompt-kit",
+      "category": "Apps",
+      "url": "https://www.prompt-kit.com/",
+      "kind": "React source components",
+      "decision": "Evaluate dependency",
+      "rationale": "Inspect selected chat/tool/message primitives against existing frontend; no wholesale UI replacement.",
+      "review_depth": "Primary repo"
+    },
+    {
+      "name": "Brik",
+      "category": "Apps",
+      "url": "https://brik.space/",
+      "kind": "Hosted parametric design tool builder",
+      "decision": "Defer",
+      "rationale": "Reusable controllers are useful as an idea; paid standalone HTML and hosted iframe exports have different dependency and visibility boundaries.",
+      "review_depth": "Primary product/export/docs",
+      "inspected_urls": [
+        "https://brik.space/docs/what-is-brik",
+        "https://brik.space/docs/exporting",
+        "https://brik.space/docs/publishing-visibility"
+      ],
+      "primary_findings": "Prompts create reusable tools with controllers, presets and timelines. Documentation distinguishes image/GIF/video exports, paid self-contained HTML with baked-in controller values that runs without a Brik account, and paid iframe embeds of published tools. Drafts are private; publishing creates unlisted-link or gallery access.",
+      "limitations": "Export and privacy behavior were not exercised. Standalone HTML support does not prove every exported dependency is offline-safe. Wix terms and gallery asset rights require separate project-specific review.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "UIZZE",
+      "category": "Apps",
+      "url": "https://uizze.com",
+      "kind": "Hosted references + paid MCP + free guidance",
+      "decision": "Adopt workflow; defer service",
+      "rationale": "Adopt a two-screen consistency exercise and explicit design-file reads; defer authenticated remote reference retrieval.",
+      "review_depth": "Primary guide; paid path gated",
+      "inspected_urls": [
+        "https://uizze.com/",
+        "https://uizze.com/codex-ui-design",
+        "https://uizze.com/web-ui-references"
+      ],
+      "primary_findings": "The guide separates a free anti-generic-UI skill from a paid MCP reference service exposing find_ui_references and find_ui_materials. Its useful evaluation exercise compares settings and billing screens under shared rules, existing components, preserved behavior and matched viewports; fixtures are explicitly synthetic rather than benchmark evidence.",
+      "limitations": "The connect flow reached sign-in/checkout and was not pursued. Paid content, output rights and runtime protocol behavior were not independently audited.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Curio",
+      "category": "Apps",
+      "url": "https://designbycurio.com/",
+      "kind": "Commercial design-spec catalog + remote MCP",
+      "decision": "Reference only",
+      "rationale": "Useful style-spec delivery format; commercial terms restrict catalog redistribution and competing datasets. Do not embed the catalog in Litha.",
+      "review_depth": "Primary docs/MCP/terms",
+      "inspected_urls": [
+        "https://designbycurio.com/",
+        "https://designbycurio.com/docs",
+        "https://designbycurio.com/mcp",
+        "https://designbycurio.com/terms"
+      ],
+      "primary_findings": "The remote MCP supports authenticated search_styles, get_style and get_style_spec. Share links can return Markdown design specs or JSON manifests. Current docs describe one-time style unlocks, while the May 2026 terms still discuss subscriptions and rolling credits; commercial end-product use is permitted subject to restrictions against redistribution, competing offerings and training replicas.",
+      "limitations": "No paid style was unlocked or copied. Public billing descriptions conflict; YAML metadata plus prose is not proof of compatibility with Google's typed DESIGN.md alpha.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Magic MCP",
+      "category": "MCP Servers & Plugins",
+      "url": "https://github.com/21st-dev/magic-mcp",
+      "kind": "Hosted MCP + compatibility proxy",
+      "decision": "Defer",
+      "rationale": "Renamed/replaced by 21st MCP; proxy forwards messages to hosted endpoint with API key and account access.",
+      "review_depth": "Source read"
+    },
+    {
+      "name": "UI Layouts MCP",
+      "category": "MCP Servers & Plugins",
+      "url": "https://www.ui-layouts.com/mcp",
+      "kind": "Local stdio + remote registry",
+      "decision": "Evaluate later",
+      "rationale": "Search/docs/metadata/TSX retrieval pipeline is useful; pin each fetched component and review its license/dependencies.",
+      "review_depth": "Primary docs/repo"
+    },
+    {
+      "name": "Lazyweb",
+      "category": "MCP Servers & Plugins",
+      "url": "https://www.lazyweb.com/",
+      "kind": "Hosted research/growth service",
+      "decision": "Defer",
+      "rationale": "Current site has expanded into growth automation; claims are vendor evidence, not proof of Litha gains.",
+      "review_depth": "Primary site"
+    },
+    {
+      "name": "Design and Refine",
+      "category": "MCP Servers & Plugins",
+      "url": "https://github.com/0xdesign/design-plugin",
+      "kind": "Temporary multi-variant workflow",
+      "decision": "Reference only",
+      "rationale": "Comparison lab and feedback loop useful; no license file found, cleanup workflow is not safe to import wholesale.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "Interface Design",
+      "category": "MCP Servers & Plugins",
+      "url": "https://github.com/Dammyjay93/interface-design",
+      "kind": "Product-UI skill + memory",
+      "decision": "Adopt pattern",
+      "rationale": "Read durable system decisions and reuse primitives; author a Litha contract instead of importing rigid taste rules.",
+      "review_depth": "Deep source"
+    },
+    {
+      "name": "AI Canvas",
+      "category": "MCP Servers & Plugins",
+      "url": "https://aicanvas.me/mcp",
+      "kind": "Open-core React registry/MCP",
+      "decision": "Evaluate selected free source",
+      "rationale": "Free library MIT; Premium proprietary. Live registry is mutable and animated defaults need restraint.",
+      "review_depth": "Primary docs/repo"
+    },
+    {
+      "name": "FontCrafter",
+      "category": "Design Tools",
+      "url": "https://arcade.pirillo.com/fontcrafter.html",
+      "kind": "Browser-local font authoring tool",
+      "decision": "Defer",
+      "rationale": "Useful only for a deliberate custom-font task; locally generated font output is distinct from a licensed copy of the tool itself.",
+      "review_depth": "Primary FAQ/technical page",
+      "inspected_urls": [
+        "https://arcade.pirillo.com/fontcrafter.html"
+      ],
+      "primary_findings": "The FAQ describes browser-only handwriting-to-font processing: thresholding, connected components, contour tracing, simplification, smoothing and Bezier fitting. It lists OTF, TTF, WOFF2 and Base64 exports with ligature/contextual features. Fonts made from one's own handwriting may be used commercially; other handwriting requires permission.",
+      "limitations": "No input was uploaded or font generated. Local-processing claims were not network-tested; legibility, font shaping and target-platform loading require separate checks.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "SVG Loaders",
+      "category": "Design Tools",
+      "url": "https://magecdn.com/tools/svg-loaders",
+      "kind": "SVG asset index with upstream libraries",
+      "decision": "Evaluate selected asset",
+      "rationale": "Two linked upstream libraries are pinned and MIT-licensed; preserve notices and test loading semantics, animation fallback and reduced motion.",
+      "review_depth": "Primary index + pinned licenses/README",
+      "inspected_urls": [
+        "https://magecdn.com/tools/svg-loaders",
+        "https://github.com/SamHerbert/SVG-Loaders/blob/561eacac2f46e2b02e48df547324dcea94a6a1c5/LICENSE.md",
+        "https://github.com/SamHerbert/SVG-Loaders/blob/561eacac2f46e2b02e48df547324dcea94a6a1c5/README.md",
+        "https://github.com/n3r4zzurr0/svg-spinners/blob/abfa05c49acf005b8b1e0ef8eb25a67a7057eb20/LICENSE",
+        "https://github.com/n3r4zzurr0/svg-spinners/blob/abfa05c49acf005b8b1e0ef8eb25a67a7057eb20/README.md"
+      ],
+      "primary_findings": "The index aggregates sources rather than granting one universal license. SamHerbert/SVG-Loaders and n3r4zzurr0/svg-spinners have MIT license files requiring retained notices; their READMEs distinguish animated SVG/SMIL or CSS and note embedding/browser caveats. A selected local SVG avoids requiring a CDN service.",
+      "limitations": "No individual animation was run and not every indexed source was licensed or audited. The aggregator's shorthand that MIT has no attribution requirements must not replace the actual notice condition.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "SVG Backgrounds",
+      "category": "Design Tools",
+      "url": "https://www.svgbackgrounds.com/set/free-svg-backgrounds-and-patterns/",
+      "kind": "Customizable SVG assets under commercial terms",
+      "decision": "Reject default",
+      "rationale": "Owner direction rejects decorative backgrounds; license also excludes automated end-user creation systems and generative-AI training.",
+      "review_depth": "Primary product/license",
+      "inspected_urls": [
+        "https://www.svgbackgrounds.com/set/free-svg-backgrounds-and-patterns/",
+        "https://www.svgbackgrounds.com/license/"
+      ],
+      "primary_findings": "The editor offers SVG/CSS copying and SVG/PNG exports. Its license allows incorporation into personal/commercial end products, requires attribution without an active subscription, and forbids standalone redistribution, competing products, automated systems/templates for end-user creation and generative-AI training. Premium graphics have active-subscription and existing-project limits.",
+      "limitations": "No asset downloaded. Individual manual end-product rights do not authorize putting a reusable graphics corpus into Litha.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Realtime Colors",
+      "category": "Design Tools",
+      "url": "https://www.realtimecolors.com/",
+      "kind": "Browser palette/token preview",
+      "decision": "Reference only",
+      "rationale": "Role-based preview and export can inform token choices; verify actual screen states and contrast independently.",
+      "review_depth": "Primary feature page",
+      "inspected_urls": [
+        "https://www.realtimecolors.com/"
+      ],
+      "primary_findings": "The preview maps text/background and primary, secondary and accent roles onto a sample page and offers export formats including CSS, SCSS, image/ZIP and QR. It links a Figma plugin; the displayed mock pricing section is part of the demonstration rather than proof of real service pricing.",
+      "limitations": "No palette export or plugin was executed. Underlying-code license and supported automation API were not established; a sample page is not Litha accessibility evidence.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Transitions.dev",
+      "category": "Design Tools",
+      "url": "https://transitions.dev/",
+      "kind": "Motion snippets, skills and local/paid tools",
+      "decision": "Adopt pattern; defer integration",
+      "rationale": "Named motion tokens and reduced-motion snippets are useful. Tooling is MIT; snippets/skills carry a distinct custom redistribution license.",
+      "review_depth": "Primary docs + pinned README/licenses",
+      "inspected_urls": [
+        "https://transitions.dev/",
+        "https://transitions.dev/skill.html",
+        "https://github.com/Jakubantalik/transitions.dev/blob/e3aefb554d8fd2cb3e91e773e82a0f2d5a4f82a0/README.md",
+        "https://github.com/Jakubantalik/transitions.dev/blob/e3aefb554d8fd2cb3e91e773e82a0f2d5a4f82a0/LICENSE",
+        "https://github.com/Jakubantalik/transitions.dev/blob/e3aefb554d8fd2cb3e91e773e82a0f2d5a4f82a0/skills/transitions-dev/LICENSE.txt"
+      ],
+      "primary_findings": "The README describes namespaced CSS snippets with semantic variables and reduced-motion guards, CLI/skill flows and a Refine path that can inject a panel and run a local relay. The license makes tooling MIT but applies custom terms to transitions/skills: end-product use allowed, competing collection redistribution forbidden, and template/theme distribution subject to plan and notice conditions.",
+      "limitations": "No CLI, panel, relay or skill was installed. Free/paid counts differ across pages; no independent quality or runtime review of all transitions.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Beautiful HTML Templates",
+      "category": "Design Tools",
+      "url": "https://github.com/zarazhangrui/beautiful-html-templates",
+      "kind": "HTML slide template library",
+      "decision": "Defer",
+      "rationale": "A later presentation/export resource, not a product UI foundation; external fonts and sibling assets still need per-template review.",
+      "review_depth": "Pinned README + metadata/tree",
+      "reviewed_at": "2026-11-01",
+      "inspected_urls": [
+        "https://github.com/zarazhangrui/beautiful-html-templates/blob/e5e204fb1f3b06290846e7dcd7aceddabeceec8c/README.md"
+      ],
+      "primary_findings": "The README presents 34 HTML slide templates and directs agents through an index and operating instructions to match a brief and adapt content. It reports MIT licensing; this review did not inspect all template markup or embedded assets.",
+      "limitations": "Pinned README and repository metadata/tree reviewed; not a complete skill, script, dependency or runtime audit."
+    },
+    {
+      "name": "daisyUI",
+      "category": "Design Tools",
+      "url": "https://daisyui.com/",
+      "kind": "MIT Tailwind CSS library; separate paid MCP",
+      "decision": "Defer",
+      "rationale": "Do not add a second component/theme system without an existing-library gap. Blueprint's paid workflow is separate from the MIT CSS source.",
+      "review_depth": "Primary docs + pinned README/license",
+      "inspected_urls": [
+        "https://daisyui.com/",
+        "https://daisyui.com/blueprint/",
+        "https://github.com/saadeghi/daisyui/blob/bf3bac3a397b543e55641ecb2d60a2ed961f09ec/README.md",
+        "https://github.com/saadeghi/daisyui/blob/bf3bac3a397b543e55641ecb2d60a2ed961f09ec/LICENSE"
+      ],
+      "primary_findings": "The core library provides Tailwind-compatible CSS components and themes and has a pinned MIT license. Blueprint is a separate license-key product organized around setup, rules, creative direction, architecture, syntax and quality-agent roles; its commercial access is not covered merely by the core MIT license.",
+      "limitations": "No package or MCP was installed. Marketing token/quality gains were not validated; the purchase page provided no additional readable license text.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Paper Shaders",
+      "category": "Design Tools",
+      "url": "https://github.com/paper-design/shaders",
+      "kind": "Canvas/React shader library",
+      "decision": "Reject default",
+      "rationale": "Apache-2.0 source can be evaluated for explicit visualization needs; background shaders conflict with current restraint/performance goals.",
+      "review_depth": "Source read"
+    },
+    {
+      "name": "Pryzm",
+      "category": "Design Tools",
+      "url": "https://www.pryzm.design/",
+      "kind": "Browser WebGL studio with hosted saves",
+      "decision": "Reference only",
+      "rationale": "Optional authored asset creation, with account uploads on save and separate media/code export terms; no default background pipeline.",
+      "review_depth": "Primary FAQ/terms",
+      "inspected_urls": [
+        "https://pryzm.design/",
+        "https://pryzm.design/terms"
+      ],
+      "primary_findings": "The FAQ describes browser WebGL composition and local rendering during editing, but saving a look uploads its photo and preview to the account. Paid exports include live Framer/React/HTML components. Terms allow exported media/code in personal/client/commercial products but prohibit standalone stock/code resale and a competing background generator.",
+      "limitations": "Browser-local rendering is not an offline guarantee. No export or upload was performed; native Roblox cannot consume browser WebGL components directly.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Logosystem",
+      "category": "Design Tools",
+      "url": "https://logosystem.co/",
+      "kind": "Third-party logo inspiration gallery",
+      "decision": "Reference only",
+      "rationale": "The site's FAQ expressly says displayed logos belong to their brands/designers and require original-source license checks.",
+      "review_depth": "Primary gallery/FAQ",
+      "inspected_urls": [
+        "https://logosystem.co/"
+      ],
+      "primary_findings": "The gallery provides filters, animated logos, app icons and a moodboard tool, with links to original designers. Its FAQ distinguishes free browsing from reuse rights: examples remain their respective owners' property.",
+      "limitations": "No logos or moodboards were copied. No underlying asset license or API access was inferred from gallery availability.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Ditther",
+      "category": "Design Tools",
+      "url": "https://www.ditther.com/",
+      "kind": "Browser-local image/video editor with paid features",
+      "decision": "Defer",
+      "rationale": "Niche asset treatment; local-processing claims and export tiers are documented, but output-license terms could not be fetched.",
+      "review_depth": "Primary FAQ; terms blocked",
+      "inspected_urls": [
+        "https://www.ditther.com/",
+        "https://www.ditther.com/terms.html"
+      ],
+      "primary_findings": "The site describes layered effects, image/video inputs, reusable looks and local browser media processing without server uploads. Core editing is free; video/4K, watermark removal and presets have paid boundaries.",
+      "limitations": "The terms link failed with a redirect loop. Pricing statements were inconsistent across the page; no price recommendation, output-rights conclusion or runtime privacy test is made.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Book of Shapes",
+      "category": "Design Tools",
+      "url": "https://bookofshapes.com/?tag=flow",
+      "kind": "Generative SVG editor with output license",
+      "decision": "Reject default",
+      "rationale": "Decorative shape defaults conflict with Litha's brief. Output rights exclude pattern-library redistribution and three study-only reconstructions.",
+      "review_depth": "Primary generator/license",
+      "inspected_urls": [
+        "https://bookofshapes.com/?tag=flow",
+        "https://bookofshapes.com/license"
+      ],
+      "primary_findings": "The output license allows personal/commercial use and modification without attribution, but prohibits SVG/clip-art packs, template libraries and competing generators based on the patterns. Joy Division, Joy Division Mesh and Brockmann Beethoven Arcs are study-only exceptions. Underlying node graphs and site code are excluded.",
+      "limitations": "No patterns were generated or downloaded. A permission to use a finished output is not permission to import the source library into Litha.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Laws of UX",
+      "category": "Resources",
+      "url": "https://lawsofux.com/",
+      "kind": "Conceptual design reference",
+      "decision": "Reference only",
+      "rationale": "Useful for hypotheses about grouping, targets and feedback; the Miller page itself rejects using seven as an arbitrary UI limit.",
+      "review_depth": "Primary index + article",
+      "inspected_urls": [
+        "https://lawsofux.com/",
+        "https://lawsofux.com/millers-law/"
+      ],
+      "primary_findings": "The site organizes conceptual articles with examples and further reading. Its Miller article explicitly warns against imposing arbitrary limits from the familiar memory number, recommends meaningful chunking, and acknowledges individual/context variation.",
+      "limitations": "The linked empirical papers were not independently reviewed here. Concept summaries are not numerical accessibility or usability acceptance tests, and poster availability is not a corpus redistribution grant.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "UserInterface.wiki",
+      "category": "Resources",
+      "url": "https://www.userinterface.wiki/",
+      "kind": "Educational site",
+      "decision": "Adopt selected reference",
+      "rationale": "Same underlying ecosystem as the listed skill, not another independent tool or evidence source.",
+      "review_depth": "Primary site + source"
+    },
+    {
+      "name": "Craftwork",
+      "category": "Resources",
+      "url": "https://craftwork.design/curated/websites/",
+      "kind": "Inspiration gallery + mixed-license assets/components",
+      "decision": "Reference only",
+      "rationale": "Inspiration grants no reuse license. Selected code may be open source, but each item and AI-use restriction must be checked.",
+      "review_depth": "Primary gallery/license",
+      "inspected_urls": [
+        "https://craftwork.design/inspiration/websites",
+        "https://craftwork.design/license"
+      ],
+      "primary_findings": "The October 2026 license distinguishes third-party inspiration with no reuse license, commercial packs, individually open-source components and commercial components. It restricts redistribution, generators/registries/datasets and use of catalog assets/previews/prompts for AI training, fine-tuning or testing; hosted embeds and downloaded files also have different subscription effects.",
+      "limitations": "No assets, prompts or code were downloaded. A site-level list of MIT/Apache/BSD/ISC examples does not make every component open source.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Zajno Motion",
+      "category": "Resources",
+      "url": "https://motion.zajno.com/",
+      "kind": "Interactive motion education/reference",
+      "decision": "Reference only",
+      "rationale": "Study feedback timing and attention, then implement and measure within Litha's own platform constraints.",
+      "review_depth": "Primary educational page",
+      "inspected_urls": [
+        "https://motion.zajno.com/"
+      ],
+      "primary_findings": "The page teaches easing, delays, real-time versus after-action motion and attention through interactive examples. It is educational material rather than an installed UI runtime or a demonstrated performance/accessibility benchmark.",
+      "limitations": "Demos were not run or copied. No general license for reproducing examples or assets was established.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "The Shape of AI",
+      "category": "Resources",
+      "url": "https://www.shapeof.ai/",
+      "kind": "AI interaction pattern reference",
+      "decision": "Adopt pattern",
+      "rationale": "Use visibility of plans/sources, cancel/control, memory management, draft choices and recoverable actions.",
+      "review_depth": "Primary site"
+    },
+    {
+      "name": "aiux.courses",
+      "category": "Resources",
+      "url": "https://aiux.courses",
+      "kind": "Curated course/source directory",
+      "decision": "Reference only",
+      "rationale": "Useful navigation with dated editorial notes; follow each linked primary source before making technical or empirical claims.",
+      "review_depth": "Primary directory/about",
+      "inspected_urls": [
+        "https://aiux.courses/",
+        "https://aiux.courses/about"
+      ],
+      "primary_findings": "The directory labels recommendations with signal, verified date, intended audience, level and price band. Its About page states that rankings are not sold, there are currently no affiliate commissions, and an unnamed working designer curates the shelf.",
+      "limitations": "Provider claims and course quality were not independently validated, and linked papers were not read merely by reviewing the directory.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Delightful frontend",
+      "category": "Resources",
+      "url": "https://developers.openai.com/blog/designing-delightful-frontends-with-gpt-5-4",
+      "kind": "Official design guidance article",
+      "decision": "Reference only",
+      "rationale": "Use explicit constraints, real content, references and rendered verification; scope promotional hero/motion examples to that surface and preserve existing systems.",
+      "review_depth": "Primary official article",
+      "inspected_urls": [
+        "https://developers.openai.com/blog/designing-delightful-frontends-with-gpt-5-4"
+      ],
+      "primary_findings": "Explicit constraints, real content, visual references and Playwright verification; preserve existing design systems and scope promotional-page examples to that surface.",
+      "limitations": "Official guidance and examples reviewed, not an evaluation of Litha or its local models.",
+      "reviewed_at": "2026-11-01"
+    },
+    {
+      "name": "Vibe Coding UI Specification",
+      "category": "Resources",
+      "url": "https://horizonx.so/resources/vibe-coding-ui-specification",
+      "kind": "Vendor-neutral Markdown/YAML UI contract",
+      "decision": "Adopt pattern",
+      "rationale": "Six explicit layers map well to Litha's local contract; the public page permits copying/adapting but the full download was not inspected.",
+      "review_depth": "Primary spec page; download unsupported",
+      "inspected_urls": [
+        "https://horizonx.so/resources/vibe-coding-ui-specification",
+        "https://horizonx.so/resources/vibe-coding-ui-specification.md"
+      ],
+      "primary_findings": "The v1.0 page organizes tokens, component states, responsive rules, accessibility, motion and quality gates into a Markdown/YAML contract. It requires real decisions for placeholders, an explicit agent-instruction link and acceptance checks, and says the resource is free to copy and adapt.",
+      "limitations": "The Markdown download returned an unsupported-content error in the research reader. Only the public excerpt/page was inspected; no complete schema-validation or software license was inferred.",
+      "reviewed_at": "2026-11-01"
+    }
+  ],
+  "access_limitations": [
+    {
+      "entry": "Superdesign",
+      "url": "https://superdesign.dev/",
+      "result": "Homepage had no readable lines; two primary product articles supplied current product/export evidence."
+    },
+    {
+      "entry": "Variant",
+      "url": "https://variant.com/",
+      "result": "Homepage had no readable lines; primary public terms were readable. Export/API contract remains unverified."
+    },
+    {
+      "entry": "Ditther",
+      "url": "https://www.ditther.com/terms.html",
+      "result": "Redirect loop blocked terms; product FAQ was readable. Output license not established."
+    },
+    {
+      "entry": "Vibe Coding UI Specification",
+      "url": "https://horizonx.so/resources/vibe-coding-ui-specification.md",
+      "result": "Research reader did not support the Markdown download; explanatory page/excerpt and copy/adapt permission were readable."
+    },
+    {
+      "entry": "UIZZE",
+      "url": "https://uizze.com/",
+      "result": "Connect path reached sign-in/checkout; public guide and reference pages reviewed, no authenticated/paid content accessed."
+    },
+    {
+      "entry": "daisyUI Blueprint",
+      "url": "https://daisyui.com/blueprint/checkout/",
+      "result": "License/purchase link yielded an unreadable checkout page; public Blueprint page and core MIT license reviewed."
+    }
+  ]
+}

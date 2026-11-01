@@ -6,6 +6,9 @@
   python -m star.voice.expressive_lab measure  --out DIR                # level/spectrum table of every WAV in DIR
   python -m star.voice.expressive_lab ab-serve --out DIR [--port 8766]  # listening page; ratings -> DIR/ratings.jsonl
 
+v1 commands (bank, samples) render the v1 round; the v2 round (Star's designed voices, model-native emotion per engine,
+native non-verbals) is rendered by tools/voice_v2/ (docs/agents/voice-v2-20261027.md).
+
 Needs the voice packages (numpy, kokoro-onnx, onnxruntime; pyworld for styles and songs; torch + faster-qwen3-tts /
 chatterbox-tts for --neural). STAR_VOICE_MODELS must point at the Kokoro model folder.
 """
@@ -37,8 +40,6 @@ Star: <excited> I can see the lighthouse!
 Professor Wren: Remarkable. Absolutely remarkable.
 Narrator: And far above the clouds, something old opened one golden eye.
 The Dragon: Who dares to sail through my storm?"""
-LULLABY = ["Close your eyes now little one", "The day is done the stars are near", "I will stay right here with you",
-           "Until the morning sun"]
 
 
 def ffmpeg() -> str | None:
@@ -139,7 +140,6 @@ def cmd_samples(out: Path, home: Path, neural: bool) -> None:
     from .guard import ArtefactGuard
     from .library import CharacterLibrary
     from .nonverbal import NonverbalBank
-    from .singing import PUBLIC_DOMAIN, compose
     out.mkdir(parents=True, exist_ok=True)
     manifest: list = []
     base = kokoro_mum()
@@ -151,12 +151,12 @@ def cmd_samples(out: Path, home: Path, neural: bool) -> None:
     tts = ExpressiveTTS(base, bank=bank, guard=ArtefactGuard(), library=lib, config=ExpressiveConfig(sounds=True))
     tts.policy.per_minute = tts.policy.per_reply = 99
     tts.policy.repeat_gap = 0.0
-    print("styles (live: her Kokoro voice + DSP)")
+    print("styles (live: her Kokoro voice, plain since v2)")
     for style in S.STYLES:
         text = STYLE_LINES.get(style, LINE)
         tts.set_mood(None, "")
         x, sr = collect(tts.synthesize(f"<{style}:0.8> {text}"))
-        save(out, f"style-{style}-kokoro", x, sr, manifest, group=f"style:{style}", engine="kokoro+dsp", style=style,
+        save(out, f"style-{style}-kokoro", x, sr, manifest, group=f"style:{style}", engine="kokoro", style=style,
              text=text)
     from . import voicedsp
     x, sr = base.synthesize_float(LINE)
@@ -188,16 +188,7 @@ def cmd_samples(out: Path, home: Path, neural: bool) -> None:
     x, sr = collect(tts.speak_script(SCRIPT))
     save(out, "roleplay-kokoro", x, sr, manifest, group="roleplay", engine="kokoro+dsp characters", style="roleplay",
          text=SCRIPT)
-    print("singing")
-    song = compose("Little Star Lullaby", LULLABY, mood="lullaby", seed=7)
-    x, sr = tts.sing(song)
-    save(out, "song-original-lullaby", x, sr, manifest, group="singing", engine="kokoro+world", style="lullaby",
-         text=" / ".join(LULLABY), origin="original (composed by star.voice.singing.compose, seed 7)")
-    pd = PUBLIC_DOMAIN["twinkle twinkle little star"]
-    pd_short = type(pd)(pd.title, pd.lyrics[:2], pd.melody[:2], pd.bpm, pd.origin)
-    x, sr = tts.sing(pd_short)
-    save(out, "song-public-domain-twinkle", x, sr, manifest, group="singing", engine="kokoro+world", style="song",
-         text=" / ".join(" ".join(l) for l in pd_short.lyrics), origin=pd.origin)
+    # singing is paused (star/voice/singing.SINGING_PAUSED): no song samples
     if neural:
         _neural_samples(out, home, base, manifest)
     write_manifest(out, manifest)
