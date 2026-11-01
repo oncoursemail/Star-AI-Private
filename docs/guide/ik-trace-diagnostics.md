@@ -1,4 +1,5 @@
 # IK trace diagnostics: schema and verification notes
+**Status:** Opt-in (off by default; a developer tool).
 
 The new `star.ik_trace_quality` module is an opt-in offline diagnostic tool. It summarizes observations supplied by the caller. It does not capture Roblox/Blender frames, solve IK, prove animation quality, pass the repository's evaluation gate, promote a candidate, or change runtime settings.
 

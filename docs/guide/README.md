@@ -17,6 +17,7 @@ written for everyone, not just programmers. Start with **Getting started**, then
 | [Self-learning](self-learning.md) | Lessons, corrections, night school, "What STAR learned this week", and how to undo it all |
 | [Privacy and data](privacy-and-data.md) | What is stored where, what leaves your PC, deleting and backing up |
 | [Troubleshooting and FAQ](troubleshooting.md) | Error messages and what to do, common questions, asking for help |
+| [IK trace diagnostics](ik-trace-diagnostics.md) | Opt-in developer check of IK trace files (offline; does not change STAR) |
 | [Glossary](glossary.md) | Plain-language meanings of the words STAR uses |
 
 ## What the status labels mean
