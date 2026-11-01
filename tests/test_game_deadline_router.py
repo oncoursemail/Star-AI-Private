@@ -59,6 +59,66 @@ def test_live_stream_blocks_offline_teacher_even_between_game_attempts():
     assert decide(gate, game_active=False, offline_teacher_approved=True).route == "teacher_offline"
 
 
+def test_paused_game_respects_governor_background_pause_even_when_normal():
+    governor = _warm_stream()
+    assert governor.recommend(now_s=12.1).profile == "normal"
+    assert governor.recommend(now_s=12.1).pause_background_workers
+    gate = router()
+    verdict = decide(
+        gate, game_active=False, offline_teacher_approved=True,
+        now_host_ms=12_100, stream_governor=governor,
+    )
+    assert verdict.route == "skip"
+    assert verdict.reason == "stream_governor_precludes_offline_teacher"
+    assert gate.metrics()["offline_teacher"] == 0
+    # Detached/offline hosts retain the explicit owner-approved study path.
+    assert decide(gate, game_active=False, offline_teacher_approved=True,
+                  now_host_ms=12_200).route == "teacher_offline"
+
+
+def test_offline_teacher_requires_fresh_stream_governor_and_host_clock():
+    governor = _warm_stream()
+    gate = router()
+    result = decide(gate, game_active=False, offline_teacher_approved=True,
+                    now_host_ms=None, stream_governor=governor)
+    assert result.reason == "host_clock_missing"
+    assert decide(gate, game_active=False, offline_teacher_approved=True,
+                  now_host_ms=16_000, stream_governor=governor).reason == (
+        "stream_headroom_unverified_for_offline_study"
+    )
+    governor.disable()
+    assert decide(gate, game_active=False, offline_teacher_approved=True,
+                  now_host_ms=16_100, stream_governor=governor).reason == (
+        "stream_headroom_unverified_for_offline_study"
+    )
+    assert gate.metrics()["offline_teacher"] == 0
+
+
+def test_offline_teacher_clock_rollback_no_longer_revives_study():
+    gate = router()
+    assert decide(gate, game_active=False, offline_teacher_approved=True,
+                  now_host_ms=18_000).route == "teacher_offline"
+    rollback = decide(gate, game_active=False, offline_teacher_approved=True,
+                      now_host_ms=1_000)
+    assert rollback.route == "skip"
+    assert rollback.reason == "host_clock_reversed"
+    assert gate.metrics()["offline_teacher"] == 1
+
+
+def test_offline_teacher_stream_clock_mismatch_fails_closed_without_poisoning():
+    governor = _warm_stream()
+    assert governor.ingest(
+        _load_sample("fresh-13", 13.0), now_s=13.0, host_verified=True,
+    )
+    gate = router()
+    wrong_epoch = decide(gate, game_active=False, offline_teacher_approved=True,
+                         now_host_ms=12_100, stream_governor=governor)
+    assert wrong_epoch.route == "skip"
+    assert wrong_epoch.reason == "stream_clock_mismatch"
+    assert governor.recommend(now_s=13.1).profile == "normal"
+    assert gate.metrics()["offline_teacher"] == 0
+
+
 def test_live_gpu_inference_needs_current_stream_telemetry():
     gate = router(device="gpu")
     train(gate)
