@@ -95,9 +95,16 @@ def test_cpu_reactive_path_preserved_when_stream_telemetry_missing():
     assert decide(gate, stream_live=True, cpu_pressure=True).reason == "hardware_pressure"
 
 
-def test_broadcast_clock_mismatch_fails_closed_without_reviving_old_samples():
+def test_verified_broadcast_clock_mismatch_fails_closed_without_reviving_old_samples():
     governor = _warm_stream()
+    # A far-future advisory *read* must no longer make the next ordinary
+    # gaming lookup appear to use a reversed clock.
     assert governor.recommend(now_s=30.0).profile == "telemetry_stale"
+    assert governor.recommend(now_s=12.1).profile == "normal"
+    # A truly later, verified host ingest remains an authoritative watermark.
+    # Routing on an older clock after that must still fail closed.
+    assert governor.ingest(_load_sample("verified-13", 13.0),
+                           now_s=13.0, host_verified=True)
     gate = router(device="gpu")
     train(gate)
     result = decide(gate, stream_live=True, stream_governor=governor,
