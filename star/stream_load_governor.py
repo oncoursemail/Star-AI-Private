@@ -185,6 +185,14 @@ class StreamLoadGovernor:
                         and sample.measured_at_s <= self._last_sample.measured_at_s)):
                 self._counts["rejected"] += 1
                 return False
+            # A long gap must not preserve a previously healthy profile.
+            # Demand fresh consecutive evidence before optional work resumes.
+            if (self._last_sample is not None and
+                    sample.measured_at_s - self._last_sample.measured_at_s
+                    > self.max_sample_age_s):
+                self._profile = "warming"
+                self._reason = "telemetry_gap_rewarming"
+                self._recovery_streak = 0
             self._seen[sample.sample_id] = None
             if len(self._seen) > _REPLAY_LIMIT:
                 self._seen.popitem(last=False)
