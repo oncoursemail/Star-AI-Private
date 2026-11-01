@@ -161,6 +161,22 @@ class StreamingLoadGovernorTests(unittest.TestCase):
         self.assertEqual(gov.metrics()["accepted"], 1)
         self.assertEqual(gov.metrics()["rejected"], 4)
 
+    def test_long_telemetry_gap_requires_fresh_warmup(self) -> None:
+        gov = enabled()
+        for i in range(10, 13):
+            self.assertTrue(gov.ingest(sample(f"initial-{i}", at=i),
+                                       now_s=i, host_verified=True))
+        self.assertEqual(gov.recommend(now_s=12).profile, "normal")
+        self.assertEqual(gov.recommend(now_s=19).profile, "telemetry_stale")
+        self.assertTrue(gov.ingest(sample("after-gap", at=20),
+                                   now_s=20, host_verified=True))
+        self.assertEqual(gov.recommend(now_s=20).profile, "warming")
+        self.assertFalse(gov.recommend(now_s=20).allow_optional_commentary)
+        for i in (21, 22):
+            self.assertTrue(gov.ingest(sample(f"new-{i}", at=i),
+                                       now_s=i, host_verified=True))
+        self.assertEqual(gov.recommend(now_s=22).profile, "normal")
+
     def test_host_monotonic_clock_cannot_go_backwards(self) -> None:
         gov = enabled()
         gov.ingest(sample(), now_s=10, host_verified=True)
