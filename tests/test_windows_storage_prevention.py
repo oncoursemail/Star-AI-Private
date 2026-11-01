@@ -213,7 +213,7 @@ class OfflineWorkflowTests(unittest.TestCase):
                         "npm run build --prefix frontend", "test -s frontend/dist/index.html"):
             self.assertIn(command, job("react", OFFLINE_WORKFLOW))
         self.assertIn("python -m pytest -q", job("checks", OFFLINE_WORKFLOW))
-        self.assertIn("ruff check star --output-format=github", job("checks", OFFLINE_WORKFLOW))
+        self.assertIn("ruff check star litha --output-format=github", job("checks", OFFLINE_WORKFLOW))
 
     def test_capture_still_runs_and_has_no_artifact_consumer(self):
         self.assertNotIn("actions/download-artifact@", OFFLINE_WORKFLOW)

@@ -1,6 +1,6 @@
 # STAR Intelligence — repository map and safe cleanup
 
-**Canonical home:** [oncoursemail/Star-AI](https://github.com/oncoursemail/Star-AI) (**public**). This repository contains STAR's public source, React website, Windows build workflow, and [official Releases](https://github.com/oncoursemail/Star-AI/releases/latest). There is one app and one download/update channel. No separate `Star-Intelligence-Downloads` repository, mirror token, or duplicated publisher is required.
+**Source home:** [oncoursemail/Star-AI-Project](https://github.com/oncoursemail/Star-AI-Project) (renamed from Star-AI-Private on 2026-10-31): STAR's source, React website, Windows build workflow, work branches (`star/next`). **Downloads:** [oncoursemail/Star-AI](https://github.com/oncoursemail/Star-AI) holds only the public website and [official Releases](https://github.com/oncoursemail/Star-AI/releases/latest), the single download/update channel; never push source branches there. No separate `Star-Intelligence-Downloads` repository, mirror token, or duplicated publisher is required.
 
 ## Finding things quickly
 

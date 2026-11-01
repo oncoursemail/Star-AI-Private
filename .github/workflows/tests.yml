@@ -52,7 +52,7 @@ jobs:
       - name: Lint star/ with ruff (correctness rules in pyproject.toml)
         run: |
           python -m pip install ruff==0.16.9
-          ruff check star --output-format=github
+          ruff check star litha --output-format=github
       - name: Validate research evaluation catalog
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python -m pytest -q tests/test_star_research.py

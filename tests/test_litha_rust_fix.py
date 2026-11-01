@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import json
+
+import litha.rust_fix as R
+
+LOG = """##[group]Run cargo fmt --check
+##[group]Run cargo test -p metallic_runtime --no-default-features --lib --test simulation -j 4 -- --test-threads=1
+   Compiling metallic_runtime v0.1.0
+error[E0432]: unresolved imports `metallic_runtime::FrameInput`, `metallic_runtime::Game`
+ --> crates\\metallic_runtime\\tests\\camera_api.rs:4:24
+  |
+4 | use metallic_runtime::{FrameInput, Game};
+error[E0609]: no field `scripts` on type `&Game`
+   --> crates/metallic_runtime/src/game.rs:126:14
+error: could not compile `metallic_runtime` (test "camera_api") due to 2 previous errors
+##[group]Run cargo clippy --workspace --all-targets -- -D warnings
+##[group]Run cargo nextest run --workspace --profile ci
+##[group]Run cargo deny check licenses
+"""
+
+
+def test_rustc_errors_and_the_ci_commands_are_read_from_the_log():
+    assert R.errors(LOG) == [
+        {"error": "error[E0432]: unresolved imports `metallic_runtime::FrameInput`, `metallic_runtime::Game`",
+         "file": "crates/metallic_runtime/tests/camera_api.rs", "line": 4},
+        {"error": "error[E0609]: no field `scripts` on type `&Game`", "file": "crates/metallic_runtime/src/game.rs",
+         "line": 126}]
+    assert R.checks(LOG) == [
+        ["fmt", "--check"],
+        ["test", "--no-run", "-p", "metallic_runtime", "--no-default-features", "--lib", "--test", "simulation", "-j", "4"],
+        ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
+        ["test", "--no-run", "--workspace"]]                      # nextest: compile the tests; deny is not hers
+
+
+def test_her_edits_may_not_remove_tests_or_assertions(tmp_path):
+    (tmp_path / "t.rs").write_text("#[test]\nfn a() {\n    assert_eq!(f(), 1);\n}\n", encoding="utf-8")
+    assert "removes a test" in R.apply(tmp_path, [{"file": "t.rs", "find": "    assert_eq!(f(), 1);\n",
+                                                   "replace": ""}])[0]
+    assert R.apply(tmp_path, [{"file": "t.rs", "find": "#[test]\n", "replace": "#![cfg(feature = \"game\")]\n#[test]\n"}]) == []
+    assert R.apply(tmp_path, [{"file": "src/../../x.rs", "find": "a", "replace": "b"}])[0].endswith("may not edit this file")
+
+
+def test_repair_loops_until_the_same_checks_pass(tmp_path, monkeypatch):
+    (tmp_path / "game.rs").write_text("fn f(g: &Game) {\n    g.scripts.run();\n}\n", encoding="utf-8")
+    runs = []
+
+    def fake_run(tree, args, timeout=0):
+        runs.append(args)
+        text = (tree / "game.rs").read_text(encoding="utf-8")
+        if args[0] == "test" and "g.scripts" in text:
+            return False, "error[E0609]: no field `scripts` on type `&Game`\n --> game.rs:2:7\n"
+        return True, ""
+
+    monkeypatch.setattr(R, "run", fake_run)
+    asked = []
+    answer = {"why": "the field moved", "edits": [{"file": "game.rs", "find": "    g.scripts.run();\n",
+                                                    "replace": "    g.host().scripts.run();\n"}]}
+    ok, why = R.repair(tmp_path, "o/r", "t", LOG.split("##[group]Run cargo clippy")[0],
+                       lambda p: asked.append(p) or json.dumps(answer))
+    assert ok and why.startswith("the field moved (checked: ") and "1 round" in why and len(asked) == 1
+    assert "game.rs:2" in asked[0] and "2:     g.scripts.run();" in asked[0]       # the real code, numbered
+    assert ["fmt"] in runs                                                         # formatting fixed without her
+    ok, why = R.repair(tmp_path, "o/r", "t", "no cargo here", lambda p: "{}")
+    assert not ok and "no cargo command" in why
+
+
+def test_the_repos_clippy_steps_run_after_her_fix_too(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text("steps:\n  - run: cargo fmt --check\n  - run: cargo clippy --workspace --all-targets -- -D "
+                               "warnings\n", encoding="utf-8")
+    assert R.later_checks(tmp_path) == [["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]]
+
+
+def test_a_ci_command_with_its_own_jobs_flag_is_not_given_a_second_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(R, "away", lambda: False)
+    seen = []
+    monkeypatch.setattr(R.subprocess, "run", lambda cmd, **k: seen.append(cmd) or
+                        type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    R.run(tmp_path, ["test", "--no-run", "-p", "x", "-j", "4"])
+    R.run(tmp_path, ["clippy", "--all-targets", "--", "-D", "warnings"])
+    assert seen[0][1:].count("-j") == 1                     # cargo refuses a second --jobs (seen on Studio #484)
+    assert seen[1][1:] == ["clippy", "--all-targets", "-j", "4", "--", "-D", "warnings"]
+    monkeypatch.setattr(R, "away", lambda: True)                 # owner away: more of the PC
+    R.run(tmp_path, ["build"])
+    assert seen[2][1:] == ["build", "-j", "8"]
+
+
+def test_she_is_shown_where_the_names_live_with_their_cfg_and_the_features(tmp_path):
+    crate = tmp_path / "crates" / "rt"
+    (crate / "src").mkdir(parents=True)
+    (crate / "tests").mkdir()
+    (crate / "Cargo.toml").write_text('[package]\nname = "rt"\n\n[features]\ndefault = ["presentation"]\n'
+                                      'presentation = []\n\n[dependencies]\n', encoding="utf-8")
+    (crate / "src" / "lib.rs").write_text('mod game;\n#[cfg(feature = "presentation")]\npub use game::{Game};\n',
+                                          encoding="utf-8")
+    (crate / "tests" / "cam.rs").write_text("use rt::Game;\n", encoding="utf-8")
+    errs = [{"error": "error[E0432]: unresolved import `rt::Game`", "file": "crates/rt/tests/cam.rs", "line": 1}]
+    shown = R.declarations(tmp_path, errs)
+    assert 'presentation = []' in shown and '#[cfg(feature = "presentation")]\npub use game::{Game};' in shown
+    assert "cam.rs" not in shown                                  # the failing test itself is already shown
+
+
+def test_a_merge_that_compiles_but_breaks_a_crate_test_is_caught(tmp_path, monkeypatch):
+    (tmp_path / "crates" / "phys" / "src").mkdir(parents=True)
+    (tmp_path / "crates" / "phys" / "Cargo.toml").write_text('[package]\nname = "phys"\n', encoding="utf-8")
+    out = ("---- raycast_from_inside stdout ----\n\nthread 'raycast_from_inside' panicked at tests/p.rs:9:5:\n"
+           "assertion `left == right` failed\nfailures:\n")
+    calls = []
+    monkeypatch.setattr(R, "run", lambda tree, args, timeout=0: calls.append(args) or (False, out))
+    ok, fails, crates, _ = R.crate_tests(tmp_path, ["crates/phys/src/lib.rs", "README.md"])
+    assert not ok and crates == ["phys"] and calls == [["test", "-p", "phys"]]
+    assert fails == "raycast_from_inside: assertion `left == right` failed"
+    assert R.crate_tests(tmp_path, ["README.md"]) == (True, "", [], "")
+
+
+def test_a_merged_build_that_breaks_is_read_as_her_repair_job():
+    out = ("error[E0560]: struct `Shared` has no field named `step_handler_limit`\n   --> crates\metallic_script\src\\"
+           "host.rs:284:21\n")
+    log = "Run cargo test -p metallic_script -p metallic_core\n" + out       # what resolve() hands rust_fix.repair
+    assert R.checks(log) == [["test", "--no-run", "-p", "metallic_script", "-p", "metallic_core"]]
+    assert R.errors(log)[0]["file"] == "crates/metallic_script/src/host.rs"
