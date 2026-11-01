@@ -1,0 +1,52 @@
+{
+  "research_date": "2026-10-31",
+  "timezone": "America/Chicago",
+  "repository": "oncoursemail/Star-AI-Project",
+  "base_branch": "star/next",
+  "base_commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+  "module": "star/ik_trace_quality.py",
+  "module_sha256": "a2d29c57eea272770c41610837cd4fcd0f21b55b64f27c8fa1457c301f0defa2",
+  "independent_check_script": "benchmarks/verify_ik_trace.py",
+  "independent_check_script_sha256": "cef3e36be9ca9af3e29bb577301b0a7f4d456b1d3a9397e089c59ecd2db475e1",
+  "environment": {
+    "python": "3.12.14",
+    "system": "Linux",
+    "machine": "x86_64"
+  },
+  "executed": {
+    "independent_unittest_methods": 34,
+    "seeded_translation_scale_trials": 25,
+    "independent_suite_result": "passed",
+    "independent_suite_seconds": 0.427,
+    "implementation_author_synthetic_check_groups": 41,
+    "synthetic_suite_result": "passed",
+    "coverage_overlaps_do_not_sum_counts": true,
+    "targeted_python_compilation": "passed",
+    "python_module_cli_synthetic_example": "passed",
+    "moving_platform_example": {
+      "supplied_frame_speed_rig_per_second": 1.0,
+      "contact_slip_speed_rig_per_second": 0.0,
+      "orientation_unmeasured": true,
+      "engine_capture_verified": false,
+      "quality_proven": false
+    }
+  },
+  "review_fixes": [
+    "ULP-aware microsecond timestamp boundary while requiring positive elapsed time",
+    "regular-file checks with nonblocking open and descriptor recheck to reject FIFOs"
+  ],
+  "not_run": [
+    "Full repository test suite (sparse inspected snapshot; pytest and application dependencies unavailable)",
+    "Roblox Studio capture or multiplayer acceptance",
+    "Blender rig/export acceptance",
+    "Windows packaged executable smoke test",
+    "Sealed model evaluation",
+    "Target-machine inference or animation performance benchmark"
+  ],
+  "runtime_changed": false,
+  "dependencies_added": false,
+  "protected_existing_tests_or_baselines_changed": false,
+  "timing_scope": "Developer check duration in this environment; not Litha inference, IK solving, or native frame latency",
+  "synthetic_check_script": "benchmarks/verify_ik_trace_synthetic.py",
+  "synthetic_check_script_sha256": "4f36d8405e9dadd2aab0e10680d7e1ced4e06d48ba0cbc8ebc34f308753edb41"
+}
