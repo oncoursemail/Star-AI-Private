@@ -51,6 +51,9 @@ jobs:
       - name: Run all offline regression tests
         if: ${{ steps.scope.outputs.docs_only != 'true' }}
         run: python -m pytest -q
+      - name: Run isolated server training-generator tests
+        if: ${{ steps.scope.outputs.docs_only != 'true' }}
+        run: python -m pytest -q server/training/tests
 
   react:
     name: React UI compile and tests
