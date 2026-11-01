@@ -777,7 +777,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
             BASE = pr_merger.BASE = entry.get("base", "main")
             CLONE = Path(entry["clone"]).expanduser()
             WORK = Path(entry.get("worktrees") or CLONE.parent / f"{CLONE.name}-worktrees").expanduser()
-            most, builds = (limit * 2, 2) if rust_fix.night() else (limit, 1)   # night: twice the work per run
+            most, builds = (limit * 2, 2) if rust_fix.away() else (limit, 1)   # owner away: twice the work per run
             if not (CLONE / ".git").exists():
                 print(f"{REPO}: no clone at {CLONE}", flush=True)
                 continue

@@ -10,7 +10,6 @@ A test file may be edited (a test can fail to compile behind a feature flag) but
 """
 from __future__ import annotations
 
-import datetime
 import json
 import os
 from pathlib import Path
@@ -22,13 +21,20 @@ ROUNDS = 4
 JOBS = "4"                                   # a third of this PC's 12 threads: the owner keeps working meanwhile
 
 
-def night() -> bool:
-    """00:00-08:00 local: the owner's heavy-work hours, so she may use more of the PC."""
-    return datetime.datetime.now().hour < 8
+def away(minutes: float = 10) -> bool:
+    """No keyboard or mouse input for `minutes` (her task runs in the owner's session): she may use more of the PC."""
+    import ctypes
+
+    class Info(ctypes.Structure):
+        _fields_ = [("size", ctypes.c_uint), ("time", ctypes.c_uint)]
+    info = Info(ctypes.sizeof(Info), 0)
+    if os.name != "nt" or not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+        return False
+    return ((ctypes.windll.kernel32.GetTickCount() - info.time) & 0xFFFFFFFF) / 1000 >= minutes * 60
 
 
 def jobs() -> str:
-    return "8" if night() else JOBS
+    return "8" if away() else JOBS
 ERROR = re.compile(r"^(error(?:\[E\d+\])?: .+)\n(?:.*\n){0,3}?\s*--> ([^\s:]+):(\d+):\d+", re.M)
 RUN = re.compile(r"^(?:##\[group\])?Run (cargo .+)$", re.M)
 PROMPT = """You are Litha, fixing a pull request in {repo} (Rust) so it builds and passes its checks again.
@@ -91,8 +97,8 @@ def run(tree: Path, args: list[str], timeout: float = 2400) -> tuple[bool, str]:
     env = {**os.environ, "CARGO_TERM_COLOR": "never",
            "CARGO_TARGET_DIR": str(Path.home() / ".star" / "litha-cargo" / tree.parent.name.replace(" ", "_"))}
     head, _, tail = " ".join(args).partition(" -- ")
-    jobs = any(a == "--jobs" or a.startswith(("-j", "--jobs=")) for a in head.split())   # CI may set its own
-    extra = ["-j", jobs()] if args[0] in ("test", "build", "check", "clippy") and not jobs else []
+    own = any(a == "--jobs" or a.startswith(("-j", "--jobs=")) for a in head.split())   # CI may set its own
+    extra = ["-j", jobs()] if args[0] in ("test", "build", "check", "clippy") and not own else []
     cmd = [cargo(), *head.split(), *extra, *(["--", *tail.split()] if tail else [])]
     try:
         r = subprocess.run(cmd, cwd=tree, capture_output=True, text=True, encoding="utf-8", errors="replace",
