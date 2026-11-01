@@ -36,6 +36,7 @@ class SocialTurnBenchmarkTests(unittest.TestCase):
         self.assertEqual(report.candidate_question_p95_ms, 600)
         self.assertEqual(report.candidate_stop_p95_ms, 125)
         self.assertEqual(report.candidate_failures, 0)
+        self.assertEqual(report.candidate_pair_regressions, 0)
         self.assertFalse(report.authorized_to_stream)
 
     def test_missing_variant_or_coverage_never_passes(self):
@@ -91,6 +92,52 @@ class SocialTurnBenchmarkTests(unittest.TestCase):
         self.assertEqual(report.status, "naturalness_regressed")
         self.assertEqual(report.candidate_failures, 0)
         self.assertEqual(report.candidate_question_p95_ms, 1000)
+
+    def test_single_question_regression_cannot_hide_under_p95(self):
+        rows = batch()
+        rows += [case(i, "viewer_question", variant)
+                 for i in range(4, 20) for variant in ("baseline", "candidate")]
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "viewer_question"
+                   and r.case_id == "viewer_question-19" and r.variant == "candidate")
+        rows[idx] = case(19, "viewer_question", "candidate", first_audible_ms=1350)
+        result = assess_social_turns(rows)
+        # With 20 questions, the highest outlier is outside nearest-rank p95:
+        # the old pooled comparison would have silently approved this slowdown.
+        self.assertEqual(result.baseline_question_p95_ms, 600)
+        self.assertEqual(result.candidate_question_p95_ms, 600)
+        self.assertEqual(result.candidate_failures, 0)
+        self.assertEqual(result.candidate_pair_regressions, 1)
+        self.assertEqual(result.status, "naturalness_regressed")
+
+    def test_single_owner_stop_regression_cannot_hide_under_p95(self):
+        rows = batch()
+        rows += [case(i, "owner_barge_in", variant)
+                 for i in range(4, 20) for variant in ("baseline", "candidate")]
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "owner_barge_in"
+                   and r.case_id == "owner_barge_in-19" and r.variant == "candidate")
+        rows[idx] = case(19, "owner_barge_in", "candidate", playback_stop_ms=300)
+        result = assess_social_turns(rows)
+        self.assertEqual(result.candidate_stop_p95_ms, 125)
+        self.assertEqual(result.candidate_failures, 0)
+        self.assertEqual(result.candidate_pair_regressions, 1)
+        self.assertEqual(result.status, "naturalness_regressed")
+
+    def test_small_pairwise_variation_keeps_rehearsal_eligibility(self):
+        rows = batch()
+        rows[1] = case(0, "viewer_question", "candidate", first_audible_ms=650)
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "owner_barge_in"
+                   and r.case_id == "owner_barge_in-0" and r.variant == "candidate")
+        rows[idx] = case(0, "owner_barge_in", "candidate", playback_stop_ms=190)
+        result = assess_social_turns(rows)
+        self.assertEqual(result.candidate_pair_regressions, 0)
+        self.assertEqual(result.status, "eligible_for_manual_rehearsal")
+
+    def test_invalid_pairwise_limits_never_loosen_audit(self):
+        for kwargs in ({"max_pair_question_regression_ms": 0},
+                       {"max_pair_stop_regression_ms": True},
+                       {"max_pair_stop_regression_ms": float("nan")},):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                assess_social_turns(batch(), **kwargs)
 
     def test_baseline_missing_quoted_audio_cannot_claim_latency_gain(self):
         rows = batch()

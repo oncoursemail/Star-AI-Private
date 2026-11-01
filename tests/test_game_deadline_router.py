@@ -106,6 +106,20 @@ def test_broadcast_clock_mismatch_fails_closed_without_reviving_old_samples():
     assert decide(gate, stream_live=True, now_host_ms=1000).reason == "host_clock_reversed"
 
 
+def test_mismatched_game_clock_advice_cannot_poison_stream_telemetry_recovery():
+    governor = _warm_stream()
+    gate = router(device="gpu")
+    train(gate)
+    result = decide(gate, now_host_ms=1_000_000_000, stream_live=True,
+                    stream_governor=governor)
+    assert result.reason == "stream_gpu_headroom_unverified"
+    # A read made using an accidental different host clock epoch must not
+    # render subsequent, correctly measured stream samples inadmissible.
+    assert governor.ingest(_load_sample("valid-13", 13.0), now_s=13.0,
+                           host_verified=True)
+    assert governor.recommend(now_s=13).profile == "normal"
+
+
 def test_stream_flags_and_governor_type_are_strict():
     gate = router()
     with pytest.raises(ValueError):

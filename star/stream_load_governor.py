@@ -243,9 +243,14 @@ class StreamLoadGovernor:
             return True
 
     def recommend(self, *, now_s: float) -> StreamLoadAdvice:
-        """Snapshot advisory recommendations, never mutate hardware or OBS."""
+        """Read-only snapshot of recommendations, never a new clock attestation.
+
+        The last trusted clock watermark advances only upon accepted host
+        telemetry. A wrong-epoch or future *read* must not lock out the next
+        valid OBS/game sample from recovering the streamer.
+        """
         with self._lock:
-            now = self._clock(now_s)
+            now = self._clock(now_s, commit=False)
             if not self._enabled:
                 return StreamLoadAdvice("disabled", "owner_opt_in_required",
                                         False, False, False, 0, False)

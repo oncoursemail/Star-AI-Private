@@ -186,6 +186,32 @@ class StreamingLoadGovernorTests(unittest.TestCase):
             gov.ingest(sample("older", at=9), now_s=9, host_verified=True)
         self.assertEqual(gov.recommend(now_s=10).profile, "warming")
 
+    def test_future_recommendation_read_cannot_poison_next_verified_sample(self) -> None:
+        gov = enabled()
+        self.assertTrue(gov.ingest(sample("first", at=10), now_s=10,
+                                   host_verified=True))
+        # A routed gaming clock may accidentally use another clock epoch.
+        # It must return stale advice, not irreversibly advance the ingest
+        # watermark to 1,000,000 seconds.
+        self.assertEqual(gov.recommend(now_s=1_000_000).profile, "telemetry_stale")
+        self.assertTrue(gov.ingest(sample("recovered", at=11), now_s=11,
+                                   host_verified=True))
+        self.assertEqual(gov.recommend(now_s=11).profile, "warming")
+        self.assertEqual(gov.metrics()["accepted"], 2)
+
+    def test_repeated_snapshot_reads_are_read_only_under_clock_mismatch(self) -> None:
+        gov = enabled()
+        self.assertTrue(gov.ingest(sample("base", at=10), now_s=10,
+                                   host_verified=True))
+        for stamp in (20, 400, 100_000):
+            self.assertEqual(gov.recommend(now_s=stamp).profile, "telemetry_stale")
+        with self.assertRaisesRegex(ValueError, "backwards"):
+            gov.recommend(now_s=9)
+        # Rejected reads have not changed the canonical monotonic watermark.
+        self.assertTrue(gov.ingest(sample("after", at=12), now_s=12,
+                                   host_verified=True))
+        self.assertEqual(gov.metrics()["accepted"], 2)
+
     def test_vram_advice_keeps_an_8gb_stream_reserve(self) -> None:
         gov = enabled()
         for i in range(3):

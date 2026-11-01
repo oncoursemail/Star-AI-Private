@@ -101,6 +101,7 @@ class SocialTurnReport:
     candidate_missed_barge_ins: int
     candidate_critical_speech: int
     candidate_ungrounded_speech: int
+    candidate_pair_regressions: int
     baseline_question_p95_ms: float | None
     candidate_question_p95_ms: float | None
     candidate_stop_p95_ms: float | None
@@ -123,6 +124,8 @@ def assess_social_turns(
     max_playback_stop_ms: float = 350,
     max_overlap_ms: float = 150,
     max_question_regression_ms: float = 100,
+    max_pair_question_regression_ms: float = 250,
+    max_pair_stop_regression_ms: float = 100,
 ) -> SocialTurnReport:
     """Conservative A/B gate for a *manual* gaming/VTuber rehearsal.
 
@@ -135,7 +138,9 @@ def assess_social_turns(
     for name, value in (("max_question_p95_ms", max_question_p95_ms),
                         ("max_playback_stop_ms", max_playback_stop_ms),
                         ("max_overlap_ms", max_overlap_ms),
-                        ("max_question_regression_ms", max_question_regression_ms)):
+                        ("max_question_regression_ms", max_question_regression_ms),
+                        ("max_pair_question_regression_ms", max_pair_question_regression_ms),
+                        ("max_pair_stop_regression_ms", max_pair_stop_regression_ms)):
         if not 0 < _millis(value, name) <= 10_000:
             raise ValueError(f"invalid {name}")
     data: dict[str, dict[str, SocialTurnMoment]] = {}
@@ -157,6 +162,7 @@ def assess_social_turns(
     candidate_stops: list[float] = []
     candidate_failures = 0
     new_regressions = 0
+    pair_regressions = 0
     false_interruptions = missed_barge_ins = critical_speech = ungrounded_speech = 0
     coverage = 0
     complete_pairs = 0
@@ -196,10 +202,22 @@ def assess_social_turns(
                 baseline_questions.append(float(base.first_audible_ms))
             if cand.first_audible_ms is not None:
                 candidate_questions.append(float(cand.first_audible_ms))
+            # A pooled p95 can completely hide a catastrophic regression in
+            # one matched viewer's response (e.g. one outlier among 20 cases).
+            if (base.first_audible_ms is not None
+                    and cand.first_audible_ms is not None
+                    and cand.first_audible_ms - base.first_audible_ms
+                    > max_pair_question_regression_ms):
+                pair_regressions += 1
         elif cand.scenario == "owner_barge_in":
             if cand.playback_stop_ms is not None:
                 candidate_stops.append(float(cand.playback_stop_ms))
             missed_barge_ins += not cand.interrupted
+            if (base.playback_stop_ms is not None
+                    and cand.playback_stop_ms is not None
+                    and cand.playback_stop_ms - base.playback_stop_ms
+                    > max_pair_stop_regression_ms):
+                pair_regressions += 1
         elif cand.scenario == "incidental_noise":
             false_interruptions += cand.interrupted
         elif cand.scenario == "critical_gameplay":
@@ -220,7 +238,7 @@ def assess_social_turns(
             status, reason, complete_pairs, reviewed, expected,
             candidate_failures, new_regressions, false_interruptions,
             missed_barge_ins, critical_speech, ungrounded_speech,
-            baseline_p95, candidate_p95, stop_p95,
+            pair_regressions, baseline_p95, candidate_p95, stop_p95,
         )
     if (not data or any(len(v) != 2 for v in data.values())
             or coverage != len(data)
@@ -231,7 +249,7 @@ def assess_social_turns(
             or candidate_p95 > baseline_p95 + max_question_regression_ms
             or candidate_p95 > max_question_p95_ms
             or stop_p95 is None or stop_p95 > max_playback_stop_ms
-            or candidate_failures or new_regressions):
+            or candidate_failures or new_regressions or pair_regressions):
         return report("naturalness_regressed", "timing_interruption_grounding_or_game_focus")
     return report("eligible_for_manual_rehearsal", "paired_conversation_guardrails_met")
 
