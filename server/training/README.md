@@ -39,6 +39,31 @@ Roblox-flavoured examples run against deterministic stand-ins (`startrain/prelud
 signals, Players, RunService, CollectionService, TweenService, Vector3, UDim2, ...). They are labelled
 `mock-verified`, never "run in Roblox". `python -m startrain selftest` runs 42 checks of the stand-ins.
 
+## Optional verifier-feedback repair loop
+
+The generator can optionally give a failed **solution** one or more chances to re-solve after an independent gate
+rejects it. This is disabled by default:
+
+```bash
+STAR_TRAIN_SOLVER_REPAIR_ROUNDS=0   # default
+```
+
+For a reviewed pilot, set it to `1` in the server training environment and compare keep rate, token cost and
+held-out quality before considering a larger value. The setting is clamped to 0–3.
+
+The solver receives only the authoritative task plus compact structured failure information
+(`gate`, `code`, and a short detail). It does **not** receive the hidden test source, decontamination index,
+evaluation suites or gate implementation. Each replacement is parsed as a complete new solution and must pass the
+same gates from the start.
+
+Only failures controlled by the solution are eligible for repair: selected G0 code-shape failures, deprecated APIs
+(G6), compile/type failures (G1/G2) and executable-test failures (G3). The loop never asks the solver to repair its
+way around decontamination/duplicate gates or weak-test sanity (G4).
+
+Kept rows record the repair round, failure trigger, before/after code hashes, a hash of the compact feedback, and
+repair-token cost. This makes repaired examples auditable without copying evaluator internals into model-facing
+training text.
+
 ## Behaviour on the shared server
 
 * One request at a time; chat requests are streamed, so a running generation is dropped within about 3 seconds
