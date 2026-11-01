@@ -36,6 +36,15 @@ CLONE = ROOT.parents[1] / "Star-AI"
 HOME_CLONE = CLONE                                          # STAR's own repo: star commit, Python tests
 IDENTITY = ["-c", "user.name=oncoursemail", "-c", "user.email=84545815+oncoursemail@users.noreply.github.com"]
 STATE = Path.home() / ".star" / "pr-fixer" / "tried.json"
+
+
+def mark(key: str, sha: str) -> dict:
+    """Record one attempt on the CURRENT file: a copy loaded at the start of a long run must not undo a re-queue
+    made meanwhile (seen 2026-11-01: four re-queued Studio PRs silently came back as tried)."""
+    tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
+    tried[key] = sha
+    STATE.write_text(json.dumps(tried), encoding="utf-8")
+    return tried
 LOG = Path.home() / ".star" / "pr-fixer" / "fixes.jsonl"
 ROUNDS = 5
 NO_TOUCH = re.compile(r"^(tests/|\.github/)|(^|/)(requirements[^/]*\.txt|pnpm-lock\.yaml|[^/]+\.lock)$")
@@ -495,6 +504,32 @@ def adjacent(ours: str, base: str, theirs: str) -> str | None:
     return None
 
 
+def both_added(ours: str, base: str, theirs: str, docs: bool) -> str | None:
+    """Both sides kept every ancestor line and only inserted lines: each insertion goes in at its own place. Two
+    insertions at the same place are only joined in prose (docs); in code their order may matter, so None."""
+    import difflib
+    b = (base if base.endswith("\n") or not base else base + "\n").splitlines(keepends=True)
+    if not b:
+        return None
+    gaps: list[dict[int, list[str]]] = []
+    for side in (ours, theirs):
+        s = (side if side.endswith("\n") or not side else side + "\n").splitlines(keepends=True)
+        ins: dict[int, list[str]] = {}
+        for op, i1, _i2, j1, j2 in difflib.SequenceMatcher(None, b, s, autojunk=False).get_opcodes():
+            if op == "insert":
+                ins[i1] = s[j1:j2]
+            elif op != "equal":
+                return None                           # an ancestor line changed or went away: not pure additions
+        gaps.append(ins)
+    if not gaps[0] or not gaps[1] or (set(gaps[0]) & set(gaps[1]) and not docs):
+        return None
+    out = []
+    for i in range(len(b) + 1):
+        out += gaps[0].get(i, []) + gaps[1].get(i, [])
+        out += b[i:i + 1]
+    return "".join(out)
+
+
 def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") -> tuple[str | None, str]:
     """Every conflict block of one file resolved by her; (None, why) when she cannot make valid code of it. A hint is a
     checker's complaint about her previous attempt at this file."""
@@ -513,6 +548,8 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") ->
             last = m.end()
             continue
         near = adjacent(ours, base, theirs) if not hint and "\n|||||||" in m.group(0) else None
+        if near is None and not hint and "\n|||||||" in m.group(0):
+            near = both_added(ours, base, theirs, docs=path.endswith((".md", ".txt", ".rst")))
         if near is not None and not slips(path, m.group(0), near, before, after):
             out += [text[last:m.start()], near]        # one side only added next to what the other changed
             last = m.end()
@@ -574,8 +611,9 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     for c in locks:                                         # generated files: star/next's copy, rebuilt below
         sh(["git", "checkout", "--theirs", "--", c], cwd=tree)
     tests: set[str] = set()
+    raws: dict[str, str] = {}                          # each file with its conflict markers, to redo a merge
     for c in code:
-        raw = (tree / c).read_text(encoding="utf-8", errors="replace")
+        raw = raws[c] = (tree / c).read_text(encoding="utf-8", errors="replace")
         merged, why = resolve_text(c, raw, pr.get("title", ""), asker)
         why = why or broken(tree, c, merged or "")
         if merged is not None and why:                     # one more try at the file, told what the checker said
@@ -620,6 +658,18 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         return {**row, "why": "after resolving, tests fail: " + " ".join(FAILED.findall(out))[:250]}
     if (tree / "Cargo.toml").is_file() and any(c.endswith(".rs") for c in code):
         ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+        mine = sorted({e["file"] for e in rust_fix.errors(out)} & set(code)) if not ok else []
+        for c in mine:                                 # the errors are in a file she merged: redo that merge first,
+            said = "; ".join(f"line {e['line']}: {e['error']}" for e in rust_fix.errors(out) if e["file"] == c)
+            merged, why = resolve_text(c, raws[c], pr.get("title", ""), asker,   # told what the compiler said
+                                       hint=f"After your merge of this file the compiler said: {said[:600]}\n")
+            if merged is not None and not (why or broken(tree, c, merged)):
+                (tree / c).write_bytes(tidy(tree, c, merged).encode("utf-8"))
+        if mine:
+            sh(["git", "add", "--", *mine], cwd=tree)
+            ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+            if ok:
+                row["why"] += f"; redid {', '.join(mine)} after the compiler's errors"
         if not ok and rust_fix.errors(out):            # it does not compile (one side renamed what the other uses):
             fixed, how = rust_fix.repair(tree, REPO, pr.get("title", ""),   # her repair, then the tests again
                                          f"Run cargo test -p {' -p '.join(crates)}\n{out}", asker)
@@ -857,8 +907,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
                     continue
                 row = {"repo": REPO, **row, "seconds": round(time.time() - t)}
                 if not dry:                               # a dry run must not use up the real attempt
-                    tried[key] = pr["headRefOid"]
-                    STATE.write_text(json.dumps(tried), encoding="utf-8")
+                    tried = mark(key, pr["headRefOid"])
                 with LOG.open("a", encoding="utf-8") as f:
                     f.write(json.dumps({"ts": round(t), **row}) + "\n")
                 print(json.dumps(row), flush=True)
@@ -910,8 +959,7 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as e:  # noqa: BLE001 - one PR must not stop the others
                 row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
             row["seconds"] = round(time.time() - t)
-            tried[str(pr["number"])] = pr["headRefOid"]
-            STATE.write_text(json.dumps(tried), encoding="utf-8")
+            tried = mark(str(pr["number"]), pr["headRefOid"])
             with LOG.open("a", encoding="utf-8") as f:
                 f.write(json.dumps({"ts": round(t), **row}) + "\n")
             print(json.dumps(row), flush=True)
@@ -929,8 +977,7 @@ def main(argv: list[str] | None = None) -> int:
             row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
         row["seconds"] = round(time.time() - t)
         if row["result"] != "rerun":      # a rerun is looked at again once its fresh log exists
-            tried[str(pr["number"])] = pr["headRefOid"]
-        STATE.write_text(json.dumps(tried), encoding="utf-8")
+            tried = mark(str(pr["number"]), pr["headRefOid"])
         with LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": round(t), **row}) + "\n")
         print(json.dumps(row), flush=True)

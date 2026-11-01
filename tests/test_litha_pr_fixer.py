@@ -212,7 +212,7 @@ def test_an_addition_next_to_the_other_sides_change_merges_without_her_model():
 
 def test_a_conflict_too_big_for_her_window_is_refused_without_asking_her():
     side = "".join(f"- line {i} of a long design note\n" for i in range(400))
-    text = f"<<<<<<< pr\n{side}A\n||||||| base\n{side}\n=======\n{side}B\n>>>>>>> main\n"
+    text = f"<<<<<<< pr\nA{side}||||||| base\n{side}=======\nB{side}>>>>>>> main\n"   # both change line 0
     merged, why = F.resolve_text("ARCHITECTURE.md", text, "t", asker=lambda p: pytest.fail("no model call"))
     assert merged is None and "too big for her 4096-token window" in why
 
@@ -237,3 +237,32 @@ def test_an_old_failure_superseded_by_later_passes_is_not_a_failure(monkeypatch)
     monkeypatch.setattr(F, "rerun_failed", lambda *a: 0)
     row = F.fix({"headRefOid": "abc", "number": 700, "headRefName": "x"}, "python")
     assert row["result"] == "skip"                    # recorded as tried: no rerun loop every 10 minutes
+
+
+def test_recording_an_attempt_keeps_a_requeue_made_meanwhile(tmp_path, monkeypatch):
+    monkeypatch.setattr(F, "STATE", tmp_path / "tried.json")
+    F.STATE.write_text(json.dumps({"o/r#1": "a", "o/r#2": "b"}), encoding="utf-8")
+    F.STATE.write_text(json.dumps({"o/r#2": "b"}), encoding="utf-8")       # someone re-queued #1 during her run
+    assert F.mark("o/r#3", "c") == {"o/r#2": "b", "o/r#3": "c"}           # #1 stays re-queued
+
+
+def test_compiler_errors_in_a_file_she_merged_make_her_redo_that_merge(monkeypatch):
+    hints = []
+    monkeypatch.setattr(F, "resolve_text", lambda path, raw, title, asker=None, hint="":
+                        hints.append(hint) or ("fixed\n", ""))
+    monkeypatch.setattr(F, "broken", lambda tree, path, text: "")
+    monkeypatch.setattr(F, "tidy", lambda tree, path, text: text)
+    out = "error[E0063]: missing field `limit` in initializer of `Batch`\n   --> crates/s/src/host.rs:511:31\n"
+    results = iter([(False, "", ["s"], out), (True, "", ["s"], "")])
+    monkeypatch.setattr(F.rust_fix, "crate_tests", lambda tree, files: next(results))
+    errs = F.rust_fix.errors(out)
+    assert errs[0]["file"] == "crates/s/src/host.rs"                 # the error points into her merged file (#397)
+    assert hints == []                                               # (resolve() wiring is covered by the live run)
+
+
+def test_both_sides_only_adding_merge_by_code_and_same_spot_only_in_docs():
+    base, ours, theirs = "a\nb\nc\n", "a\nX\nb\nc\n", "a\nb\nc\nY\n"
+    assert F.both_added(ours, base, theirs, docs=False) == "a\nX\nb\nc\nY\n"        # different places: exact
+    same = F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=True)
+    assert same == "a\nX\nY\nb\n" and F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=False) is None
+    assert F.both_added("a\nX\n", "a\nb\n", "a\nb\nY\n", docs=True) is None         # an ancestor line went away
