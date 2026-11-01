@@ -215,3 +215,12 @@ def test_a_conflict_too_big_for_her_window_is_refused_without_asking_her():
     text = f"<<<<<<< pr\n{side}A\n||||||| base\n{side}\n=======\n{side}B\n>>>>>>> main\n"
     merged, why = F.resolve_text("ARCHITECTURE.md", text, "t", asker=lambda p: pytest.fail("no model call"))
     assert merged is None and "too big for her 4096-token window" in why
+
+
+def test_a_pyright_gate_failure_is_reported_not_rerun(monkeypatch):
+    log = ("Python types\tCheck\t2026-11-01T07:50:00Z New pyright errors (fix them; the baseline only shrinks):\n"
+           "Python types\tCheck\t2026-11-01T07:50:00Z   litha/pr_fixer.py:411: No overloads for \"run\" [reportCallIssue]\n")
+    monkeypatch.setattr(F, "failed_logs", lambda sha: log)
+    monkeypatch.setattr(F, "rerun_failed", lambda *a: pytest.fail("a type error is not flaky"))
+    row = F.fix({"headRefOid": "abc", "number": 848, "headRefName": "x"}, "python")
+    assert row["result"] == "failed" and row["kind"] == "types" and row["why"].startswith("new pyright errors: litha/pr_fixer.py:411: No overloads")

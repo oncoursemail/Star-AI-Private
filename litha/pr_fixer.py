@@ -676,6 +676,10 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
     if not found and not log.strip():     # logs expire on GitHub: run the failed jobs again, look next time
         return {"pr": number, "result": "rerun", "why": f"failed logs expired; reran {rerun_failed(sha, number)} run(s)"}
     linting = not fails and bool(RUFF_CI.search(log))
+    typing = re.search(r"New pyright errors[^\n]*\n((?:.*\.py:\d+: .*\n?){1,4})", log)
+    if not found and not fails and not linting and typing:   # a type gate fails the same way every run: no rerun
+        return {"pr": number, "result": "failed", "kind": "types",
+                "why": "new pyright errors: " + " | ".join(re.findall(r"\S+\.py:\d+: [^\n]*", typing.group(1)))[:300]}
     if not found and not fails and not linting:   # timeout, lost runner, setup (seen: #700 died after 9 h): one rerun
         return {"pr": number, "result": "flaky-rerun",
                 "why": f"no test or lint failure in the failed logs; reran {rerun_failed(sha, number)} failed run(s) once"}
