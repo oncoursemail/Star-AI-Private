@@ -36,6 +36,15 @@ CLONE = ROOT.parents[1] / "Star-AI"
 HOME_CLONE = CLONE                                          # STAR's own repo: star commit, Python tests
 IDENTITY = ["-c", "user.name=oncoursemail", "-c", "user.email=84545815+oncoursemail@users.noreply.github.com"]
 STATE = Path.home() / ".star" / "pr-fixer" / "tried.json"
+
+
+def mark(key: str, sha: str) -> dict:
+    """Record one attempt on the CURRENT file: a copy loaded at the start of a long run must not undo a re-queue
+    made meanwhile (seen 2026-11-01: four re-queued Studio PRs silently came back as tried)."""
+    tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
+    tried[key] = sha
+    STATE.write_text(json.dumps(tried), encoding="utf-8")
+    return tried
 LOG = Path.home() / ".star" / "pr-fixer" / "fixes.jsonl"
 ROUNDS = 5
 NO_TOUCH = re.compile(r"^(tests/|\.github/)|(^|/)(requirements[^/]*\.txt|pnpm-lock\.yaml|[^/]+\.lock)$")
@@ -857,8 +866,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
                     continue
                 row = {"repo": REPO, **row, "seconds": round(time.time() - t)}
                 if not dry:                               # a dry run must not use up the real attempt
-                    tried[key] = pr["headRefOid"]
-                    STATE.write_text(json.dumps(tried), encoding="utf-8")
+                    tried = mark(key, pr["headRefOid"])
                 with LOG.open("a", encoding="utf-8") as f:
                     f.write(json.dumps({"ts": round(t), **row}) + "\n")
                 print(json.dumps(row), flush=True)
@@ -910,8 +918,7 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as e:  # noqa: BLE001 - one PR must not stop the others
                 row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
             row["seconds"] = round(time.time() - t)
-            tried[str(pr["number"])] = pr["headRefOid"]
-            STATE.write_text(json.dumps(tried), encoding="utf-8")
+            tried = mark(str(pr["number"]), pr["headRefOid"])
             with LOG.open("a", encoding="utf-8") as f:
                 f.write(json.dumps({"ts": round(t), **row}) + "\n")
             print(json.dumps(row), flush=True)
@@ -929,8 +936,7 @@ def main(argv: list[str] | None = None) -> int:
             row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
         row["seconds"] = round(time.time() - t)
         if row["result"] != "rerun":      # a rerun is looked at again once its fresh log exists
-            tried[str(pr["number"])] = pr["headRefOid"]
-        STATE.write_text(json.dumps(tried), encoding="utf-8")
+            tried = mark(str(pr["number"]), pr["headRefOid"])
         with LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": round(t), **row}) + "\n")
         print(json.dumps(row), flush=True)

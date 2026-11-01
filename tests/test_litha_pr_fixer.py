@@ -237,3 +237,10 @@ def test_an_old_failure_superseded_by_later_passes_is_not_a_failure(monkeypatch)
     monkeypatch.setattr(F, "rerun_failed", lambda *a: 0)
     row = F.fix({"headRefOid": "abc", "number": 700, "headRefName": "x"}, "python")
     assert row["result"] == "skip"                    # recorded as tried: no rerun loop every 10 minutes
+
+
+def test_recording_an_attempt_keeps_a_requeue_made_meanwhile(tmp_path, monkeypatch):
+    monkeypatch.setattr(F, "STATE", tmp_path / "tried.json")
+    F.STATE.write_text(json.dumps({"o/r#1": "a", "o/r#2": "b"}), encoding="utf-8")
+    F.STATE.write_text(json.dumps({"o/r#2": "b"}), encoding="utf-8")       # someone re-queued #1 during her run
+    assert F.mark("o/r#3", "c") == {"o/r#2": "b", "o/r#3": "c"}           # #1 stays re-queued
