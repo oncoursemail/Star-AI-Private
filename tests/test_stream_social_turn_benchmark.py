@@ -109,6 +109,66 @@ class SocialTurnBenchmarkTests(unittest.TestCase):
         self.assertEqual(result.candidate_pair_regressions, 1)
         self.assertEqual(result.status, "naturalness_regressed")
 
+    def test_silent_candidate_cannot_pass_by_dropping_expected_commentary(self):
+        rows = batch()
+        for index, row in enumerate(rows):
+            if row.scenario == "gameplay_commentary" and row.variant == "candidate":
+                rows[index] = case(
+                    int(row.case_id.rsplit("-", 1)[-1]), "gameplay_commentary",
+                    "candidate", first_audible_ms=None, overlap_ms=None,
+                )
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "naturalness_regressed")
+        self.assertEqual(report.candidate_dropped_commentary, 4)
+        self.assertEqual(report.candidate_pair_regressions, 4)
+        self.assertEqual(report.candidate_failures, 0)
+
+    def test_single_commentary_latency_regression_is_not_hidden_by_question_p95(self):
+        rows = batch()
+        idx = next(i for i, row in enumerate(rows)
+                   if row.case_id == "gameplay_commentary-3"
+                   and row.variant == "candidate")
+        rows[idx] = case(3, "gameplay_commentary", "candidate", first_audible_ms=900)
+        report = assess_social_turns(rows)
+        self.assertEqual(report.candidate_late_commentary, 1)
+        self.assertEqual(report.candidate_pair_regressions, 1)
+        self.assertEqual(report.candidate_failures, 0)
+        self.assertEqual(report.status, "naturalness_regressed")
+
+    def test_commentary_absolute_delay_is_not_a_realtime_reaction(self):
+        rows = batch()
+        idx = next(i for i, row in enumerate(rows)
+                   if row.case_id == "gameplay_commentary-0"
+                   and row.variant == "candidate")
+        rows[idx] = case(0, "gameplay_commentary", "candidate", first_audible_ms=3500)
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "naturalness_regressed")
+        self.assertEqual(report.candidate_failures, 1)
+
+    def test_contextual_silence_and_small_commentary_delay_still_pass(self):
+        rows = batch()
+        for index, row in enumerate(rows):
+            if row.case_id == "gameplay_commentary-0":
+                rows[index] = case(0, "gameplay_commentary", row.variant,
+                                   first_audible_ms=None, overlap_ms=None)
+            elif row.case_id == "gameplay_commentary-1" and row.variant == "candidate":
+                rows[index] = case(1, "gameplay_commentary", "candidate",
+                                   first_audible_ms=650)
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "eligible_for_manual_rehearsal")
+        self.assertEqual(report.candidate_dropped_commentary, 0)
+        self.assertEqual(report.candidate_late_commentary, 0)
+
+    def test_commentary_timing_thresholds_are_strict_bounded_inputs(self):
+        for kwargs in (
+            {"max_commentary_first_audible_ms": 0},
+            {"max_commentary_first_audible_ms": float("inf")},
+            {"max_pair_commentary_regression_ms": True},
+            {"max_pair_commentary_regression_ms": 10001},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                assess_social_turns(batch(), **kwargs)
+
     def test_single_owner_stop_regression_cannot_hide_under_p95(self):
         rows = batch()
         rows += [case(i, "owner_barge_in", variant)
