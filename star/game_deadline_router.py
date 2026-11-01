@@ -215,9 +215,20 @@ class GameDeadlineRouter:
                 return skip("disabled_or_wrong_game_session")
             if not host_verified:
                 return skip("trusted_host_evidence_missing")
-            # A paused game can use a slow teacher only between attempts, and
-            # only after *separate* host approval. Never conflate teacher
-            # research with permission to update a game agent.
+            # A host-clock rollback must not revive teacher work *or*
+            # previously fast reactive timings after a newer decision.
+            # Treat both kinds of work as part of the same monotonic session.
+            now: float | None = None
+            if now_host_ms is not None:
+                now = _clock_ms(now_host_ms, "now_host_ms")
+                if self._last_advice_ms is not None and now < self._last_advice_ms:
+                    return skip("host_clock_reversed")
+                self._last_advice_ms = now
+
+            # Paused gameplay is not the same as an idle streaming computer.
+            # The stream governor's pause_background_workers bit is binding
+            # *for advice*, even if its overall pressure profile is "normal".
+            # Normal OBS performance is not permission to start a teacher job.
             if not game_active:
                 if stream_live:
                     return skip("live_stream_precludes_offline_teacher")
@@ -225,18 +236,23 @@ class GameDeadlineRouter:
                     return skip("offline_teacher_not_approved")
                 if cpu_pressure or gpu_pressure:
                     return skip("hardware_pressure")
+                if stream_governor is not None:
+                    if now is None:
+                        return skip("host_clock_missing")
+                    try:
+                        load = stream_governor.recommend(now_s=now / 1000.0)
+                    except ValueError:
+                        return skip("stream_clock_mismatch")
+                    if load.profile != "normal":
+                        return skip("stream_headroom_unverified_for_offline_study")
+                    if load.pause_background_workers:
+                        return skip("stream_governor_precludes_offline_teacher")
                 self._counts["offline_teacher"] += 1
                 return DeadlineAdvice("teacher_offline", "offline_study_only")
 
             # Record the monotonic host clock even when pressure or stale
             # observations make this particular routing opportunity a skip.
             # Otherwise a later backward clock could revive old fast samples.
-            now: float | None = None
-            if now_host_ms is not None:
-                now = _clock_ms(now_host_ms, "now_host_ms")
-                if self._last_advice_ms is not None and now < self._last_advice_ms:
-                    return skip("host_clock_reversed")
-                self._last_advice_ms = now
             if observation_age_ms is None:
                 return skip("observation_age_missing")
             age = _milliseconds(observation_age_ms, "observation_age_ms")
