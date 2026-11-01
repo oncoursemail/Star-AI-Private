@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import re
-from typing import Iterable
+from typing import Iterable, cast
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 SCENARIOS = (
@@ -24,7 +24,7 @@ def _millis(value: object, field: str) -> float:
     if type(value) not in (float, int):
         raise ValueError(f"{field} requires a finite numeric millisecond interval")
     try:
-        out = float(value)
+        out = float(cast(float | int, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{field} requires a finite numeric millisecond interval") from exc
     if not math.isfinite(out) or not 0 <= out <= 60_000:
@@ -52,6 +52,9 @@ class SocialTurnMoment:
     playback_stop_ms: float | None = None
     grounded: bool = True
     independently_reviewed: bool = False
+    # Independently reviewed longest UNPLANNED gap during audible playback.
+    # Optional until the streaming host records annotated PCM gap evidence.
+    max_unplanned_gap_ms: float | None = None
 
     def __post_init__(self) -> None:
         if type(self.case_id) is not str or _ID.fullmatch(self.case_id) is None:
@@ -69,6 +72,11 @@ class SocialTurnMoment:
             _millis(self.overlap_ms, "overlap_ms")
         if self.playback_stop_ms is not None:
             _millis(self.playback_stop_ms, "playback_stop_ms")
+        if self.max_unplanned_gap_ms is not None:
+            _millis(self.max_unplanned_gap_ms, "max_unplanned_gap_ms")
+            if (self.scenario not in ("viewer_question", "gameplay_commentary")
+                    or self.first_audible_ms is None):
+                raise ValueError("playback gap needs an audible, reviewed speech case")
         if self.scenario in ("viewer_question", "gameplay_commentary"):
             if self.interrupted or self.playback_stop_ms is not None:
                 raise ValueError("ordinary speech cases cannot claim barge-in")
@@ -107,6 +115,7 @@ class SocialTurnReport:
     candidate_stop_p95_ms: float | None
     candidate_dropped_commentary: int = 0
     candidate_late_commentary: int = 0
+    candidate_stutter_regressions: int = 0
     authorized_to_stream: bool = False
     note: str = ("Offline operator-reviewed timing evidence, not authenticated media, "
                  "human-equivalence proof, automatic model promotion or broadcast permission")
@@ -130,6 +139,8 @@ def assess_social_turns(
     max_pair_stop_regression_ms: float = 100,
     max_commentary_first_audible_ms: float = 2000,
     max_pair_commentary_regression_ms: float = 500,
+    max_unplanned_gap_ms: float = 550,
+    max_pair_gap_regression_ms: float = 200,
 ) -> SocialTurnReport:
     """Conservative A/B gate for a *manual* gaming/VTuber rehearsal.
 
@@ -146,7 +157,9 @@ def assess_social_turns(
                         ("max_pair_question_regression_ms", max_pair_question_regression_ms),
                         ("max_pair_stop_regression_ms", max_pair_stop_regression_ms),
                         ("max_commentary_first_audible_ms", max_commentary_first_audible_ms),
-                        ("max_pair_commentary_regression_ms", max_pair_commentary_regression_ms)):
+                        ("max_pair_commentary_regression_ms", max_pair_commentary_regression_ms),
+                        ("max_unplanned_gap_ms", max_unplanned_gap_ms),
+                        ("max_pair_gap_regression_ms", max_pair_gap_regression_ms)):
         if not 0 < _millis(value, name) <= 10_000:
             raise ValueError(f"invalid {name}")
     data: dict[str, dict[str, SocialTurnMoment]] = {}
@@ -170,7 +183,8 @@ def assess_social_turns(
     new_regressions = 0
     pair_regressions = 0
     false_interruptions = missed_barge_ins = critical_speech = ungrounded_speech = 0
-    dropped_commentary = late_commentary = 0
+    dropped_commentary = late_commentary = stutter_regressions = 0
+    incomplete_gap_pairs = False
     coverage = 0
     complete_pairs = 0
     reviewed = 0
@@ -182,7 +196,9 @@ def assess_social_turns(
             return (w.first_audible_ms is not None and
                     w.first_audible_ms <= max_question_p95_ms and
                     w.overlap_ms is not None and w.overlap_ms <= max_overlap_ms
-                    and w.grounded)
+                    and w.grounded and
+                    (w.max_unplanned_gap_ms is None or
+                     w.max_unplanned_gap_ms <= max_unplanned_gap_ms))
         if w.scenario == "gameplay_commentary":
             # A speech-expected commentary moment is different from an
             # explicitly silent, game-critical moment. Late audio is not a
@@ -190,7 +206,9 @@ def assess_social_turns(
             return ((w.first_audible_ms is None or
                      (w.first_audible_ms <= max_commentary_first_audible_ms
                       and w.overlap_ms is not None and w.overlap_ms <= max_overlap_ms))
-                    and (w.first_audible_ms is None or w.grounded))
+                    and (w.first_audible_ms is None or w.grounded)
+                    and (w.max_unplanned_gap_ms is None or
+                         w.max_unplanned_gap_ms <= max_unplanned_gap_ms))
         if w.scenario == "owner_barge_in":
             return (w.interrupted and w.playback_stop_ms is not None
                     and w.playback_stop_ms <= max_playback_stop_ms)
@@ -208,6 +226,22 @@ def assess_social_turns(
             continue
         coverage += 1
         counts[cand.scenario] += 1
+        if cand.scenario in ("viewer_question", "gameplay_commentary"):
+            # Do not accept a selective A/B comparison which instruments only
+            # one model's fluent playback. Unspoken moments have no PCM gap.
+            if (base.first_audible_ms is not None
+                    and cand.first_audible_ms is not None
+                    and (base.max_unplanned_gap_ms is None)
+                        != (cand.max_unplanned_gap_ms is None)):
+                incomplete_gap_pairs = True
+            if cand.max_unplanned_gap_ms is not None and (
+                cand.max_unplanned_gap_ms > max_unplanned_gap_ms
+                or (base.max_unplanned_gap_ms is not None and
+                    cand.max_unplanned_gap_ms - base.max_unplanned_gap_ms
+                    > max_pair_gap_regression_ms)
+            ):
+                stutter_regressions += 1
+                pair_regressions += 1
         if cand.scenario == "viewer_question":
             if base.first_audible_ms is not None:
                 baseline_questions.append(float(base.first_audible_ms))
@@ -263,9 +297,9 @@ def assess_social_turns(
             candidate_failures, new_regressions, false_interruptions,
             missed_barge_ins, critical_speech, ungrounded_speech,
             pair_regressions, baseline_p95, candidate_p95, stop_p95,
-            dropped_commentary, late_commentary,
+            dropped_commentary, late_commentary, stutter_regressions,
         )
-    if (not data or any(len(v) != 2 for v in data.values())
+    if (not data or incomplete_gap_pairs or any(len(v) != 2 for v in data.values())
             or coverage != len(data)
             or any(n < minimum_per_scenario for n in counts.values())):
         return report("insufficient_evidence", "missing_unreviewed_or_unbalanced_scenarios")
