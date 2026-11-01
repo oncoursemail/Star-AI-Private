@@ -583,8 +583,9 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     for c in locks:                                         # generated files: star/next's copy, rebuilt below
         sh(["git", "checkout", "--theirs", "--", c], cwd=tree)
     tests: set[str] = set()
+    raws: dict[str, str] = {}                          # each file with its conflict markers, to redo a merge
     for c in code:
-        raw = (tree / c).read_text(encoding="utf-8", errors="replace")
+        raw = raws[c] = (tree / c).read_text(encoding="utf-8", errors="replace")
         merged, why = resolve_text(c, raw, pr.get("title", ""), asker)
         why = why or broken(tree, c, merged or "")
         if merged is not None and why:                     # one more try at the file, told what the checker said
@@ -629,6 +630,18 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         return {**row, "why": "after resolving, tests fail: " + " ".join(FAILED.findall(out))[:250]}
     if (tree / "Cargo.toml").is_file() and any(c.endswith(".rs") for c in code):
         ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+        mine = sorted({e["file"] for e in rust_fix.errors(out)} & set(code)) if not ok else []
+        for c in mine:                                 # the errors are in a file she merged: redo that merge first,
+            said = "; ".join(f"line {e['line']}: {e['error']}" for e in rust_fix.errors(out) if e["file"] == c)
+            merged, why = resolve_text(c, raws[c], pr.get("title", ""), asker,   # told what the compiler said
+                                       hint=f"After your merge of this file the compiler said: {said[:600]}\n")
+            if merged is not None and not (why or broken(tree, c, merged)):
+                (tree / c).write_bytes(tidy(tree, c, merged).encode("utf-8"))
+        if mine:
+            sh(["git", "add", "--", *mine], cwd=tree)
+            ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+            if ok:
+                row["why"] += f"; redid {', '.join(mine)} after the compiler's errors"
         if not ok and rust_fix.errors(out):            # it does not compile (one side renamed what the other uses):
             fixed, how = rust_fix.repair(tree, REPO, pr.get("title", ""),   # her repair, then the tests again
                                          f"Run cargo test -p {' -p '.join(crates)}\n{out}", asker)

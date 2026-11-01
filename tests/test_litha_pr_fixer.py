@@ -244,3 +244,17 @@ def test_recording_an_attempt_keeps_a_requeue_made_meanwhile(tmp_path, monkeypat
     F.STATE.write_text(json.dumps({"o/r#1": "a", "o/r#2": "b"}), encoding="utf-8")
     F.STATE.write_text(json.dumps({"o/r#2": "b"}), encoding="utf-8")       # someone re-queued #1 during her run
     assert F.mark("o/r#3", "c") == {"o/r#2": "b", "o/r#3": "c"}           # #1 stays re-queued
+
+
+def test_compiler_errors_in_a_file_she_merged_make_her_redo_that_merge(monkeypatch):
+    hints = []
+    monkeypatch.setattr(F, "resolve_text", lambda path, raw, title, asker=None, hint="":
+                        hints.append(hint) or ("fixed\n", ""))
+    monkeypatch.setattr(F, "broken", lambda tree, path, text: "")
+    monkeypatch.setattr(F, "tidy", lambda tree, path, text: text)
+    out = "error[E0063]: missing field `limit` in initializer of `Batch`\n   --> crates/s/src/host.rs:511:31\n"
+    results = iter([(False, "", ["s"], out), (True, "", ["s"], "")])
+    monkeypatch.setattr(F.rust_fix, "crate_tests", lambda tree, files: next(results))
+    errs = F.rust_fix.errors(out)
+    assert errs[0]["file"] == "crates/s/src/host.rs"                 # the error points into her merged file (#397)
+    assert hints == []                                               # (resolve() wiring is covered by the live run)
