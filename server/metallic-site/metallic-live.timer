@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh metallic.club live data every 2 minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=10s
+Unit=metallic-live.service
+
+[Install]
+WantedBy=timers.target

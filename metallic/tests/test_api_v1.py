@@ -675,10 +675,10 @@ def test_launcher_px_page_reads_progress_from_the_api(live, tmp_path):
     assert data["mode"] == "internal" and data["projects"]
 
 
-def test_website_downloads_asks_the_api_first_then_the_channel_file(live):
-    js = (REPO / "metallic-site" / "src" / "assets" / "downloads.js").read_text(encoding="utf-8")
-    assert '"/api/v1/releases/" + channel' in js and '"/releases/channels/" + channel + ".json"' in js
-    assert js.index("/api/v1/releases/") < js.index("/releases/channels/")
+def test_release_endpoint_is_public_and_the_website_reads_the_tauri_manifest(live):
+    # metallic.club (Early Access) reads the Tauri updater manifest at /releases/latest.json, not the API
+    site = (REPO / "metallic-site" / "src" / "assets" / "site.js").read_text(encoding="utf-8")
+    assert '"/releases/latest.json"' in site and "/api/" not in site
     op, params, _ = live.spec.match("GET", "/v1/releases/beta")
     assert op.op_id == "getRelease" and op.public
     code, h, body = live.call("GET", "/v1/releases/beta", origin="https://metallic.club")

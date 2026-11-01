@@ -1,86 +1,49 @@
-/* Downloads page: lists what the release channel really contains. First asks Metallic API v1 on the same site
-   (/api/v1/releases/<channel>: the server has checked the Ed25519 signature); when the site has no /api proxy it reads
-   /releases/channels/<channel>.json, the same file the launcher verifies. Either way the launcher verifies again
-   before installing. Text goes in through textContent. */
-(function () {
-  "use strict";
-  var list = document.getElementById("dl-list");
-  var note = document.getElementById("dl-channel-note");
-  var buttons = Array.prototype.slice.call(document.querySelectorAll("[data-channel]"));
-  var NOTES = {
-    stable: "Stable builds are the ones we recommend.",
-    beta: "Beta builds are tried here first. They can break; the launcher can switch back to the last good version."
-  };
-  var NAMES = { launcher: "Metallic Launcher", litha: "Litha add-on", rc: "Metallic RC", mc: "Metallic MC", rb: "Metallic RB" };
-
-  function el(tag, cls, text) {
-    var n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text != null) n.textContent = text;
-    return n;
+/* Downloads: the newest build from /releases/latest.json (the Tauri updater manifest:
+   {"version","notes","pub_date","platforms":{"windows-x86_64":{"signature","url"}}}). */
+"use strict";
+(async () => {
+  const M = window.Metallic;
+  const $ = (s) => document.querySelector(s);
+  const r = await M.release;
+  const btn = $("[data-dl-main]");
+  if (!r) {
+    btn.setAttribute("aria-disabled", "true");
+    btn.removeAttribute("href");
+    btn.textContent = "Not published yet";
+    return;
   }
-  function size(n) {
-    if (n >= 1 << 30) return (n / (1 << 30)).toFixed(1) + " GB";
-    if (n >= 1 << 20) return (n / (1 << 20)).toFixed(1) + " MB";
-    return Math.max(1, Math.round(n / 1024)) + " KB";
-  }
-  function day(iso) {
-    var d = new Date(iso);
-    return isNaN(d) ? "" : d.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
-  }
-  function empty(text) { list.textContent = ""; list.appendChild(el("p", "empty", text)); }
+  $("[data-wait]").hidden = true;
+  const v = $("[data-version]");
+  v.replaceChildren("Early Access ", M.el("b", null, r.version), " for Windows");
+  $('[data-f="version"]').textContent = r.version;
+  const d = r.date ? new Date(r.date) : null;
+  $('[data-f="date"]').textContent = d && !isNaN(d) ? M.date(d.getTime() / 1000, true) : "Not stated";
+  const file = decodeURIComponent(r.url.split("?")[0].split("/").pop() || "");
+  if (file) $('[data-f="file"]').textContent = file;
 
-  function fromApi(ch) {      // API shape (components as a list) -> manifest shape
-    var comps = {};
-    (ch.components || []).forEach(function (c) { comps[c.name] = c; });
-    return { components: comps, verified: ch.verified === true };
-  }
+  // size: only asked for when the installer is on this site (connect-src 'self')
+  const size = $('[data-f="size"]');
+  size.textContent = "Not stated";
+  try {
+    const u = new URL(r.url, location.href);
+    if (u.origin === location.origin) {
+      const h = await fetch(u.href, { method: "HEAD", cache: "no-store" });
+      const n = Number(h.headers.get("Content-Length"));
+      if (h.ok && n > 0) size.textContent = (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
+    }
+  } catch (e) { /* stays "Not stated" */ }
 
-  function render(manifest, channel) {
-    list.textContent = "";
-    var names = Object.keys(manifest.components || {}).sort();
-    if (!names.length) return empty("Nothing has been published on the " + channel + " channel yet.");
-    if (manifest.verified) list.appendChild(el("p", "m3", "Signature checked by the Metallic server."));
-    names.forEach(function (name) {
-      var c = manifest.components[name];
-      var card = el("article", "dl-card");
-      var main = el("div");
-      var h = el("h3", null, NAMES[name] || name);
-      h.appendChild(el("span", "ver", "version " + c.version));
-      main.appendChild(h);
-      var meta = [c.released ? "Released " + day(c.released) : "", c.platform && c.platform !== "any" ? c.platform : "", size(c.size || 0) + " installed"].filter(Boolean);
-      main.appendChild(el("p", "dl-meta", meta.join(" · ")));
-      if (c.notes) main.appendChild(el("p", "dl-notes", c.notes));
-      if (c.installer) main.appendChild(el("p", "hash", "SHA-256 " + c.installer.sha256));
-      card.appendChild(main);
-      var act = el("div", "act");
-      if (c.installer) {
-        var a = el("a", "btn primary", "Download (" + size(c.installer.size) + ")");
-        a.href = "/releases/" + c.installer.path.split("/").map(encodeURIComponent).join("/");
-        act.appendChild(a);
-      } else {
-        act.appendChild(el("p", "m3", "Installed and updated by the launcher."));
-      }
-      card.appendChild(act);
-      list.appendChild(card);
-    });
-  }
-
-  function load(channel) {
-    note.textContent = NOTES[channel] || "";
-    note.className = channel === "beta" ? "warn" : "m3";
-    buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.channel === channel)); });
-    empty("Loading the release list...");
-    function json(r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); }
-    fetch("/api/v1/releases/" + channel, { cache: "no-store" })
-      .then(json)
-      .then(fromApi)
-      .catch(function () { return fetch("/releases/channels/" + channel + ".json", { cache: "no-store" }).then(json); })
-      .then(function (m) { render(m, channel); })
-      .catch(function () { empty("No " + channel + " release has been published yet."); });
-  }
-
-  buttons.forEach(function (b) { b.addEventListener("click", function () { load(b.dataset.channel); }); });
-  load("stable");
-
+  // notes: plain text; blank lines split paragraphs, "- " or "* " lines become a list
+  const box = $("[data-notes]"), out = [];
+  const blocks = (r.notes || "").replace(/\r/g, "").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  blocks.forEach((b) => {
+    const lines = b.split("\n").map((l) => l.trim());
+    if (lines.every((l) => /^[-*] /.test(l))) {
+      const ul = M.el("ul");
+      lines.forEach((l) => ul.append(M.el("li", null, l.slice(2).replace(/\*\*/g, ""))));
+      out.push(ul);
+    } else out.push(M.el("p", null, lines.join(" ").replace(/^#+\s*/, "").replace(/\*\*/g, "")));
+  });
+  if (out.length) box.replaceChildren(...out);
+  else box.replaceChildren(M.el("p", null, "This build has no release notes."));
 })();

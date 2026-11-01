@@ -38,3 +38,7 @@ PS3_UPDATE/
 
 # Mineflayer (STAR Home Minecraft) dependencies, installed on her PC with npm install
 star/games/mineflayer/node_modules/
+
+# metallic.club preview screenshots and taste-skill working files (local only)
+metallic-site/screens/
+.taste-skill/

@@ -1,56 +1,95 @@
-<!-- title: Metallic. One launcher for the games we make -->
-<!-- description: Metallic brings a Rec Room revival, Minecraft servers and Roblox projects into one launcher, and shows exactly how far along each one is. -->
+<!-- title: Metallic. Every Rec Room revival, one window -->
+<!-- description: Metallic is a Windows launcher that follows every Rec Room revival live, installs the ones you pick and starts them on PC or in VR. -->
 <!-- page: home -->
 <!-- scripts: home.js -->
-<section class="hero">
-  <div class="hero-in">
-    <p class="eyebrow">Metallic</p>
-    <h1>Play, build and host from one launcher.</h1>
-    <p class="lede">Our Rec Room revival, Minecraft servers and Roblox projects live side by side. Every one of them shows what already works and what does not yet.</p>
-    <p class="cta"><a class="btn primary" href="/downloads/">Downloads</a><a class="btn" href="/progress/">See the progress</a></p>
-    <p class="hero-note" data-latest>No public release yet. The downloads page lists every build the moment one is published.</p>
+<section class="hero" aria-labelledby="hero-h">
+  <h1 id="hero-h" class="split"><span>Every revival,</span> <span>one window.</span></h1>
+  <div class="reel" data-reel aria-live="off">
+    <div class="reel-track" data-reel-track>
+      <figure class="frame"><img src="/assets/art/scenes/night-city.jpg" alt="Night metal city, one of the launcher's backgrounds" width="640" height="360"><figcaption><span class="cap-name">Night metal city</span><span class="cap-num">A Metallic background</span></figcaption></figure>
+      <figure class="frame"><img src="/assets/art/metal.jpg" alt="Brushed graphite plates, the Metallic material" width="1536" height="864"><figcaption><span class="cap-name">Metallic Early Access</span><span class="cap-num">One window for every revival</span></figcaption></figure>
+      <figure class="frame"><img src="/assets/art/scenes/crystal-cave.jpg" alt="Crystal cave, one of the launcher's backgrounds" width="640" height="360"><figcaption><span class="cap-name">Crystal cave</span><span class="cap-num">A Metallic background</span></figcaption></figure>
+    </div>
+  </div>
+  <div class="hero-foot">
+    <p class="lede">Metallic follows every Rec Room revival live, installs the ones you pick and starts them on PC or in VR with one button.</p>
+    <p class="hero-cta"><a class="btn big" href="/downloads/" data-dl>Download for Windows</a><span class="cta-note" data-dl-note>Windows 10 and 11, 64-bit</span></p>
+  </div>
+  <div class="pulse" data-pulse hidden>
+    <p><strong data-total="inGame">0</strong><span>in game right now, where a revival publishes it</span></p>
+    <p><strong data-total="online">0</strong><span>online in the revivals' Discord servers</span></p>
   </div>
 </section>
 
-<section class="wrap doors" aria-labelledby="doors-h">
-  <h2 id="doors-h" class="kicker">Three places to start</h2>
-  <div class="door-grid">
-    <a class="door" href="/games/#rc">
-      <img src="/assets/art/rc.jpg" alt="A grassy room with a golf green, a tree house and a red barn at sunset" width="1536" height="864" loading="lazy">
-      <div class="door-text"><span class="tag">RC</span><h3>Metallic RC</h3><p>A Rec Room revival with its own backend. Two players in one room is the next big step.</p><span class="status">In development</span></div>
-    </a>
-    <a class="door" href="/games/#mc">
-      <img src="/assets/art/mc.jpg" alt="A terraced blocky hillside town at night with a clock tower, market stalls and string lights" width="1536" height="864" loading="lazy">
-      <div class="door-text"><span class="tag">MC</span><h3>Metallic MC</h3><p>Server tools for Minecraft: console, files and charts. Hosting comes after the basics are proven.</p><span class="status">In development</span></div>
-    </a>
-    <a class="door" href="/games/#rb">
-      <img src="/assets/art/rb.jpg" alt="Players in orange and blue gear play paintball around a wooden bridge over a river in a pine forest" width="1536" height="864" loading="lazy">
-      <div class="door-text"><span class="tag">RB</span><h3>Metallic RB</h3><p>Roblox experiences, starting with Paintball. The River map is installed; a full match needs real players.</p><span class="status">In development</span></div>
-    </a>
+<section class="board" id="revivals" aria-labelledby="board-h">
+  <div class="board-head">
+    <h2 id="board-h" class="two-tone"><span>Every revival we follow,</span> <span>busiest first.</span></h2>
+    <p class="board-meta" data-checked>Live counts update on the server every two minutes.</p>
   </div>
-  <p class="m3 fine">The pictures are concept art, not screenshots.</p>
-</section>
-
-<section class="wrap split litha-band" aria-labelledby="litha-h">
-  <div class="split-art"><img src="/assets/litha/litha-b-full.webp" alt="Litha, a young architect in a green coat and round glasses, with a floor plan floating beside her" width="820" height="1200" loading="lazy"></div>
-  <div class="split-text">
-    <p class="kicker">Add-on</p>
-    <h2 id="litha-h">Litha helps you build games.</h2>
-    <p>Ask about Roblox scripts, Unity code, Minecraft datapacks or Metallic RC rooms and get a short, friendly answer. She is part of the launcher, kept out of the way, and you can turn her off.</p>
-    <p><a class="btn" href="/litha/">Meet Litha</a></p>
+  <div class="board-body">
+    <div class="tabs" role="tablist" aria-label="Filter by the year of Rec Room a revival brings back" data-tabs hidden></div>
+    <div class="bands-wrap">
+      <ul class="bands" data-bands aria-live="polite"></ul>
+      <div class="board-empty" data-board-empty>
+        <p class="empty-title">The live board is on its way.</p>
+        <p>Once this site is connected, every revival appears here with the players in game (where the revival publishes it) and the members online in its Discord server, refreshed every minute. The launcher shows the same board today.</p>
+      </div>
+      <p class="board-more"><button class="btn ghost" type="button" data-more hidden>Show every revival</button></p>
+      <p class="fine">In game counts come only from revivals that publish their own player count. Online in Discord is how many members of a revival's Discord server show as online; it is not a player count.</p>
+    </div>
   </div>
 </section>
 
-<section class="wrap how" aria-labelledby="how-h">
-  <h2 id="how-h" class="kicker">How we report progress</h2>
+<section class="how" aria-labelledby="how-h">
+  <h2 id="how-h">From download to in game</h2>
   <div class="how-grid">
-    <p class="big">A merged change is not a finished feature.</p>
-    <p>Each piece of work is planned, implemented, tested, accepted or released. These are different things, and the <a href="/progress/">progress page</a> shows which one each item is, with the date we last confirmed it. Nothing on it is a made-up percentage.</p>
+    <div class="how-stage">
+      <div class="lcard" data-ui data-lcard data-step="1" aria-hidden="true">
+        <div class="lc-banner"><img src="/assets/art/scenes/river-valley.jpg" alt="" width="640" height="360" data-lc-img></div>
+        <div class="lc-body">
+          <div class="lc-name"><i class="lc-icon" data-lc-icon>V</i><span data-lc-name>Vanilla</span><em class="lc-plat" data-lc-plat>PC</em></div>
+          <p class="lc-blurb" data-lc-blurb>Relive the golden age of Rec Room for free.</p>
+          <div class="lc-state s1"><span>Installing Metallic</span><b class="lc-bar"><i></i></b></div>
+          <div class="lc-state s2"><span class="lc-btn">Install</span><span class="lc-hint">Downloads this revival's client</span></div>
+          <div class="lc-state s3"><span class="lc-btn primary">Play</span><span class="lc-choice"><b>PC</b><b class="on">VR</b></span></div>
+          <div class="lc-state s4"><span class="lc-btn primary">Play</span><span class="lc-hint">Up to date. Updated by itself.</span></div>
+        </div>
+      </div>
+    </div>
+    <ol class="how-steps">
+      <li data-step="1"><p><strong>To begin,</strong> download the installer and run it. One window holds every revival, its news and its live numbers.</p></li>
+      <li data-step="2"><p><strong>Then pick a revival</strong> and press Install. Metallic fetches its client and keeps it beside the others.</p></li>
+      <li data-step="3"><p><strong>Press Play</strong> and choose PC or VR: desktop mode on your monitor, or your headset.</p></li>
+      <li data-step="4"><p><strong>From then on,</strong> updates install by themselves. Each new build is signed and checked first.</p></li>
+    </ol>
   </div>
 </section>
 
-<section class="wrap news-latest" aria-labelledby="news-h">
-  <h2 id="news-h" class="kicker">Latest news</h2>
-  <!--news:latest-->
-  <p><a href="/news/">All news</a></p>
+<section class="mode" data-mode="pc" aria-labelledby="mode-h">
+  <div class="mode-text">
+    <h2 id="mode-h">Play it <span data-mode-word>on PC</span>.</h2>
+    <p>The same switch sits under every Play button in Metallic. PC for keyboard and mouse, VR for your headset. Try it.</p>
+  </div>
+  <div class="switch-big" data-ui role="radiogroup" aria-label="Play mode">
+    <button type="button" role="radio" aria-checked="true" data-pick="pc">PC</button>
+    <button type="button" role="radio" aria-checked="false" data-pick="vr">VR</button>
+  </div>
+</section>
+
+<section class="ledger" aria-labelledby="proj-h">
+  <h2 id="proj-h">Our own projects</h2>
+  <p class="ledger-lede">Metallic makes games too. Their player counts come from the platform each one runs on.</p>
+  <ul class="rows" data-projects>
+    <li class="row-empty">Our projects show here with their live player counts once this site is connected.</li>
+  </ul>
+</section>
+
+<section class="latest" aria-labelledby="news-h">
+  <div class="strip-head">
+    <h2 id="news-h">News from the revivals</h2>
+    <a class="more-link" href="/news/">All news</a>
+  </div>
+  <ul class="headlines" data-news-strip>
+    <li class="hl-empty">Releases, blog posts and videos from every revival collect here as they are published.</li>
+  </ul>
 </section>

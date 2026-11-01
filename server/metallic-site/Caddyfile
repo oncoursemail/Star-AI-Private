@@ -1,0 +1,45 @@
+# metallic.club, served by Caddy on loopback only. The Cloudflare tunnel (cloudflared, see cloudflared-config.yml) is the
+# only thing that talks to it and does HTTPS at Cloudflare's edge, so Caddy needs no certificate and no open port.
+{
+	admin localhost:2019
+	auto_https off
+}
+
+:8088 {
+	bind 127.0.0.1
+
+	@www host www.metallic.club
+	redir @www https://metallic.club{uri} 301
+
+	root * /srv/metallic/dist
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: https://cdn.discordapp.com; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+		-Server
+	}
+
+	# written every 2 minutes (metallic-live) or on each release: never cached
+	@fresh path /live/* /releases/latest.json
+	header @fresh Cache-Control "no-store"
+
+	# installers carry their version in the file name, so they never change
+	@installers path /releases/*.exe /releases/*.msi /releases/*.sig /releases/*.zip
+	header @installers Cache-Control "public, max-age=31536000, immutable"
+
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=3600"
+
+	file_server {
+		hide .*
+	}
+
+	handle_errors {
+		rewrite * /404.html
+		file_server
+	}
+}

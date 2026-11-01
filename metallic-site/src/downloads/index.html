@@ -1,35 +1,54 @@
-<!-- title: Downloads. Metallic launcher and add-ons -->
-<!-- description: Every published Metallic build with its version, date, size and checksum, from the stable or beta release channel. Updates are signed and verified before they install. -->
+<!-- title: Download Metallic for Windows -->
+<!-- description: Download the newest Metallic Early Access installer for Windows 10 and 11. Version, release date, notes and system requirements. -->
 <!-- page: downloads -->
 <!-- scripts: downloads.js -->
-<section class="wrap page-head">
-  <p class="eyebrow">Downloads</p>
-  <h1>Get Metallic.</h1>
-  <p class="lede">This page reads the same release channels the launcher uses. If nothing is listed, nothing has been published yet; we do not show placeholder builds.</p>
+<section class="dl" aria-labelledby="dl-h">
+  <div class="dl-main">
+    <h1 id="dl-h">Download Metallic</h1>
+    <p class="dl-version" data-version>Early Access for Windows</p>
+    <p class="hero-cta"><a class="btn big" href="#notes" data-dl data-dl-main>Download for Windows</a><span class="cta-note" data-dl-note>Windows 10 and 11, 64-bit</span></p>
+    <p class="dl-wait" data-wait>The first Early Access build is not published yet. This page shows it the moment it is, and the button above starts the download.</p>
+  </div>
+  <dl class="facts">
+    <div><dt>Version</dt><dd data-f="version">Not published yet</dd></div>
+    <div><dt>Released</dt><dd data-f="date">Not published yet</dd></div>
+    <div><dt>File</dt><dd data-f="file">Windows installer (.exe)</dd></div>
+    <div><dt>Size</dt><dd data-f="size">Shown once published</dd></div>
+    <div><dt>Signed</dt><dd>Every build is signed. The launcher checks the signature before it installs an update.</dd></div>
+  </dl>
 </section>
 
-<section class="wrap dl" aria-labelledby="dl-h">
-  <div class="dl-head">
-    <h2 id="dl-h" class="kicker">Releases</h2>
-    <div class="seg" role="group" aria-label="Release channel">
-      <button type="button" data-channel="stable" aria-pressed="true">Stable</button>
-      <button type="button" data-channel="beta" aria-pressed="false">Beta</button>
-    </div>
+<section class="scenes" aria-labelledby="scenes-h">
+  <div class="scenes-head">
+    <h2 id="scenes-h">Five backgrounds, drawn live</h2>
+    <p>Behind the launcher runs an animated scene, generated in code rather than painted. Two follow your clock from day to night; the Hollow appears around Halloween.</p>
   </div>
-  <p class="m3" id="dl-channel-note">Stable builds are the ones we recommend.</p>
-  <div id="dl-list" aria-live="polite">
-    <p class="empty">Loading the release list...</p>
-    <noscript><p class="empty">This list needs JavaScript. The raw channel file is at <a href="/releases/channels/stable.json">/releases/channels/stable.json</a>.</p></noscript>
+  <div class="scene-grid">
+    <figure class="scene big"><img src="/assets/art/scenes/night-city.jpg" alt="Night metal city: dark towers with lit windows under a full moon" width="640" height="360" loading="lazy"><figcaption>Night metal city</figcaption></figure>
+    <figure class="scene"><img src="/assets/art/scenes/river-valley.jpg" alt="Valley lake: hills around a lake at sunset" width="640" height="360" loading="lazy"><figcaption>Valley lake</figcaption></figure>
+    <figure class="scene"><img src="/assets/art/scenes/crystal-cave.jpg" alt="Crystal cave: glowing crystals in a dark cave" width="640" height="360" loading="lazy"><figcaption>Crystal cave</figcaption></figure>
+    <figure class="scene"><img src="/assets/art/scenes/violet-nebula.jpg" alt="Violet nebula: stars and a violet cloud of gas" width="640" height="360" loading="lazy"><figcaption>Violet nebula</figcaption></figure>
+    <figure class="scene"><img src="/assets/art/scenes/halloween-hollow.jpg" alt="Hollow: a moonlit Halloween forest" width="640" height="360" loading="lazy"><figcaption>Hollow, in season</figcaption></figure>
   </div>
 </section>
 
-<section class="wrap how">
-  <h2 class="kicker">How updates stay safe</h2>
-  <div class="how-grid">
-    <p class="big">Signed, checked, and reversible.</p>
-    <div>
-      <p>Each channel is a file we sign with a key that never leaves our own PC. The launcher knows the matching public key, refuses anything it cannot verify, downloads only the files that changed, checks every file against its hash, and installs the new version beside the old one. If the new version fails to start, the launcher switches back by itself.</p>
-      <p>You can check a first-install download yourself. On Windows, run <code>certutil -hashfile &lt;file&gt; SHA256</code> in a terminal and compare the result with the checksum shown above.</p>
-    </div>
+<section class="notes" id="notes" aria-labelledby="notes-h">
+  <h2 id="notes-h">What is in this build</h2>
+  <div class="notes-body" data-notes>
+    <p>Release notes appear here with the first published build.</p>
   </div>
+</section>
+
+<section class="req" aria-labelledby="req-h">
+  <h2 id="req-h">What you need</h2>
+  <div class="req-grid">
+    <div class="req-item"><p class="req-big">Windows 10 or 11</p><p>64-bit (x86-64). Metallic uses the WebView2 runtime that ships with Windows; the installer adds it if it is missing.</p></div>
+    <div class="req-item"><p class="req-big">An internet connection</p><p>For the live counts and the news, and to install and update revivals.</p></div>
+    <div class="req-item"><p class="req-big">A headset, for VR</p><p>Optional. Revivals that support VR start in your headset when you pick VR under the Play button.</p></div>
+  </div>
+</section>
+
+<section class="auto" aria-labelledby="auto-h">
+  <h2 id="auto-h">Updates install by themselves</h2>
+  <p>You download Metallic once. When a new build is out, the launcher fetches it, checks its signature and installs it. There is nothing to download again from this page.</p>
 </section>

@@ -1,0 +1,26 @@
+[Unit]
+Description=Metallic live data for metallic.club (revivals, news, projects JSON)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=metallic
+Group=metallic
+ExecStart=/opt/metallic/metallic-live --out /srv/metallic/dist/live
+TimeoutStartSec=100
+Nice=10
+MemoryMax=128M
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+ReadWritePaths=/srv/metallic/dist/live

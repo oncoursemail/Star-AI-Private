@@ -1,125 +1,104 @@
-# Hosting the Metallic site yourself
+# Hosting metallic.club
 
-The site is plain files. Nothing here is deployed; this is the plan for when you decide to put it online.
+The site is plain files plus three JSON files that a timer rewrites. Nothing here is deployed by the build; this is the
+plan for the owner's server. Layout on the host:
+
+```
+Cloudflare edge (HTTPS, metallic.club + www)
+   └─ Cloudflare Tunnel (cloudflared dials out; no open ports, the home IP never appears in DNS)
+        └─ Caddy on 127.0.0.1:8088, plain HTTP, root /srv/metallic/dist
+             ├─ /                     the built site (HTML, CSS, JS, fonts, images)
+             ├─ /live/*.json          revivals.json, news.json, projects.json, rewritten every 2 minutes
+             └─ /releases/            latest.json (Tauri updater manifest) and the versioned installers
+```
+
+All files for the host are in `server/metallic-site/`: `Caddyfile`, `metallic-live.service`, `metallic-live.timer`,
+`cloudflared-config.yml` (a template) and `deploy.sh`.
 
 ## 1. Build
 
 ```
-python metallic-site/build.py --out dist --site-url https://metallic.club ^
-    --releases <release folder> [--with-blobs] [--forge <forge url> --token-file <read-only token file>]
+python metallic-site/build.py --out dist --site-url https://metallic.club [--releases <folder>]
 ```
 
-- `dist/` is the whole site: HTML, CSS, a little JavaScript, two fonts, images. No server code, no database.
-- `--releases` copies `channels/`, `installers/` and `changelog.json` from the folder the publisher made
-  (`python -m launcher.updates publish ...`). Add `--with-blobs` to serve the update files from the same host.
-  Leave it out if the blobs live somewhere else (then point the launcher's update address there).
-- `--forge` is optional. It adds milestone and issue counts for public repositories to the progress page. Issue titles,
-  release notes and numbers for private repositories are never written, and the build refuses to write if it finds an
-  address, a user name or a key. Use a read-only token, kept in a file outside the repo.
+- `dist/` is the whole site. No server code, no database, no framework.
+- `--releases <folder>` copies `latest.json` and the installer files (`.exe`, `.msi`, `.sig`, `.zip`) from that folder
+  into `dist/releases/`. Leave it out when releases are copied to the host separately.
+- `--sample-live <folder>` copies sample `revivals.json`, `news.json` and `projects.json` into `dist/live/`. For local
+  previews only; never use it for the real site (the timer writes the real files).
+- Without any JSON the pages still look complete: the board, projects and news show an empty state, the download button
+  falls back to the downloads page, and the downloads page says no build is published yet.
 
-## 2. Serve it
-
-Any static host works. Two self-hosted options:
-
-**Caddy** (gets and renews the Let's Encrypt certificate by itself):
+## 2. Deploy (on the server)
 
 ```
-metallic.club {
-    root * /srv/metallic/dist
-    file_server
-    encode zstd gzip
-    header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options nosniff
-        Referrer-Policy no-referrer
-        Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
-    }
-    @channels path /releases/channels/* /releases/*.json /releases/*.sig
-    header @channels Cache-Control "no-store"
-    @blobs path /releases/blobs/*
-    header @blobs Cache-Control "public, max-age=31536000, immutable"
-    handle_errors {
-        rewrite * /404.html
-        file_server
-    }
-}
+sudo bash server/metallic-site/deploy.sh <built dist folder>
 ```
 
-**nginx** behind certbot (`certbot --nginx -d metallic.club -d www.metallic.club`):
+It prints each step and is safe to repeat:
+
+1. installs Caddy and cloudflared from their official apt repositories (only when missing);
+2. creates the unprivileged system user `metallic` and `/srv/metallic/dist` (`live/` belongs to `metallic`);
+3. copies the site with `rsync --delete`, keeping `live/` and `releases/`;
+4. installs the Caddyfile, validates it and reloads Caddy, then checks `http://127.0.0.1:8088/`;
+5. installs and enables `metallic-live.timer`, which runs `/opt/metallic/metallic-live --out /srv/metallic/dist/live`
+   as `metallic` every 2 minutes (copy that program to `/opt/metallic/` first; until then the pages show empty states);
+6. writes `/etc/cloudflared/config.yml` from the template if there is none and prints the one-time tunnel commands.
+
+### The tunnel, once
 
 ```
-server {
-    server_name metallic.club www.metallic.club;
-    root /srv/metallic/dist;
-    index index.html;
-    error_page 404 /404.html;
-    add_header Strict-Transport-Security "max-age=31536000" always;
-    add_header X-Content-Type-Options nosniff always;
-    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'" always;
-    location /releases/channels/ { add_header Cache-Control "no-store"; }
-    location /releases/blobs/   { add_header Cache-Control "public, max-age=31536000, immutable"; }
-    location / { try_files $uri $uri/ =404; }
-}
+cloudflared tunnel login
+cloudflared tunnel create metallic                 # prints the tunnel id and writes ~/.cloudflared/<id>.json
+sudo mv ~/.cloudflared/<id>.json /etc/cloudflared/ && sudo chmod 600 /etc/cloudflared/<id>.json
+sudo sed -i 's/<TUNNEL-ID>/<id>/g' /etc/cloudflared/config.yml
+cloudflared tunnel route dns metallic metallic.club
+cloudflared tunnel route dns metallic www.metallic.club
+sudo bash server/metallic-site/deploy.sh <dist>    # again: installs and starts the cloudflared service
 ```
 
-Both serve `Range` requests for files, which the launcher uses to resume interrupted downloads.
+The ingress sends `metallic.club` and `www.metallic.club` to `http://127.0.0.1:8088`; Caddy redirects `www` to the bare
+domain. The credentials JSON stays on the server and is never committed.
 
-**Optional: Metallic API on the same site.** The downloads page first asks `/api/v1/releases/<channel>` (the API has
-checked the signature) and falls back to the channel file when there is no `/api`. Proxying keeps `connect-src 'self'`
-as it is. Only the public read endpoints need to be reachable from the internet; keep the rest LAN-only until the
-developer portal (step 2) exists:
+### Cloudflare settings
 
-```
-# Caddy, inside the site block
-@api path /api/v1/releases* /api/v1/games* /api/v1/news* /api/v1/progress* /api/v1/projects/status /api/v1/openapi.json
-handle @api {
-    uri strip_prefix /api
-    reverse_proxy https://<metallic-api LAN address>:8476 {
-        transport http {
-            tls_trusted_ca_certs /etc/caddy/metallic-api.pem   # the API's self-signed certificate
-        }
-    }
-}
-```
+- SSL/TLS: Always Use HTTPS on, minimum TLS 1.2. (Mode does not matter for a tunnel; there is no origin certificate.)
+- DNS: only the two tunnel CNAME records. Delete any old `A` record that points at the home IP (also `mail`, `ftp`,
+  `vpn` and similar).
+- Caching: Cloudflare already respects the origin's `Cache-Control`. If you add a cache rule, bypass it for `/live/*`
+  and `/releases/latest.json`, so new counts and a new release show at once.
+- Check from outside: `nslookup metallic.club` must show only Cloudflare addresses, and `curl -I https://metallic.club`
+  must answer with the headers below.
 
-## 3. Cloudflare in front (hides the home IP)
+## 3. What Caddy sends
 
-1. Add the domain to Cloudflare and switch the registrar's name servers to the ones Cloudflare gives you.
-2. DNS: an `A` record for `@` and `www` pointing at your home IP, with the orange cloud ON (proxied). Never create a
-   DNS-only record that points at the home IP, and delete old records that do (also `mail`, `ftp`, `vpn` and similar).
-3. SSL/TLS mode: **Full (strict)**. Keep the Let's Encrypt certificate on the origin so Cloudflare can verify it.
-4. On the router, forward ports 80 and 443 to the host. In the host firewall, allow 80 and 443 **only from Cloudflare's
-   published ranges** (https://www.cloudflare.com/ips/), so the origin ignores everyone else.
-5. Stronger and simpler: run `cloudflared` (a Cloudflare Tunnel) on the host. It dials out, so no ports are open on the
-   router and the home IP never appears in DNS. Point the tunnel at `http://localhost:80` (or the Caddy/nginx port).
-6. Cloudflare settings: Always Use HTTPS on, minimum TLS 1.2, Bot Fight Mode on. Add a caching rule that bypasses cache
-   for `/releases/channels/*`, so a new release shows up at once. Blobs can be cached for a year because their names are
-   their hashes.
-7. Do not send mail from the home IP, do not host anything else on it that names it, and do not link to the forge
-   (`forge` stays on the LAN or a private tunnel).
-8. Check from outside: `nslookup metallic.club` must show only Cloudflare addresses, and `curl -I https://metallic.club`
-   must work.
+- `Content-Security-Policy: default-src 'self'; img-src 'self' data: https://cdn.discordapp.com; style-src 'self';
+  script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`.
+  The only outside host is Discord's image CDN, for the revivals' server icons and banners. Every request the pages make
+  for data is same-origin (`connect-src 'self'`).
+- `Cache-Control: no-store` on `/live/*` and `/releases/latest.json`; `public, max-age=31536000, immutable` on the
+  installers (their names carry the version); one hour on `/assets/*`.
+- Hidden files (for example metallic-live's `.revivals-history.json`) are not served. Errors show `/404.html`.
+- Range requests work for the installers, so interrupted downloads resume.
 
 ## 4. Publishing a release
 
-1. `python -m launcher.updates publish --root <release folder> --channel beta ...` (signs with your key, see below).
-2. `python -m launcher.updates verify --root <release folder> --channel beta` checks the signature and every file.
-3. Copy the release folder to the host (`rsync` or `scp`), or rebuild with `--releases` and sync `dist/`.
-4. Try it from a test PC on the beta channel. Then `python -m launcher.updates promote --root <folder> --from beta --to stable`.
-5. Pull a bad release with `publish ... --withdraw <bad version> --allow-downgrade` (clients on the bad version move back).
+Metallic Early Access updates itself with Tauri's updater, which reads `/releases/latest.json`:
 
-## 5. The signing key
+```
+{"version": "0.1.0", "notes": "...", "pub_date": "2026-11-01T12:00:00Z",
+ "platforms": {"windows-x86_64": {"signature": "<minisign signature>", "url": "https://metallic.club/releases/Metallic_0.1.0_x64-setup.exe"}}}
+```
 
-- Create it once: `python -m launcher.updates keygen --write-trust`. It writes
-  `%USERPROFILE%\.metallic\release-signing-key.json` (override with the `METALLIC_RELEASE_KEY` variable) and refuses any
-  path inside a git repository. The command also adds the **public** key to `launcher/updates/trust.json`; commit that
-  file, the launcher needs it.
-- **Back the key file up offline** (a USB stick in a drawer). If it is lost, installed launchers can never be updated
-  again, because they only trust that key. If it leaks, publish a new trust list in a launcher update signed with the old
-  key, then retire the old key.
-- Never put the key on the web host. Signing happens on your PC; the host only receives the signed files.
+1. Build and sign the installer on your PC (the Tauri signing key never leaves it; back it up offline, because installed
+   launchers only trust that key).
+2. Copy the versioned installer to `/srv/metallic/dist/releases/` first, then `latest.json` last, so the manifest never
+   points at a file that is not there yet.
+3. The downloads page and the home page's button read the same `latest.json`: version, date, notes, and the size when
+   the installer is on this site.
 
-## 6. What the site never does
+## 5. What the site never does
 
-It sets no cookies, loads no scripts, fonts or images from other companies, and has no forms or accounts. The strict
-Content-Security-Policy above is safe because of that. Adding analytics or an embed later means loosening it on purpose.
+It sets no cookies, has no forms or accounts, loads no scripts or fonts from other companies (fonts are self-hosted) and
+no images except the revivals' own Discord artwork. Live numbers are shown as published: "in game" only where a revival
+publishes its player count, and Discord's online count is always labelled "online in Discord", never players.

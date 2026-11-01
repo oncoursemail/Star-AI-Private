@@ -1,0 +1,11 @@
+# Template for /etc/cloudflared/config.yml. Replace <TUNNEL-ID> with the id that `cloudflared tunnel create metallic`
+# prints (it also writes the credentials file named below). Never commit the filled-in file or the credentials JSON.
+tunnel: <TUNNEL-ID>
+credentials-file: /etc/cloudflared/<TUNNEL-ID>.json
+
+ingress:
+  - hostname: metallic.club
+    service: http://127.0.0.1:8088
+  - hostname: www.metallic.club
+    service: http://127.0.0.1:8088
+  - service: http_status:404
