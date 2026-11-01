@@ -1,0 +1,27 @@
+test_baseline_unauthorized_is_not_clean_comparison (test_advisory_compare.ComparisonTests.test_baseline_unauthorized_is_not_clean_comparison) ... ok
+test_correctness_loss_rejects_fast_result (test_advisory_compare.ComparisonTests.test_correctness_loss_rejects_fast_result) ... ok
+test_duplicate_pair (test_advisory_compare.ComparisonTests.test_duplicate_pair) ... ok
+test_empty_and_excessive_rows (test_advisory_compare.ComparisonTests.test_empty_and_excessive_rows) ... ok
+test_faster_is_review_only (test_advisory_compare.ComparisonTests.test_faster_is_review_only) ... ok
+test_input_not_modified (test_advisory_compare.ComparisonTests.test_input_not_modified) ... ok
+test_invalid_numeric_inputs (test_advisory_compare.ComparisonTests.test_invalid_numeric_inputs) ... ok
+test_invalid_options (test_advisory_compare.ComparisonTests.test_invalid_options) ... ok
+test_invalid_schema_or_extra_fields (test_advisory_compare.ComparisonTests.test_invalid_schema_or_extra_fields) ... ok
+test_json_contract (test_advisory_compare.ComparisonTests.test_json_contract) ... ok
+test_mismatched_context (test_advisory_compare.ComparisonTests.test_mismatched_context) ... ok
+test_missing_pair (test_advisory_compare.ComparisonTests.test_missing_pair) ... ok
+test_new_timeout_rejects_even_if_previously_unverified (test_advisory_compare.ComparisonTests.test_new_timeout_rejects_even_if_previously_unverified) ... ok
+test_no_speed_gain_is_inconclusive (test_advisory_compare.ComparisonTests.test_no_speed_gain_is_inconclusive) ... ok
+test_no_verified_outputs_not_win (test_advisory_compare.ComparisonTests.test_no_verified_outputs_not_win) ... ok
+test_other_improvement_does_not_hide_lost_case (test_advisory_compare.ComparisonTests.test_other_improvement_does_not_hide_lost_case) ... ok
+test_percentile_includes_failed_latency (test_advisory_compare.ComparisonTests.test_percentile_includes_failed_latency) ... ok
+test_repeats_are_not_new_cases (test_advisory_compare.ComparisonTests.test_repeats_are_not_new_cases) ... ok
+test_row_order_does_not_matter (test_advisory_compare.ComparisonTests.test_row_order_does_not_matter) ... ok
+test_strict_booleans_and_integers (test_advisory_compare.ComparisonTests.test_strict_booleans_and_integers) ... ok
+test_unauthorized_rejects (test_advisory_compare.ComparisonTests.test_unauthorized_rejects) ... ok
+test_verified_timeout_is_inconsistent (test_advisory_compare.ComparisonTests.test_verified_timeout_is_inconsistent) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.007s
+
+OK
