@@ -111,12 +111,17 @@ class StreamDirector:
 
     def __init__(self, *, max_events: int = 48, gap_seconds: float = 2.2,
                  viewer_cooldown: float = 25.0,
-                 success_repeat_gap_seconds: float = 18.0) -> None:
+                 success_repeat_gap_seconds: float = 18.0,
+                 max_pending_per_viewer: int = 2) -> None:
         if type(max_events) is not int or not 1 <= max_events <= 128:
             raise ValueError("max_events must be between 1 and 128")
         self.gap_seconds = _clock(gap_seconds)
         self.viewer_cooldown = _clock(viewer_cooldown)
         self.success_repeat_gap_seconds = _clock(success_repeat_gap_seconds)
+        if (type(max_pending_per_viewer) is not int
+                or not 1 <= max_pending_per_viewer <= 16):
+            raise ValueError("max_pending_per_viewer must be an integer from 1 to 16")
+        self.max_pending_per_viewer = max_pending_per_viewer
         self.max_events = max_events
         self.enabled = False
         self._session_epoch = 0
@@ -133,7 +138,8 @@ class StreamDirector:
         self._game_reactions: dict[str, tuple[float, str]] = {}
         self._counters = {"accepted": 0, "rejected": 0, "expired": 0,
                           "evicted": 0, "completed": 0, "abandoned": 0,
-                          "suppressed_reactions": 0}
+                          "suppressed_reactions": 0,
+                          "viewer_queue_limited": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
@@ -249,6 +255,23 @@ class StreamDirector:
         if last is not None and now - last < min(40.0, max(10.0, ttl)):
             self._counters["rejected"] += 1
             return False
+        # Twitch EventSub delivery de-duplication is not flood control: one
+        # authenticated viewer can submit many distinct chat messages and fill
+        # the entire queue before anybody else has a chance to ask a question.
+        # Bound *pending* items per canonical host-verified speaker across
+        # viewer_question and viewer_comment. Reject the NEW event rather than
+        # evicting an already proposed intent (which may be synthesizing audio).
+        # This is chat admission only; it does not authorize speech or tools.
+        if event.kind.startswith("viewer"):
+            pending = sum(
+                item.kind.startswith("viewer")
+                and item.speaker_id == event.speaker_id
+                for item in self._events
+            )
+            if pending >= self.max_pending_per_viewer:
+                self._counters["viewer_queue_limited"] += 1
+                self._counters["rejected"] += 1
+                return False
         if len(self._events) >= self.max_events:
             lowest = min(self._events, key=lambda item: (self._priority(item, now), item.timestamp))
             if self._priority(lowest, now) >= self._priority(event, now):
