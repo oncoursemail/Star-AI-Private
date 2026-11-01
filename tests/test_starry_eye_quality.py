@@ -117,6 +117,18 @@ def test_declared_intentional_overlap_is_not_flagged(tmp_path):
     assert not any(f["code"] == "ui_hit_target_overlap" for f in result["findings"])
 
 
+@pytest.mark.parametrize("foreground,large_text", [("#00827F", False), ("#004FCD", True)])
+def test_contrast_threshold_is_not_rounded_into_a_pass(tmp_path, foreground, large_text):
+    work, manifest = _setup(tmp_path)
+    manifest["layout"]["desktop"] = [
+        {"id": "Caption", "rect": [12, 18, 105, 52], "foreground": foreground,
+         "background": "#000000", "large_text": large_text},
+    ]
+    result = audit(work, _save(tmp_path, manifest))
+    assert result["status"] == "automated_checks_failed"
+    assert any(f["code"] == "low_text_contrast" for f in result["findings"])
+
+
 def test_motion_does_not_claim_animation_from_unchanged_frames(tmp_path):
     work, manifest = _setup(tmp_path)
     manifest["motion"] = [{"from": "desktop", "to": "after", "expected": "moving", "threshold": 0.01}]
