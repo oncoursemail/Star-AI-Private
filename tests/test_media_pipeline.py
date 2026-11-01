@@ -319,23 +319,27 @@ def test_switch_lists_both_places_for_every_capability_with_honest_notes(tmp_pat
     shown = {entry['id']: entry for entry in media_places.describe(Settings(), tmp_path)}
     assert list(shown) == ['images', 'voice', 'video']
     for entry in shown.values():
-        assert [option['label'] for option in entry['options']] == ['STAR Brains (servers)', 'This PC (your GPU)']
+        labels = [option['label'] for option in entry['options']]
+        assert labels[:2] == ['STAR Brains (servers)', 'This PC (your GPU)']
+        assert labels[2:] == (['Automatic: this PC when its graphics card is free, otherwise the STAR Brains']
+                              if entry['id'] == 'images' else [])
         for option in entry['options']:
             assert option['available'] or option['reason'].startswith('Not available')
     images = {option['id']: option for option in shown['images']['options']}
     assert shown['images']['chosen'] == 'pc' and images['pc']['available'] and not images['servers']['available']
     assert 'Measured on this PC' in images['pc']['note'] and '1024x1024 in 6.8 s' in images['pc']['note']
-    assert 'no graphics card' in images['servers']['reason'] and 'estimate' in images['servers']['reason']
-    assert '480 to 1500 s' in images['servers']['reason'] and 'not measured on the servers' in images['servers']['reason']
+    # The servers' image service exists now: a setting (its address + the STAR Server key) makes it available.
+    assert 'no image service address is set' in images['servers']['reason'] and not images['auto']['available']
+    assert '512x512 in 5.5 s' in images['servers']['note'] and '1024x1024 in 14 s' in images['servers']['note']
     voice = {option['id']: option for option in shown['voice']['options']}
     assert voice['pc']['available'] and not voice['servers']['available']
     assert 'no speech recogniser or voice is installed on the servers' in voice['servers']['reason']
     video = {option['id']: option for option in shown['video']['options']}
     assert not video['servers']['available'] and 'no STAR Server is connected' in video['servers']['reason']
     assert not video['pc']['available'] and 'on-device brain is not installed' in video['pc']['reason']
-    # Settings can make video places available; images and voice on the servers cannot exist here.
+    # Settings can make video and image places available; voice on the servers cannot exist here.
     assert video['servers']['fixable'] and video['pc']['fixable']
-    assert images['servers']['fixable'] is False and voice['servers']['fixable'] is False
+    assert images['servers']['fixable'] and images['auto']['fixable'] and voice['servers']['fixable'] is False
     assert images['pc']['fixable'] and voice['pc']['fixable']
 
 
