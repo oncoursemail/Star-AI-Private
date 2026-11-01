@@ -11,7 +11,7 @@ No service is launched, stopped, configured, or contacted over a socket.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import platform
 import re
@@ -27,11 +27,23 @@ class ProcessWitness:
     created_unix_s: float
 
 
+_GPU_UUID_RE = re.compile(r"GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def _validated_gpu_uuid(value: str) -> str:
+    """Bounded NVIDIA GPU UUID, normalized for comparisons; never emit in reports."""
+    if type(value) is not str or _GPU_UUID_RE.fullmatch(value) is None:
+        raise ValueError("invalid local GPU UUID evidence")
+    return value.casefold()
+
+
 @dataclass(frozen=True)
 class GpuHeadroom:
     total_mib: int
     free_mib: int
     utilization_pct: int
+    # Read in memory for device continuity; intentionally excluded from repr.
+    device_uuid: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if (type(self.total_mib) is not int
@@ -41,6 +53,8 @@ class GpuHeadroom:
                 or not 0 <= self.free_mib <= self.total_mib
                 or not 0 <= self.utilization_pct <= 100):
             raise ValueError("invalid bounded local GPU evidence")
+        if self.device_uuid is not None:
+            _validated_gpu_uuid(self.device_uuid)
 
 
 @dataclass(frozen=True)
@@ -88,17 +102,20 @@ def query_nvidia_gpu(index: int = 0) -> GpuHeadroom:
         raise ValueError("GPU index must be an integer 0..7")
     result = subprocess.run(
         ["nvidia-smi", "-i", str(index),
-         "--query-gpu=memory.total,memory.free,utilization.gpu",
+         "--query-gpu=uuid,memory.total,memory.free,utilization.gpu",
          "--format=csv,noheader,nounits"],
         capture_output=True, text=True, timeout=3, check=False,
     )
-    if result.returncode != 0 or len(result.stdout) > 128:
+    if result.returncode != 0 or len(result.stdout) > 256:
         raise RuntimeError("GPU sample unavailable")
     rows = result.stdout.strip().splitlines()
-    if len(rows) != 1 or re.fullmatch(r"\s*\d+\s*,\s*\d+\s*,\s*\d+\s*", rows[0]) is None:
+    parts = [part.strip() for part in rows[0].split(",")] if len(rows) == 1 else []
+    if (len(parts) != 4
+            or not all(re.fullmatch(r"\d+", part) for part in parts[1:])):
         raise ValueError("unexpected GPU counter format")
-    total, free, util = (int(part.strip()) for part in rows[0].split(","))
-    return GpuHeadroom(total, free, util)
+    device_uuid = _validated_gpu_uuid(parts[0])
+    total, free, util = (int(part) for part in parts[1:])
+    return GpuHeadroom(total, free, util, device_uuid=device_uuid)
 
 
 def _game_identity(identity: tuple[int, float] | None) -> tuple[int, float] | None:
