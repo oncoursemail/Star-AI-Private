@@ -223,6 +223,59 @@ class TestRealtimeGameLoop(unittest.TestCase):
         )
         self.assertFalse(finish(loop, lease, scene, now=1200).offered)
 
+    def test_unverified_completion_cannot_free_an_unfinished_worker(self):
+        loop = start()
+        original = frame()
+        lease = offer(loop, original)
+        # An untrusted or premature completion was previously able to erase
+        # the lease and admit a second inference worker without a stop proof.
+        self.assertEqual(
+            finish(loop, lease, original, now=1200, host_verified=False).reason,
+            "trusted_completion_missing",
+        )
+        self.assertTrue(loop.metrics()["worker_stop_pending"])
+        self.assertEqual(
+            offer(loop, frame(seq=2, captured=1250), now=1300).reason,
+            "previous_inference_worker_not_stopped",
+        )
+        self.assertFalse(loop.acknowledge_worker_stopped())
+        self.assertTrue(loop.acknowledge_worker_stopped(
+            host_confirmed_stopped=True))
+        self.assertEqual(
+            offer(loop, frame(seq=3, captured=1350), now=1400).route,
+            "reactive",
+        )
+
+    def test_clock_reversed_completion_requires_verified_worker_stop(self):
+        loop = start()
+        original = frame()
+        lease = offer(loop, original)
+        self.assertEqual(
+            finish(loop, lease, original, now=1099).reason,
+            "host_clock_reversed",
+        )
+        self.assertTrue(loop.metrics()["worker_stop_pending"])
+        loop.stop()
+        with self.assertRaises(RuntimeError):
+            loop.start(SCOPE, ("jump",), owner_approved=True)
+        self.assertTrue(loop.acknowledge_worker_stopped(
+            host_confirmed_stopped=True))
+        loop.start(SCOPE, ("jump",), owner_approved=True)
+
+    def test_verified_failed_completion_does_not_leave_phantom_worker(self):
+        loop = start()
+        original = frame()
+        lease = offer(loop, original)
+        self.assertEqual(
+            finish(loop, lease, original, cpu_pressure=True).reason,
+            "hardware_pressure",
+        )
+        self.assertFalse(loop.metrics()["worker_stop_pending"])
+        self.assertEqual(
+            offer(loop, frame(seq=2, captured=1250), now=1300).route,
+            "reactive",
+        )
+
     def test_fast_route_rechecked_after_model_under_new_cpu_pressure(self):
         loop = start()
         scene = frame()
