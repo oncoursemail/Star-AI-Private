@@ -504,6 +504,32 @@ def adjacent(ours: str, base: str, theirs: str) -> str | None:
     return None
 
 
+def both_added(ours: str, base: str, theirs: str, docs: bool) -> str | None:
+    """Both sides kept every ancestor line and only inserted lines: each insertion goes in at its own place. Two
+    insertions at the same place are only joined in prose (docs); in code their order may matter, so None."""
+    import difflib
+    b = (base if base.endswith("\n") or not base else base + "\n").splitlines(keepends=True)
+    if not b:
+        return None
+    gaps: list[dict[int, list[str]]] = []
+    for side in (ours, theirs):
+        s = (side if side.endswith("\n") or not side else side + "\n").splitlines(keepends=True)
+        ins: dict[int, list[str]] = {}
+        for op, i1, _i2, j1, j2 in difflib.SequenceMatcher(None, b, s, autojunk=False).get_opcodes():
+            if op == "insert":
+                ins[i1] = s[j1:j2]
+            elif op != "equal":
+                return None                           # an ancestor line changed or went away: not pure additions
+        gaps.append(ins)
+    if not gaps[0] or not gaps[1] or (set(gaps[0]) & set(gaps[1]) and not docs):
+        return None
+    out = []
+    for i in range(len(b) + 1):
+        out += gaps[0].get(i, []) + gaps[1].get(i, [])
+        out += b[i:i + 1]
+    return "".join(out)
+
+
 def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") -> tuple[str | None, str]:
     """Every conflict block of one file resolved by her; (None, why) when she cannot make valid code of it. A hint is a
     checker's complaint about her previous attempt at this file."""
@@ -522,6 +548,8 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") ->
             last = m.end()
             continue
         near = adjacent(ours, base, theirs) if not hint and "\n|||||||" in m.group(0) else None
+        if near is None and not hint and "\n|||||||" in m.group(0):
+            near = both_added(ours, base, theirs, docs=path.endswith((".md", ".txt", ".rst")))
         if near is not None and not slips(path, m.group(0), near, before, after):
             out += [text[last:m.start()], near]        # one side only added next to what the other changed
             last = m.end()

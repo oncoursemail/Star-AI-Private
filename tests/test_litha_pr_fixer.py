@@ -212,7 +212,7 @@ def test_an_addition_next_to_the_other_sides_change_merges_without_her_model():
 
 def test_a_conflict_too_big_for_her_window_is_refused_without_asking_her():
     side = "".join(f"- line {i} of a long design note\n" for i in range(400))
-    text = f"<<<<<<< pr\n{side}A\n||||||| base\n{side}\n=======\n{side}B\n>>>>>>> main\n"
+    text = f"<<<<<<< pr\nA{side}||||||| base\n{side}=======\nB{side}>>>>>>> main\n"   # both change line 0
     merged, why = F.resolve_text("ARCHITECTURE.md", text, "t", asker=lambda p: pytest.fail("no model call"))
     assert merged is None and "too big for her 4096-token window" in why
 
@@ -258,3 +258,11 @@ def test_compiler_errors_in_a_file_she_merged_make_her_redo_that_merge(monkeypat
     errs = F.rust_fix.errors(out)
     assert errs[0]["file"] == "crates/s/src/host.rs"                 # the error points into her merged file (#397)
     assert hints == []                                               # (resolve() wiring is covered by the live run)
+
+
+def test_both_sides_only_adding_merge_by_code_and_same_spot_only_in_docs():
+    base, ours, theirs = "a\nb\nc\n", "a\nX\nb\nc\n", "a\nb\nc\nY\n"
+    assert F.both_added(ours, base, theirs, docs=False) == "a\nX\nb\nc\nY\n"        # different places: exact
+    same = F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=True)
+    assert same == "a\nX\nY\nb\n" and F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=False) is None
+    assert F.both_added("a\nX\n", "a\nb\n", "a\nb\nY\n", docs=True) is None         # an ancestor line went away
