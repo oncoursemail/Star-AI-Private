@@ -32,6 +32,9 @@ _GUIDANCE = {
 }
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
 _EVIDENCE = frozenset({"observed", "reported", "unknown"})
+# Bound stream-time dedupe and identity receipts under sustained chat floods.
+# Cache saturation rejects new viewer chatter rather than silently disabling dedupe.
+_MAX_SESSION_RECEIPTS = 4096
 
 
 def _reaction_digest(detail: str, game_scope: str = "") -> str:
@@ -143,7 +146,8 @@ class StreamDirector:
         self._counters = {"accepted": 0, "rejected": 0, "expired": 0,
                           "evicted": 0, "completed": 0, "abandoned": 0,
                           "suppressed_reactions": 0,
-                          "viewer_queue_limited": 0}
+                          "viewer_queue_limited": 0,
+                          "dedupe_capacity_rejected": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
         with self._lock:
@@ -262,6 +266,15 @@ class StreamDirector:
             if last is not None and now - last < min(40.0, max(10.0, ttl)):
                 self._counters["rejected"] += 1
                 return False
+            # Distinct, moderated messages can arrive far faster than speech.
+            # Never let an unbounded dedupe dictionary turn a chat flood into
+            # high host-memory usage, or evict old digests to bypass replay checks.
+            # Host-attested owner/game events remain admissible under saturation.
+            if (suppress_repeats and digest not in self._recent
+                    and len(self._recent) >= _MAX_SESSION_RECEIPTS):
+                self._counters["rejected"] += 1
+                self._counters["dedupe_capacity_rejected"] += 1
+                return False
             # Twitch EventSub delivery de-duplication is not flood control: one
             # authenticated viewer can submit many distinct chat messages and fill
             # the entire queue before anybody else has a chance to ask a question.
@@ -364,14 +377,25 @@ class StreamDirector:
                     if spoken:
                         self._last_speech_at = now
                         if event.kind.startswith("viewer") and event.speaker_id:
+                            # A very long cooldown must not allow an unbounded
+                            # set of distinct viewers to accumulate across hours.
+                            if (event.speaker_id not in self._viewer_last_spoken
+                                    and len(self._viewer_last_spoken) >= _MAX_SESSION_RECEIPTS):
+                                oldest = min(self._viewer_last_spoken,
+                                             key=self._viewer_last_spoken.__getitem__)
+                                self._viewer_last_spoken.pop(oldest)
                             self._viewer_last_spoken[event.speaker_id] = now
                         # Only a genuinely observed success can suppress later
                         # reactions. A reported/unknown victory may have been wrong;
                         # it must never silence the later witnessed achievement.
                         if event.kind == "game_success" and event.evidence == "observed":
-                            self._game_reactions[
-                                _reaction_digest(event.detail, event.game_scope)
-                            ] = (now, event.signal_id)
+                            reaction = _reaction_digest(event.detail, event.game_scope)
+                            if (reaction not in self._game_reactions
+                                    and len(self._game_reactions) >= _MAX_SESSION_RECEIPTS):
+                                oldest = min(self._game_reactions,
+                                             key=lambda key: self._game_reactions[key][0])
+                                self._game_reactions.pop(oldest)
+                            self._game_reactions[reaction] = (now, event.signal_id)
                         self._counters["completed"] += 1
                     else:
                         self._counters["abandoned"] += 1
