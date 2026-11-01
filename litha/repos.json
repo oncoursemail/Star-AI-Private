@@ -3,6 +3,7 @@
   "repos": [
     {"repo": "oncoursemail/Star-AI-Project", "base": "star/next", "mode": "merge"},
     {"repo": "Metallic-Club/studio", "base": "main", "mode": "merge", "allow_main": true,
+     "clone": "~/Documents/metallic-studio", "worktrees": "~/Documents/metallic-studio-worktrees",
      "why": "owner 2026-10-30: sessions may merge PRs to main after CI is green and a review"},
     {"repo": "oncoursemail/Metallic-RC", "base": "*", "mode": "review"},
     {"repo": "oncoursemail/Metallic-RB", "base": "*", "mode": "review"},

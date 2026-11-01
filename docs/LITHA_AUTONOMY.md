@@ -130,6 +130,23 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   her fix PR with the test as a regression test. Not yet seen live (no proven find on a real PR so far).
 - Merger: honours the reviewed `star:allow` marker like star commit; holds MAJOR bumps of STAR Home packages.
 
+## 4c. Conflicts in every repo (2026-10-31 night, measured)
+
+- `python -m litha.pr_fixer --others N`: for each repos.json entry with `clone` and mode merge (now Metallic-Club/studio)
+  she resolves up to N conflicting PRs per run on `litha/merge-<n>-<date>-<hhmm>` and reruns a failed check once per
+  head. Her merger then reviews; Studio CI (fmt, nextest, clippy, deny) must be green before she merges.
+- Every conflict is shown in diff3 form (with the common ancestor). Checks before anything is written, each answered
+  back to her with the reason (3 tries per block, then one more try at the whole file with the checker's message):
+  nothing either side ADDED is lost (functions/types/modules, headings, table rows); no line from just outside the
+  block repeated (the #853 slip: doubled `data:BootData`, closed); brackets balance as both sides do; escapes are
+  not turned into real characters (a Rust `\n` became a line break); the file parses (rustfmt for .rs, toml, json,
+  py; naga for .wgsl only where the base copy passes). Pure additions on both sides (empty ancestor) are kept both,
+  without asking her. Merged .rs files go through rustfmt when the base copy is rustfmt-clean (Studio CI runs
+  cargo fmt --check). `.github/` conflicts and more than 5 files stay with a person.
+- Dry run on 8 Studio PRs: 4 resolved (#448, #446, #442 incl. a real logic merge in physics raycast, #438), 4 refused
+  (CI files / 7 files / no clean answer). Earlier versions of the same run produced 2 merges with a lost brace, both
+  caught by rustfmt.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import shutil
+import subprocess
 import sys
+from unittest.mock import patch
+
+import pytest
 
 import litha.pr_fixer as F
 
@@ -112,7 +118,82 @@ def test_conflicts_are_resolved_block_by_block_and_must_compile():
     answers = iter([json.dumps({"resolved": "A = 1\nB = 2\n"}), json.dumps({"resolved": "y = 2"})])
     merged, why = F.resolve_text("star/m.py", text, "t", lambda p: next(answers))
     assert merged == "import os\nA = 1\nB = 2\n\nx = 3\ny = 2\n" and why == ""
-    broken = iter([json.dumps({"resolved": "def f(:\n"}), json.dumps({"resolved": "y = 2"})])
-    assert F.resolve_text("star/m.py", text, "t", lambda p: next(broken))[0] is None      # must compile
-    marked = iter([json.dumps({"resolved": "<<<<<<< HEAD"})] * 2)
+    bad = iter([json.dumps({"resolved": "def f(:\n"})] * 3)
+    assert F.resolve_text("star/m.py", text, "t", lambda p: next(bad))[0] is None         # brackets do not balance
+    assert "does not compile" in F.broken(Path("."), "star/m.py", "import os\ndef f:\n")    # must compile
+    marked = iter([json.dumps({"resolved": "<<<<<<< HEAD"})] * 3)
     assert F.resolve_text("star/m.py", text, "t", lambda p: next(marked))[0] is None      # no markers left
+
+
+DIFF3 = ("<<<<<<< HEAD\nfn keep() {}\nfn pr_added() {}\n||||||| base\nfn keep() {}\n=======\nfn keep() {}\n"
+         "fn main_added() {}\n>>>>>>> origin/main\n")
+
+
+def test_a_resolution_that_drops_what_one_side_added_is_sent_back():
+    asked = []
+    answers = iter([json.dumps({"resolved": "fn keep() {}\nfn pr_added() {}\n"}),             # lost main's function
+                    json.dumps({"resolved": "fn keep() {}\nfn pr_added() {}\nfn main_added() {}\n"})])
+    merged, why = F.resolve_text("crates/a/src/lib.rs", DIFF3, "t", lambda p: asked.append(p) or next(answers))
+    assert why == "" and "fn main_added" in merged
+    assert "fn main_added" in asked[1] and "dropped" in asked[1]
+    lazy = iter([json.dumps({"resolved": "fn keep() {}\n"})] * 3)
+    assert F.resolve_text("crates/a/src/lib.rs", DIFF3, "t", lambda p: next(lazy))[0] is None
+
+
+def test_lost_brackets_and_decoded_escapes_are_sent_back():
+    block = ('<<<<<<< HEAD\n    fn a() {\n        eprintln!("{m}\\nusage: a");\n    }\n||||||| base\n    fn a() {}\n'
+             '=======\n    fn a() {\n        eprintln!("{m}\\nusage: b");\n    }\n>>>>>>> origin/main\n')
+    good = '    fn a() {\n        eprintln!("{m}\\nusage: a b");\n    }\n'
+    assert F.slips("x.rs", block, good) == ""
+    assert "brackets" not in F.slips("x.rs", block, good.replace("\\n", "\n")) and \
+        "escape" in F.slips("x.rs", block, good.replace("\\n", "\n"))                     # the #446 slip
+    assert "{}" in F.slips("x.rs", block, good.rsplit("    }", 1)[0])                       # lost closing brace
+    answers = iter([json.dumps({"resolved": good.replace("\\n", "\n")}), json.dumps({"resolved": good})])
+    assert F.resolve_text("x.rs", block, "t", lambda p: next(answers))[0] == good
+
+
+def test_repeating_the_line_outside_the_block_is_sent_back():
+    block = ("<<<<<<< HEAD\n companions?:ReactNode\n||||||| base\n companions?:ReactNode\n=======\n companions?:ReactNode\n"
+             " account?:ReactNode\n>>>>>>> origin/main\n")
+    before, after = "export type P={\n appearance?:ReactNode\n", " data:BootData\n}\n"
+    assert F.slips("p.tsx", block, " companions?:ReactNode\n account?:ReactNode\n", before, after) == ""
+    assert "just before" in F.slips("p.tsx", block, " appearance?:ReactNode\n companions?:ReactNode\n account?:ReactNode\n",
+                                    before, after)                                       # the #853 slip
+    assert "just after" in F.slips("p.tsx", block, " companions?:ReactNode\n account?:ReactNode\n data:BootData\n",
+                                   before, after)
+
+
+def test_two_pure_additions_are_kept_both_without_asking():
+    text = ("    fn start() {\n<<<<<<< HEAD\n        let a = 1;\n||||||| 494e8a5d\n=======\n        sync();\n"
+            ">>>>>>> origin/main\n        run();\n    }\n")
+    merged, why = F.resolve_text("s.rs", text, "t", lambda p: 1 / 0)               # the model is never asked
+    assert why == "" and merged == "    fn start() {\n        let a = 1;\n        sync();\n        run();\n    }\n"
+    answers = iter([json.dumps({"resolved": "        sync();\n        let a = 1;\n"})])   # a checker complained: she decides
+    assert F.resolve_text("s.rs", text, "t", lambda p: next(answers), hint="x\n")[0].count("sync();") == 1
+
+
+def test_what_one_side_deleted_on_purpose_may_stay_deleted():
+    block = ("<<<<<<< HEAD\n## Physics\n| Crate | Role |\n| --- | --- |\n| core | data |\n||||||| base\n## Physics\n"
+             "## Old notes\n=======\n## Physics\n## Old notes\n| render | GPU |\n>>>>>>> origin/main\n")
+    assert F.dropped(block, "## Physics\n| Crate | Role |\n| --- | --- |\n| core | data |\n| render | GPU |\n") == []
+    assert F.dropped(block, "## Physics\n| core | data |\n") == ["row Crate", "row render"]
+
+
+def test_merged_rust_must_parse_when_the_base_copy_does(tmp_path):
+    if not (shutil.which("rustfmt") or (Path.home() / ".cargo/bin/rustfmt.exe").exists()):
+        pytest.skip("no rustfmt")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "a"\nedition = "2024"\n', encoding="utf-8")
+    (tmp_path / "lib.rs").write_text("fn a() {}\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", *F.IDENTITY, "commit", "-qm", "x"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=tmp_path, check=True)
+    with patch.object(F, "BASE", "main"):
+        assert F.broken(tmp_path, "lib.rs", "fn a() {}\nfn b() { let x = 1; }\n") == ""
+        assert "rustfmt rejects" in F.broken(tmp_path, "lib.rs", "fn a() {}\nfn b() { let x = ; }\n")
+        assert F.broken(tmp_path, "new.rs", "fn c( {") == ""               # no base copy to compare with: CI decides
+        assert F.tidy(tmp_path, "lib.rs", "fn a() {}\nfn b() {\n    \n}\n") == "fn a() {}\nfn b() {}\n"   # cargo fmt clean
+        (tmp_path / "lib.rs").write_text("fn  a() {}\n", encoding="utf-8")         # a base that is not rustfmt-clean:
+        subprocess.run(["git", *F.IDENTITY, "commit", "-qam", "y"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=tmp_path, check=True)
+        assert F.tidy(tmp_path, "lib.rs", "fn  a() {}\nfn b() {\n    \n}\n") == "fn  a() {}\nfn b() {\n    \n}\n"
