@@ -45,7 +45,7 @@ def test_clip_plays_before_the_reply_and_counts_as_heard_audio():
     metrics = turn(session, 1)
     assert metrics.ack_text in acks.LINES["task"] and metrics.first_ack_at < metrics.first_audio_at
     stages = metrics.stages()
-    assert stages["perceived"] < stages["total"] and stages["total"] >= 0.3        # the brain's delay is bridged
+    assert stages["perceived"] < stages["total"] and stages["total"] >= 0.3 - 0.016  # brain delay bridged (Windows clock: ~15.6 ms ticks)
     assert events.of("acknowledgement")[0]["text"] == metrics.ack_text
     assert session.history[-1] == {"role": "assistant", "content": "Sure. A door needs a hinge."}   # clip not in history
     assert tts.spoken[:len(sum(acks.LINES.values(), ()))] == list(sum(acks.LINES.values(), ()))      # rendered once
