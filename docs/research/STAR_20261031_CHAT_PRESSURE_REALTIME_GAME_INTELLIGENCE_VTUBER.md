@@ -78,6 +78,14 @@ For general knowledge, organize `source -> claim -> date -> verification method 
 
 Treat Rust as an **optimization tool for proven hot spots** (frame preprocessing, structured telemetry, high-volume event filters, and safe native IPC). Profile before migrating working Python orchestration: Rust alone does not increase model reasoning accuracy, and additional FFI/process boundaries may *increase* end-to-end latency. Retain a Python fallback, Rust tests, measured p95 win, and compatibility checks before changing defaults.
 
+### New October 2026 evidence: inspect before editing
+
+The [October 1, 2026 OpenGameEval paper](https://arxiv.org/abs/2610.02563) evaluated 13 frontier agents on 84 human-curated Roblox Studio development tasks with 16 attempts each. Its analysis reports that *within matched task/model comparisons*, inspecting all reference-touched objects before changing them correlates with a 13.4 percentage point higher pass rate on scene-only tasks and 9.8 points on script-only tasks relative to inspecting none. This is observational correlation in the research, not a STAR speedup or guaranteed causal effect.
+
+**STAR change proposal:** add an explicit `inventory -> inspect references -> plan edits -> apply bounded patch -> run Studio tests -> compare camera captures` contract in the game builder. Before creation, collect the instance hierarchy, relevant properties, constraint relationships, Humanoid/RigType assumptions, world transform/anchoring, UI scales, and dependency graph. Fail a build candidate if it edits an unseen target, breaks support geometry, leaves orphan attachments, or degrades a known-good scene. Validate across several game variants rather than replaying the same place. Roblox publishes the [open-source evaluation harness](https://github.com/Roblox/open-game-eval) for reproducible Studio-based checks.
+
+For animation, [Live2D Cubism physics documentation](https://docs.live2d.com/en/cubism-editor-manual/physics-operation/) explains real-time hair movement driven by face turning and physics sampling. Treat hair/cloth/tail simulation as *render-side parameters derived from motion*, not as LLM-generated frame-by-frame commands. Start with 30 or 60 Hz rig output and measure lip/eye/hair latency while OBS and the game are active; keep reduced-motion ON when opted in, and stop all physics cues on a revoked audio/scene epoch.
+
 ## 7. Priority implementation sequence and release gates
 
 **P0 — trustworthy realtime baseline.** Publish concurrency/cache-pressure regressions; run Python/Ruff/Pyright and existing stream suites; inspect exact-commit Actions status. On the authorized Windows box, collect real CPU/GPU/RAM/VRAM/game FPS/OBS/TTS data, and verify actual audio/visual playback. No headline speedups without paired measurements.
