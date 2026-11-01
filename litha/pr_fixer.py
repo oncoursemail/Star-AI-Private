@@ -28,7 +28,7 @@ import time
 import tomllib
 
 from litha import rust_fix
-from litha.pr_merger import BASE, REPO, gh, head_checks, open_prs
+from litha.pr_merger import BASE, REPO, gh, head_checks, latest_runs, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
 WORK = ROOT.parent                                          # worktrees/
@@ -70,7 +70,7 @@ def failed_logs(sha: str) -> str:
     """The text of every failed check's job log on this commit (GitHub Actions jobs only)."""
     data = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"))
     out = []
-    for c in data.get("check_runs", []):
+    for c in latest_runs(data.get("check_runs", [])):
         if (c.get("conclusion") or "") != "failure":
             continue
         m = re.search(r"/job/(\d+)", c.get("details_url") or "")
@@ -674,7 +674,9 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
     log = "" if found else failed_logs(sha)
     fails = failures(log)
     if not found and not log.strip():     # logs expire on GitHub: run the failed jobs again, look next time
-        return {"pr": number, "result": "rerun", "why": f"failed logs expired; reran {rerun_failed(sha, number)} run(s)"}
+        n = rerun_failed(sha, number)                     # nothing restarted: not a rerun, or it loops every run
+        return {"pr": number, "result": "rerun" if n else "skip",
+                "why": f"failed logs expired; reran {n} run(s)" + ("" if n else "; nothing could be restarted")}
     linting = not fails and bool(RUFF_CI.search(log))
     typing = re.search(r"New pyright errors[^\n]*\n((?:.*\.py:\d+: .*\n?){1,4})", log)
     if not found and not fails and not linting and typing:   # a type gate fails the same way every run: no rerun

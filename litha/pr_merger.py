@@ -73,7 +73,17 @@ def head_checks(sha: str) -> list[dict]:
     """Check runs on the exact head commit: [{name, status, conclusion}]."""
     data = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"))
     return [{"name": c["name"], "status": c["status"], "conclusion": (c.get("conclusion") or "").upper()}
-            for c in data.get("check_runs", [])]
+            for c in latest_runs(data.get("check_runs", []))]
+
+
+def latest_runs(runs: list[dict]) -> list[dict]:
+    """The newest run of each check name: a check that failed on Oct 27 and passed three times since is passing
+    (seen on #700: the old failure kept her rerunning it every 10 minutes)."""
+    latest: dict[str, dict] = {}
+    for c in runs:
+        if c["name"] not in latest or (c.get("started_at") or "") >= (latest[c["name"]].get("started_at") or ""):
+            latest[c["name"]] = c
+    return list(latest.values())
 
 
 def parse_diff(diff: str) -> dict[str, dict]:

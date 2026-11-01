@@ -224,3 +224,16 @@ def test_a_pyright_gate_failure_is_reported_not_rerun(monkeypatch):
     monkeypatch.setattr(F, "rerun_failed", lambda *a: pytest.fail("a type error is not flaky"))
     row = F.fix({"headRefOid": "abc", "number": 848, "headRefName": "x"}, "python")
     assert row["result"] == "failed" and row["kind"] == "types" and row["why"].startswith("new pyright errors: litha/pr_fixer.py:411: No overloads")
+
+
+def test_an_old_failure_superseded_by_later_passes_is_not_a_failure(monkeypatch):
+    runs = [{"name": "Offline Python checks", "status": "completed", "conclusion": "failure",
+             "started_at": "2026-10-27T12:00:00Z", "details_url": "https://x/actions/runs/1/job/11"},
+            {"name": "Offline Python checks", "status": "completed", "conclusion": "success",
+             "started_at": "2026-11-01T09:00:00Z", "details_url": "https://x/actions/runs/2/job/22"}]
+    assert [c["conclusion"] for c in F.latest_runs(runs)] == ["success"]           # Star-AI-Project #700
+    monkeypatch.setattr(F, "gh", lambda *a, **k: json.dumps({"check_runs": runs}))
+    assert F.failed_logs("abc") == ""
+    monkeypatch.setattr(F, "rerun_failed", lambda *a: 0)
+    row = F.fix({"headRefOid": "abc", "number": 700, "headRefName": "x"}, "python")
+    assert row["result"] == "skip"                    # recorded as tried: no rerun loop every 10 minutes
