@@ -24,7 +24,9 @@ from pathlib import Path
 
 from .styles import SOUNDS
 
-NATIVE_ENGINES = frozenset({"chatterbox-turbo"})
+# Engines that make a sound themselves. Empty since 2026-10-27: Chatterbox-Turbo's laugh/sigh/gasp/cough were rated
+# 1-2 by the owner, so they are not used (docs/agents/voice-v2-20261027.md). A sound with no native engine is skipped.
+NATIVE_ENGINES: frozenset = frozenset()
 
 
 @dataclass(frozen=True)
