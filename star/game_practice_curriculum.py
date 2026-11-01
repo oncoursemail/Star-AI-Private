@@ -7,8 +7,9 @@ Host-curated targets are an allowlist; an LLM-suggested target is not authorized
 
 The progression policy is intentionally conservative: each listed situation
 at the current difficulty must clear a practice confidence threshold before
-harder exercises become eligible. Independent validation is still required to
-promote a skill, and practice confidence is not evidence of transfer mastery.
+harder exercises become eligible. An optional spaced-retention review can
+revisit VERIFIED previously mastered situations before harder tiers. Independent
+validation is still required to promote a skill; practice is not transfer proof.
 """
 from __future__ import annotations
 
@@ -78,7 +79,7 @@ class PracticeEvidenceSource(Protocol):
 
 @dataclass(frozen=True)
 class PracticeAdvice:
-    status: str  # disabled | no_targets | rehearse | review_required | complete
+    status: str  # disabled | no_targets | rehearse | spaced_review | review_required | complete
     target: PracticeTarget | None
     reason: str
     trials: int = 0
@@ -94,6 +95,7 @@ def recommend_practice(
     min_trials: int = 8, minimum_lower_bound: float = 0.55,
     max_trials_before_review: int = 40,
     max_evidence_age_s: int = 7 * 24 * 3600,
+    spaced_review_after_s: int | None = None,
 ) -> PracticeAdvice:
     """Propose *one* next practice exercise without leaking validation.
 
@@ -110,6 +112,8 @@ def recommend_practice(
     _integer(min_trials, "min_trials", 5, 100)
     _integer(max_trials_before_review, "max_trials_before_review", 10, 1000)
     _integer(max_evidence_age_s, "max_evidence_age_s", 60, 30 * 24 * 3600)
+    if spaced_review_after_s is not None:
+        _integer(spaced_review_after_s, "spaced_review_after_s", 60, max_evidence_age_s)
     if max_trials_before_review <= min_trials:
         raise ValueError("review budget must exceed minimum evidence count")
     if (type(minimum_lower_bound) not in (int, float)
@@ -159,28 +163,41 @@ def recommend_practice(
         scopes[situation] = by_action
 
     pending: list[tuple[PracticeTarget, int, int, float, int, bool]] = []
+    due_reviews: list[tuple[PracticeTarget, int, int, float, int]] = []
     for target in targets:
         item = scopes[target.situation_id].get(target.action_id)
         attempts = item.trials if item is not None else 0
         successes = item.successes if item is not None else 0
         recent = item.most_recent_unix_s if item is not None else 0
+        # New signed ledger versions expose the most recent PRACTICE result
+        # (not validation). Older aggregate adapters may omit it; do not
+        # infer a success when the field is absent.
+        newest = getattr(item, "most_recent_success", None) if item is not None else None
+        if newest is not None and type(newest) is not bool:
+            raise ValueError("invalid last signed-practice outcome")
+        last_failed = newest is False
         lower = _lower_bound(successes, attempts)
         # A signed aggregate outside the requested recent practice window cannot establish that
         # a skill was retained. We cannot infer recent win rate from a single
         # last-seen timestamp: request independent reassessment instead of
         # silently unlocking higher stages or reusing old successes.
         stale = item is not None and now - recent > max_evidence_age_s
-        mastered = (attempts >= min_trials and
-                    lower >= minimum_lower_bound and not stale)
+        mastered = (attempts >= min_trials and lower >= minimum_lower_bound
+                    and not stale and not last_failed)
         if not mastered:
             pending.append((target, attempts, successes, lower, recent, stale))
-    if not pending:
+        elif (spaced_review_after_s is not None and recent > 0
+              and now - recent >= spaced_review_after_s):
+            # Verified, still-recent PRACTICE evidence schedules a retention
+            # check. This is not a new mastery event or a holdout result.
+            due_reviews.append((target, attempts, successes, lower, recent))
+    if not pending and not due_reviews:
         return PracticeAdvice("complete", None,
                               "practice_only_complete_requires_independent_validation")
 
     # An unmastered lower-tier situation blocks the harder tier; otherwise a
     # strong result on one easy map can hide a failure on another map.
-    frontier = min(item[0].difficulty for item in pending)
+    frontier = min(item[0].difficulty for item in pending) if pending else 6
     candidates = [item for item in pending if item[0].difficulty == frontier]
     # Old lifetime wins must not imply current skill retention. The host must
     # start an independently verified fresh assessment window; adding one
@@ -193,6 +210,22 @@ def recommend_practice(
         return PracticeAdvice("review_required", target,
                               "practice_evidence_stale_requires_fresh_assessment",
                               attempts, successes, round(lower, 4))
+    # A *due*, still-mastered easier skill needs spaced retrieval before
+    # moving on to a new harder tier; an unmastered current-tier skill wins
+    # ties. Pick the oldest witnessed skill to avoid favoring easy repetition.
+    eligible_reviews = [item for item in due_reviews if item[0].difficulty < frontier]
+    if eligible_reviews:
+        target, attempts, successes, lower, _ = min(
+            eligible_reviews,
+            key=lambda item: (item[4], item[0].difficulty,
+                              item[0].situation_id, item[0].action_id),
+        )
+        return PracticeAdvice("spaced_review", target,
+                              "verified_skill_retention_review_due",
+                              attempts, successes, round(lower, 4))
+    if not pending:
+        return PracticeAdvice("complete", None,
+                              "practice_only_complete_requires_independent_validation")
     # Stop infinite ineffective self-play after a bounded failure budget.
     stalled = [item for item in candidates if item[1] >= max_trials_before_review]
     if stalled:

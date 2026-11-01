@@ -106,6 +106,9 @@ class PracticeEvidence:
     trials: int
     successes: int
     most_recent_unix_s: int
+    # PRACTICE-only newest outcome. Optional for older callers constructing
+    # the four-field aggregate, and never includes held-out validation.
+    most_recent_success: bool | None = None
 
 
 class GameplaySkillBank:
@@ -294,12 +297,22 @@ class GameplaySkillBank:
             age = now - trial.observed_unix_s
             if not 0 <= age <= max_age_s:
                 continue
-            entry = aggregates.setdefault(trial.action_id, [0, 0, 0])
+            entry = aggregates.setdefault(trial.action_id, [0, 0, 0, 0])
             entry[0] += 1
             entry[1] += int(trial.outcome == "success")
-            entry[2] = max(entry[2], trial.observed_unix_s)
-        return tuple(PracticeEvidence(action, *totals)
-                     for action, totals in sorted(aggregates.items()))
+            # A recent failure must not be hidden by a strong historical
+            # aggregate. When events share a one-second timestamp, any
+            # failure wins the tie rather than depending on SQLite row order.
+            if trial.observed_unix_s > entry[2]:
+                entry[2] = trial.observed_unix_s
+                entry[3] = int(trial.outcome == "success")
+            elif trial.observed_unix_s == entry[2] and trial.outcome == "failure":
+                entry[3] = 0
+        return tuple(
+            PracticeEvidence(action, totals[0], totals[1], totals[2],
+                             bool(totals[3]))
+            for action, totals in sorted(aggregates.items())
+        )
 
     def verify_practice_trial(self, trial: GameTrial, *, now_unix_s: int) -> bool:
         """Match an *exact* PRACTICE outcome to an existing signed bank record.

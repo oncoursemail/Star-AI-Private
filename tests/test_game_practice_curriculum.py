@@ -16,6 +16,7 @@ class PracticeAggregate:
     trials: int
     successes: int
     most_recent_unix_s: int = NOW - 30
+    most_recent_success: bool | None = None
 
 
 class EvidenceBank:
@@ -190,3 +191,122 @@ def test_no_targets_and_configuration_validation():
     assert plan(EvidenceBank()).status == "no_targets"
     with pytest.raises(ValueError):
         plan(EvidenceBank(), target(), max_trials_before_review=5)
+
+def test_spaced_review_is_explicit_opt_in_and_only_after_interval():
+    day = 86400
+    bank = EvidenceBank({"map_1": (PracticeAggregate("jump", 20, 20, NOW - day),)})
+    assert plan(bank, target()).status == "complete"  # old behavior unchanged
+    before = plan(bank, target(), spaced_review_after_s=day + 1)
+    assert before.status == "complete"
+    due = plan(bank, target(), spaced_review_after_s=day)
+    assert due.status == "spaced_review"
+    assert due.reason == "verified_skill_retention_review_due"
+    assert due.target == target()
+    assert due.trials == 20 and due.successes == 20
+    assert not due.authorized_to_play and not due.heldout_evaluated
+
+
+def test_due_early_skill_is_refreshed_before_new_harder_challenge():
+    day = 86400
+    bank = EvidenceBank({
+        "early": (PracticeAggregate("jump", 20, 20, NOW - 2 * day),),
+        "newer": (PracticeAggregate("jump", 20, 20, NOW - 30),),
+    })
+    advice = plan(
+        bank, target("early"), target("newer"), target("boss", difficulty=4),
+        spaced_review_after_s=day,
+    )
+    assert advice.status == "spaced_review"
+    assert advice.target.situation_id == "early"
+    assert len(bank.calls) == 3  # one bounded signed lookup per situation
+
+
+def test_unmastered_same_tier_is_prioritized_over_due_repetition():
+    day = 86400
+    bank = EvidenceBank({"review": (PracticeAggregate("jump", 20, 20, NOW - 2 * day),)})
+    advice = plan(
+        bank, target("review"), target("unlearned"),
+        spaced_review_after_s=day,
+    )
+    assert advice.status == "rehearse"
+    assert advice.target.situation_id == "unlearned"
+
+
+def test_oldest_due_verified_target_is_selected_deterministically():
+    day = 86400
+    bank = EvidenceBank({
+        "a": (PracticeAggregate("jump", 20, 20, NOW - 2 * day),),
+        "b": (PracticeAggregate("jump", 20, 20, NOW - 3 * day),),
+        "c": (PracticeAggregate("jump", 20, 20, NOW - 30),),
+    })
+    advice = plan(
+        bank, target("a"), target("b"), target("c"),
+        spaced_review_after_s=day,
+    )
+    assert advice.status == "spaced_review"
+    assert advice.target.situation_id == "b"
+
+
+def test_stale_skill_reassessment_beats_spaced_review():
+    day = 86400
+    bank = EvidenceBank({
+        "stale": (PracticeAggregate("jump", 20, 20, NOW - 8 * day),),
+        "recent": (PracticeAggregate("jump", 20, 20, NOW - 2 * day),),
+    })
+    advice = plan(
+        bank, target("stale"), target("recent"),
+        spaced_review_after_s=day,
+    )
+    assert advice.status == "review_required"
+    assert advice.target.situation_id == "stale"
+
+
+@pytest.mark.parametrize("interval", [True, 0, -1, 1.5, 59, 7 * 86400 + 1])
+def test_spaced_review_interval_never_exceeds_signed_evidence_lookback(interval):
+    with pytest.raises(ValueError):
+        plan(EvidenceBank(), target(), spaced_review_after_s=interval)
+
+
+def test_due_review_waits_for_signed_practice_success_threshold():
+    day = 86400
+    bank = EvidenceBank({"map_1": (PracticeAggregate("jump", 20, 12, NOW - 2 * day),)})
+    advice = plan(bank, target(), spaced_review_after_s=day)
+    assert advice.status == "rehearse"
+    assert advice.target == target()
+
+
+def test_due_review_does_not_read_bank_while_owner_opt_in_is_off():
+    bank = EvidenceBank()
+    result = recommend_practice(
+        bank, targets=(target(),), now_unix_s=NOW,
+        spaced_review_after_s=86400,
+    )
+    assert result.status == "disabled" and bank.calls == []
+
+
+def test_latest_signed_practice_failure_prevents_false_mastery():
+    bank = EvidenceBank({"easy": (PracticeAggregate(
+        "jump", 21, 20, NOW, False),)})
+    advice = plan(
+        bank, target("easy"), target("boss", difficulty=4),
+        spaced_review_after_s=86400,
+    )
+    assert advice.status == "rehearse"
+    assert advice.target.situation_id == "easy"
+    assert not advice.heldout_evaluated and not advice.authorized_to_play
+
+
+def test_latest_practice_success_can_preserve_mastery():
+    bank = EvidenceBank({"easy": (PracticeAggregate(
+        "jump", 21, 20, NOW, True),)})
+    advice = plan(bank, target("easy"), target("boss", difficulty=4))
+    assert advice.status == "rehearse"
+    assert advice.target.situation_id == "boss"
+
+
+def test_latest_practice_outcome_must_be_strict_boolean_when_present():
+    for invalid in (1, "success", False + 1, [], object()):
+        bank = EvidenceBank({"easy": (PracticeAggregate(
+            "jump", 21, 20, NOW, invalid),)})
+        with pytest.raises(ValueError):
+            plan(bank, target("easy"))
