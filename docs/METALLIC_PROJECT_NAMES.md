@@ -19,7 +19,7 @@ STAR has two repository roles:
 
 | Role | Repository | Stable repository ID |
 | --- | --- | --- |
-| Private source and development | [oncoursemail/Star-AI-Private](https://github.com/oncoursemail/Star-AI-Private) | `1412474221` |
+| STAR source and development | [oncoursemail/Star-AI-Project](https://github.com/oncoursemail/Star-AI-Project) (was Star-AI-Private) | `1412474221` |
 | Public distribution | [oncoursemail/Star-AI](https://github.com/oncoursemail/Star-AI) | `1424898960` |
 
 These labels describe project identity. They do not change the existing
