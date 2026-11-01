@@ -5,11 +5,17 @@ faster-whisper>=1.2.1,<2
 pyttsx3>=2.99,<3
 # Voice calls (star/voice, see docs/STAR_VOICE_CALLS.md): microphone and speaker, voice activity,
 # end-of-turn model and the Kokoro voice. These defaults run on the CPU.
-numpy>=2.0,<2.3
+numpy>=2.4.6,<2.5
 sounddevice>=0.5.6,<1
+# Hearing the PC's sound (WASAPI loopback, star/senses/capture.py): BSD-3-Clause
+soundcard>=0.4.6,<1
 kokoro-onnx>=0.6.1,<0.7
 onnxruntime>=1.31.0,<2
 # NVIDIA GPU (optional, about 14x real time for the voice instead of 2.5x): install
 #   onnxruntime-gpu[cuda,cudnn]==1.26.*
 # INSTEAD of onnxruntime. The two packages share one import name and overwrite each other, so the CPU
 # wheel must not be installed next to it (docs/STAR_VOICE_CALLS.md, "GPU").
+# Expressive voice (star/voice/expressive.py): WORLD vocoder for style pitch contours, questions, emphasis, hums,
+# yawns and singing in her own voice. MIT. Without it the styles still work (speed, whisper, level), only the pitch
+# shaping is skipped.
+pyworld>=0.3.5,<0.4

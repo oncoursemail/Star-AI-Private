@@ -1,0 +1,25 @@
+{
+  "tool": "built-in image_gen",
+  "design_sheet": {
+    "reference": "star-streamer-concept-v2.png",
+    "transparent_background": false,
+    "prompt": "Use case: identity-preserve / stylized-concept. The provided image is the identity and outfit reference for the ORIGINAL character STAR, an unmistakably adult 24-year-old woman. Create a carefully designed professional anime VTuber MODEL DESIGN SHEET on clean flat warm-white background. Preserve her gold eyes, charcoal soft hair with warm gold ombre tips, fluffy low twin ponytails, star hair clip, cute adult face, curvy adult proportions and full bust. Refine with clean crisp 2D anime cel-shading suitable for Live2D production, less glossy/airbrushed. Layout: left 55 percent is one large full-body straight-on FRONT neutral A-pose with both hands relaxed slightly away from body and friendly CLOSED mouth, neither hand waving; right upper area is a back view at smaller scale that consistently shows hoodie seams and hair silhouette; right lower area has THREE large bust/face expression studies of the EXACT same identity: open-mouth happy, playful wink, focused pout. Prioritize face readability and coherent identical construction across views. Adult gamer streetwear: roomy cropped black zip hoodie with wide cream lining framing a cream fully opaque fitted top with solid neckline (REMOVE chest cutout), high-waisted black shorts with one clean gold piping line, dark opaque thigh-highs, chunky black-and-cream star sneakers. Simplify accessories: ONE four-point star hair clip, ONE star zipper pull, and gold tips in hair are the signature; remove most dangling chains, tiny belts, excessive bows and other meaningless microdetails. Keep a gentle confident smile and lively eyes with white highlights, soft cheek color. Black silhouette balanced with large cream areas and controlled warm gold accents; no ornament overload. Neutral flat illustration illumination, true clean white sheet with NO cast glows, no halo, no atmospheric background, no gradients. Small understated top title exactly 'STAR' only, no other written labels. Professional human art-direction feel with intentional large shapes, clean anatomy and five fingers per hand, clearly adult woman; no childlike proportions, no school uniform. This is original STAR art; do not depict or copy any existing VTuber."
+  },
+  "emotes": {
+    "reference": "star-streamer-design-sheet-v3.png",
+    "transparent_background": true,
+    "prompt_before_expression": "Asset type: ONE square Twitch chat emote PNG, genuine transparent background, absolutely no glow/halo or dark backdrop. Use the provided reference ONLY for the ORIGINAL adult STAR character identity: charcoal hair with buttery gold ends, fluffy twin ponytails, honey-gold eyes, gold star hair clip, cream top and black hoodie. Tight head-and-shoulders crop with face filling 85 percent of square; simplify her hair into a few readable fluffy shapes and reduce detail so this reads at TWENTY EIGHT pixels. Bold clean dark outline with slightly heavier outside contour, crisp flat 2D anime emote cel shading, cream highlights, gold accents. Cute stylized adult face, no child body, no cleavage or bust emphasis. ",
+    "expressions": {
+      "laugh": "A joyful laughing emote: closed crescent eyes, big happy laugh, tiny tear of laughter at outer eye, one little gold sparkle.",
+      "love": "An affectionate heart emote: warm smiling eyes, a small cream heart hugged under chin, pink cheeks, sweet adult expression.",
+      "hype": "A surprised excited hype emote: wide bright golden eyes, open delighted mouth, both hands lifted beside face with five fingers, two tiny gold sparkles.",
+      "think": "A thoughtful slightly smug emote: one raised eyebrow, closed mouth half-smile, one finger under chin, tiny gold star thought sparkle."
+    },
+    "prompt_after_expression": " Entire silhouette and hands inside square with 8 percent transparent margin. The same exact hairstyle, face and star clip as reference. No lettering, no words, no watermark, no numbers, no sheet, just a SINGLE expressive emote. Keep flat-color area count low for PNG file size below 1 megabyte, sharp edges against real alpha."
+  },
+  "known_prompt_deviations": [
+    "The model rendered five-point hair ornaments despite the sheet prompt specifying four points.",
+    "Emote masters exceed 1 MB; validated mechanical size exports are supplied for upload.",
+    "Generated views are reference artwork and do not establish pixel-registered layered rig parts."
+  ]
+}

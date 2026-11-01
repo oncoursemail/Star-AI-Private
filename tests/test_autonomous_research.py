@@ -83,6 +83,12 @@ class FakeCompletions:
             message=SimpleNamespace(content=content))])
 
 
+def _legacy_settings():
+    """The snippet-only Team research path (Settings.web_research_v2 = False), kept as the fallback."""
+    from star.desktop_core import Settings
+    return Settings(endpoint="http://127.0.0.1:8080/v1", model="local", project="STAR", web_research_v2=False)
+
+
 def test_team_research_fans_out_then_accepts_one_evidence_followup(tmp_path):
     async def scenario():
         model = FakeCompletions()
@@ -98,7 +104,7 @@ def test_team_research_fans_out_then_accepts_one_evidence_followup(tmp_path):
             endpoint="http://127.0.0.1:8080/v1", model="local",
             project="STAR", prompt="Roblox animation research evaluation",
             home=tmp_path, parallel=2, client=client, research=True,
-            web_provider=search,
+            web_provider=search, settings=_legacy_settings(),
         )
         assert plan.completed and len(model.calls) == 4
         assert len(searches) == 4  # Three initial angles plus one approved follow-up.
@@ -129,7 +135,8 @@ def test_team_research_search_failure_is_recorded_without_model_calls(tmp_path):
             await run_research_team(
                 endpoint="http://127.0.0.1:8080/v1", model="local",
                 project="STAR", prompt="Research Roblox Studio QA",
-                home=tmp_path, client=client, research=True, web_provider=broken)
+                home=tmp_path, client=client, research=True, web_provider=broken,
+                settings=_legacy_settings())
         assert "secret-api-key" not in str(error.value)
         assert model.calls == []
         with sqlite3.connect(tmp_path / "research-runs.sqlite3") as db:

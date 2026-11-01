@@ -19,7 +19,10 @@ type Row = {id: string; role: 'user' | 'assistant' | 'event'; text: string; crea
 /** Mirrors `asdict(Settings())` in star/desktop_core.py; loosely typed on purpose. */
 export const backendSettings = {
   endpoint: 'http://127.0.0.1:8080/v1', provider: 'local', model: 'qwen-test', fast_model: '',
-  reasoning_model: '', roblox_model: '', vision_model: '', router_models_dir: '', router_context: 4096,
+  reasoning_model: '', roblox_model: '', vision_model: '', strata_enabled: false,
+  strata_endpoint: 'http://127.0.0.1:8082/v1', strata_model: 'strata', strata_reasoning: 'auto',
+  strata_context_tokens: 32768, strata_timeout: 900, strata_vision_enabled: true, strata_loop_guard_enabled: true,
+  router_models_dir: '', router_context: 4096,
   gpu_layers: 25, instant_route_enabled: false, project: 'STAR', workspace: '', studio_id: '', studio_target: 'local_pc', studio_edit: false, workspace_edit: false,
   max_calls: 12, context_chars: 26000, reduced_motion: true, obsidian_vault: '', obsidian_enabled: false,
   skills_enabled: true, graphify_enabled: true, comfy_workflow: '', comfy_prompt_node: '6', comfy_port: 8188,
@@ -44,7 +47,7 @@ export function installFakeDesktop() {
   const handlers = new Map<string, (call: Call) => Reply | void>()
 
   const boot = () => ({
-    version: '1.0.0', project: 'STAR', projects: ['STAR'], active_chat: 'chat-1',
+    version: '2.0.0', project: 'STAR', projects: ['STAR'], active_chat: 'chat-1',
     chats: [{id: 'chat-1', title: 'Test chat', created: stamp(), updated: stamp()}],
     // Like the real host: every stored answer carries its row id, so it can be rated.
     messages: db.map((m, i) => ({...m, id: `saved-${i}`, ...(m.role === 'assistant' ? {mid: m.mid ?? i + 1} : {})})), retry,

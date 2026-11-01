@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import re
 from time import monotonic
 
+from . import curiosity
 from .brain_router import NO_GROUNDING, GroundingPlan, followup_grounding, retrieval_query
 from .doc_knowledge import KnowledgeClient, client_for
 
@@ -152,6 +153,8 @@ def _retrieve(client: KnowledgeClient, plan: GroundingPlan, query: str) -> list[
     passages: list[dict] = []
     if plan.retrieve == "api" and plan.symbols:
         for hit in client.api_lookup(list(plan.symbols)[:plan.passages]):
+            if not hit.get("found"):
+                curiosity.record("weak_retrieval", "API name not found in the documentation: " + str(hit.get("symbol", "")))
             if hit.get("found") and hit.get("text"):
                 passages.append({"rank": len(passages) + 1, "title": hit.get("title", ""),
                                  "heading": hit.get("heading") or hit["symbol"], "kind": hit.get("kind", ""),
@@ -201,6 +204,8 @@ def prepare(settings, route, prompt: str, prior_user_turns: list[str] | None = N
         return Grounding(status="unavailable", plan=plan, retrieval_ms=elapsed, query=query)
     elapsed = int((monotonic() - started) * 1000)
     status = "ok" if passages else "empty"
+    if not passages:
+        curiosity.record("weak_retrieval", retrieval_query(query), "documentation search returned nothing")
     _emit(on_event, {"event": "knowledge_finished", "state": status, "passages": len(passages), "elapsed_ms": elapsed})
     return Grounding(status=status, plan=plan, client=knowledge, passages=passages, block=block,
                      retrieval_ms=elapsed, query=query)
@@ -455,10 +460,11 @@ async def repair_slop(answer: str, report, *, model_client, model: str, timeout:
 
 async def finalize(grounding: Grounding, route, result, *, model_client=None, prompt: str = "",
                    started: float | None = None, on_event=None, settings=None, retry_ladder: bool = False,
-                   thinking: bool = False):
+                   thinking: bool = False, resample=None):
     """Luau self-check, then the sources list. Returns the same (answer, messages, archive) shape.
     Any failure here leaves the model's answer exactly as it was. `retry_ladder` adds the second repair
-    rung; `thinking` (llama.cpp brains only) asks that rung with thinking on."""
+    rung; `thinking` (llama.cpp brains only) asks that rung with thinking on. `resample` (async temperature -> answer text;
+    only used with settings.verify_resample = on) asks the whole request again after a compile failure."""
     answer, messages, archive = result
     original = answer
     try:
@@ -472,7 +478,29 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
 
         slop_mode = getattr(settings, "slop_check", "off")
         slop_record: dict = {}
-        if (slop_mode == "repair" and model_client is not None and not getattr(route, "quick", True)
+        # Opt-in check-fix loop (star/verify_ladder.py): replaces the slop repair and the static check + repair below.
+        verify = (getattr(settings, "verify_ladder", "off") == "on" and model_client is not None
+                  and not getattr(route, "quick", True) and bool(luau_blocks(answer)))
+        if verify and (not timed or left() > REVIEW_RESERVE_SECONDS):
+            from . import mistake_memory, slop, verify_ladder
+            write_tests, fix = verify_ladder.model_tools(model_client, route.model, prompt,
+                                                         max_tokens=getattr(route, "response_tokens", 1600),
+                                                         thinking=getattr(settings, "thinking_budget", "off"))
+            tools = verify_ladder.Tools(checker=knowledge.luau_check if knowledge is not None else None,
+                                        dump=slop.bundled_api_dump(), runner=verify_ladder.default_runner(),
+                                        write_tests=write_tests, fix=fix, prompt=prompt,
+                                        deprecated=getattr(settings, "verify_deprecated", "on") == "on",
+                                        retry_rejected=getattr(settings, "verify_retry", "off") == "on",
+                                        resample=resample if getattr(settings, "verify_resample", "off") == "on" else None,
+                                        fixers=(mistake_memory.active_fixers()
+                                                if getattr(settings, "mistake_memory", "retrieve") == "fix" else []))
+            answer, ladder_record = await verify_ladder.review(
+                answer, tools, rounds=getattr(settings, "verify_rounds", 2),
+                budget=float(getattr(settings, "verify_budget_s", 240)),
+                deadline=started + budget if timed and started is not None else None, on_event=on_event)
+            if ladder_record:
+                archive = [*archive, {"star_verify": ladder_record}]
+        if (not verify and slop_mode == "repair" and model_client is not None and not getattr(route, "quick", True)
                 and (not timed or left() >= max(90, 0.35 * budget))):
             from . import slop
             dump = slop.bundled_api_dump()
@@ -484,7 +512,7 @@ async def finalize(grounding: Grounding, route, result, *, model_client=None, pr
                     timeout=max(0.05, left() - REPAIR_RESERVE_SECONDS) if timed else None)
                 _emit(on_event, {"event": "slop_repair", "accepted": slop_record["accepted"]})
 
-        if (grounding.plan.check_luau and knowledge is not None and luau_blocks(answer)
+        if (not verify and grounding.plan.check_luau and knowledge is not None and luau_blocks(answer)
                 and (not timed or left() > REVIEW_RESERVE_SECONDS)):
             repair = None
             # A repair is another model call; only when the turn has clearly enough time left.

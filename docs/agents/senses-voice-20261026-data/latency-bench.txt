@@ -1,0 +1,15 @@
+arm                            brain              n  first audio p50     p95  perceived p50     p95
+baseline (shipped defaults)    local-gpu         10          1000 ms 1047 ms         610 ms  625 ms
+speculative reply              local-gpu         10           813 ms  859 ms         609 ms  625 ms
+her-PC preset                  local-gpu         10           750 ms  828 ms         390 ms  391 ms
+baseline (shipped defaults)    server-scripted   10          2204 ms 2484 ms         609 ms  625 ms
+speculative reply              server-scripted   10          2046 ms 2313 ms         609 ms  610 ms
+her-PC preset                  server-scripted   10          1984 ms 2266 ms         390 ms  391 ms
+
+where the time goes (p50, ms)                          endpoint             asr  transcript_to_  first_token_to           total
+baseline (shipped defaults) / local-gpu                     610               0             109             281            1000
+speculative reply / local-gpu                               609               0             109             282             813
+her-PC preset / local-gpu                                   390               0             110             281             750
+baseline (shipped defaults) / server-scripted               609               0             906             688            2219
+speculative reply / server-scripted                         609               0             907             704            2047
+her-PC preset / server-scripted                             390               0             906             719            1984

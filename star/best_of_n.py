@@ -39,6 +39,8 @@ import re
 from time import monotonic
 from typing import Any, Awaitable, Callable
 
+from . import candidate_pool
+
 MIN_N, MAX_N = 1, 8
 DEFAULT_MAX_N = 4
 ENV_VAR = "STAR_BEST_OF_N"              # off | auto | 2..8 (forces N); the desktop setting wins when it is on
@@ -589,10 +591,11 @@ class Outcome:
     changed: bool = False            # True when the answer differs from the main answer
     tests_state: str = "none"
     state: str = "single"            # single | selected | repaired | none_passed | unavailable
+    verification_work: dict[str, int] = field(default_factory=dict)
 
     def record(self) -> dict:
         return {"state": self.state, "n": len(self.candidates), "tests": self.tests, "tests_state": self.tests_state,
-                "suspect_tests": self.suspect_tests,
+                "suspect_tests": self.suspect_tests, "verification_work": dict(self.verification_work),
                 "chosen": self.chosen.index if self.chosen else None,
                 "candidates": [c.summary() for c in self.candidates]}
 
@@ -702,24 +705,78 @@ class BestOfN:
 
     async def evaluate(self, candidates: list[Candidate], tests: str | None) -> Outcome:
         kind = self.plan.kind or "luau"
+        # The same code can appear in several candidates (sometimes under different prose).
+        # A standalone sandbox run depends on the exact source and tests, whereas static
+        # checks may also inspect the *answer* (e.g. a truncated Markdown fence). Deduplicate
+        # only at those safe boundaries. No persistent cache or cross-project state exists.
+        static_groups: dict[tuple[str, str], list[Candidate]] = {}
+        unit_groups: dict[str, list[Candidate]] = {}
+        eligible = [c for c in candidates if c.ok]
+        can_run_units = bool(tests and getattr(self.checker, "can_run_tests", False))
+        for c in eligible:
+            c.code = main_block(c.answer, kind)
+            static_groups.setdefault((c.code, c.answer), []).append(c)
+            if can_run_units and c.code:
+                unit_groups.setdefault(c.code, []).append(c)
         semaphore = asyncio.Semaphore(3)
 
-        async def check(c: Candidate) -> None:
-            if not c.ok:
-                return
-            c.code = main_block(c.answer, kind)
+        async def check_static(key: tuple[str, str], members: list[Candidate]) -> None:
             async with semaphore:
-                c.checks = await asyncio.to_thread(self.checker.static, c.code, c.answer)
-                if tests and c.code and getattr(self.checker, "can_run_tests", False):
-                    c.unit_raw, c.unit_error = await asyncio.to_thread(self.checker.run_tests, c.code, tests)
+                try:
+                    results = await asyncio.to_thread(self.checker.static, *key)
+                    if not isinstance(results, (list, tuple)) or not all(
+                            isinstance(check, CheckResult) for check in results):
+                        raise TypeError("invalid verifier result")
+                except Exception as exc:
+                    # A broken checker cannot silently certify an otherwise unchecked answer.
+                    results = [CheckResult("static verification", "fail", type(exc).__name__)]
+                for c in members:
+                    c.checks = list(results)  # separate lists: later unit results are per candidate
 
-        await asyncio.gather(*(check(c) for c in candidates))
+        async def check_units(code: str, members: list[Candidate]) -> None:
+            async with semaphore:
+                try:
+                    raw, error = await asyncio.to_thread(self.checker.run_tests, code, tests)
+                    if raw is not None and (not isinstance(raw, dict) or not all(
+                            isinstance(name, str) and type(passed) is bool for name, passed in raw.items())):
+                        raise TypeError("invalid sandbox result")
+                    if not isinstance(error, str):
+                        raise TypeError("invalid sandbox error")
+                except Exception as exc:
+                    raw, error = None, "sandbox: " + type(exc).__name__
+                for c in members:
+                    c.unit_raw = dict(raw) if raw is not None else None
+                    c.unit_error = error
+
+        await asyncio.gather(
+            *(check_static(key, members) for key, members in static_groups.items()),
+            *(check_units(code, members) for code, members in unit_groups.items()),
+        )
+        verification_work = {
+            "candidates": len(eligible),
+            "static_runs": len(static_groups),
+            "static_reused": len(eligible) - len(static_groups),
+            "sandbox_runs": len(unit_groups),
+            "sandbox_reused": sum(len(group) - 1 for group in unit_groups.values()),
+        }
+        _emit(self._on_event, {"event": "best_of_n_verification_work", **verification_work})
         valid, suspect = agreed_units(candidates) if tests else (set(), set())
         if valid:
-            stub, _ = await asyncio.to_thread(self.checker.run_tests, STUB_MODULE, tests)
-            vacuous = {name for name, ok in (stub or {}).items() if ok}
-            valid -= vacuous
-            suspect |= vacuous & {n for c in candidates for n in (c.unit_raw or {})}
+            try:
+                stub, stub_error = await asyncio.to_thread(self.checker.run_tests, STUB_MODULE, tests)
+            except Exception:
+                stub, stub_error = None, "unavailable"
+            if (stub_error or not isinstance(stub, dict) or not valid.issubset(stub)
+                    or not all(isinstance(name, str) and type(ok) is bool
+                               for name, ok in stub.items())):
+                # We could not check whether every model-written assertion also ran
+                # against an empty module. Never count unverified assertions.
+                suspect |= valid
+                valid = set()
+            else:
+                vacuous = {name for name, ok in stub.items() if ok}
+                valid -= vacuous
+                suspect |= vacuous & {n for c in candidates for n in (c.unit_raw or {})}
         for c in candidates:
             if not c.ok:
                 continue
@@ -751,8 +808,10 @@ class BestOfN:
         answer = best.answer if best.ok else main.answer
         outcome = Outcome(answer, best if best.ok else None, candidates, tests=len(valid),
                           suspect_tests=len(suspect), changed=answer != main.answer, tests_state=self.tests_state,
-                          state="repaired" if best.repaired and not best.hard_failures else state)
+                          state="repaired" if best.repaired and not best.hard_failures else state,
+                          verification_work=verification_work)
         outcome.footer = evidence(outcome, kind)
+        candidate_pool.record_best_of_n(self.prompt, outcome)       # M5 offline replay; no-op unless the pool flag is set
         _emit(self._on_event, {"event": "best_of_n_selected", "index": best.index, "n": len(candidates),
                                "passed": best.passed, "ran": best.ran, "state": outcome.state})
         return outcome
@@ -795,17 +854,51 @@ class BestOfN:
             answer = best.answer.rstrip() + f"\n\n```{fence}\n{fixed.rstrip()}\n```\n"
         trial = Candidate(best.index, best.model, best.temperature, answer=answer)
         trial.code = main_block(answer, self.plan.kind or "luau")
-        trial.checks = await asyncio.to_thread(self.checker.static, trial.code, trial.answer)
-        if tests and getattr(self.checker, "can_run_tests", False) and best.unit:
-            raw, _ = await asyncio.to_thread(self.checker.run_tests, trial.code, tests)
-            if raw is not None:
-                names = set(best.unit_failed) | {n for n in (best.unit_raw or {}) if (best.unit_raw or {}).get(n)}
-                passed = sorted(n for n in names if raw.get(n, False))
-                trial.unit = (len(passed), len(names))
-                trial.checks.append(CheckResult("unit tests", "pass" if len(passed) == len(names) else "fail",
-                                                f"{len(passed)}/{len(names)}"))
+        try:
+            trial.checks = await asyncio.to_thread(self.checker.static, trial.code, trial.answer)
+        except Exception:
+            return None
+        if not isinstance(trial.checks, (list, tuple)) or not all(
+                isinstance(check, CheckResult) for check in trial.checks):
+            return None
+        trial.checks = list(trial.checks)
+        # Repair must not make any previously passing static check fail or turn a
+        # previously executed check into "not run". Missing verification is not an
+        # improvement, even if it makes the hard-failure counter smaller.
+        new_checks = {check.name: check for check in trial.checks}
+        for old in best.checks:
+            if old.name == "unit tests":
+                continue
+            fresh = new_checks.get(old.name)
+            if (fresh is None or (old.ran and not fresh.ran)
+                    or (old.status == "pass" and fresh.status != "pass")):
+                return None
+        if best.unit is not None:
+            if not tests or not getattr(self.checker, "can_run_tests", False):
+                return None
+            try:
+                raw, error = await asyncio.to_thread(self.checker.run_tests, trial.code, tests)
+            except Exception:
+                return None
+            if (not isinstance(raw, dict) or not all(
+                    isinstance(name, str) and type(passed) is bool for name, passed in raw.items())):
+                return None
+            names = set(best.unit_failed) | {n for n, ok in (best.unit_raw or {}).items() if ok}
+            if not names:
+                return None
+            previously_passing = {n for n in names if (best.unit_raw or {}).get(n, False)}
+            if any(not raw.get(n, False) for n in previously_passing):
+                return None
+            passed = sorted(n for n in names if raw.get(n, False))
+            trial.unit = (len(passed), len(names))
+            trial.unit_raw = dict(raw)
+            trial.unit_error = error
+            trial.unit_failed = tuple(sorted(names - set(passed)))
+            trial.checks.append(CheckResult("unit tests", "pass" if len(passed) == len(names) else "fail",
+                                            f"{len(passed)}/{len(names)}"))
         if trial.hard_failures < best.hard_failures:
-            best.answer, best.code, best.checks, best.unit = trial.answer, trial.code, trial.checks, trial.unit
+            best.answer, best.code, best.checks, best.unit = trial.answer, trial.code, list(trial.checks), trial.unit
+            best.unit_raw, best.unit_error, best.unit_failed = trial.unit_raw, trial.unit_error, trial.unit_failed
             best.repaired = True
             return "repaired"
         return None
@@ -929,6 +1022,27 @@ def model_repair(client, model: str, kind: str, *, max_tokens: int = 1600, extra
         text = _first_text(await client.chat.completions.create(**kwargs))
         return main_block(text, kind)
     return repair
+
+
+def draft_fields(settings, model: str, tools: bool) -> dict:
+    """Request fields of a draft candidate: the server's background slot fields, thinking off."""
+    from .providers import llama_request_fields
+    fields = dict(llama_request_fields(settings, model=model, background=True, tools=tools) or {})
+    kwargs = dict(fields.get("chat_template_kwargs") or {})
+    kwargs["enable_thinking"] = False        # a candidate is a draft answer, not a thinking session
+    fields["chat_template_kwargs"] = kwargs
+    return fields
+
+
+def resample_tool(client, settings, request: dict, *, model: str, max_tokens: int):
+    """`async (temperature) -> answer text`: the turn's own request asked again at another temperature, for the
+    check-fix ladder's opt-in resample (setting verify_resample, star/verify_ladder.py)."""
+    draw = sampler(client, request, max_tokens=max_tokens,
+                   extra_body_for=lambda name: draft_fields(settings, name, bool(request.get("tools"))))
+
+    async def resample(temperature: float) -> str:
+        return await draw(Target(model, 1), temperature)
+    return resample
 
 
 def sampler(client, request: dict, *, max_tokens: int, extra_body_for=None):
@@ -1060,13 +1174,7 @@ class DesktopTurn:
         self._tools = None
 
     def _extra_body(self, model: str) -> dict:
-        from .providers import llama_request_fields
-        fields = dict(llama_request_fields(self.settings, model=model, background=True,
-                                           tools=bool(self._tools)) or {})
-        kwargs = dict(fields.get("chat_template_kwargs") or {})
-        kwargs["enable_thinking"] = False        # a candidate is a draft answer, not a thinking session
-        fields["chat_template_kwargs"] = kwargs
-        return fields
+        return draft_fields(self.settings, model, bool(self._tools))
 
     def on_first_request(self, request: dict) -> None:
         if self.run.started:

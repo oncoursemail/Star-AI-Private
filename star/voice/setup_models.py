@@ -58,18 +58,19 @@ def is_ready(item: ModelFile, folder: Path) -> bool:
     return path.is_file() and path.stat().st_size == item.size
 
 
-def missing(folder: Path | None = None) -> list[ModelFile]:
+def missing(folder: Path | None = None, files: tuple | list | None = None) -> list[ModelFile]:
     folder = folder or models_dir()
-    return [item for item in MODEL_FILES if not is_ready(item, folder)]
+    return [item for item in (MODEL_FILES if files is None else files) if not is_ready(item, folder)]
 
 
-def download(folder: Path | None = None, report: Callable[[str], None] = print, opener=None) -> list[str]:
+def download(folder: Path | None = None, report: Callable[[str], None] = print, opener=None,
+             files: tuple | list | None = None) -> list[str]:
     """Fetch whatever is missing. A file only gets its final name after size and SHA-256 both match."""
     import httpx
     folder = folder or models_dir()
     folder.mkdir(parents=True, exist_ok=True)
     fetched = []
-    for item in missing(folder):
+    for item in missing(folder, files):
         report(f"Downloading {item.name} ({item.size / 1e6:.0f} MB): {item.what}")
         partial = folder / (item.name + ".part")
         with (opener or httpx.stream)("GET", item.url, follow_redirects=True, timeout=60.0) as response:

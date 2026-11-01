@@ -40,7 +40,24 @@ class Runtime:
         self._close_log()
 
     @staticmethod
-    def arguments(executable: Path, model: Path, *, port=8080, context=4096, gpu_layers=25, projector: Path | None = None) -> list[str]:
+    def _speculative_flags(speculative: str, max_draft_tokens: int) -> list[str]:
+        """Strict opt-in experiment; unsupported llama.cpp builds fail normally.
+
+        ngram-simple reuses patterns from generated context and needs no second
+        draft model. It can also SLOW decoding down: benchmark before use.
+        """
+        if type(speculative) is not str or speculative not in ("off", "ngram-simple"):
+            raise ValueError("Unknown speculative decoding mode")
+        if type(max_draft_tokens) is not int or not 4 <= max_draft_tokens <= 64:
+            raise ValueError("Speculative draft length must be an integer from 4 to 64")
+        if speculative == "off":
+            return []
+        return ["--spec-type", "ngram-simple", "--spec-draft-n-max", str(max_draft_tokens)]
+
+    @staticmethod
+    def arguments(executable: Path, model: Path, *, port=8080, context=4096, gpu_layers=25,
+                  projector: Path | None = None, speculative: str = "off",
+                  max_draft_tokens: int = 16) -> list[str]:
         executable=executable.expanduser().resolve(strict=True)
         model=model.expanduser().resolve(strict=True)
         if executable.name.lower()!='llama-server.exe' or executable.suffix.lower()!='.exe':
@@ -58,11 +75,12 @@ class Runtime:
             if proj.suffix.lower() != '.gguf':
                 raise ValueError('Vision projector must be a GGUF file')
             args += ['--mmproj', str(proj)]
-        return args
+        return args + Runtime._speculative_flags(speculative, max_draft_tokens)
 
     @staticmethod
     def router_arguments(executable: Path, models_dir: Path, *, port=8080,
-                         context=4096, gpu_layers=25, max_loaded=1) -> list[str]:
+                         context=4096, gpu_layers=25, max_loaded=1,
+                         speculative: str = "off", max_draft_tokens: int = 16) -> list[str]:
         """Dynamic llama.cpp model router, bound strictly to loopback.
 
         One resident model prevents multiple heavy GGUFs from exhausting RAM.
@@ -82,15 +100,19 @@ class Runtime:
         return [str(exe), '--models-dir', str(inventory.directory),
                 '--models-max', '1', '--host', '127.0.0.1',
                 '--port', str(port), '--ctx-size', str(context),
-                '-ngl', str(gpu_layers), '-np', '1', '--jinja']
+                '-ngl', str(gpu_layers), '-np', '1', '--jinja'] + Runtime._speculative_flags(
+                    speculative, max_draft_tokens)
 
     def start_router(self, executable: Path, models_dir: Path, log_path: Path,
-                     *, port=8080, context=4096, gpu_layers=25):
+                     *, port=8080, context=4096, gpu_layers=25,
+                     speculative: str = "off", max_draft_tokens: int = 16):
         """Start only an explicitly requested, locally installed model router."""
         with self.lock:
             self._ready_to_start('Stop the current managed STAR Brain before starting model router')
             argv = self.router_arguments(executable, models_dir, port=port,
-                                         context=context, gpu_layers=gpu_layers)
+                                         context=context, gpu_layers=gpu_layers,
+                                         speculative=speculative,
+                                         max_draft_tokens=max_draft_tokens)
             log_path.parent.mkdir(parents=True, exist_ok=True)
             self._close_log()
             self.log_file = log_path.open('ab')
@@ -112,10 +134,14 @@ class Runtime:
             return bool(self.mode == 'router' and self._stopping is None
                         and self.process and self.process.poll() is None)
 
-    def start(self, executable: Path, model: Path, log_path: Path, *, port=8080, context=4096, gpu_layers=25, projector: Path | None = None):
+    def start(self, executable: Path, model: Path, log_path: Path, *, port=8080,
+              context=4096, gpu_layers=25, projector: Path | None = None,
+              speculative: str = "off", max_draft_tokens: int = 16):
         with self.lock:
             self._ready_to_start('llama.cpp is already running')
-            argv=self.arguments(executable,model,port=port,context=context,gpu_layers=gpu_layers,projector=projector)
+            argv=self.arguments(executable,model,port=port,context=context,gpu_layers=gpu_layers,
+                                projector=projector, speculative=speculative,
+                                max_draft_tokens=max_draft_tokens)
             log_path.parent.mkdir(parents=True,exist_ok=True)
             self._close_log()
             self.log_file=log_path.open('ab')

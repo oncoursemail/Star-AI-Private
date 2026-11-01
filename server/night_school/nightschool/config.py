@@ -30,6 +30,10 @@ class Settings:
     # STAR's resource planner (star/resource_planner_service.py) on this machine; "off" = only the idle gate above.
     # Planner down or without fresh data: the idle gate decides, exactly as before.
     planner_url: str = field(default_factory=lambda: _env("STAR_NS_PLANNER_URL", "http://127.0.0.1:8098"))
+    # "priority": brain_url goes through STAR's priority proxy (star/priority_proxy.py, e.g. http://127.0.0.1:8097/p3),
+    # which pauses night school's generation for the owner's chat and resumes it; so night school works beside other
+    # clients (no idle wait, no cancel). HOLD and the quiet lock still stop it. Proxy not answering: the idle gate.
+    gate: str = field(default_factory=lambda: _env("STAR_NS_GATE", "idle"))
     # Parallel practice lanes (each its own planner lease and its own slot: slot, slot + 1, ...). Lanes 2..N run only
     # while the planner admits them; with the planner off or down night school is single-lane, as before.
     # The model that drafts lessons (the "diagnose" step, 260 tokens). "" = the answer model. star-quick (its own
@@ -80,6 +84,20 @@ class Settings:
     conductor_interval_min: int = field(default_factory=lambda: int(_env("STAR_NS_CONDUCTOR_INTERVAL_MIN", "30")))
     conductor_docs: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_DOCS", ""))   # "" = home/docs-recent
     conductor_tag: str = field(default_factory=lambda: _env("STAR_NS_CONDUCTOR_TAG", ""))     # "pc-": pool/conductor-pc-<night>.json
+
+    # Curiosity queue (star/curiosity.py): the conductor turns the app's open "did not know / got wrong" items into
+    # practice tasks. data/curiosity.jsonl is the app PC's snapshot (pc/turbo.py sync); the conductor's own results go to
+    # data/curiosity-done.jsonl, which the PC brings back. "off" = the conductor ignores the queue.
+    curiosity: str = field(default_factory=lambda: _env("STAR_NS_CURIOSITY", "on"))
+    curiosity_items: int = field(default_factory=lambda: int(_env("STAR_NS_CURIOSITY_ITEMS", "6")))
+
+    @property
+    def curiosity_file(self) -> Path:
+        return self.data / "curiosity.jsonl"
+
+    @property
+    def curiosity_done_file(self) -> Path:
+        return self.data / "curiosity-done.jsonl"
 
     @property
     def app(self) -> Path:          # a copy of the repository (the folder that holds `star/`)

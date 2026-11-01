@@ -1,10 +1,12 @@
 """Embed brain 1's pending knowledge chunks on this PC's graphics card, only while the owner is away.
 
     python gpu_embed.py [--home DIR] model      copy the brain's embedding GGUF here (checked by SHA-256)
-    python gpu_embed.py [--home DIR] pull       the texts still to embed -> DIR/pending.jsonl
+    python gpu_embed.py [--home DIR] pull       the texts still to embed -> DIR/pending.jsonl (takes the brain's claim "pc"
+                                                for 12 h; refused while the laptop's offload-run holds it)
     python gpu_embed.py [--home DIR] verify     embed 200 texts the brain already embedded; cosine to the brain's
     python gpu_embed.py [--home DIR] run        embed DIR/pending.jsonl -> DIR/vectors.bin while the PC is idle
-    python gpu_embed.py [--home DIR] push       load DIR/vectors.bin into the brain's index (never replaces vectors)
+    python gpu_embed.py [--home DIR] push       load DIR/vectors.bin into the brain's index (never replaces vectors),
+                                                then gives the claim back
 
 Same model file as the brain (star-embed-ft1), the server's own pooling and L2 normalisation, and the same 512-token
 physical batch, so an over-long input is shortened exactly as on the brain (starkb.embed.embed_batch). `run` uses the
@@ -216,9 +218,17 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"model": str(model), "sha256": got, "same_as_brain": got == want}))
         return 0 if got == want else 1
     if args.cmd == "pull":
+        taken = subprocess.run(remote(config, f"{REMOTE_PY} -m starkb offload-claim --owner pc"),
+                               capture_output=True, text=True)
+        if taken.returncode:
+            print("not pulling, another machine is embedding the pending texts:", taken.stdout.strip())
+            return 75
         with open(home / "pending.jsonl", "wb") as out:
             subprocess.run(remote(config, f"{REMOTE_PY} -m starkb offload-export"), stdout=out, check=True)
-        print(sum(1 for _ in open(home / "pending.jsonl", encoding="utf-8")), "texts in", home / "pending.jsonl")
+        count = sum(1 for _ in open(home / "pending.jsonl", encoding="utf-8"))
+        print(count, "texts in", home / "pending.jsonl")
+        if not count:
+            subprocess.run(remote(config, f"{REMOTE_PY} -m starkb offload-release --owner pc"), capture_output=True)
         return 0
     if args.cmd == "verify":
         sample = home / "sample.jsonl"
@@ -235,7 +245,10 @@ def main(argv: list[str] | None = None) -> int:
         run(home, config, model)
         return 0
     with open(home / "vectors.bin", "rb") as source:
-        return subprocess.run(remote(config, f"{REMOTE_PY} -m starkb offload-import"), stdin=source).returncode
+        code = subprocess.run(remote(config, f"{REMOTE_PY} -m starkb offload-import"), stdin=source).returncode
+    if not code:
+        subprocess.run(remote(config, f"{REMOTE_PY} -m starkb offload-release --owner pc"), capture_output=True)
+    return code
 
 
 if __name__ == "__main__":

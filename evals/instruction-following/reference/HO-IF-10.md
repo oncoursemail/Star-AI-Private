@@ -1,0 +1,1 @@
+In July 1969 the Apollo 11 crew landed their lunar module on the Moon. Neil Armstrong stepped onto the surface first and Edwin Aldrin followed him soon after. They collected rocks, planted a flag and returned safely to Earth a few days later.

@@ -1,0 +1,2996 @@
+{
+ "rows": [
+  {
+   "phase": "2",
+   "id": "cow",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 75.6,
+   "file": "p2-cow-1111.png",
+   "timing": {
+    "rewrite_s": 27.4,
+    "draw_s": 36.1,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.767,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the cow depicted with four normal, natural-looking legs?",
+    "Is the setting a grassy field with natural lighting?",
+    "Is the cow a Holstein breed with black and white patches?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 2,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.767,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "cow",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 100.9,
+   "file": "p2-cow-2222.png",
+   "timing": {
+    "rewrite_s": 15.8,
+    "draw_s": 84.7,
+    "pictures_drawn": 1,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.767,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the cow depicted with exactly four legs?",
+    "Is the image a realistic photograph?",
+    "Is the cow standing on grass?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "horse",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 70.2,
+   "file": "p2-horse-1111.png",
+   "timing": {
+    "rewrite_s": 19.0,
+    "draw_s": 46.7,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the subject a horse?",
+    "Is the horse in a galloping pose?",
+    "Is the setting a green field?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "horse",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 72.4,
+   "file": "p2-horse-2222.png",
+   "timing": {
+    "rewrite_s": 18.1,
+    "draw_s": 44.3,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the subject a horse?",
+    "Is the horse in a galloping pose?",
+    "Is the setting a green field?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "dogcat",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 98.6,
+   "file": "p2-dogcat-1111.png",
+   "timing": {
+    "rewrite_s": 18.5,
+    "draw_s": 51.4,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is a dog and a cat sitting together on a sofa?",
+    "Is the lighting soft and natural?",
+    "Is the background a cozy living room?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "dogcat",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 92.2,
+   "file": "p2-dogcat-2222.png",
+   "timing": {
+    "rewrite_s": 17.6,
+    "draw_s": 56.3,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Are both a dog and a cat present in the image?",
+    "Are the animals sitting together on a sofa?",
+    "Is the lighting soft and natural?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "mug",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 65.7,
+   "file": "p2-mug-1111.png",
+   "timing": {
+    "rewrite_s": 14.9,
+    "draw_s": 38.8,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the person holding a coffee mug?",
+    "Are both hands used to hold the mug?",
+    "Is the person wearing a knit sweater?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "mug",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 66.4,
+   "file": "p2-mug-2222.png",
+   "timing": {
+    "rewrite_s": 16.2,
+    "draw_s": 33.7,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is a person visible holding a mug?",
+    "Are both hands gripping the mug?",
+    "Is the background blurred or plain?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "hands",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 74.0,
+   "file": "p2-hands-1111.png",
+   "timing": {
+    "rewrite_s": 15.4,
+    "draw_s": 35.0,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Are there two hands visible in the image?",
+    "Is a small plant being held by the hands?",
+    "Is the background blurred to emphasize the subject?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "hands",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 82.7,
+   "file": "p2-hands-2222.png",
+   "timing": {
+    "rewrite_s": 15.4,
+    "draw_s": 48.6,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Are two hands visible holding a plant?",
+    "Is the plant small and green?",
+    "Is the background blurred?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "spider",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 77.0,
+   "file": "p2-spider-1111.png",
+   "timing": {
+    "rewrite_s": 17.6,
+    "draw_s": 36.0,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a spider visible on a web?",
+    "Are there morning dew drops on the web threads?",
+    "Is the background blurred green foliage?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "spider",
+   "category": "anatomy",
+   "seed": 2222,
+   "seconds": 75.5,
+   "file": "p2-spider-2222.png",
+   "timing": {
+    "rewrite_s": 17.8,
+    "draw_s": 31.5,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is a spider visible in the image?",
+    "Are there dew drops on the web?",
+    "Is the background blurred?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "retro",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 81.1,
+   "file": "p2-retro-1111.png",
+   "timing": {
+    "rewrite_s": 27.9,
+    "draw_s": 31.7,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the image rendered in an 8-bit pixel art style?",
+    "Does the scene depict a platformer environment with blocks and platforms?",
+    "Is the top area of the image clear for UI text placement?"
+   ],
+   "overlays": [
+    {
+     "text": "SCORE 0420",
+     "where": "top-left",
+     "style": "pixel",
+     "scene": false
+    },
+    {
+     "text": "LIVES 3",
+     "where": "top-right",
+     "style": "pixel",
+     "scene": false
+    }
+   ],
+   "expected_text": [
+    "SCORE 0420",
+    "LIVES 3"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "SCORE 0420",
+     "LIVES 3"
+    ],
+    "checks_yes": 2,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.767,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "2",
+   "id": "retro",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 84.3,
+   "file": "p2-retro-2222.png",
+   "timing": {
+    "rewrite_s": 19.5,
+    "draw_s": 33.5,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.767,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the image rendered in an 8-bit pixel art style?",
+    "Does the scene depict a side-scrolling platformer environment?",
+    "Are the UI elements located in the top corners of the screen?"
+   ],
+   "overlays": [
+    {
+     "text": "SCORE 0420",
+     "where": "top-left",
+     "style": "pixel",
+     "scene": false
+    },
+    {
+     "text": "LIVES 3",
+     "where": "top-right",
+     "style": "pixel",
+     "scene": false
+    }
+   ],
+   "expected_text": [
+    "SCORE 0420",
+    "LIVES 3"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "SCORE 0420",
+     "LIVES 3"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "2",
+   "id": "open",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 86.8,
+   "file": "p2-open-1111.png",
+   "timing": {
+    "rewrite_s": 20.0,
+    "draw_s": 47.5,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": true,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "OPEN 24 HOURS"
+      ],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": true,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is a shop window visible in the image?",
+    "Does the window display contain merchandise?",
+    "Is the storefront framed by wood?"
+   ],
+   "overlays": [
+    {
+     "text": "OPEN 24 HOURS",
+     "where": "center",
+     "style": "bold",
+     "scene": true
+    }
+   ],
+   "expected_text": [
+    "OPEN 24 HOURS"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "OPEN 24 HOURS"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "2",
+   "id": "open",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 182.8,
+   "file": "p2-open-2222.png",
+   "timing": {
+    "rewrite_s": 18.7,
+    "draw_s": 66.0,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": true,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [
+       "judge noted: no merged, extra, missing or melted body parts detected; one person is visible in reflection but no "
+      ],
+      "text_read": [
+       "OPEN",
+       "24",
+       "HOURS",
+       "24"
+      ],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.85,
+      "passed": true,
+      "text_ok": true,
+      "clear": false
+     }
+    },
+    {
+     "seed": 2223,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [
+       "the words in the picture must read exactly: OPEN 24 HOURS"
+      ],
+      "soft": [
+       "judge noted: no merged, extra, missing or melted body parts detected; all visible human figures appear anatomical"
+      ],
+      "text_read": [
+       "OPEN",
+       "24",
+       "HORS",
+       "alo",
+       "musele"
+      ],
+      "checks_yes": 0,
+      "checks_total": 0,
+      "blank": false,
+      "judged": true,
+      "score": 0.1,
+      "passed": false,
+      "text_ok": false,
+      "clear": false
+     }
+    },
+    {
+     "seed": 2224,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "OPEN",
+       "24",
+       "HOURS"
+      ],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": true,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 2,
+   "checks": [
+    "Is there a shop window visible in the image?",
+    "Is there a neon sign attached to the window?",
+    "Is the setting an urban street scene?"
+   ],
+   "overlays": [
+    {
+     "text": "OPEN 24 HOURS",
+     "where": "center",
+     "style": "bold",
+     "scene": true
+    }
+   ],
+   "expected_text": [
+    "OPEN 24 HOURS"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "OPEN",
+     "24",
+     "HOURS"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "2",
+   "id": "book",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 59.8,
+   "file": "p2-book-1111.png",
+   "timing": {
+    "rewrite_s": 19.5,
+    "draw_s": 29.8,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.767,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a lighthouse in the image?",
+    "Is the lighthouse located on a cliff?",
+    "Is the title text bold and centered?"
+   ],
+   "overlays": [
+    {
+     "text": "THE LAST LIGHTHOUSE",
+     "where": "center",
+     "style": "bold",
+     "scene": false
+    }
+   ],
+   "expected_text": [
+    "THE LAST LIGHTHOUSE"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "THE LAST LIGHTHOUSE"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "2",
+   "id": "book",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 64.1,
+   "file": "p2-book-2222.png",
+   "timing": {
+    "rewrite_s": 23.1,
+    "draw_s": 29.4,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.767,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a lighthouse depicted on a rocky cliff?",
+    "Is the sky area at the top clear of imagery?",
+    "Is the lighting style dramatic and moody?"
+   ],
+   "overlays": [
+    {
+     "text": "THE LAST LIGHTHOUSE",
+     "where": "top",
+     "style": "bold",
+     "scene": false
+    }
+   ],
+   "expected_text": [
+    "THE LAST LIGHTHOUSE"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "THE LAST LIGHTHOUSE"
+    ],
+    "checks_yes": 2,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.767,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "2",
+   "id": "neon",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 110.5,
+   "file": "p2-neon-1111.png",
+   "timing": {
+    "rewrite_s": 20.8,
+    "draw_s": 59.7,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": true,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "PIZZA"
+      ],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": true,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the background a red brick wall?",
+    "Is the text PIZZA visible on the sign?",
+    "Does the sign emit a glowing red light?"
+   ],
+   "overlays": [
+    {
+     "text": "PIZZA",
+     "where": "center",
+     "style": "plain",
+     "scene": true
+    }
+   ],
+   "expected_text": [
+    "PIZZA"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "PIZZA"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "2",
+   "id": "neon",
+   "category": "text",
+   "seed": 2222,
+   "seconds": 108.0,
+   "file": "p2-neon-2222.png",
+   "timing": {
+    "rewrite_s": 22.0,
+    "draw_s": 51.5,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": true,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "PIZZA"
+      ],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": true,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the background a red brick wall?",
+    "Is there a neon sign in the center of the image?",
+    "Does the sign glow with a red light?"
+   ],
+   "overlays": [
+    {
+     "text": "PIZZA",
+     "where": "center",
+     "style": "pixel",
+     "scene": true
+    }
+   ],
+   "expected_text": [
+    "PIZZA"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "PIZZA"
+    ],
+    "checks_yes": 2,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.767,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "2",
+   "id": "interior",
+   "category": "scene",
+   "seed": 1111,
+   "seconds": 59.2,
+   "file": "p2-interior-1111.png",
+   "timing": {
+    "rewrite_s": 14.4,
+    "draw_s": 34.5,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a green armchair in the image?",
+    "Is there a large window in the background?",
+    "Is the style photorealistic and modern?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "interior",
+   "category": "scene",
+   "seed": 2222,
+   "seconds": 56.4,
+   "file": "p2-interior-2222.png",
+   "timing": {
+    "rewrite_s": 14.5,
+    "draw_s": 31.4,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a green armchair in the room?",
+    "Is there a large window visible?",
+    "Is the style modern and cozy?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "food",
+   "category": "scene",
+   "seed": 1111,
+   "seconds": 67.8,
+   "file": "p2-food-1111.png",
+   "timing": {
+    "rewrite_s": 16.7,
+    "draw_s": 34.7,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a bowl of ramen in the image?",
+    "Are a soft-boiled egg and green onions visible as toppings?",
+    "Does the lighting suggest a professional studio food photography setup?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "2",
+   "id": "food",
+   "category": "scene",
+   "seed": 2222,
+   "seconds": 72.1,
+   "file": "p2-food-2222.png",
+   "timing": {
+    "rewrite_s": 16.5,
+    "draw_s": 41.5,
+    "pictures_drawn": 2,
+    "repair_draw_s": 0.0,
+    "early_stop": true,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase2"
+   },
+   "drafts": [
+    {
+     "seed": 2222,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a bowl of ramen in the image?",
+    "Does the ramen contain an egg and green onions?",
+    "Is the lighting bright and studio-like?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "1",
+   "id": "cow",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 229.9,
+   "file": "p1-cow-1111.png",
+   "timing": {
+    "rewrite_s": 36.7,
+    "draw_s": 148.5,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the subject a cow?",
+    "Are all four legs visible and anatomically correct?",
+    "Is the setting a grassy pasture?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "1",
+   "id": "horse",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 171.4,
+   "file": "p1-horse-1111.png",
+   "timing": {
+    "rewrite_s": 16.7,
+    "draw_s": 98.7,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is a horse visible in the image?",
+    "Is the horse in a galloping pose?",
+    "Is the setting an open field?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "1",
+   "id": "dogcat",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 200.8,
+   "file": "p1-dogcat-1111.png",
+   "timing": {
+    "rewrite_s": 15.4,
+    "draw_s": 101.0,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a dog and a cat in the image?",
+    "Are they sitting on a sofa?",
+    "Is the lighting soft and natural?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "1",
+   "id": "mug",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 167.6,
+   "file": "p1-mug-1111.png",
+   "timing": {
+    "rewrite_s": 15.3,
+    "draw_s": 84.6,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the person holding a coffee mug?",
+    "Are both hands visible holding the mug?",
+    "Is the background a blurred kitchen setting?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "1",
+   "id": "hands",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 231.2,
+   "file": "p1-hands-1111.png",
+   "timing": {
+    "rewrite_s": 16.6,
+    "draw_s": 82.7,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Are there two hands visible in the image?",
+    "Is a small plant being held by the hands?",
+    "Is the background blurred and natural?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "1",
+   "id": "spider",
+   "category": "anatomy",
+   "seed": 1111,
+   "seconds": 219.1,
+   "file": "p1-spider-1111.png",
+   "timing": {
+    "rewrite_s": 17.1,
+    "draw_s": 76.1,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is a spider visible in the center of the image?",
+    "Are there dew droplets on the web?",
+    "Is the background blurred green foliage?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "1",
+   "id": "retro",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 186.3,
+   "file": "p1-retro-1111.png",
+   "timing": {
+    "rewrite_s": 24.6,
+    "draw_s": 68.7,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       ""
+      ],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.667,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "\u2190",
+       "\u25a1",
+       "\u25a1",
+       "\u2192",
+       "\u25a1",
+       "\u25bc",
+       "\u2192"
+      ],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.667,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "TOV.8 HC H.",
+       "9"
+      ],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.667,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the image rendered in an 8-bit pixel art style?",
+    "Is there a hero character holding a sword?",
+    "Are the words SCORE 0420 and LIVES 3 visible in the top corners?"
+   ],
+   "overlays": [
+    {
+     "text": "SCORE 0420",
+     "where": "top-left",
+     "style": "pixel",
+     "scene": false
+    },
+    {
+     "text": "LIVES 3",
+     "where": "top-right",
+     "style": "pixel",
+     "scene": false
+    }
+   ],
+   "expected_text": [
+    "SCORE 0420",
+    "LIVES 3"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "SCORE 0420",
+     "LIVES 3"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "1",
+   "id": "open",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 164.9,
+   "file": "p1-open-1111.png",
+   "timing": {
+    "rewrite_s": 18.6,
+    "draw_s": 66.5,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "E"
+      ],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.667,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "A",
+       "B",
+       "C",
+       "D",
+       "E",
+       "F",
+       "G",
+       "H",
+       "I",
+       "J",
+       "K",
+       "L",
+       "M",
+       "N",
+       "O",
+       "P",
+       "Q",
+       "R",
+       "S",
+       "T",
+       "U",
+       "V",
+       "W",
+       "X",
+       "Y",
+       "Z"
+      ],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.667,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "MULLS & CO."
+      ],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.667,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is a shop window the main subject?",
+    "Is the text 'OPEN 24 HOURS' visible on the window?",
+    "Is the image photorealistic?"
+   ],
+   "overlays": [
+    {
+     "text": "OPEN 24 HOURS",
+     "where": "center",
+     "style": "plain",
+     "scene": true
+    }
+   ],
+   "expected_text": [
+    "OPEN 24 HOURS"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "OPEN 24 HOURS"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "1",
+   "id": "book",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 151.4,
+   "file": "p1-book-1111.png",
+   "timing": {
+    "rewrite_s": 20.6,
+    "draw_s": 68.2,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.767,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.767,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 2,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.767,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a lighthouse depicted on the cover?",
+    "Is the background a stormy ocean scene?",
+    "Is the title text placed at the top in bold font?"
+   ],
+   "overlays": [
+    {
+     "text": "THE LAST LIGHTHOUSE",
+     "where": "top",
+     "style": "bold",
+     "scene": false
+    }
+   ],
+   "expected_text": [
+    "THE LAST LIGHTHOUSE"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "THE LAST LIGHTHOUSE"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "1",
+   "id": "neon",
+   "category": "text",
+   "seed": 1111,
+   "seconds": 153.8,
+   "file": "p1-neon-1111.png",
+   "timing": {
+    "rewrite_s": 20.1,
+    "draw_s": 73.0,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "PIZZA"
+      ],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.8,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "PIZZA"
+      ],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.8,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [
+       "PIZZA"
+      ],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.8,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is the background a red brick wall?",
+    "Is there a neon sign present?",
+    "Is the sign glowing with red light?"
+   ],
+   "overlays": [
+    {
+     "text": "PIZZA",
+     "where": "center",
+     "style": "plain",
+     "scene": true
+    }
+   ],
+   "expected_text": [
+    "PIZZA"
+   ],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [
+     "PIZZA",
+     "PIZZA"
+    ],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": true
+   }
+  },
+  {
+   "phase": "1",
+   "id": "interior",
+   "category": "scene",
+   "seed": 1111,
+   "seconds": 142.8,
+   "file": "p1-interior-1111.png",
+   "timing": {
+    "rewrite_s": 15.5,
+    "draw_s": 65.0,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a green armchair in the image?",
+    "Is there a large window visible in the room?",
+    "Is the lighting natural and bright?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  },
+  {
+   "phase": "1",
+   "id": "food",
+   "category": "scene",
+   "seed": 1111,
+   "seconds": 193.1,
+   "file": "p1-food-1111.png",
+   "timing": {
+    "rewrite_s": 9.3,
+    "draw_s": 75.0,
+    "pictures_drawn": 3,
+    "repair_draw_s": 0.0,
+    "early_stop": false,
+    "text_in_scene": false,
+    "text_fallback": false,
+    "pipeline": "phase1"
+   },
+   "drafts": [
+    {
+     "seed": 1111,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1112,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    },
+    {
+     "seed": 1113,
+     "round": 0,
+     "kind": "draft",
+     "judge": {
+      "anatomy_ok": true,
+      "issues": [],
+      "soft": [],
+      "text_read": [],
+      "checks_yes": 3,
+      "checks_total": 3,
+      "blank": false,
+      "judged": true,
+      "score": 0.9,
+      "passed": true,
+      "text_ok": null,
+      "clear": true
+     }
+    }
+   ],
+   "chosen": 0,
+   "checks": [
+    "Is there a bowl of ramen?",
+    "Is there an egg and green onions in the bowl?",
+    "Is it a studio food photo?"
+   ],
+   "overlays": [],
+   "expected_text": [],
+   "final": {
+    "anatomy_ok": true,
+    "issues": [],
+    "soft": [],
+    "text_read": [],
+    "checks_yes": 3,
+    "checks_total": 3,
+    "blank": false,
+    "judged": true,
+    "score": 0.9,
+    "passed": true,
+    "text_ok": null,
+    "clear": true,
+    "text_exact": null
+   }
+  }
+ ],
+ "summary": {
+  "1": {
+   "pictures": 12,
+   "anatomy_pass": "8/8",
+   "prompt_match_yes": "24/24",
+   "exact_text": "4/4",
+   "seconds_mean": 184.4,
+   "seconds_median": 178.9,
+   "seconds_max": 231.2,
+   "early_stop": 0,
+   "repairs": 0,
+   "text_fallback": 0,
+   "pictures_drawn_mean": 3,
+   "rewrite_s_mean": 18.9
+  },
+  "2": {
+   "pictures": 24,
+   "anatomy_pass": "16/16",
+   "prompt_match_yes": "47/48",
+   "exact_text": "8/8",
+   "seconds_mean": 82.7,
+   "seconds_median": 75.5,
+   "seconds_max": 182.8,
+   "early_stop": 23,
+   "repairs": 0,
+   "text_fallback": 0,
+   "pictures_drawn_mean": 2,
+   "rewrite_s_mean": 18.6
+  }
+ }
+}

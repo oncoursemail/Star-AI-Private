@@ -1,0 +1,143 @@
+{
+ "all": {
+  "n": 20,
+  "v2": 4.92,
+  "baseline": 2.62,
+  "wins": 14,
+  "losses": 3,
+  "ties": 3,
+  "sign_p": 0.01273
+ },
+ "highpoly": {
+  "n": 4,
+  "v2": 5.17,
+  "baseline": 3.25,
+  "wins": 2,
+  "losses": 2,
+  "ties": 0,
+  "sign_p": 1.0
+ },
+ "lowpoly": {
+  "n": 4,
+  "v2": 4.67,
+  "baseline": 2.83,
+  "wins": 2,
+  "losses": 0,
+  "ties": 2,
+  "sign_p": 0.5
+ },
+ "pbr": {
+  "n": 4,
+  "v2": 3.58,
+  "baseline": 3.0,
+  "wins": 2,
+  "losses": 1,
+  "ties": 1,
+  "sign_p": 1.0
+ },
+ "roblox": {
+  "n": 4,
+  "v2": 5.92,
+  "baseline": 2.5,
+  "wins": 4,
+  "losses": 0,
+  "ties": 0,
+  "sign_p": 0.125
+ },
+ "stylized": {
+  "n": 4,
+  "v2": 5.25,
+  "baseline": 1.5,
+  "wins": 4,
+  "losses": 0,
+  "ties": 0,
+  "sign_p": 0.125
+ },
+ "per_judge_v2_better": [
+  12,
+  14,
+  12
+ ],
+ "per_brief": {
+  "h01": {
+   "v2": 3.67,
+   "baseline": 5.0
+  },
+  "h02": {
+   "baseline": 1.0,
+   "v2": 6.0
+  },
+  "h03": {
+   "baseline": 2.0,
+   "v2": 7.0
+  },
+  "h04": {
+   "baseline": 5.0,
+   "v2": 4.0
+  },
+  "l01": {
+   "baseline": 3.0,
+   "v2": 5.67
+  },
+  "l02": {
+   "baseline": 1.0,
+   "v2": 5.67
+  },
+  "l03": {
+   "v2": 1.67,
+   "baseline": 1.67
+  },
+  "l04": {
+   "v2": 5.67,
+   "baseline": 5.67
+  },
+  "p01": {
+   "v2": 2.0,
+   "baseline": 3.0
+  },
+  "p02": {
+   "baseline": 4.0,
+   "v2": 4.0
+  },
+  "p03": {
+   "baseline": 3.33,
+   "v2": 3.67
+  },
+  "p04": {
+   "v2": 4.67,
+   "baseline": 1.67
+  },
+  "r01": {
+   "v2": 6.33,
+   "baseline": 1.0
+  },
+  "r02": {
+   "v2": 4.33,
+   "baseline": 4.0
+  },
+  "r03": {
+   "v2": 7.0,
+   "baseline": 1.0
+  },
+  "r04": {
+   "baseline": 4.0,
+   "v2": 6.0
+  },
+  "s01": {
+   "baseline": 2.0,
+   "v2": 5.0
+  },
+  "s02": {
+   "baseline": 1.0,
+   "v2": 4.0
+  },
+  "s03": {
+   "v2": 5.0,
+   "baseline": 1.0
+  },
+  "s04": {
+   "baseline": 2.0,
+   "v2": 7.0
+  }
+ }
+}

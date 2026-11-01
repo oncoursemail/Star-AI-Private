@@ -1,0 +1,47 @@
+{
+ "version": 1,
+ "characters": [
+  {
+   "id": "ca503dd21c43",
+   "name": "Captain Brine",
+   "kind": "designed",
+   "description": "A gruff old sea captain, a deep, gravelly man's voice, slow and dramatic.",
+   "voice": "am_onyx:0.6+am_michael:0.4",
+   "reference_clip": "",
+   "style": "neutral",
+   "pitch_semitones": -3.0,
+   "speed": 0.85,
+   "consent": null,
+   "created_at": 1793059090.6196094,
+   "notes": ""
+  },
+  {
+   "id": "e8f1de26acdf",
+   "name": "Professor Wren",
+   "kind": "designed",
+   "description": "A precise, slightly nervous middle-aged woman with a British accent, quick and bright.",
+   "voice": "bf_emma:1.0",
+   "reference_clip": "",
+   "style": "neutral",
+   "pitch_semitones": 0.5,
+   "speed": 0.85,
+   "consent": null,
+   "created_at": 1793059090.6367836,
+   "notes": ""
+  },
+  {
+   "id": "2101e7417109",
+   "name": "The Dragon",
+   "kind": "designed",
+   "description": "An ancient, enormous dragon: a very deep, slow, rumbling male voice, calm and menacing.",
+   "voice": "am_onyx:0.6+am_michael:0.4",
+   "reference_clip": "",
+   "style": "neutral",
+   "pitch_semitones": -3.0,
+   "speed": 0.85,
+   "consent": null,
+   "created_at": 1793059090.657185,
+   "notes": ""
+  }
+ ]
+}

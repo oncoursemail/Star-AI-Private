@@ -37,7 +37,7 @@ def _read_map_rows(workspace):
     scan = {"limited": False}
     rows = []
     total_bytes = 0
-    for path, relative in _files(workspace, SOURCE_TYPES, scan):
+    for path, relative in _files(workspace, SOURCE_TYPES, scan):  # pyright: ignore[reportAssignmentType]
         if len(rows) >= MAX_MAP_FILES:
             scan["limited"] = True
             break

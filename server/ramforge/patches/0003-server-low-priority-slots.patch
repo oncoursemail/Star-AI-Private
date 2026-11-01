@@ -1,0 +1,89 @@
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index 44aaadd..d29894b 100644
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -3474,11 +3474,31 @@ private:
+         if (params_base.cont_batching || batch.size() == 0) {
+             bool add_ok = true; // false means the batch is full, skip remaining slots
+
++            // STAR priority: a low-priority slot (task param low_priority) reads its prompt in chunks of at most
++            // low_prio_chunk tokens per iteration (64 by default: measured 2026-10-20, 256 left the owner 4-6 s behind a 3,000-token background prompt), and not at all while a normal slot has work (prompt or
++            // generation), so a normal request never waits behind a long background prompt.
++            static const int32_t low_prio_chunk = [] {
++                const char * v = getenv("LLAMA_LOW_PRIO_CHUNK");
++                return v ? std::max(1, atoi(v)) : 64;
++            }();
++            bool normal_busy = false;
++            for (auto & s : slots) {
++                if (s.is_processing() && s.task && !s.task->params.low_priority &&
++                        (s.state == SLOT_STATE_STARTED || s.state == SLOT_STATE_PROCESSING_PROMPT || s.state == SLOT_STATE_GENERATING)) {
++                    normal_busy = true;
++                }
++            }
++
+             iterate(slots, [&](server_slot & slot) {
+                 if (!add_ok || batch.size() >= n_batch) {
+                     return; // batch is full, skip remaining slots
+                 }
+
++                if (normal_busy && slot.is_processing() && slot.task && slot.task->params.low_priority &&
++                        (slot.state == SLOT_STATE_STARTED || slot.state == SLOT_STATE_PROCESSING_PROMPT)) {
++                    return; // background prompt waits for the next iteration
++                }
++
+                 if (!slot.is_processing()) {
+                     return;
+                 }
+@@ -3940,7 +3960,8 @@ private:
+                     const int32_t n_decision_first = slot.task->type == SERVER_TASK_TYPE_DECISION ? slot.task->decision.pos_first() : -1;
+
+                     // add prompt tokens for processing in the current batch
+-                    while (slot.prompt.n_tokens() < slot.task->n_tokens() && batch.size() < n_batch) {
++                    while (slot.prompt.n_tokens() < slot.task->n_tokens() && batch.size() < n_batch &&
++                           !(slot.task->params.low_priority && batch.size() - n_tokens_prev >= low_prio_chunk)) {
+                         // get next token to process
+                         llama_token cur_tok = input_tokens[slot.prompt.n_tokens()];
+                         if (cur_tok == LLAMA_TOKEN_NULL) {
+diff --git a/tools/server/server-models.cpp b/tools/server/server-models.cpp
+index 6035324..d5805be 100644
+--- a/tools/server/server-models.cpp
++++ b/tools/server/server-models.cpp
+@@ -2520,9 +2520,11 @@ server_http_proxy::server_http_proxy(
+     cli->set_write_timeout(timeout_read, 0); // reversed for cli (client) vs srv (server)
+     cli->set_read_timeout(timeout_write, 0);
+     this->status = 500; // to be overwritten upon response
+-    this->cleanup_pipes = [pipe]() {
++    this->cleanup_pipes = [pipe, cli]() {
+         pipe->close_read();
+         pipe->close_write();
++        cli->stop(); // STAR: the client went away; drop the child connection now so the child cancels the task
++                     // (before, a request still reading its prompt ran on until its first token)
+     };
+
+     // wire up the receive end of the pipe
+diff --git a/tools/server/server-schema.cpp b/tools/server/server-schema.cpp
+index 54e126a..a25a2ac 100644
+--- a/tools/server/server-schema.cpp
++++ b/tools/server/server-schema.cpp
+@@ -17,6 +17,9 @@ std::vector<std::unique_ptr<field>> make_llama_cmpl_schema(const common_params &
+     add((new field_bool("verbose", params.verbose))
+         ->set_desc("Include __verbose field in the response with additional debug information"));
+
++    add((new field_bool("low_priority", params.low_priority))
++        ->set_desc("Background request: its prompt is read in small chunks and waits while a normal request has work"));
++
+     add((new field_bool("timings_per_token", params.timings_per_token))
+         ->set_desc("Include prompt processing and text generation speed information in each response"));
+
+diff --git a/tools/server/server-task.h b/tools/server/server-task.h
+index b8d6a3b..ebc9d01 100644
+--- a/tools/server/server-task.h
++++ b/tools/server/server-task.h
+@@ -74,6 +74,7 @@ struct task_params {
+     std::vector<std::string> response_fields;
+
+     bool timings_per_token   = false;
++    bool low_priority        = false; // STAR: background request, its prompt yields to normal requests
+     bool post_sampling_probs = false;
+
+     struct common_params_sampling sampling;

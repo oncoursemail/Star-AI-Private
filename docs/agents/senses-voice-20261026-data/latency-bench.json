@@ -1,0 +1,218 @@
+[
+ {
+  "arm": "baseline (shipped defaults)",
+  "brain": "local-gpu",
+  "turns": 10,
+  "of": 10,
+  "first_audio": {
+   "n": 10,
+   "p50_ms": 1000.0,
+   "p95_ms": 1047.0,
+   "max_ms": 1047.0
+  },
+  "perceived_p50_ms": 610.0,
+  "perceived_p95_ms": 625.0,
+  "stages": {
+   "endpoint": {
+    "p50_ms": 610.0,
+    "p95_ms": 625.0
+   },
+   "asr": {
+    "p50_ms": 0.0,
+    "p95_ms": 0.0
+   },
+   "transcript_to_first_token": {
+    "p50_ms": 109.0,
+    "p95_ms": 110.0
+   },
+   "first_token_to_first_audio": {
+    "p50_ms": 281.0,
+    "p95_ms": 328.0
+   },
+   "total": {
+    "p50_ms": 1000.0,
+    "p95_ms": 1047.0
+   }
+  }
+ },
+ {
+  "arm": "speculative reply",
+  "brain": "local-gpu",
+  "turns": 10,
+  "of": 10,
+  "first_audio": {
+   "n": 10,
+   "p50_ms": 813.0,
+   "p95_ms": 859.0,
+   "max_ms": 859.0
+  },
+  "perceived_p50_ms": 609.0,
+  "perceived_p95_ms": 625.0,
+  "stages": {
+   "endpoint": {
+    "p50_ms": 609.0,
+    "p95_ms": 625.0
+   },
+   "asr": {
+    "p50_ms": 0.0,
+    "p95_ms": 0.0
+   },
+   "transcript_to_first_token": {
+    "p50_ms": 109.0,
+    "p95_ms": 125.0
+   },
+   "first_token_to_first_audio": {
+    "p50_ms": 282.0,
+    "p95_ms": 328.0
+   },
+   "total": {
+    "p50_ms": 813.0,
+    "p95_ms": 859.0
+   }
+  }
+ },
+ {
+  "arm": "her-PC preset",
+  "brain": "local-gpu",
+  "turns": 10,
+  "of": 10,
+  "first_audio": {
+   "n": 10,
+   "p50_ms": 750.0,
+   "p95_ms": 828.0,
+   "max_ms": 828.0
+  },
+  "perceived_p50_ms": 390.0,
+  "perceived_p95_ms": 391.0,
+  "stages": {
+   "endpoint": {
+    "p50_ms": 390.0,
+    "p95_ms": 391.0
+   },
+   "asr": {
+    "p50_ms": 0.0,
+    "p95_ms": 0.0
+   },
+   "transcript_to_first_token": {
+    "p50_ms": 110.0,
+    "p95_ms": 110.0
+   },
+   "first_token_to_first_audio": {
+    "p50_ms": 281.0,
+    "p95_ms": 343.0
+   },
+   "total": {
+    "p50_ms": 750.0,
+    "p95_ms": 828.0
+   }
+  }
+ },
+ {
+  "arm": "baseline (shipped defaults)",
+  "brain": "server-scripted",
+  "turns": 10,
+  "of": 10,
+  "first_audio": {
+   "n": 10,
+   "p50_ms": 2204.0,
+   "p95_ms": 2484.0,
+   "max_ms": 2484.0
+  },
+  "perceived_p50_ms": 609.0,
+  "perceived_p95_ms": 625.0,
+  "stages": {
+   "endpoint": {
+    "p50_ms": 609.0,
+    "p95_ms": 625.0
+   },
+   "asr": {
+    "p50_ms": 0.0,
+    "p95_ms": 0.0
+   },
+   "transcript_to_first_token": {
+    "p50_ms": 906.0,
+    "p95_ms": 922.0
+   },
+   "first_token_to_first_audio": {
+    "p50_ms": 688.0,
+    "p95_ms": 969.0
+   },
+   "total": {
+    "p50_ms": 2219.0,
+    "p95_ms": 2484.0
+   }
+  }
+ },
+ {
+  "arm": "speculative reply",
+  "brain": "server-scripted",
+  "turns": 10,
+  "of": 10,
+  "first_audio": {
+   "n": 10,
+   "p50_ms": 2046.0,
+   "p95_ms": 2313.0,
+   "max_ms": 2313.0
+  },
+  "perceived_p50_ms": 609.0,
+  "perceived_p95_ms": 610.0,
+  "stages": {
+   "endpoint": {
+    "p50_ms": 609.0,
+    "p95_ms": 610.0
+   },
+   "asr": {
+    "p50_ms": 0.0,
+    "p95_ms": 0.0
+   },
+   "transcript_to_first_token": {
+    "p50_ms": 907.0,
+    "p95_ms": 922.0
+   },
+   "first_token_to_first_audio": {
+    "p50_ms": 704.0,
+    "p95_ms": 953.0
+   },
+   "total": {
+    "p50_ms": 2047.0,
+    "p95_ms": 2313.0
+   }
+  }
+ },
+ {
+  "arm": "her-PC preset",
+  "brain": "server-scripted",
+  "turns": 10,
+  "of": 10,
+  "first_audio": {
+   "n": 10,
+   "p50_ms": 1984.0,
+   "p95_ms": 2266.0,
+   "max_ms": 2266.0
+  },
+  "perceived_p50_ms": 390.0,
+  "perceived_p95_ms": 391.0,
+  "stages": {
+   "endpoint": {
+    "p50_ms": 390.0,
+    "p95_ms": 391.0
+   },
+   "asr": {
+    "p50_ms": 0.0,
+    "p95_ms": 0.0
+   },
+   "transcript_to_first_token": {
+    "p50_ms": 906.0,
+    "p95_ms": 907.0
+   },
+   "first_token_to_first_audio": {
+    "p50_ms": 719.0,
+    "p95_ms": 985.0
+   },
+   "total": {
+    "p50_ms": 1984.0,
+    "p95_ms": 2266.0
+   }
+  }
+ }
+]

@@ -37,9 +37,17 @@ _EMOJI = re.compile(
     "\U00002B00-\U00002BFF\U0000FE0F\U0000200D]")
 
 
-def speakable(text: str) -> str:
-    """Strip everything a voice should not read aloud: markup, emoji, stage directions, raw links."""
+def speakable(text: str, keep_tags: bool = False) -> str:
+    """Strip everything a voice should not read aloud: markup, emoji, stage directions, raw links. Voice tags
+    (star/voice/styles.py: <whisper>, <laugh>, ...) are kept for an expressive engine, otherwise removed."""
     text = _THINK.sub(" ", text)
+    tags: list[str] = []
+    if keep_tags:
+        from .styles import protect_tags
+        text, tags = protect_tags(text)
+    else:
+        from .styles import strip_tags
+        text = strip_tags(text)
     text = _CODE_BLOCK.sub(" I've put the code on screen for you. ", text)
     text = _LINK.sub(r"\1", text)
     text = _URL.sub("a link", text)
@@ -47,6 +55,9 @@ def speakable(text: str) -> str:
     text = _BULLET.sub("", text)
     text = _MARKUP.sub("", text)
     text = _EMOJI.sub("", text)
+    if tags:
+        from .styles import restore_tags
+        text = restore_tags(text, tags)
     return _SPACES.sub(" ", text).strip()
 
 
@@ -73,11 +84,14 @@ class SentenceChunker:
         it in front of a linking word ("and", "because", "between", ...) so speech can start (0 disables).
         A brain that writes at speaking pace needs about four seconds for a seventeen-word sentence.
     max_chars: hard cap so a run-on sentence still reaches the speaker.
+    keep_tags: keep voice tags (star/voice/styles.py) in the chunks; otherwise they are removed.
     """
 
     def __init__(self, *, first_eager: bool = True, first_clause_words: int = 4,
-                 first_clause_chars: int = 28, first_soft_words: int = 9, max_chars: int = 240) -> None:
+                 first_clause_chars: int = 28, first_soft_words: int = 9, max_chars: int = 240,
+                 keep_tags: bool = False) -> None:
         self.first_eager = first_eager
+        self.keep_tags = keep_tags            # keep voice tags (<whisper>, <laugh>) for an expressive engine
         self.first_clause_words = first_clause_words
         self.first_clause_chars = first_clause_chars
         self.first_soft_words = first_soft_words
@@ -119,7 +133,7 @@ class SentenceChunker:
     # -- internals --------------------------------------------------------------------------
     def _release(self, cut: int, out: list[str]) -> None:
         piece, self._buf = self._buf[:cut], self._buf[cut:].lstrip()
-        clean = speakable(piece)
+        clean = speakable(piece, self.keep_tags)
         if clean and _has_words(clean):
             out.append(clean)
             self._emitted += 1

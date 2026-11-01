@@ -24,7 +24,7 @@ async function openChat(){
 }
 async function openPreferences(user:ReturnType<typeof userEvent.setup>){
  await user.click(screen.getByRole('button',{name:/^settings/i}))
- await user.click(await screen.findByRole('tab',{name:'General'}))
+ await user.click(await screen.findByRole('tab',{name:'Companions'}))
  return screen.getByRole('checkbox',{name:'Show Star'})
 }
 async function startAnswer(user:ReturnType<typeof userEvent.setup>){
@@ -41,7 +41,7 @@ describe('Desktop mascot preference and activity',()=>{
   expect(localStorage.getItem('star.pet.visible')).toBe('off')
   const toggle=await openPreferences(user)
   expect(toggle).toHaveProperty('checked',false)
-  expect(screen.getByText(/Off by default\. Display the mascot/)).toBeTruthy()
+  expect(screen.getByText(/Shows the Star mascot over the chat/)).toBeTruthy()
   await user.click(toggle)
   expect(localStorage.getItem('star.pet.visible')).toBe('on')
   expect(pet()).toBeNull() // Settings never has the chat overlay.

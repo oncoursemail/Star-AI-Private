@@ -19,6 +19,9 @@ from .asset_forge import PolyHavenCatalog, plan_building, preview_terrain
 from .architecture_pipeline import PALETTES, make_plan, validate_brief
 from .architecture_quality import design_summary
 from .agent_skills import SkillLibrary, install_starters
+from .operational_awareness import (SELF_TOOLS, observe as awareness_observe,
+                                    improvement_plan as awareness_plan,
+                                    preflight_brief as awareness_brief)
 from .skill_packs import PACKS_DIR
 from .brain_router import is_roblox_dev_prompt
 from .doc_knowledge import client_for
@@ -277,6 +280,24 @@ VFX_TOOLS = (
            "speed": {"type": "number", "minimum": 0.1, "maximum": 1, "default": 0.25}},
           ("prompt",)),
 )
+# STAR game UI designer (star/roblox_ui_designer.py): offline, applies nothing. Won the blind held-out eval 6.28 vs
+# 1.78 (single-pass Litha script) on 10-29 (docs/agents/roblox-scenes-20261029.md).
+UI_TOOLS = (
+    _tool("star_roblox_ui_make",
+          "Design a Roblox game UI screen from a small plan and get one self-contained LocalScript (8 px grid, "
+          "contrast-checked palettes, phone/tablet/desktop layouts, gamepad focus, part-built item art). plan: "
+          "{screen: shop|inventory|hud|settings|menu|dialog|leaderboard|rewards|quest|results|loading, style: "
+          "scifi|fantasy|cartoon|anime|minimal|horror|survival|pirate|luxury|..., title, subtitle?, accent? '#RRGGBB', "
+          "items?: [{name, kind, rarity, price, stat, owned, count, equipped, amount}], currency?: {name, amount}, "
+          "tabs?, actions?, options?, entries?: [{name, value}], you?, quests?, stats?, hotbar?, health?, stamina?, "
+          "objective?, body?, speaker?, today?, progress?}. Missing content is filled from 'brief'. Returns the "
+          "screen choice, design notes, static checks and the script saved in STAR's own folder (path); nothing is "
+          "applied to any place.",
+          {"brief": _s(400), "plan": {"type": "object"}}, ("brief",)),
+)
+_UI_TRIGGER = re.compile(r"\b(?:ui|gui|hud|shop (?:ui|screen|menu)|inventory|main menu|settings menu|leaderboards?|"
+                         r"daily rewards?|login rewards?|quest log|results screen|loading screen|dialog(?:ue)? (?:box|ui)|"
+                         r"screen ?gui)\b", re.I)
 _VFX_TRIGGER = re.compile(r"\b(?:vfx|visual effects?|particles?|ability effects?|effects? for|spell effects?|explosion "
                           r"effects?|aura|shockwave|energy burst)\b", re.I)
 # Live retrieval from create.roblox.com/docs (star/roblox_docs_live.py). Opt-in: off unless enabled.
@@ -314,10 +335,45 @@ _HUB_GAMEPLAY_TRIGGER = re.compile(r"\b(telemetry|instrumentation|funnel|analyti
 _CLOUD_TRIGGER = re.compile(r"\b(open.?cloud|owned.universe|owner.analytics|authorized.universe|api.key|publish\w*|headless|"
                             r"test.(?:place|experience|run)|run.(?:the.)?tests?|luau.execution|data.?stores?|"
                             r"(?:place|experience|universe).(?:info\w*|id))\b", re.I)
+GENERAL_KNOWLEDGE_TOOLS = (
+    _tool("star_general_knowledge_curriculum",
+          "Prepare a cross-disciplinary, evidence-first research curriculum with authoritative "
+          "source candidates, questions, experiments and transfer tests. This is NOT an "
+          "internet retrieval or automatic model training.",
+          {"topic": _s(500), "max_domains": _limit(8, 4)}, ("topic",)),
+)
+
+GAME_EXPERIENCE_TOOLS = (
+    _tool("star_game_episode_analyze",
+          "Analyze a bounded owner-observed gameplay trace. Returns time-referenced, "
+          "UNVERIFIED mechanic hypotheses, reproducible experiments and original design prototypes. "
+          "Does not control Roblox or watch video from a link.",
+          {"episode": {"type": "object"}}, ("episode",)),
+    _tool("star_game_episode_save",
+          "Opt-in: store a gameplay analysis as an UNREVIEWED, project-scoped candidate only. "
+          "No model-generated fact is promoted into trusted knowledge.",
+          {"episode": {"type": "object"}}, ("episode",)),
+    _tool("star_game_experience_search",
+          "Find earlier game observation candidates for this project, showing provenance and "
+          "review state. Unreviewed results cannot be stated as confirmed gameplay facts.",
+          {"query": _s(300), "limit": _limit(12, 6)}, ("query",)),
+)
+VIDEO_STUDY_TOOLS = (
+    _tool("star_game_video_study",
+          "Opt-in: actually examine multiple timestamped windows of a LOCAL video inside "
+          "the owner-selected workspace, with four frames per window and speech. "
+          "Uses the existing authorized local or STAR Server vision model, never a public URL "
+          "or automatic hosted provider. Results are unverified interpretations.",
+          {"path": _s(300), "question": _s(1000),
+           "max_windows": _limit(12, 4),
+           "window_seconds": {"type": "integer", "minimum": 5, "maximum": 120, "default": 60}},
+          ("path", "question")),
+)
+
 ALL_TOOLS = {tool["name"]: tool for tool in (*SKILL_TOOLS, *OBSIDIAN_TOOLS, *GRAPHIFY_TOOLS,
              *ROBLOX_GAME_TOOLS, *ROBLOX_KNOWLEDGE_TOOLS, *DOC_KNOWLEDGE_TOOLS, *ROBLOX_VIDEO_TOOLS,
              *ROBLOX_CLOUD_TOOLS, *ROBLOX_HUB_TOOLS, *CRAFT_TOOLS, *ASSET_TOOLS, *DESIGN_TOOLS, *MAP_PLAN_TOOLS, *STUDIO_LAB_TOOLS, *ROBLOX_DOCS_LIVE_TOOLS, *RUNTIME_TOOLS, *ARCHITECTURE_TOOLS,
-             *VFX_TOOLS, *COMMERCE_TOOLS)}
+             *VFX_TOOLS, *UI_TOOLS, *COMMERCE_TOOLS, *GAME_EXPERIENCE_TOOLS, *VIDEO_STUDY_TOOLS, *GENERAL_KNOWLEDGE_TOOLS, *SELF_TOOLS)}
 _DOC_TOOL_NAMES = frozenset(tool["name"] for tool in DOC_KNOWLEDGE_TOOLS)
 _SHARED_TOOL_NAMES = frozenset(tool["name"] for tool in RUNTIME_TOOLS)
 _LEGACY_GRAPH_READ_NAMES = frozenset({"star_graphify_query", "star_graphify_stats"})
@@ -351,6 +407,20 @@ _GAME_TRIGGER = re.compile(r"\b(games?|experiences?|types?|genres?|playing|playe
 _DOCS_TRIGGER = re.compile(r"\b(roblox|luau|studio|code|scripts?|api|docs?|build|create|debug|fix|learn|architecture|research|design|ui|performance)\b", re.I)
 _FORUM_TRIGGER = re.compile(r"\b(forum|devforum|community|news|announcement|update|research|bug|discussion|issue|help)\b", re.I)
 _VIDEO_TRIGGER = re.compile(r"\b(youtube|videos?|watch|footage|clip|trailer|tutorial|creator)\b", re.I)
+_GAME_EXPERIENCE_TRIGGER = re.compile(
+    r"\b(roblox|gameplay|playtests?|games?|mechanics?|movement|learn(?:ing)?|"
+    r"videos?|watch|recordings?|experiences?|design)\b", re.I)
+_GENERAL_KNOWLEDGE_TRIGGER = re.compile(
+    r"\b(general knowledge|curriculum|teach me|learn about|research plan|study plan|"
+    r"knowledge gaps?|deep learning about|study physics|study science|study history|"
+    r"broader knowledge|learn everything)\b", re.I)
+
+_AWARENESS_TRIGGER = re.compile(
+    r"\b(?:self[- ]?aware(?:ness)?|self[- ]?assess(?:ment)?|metacognit\w*|"
+    r"capabilit\w*|what can (?:you|star) (?:do|build)|which tools (?:do you|does star) have|"
+    r"where (?:are you|is star) weak|how (?:can you|can star) improv\w*|"
+    r"(?:make|build|create|design)\s+(?:(?:a|an|the|my)\s+)?(?:[\w-]+\s+){0,6}game|"
+    r"your (?:weakness\w*|limitation\w*|strengths?)|learn (?:faster|more efficiently))\b", re.I)
 
 
 class LocalIntelligence:
@@ -364,12 +434,22 @@ class LocalIntelligence:
                  vfx_studio_enabled: bool = False,
                  docs_live: RobloxDocsLive | None = None,
                  registered_workspaces: Iterable[Path | str] = (),
-                 graph_boundary_check: Callable[[], bool] | None = None):
+                 graph_boundary_check: Callable[[], bool] | None = None,
+                 game_experience_enabled: bool = False,
+                 game_experience_write_enabled: bool = False,
+                 video_study_enabled: bool = False, video_settings=None,
+                 awareness_enabled: bool = False):
         self.home = home
         self.workspace = workspace
+        self.game_experience_enabled = game_experience_enabled is True
+        self.game_experience_write_enabled = (self.game_experience_enabled
+                                              and game_experience_write_enabled is True)
+        self.video_study_enabled = video_study_enabled is True
+        self.video_settings = video_settings
         self.design_enabled = design_enabled
         self.map_plans_enabled = map_plans_enabled
         self.studio_lab_enabled = studio_lab_enabled is True
+        self.awareness_enabled = awareness_enabled is True
         self.vfx_studio_enabled = vfx_studio_enabled is True
         self.docs_live = docs_live   # None unless the owner enabled live Roblox docs retrieval
         self.docs = docs   # star.doc_knowledge.KnowledgeClient, or None when not configured
@@ -446,6 +526,8 @@ class LocalIntelligence:
         shared = self._shared_status()
         graph_detected = bool(self.graph and self.graph.path.is_file() and not self.graph.path.is_symlink())
         return {
+            "operational_awareness": {"enabled": self.awareness_enabled, "read_only": True,
+                                      "tool_presence_does_not_prove_competence": True},
             "skills": {"enabled": self.skills is not None, "count": len(catalog),
                        "names": [s.name for s in catalog[:12]]},
             "graphify": {"enabled": self._graph_allowed(),
@@ -462,6 +544,11 @@ class LocalIntelligence:
                             "online_search": self.asset_forge_enabled and self.roblox is not None},
             "craft": {"enabled": self.roblox is not None, "read_only": True,
                       "tools": [tool["name"] for tool in CRAFT_TOOLS] if self.roblox else []},
+            "game_experience": {"enabled": self.game_experience_enabled,
+                                "write_enabled": self.game_experience_write_enabled,
+                                "verified_mechanics": "requires separate playtest evidence"},
+            "video_study": {"enabled": self.video_study_enabled,
+                            "local_workspace_only": True, "needs_vision_provider": True},
             "roblox_research": self.roblox.status() if self.roblox else {"enabled": False},
             "roblox_intelligence_hub": ({**self.roblox_hub.status(),
                                         "analytics_configuration_error": self.roblox_hub_config_error}
@@ -483,6 +570,17 @@ class LocalIntelligence:
         if self._closed:
             return []
         result = []
+        if _GENERAL_KNOWLEDGE_TRIGGER.search(prompt):
+            result.extend(GENERAL_KNOWLEDGE_TOOLS)
+        if _GAME_EXPERIENCE_TRIGGER.search(prompt):
+            if self.game_experience_enabled:
+                result.extend(tool for tool in GAME_EXPERIENCE_TOOLS
+                              if tool["name"] != "star_game_episode_save"
+                              or self.game_experience_write_enabled)
+            if self.video_study_enabled and self.workspace is not None:
+                result.extend(VIDEO_STUDY_TOOLS)
+        if self.awareness_enabled and _AWARENESS_TRIGGER.search(prompt):
+            result.extend(SELF_TOOLS)
         if self.asset_forge_enabled and _ASSET_TRIGGER.search(prompt) and (_ROBLOX_TRIGGER.search(prompt) or
                 is_roblox_dev_prompt(prompt) or re.search(r"\b(blender|3d|procedural|poly.?haven|game\s?dev)\b", prompt, re.I)):
             # Only the first asset tool uses a third-party HTTP endpoint.
@@ -512,6 +610,8 @@ class LocalIntelligence:
                 result.extend(STUDIO_LAB_TOOLS)
         if self.vfx_studio_enabled and roblox_prompt and _VFX_TRIGGER.search(prompt):
             result.extend(VFX_TOOLS)
+        if self.design_enabled and roblox_prompt and _UI_TRIGGER.search(prompt):
+            result.extend(UI_TOOLS)
         if self.docs_live is not None and roblox_prompt and _DOCS_TRIGGER.search(prompt):
             result.extend(ROBLOX_DOCS_LIVE_TOOLS)
         if self.roblox_hub and roblox_prompt:
@@ -541,6 +641,15 @@ class LocalIntelligence:
             result.extend(ARCHITECTURE_TOOLS)
         return result
 
+    def preflight(self, prompt: str, *, enabled: set[str]) -> str:
+        """Short host-observed self-check offered only on owner-opted-in turns."""
+        if (self._closed or not self.awareness_enabled or
+                "star_self_capabilities" not in enabled or
+                not _AWARENESS_TRIGGER.search(prompt)):
+            return ""
+        goal = prompt.strip()[:260].strip()
+        return awareness_brief(goal, status=self.status(), enabled_tools=tuple(enabled))
+
     @staticmethod
     def owns(name: str) -> bool:
         return name in ALL_TOOLS
@@ -549,6 +658,52 @@ class LocalIntelligence:
         if self._closed or name not in enabled or name not in ALL_TOOLS or not isinstance(args, dict):
             raise PermissionError("Intelligence tool is not enabled for this task")
         Draft202012Validator(ALL_TOOLS[name]["inputSchema"]).validate(args)
+        if name == "star_general_knowledge_curriculum":
+            from .general_knowledge_lab import plan
+            return plan(args["topic"], max_domains=args.get("max_domains", 4))
+        if name.startswith("star_game_episode_") or name == "star_game_experience_search":
+            from . import game_experience
+            if not self.game_experience_enabled:
+                raise PermissionError("Game experience tools are disabled")
+            if name == "star_game_episode_analyze":
+                return game_experience.analyze_episode(args["episode"])
+            if name == "star_game_episode_save":
+                if not self.game_experience_write_enabled:
+                    raise PermissionError("Gameplay candidate storage requires explicit opt-in")
+                return game_experience.save_candidate(self.home, self.project, args["episode"])
+            return game_experience.search_candidates(self.home, self.project,
+                                                     args["query"], args.get("limit", 6))
+        if name == "star_game_video_study":
+            if not self.video_study_enabled or self.workspace is None or self.video_settings is None:
+                raise PermissionError("Opt-in video study and an owner-selected workspace are required")
+            requested = Path(args["path"])
+            if requested.is_absolute() or any(piece in ("..", "") for piece in requested.parts):
+                raise PermissionError("Provide a relative path inside the selected workspace")
+            root = Path(self.workspace).expanduser().resolve(strict=True)
+            path = (root / requested).resolve(strict=True)
+            if root not in path.parents or not path.is_file():
+                raise PermissionError("Video must be a local file inside the selected workspace")
+            from . import video_study
+            # The analysis performs blocking frame extraction and model calls; the
+            # assistant dispatches this tool on a worker thread.
+            return video_study.analyze_local(
+                self.video_settings, self.home, path, args["question"],
+                max_windows=args.get("max_windows", 4),
+                window_seconds=args.get("window_seconds", 60),
+                ffmpeg_dir=getattr(self.video_settings, "ffmpeg_dir", ""),
+            )
+        if name in {"star_self_capabilities", "star_self_improvement_plan"}:
+            if not self.awareness_enabled:
+                raise PermissionError("Operational awareness is not enabled")
+            # This host data is read-only. The attached list proves schema
+            # availability, not that a backend operation succeeded.
+            status, tools = self.status(), tuple(enabled)
+            atlas_db = self.home / "resource_atlas.sqlite3"
+            if name == "star_self_capabilities":
+                return awareness_observe(args["goal"], status=status, enabled_tools=tools,
+                                         atlas_db=atlas_db)
+            return awareness_plan(args["goal"], limit=args.get("limit", 5), status=status,
+                                  enabled_tools=tools, atlas_db=atlas_db)
         if name in _HUB_TOOL_NAMES:
             hub = self.roblox_hub
             if hub is None:
@@ -644,6 +799,10 @@ class LocalIntelligence:
             if not self.studio_lab_enabled:
                 raise PermissionError("The Studio lab is off (setting studio_lab_enabled or STAR_STUDIO_LAB=1)")
             return self._studio_lab_call(args)
+        if name == "star_roblox_ui_make":
+            if not self.design_enabled:
+                raise PermissionError("Design tools are disabled")
+            return self._ui_call(args)
         if name == "star_roblox_vfx_make":
             if not self.vfx_studio_enabled:
                 raise PermissionError("STAR VFX Studio is not enabled")
@@ -808,6 +967,22 @@ class LocalIntelligence:
             raise ValueError("Reference image not found or larger than 8 MB")
         return target.read_bytes()
 
+    def _ui_call(self, args: dict) -> dict:
+        import time as _time
+        from . import roblox_ui_designer as ui
+        raw_plan = args.get("plan")
+        plan = ui.parse_plan(raw_plan if isinstance(raw_plan, dict) else {}, args["brief"])
+        script = ui.emit_luau(plan, ui_id=plan["screen"].title())
+        out = Path(self.home) / "ui-make" / _time.strftime("%Y%m%dT%H%M%SZ", _time.gmtime())
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / f"{plan['screen'].title()}UI.client.luau"
+        path.write_text(script, encoding="utf-8")
+        head = script.split("\nlocal T = ", 1)[0]
+        return {"screen": plan["screen"], "style": plan["style"], "title": plan["title"], "design_notes": head,
+                "static_checks": ui.static_check(plan), "script_path": str(path), "script_chars": len(script),
+                "note": "Nothing was applied. Put the script in StarterPlayerScripts (client presentation only: "
+                        "validate purchases and rewards on the server)."}
+
     def _vfx_call(self, args: dict) -> dict:
         from . import roblox_vfx_studio as vfx
         image = self._vfx_image(args.get("reference_image"))
@@ -923,4 +1098,12 @@ def for_settings(settings, home: Path) -> LocalIntelligence:
                             or _env_on("STAR_VFX_STUDIO", default=False)),
         docs_live=(RobloxDocsLive(cache_dir=Path(home) / "cache" / "roblox-docs")
                    if live_enabled(settings) else None),
+        game_experience_enabled=(getattr(settings, "game_experience_enabled", False) is True
+                                 or _env_on("STAR_GAME_EXPERIENCE", default=False)),
+        game_experience_write_enabled=(getattr(settings, "game_experience_write_enabled", False) is True
+                                       or _env_on("STAR_GAME_EXPERIENCE_WRITE", default=False)),
+        video_study_enabled=(getattr(settings, "video_study_enabled", False) is True
+                             or _env_on("STAR_VIDEO_STUDY", default=False)),
+        video_settings=settings,
+        awareness_enabled=_env_on("STAR_SELF_AWARENESS", default=False),
     )

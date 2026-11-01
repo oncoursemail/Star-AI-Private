@@ -1,5 +1,5 @@
 # Windows batch files must keep CRLF line endings: cmd.exe mis-resolves labels in LF-only files.
-*.cmd -text
+*.cmd -text whitespace=cr-at-eol
 
 # Node scripts imported by the vitest suite carry a shebang; with CRLF the shebang line fails to parse there.
 *.mjs text eol=lf
@@ -15,3 +15,6 @@ tests/fixtures/shared_brain_sources/**/*.py text eol=lf
 # STAR Brain files are copied to the Linux server as they are: with CRLF, models.ini paths end in a carriage return and
 # server/brain/apply.sh check reports every model file as missing (seen 2026-10-14).
 server/brain/** text eol=lf
+# G1 API lock: the llama.cpp patch and the scripts are applied/run on Linux.
+server/api_lock/** text eol=lf
+server/api_lock/*.patch -whitespace

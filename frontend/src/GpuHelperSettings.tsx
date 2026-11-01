@@ -23,6 +23,7 @@ export function GpuHelperSettings({draft,set,disabled=false}:{draft:AppSettings;
   const [problem,setProblem]=useState('')
   const mounted=useRef(true)
   const hintId=useId()
+  const nightId=useId()
 
   const refresh=useCallback(async()=>{
     if(disabled)return
@@ -47,13 +48,15 @@ export function GpuHelperSettings({draft,set,disabled=false}:{draft:AppSettings;
     setBusy(false)
   }
 
-  const on=status?status.enabled:draft.use_my_gpu===true
+  const on=status?(status.switch??status.enabled):draft.use_my_gpu===true
   const serverProvider=draft.provider==='star_server'
   return <section className="panel settings-section" aria-label="Use my GPU">
     <div className="section-heading"><div><h3 className="settings-group-title">Use my GPU</h3>
       <p>Runs STAR's code model on this PC's NVIDIA graphics card, about three times faster than the server. Memory, tools and lessons stay exactly as they are; when the card is busy or anything fails, the server answers.</p></div><Cpu size={20} aria-hidden="true"/></div>
     <label className="setting-switch"><span><strong>Use my GPU</strong><small id={hintId}>Off by default. Pauses while a game or another program uses the card, and unloads after the idle minutes below.{serverProvider?'':' Works with STAR Server as the provider.'}</small></span>
       <input type="checkbox" aria-label="Use my GPU" aria-describedby={hintId} checked={on} disabled={disabled||busy} onChange={e=>void toggle(e.target.checked)}/></label>
+    <label className="setting-switch"><span><strong>Automatically turn on at night</strong><small id={nightId}>On by default. Between 01:00 and 08:00 STAR may use this PC even when the switch above is off (night learning still waits until you are away and no game uses the card). At 08:00 it follows the switch again.</small></span>
+      <input type="checkbox" aria-label="Automatically turn on at night" aria-describedby={nightId} checked={draft.use_my_pc_auto_night!==false} disabled={disabled} onChange={e=>set({use_my_pc_auto_night:e.target.checked})}/></label>
     <p className="voice-current" role="status">Status: <strong>{status?status.label:(disabled?'Open STAR Desktop to see this':'Reading…')}</strong>{status&&<> · {status.text}</>}</p>
     {problem&&<p role="alert" className="media-warning">{problem}</p>}
     {on&&<div className="field-grid">

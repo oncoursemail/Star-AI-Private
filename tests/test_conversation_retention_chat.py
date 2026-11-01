@@ -327,3 +327,14 @@ def test_real_desktop_request_keeps_a_retried_turn_that_has_a_failure_record(des
     assert [(m['role'], owner_words(m['content'])) for m in messages[1:3]] == [
         ('user', 'Retry this question'), ('assistant', 'Answer after retry.')]
     assert 'Cannot reach STAR Brain' not in json.dumps(messages)
+
+
+def test_fast_route_sends_the_first_turn_and_the_rules_do_not_deny_memory(desk):
+    """Issue 573: a second turn on the fast route carries the first turn, and "remember ..." counts as a follow-up."""
+    first = 'FIRST_QUESTION_MARKER: what is a haiku?'
+    turn(desk, first)
+    turn(desk, 'Do you remember the first question I asked you?')
+    request = desk.models.requests[-1]
+    assert first in json.dumps(request['messages'])
+    system = request['messages'][0]['content']
+    assert 'never say you cannot remember' in system

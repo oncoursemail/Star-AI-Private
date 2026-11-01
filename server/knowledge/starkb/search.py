@@ -30,6 +30,11 @@ FALLBACK_DEPTH = 5              # vector mode: chunks with no embedding are cand
 FALLBACK_EMBED = 4              # ... and at most this many of them are embedded for one query
 FALLBACK_CACHE = 4000           # on-the-fly vectors kept in memory (never written to the index)
 RRF_K = 60                          # Cormack et al. 2009 default
+# `hybrid` fusion: the BM25 list counts this much against the vector list (1.0 = plain RRF). Equal weights let a weak
+# BM25 list push good vector hits down. Brain-1 index, 145 questions (action-wave1-20261025): r@5 / MRR@10 for weight
+# 1.0 127 / .751, 0.5 128 / .782, 0.3 129 / .789, 0.2 132 / .799, 0.1 133 / .800; plain `vector` 134 / .799. 0.1 was
+# best on the dev sets (questions + golden 48/55 vs 42/55); hybrid still does not beat `vector`, which stays the default.
+HYBRID_LEXICAL_WEIGHT = float(os.environ.get("STAR_KB_HYBRID_LEXICAL_WEIGHT", "0.1"))
 BM25_WEIGHTS = (3.0, 2.0, 2.0, 1.0)  # title, heading, idents, text (fixed before evaluation, not tuned)
 BM25_QUESTION_WEIGHT = 2.0          # generated questions, weighted like a heading (fixed before evaluation, not tuned)
 BASE_COLUMNS = "{title heading idents text}"   # FTS5 column filter: match outside the questions column only
@@ -379,11 +384,13 @@ class Searcher:
         return [(int(self._ids[i]), float(scores[i])) for i in top]
 
     @staticmethod
-    def rrf(*rankings: list[tuple[int, float]], k: int = RRF_K) -> list[tuple[int, float]]:
+    def rrf(*rankings: list[tuple[int, float]], k: int = RRF_K,
+            weights: tuple[float, ...] | None = None) -> list[tuple[int, float]]:
         fused: dict[int, float] = {}
-        for ranking in rankings:
+        for index, ranking in enumerate(rankings):
+            weight = 1.0 if weights is None else weights[index]
             for rank, (chunk_id, _) in enumerate(ranking, 1):
-                fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (k + rank)
+                fused[chunk_id] = fused.get(chunk_id, 0.0) + weight / (k + rank)
         return sorted(fused.items(), key=lambda item: -item[1])
 
     # -- full pipeline --------------------------------------------------------------------
@@ -415,13 +422,14 @@ class Searcher:
                candidates: int = 50, rerank_n: int = 15, fallback: bool = False,
                degrade: bool = False, questions: bool | None = None, facets: bool | None = None,
                facet_merge: str = "max", scope: str | None = None,
-               remote_rerank_n: int = 0) -> tuple[list[Passage], dict]:
+               remote_rerank_n: int = 0, lexical_weight: float | None = None) -> tuple[list[Passage], dict]:
         """fallback=True (the service default): in `vector` mode on a partly embedded index, the
         chunks without an embedding that BM25 ranks in its top FALLBACK_DEPTH over the whole corpus
         are embedded at query time (at most FALLBACK_EMBED) and ranked by cosine with the rest.
         With every chunk embedded this is plain `vector`. degrade=True: if the embedding model
         cannot be reached, answer with BM25 and report `timing["degraded"]` instead of failing.
-        remote_rerank_n=N (`vector` mode, only when the brain has a remote reranker): the top N are reranked on the
+        lexical_weight: the BM25 list's weight in `hybrid` fusion (None = HYBRID_LEXICAL_WEIGHT).
+        remote_rerank_n=N (`vector` or `hybrid` mode, only when the brain has a remote reranker): the top N are reranked on the
         remote GPU and the reranked order is fused with the vector order by RRF (scores stay cosines). There is no
         fallback to the brain's slow reranker here: if the remote fails, the vector order stands
         (`timing["rerank_skipped"]`). Measured 2026-10-21 (docs/agents/laptop-rerank-20261021.md)."""
@@ -512,8 +520,9 @@ class Searcher:
         elif mode == "vector":
             ranked = dense
         else:
-            ranked = self.rrf(lexical, dense)
-        if remote_rerank_n and mode == "vector" and ranked and getattr(self.brain, "remote_rerank", None):
+            weight = HYBRID_LEXICAL_WEIGHT if lexical_weight is None else lexical_weight
+            ranked = self.rrf(lexical, dense, weights=(weight, 1.0))
+        if remote_rerank_n and mode in ("vector", "hybrid") and ranked and getattr(self.brain, "remote_rerank", None):
             head = ranked[:remote_rerank_n]
             rows = self._rows([cid for cid, _ in head])
             docs = [(rows[cid]["heading"] + "\n" + rows[cid]["text"])[:RERANK_DOC_CHARS] for cid, _ in head]
