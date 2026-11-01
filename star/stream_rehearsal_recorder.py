@@ -118,6 +118,9 @@ class StreamRehearsalRecorder:
         self._speech_to_pcm: list[float] = []
         self._pcm_to_avatar: list[float] = []
         self._frame_times: list[float] = []
+        self._last_presented_ms: float | None = None
+        self._last_audible_presented_ms: float | None = None
+        self._audible_presentation_gap_max_ms: float | None = None
         self._audible_frame_times: list[float] = []
         self._obs_previous: tuple[int, int] | None = None
         self._obs_skipped = 0
@@ -221,6 +224,7 @@ class StreamRehearsalRecorder:
                 self._speech_to_pcm.append(when - self._speech[2])
                 self._speech = (self._speech[0], "audible", when)
                 self._avatar_last_ms = when
+                self._last_audible_presented_ms = None
             elif event == "avatar_frame_rendered":
                 if self._speech is None or self._speech[:2] != (opaque_id, "audible"):
                     raise ValueError("avatar cannot claim unsounded speech")
@@ -241,6 +245,16 @@ class StreamRehearsalRecorder:
                 gap = when - self._avatar_last_ms
                 self._avatar_max_gap_ms = max(self._avatar_max_gap_ms or 0, gap)
                 self._avatar_frames_by_speech.append(self._avatar_current_count)
+                # Do not hide a frozen game presentation at the END of speech:
+                # no more host frame callbacks is still a visible stall.
+                if self._last_audible_presented_ms is not None:
+                    tail_ms = when - self._last_audible_presented_ms
+                    self._audible_presentation_gap_max_ms = max(
+                        self._audible_presentation_gap_max_ms or 0, tail_ms,
+                    )
+                    self._audible_frame_times[-1] = max(
+                        self._audible_frame_times[-1], tail_ms,
+                    )
                 self._avatar_last_ms = None
                 self._speech = None
             elif event == "gpu_peak_measured":
@@ -254,9 +268,27 @@ class StreamRehearsalRecorder:
                 assert duration_ms is not None
                 if self._gpu_peak_mib is not None:
                     raise ValueError("cannot measure more frames after final GPU peak")
+                if (self._last_presented_ms is not None
+                        and when <= self._last_presented_ms):
+                    raise ValueError("duplicate or non-increasing frame presentation timestamp")
+                self._last_presented_ms = when
                 self._frame_times.append(float(duration_ms))
                 if self._speech is not None and self._speech[1] == "audible":
-                    self._audible_frame_times.append(float(duration_ms))
+                    # A reported 16 ms render duration is not evidence of
+                    # 60 FPS when the actual host presentation callbacks
+                    # arrive only once per 100 ms. Conservatively use the
+                    # larger of the duration and monotonic presentation gap.
+                    anchor_ms = (self._last_audible_presented_ms
+                                 if self._last_audible_presented_ms is not None
+                                 else self._speech[2])
+                    gap_ms = when - anchor_ms
+                    self._audible_presentation_gap_max_ms = max(
+                        self._audible_presentation_gap_max_ms or 0, gap_ms,
+                    )
+                    self._audible_frame_times.append(
+                        max(float(duration_ms), gap_ms)
+                    )
+                    self._last_audible_presented_ms = when
             elif event == "obs_stats_sampled":
                 assert skipped_frames is not None and total_frames is not None
                 if skipped_frames > total_frames:
@@ -310,6 +342,14 @@ class StreamRehearsalRecorder:
                 "utterances_stopped": self._counts["pcm_stopped"],
                 "frame_samples": len(self._frame_times),
                 "audible_frame_samples": len(self._audible_frame_times),
+                "audible_presentation_gap_max_ms": (
+                    round(self._audible_presentation_gap_max_ms, 3)
+                    if self._audible_presentation_gap_max_ms is not None
+                    else None
+                ),
+                "audible_effective_frame_time_p99_ms": _percentile(
+                    self._audible_frame_times, 0.99,
+                ),
                 "avatar_frame_samples": self._counts["avatar_frame_rendered"],
                 "avatar_frame_gap_max_ms": (
                     round(self._avatar_max_gap_ms, 3)
@@ -346,6 +386,9 @@ class StreamRehearsalRecorder:
         The frame cadence check prevents a frozen/missing avatar renderer from
         qualifying as a high-quality real-time speech rehearsal. Renderer
         frames do not themselves prove natural motion or lip-sync accuracy.
+        Export uses conservative host presentation gaps (including the
+        beginning/end of audible PCM), never optimistic duration claims
+        alone. Non-increasing presentation timestamps are invalid.
         """
         with self._lock:
             if (not self.report()["clean_shutdown"]
