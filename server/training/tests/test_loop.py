@@ -2,6 +2,7 @@
 dropping a request in flight, and the checkpoint after every candidate (run on the PC)."""
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 import re
@@ -75,6 +76,24 @@ class ScriptedBrain:
         return [list(self.vector) for _ in texts]
 
 
+class RepairBrain(ScriptedBrain):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.repair_users: list[str] = []
+
+    def chat(self, model, messages, *, max_tokens, temperature=0.6, top_p=0.95,
+             should_yield=lambda: "", seed=None):
+        if messages[0]["content"].startswith(prompts.REPAIR_SYSTEM):
+            self.requests.append("repair")
+            self.repair_users.append(messages[-1]["content"])
+            return {"text": SOLUTION_REPLY, "finish": "stop", "prompt_tokens": 100,
+                    "completion_tokens": 50, "seconds": 0.1}
+        return super().chat(
+            model, messages, max_tokens=max_tokens, temperature=temperature,
+            top_p=top_p, should_yield=should_yield, seed=seed,
+        )
+
+
 @pytest.fixture()
 def env(tmp_path):
     s = Settings(home=tmp_path / "h", lock_dir=str(tmp_path / "nolock"), idle_s=0, poll_s=0.01)
@@ -104,6 +123,27 @@ def test_a_good_candidate_is_kept_with_its_evidence(env):
     assert kept[0]["sources"] == ["owner-open-weight-models-synthetic"] and len(kept[0]["gate_log_sha256"]) == 64
     assert store.load_vectors() == [("sv-000001", [1.0, 0.0, 0.0])]
     assert store.state["kept"] == 1 and store.state["tokens"]["completion"] == 150
+
+
+def test_optional_verifier_repair_turns_fixable_failure_into_kept(env):
+    s, _, _ = env
+    s.solver_repair_rounds = 2
+    broken = "```luau\n" + SOLUTION.replace("pop", "popp") + "```"
+    brain = RepairBrain(solution_reply=broken)
+    gen, store = make(env, brain)
+    row = gen.make_candidate()
+
+    assert "gate" not in row, row
+    assert row["generation_mode"] == "verifier-repair"
+    assert row["repairs"][0]["trigger"] == "G3:assertion_failed"
+    assert row["repairs"][0]["strategy"] == "fresh_reexplore"
+    assert row["repairs"][0]["result"] == "candidate"
+    assert "FRESH RE-EXPLORATION" in brain.repair_users[0]
+    assert "function Stack.popp" not in brain.repair_users[0]
+    assert len(row["repairs"][0]["feedback_sha256"]) == 64
+    assert row["tokens_repairs"] == 50
+    assert brain.requests[-1] == "repair"
+    assert store.state["kept"] == 1
 
 
 def test_second_identical_candidate_is_a_duplicate(env):
@@ -208,5 +248,7 @@ def test_the_report_counts_everything(env):
 
 
 def test_idle_gate_ordering_is_cheapest_first():
-    order = re.findall(r'"(G\d)"', Path(loop.__file__).read_text())
+    # Inspect only the gate runner: module-level policy sets may mention gate
+    # IDs before this function without changing runtime gate ordering.
+    order = re.findall(r'"(G\d)"', inspect.getsource(loop.Generator.run_gates))
     assert order.index("G0") < order.index("G6") < order.index("G8") < order.index("G7") < order.index("G1") < order.index("G3") < order.index("G4")

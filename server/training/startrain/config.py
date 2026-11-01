@@ -50,6 +50,11 @@ class Settings:
     decontam_code_jaccard: float = 0.50
     decontam_cosine: float = 0.88
     cluster_cap: float = 0.05
+    # Optional verifier-feedback repair. Off by default until the owner enables
+    # it after reviewing the generated trajectories and server cost.
+    solver_repair_rounds: int = field(default_factory=lambda: max(
+        0, min(3, int(_env("STAR_TRAIN_SOLVER_REPAIR_ROUNDS", "0")))
+    ))
     report_every: int = 5
     seed: int = field(default_factory=lambda: int(_env("STAR_TRAIN_SEED", "20261011")))
 

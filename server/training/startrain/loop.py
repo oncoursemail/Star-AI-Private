@@ -19,6 +19,14 @@ from .store import Store, now_iso
 
 TOPIC_BY_ID = topics.by_id()
 
+# Only solution-controlled failures are repairable. Task/test/decontamination
+# failures are never shown to the solver as something it can talk its way past.
+_REPAIRABLE_G0 = frozenset({
+    "code_length", "response_length", "forbidden_call", "checking_disabled",
+    "missing_strict_header", "cast_to_any", "strict_unverifiable", "debug_print",
+})
+_REPAIRABLE_GATES = frozenset({"G6", "G1", "G2", "G3"})
+
 
 class Generator:
     def __init__(self, settings, brain, tools, decontam, store: Store, stop, log=print):
@@ -137,10 +145,80 @@ class Generator:
             return rejected("S", "solution_unparsable", problem)
         base["response"], base["code"] = reply["text"].strip(), code
 
-        # 3. the gates, cheapest first
-        g0 = time.monotonic()
+        # 3. the gates, cheapest first. Optional repair is verifier-driven:
+        # the solver receives only a compact failure summary, never the tests or
+        # evaluator implementation, and every replacement must pass the same gates.
+        gate_seconds = 0.0
+        gt = time.monotonic()
         verdict, infos, fp = self.run_gates(base, rng)
-        self.store.state["seconds"]["gates"] += time.monotonic() - g0
+        gate_seconds += time.monotonic() - gt
+        repairs: list[dict] = []
+        repair_tokens = 0
+        for repair_round in range(1, self.s.solver_repair_rounds + 1):
+            repairable = verdict.gate in _REPAIRABLE_GATES or (
+                verdict.gate == "G0" and verdict.code in _REPAIRABLE_G0
+            )
+            if verdict.ok or not repairable:
+                break
+            trigger = f"{verdict.gate}:{verdict.code}"
+            feedback_fingerprint = trigger + ":" + verdict.detail
+            before_sha = hashlib.sha256(base["code"].encode("utf-8")).hexdigest()
+            # Semantic execution failures are re-solved without the failed
+            # answer in context; second+ attempts also switch to fresh
+            # re-exploration to avoid repeatedly anchoring on one approach.
+            fresh_reexplore = verdict.gate == "G3" or repair_round > 1
+            strategy = "fresh_reexplore" if fresh_reexplore else "local_repair"
+            reply = self._chat(
+                self.s.solver_model,
+                prompts.repair_messages(
+                    base["prompt"], None if fresh_reexplore else base["response"], topic.mode,
+                    verdict.gate, verdict.code, verdict.detail,
+                ),
+                max_tokens=1700,
+                temperature=0.45 if fresh_reexplore else 0.25,
+                stage="repair",
+                seed=rng.randrange(1 << 30),
+            )
+            repair_tokens += reply["completion_tokens"]
+            if reply["finish"] == "length":
+                repairs.append({"round": repair_round, "trigger": trigger, "result": "truncated",
+                                "before_sha256": before_sha})
+                verdict = G.reject("S", "repair_truncated", "the repair ran out of tokens")
+                infos = {}
+                break
+            repaired_code, problem = parse.parse_solution(reply["text"])
+            if problem:
+                repairs.append({"round": repair_round, "trigger": trigger, "result": "unparsable",
+                                "before_sha256": before_sha})
+                verdict = G.reject("S", "repair_unparsable", problem)
+                infos = {}
+                break
+            after_sha = hashlib.sha256(repaired_code.encode("utf-8")).hexdigest()
+            if after_sha == before_sha:
+                repairs.append({"round": repair_round, "trigger": trigger, "result": "no_change",
+                                "before_sha256": before_sha, "after_sha256": after_sha})
+                verdict = G.reject("S", "repair_no_change", "repair returned byte-identical code")
+                infos = {}
+                break
+            repairs.append({
+                "round": repair_round,
+                "trigger": trigger,
+                "strategy": strategy,
+                "result": "candidate",
+                "before_sha256": before_sha,
+                "after_sha256": after_sha,
+                "feedback_sha256": hashlib.sha256(feedback_fingerprint.encode("utf-8")).hexdigest(),
+            })
+            base["response"], base["code"] = reply["text"].strip(), repaired_code
+            gt = time.monotonic()
+            verdict, infos, fp = self.run_gates(base, rng)
+            gate_seconds += time.monotonic() - gt
+
+        self.store.state["seconds"]["gates"] += gate_seconds
+        base["generation_mode"] = "verifier-repair" if repairs else "single-pass"
+        if repairs:
+            base["repairs"] = repairs
+            base["tokens_repairs"] = repair_tokens
         if not verdict.ok:
             return rejected(verdict.gate, verdict.code, verdict.detail, {"gates": infos} if infos else None)
         vector = infos.pop("_vector", None)
