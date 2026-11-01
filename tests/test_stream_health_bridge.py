@@ -257,3 +257,40 @@ def test_metrics_exclude_obs_payloads_and_require_real_windows():
 def test_obs_age_configuration_is_strict(invalid):
     with pytest.raises(ValueError):
         StreamHealthBridge(max_obs_age_ms=invalid)
+
+
+@pytest.mark.parametrize(
+    "payload,host_ms", [
+        (obs(rskip=float("nan")), 1700),
+        ({"renderSkippedFrames": "broken"}, 1700),
+        (None, 1700),
+        (obs(), -1),
+        (obs(), float("inf")),
+    ],
+)
+def test_unverified_malformed_obs_cannot_grief_live_resource_admission(payload, host_ms):
+    """An untrusted packet must not revoke the last correctly paired OBS window."""
+    bridge = active()
+    ready(bridge)
+    invalidations = bridge.metrics()["obs_invalidated"]
+    assert bridge.offer_obs(payload, host_ms=host_ms, host_verified=False) is None
+    assert bridge.metrics()["obs_invalidated"] == invalidations
+    assert bridge.advise("vision", now_ms=1520).allowed
+    # The original OBS counter baseline must also survive, not just a cached
+    # admission result. The next trusted interval should be usable immediately.
+    assert output(bridge, 1900)
+    assert bridge.offer_obs(obs(rtotal=1200, ototal=1200),
+                            host_ms=2000, host_verified=True) is not None
+    assert bridge.offer_host(load(), host_ms=2010, host_verified=True)
+    assert bridge.advise("vision", now_ms=2020).allowed
+
+
+@pytest.mark.parametrize("flag", [1, 0, "true", None])
+def test_invalid_host_verified_flag_never_resets_trusted_obs(flag):
+    bridge = active()
+    ready(bridge)
+    invalidations = bridge.metrics()["obs_invalidated"]
+    with pytest.raises(ValueError):
+        bridge.offer_obs(obs(rskip=float("nan")), host_ms=1700, host_verified=flag)
+    assert bridge.metrics()["obs_invalidated"] == invalidations
+    assert bridge.advise("vision", now_ms=1520).allowed
