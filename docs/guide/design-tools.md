@@ -28,6 +28,14 @@ components that people and AI tools can both read. Ask STAR to **draft**, **chec
 STAR shows the result in the chat. To let STAR save it into your project folder, set a **Workspace folder** and
 turn on **Allow workspace writes** in Settings → **Advanced settings** → **Developer permissions**. Both start off.
 
+## Check UI evidence across states and devices
+
+**Status: Experimental, off by default.** The existing read-only visual auditor can now take an optional
+UI evidence contract: required screens, viewport sizes, interface states, input methods and motion preferences.
+It distinguishes missing evidence from failing checks, and detects stale source, screenshot and trace bindings.
+It does not run the application or certify design quality. See [UI evidence contracts](ui-evidence-contract.md)
+for activation, the file format, examples and the precise limits of the result.
+
 ## Pictures
 
 **Status: Opt-in** (needs ComfyUI on this PC)
