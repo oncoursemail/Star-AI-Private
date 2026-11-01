@@ -192,6 +192,7 @@ class StreamLoadGovernor:
             new_profile, reason = self._classify(sample)
             if self._profile == "warming":
                 if new_profile != "normal":
+                    self._recovery_streak = 0
                     self._profile = new_profile
                     self._reason = reason
                     self._counts["transitions"] += 1
