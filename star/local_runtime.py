@@ -101,7 +101,8 @@ class Runtime:
     def router_arguments(executable: Path, models_dir: Path, *, port=8080,
                          context=4096, gpu_layers=25, max_loaded=1,
                          speculative: str = "off", max_draft_tokens: int = 16,
-                  flash_attention: str = "auto", kv_cache_type: str = "f16") -> list[str]:
+                         flash_attention: str = "auto",
+                         kv_cache_type: str = "f16") -> list[str]:
         """Dynamic llama.cpp model router, bound strictly to loopback.
 
         One resident model prevents multiple heavy GGUFs from exhausting RAM.
@@ -127,8 +128,8 @@ class Runtime:
 
     def start_router(self, executable: Path, models_dir: Path, log_path: Path,
                      *, port=8080, context=4096, gpu_layers=25,
-                     speculative: str = "off", max_draft_tokens: int = 16, flash_attention: str = "auto",
-                     kv_cache_type: str = "f16"):
+                     speculative: str = "off", max_draft_tokens: int = 16,
+                     flash_attention: str = "auto", kv_cache_type: str = "f16"):
         """Start only an explicitly requested, locally installed model router."""
         with self.lock:
             self._ready_to_start('Stop the current managed STAR Brain before starting model router')
@@ -161,15 +162,15 @@ class Runtime:
 
     def start(self, executable: Path, model: Path, log_path: Path, *, port=8080,
               context=4096, gpu_layers=25, projector: Path | None = None,
-              speculative: str = "off", max_draft_tokens: int = 16, flash_attention: str = "auto",
-                     kv_cache_type: str = "f16"):
+              speculative: str = "off", max_draft_tokens: int = 16,
+              flash_attention: str = "auto", kv_cache_type: str = "f16"):
         with self.lock:
             self._ready_to_start('llama.cpp is already running')
             argv=self.arguments(executable,model,port=port,context=context,gpu_layers=gpu_layers,
                                 projector=projector, speculative=speculative,
                                 max_draft_tokens=max_draft_tokens,
-                                         flash_attention=flash_attention,
-                                         kv_cache_type=kv_cache_type)
+                                flash_attention=flash_attention,
+                                kv_cache_type=kv_cache_type)
             log_path.parent.mkdir(parents=True,exist_ok=True)
             self._close_log()
             self.log_file=log_path.open('ab')
