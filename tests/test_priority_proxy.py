@@ -413,6 +413,14 @@ def chat(n=None, stream=False, **extra):
     return body
 
 
+def _log_lines(path) -> list[str]:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return [line for line in handle if line.strip()]
+    except OSError:
+        return []
+
+
 def wait_for(pred, timeout=10.0):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
@@ -488,7 +496,11 @@ def test_solo_p0_pauses_every_background_stream(stack):
     first_slots = {r["id_slot"] for r in fake.requests[:2]}
     assert {r["id_slot"] for r in cont} == first_slots == {0, 1}    # each answer resumed on its own slot
     assert [r["id_slot"] for r in fake.requests if r.get("max_tokens") == 8] == [2]   # the chat took the spare one
-    rows = [json.loads(line) for line in open(server.RequestHandlerClass.proxy.cfg.log)]
+    log = server.RequestHandlerClass.proxy.cfg.log
+    # The proxy writes a request's log row after it has answered (in its finally), so the client can be done first:
+    # reading at once found 1 of the 2 P3 rows on CI ("assert 1 == 2"), however long the answers were.
+    assert wait_for(lambda: len(_log_lines(log)) >= 3)
+    rows = [json.loads(line) for line in _log_lines(log)]
     assert {r["class"] for r in rows} == {"P0", "P3"} and all(r["status"] == "ok" for r in rows)
     assert sum(r["pauses"] for r in rows if r["class"] == "P3") == 2
 
