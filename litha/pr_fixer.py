@@ -27,6 +27,7 @@ import tempfile
 import time
 import tomllib
 
+from litha import rust_fix
 from litha.pr_merger import BASE, REPO, gh, head_checks, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
@@ -689,11 +690,60 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
     return row
 
 
+def fix_rust(pr: dict, log: str, dry: bool = False, asker=ask) -> dict:
+    """A Rust PR (other repos) whose CI failed to build/lint/format: her fix on top of it, proven by the same cargo
+    checks locally. Her own litha/ PR gets the commit directly; anyone else's gets her PR litha/fix-<n>-..."""
+    number, head = pr["number"], str(pr.get("headRefName", ""))
+    own = head.startswith("litha/")
+    branch = head if own else f"litha/fix-{number}-{dt.date.today():%Y%m%d}-{dt.datetime.now():%H%M}"
+    tree = WORK / f"litha-fix-{number}"
+    if tree.exists():
+        sh(["git", "-C", str(CLONE), "worktree", "remove", "--force", str(tree)])
+    local = f"litha-work/fix-{number}"
+    got = sh(["git", "-C", str(CLONE), "fetch", "-q", "origin", f"pull/{number}/head:{local}", "--force"])
+    if got.returncode:
+        return {"pr": number, "result": "skip", "why": "fetch failed: " + got.stderr[-200:]}
+    sh(["git", "-C", str(CLONE), "worktree", "add", "-q", str(tree), local])
+    ok, why = rust_fix.repair(tree, REPO, pr.get("title", ""), log, asker)
+    row = {"pr": number, "result": "fixed" if ok else "failed", "kind": "rust", "why": why}
+    if not ok or dry:
+        return row
+    changed = sh(["git", "status", "--porcelain"], cwd=tree).stdout.split("\n")
+    if not any(line.strip() for line in changed):
+        return {**row, "result": "failed", "why": "the checks pass here without a change (CI-only failure?)"}
+    sh(["git", "add", "-A"], cwd=tree)
+    c = sh(["git", *IDENTITY, "commit", "-q", "--no-verify", "-m", f"[litha] fix #{number}: {why[:120]}"], cwd=tree)
+    if c.returncode:
+        return {**row, "result": "failed", "why": "commit failed: " + (c.stdout + c.stderr)[-200:]}
+    if sh(["git", "push", "-q", "origin", f"HEAD:refs/heads/{branch}"], cwd=tree).returncode:
+        return {**row, "result": "failed", "why": "push failed (no force-push; the branch moved?)"}
+    if own:
+        row["fix_pr"] = pr.get("url", f"#{number}")
+        return row
+    try:
+        row["fix_pr"] = gh("pr", "create", "--repo", REPO, "--base", BASE, "--head", branch, "--title",
+                           f"[litha] fix #{number}: {pr.get('title', '')[:60]}", "--body",
+                           f"Litha fixed what broke CI on #{number} ({why}). Contains #{number}'s commits plus her fix; "
+                           "merging this lands both.").strip()
+        gh("pr", "comment", str(number), "--repo", REPO, "--body", f"Litha fixed the failing build in {row['fix_pr']}")
+    except RuntimeError as e:
+        row["why"] += f" (PR create: {str(e)[:150]})"
+    return row
+
+
 def others(python: str, limit: int, dry: bool = False) -> int:
     """The owner's other repos with a local clone (repos.json "clone", mode merge): she resolves conflicting PRs on
     her own branch, and reruns a failed check once per head (flaky runners). Their CI and her merger's review decide."""
     global REPO, BASE, CLONE, WORK
     from litha import pr_merger
+    lock = STATE.parent / "others.lock"           # cargo builds take minutes: never two runs in the same worktrees
+    try:
+        os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        if time.time() - lock.stat().st_mtime < 7200:
+            print("another --others run is busy", flush=True)
+            return 0
+        lock.touch()                              # a run that died over 2 h ago: take over
     home = (REPO, BASE, CLONE, WORK, pr_merger.REPO, pr_merger.BASE)
     tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
     try:
@@ -709,7 +759,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
                 continue
             prs = open_prs()
             busy = {m.group(1) for p in prs for m in [re.match(r"litha/merge-(\d+)-", p.get("headRefName", ""))] if m}
-            done = reruns = 0
+            done = reruns = repairs = 0
             for pr in prs:
                 key = f"{REPO}#{pr['number']}"
                 if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(key) == pr["headRefOid"]:
@@ -722,16 +772,28 @@ def others(python: str, limit: int, dry: bool = False) -> int:
                     except Exception as e:  # noqa: BLE001 - one PR must not stop the others
                         row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
                     done += 1
-                elif pr.get("mergeable") == "MERGEABLE" and reruns < 3:
+                elif pr.get("mergeable") == "MERGEABLE" and (reruns < 3 or repairs < 1):
                     checks = head_checks(pr["headRefOid"])
                     if not any(c["conclusion"] == "FAILURE" for c in checks) or \
                             any(c["status"] != "completed" for c in checks):
                         continue
                     t = time.time()
-                    row = {"pr": pr["number"], "result": "flaky-rerun",
-                           "why": f"reran {0 if dry else rerun_failed(pr['headRefOid'], pr['number'])} failed run(s) "
-                                  "once for this head"}
-                    reruns += 1
+                    log = failed_logs(pr["headRefOid"])
+                    if rust_fix.checks(log) and (rust_fix.errors(log) or "Diff in " in log):
+                        if repairs >= 1:                  # one build per repo per run: cargo is the slow part
+                            continue
+                        try:
+                            row = fix_rust(pr, log, dry)
+                        except Exception as e:  # noqa: BLE001 - one PR must not stop the others
+                            row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
+                        repairs += 1
+                    elif reruns < 3:
+                        row = {"pr": pr["number"], "result": "flaky-rerun",
+                               "why": f"reran {0 if dry else rerun_failed(pr['headRefOid'], pr['number'])} failed "
+                                      "run(s) once for this head"}
+                        reruns += 1
+                    else:
+                        continue
                 else:
                     continue
                 row = {"repo": REPO, **row, "seconds": round(time.time() - t)}
@@ -743,6 +805,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
                 print(json.dumps(row), flush=True)
     finally:
         REPO, BASE, CLONE, WORK, pr_merger.REPO, pr_merger.BASE = home
+        lock.unlink(missing_ok=True)
     return 0
 
 
