@@ -175,10 +175,16 @@ class StreamLoadGovernor:
         Source authentication and OBS counter-delta calculations belong to host.
         """
         with self._lock:
-            now = self._clock(now_s)
+            # Reject unauthenticated/malformed submissions BEFORE touching the
+            # host-clock watermark. Otherwise a bogus future timestamp on a
+            # rejected packet can lock out every subsequent valid measurement
+            # until the session is restarted (clock-poisoning denial of service).
             if (not self._enabled or host_verified is not True
-                    or not isinstance(sample, StreamLoadSample)
-                    or sample.sample_id in self._seen
+                    or not isinstance(sample, StreamLoadSample)):
+                self._counts["rejected"] += 1
+                return False
+            now = self._clock(now_s)
+            if (sample.sample_id in self._seen
                     or sample.measured_at_s > now
                     or now - sample.measured_at_s > self.max_sample_age_s
                     or (self._last_sample is not None
