@@ -74,6 +74,7 @@ def test_the_repos_clippy_steps_run_after_her_fix_too(tmp_path):
 
 
 def test_a_ci_command_with_its_own_jobs_flag_is_not_given_a_second_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(R, "night", lambda: False)
     seen = []
     monkeypatch.setattr(R.subprocess, "run", lambda cmd, **k: seen.append(cmd) or
                         type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})())
@@ -81,6 +82,9 @@ def test_a_ci_command_with_its_own_jobs_flag_is_not_given_a_second_one(tmp_path,
     R.run(tmp_path, ["clippy", "--all-targets", "--", "-D", "warnings"])
     assert seen[0][1:].count("-j") == 1                     # cargo refuses a second --jobs (seen on Studio #484)
     assert seen[1][1:] == ["clippy", "--all-targets", "-j", "4", "--", "-D", "warnings"]
+    monkeypatch.setattr(R, "night", lambda: True)                # 00:00-08:00: more of the PC
+    R.run(tmp_path, ["build"])
+    assert seen[2][1:] == ["build", "-j", "8"]
 
 
 def test_she_is_shown_where_the_names_live_with_their_cfg_and_the_features(tmp_path):

@@ -777,6 +777,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
             BASE = pr_merger.BASE = entry.get("base", "main")
             CLONE = Path(entry["clone"]).expanduser()
             WORK = Path(entry.get("worktrees") or CLONE.parent / f"{CLONE.name}-worktrees").expanduser()
+            most, builds = (limit * 2, 2) if rust_fix.night() else (limit, 1)   # night: twice the work per run
             if not (CLONE / ".git").exists():
                 print(f"{REPO}: no clone at {CLONE}", flush=True)
                 continue
@@ -787,7 +788,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
                 key = f"{REPO}#{pr['number']}"
                 if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(key) == pr["headRefOid"]:
                     continue
-                if pr.get("mergeable") == "CONFLICTING" and done < limit and str(pr["number"]) not in busy \
+                if pr.get("mergeable") == "CONFLICTING" and done < most and str(pr["number"]) not in busy \
                         and not str(pr.get("headRefName", "")).startswith("litha/"):
                     t = time.time()
                     try:
@@ -795,7 +796,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
                     except Exception as e:  # noqa: BLE001 - one PR must not stop the others
                         row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
                     done += 1
-                elif pr.get("mergeable") == "MERGEABLE" and (reruns < 3 or repairs < 1):
+                elif pr.get("mergeable") == "MERGEABLE" and (reruns < 3 or repairs < builds):
                     checks = head_checks(pr["headRefOid"])
                     if not any(c["conclusion"] == "FAILURE" for c in checks) or \
                             any(c["status"] != "completed" for c in checks):
@@ -803,7 +804,7 @@ def others(python: str, limit: int, dry: bool = False) -> int:
                     t = time.time()
                     log = failed_logs(pr["headRefOid"])
                     if rust_fix.checks(log) and (rust_fix.errors(log) or "Diff in " in log):
-                        if repairs >= 1:                  # one build per repo per run: cargo is the slow part
+                        if repairs >= builds:             # 1 build per repo per run (2 at night): cargo is slow
                             continue
                         try:
                             row = fix_rust(pr, log, dry)
