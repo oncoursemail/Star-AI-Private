@@ -243,6 +243,34 @@ class StreamingLoadGovernorTests(unittest.TestCase):
         self.assertEqual(gov.metrics()["rejected"], 3)
         self.assertEqual(gov.recommend(now_s=11).profile, "warming")
 
+    def test_verified_duplicate_from_delayed_queue_cannot_poison_clock(self) -> None:
+        gov = enabled()
+        self.assertTrue(gov.ingest(sample("first", at=10), now_s=10,
+                                   host_verified=True))
+        self.assertFalse(gov.ingest(sample("first", at=10), now_s=1_000_000,
+                                    host_verified=True))
+        # A duplicate is not a new clock attestation. Valid later evidence
+        # must recover without forcing an owner-visible session restart.
+        self.assertTrue(gov.ingest(sample("next", at=11), now_s=11,
+                                   host_verified=True))
+        self.assertEqual(gov.metrics()["accepted"], 2)
+
+    def test_verified_stale_future_delivery_cannot_poison_clock(self) -> None:
+        gov = enabled()
+        self.assertTrue(gov.ingest(sample("first", at=10), now_s=10,
+                                   host_verified=True))
+        self.assertFalse(gov.ingest(sample("old", at=11), now_s=1_000_000,
+                                    host_verified=True))
+        self.assertFalse(gov.ingest(sample("future", at=1_001), now_s=12,
+                                    host_verified=True))
+        self.assertTrue(gov.ingest(sample("next", at=12), now_s=12,
+                                   host_verified=True))
+        with self.assertRaises(ValueError):
+            gov.ingest(sample("rollback", at=13), now_s=9,
+                       host_verified=True)
+        self.assertTrue(gov.ingest(sample("after", at=13), now_s=13,
+                                   host_verified=True))
+
     def test_concurrent_duplicate_ingest_stays_atomic(self) -> None:
         gov = enabled()
         barrier = Barrier(12)
