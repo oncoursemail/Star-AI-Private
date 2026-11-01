@@ -9,6 +9,13 @@ from star.stream_windows_resource_window import (
 )
 
 
+GPU_UUID = "GPU-11111111-2222-3333-4444-555555555555"
+
+
+def gpu_with_id(total: int, free: int, utilization: int) -> GpuHeadroom:
+    return GpuHeadroom(total, free, utilization, device_uuid=GPU_UUID)
+
+
 def witnesses() -> tuple[ProcessWitness, ...]:
     return (
         ProcessWitness("obs64.exe", 10, 100.0),
@@ -20,7 +27,7 @@ def witnesses() -> tuple[ProcessWitness, ...]:
 
 def sample(at: float, gpu: GpuHeadroom | None = None, *, processes=None) -> _WindowSample:
     if gpu is None:
-        gpu = GpuHeadroom(8192, 3500, 35)
+        gpu = gpu_with_id(8192, 3500, 35)
     return _WindowSample(at, witnesses() if processes is None else processes, gpu)
 
 
@@ -60,7 +67,7 @@ class TestResourceStabilityWindow(unittest.TestCase):
 
     def test_transient_vram_crash_cannot_be_averaged_out(self):
         samples = [sample(i * 0.5) for i in range(5)]
-        samples[2] = sample(1.0, GpuHeadroom(8192, 260, 3))
+        samples[2] = sample(1.0, gpu_with_id(8192, 260, 3))
         result = evaluate(samples)
         self.assertEqual(result.status, "deferred")
         self.assertEqual(result.gpu_min_free_mib, 260)
@@ -68,14 +75,14 @@ class TestResourceStabilityWindow(unittest.TestCase):
 
     def test_short_gpu_busy_spike_fails_preflight(self):
         samples = [sample(i * 0.5) for i in range(5)]
-        samples[3] = sample(1.5, GpuHeadroom(8192, 4500, 99))
+        samples[3] = sample(1.5, gpu_with_id(8192, 4500, 99))
         result = evaluate(samples)
         self.assertIn("gpu_utilization_high", result.reasons)
         self.assertEqual(result.gpu_max_utilization_pct, 99)
 
     def test_gpu_index_change_or_driver_counter_inconsistency(self):
         samples = [sample(i * 0.5) for i in range(5)]
-        samples[3] = sample(1.5, GpuHeadroom(12288, 6500, 15))
+        samples[3] = sample(1.5, gpu_with_id(12288, 6500, 15))
         result = evaluate(samples)
         self.assertIn("gpu_total_changed_during_window", result.reasons)
         self.assertEqual(result.status, "deferred")
@@ -154,7 +161,7 @@ class TestResourceStabilityWindow(unittest.TestCase):
             owner_approved=True, pinned_game_identity=(13, 103.0),
             system_name=lambda: "Windows",
             process_reader=unbounded,
-            gpu_reader=lambda _: GpuHeadroom(8192, 3200, 20),
+            gpu_reader=lambda _: gpu_with_id(8192, 3200, 20),
             monotonic_clock=clock.now, sleeper=clock.sleep,
         )
         self.assertEqual(report.status, "unavailable")
@@ -189,7 +196,7 @@ class TestResourceStabilityWindow(unittest.TestCase):
             owner_approved=True, pinned_game_identity=(13, 103.0),
             system_name=lambda: "Windows",
             process_reader=witnesses,
-            gpu_reader=lambda index: (seen.append(index) or GpuHeadroom(8192, 3200, 20)),
+            gpu_reader=lambda index: (seen.append(index) or gpu_with_id(8192, 3200, 20)),
             monotonic_clock=clock.now,
             sleeper=clock.sleep,
         )
@@ -207,7 +214,7 @@ class TestResourceStabilityWindow(unittest.TestCase):
             counter += 1
             if counter == 3:
                 raise RuntimeError("SECRET_CONTEXT_VALUE")
-            return GpuHeadroom(8192, 3200, 20)
+            return gpu_with_id(8192, 3200, 20)
 
         result = probe_windows_resource_window(
             owner_approved=True, pinned_game_identity=(13, 103.0),
@@ -225,7 +232,7 @@ class TestResourceStabilityWindow(unittest.TestCase):
             owner_approved=True, pinned_game_identity=(13, 103.0),
             system_name=lambda: "Windows",
             process_reader=lambda: witnesses() + (witnesses()[0],),
-            gpu_reader=lambda _: GpuHeadroom(8192, 3200, 20),
+            gpu_reader=lambda _: gpu_with_id(8192, 3200, 20),
             monotonic_clock=clock.now, sleeper=clock.sleep,
         )
         self.assertEqual(result.status, "unavailable")

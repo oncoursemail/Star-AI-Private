@@ -21,6 +21,7 @@ from star.stream_windows_rehearsal_preflight import (
     GpuHeadroom,
     ProcessWitness,
     _game_identity,
+    _validated_gpu_uuid,
     enumerate_windows_processes,
     evaluate_preflight,
     query_nvidia_gpu,
@@ -84,16 +85,21 @@ def evaluate_resource_window(
     samples: Sequence[_WindowSample],
     *,
     pinned_game_identity: tuple[int, float] | None,
+    expected_gpu_uuid: str | None = None,
     gpu_reserve_mib: int = 1536,
     max_gpu_utilization_pct: int = 90,
 ) -> ResourceWindowReport:
     """Pure fail-closed evaluation: require sustained, not instantaneous, headroom."""
     game = _game_identity(pinned_game_identity)
+    expected_uuid = (
+        _validated_gpu_uuid(expected_gpu_uuid) if expected_gpu_uuid is not None else None
+    )
     if not 3 <= len(samples) <= 9:
         raise ValueError("expected 3..9 bounded host samples")
 
     reasons: list[str] = []
     total_mib: int | None = None
+    first_gpu_uuid: str | None = None
     free_values: list[int] = []
     utilization_values: list[int] = []
     previous_at: float | None = None
@@ -129,6 +135,18 @@ def evaluate_resource_window(
         total_mib = total_mib if total_mib is not None else sample.gpu.total_mib
         if sample.gpu.total_mib != total_mib:
             reasons.append("gpu_total_changed_during_window")
+        # Identical VRAM/utilization readings can belong to different GPUs.
+        # Index-only selection cannot prove the sampled device was stable.
+        if sample.gpu.device_uuid is None:
+            reasons.append("gpu_device_identity_missing")
+        else:
+            uuid = _validated_gpu_uuid(sample.gpu.device_uuid)
+            if first_gpu_uuid is None:
+                first_gpu_uuid = uuid
+            elif uuid != first_gpu_uuid:
+                reasons.append("gpu_device_identity_changed_during_window")
+            if expected_uuid is not None and uuid != expected_uuid:
+                reasons.append("gpu_device_identity_mismatch")
         free_values.append(sample.gpu.free_mib)
         utilization_values.append(sample.gpu.utilization_pct)
 
@@ -162,6 +180,7 @@ def probe_windows_resource_window(
     *,
     owner_approved: bool = False,
     pinned_game_identity: tuple[int, float] | None,
+    expected_gpu_uuid: str | None = None,
     gpu_index: int = 0,
     sample_count: int = 5,
     sample_spacing_s: float = 0.5,
@@ -180,6 +199,8 @@ def probe_windows_resource_window(
     if owner_approved is not True:
         raise PermissionError("host opt-in required for read-only resource observations")
     _game_identity(pinned_game_identity)
+    if expected_gpu_uuid is not None:
+        _validated_gpu_uuid(expected_gpu_uuid)
     if type(gpu_index) is not int or not 0 <= gpu_index <= 7:
         raise ValueError("GPU index must be 0..7")
     if type(sample_count) is not int or not 3 <= sample_count <= 9:
@@ -215,7 +236,10 @@ def probe_windows_resource_window(
             return _unavailable("local_monotonic_clock_unavailable")
         samples.append(_WindowSample(at, processes, gpu))
     try:
-        return evaluate_resource_window(samples, pinned_game_identity=pinned_game_identity)
+        return evaluate_resource_window(
+            samples, pinned_game_identity=pinned_game_identity,
+            expected_gpu_uuid=expected_gpu_uuid,
+        )
     except (TypeError, ValueError):
         return _unavailable("resource_window_evidence_invalid")
 
