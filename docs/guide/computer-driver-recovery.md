@@ -1,4 +1,5 @@
 # Computer driver recovery and optional outcome waits
+**Status:** Opt-in (off by default; a developer tool).
 
 This change extends `star.computer.driver.Driver.run`. It prevents several unsafe internal replays and adds a disabled-by-default option to finish waiting after a new positive postcondition is observed. It does not enable computer use, change policy, or establish native Windows performance.
 
