@@ -163,14 +163,19 @@ class Generator:
             trigger = f"{verdict.gate}:{verdict.code}"
             feedback_fingerprint = trigger + ":" + verdict.detail
             before_sha = hashlib.sha256(base["code"].encode("utf-8")).hexdigest()
+            # Semantic execution failures are re-solved without the failed
+            # answer in context; second+ attempts also switch to fresh
+            # re-exploration to avoid repeatedly anchoring on one approach.
+            fresh_reexplore = verdict.gate == "G3" or repair_round > 1
+            strategy = "fresh_reexplore" if fresh_reexplore else "local_repair"
             reply = self._chat(
                 self.s.solver_model,
                 prompts.repair_messages(
-                    base["prompt"], base["response"], topic.mode,
+                    base["prompt"], None if fresh_reexplore else base["response"], topic.mode,
                     verdict.gate, verdict.code, verdict.detail,
                 ),
                 max_tokens=1700,
-                temperature=0.35,
+                temperature=0.45 if fresh_reexplore else 0.25,
                 stage="repair",
                 seed=rng.randrange(1 << 30),
             )
@@ -198,6 +203,7 @@ class Generator:
             repairs.append({
                 "round": repair_round,
                 "trigger": trigger,
+                "strategy": strategy,
                 "result": "candidate",
                 "before_sha256": before_sha,
                 "after_sha256": after_sha,
