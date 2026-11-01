@@ -130,11 +130,14 @@ class StreamLoadGovernor:
         self._seen.clear()
         self._recovery_streak = 0
 
-    def _clock(self, now_s: float) -> float:
+    def _clock(self, now_s: float, *, commit: bool = True) -> float:
         now = _number(now_s, "now_s", maximum=_MAX_SECONDS)
         if self._last_now is not None and now < self._last_now:
             raise ValueError("host monotonic clock moved backwards; reset session")
-        self._last_now = now
+        # Rejected but host-verified telemetry (e.g. replayed counter samples)
+        # must not advance the clock and lock out a subsequent valid sample.
+        if commit:
+            self._last_now = now
         return now
 
     @staticmethod
@@ -183,7 +186,7 @@ class StreamLoadGovernor:
                     or not isinstance(sample, StreamLoadSample)):
                 self._counts["rejected"] += 1
                 return False
-            now = self._clock(now_s)
+            now = self._clock(now_s, commit=False)
             if (sample.sample_id in self._seen
                     or sample.measured_at_s > now
                     or now - sample.measured_at_s > self.max_sample_age_s
@@ -191,6 +194,9 @@ class StreamLoadGovernor:
                         and sample.measured_at_s <= self._last_sample.measured_at_s)):
                 self._counts["rejected"] += 1
                 return False
+            # Trust and freshness gates passed: only now commit the host-clock
+            # watermark. A rejected delivery cannot poison future observations.
+            self._last_now = now
             # A long gap must not preserve a previously healthy profile.
             # Demand fresh consecutive evidence before optional work resumes.
             if (self._last_sample is not None and
