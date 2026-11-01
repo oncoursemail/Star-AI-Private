@@ -336,7 +336,9 @@ class TestStreamRehearsalRecorder(unittest.TestCase):
             game_id="g", game_version="v",
         )
         self.assertEqual(len(run.frame_times_ms), 120)
-        self.assertEqual(set(run.frame_times_ms), {20})
+        self.assertEqual(run.frame_times_ms[0], 90)  # leading audio/game pause
+        self.assertEqual(run.frame_times_ms[-1], 46)  # trailing pause
+        self.assertEqual(set(run.frame_times_ms[1:-1]), {20})
 
     def test_missing_avatar_is_not_eligible_for_streaming_comparison(self):
         r = self._complete_host_run(avatar_times=())
