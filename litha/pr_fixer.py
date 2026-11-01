@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 import tomllib
 
 from litha import rust_fix
@@ -36,6 +37,7 @@ CLONE = ROOT.parents[1] / "Star-AI"
 HOME_CLONE = CLONE                                          # STAR's own repo: star commit, Python tests
 IDENTITY = ["-c", "user.name=oncoursemail", "-c", "user.email=84545815+oncoursemail@users.noreply.github.com"]
 STATE = Path.home() / ".star" / "pr-fixer" / "tried.json"
+_STATE_MUTEX = threading.Lock()
 
 
 def mark(key: str, sha: str) -> dict:
@@ -46,7 +48,7 @@ def mark(key: str, sha: str) -> dict:
     Invalid state fails closed rather than silently discarding queued work.
     """
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    with (STATE.parent / "tried.lock").open("a+b") as lock:
+    with _STATE_MUTEX, (STATE.parent / "tried.lock").open("a+b") as lock:
         if os.name == "nt":
             import msvcrt
 

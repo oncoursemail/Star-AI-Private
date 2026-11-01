@@ -312,3 +312,28 @@ def test_mark_atomic_replace_failure_preserves_state(tmp_path, monkeypatch):
         F.mark("another", "new-head")
     assert F.STATE.read_text(encoding="utf-8") == original
     assert list(tmp_path.glob(".tried-*.json")) == []
+
+
+def test_mark_serializes_concurrent_processes(tmp_path, monkeypatch):
+    """Independent operating-system processes share the same attempt-state lock."""
+    monkeypatch.setattr(F, "STATE", tmp_path / "tried.json")
+    code = (
+        "from pathlib import Path; import sys; import litha.pr_fixer as fixer; "
+        "fixer.STATE = Path(sys.argv[1]); fixer.mark(sys.argv[2], sys.argv[3])"
+    )
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-c", code, str(F.STATE), f"repo#{i}", str(i)],
+            cwd=Path(__file__).resolve().parents[1],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for i in range(6)
+    ]
+    for proc in procs:
+        _out, err = proc.communicate(timeout=30)
+        assert proc.returncode == 0, err
+    assert json.loads(F.STATE.read_text(encoding="utf-8")) == {
+        f"repo#{i}": str(i) for i in range(6)
+    }
