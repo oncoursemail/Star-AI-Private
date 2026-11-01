@@ -140,10 +140,14 @@ class GamePredictionLab:
         )""")
         self._db.execute("""CREATE INDEX IF NOT EXISTS forecast_model_scope
             ON forecast_runs(model_id, game_id, game_version, status)""")
+        # A partial index keeps per-action expiration cheap as the bounded
+        # forecasting ledger grows, without indexing historical verified rows.
+        self._db.execute("""CREATE INDEX IF NOT EXISTS forecast_pending_expiry
+            ON forecast_runs(predicted_unix_s) WHERE status='pending'""")
         self._lock = RLock()
         self._enabled = False
         self._counts = dict(committed=0, duplicate=0, rejected=0,
-                            verified=0, stale=0)
+                            verified=0, stale=0, expired_pending=0)
 
     def close(self) -> None:
         with self._lock:
@@ -169,6 +173,22 @@ class GamePredictionLab:
             self._enabled = False
             self._db.execute("UPDATE forecast_runs SET status='cancelled' WHERE status='pending'")
 
+    def _expire_pending(self, now_unix_s: int) -> None:
+        """Retire abandoned runs once their signed-outcome window closes.
+
+        A crashed game host may leave 64 pending forecasts behind. Such runs
+        can never be resolved after the outcome deadline, but previously
+        exhausted every inflight slot indefinitely. Keep cancelled rows as
+        durable non-reusable run IDs; do not touch verified calibration data.
+        Caller holds _lock and has already validated a new host precommit.
+        """
+        expired = self._db.execute(
+            "UPDATE forecast_runs SET status='cancelled' "
+            "WHERE status='pending' AND predicted_unix_s < ?",
+            (now_unix_s - _MAX_OUTCOME_DELAY_S,),
+        ).rowcount
+        self._counts["expired_pending"] += expired
+
     def precommit(self, forecast: GameForecast, *, now_unix_s: int) -> bool:
         if not isinstance(forecast, GameForecast):
             raise TypeError("expected GameForecast")
@@ -192,6 +212,9 @@ class GamePredictionLab:
             ).fetchone():
                 self._counts["duplicate"] += 1
                 return False
+            # Reclaim expired in-flight slots before admission. Run IDs remain
+            # tombstoned, preventing replay after a game process crashes.
+            self._expire_pending(now)
             pending, total = self._db.execute(
                 "SELECT SUM(status='pending'), COUNT(*) FROM forecast_runs"
             ).fetchone()

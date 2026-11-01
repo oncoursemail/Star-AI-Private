@@ -147,6 +147,61 @@ class TestGamePredictionLab(unittest.TestCase):
             self.forecast("run_over_limit"), now_unix_s=NOW))
         self.assertEqual(self.lab.metrics()["pending"], 64)
 
+    def test_abandoned_forecasts_release_capacity_after_outcome_deadline(self):
+        self.lab.enable(owner_approved=True)
+        for i in range(64):
+            self.assertTrue(self.lab.precommit(self.forecast(f"abandoned_{i}"), now_unix_s=NOW))
+        # The 180-second boundary is still eligible for a verified result.
+        self.assertFalse(self.lab.precommit(
+            self.forecast("not_yet", when=NOW + 180), now_unix_s=NOW + 180))
+        self.assertEqual(self.lab.metrics()["pending"], 64)
+        self.assertTrue(self.lab.precommit(
+            self.forecast("recovery", when=NOW + 181), now_unix_s=NOW + 181))
+        metrics = self.lab.metrics()
+        self.assertEqual(metrics["expired_pending"], 64)
+        self.assertEqual(metrics["pending"], 1)
+        self.assertFalse(self.lab.precommit(
+            self.forecast("abandoned_0", when=NOW + 181), now_unix_s=NOW + 181))
+        self.assertFalse(self.lab.resolve(self.signed("abandoned_0"), now_unix_s=NOW + 181))
+        self.assertEqual(self.lab.report("star_v1").trials, 0)
+
+    def test_pending_expiration_preserves_recent_runs_and_rejects_bad_clock(self):
+        self.lab.enable(owner_approved=True)
+        self.assertTrue(self.lab.precommit(self.forecast("old"), now_unix_s=NOW))
+        self.assertTrue(self.lab.precommit(
+            self.forecast("new", when=NOW + 120), now_unix_s=NOW + 120))
+        # An invalid new forecast must not mutate existing pending evidence.
+        self.assertFalse(self.lab.precommit(
+            self.forecast("bad", when=NOW), now_unix_s=NOW + 181))
+        self.assertEqual(self.lab.metrics()["pending"], 2)
+        self.assertTrue(self.lab.precommit(
+            self.forecast("next", when=NOW + 181), now_unix_s=NOW + 181))
+        self.assertEqual(self.lab.metrics()["pending"], 2)
+        self.assertEqual(self.lab.metrics()["expired_pending"], 1)
+        self.assertTrue(self.lab.resolve(
+            self.signed("new", observed=NOW + 121), now_unix_s=NOW + 181))
+        self.assertEqual(self.lab.report("star_v1").trials, 1)
+
+    def test_crashed_host_recovers_expired_pending_without_erasing_run_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "crashed-host.sqlite"
+            with GamePredictionLab(self.bank, db) as original:
+                original.enable(owner_approved=True)
+                for i in range(64):
+                    self.assertTrue(original.precommit(
+                        self.forecast(f"before_crash_{i}"), now_unix_s=NOW))
+                # Simulate an abrupt process exit: do not call disable().
+            with GamePredictionLab(self.bank, db) as recovered:
+                recovered.enable(owner_approved=True)
+                self.assertTrue(recovered.precommit(
+                    self.forecast("after_restart", when=NOW + 181),
+                    now_unix_s=NOW + 181))
+                self.assertEqual(recovered.metrics()["pending"], 1)
+                self.assertEqual(recovered.metrics()["expired_pending"], 64)
+                self.assertFalse(recovered.precommit(
+                    self.forecast("before_crash_5", when=NOW + 181),
+                    now_unix_s=NOW + 181))
+
     def test_prospective_overconfidence_is_visible_without_claiming_mastery(self):
         self.lab.enable(owner_approved=True)
         for i in range(25):
