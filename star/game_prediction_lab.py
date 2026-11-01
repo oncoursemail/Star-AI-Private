@@ -264,6 +264,13 @@ class GamePredictionLab:
                                   trial.objective_id, trial.situation_id, trial.action_id):
                 self._counts["rejected"] += 1
                 return False
+            # Authentication MUST precede irreversible cancellation. A trial
+            # with the right run ID/scope but an invented earlier/future
+            # timestamp is not evidence that the real forecast expired.
+            # Otherwise a single unsigned result can tombstone a live run.
+            if not self._bank.verify_practice_trial(trial, now_unix_s=now):
+                self._counts["rejected"] += 1
+                return False
             predicted_at = row[5]
             if (trial.observed_unix_s < predicted_at
                     or trial.observed_unix_s > now
@@ -271,9 +278,6 @@ class GamePredictionLab:
                 self._counts["stale"] += 1
                 self._db.execute("""UPDATE forecast_runs SET status='cancelled'
                     WHERE run_id=? AND status='pending'""", (trial.run_id,))
-                return False
-            if not self._bank.verify_practice_trial(trial, now_unix_s=now):
-                self._counts["rejected"] += 1
                 return False
             self._db.execute("""UPDATE forecast_runs
                 SET status='verified', outcome=?, verified_unix_s=?

@@ -112,6 +112,22 @@ class TestGamePredictionLab(unittest.TestCase):
         self.assertFalse(self.lab.precommit(
             self.forecast(when=NOW), now_unix_s=NOW + 2))
 
+    def test_unsigned_time_anomalies_cannot_cancel_live_forecasts(self):
+        """Unauthenticated timestamps must not tombstone a real prediction."""
+        self.lab.enable(owner_approved=True)
+        for run, observed in (("forged_earlier", NOW - 1),
+                              ("forged_future", NOW + 1)):
+            with self.subTest(run=run):
+                self.assertTrue(self.lab.precommit(
+                    self.forecast(run), now_unix_s=NOW))
+                # Correct run/scope but NO independent signed bank evidence.
+                attacker = self.signed(run, observed=observed, store=False)
+                self.assertFalse(self.lab.resolve(attacker, now_unix_s=NOW))
+                self.assertEqual(self.lab.metrics()["pending"], 1)
+                verified = self.signed(run, observed=NOW)
+                self.assertTrue(self.lab.resolve(verified, now_unix_s=NOW))
+        self.assertEqual(self.lab.report("star_v1").trials, 2)
+
     def test_stale_results_and_time_travel_cannot_update(self):
         self.lab.enable(owner_approved=True)
         self.lab.precommit(self.forecast(), now_unix_s=NOW)
