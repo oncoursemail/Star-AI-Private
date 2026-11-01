@@ -220,6 +220,59 @@ class SocialTurnBenchmarkTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             assess_social_turns(rows)
 
+    def test_long_unplanned_audio_gap_fails_even_with_fast_first_word(self):
+        rows = batch()
+        for index, row in enumerate(rows):
+            if row.scenario in ("viewer_question", "gameplay_commentary"):
+                rows[index] = case(
+                    int(row.case_id.rsplit("-", 1)[-1]), row.scenario, row.variant,
+                    max_unplanned_gap_ms=(800 if row.case_id == "viewer_question-0"
+                                          and row.variant == "candidate" else 100),
+                )
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "naturalness_regressed")
+        self.assertEqual(report.candidate_stutter_regressions, 1)
+        self.assertEqual(report.candidate_question_p95_ms, 600)
+
+    def test_relative_playback_gap_regression_is_caught_below_absolute_limit(self):
+        rows = batch()
+        rows[0] = case(0, "viewer_question", "baseline", max_unplanned_gap_ms=120)
+        rows[1] = case(0, "viewer_question", "candidate", max_unplanned_gap_ms=410)
+        report = assess_social_turns(rows)
+        self.assertEqual(report.candidate_failures, 0)
+        self.assertEqual(report.candidate_stutter_regressions, 1)
+        self.assertEqual(report.status, "naturalness_regressed")
+
+    def test_partial_audio_gap_instrumentation_is_not_accepted(self):
+        rows = batch()
+        rows[1] = case(0, "viewer_question", "candidate", max_unplanned_gap_ms=100)
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "insufficient_evidence")
+
+    def test_matched_smooth_playback_remains_eligible(self):
+        rows = batch()
+        for index, row in enumerate(rows):
+            if row.scenario in ("viewer_question", "gameplay_commentary"):
+                rows[index] = case(
+                    int(row.case_id.rsplit("-", 1)[-1]), row.scenario, row.variant,
+                    max_unplanned_gap_ms=100,
+                )
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "eligible_for_manual_rehearsal")
+        self.assertEqual(report.candidate_stutter_regressions, 0)
+
+    def test_gap_evidence_is_strictly_numeric_and_only_for_audible_speech(self):
+        for gap in (True, float("nan"), float("inf"), 60_001, "100", object()):
+            with self.subTest(gap=str(type(gap))), self.assertRaises(ValueError):
+                case(0, "viewer_question", "candidate", max_unplanned_gap_ms=gap)
+        with self.assertRaises(ValueError):
+            case(0, "critical_gameplay", "candidate", max_unplanned_gap_ms=100)
+        with self.assertRaises(ValueError):
+            case(0, "gameplay_commentary", "candidate", first_audible_ms=None,
+                 overlap_ms=None, max_unplanned_gap_ms=100)
+        with self.assertRaises(ValueError):
+            assess_social_turns(batch(), max_pair_gap_regression_ms=True)
+
     def test_boolean_nan_and_shape_validation(self):
         with self.assertRaises(ValueError):
             case(0, "viewer_question", "baseline", first_audible_ms=math.nan)
