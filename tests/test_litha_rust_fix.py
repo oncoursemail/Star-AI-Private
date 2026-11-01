@@ -105,7 +105,15 @@ def test_a_merge_that_compiles_but_breaks_a_crate_test_is_caught(tmp_path, monke
            "assertion `left == right` failed\nfailures:\n")
     calls = []
     monkeypatch.setattr(R, "run", lambda tree, args, timeout=0: calls.append(args) or (False, out))
-    ok, fails, crates = R.crate_tests(tmp_path, ["crates/phys/src/lib.rs", "README.md"])
+    ok, fails, crates, _ = R.crate_tests(tmp_path, ["crates/phys/src/lib.rs", "README.md"])
     assert not ok and crates == ["phys"] and calls == [["test", "-p", "phys"]]
     assert fails == "raycast_from_inside: assertion `left == right` failed"
-    assert R.crate_tests(tmp_path, ["README.md"]) == (True, "", [])
+    assert R.crate_tests(tmp_path, ["README.md"]) == (True, "", [], "")
+
+
+def test_a_merged_build_that_breaks_is_read_as_her_repair_job():
+    out = ("error[E0560]: struct `Shared` has no field named `step_handler_limit`\n   --> crates\metallic_script\src\\"
+           "host.rs:284:21\n")
+    log = "Run cargo test -p metallic_script -p metallic_core\n" + out       # what resolve() hands rust_fix.repair
+    assert R.checks(log) == [["test", "--no-run", "-p", "metallic_script", "-p", "metallic_core"]]
+    assert R.errors(log)[0]["file"] == "crates/metallic_script/src/host.rs"

@@ -590,7 +590,14 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         sh(["git", "merge", "--abort"], cwd=tree)
         return {**row, "why": "after resolving, tests fail: " + " ".join(FAILED.findall(out))[:250]}
     if (tree / "Cargo.toml").is_file() and any(c.endswith(".rs") for c in code):
-        ok, fails, crates = rust_fix.crate_tests(tree, code)
+        ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+        if not ok and rust_fix.errors(out):            # it does not compile (one side renamed what the other uses):
+            fixed, how = rust_fix.repair(tree, REPO, pr.get("title", ""),   # her repair, then the tests again
+                                         f"Run cargo test -p {' -p '.join(crates)}\n{out}", asker)
+            if fixed:
+                sh(["git", "add", "-u"], cwd=tree)
+                ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+                row["why"] += f"; fixed the merged build: {how[:200]}"
         row["tests"] += [f"cargo test -p {' -p '.join(crates)}"]
         if not ok:
             sh(["git", "merge", "--abort"], cwd=tree)

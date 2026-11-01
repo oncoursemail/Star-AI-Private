@@ -188,8 +188,8 @@ def apply(tree: Path, edits: list) -> list[str]:
 FAILED_TEST = re.compile(r"^---- (\S+) stdout ----\n(?:.*\n){0,6}?.*panicked at [^\n]*\n([^\n]*)", re.M)
 
 
-def crate_tests(tree: Path, files: list[str]) -> tuple[bool, str, list[str]]:
-    """(passed, failures, packages): the tests of every crate a merged .rs file belongs to. A merge can compile and
+def crate_tests(tree: Path, files: list[str]) -> tuple[bool, str, list[str], str]:
+    """(passed, failures, packages, output): the tests of every crate a merged .rs file belongs to. A merge can compile and
     still be wrong (both sides fixed one bug two ways, and one side's test now fails); this catches it before a push."""
     packages: list[str] = []
     for f in files:
@@ -203,10 +203,10 @@ def crate_tests(tree: Path, files: list[str]) -> tuple[bool, str, list[str]]:
                 packages += [m.group(1)] if m.group(1) not in packages else []
                 break
     if not packages:
-        return True, "", []
+        return True, "", [], ""
     ok, out = run(tree, ["test", *[a for p in packages for a in ("-p", p)]])
     fails = "; ".join(f"{name}: {why.strip()[:200]}" for name, why in FAILED_TEST.findall(out)[:4])
-    return ok, fails or out[-600:], packages
+    return ok, fails or out[-600:], packages, out
 
 
 CLIPPY = re.compile(r"^\s*(?:-\s*)?run:\s*(cargo clippy[^\n#]*)", re.M)
