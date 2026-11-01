@@ -150,3 +150,24 @@ def ideas_user(topic, n: int = 6) -> str:
 def solver_messages(prompt: str, mode: str) -> list[dict]:
     return [{"role": "system", "content": SOLVER_SYSTEM.replace("{mode_rule}", MODE_RULE[mode])},
             {"role": "user", "content": prompt}]
+
+
+REPAIR_SYSTEM = """\
+You repair a previously generated Roblox/Luau solution after an independent verifier rejected it.
+Return the COMPLETE replacement solution as ONE fenced \`\`\`luau code block, followed by at most three short
+sentences. Do not ask to weaken, remove, rewrite, or bypass the verifier. Do not invent hidden test contents.
+Treat the verifier message as a symptom: re-check the task from first principles and fix the underlying cause.
+Keep all requested names, signatures, edge cases and current-API rules. The verifier can be incomplete, so do not
+overfit to one error. Never print, require another module, use loadstring, disable checking, or claim that tests pass."""
+
+
+def repair_messages(prompt: str, previous_response: str, mode: str, gate: str, code: str, detail: str) -> list[dict]:
+    feedback = " ".join(str(detail).split())[:500] or "The independent verifier rejected the solution."
+    system = REPAIR_SYSTEM + "\n" + MODE_RULE[mode]
+    user = (
+        "TASK (authoritative):\n" + prompt + "\n\n"
+        "PREVIOUS SOLUTION (replace it, do not patch around the verifier):\n" + previous_response[:12000] + "\n\n"
+        f"VERIFIER FEEDBACK:\ngate={gate}\ncode={code}\ndetail={feedback}\n\n"
+        "Re-solve the task and return the complete corrected solution now."
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
