@@ -16,11 +16,11 @@ def test_cost_and_caps(tmp_path, monkeypatch):
                             cache_read_input_tokens=0)
     assert claude.cost(usage, "claude-opus-5-5") == 4.0 + 2.0
     day = __import__("datetime").date.today().isoformat()
-    claude.LEDGER.write_text(json.dumps({"day": day, "usd": 20.0}) + "\n", encoding="utf-8")
-    assert claude.spent() == (20.0, 20.0) and not claude.ready()   # the day's cap is reached
+    claude.LEDGER.write_text(json.dumps({"day": day, "usd": 30.0}) + "\n", encoding="utf-8")
+    assert claude.spent() == (30.0, 30.0) and not claude.ready()   # the day's cap is reached
     (tmp_path / "cap.json").write_text('{"day": 50}', encoding="utf-8")
     assert claude.ready()
-    claude.LEDGER.write_text(json.dumps({"day": "2000-01-01", "usd": 150.0}) + "\n", encoding="utf-8")
+    claude.LEDGER.write_text(json.dumps({"day": "2000-01-01", "usd": 300.0}) + "\n", encoding="utf-8")
     assert not claude.ready()                                   # the total cap is reached
 
 
@@ -70,3 +70,11 @@ def test_claude_review_vetoes_a_merge_once_per_head(tmp_path, monkeypatch):
     assert pr_merger.vetoed({}, pr) and len(asked) == 1         # same head: no second paid call
     answer["verdict"] = "merge"
     assert not pr_merger.vetoed({}, {"number": 8, "headRefOid": "def"})
+
+
+def test_second_key_is_found(tmp_path, monkeypatch):
+    monkeypatch.setattr(claude, "KEY", tmp_path / "anthropic.key")
+    (tmp_path / "anthropic2.key").write_text("b", encoding="utf-8")
+    assert claude.keys() == [tmp_path / "anthropic2.key"]
+    claude.KEY.write_text("a", encoding="utf-8")
+    assert claude.keys() == [tmp_path / "anthropic.key", tmp_path / "anthropic2.key"]

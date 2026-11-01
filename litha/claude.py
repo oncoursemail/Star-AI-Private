@@ -1,6 +1,7 @@
 """Litha's second opinion: Claude, asked only when her local model fails. Paid per token, so every call is priced from
 its usage and written to a ledger; she stops asking at the cap (total and per day).
-Key: ~/.star/anthropic.key (one line, the owner's). Caps: ~/.star/litha-claude/cap.json {"total": 150, "day": 20}."""
+Keys: ~/.star/anthropic.key, then anthropic2.key, ... (one line each, the owner's): the next key is used when one is
+out of credit or refused. Caps: ~/.star/litha-claude/cap.json {"total": 300, "day": 30}."""
 from __future__ import annotations
 
 import datetime
@@ -14,7 +15,7 @@ PRICE = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0), "clau
 KEY = Path.home() / ".star" / "anthropic.key"
 HOME = Path.home() / ".star" / "litha-claude"
 LEDGER = HOME / "spend.jsonl"
-CAPS = {"total": 150.0, "day": 20.0}                 # of the owner's $200: room left for his own use
+CAPS = {"total": 300.0, "day": 30.0}                 # two keys from the owner; cap.json changes it
 
 
 def caps() -> dict:
@@ -38,8 +39,12 @@ def spent() -> tuple[float, float]:
     return total, day
 
 
+def keys() -> list[Path]:
+    return [k for k in [KEY, *sorted(KEY.parent.glob("anthropic[0-9]*.key"))] if k.exists()]
+
+
 def ready() -> bool:
-    if not KEY.exists() or os.environ.get("LITHA_CLAUDE") == "off" or "PYTEST_CURRENT_TEST" in os.environ:
+    if not keys() or os.environ.get("LITHA_CLAUDE") == "off" or "PYTEST_CURRENT_TEST" in os.environ:
         return False
     total, day = spent()
     c = caps()
@@ -58,13 +63,24 @@ def ask(prompt: str, effort: str = "medium", what: str = "") -> str:
     if not ready():
         return ""
     import anthropic
-    client = anthropic.Anthropic(api_key=KEY.read_text(encoding="utf-8").strip(), max_retries=2, timeout=300)
     t = time.time()
-    try:
-        r = client.messages.create(model=MODEL, max_tokens=16000, output_config={"effort": effort},
-                                   messages=[{"role": "user", "content": prompt}])
-    except anthropic.APIError as e:
-        print(f"claude: {type(e).__name__}: {str(e)[:200]}", flush=True)
+    for key in keys():
+        client = anthropic.Anthropic(api_key=key.read_text(encoding="utf-8").strip(), max_retries=2, timeout=300)
+        try:
+            r = client.messages.create(model=MODEL, max_tokens=16000, output_config={"effort": effort},
+                                       messages=[{"role": "user", "content": prompt}])
+            break
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+            print(f"claude: {key.name} refused ({type(e).__name__}), trying the next key", flush=True)
+        except anthropic.BadRequestError as e:
+            if "credit" not in str(e).lower():
+                print(f"claude: BadRequestError: {str(e)[:200]}", flush=True)
+                return ""
+            print(f"claude: {key.name} is out of credit, trying the next key", flush=True)
+        except anthropic.APIError as e:
+            print(f"claude: {type(e).__name__}: {str(e)[:200]}", flush=True)
+            return ""
+    else:
         return ""
     usd = cost(r.usage)
     HOME.mkdir(parents=True, exist_ok=True)
