@@ -3,7 +3,7 @@
 No OBS, GPU, game, TTS, Twitch, network, account or credentials are used.
 """
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
+from typing import Any
 from threading import Barrier
 import unittest
 
@@ -11,7 +11,7 @@ from star.stream_load_governor import StreamLoadGovernor, StreamLoadSample
 
 
 def sample(ident: str = "s1", at: float = 10.0, **changes: object) -> StreamLoadSample:
-    fields = dict(
+    fields: dict[str, Any] = dict(
         sample_id=ident,
         measured_at_s=at,
         game_p95_frame_ms=13.0,
