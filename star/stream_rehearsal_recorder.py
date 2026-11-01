@@ -118,6 +118,7 @@ class StreamRehearsalRecorder:
         self._speech_to_pcm: list[float] = []
         self._pcm_to_avatar: list[float] = []
         self._frame_times: list[float] = []
+        self._audible_frame_times: list[float] = []
         self._obs_previous: tuple[int, int] | None = None
         self._obs_skipped = 0
         self._obs_total = 0
@@ -246,14 +247,16 @@ class StreamRehearsalRecorder:
                 assert gpu_peak_mib is not None
                 if self._gpu_peak_mib is not None or not self._frame_times:
                     raise ValueError("GPU peak must be measured once after game frames")
-                if self._speech is not None:
-                    raise ValueError("GPU peak measured before audio finished")
+                if self._speech is not None or self._counts["pcm_stopped"] != 1:
+                    raise ValueError("GPU peak measured before completed audible speech")
                 self._gpu_peak_mib = float(gpu_peak_mib)
             elif event == "frame_presented":
                 assert duration_ms is not None
                 if self._gpu_peak_mib is not None:
                     raise ValueError("cannot measure more frames after final GPU peak")
                 self._frame_times.append(float(duration_ms))
+                if self._speech is not None and self._speech[1] == "audible":
+                    self._audible_frame_times.append(float(duration_ms))
             elif event == "obs_stats_sampled":
                 assert skipped_frames is not None and total_frames is not None
                 if skipped_frames > total_frames:
@@ -306,6 +309,7 @@ class StreamRehearsalRecorder:
                 "utterances_audible": self._counts["pcm_first_audible"],
                 "utterances_stopped": self._counts["pcm_stopped"],
                 "frame_samples": len(self._frame_times),
+                "audible_frame_samples": len(self._audible_frame_times),
                 "avatar_frame_samples": self._counts["avatar_frame_rendered"],
                 "avatar_frame_gap_max_ms": (
                     round(self._avatar_max_gap_ms, 3)
@@ -347,8 +351,9 @@ class StreamRehearsalRecorder:
             if (not self.report()["clean_shutdown"]
                     or len(self._speech_to_pcm) != 1
                     or self._counts["pcm_stopped"] != 1
-                    or not 120 <= len(self._frame_times) <= 5000):
-                raise ValueError("complete one-speech, 120..5000-frame run required")
+                    or len(self._frame_times) > 5000
+                    or not 120 <= len(self._audible_frame_times) <= 5000):
+                raise ValueError("complete one-speech, 120..5000 audible-game frames required")
             if self._gpu_peak_mib is None:
                 raise ValueError("host-verified GPU peak required for benchmark")
             if (self._avatar_frames_by_speech != [self._counts["avatar_frame_rendered"]]
@@ -359,6 +364,6 @@ class StreamRehearsalRecorder:
             return RealtimeRun(
                 pair_id=pair_id, variant=variant, game_id=game_id,
                 game_version=game_version, first_audio_ms=self._speech_to_pcm[0],
-                frame_times_ms=tuple(self._frame_times),
+                frame_times_ms=tuple(self._audible_frame_times),
                 gpu_peak_mib=self._gpu_peak_mib, audio_finished=True,
             )
