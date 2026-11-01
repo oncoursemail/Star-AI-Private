@@ -150,3 +150,64 @@ def test_no_frames_and_gpu_overcommit_never_pass():
             row(f"overflow-{i // 2}", "baseline" if i % 2 == 0 else "candidate")
             for i in range(1002)
         )
+
+
+def test_one_bad_audible_reply_cannot_hide_under_aggregate_p95():
+    records = cohort()
+    records[-1] = row("pair-23", "candidate", ttfa=1300, frame_ms=16.8,
+                      gpu=5400)
+    result = compare_realtime(records)
+    assert result.verdict == "regressed"
+    assert result.candidate_pair_audio_regressions == 1
+
+
+def test_one_severe_display_hitch_cannot_hide_under_p99():
+    records = cohort()
+    last = records[-1]
+    records[-1] = RealtimeRun(last.pair_id, last.variant, last.game_id,
+                              last.game_version, last.first_audio_ms,
+                              (16.8,) * 149 + (333.0,), 5400, True)
+    result = compare_realtime(records)
+    assert result.verdict == "regressed"
+    assert result.candidate_hitch_runs == 1
+    assert result.candidate_new_hitch_runs == 1
+
+
+def test_one_pair_fps_loss_cannot_hide_in_group_bootstrap():
+    records = cohort()
+    records[-1] = row("pair-23", "candidate", ttfa=420, frame_ms=19.7,
+                      gpu=5400)
+    result = compare_realtime(records)
+    assert result.verdict == "regressed"
+    assert result.candidate_pair_fps_regressions == 1
+
+
+def test_inherited_severe_hitch_is_inconclusive_not_falsely_new_regression():
+    records = cohort()
+    baseline = records[-2]
+    candidate = records[-1]
+    records[-2] = RealtimeRun(baseline.pair_id, baseline.variant,
+                              baseline.game_id, baseline.game_version,
+                              baseline.first_audio_ms, (16.7,) * 149 + (333.0,),
+                              5000, True)
+    records[-1] = RealtimeRun(candidate.pair_id, candidate.variant,
+                              candidate.game_id, candidate.game_version,
+                              candidate.first_audio_ms, (16.8,) * 149 + (300.0,),
+                              5400, True)
+    result = compare_realtime(records)
+    assert result.verdict == "inconclusive"
+    assert result.candidate_hitch_runs == 1
+    assert result.candidate_new_hitch_runs == 0
+
+
+def test_custom_thresholds_and_bad_limits_fail_closed():
+    records = cohort()
+    assert compare_realtime(records, max_pair_audio_regression_ms=300,
+                            max_pair_fps_loss=10,
+                            max_candidate_frame_ms=250).verdict == "eligible_for_manual_pilot"
+    for options in ({"max_pair_audio_regression_ms": True},
+                    {"max_pair_fps_loss": float("nan")},
+                    {"max_candidate_frame_ms": 1},
+                    {"max_candidate_frame_ms": float("inf")}):
+        with pytest.raises(ValueError):
+            compare_realtime(records, **options)
