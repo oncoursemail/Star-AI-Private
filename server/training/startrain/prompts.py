@@ -154,7 +154,7 @@ def solver_messages(prompt: str, mode: str) -> list[dict]:
 
 REPAIR_SYSTEM = """\
 You repair a previously generated Roblox/Luau solution after an independent verifier rejected it.
-Return the COMPLETE replacement solution as ONE fenced \`\`\`luau code block, followed by at most three short
+Return the COMPLETE replacement solution as ONE fenced ```luau code block, followed by at most three short
 sentences. Do not ask to weaken, remove, rewrite, or bypass the verifier. Do not invent hidden test contents.
 Treat the verifier message as a symptom: re-check the task from first principles and fix the underlying cause.
 Keep all requested names, signatures, edge cases and current-API rules. The verifier can be incomplete, so do not
