@@ -9,6 +9,7 @@ no error; it `needs_fix` when it has an error or a warning (deprecated API). Inf
 from __future__ import annotations
 
 import re
+import threading
 import time
 
 from . import csharp, javamc, minecraft
@@ -108,12 +109,30 @@ class Verifier:
         self.jvm = jvm                          # warm javac service for Minecraft plugins/mods (None = static only)
         self.mc = mc if mc else None             # McIndex (server/mesh/mcdata) or None
         self.polyglot = polyglot           # server/mesh/polyglot client (None = those languages stay unchecked)
-        self._pg: dict = {}
+        # The HTTP service shares one Verifier among request threads. A cache
+        # belonging to another request must never turn one edition's failure
+        # into another edition's success.
+        self._pg_local = threading.local()
+
+    @property
+    def _pg(self) -> dict:
+        cache = getattr(self._pg_local, "cache", None)
+        if cache is None:
+            cache = self._pg_local.cache = {}
+        return cache
+
+    @staticmethod
+    def _rust_context(text: str, question: str | None, blocks: list[dict]) -> str:
+        # Explicitly typed raw source has no prose or other blocks to resolve.
+        # Only the question can choose its edition, never source strings/comments.
+        if len(blocks) == 1 and blocks[0]["start"] == 0 and blocks[0]["end"] == len(text):
+            return question or ""
+        return question + "\n\n" + text if question else text
 
     def _poly(self, code: str, lang: str, prose: str) -> dict | None:
         if not self.polyglot or lang not in COMPILED or (lang == "java" and JAVA_PLUGIN.search(code)):
             return None                    # Paper/Fabric/NeoForge/Velocity Java belongs to the mc-plugins checker
-        key = (lang, code)
+        key = (lang, code, prose)
         if key not in self._pg:
             self._pg[key] = self.polyglot.check(lang, code, prose)
         return self._pg[key]
@@ -126,14 +145,34 @@ class Verifier:
                 if b["language"] == "luau" and not ROBLOX_HINT.search(b["code"]):
                     b["language"] = "lua"
 
-    def prefetch(self, blocks: list[dict], prose: str):
+    def prefetch(self, blocks: list[dict], prose: str, question: str | None = None):
         """Compile the blocks of one answer in parallel (the per-block results are then read from the cache)."""
-        self._pg = {}
+        self._pg.clear()
         if self.polyglot:
             todo = [(b["language"], b["code"]) for b in blocks if b["language"] in COMPILED
                     and not (b["language"] == "java" and JAVA_PLUGIN.search(b["code"]))]
             if len(todo) > 1:
-                self._pg.update(self.polyglot.check_many(todo, prose))
+                # Rust editions change language semantics. Pass the original
+                # target request even when the answer omits its edition. Keep
+                # other language contexts unchanged (notably elsewhere filters).
+                rust_scope = self._rust_context(prose, question, blocks)
+                rust = [item for item in todo if item[0] == "rust" and rust_scope != prose]
+                batch_contexts = getattr(self.polyglot, "check_many_contexts", None)
+                if rust and callable(batch_contexts):
+                    contexts = {item: rust_scope if item[0] == "rust" else prose for item in todo}
+                    results = batch_contexts([(lang, code, contexts[(lang, code)]) for lang, code in todo])
+                    self._pg.update({(lang, code, contexts[(lang, code)]): result
+                                     for (lang, code), result in results.items()})
+                    return
+                # Compatibility with independently supplied checker clients that
+                # implement only the original check_many(items, context) API.
+                other = [item for item in todo if item not in rust]
+                if other:
+                    self._pg.update({(lang, code, prose): result for (lang, code), result
+                                     in self.polyglot.check_many(other, prose).items()})
+                if rust:
+                    self._pg.update({(lang, code, rust_scope): result for (lang, code), result
+                                     in self.polyglot.check_many(rust, rust_scope).items()})
 
     def check_block(self, code: str, lang: str, prose: str = "", path: str | None = None) -> tuple[list[dict], bool]:
         problems, checked = self._check_block(code, lang, prose, path)
@@ -154,6 +193,8 @@ class Verifier:
             return rep["blocks"][b["index"]]["problems"] if b["index"] < len(rep["blocks"]) else []
         scope = question if question and mc_index and self.mc is not None and mc_index.VERSION_RE.search(question) \
             else text
+        if b["language"] == "rust":
+            scope = self._rust_context(text, question, [span])
         return self.check_block(new, b["language"], scope, b.get("path"))[0]
 
     def _check_block(self, code: str, lang: str, prose: str = "", path: str | None = None) -> tuple[list[dict], bool]:
@@ -196,7 +237,7 @@ class Verifier:
         self._plain_lua(blocks, question)
         jctx = javamc.check_answer(blocks, text, self.jvm)   # Java + plugin.yml etc.: checked together
         jmeta, jroles = jctx.pop("_meta", None), jctx.pop("_roles", {})
-        self.prefetch(blocks, text)
+        self.prefetch(blocks, text, question)
         out = []
         prev = 0
         for k, b in enumerate(blocks):
@@ -211,7 +252,8 @@ class Verifier:
                 problems, checked = self._placeholders_info(jctx[k]), True
                 b["language"] = b["language"] or jroles.get(k, "")
             else:
-                problems, checked = self.check_block(b["code"], b["language"], scope, path)
+                block_scope = self._rust_context(text, question, blocks) if b["language"] == "rust" else scope
+                problems, checked = self.check_block(b["code"], b["language"], block_scope, path)
             for p in problems:
                 if p.get("line"):
                     p["answer_line"] = b["line"] + p["line"] - 1
@@ -291,7 +333,13 @@ class Verifier:
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": f"the fix rewrote the placeholder {lost[0]}; kept as written"})
                     continue
-                if _bad(self.recheck(text, span, new, b, question)) >= _bad(b["problems"]):
+                candidate_problems = self.recheck(text, span, new, b, question)
+                if b["language"] == "rust" and self._poly(
+                        new, "rust", self._rust_context(text, question, [span])) is None:
+                    changes.append({"round": rnd, "block": b["index"],
+                                    "rejected": "the Rust compiler could not verify the fix; kept as written"})
+                    continue
+                if _bad(candidate_problems) >= _bad(b["problems"]):
                     changes.append({"round": rnd, "block": b["index"],
                                     "rejected": "the fix did not remove problems; kept as written"})
                     continue

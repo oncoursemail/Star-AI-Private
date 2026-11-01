@@ -46,6 +46,22 @@ class Polyglot:
 
     def check_many(self, items: list[tuple[str, str]], context: str = "") -> dict[tuple[str, str], dict | None]:
         """{(language, code): reply} for several blocks at once (in parallel)."""
-        todo = list(dict.fromkeys(i for i in items if i[0] in LANGUAGES))
-        futures = {i: self.pool.submit(self.check, i[0], i[1], context) for i in todo}
+        return self.check_many_contexts([(lang, code, context) for lang, code in items])
+
+    def check_many_contexts(self, items: list[tuple[str, str, str]]) -> dict[tuple[str, str], dict | None]:
+        """One parallel batch with the correct context for each language/code pair.
+
+        The verifier may include a question's Rust edition without changing the
+        context used to resolve names in other languages. Conflicting duplicate
+        contexts are rejected before submitting any work.
+        """
+        todo: dict[tuple[str, str], str] = {}
+        for language, code, context in items:
+            if language not in LANGUAGES:
+                continue
+            key = (language, code)
+            if key in todo and todo[key] != context:
+                raise ValueError("Conflicting verification contexts for one code block")
+            todo[key] = context
+        futures = {i: self.pool.submit(self.check, i[0], i[1], context) for i, context in todo.items()}
         return {i: f.result() for i, f in futures.items()}
