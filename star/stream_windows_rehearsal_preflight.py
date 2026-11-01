@@ -16,7 +16,7 @@ import math
 import platform
 import re
 import subprocess
-from typing import Callable, Iterable
+from typing import Callable, Iterable, cast
 
 
 @dataclass(frozen=True)
@@ -89,11 +89,18 @@ def enumerate_windows_processes() -> Iterable[ProcessWitness]:
         # Windows exposes special system processes with PID 0, empty names
         # or unknown creation times. They are not usable app witnesses; skip
         # them rather than letting ordinary OS metadata poison the snapshot.
-        if (type(name) is str and 1 <= len(name) <= 256
-                and type(pid) is int and 0 < pid <= 2**31 - 1
-                and type(created) in (int, float)
-                and math.isfinite(float(created)) and 0 < created <= 10**11):
-            yield ProcessWitness(name, pid, float(created))
+        # psutil's typed process metadata can contain Incomplete/None. Narrow
+        # the runtime value before converting it, rather than relying on
+        # `type(...) in (...)` to convince static analysis it is numeric.
+        if not isinstance(name, str) or not 1 <= len(name) <= 256:
+            continue
+        if type(pid) is not int or not 0 < cast(int, pid) <= 2**31 - 1:
+            continue
+        if not isinstance(created, (int, float)) or isinstance(created, bool):
+            continue
+        timestamp = float(created)
+        if math.isfinite(timestamp) and 0 < timestamp <= 10**11:
+            yield ProcessWitness(name, cast(int, pid), timestamp)
 
 
 def query_nvidia_gpu(index: int = 0) -> GpuHeadroom:
