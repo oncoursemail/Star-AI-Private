@@ -223,6 +223,26 @@ class StreamingLoadGovernorTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 sample(**changes)
 
+    def test_untrusted_clock_values_cannot_poison_verified_session(self) -> None:
+        gov = enabled()
+        self.assertTrue(gov.ingest(sample("verified-10", at=10),
+                                   now_s=10, host_verified=True))
+        # These untrusted packets must not advance the internal clock,
+        # even if their syntactically valid timestamps are far in the future.
+        self.assertFalse(gov.ingest(sample("forged-future", at=1_000_000),
+                                    now_s=1_000_000, host_verified=False))
+        self.assertFalse(gov.ingest(sample("forged-past", at=1),
+                                    now_s=1, host_verified=False))
+        # A malformed object with a purported verified flag also cannot
+        # advance the host clock or cause attribute access.
+        self.assertFalse(gov.ingest(object(), now_s=1_000_000,
+                                    host_verified=True))  # type: ignore[arg-type]
+        self.assertTrue(gov.ingest(sample("verified-11", at=11),
+                                   now_s=11, host_verified=True))
+        self.assertEqual(gov.metrics()["accepted"], 2)
+        self.assertEqual(gov.metrics()["rejected"], 3)
+        self.assertEqual(gov.recommend(now_s=11).profile, "warming")
+
     def test_concurrent_duplicate_ingest_stays_atomic(self) -> None:
         gov = enabled()
         barrier = Barrier(12)
