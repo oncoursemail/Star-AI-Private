@@ -15,6 +15,7 @@ import httpx
 import pytest
 
 import star.desktop_core as core
+import star.model_health as model_health
 import star.warmup as warmup
 from star.agent import FAST_RULES
 from star.desktop_core import Conversations, Settings, run_task
@@ -195,6 +196,9 @@ def lan_transport(seen, *, key=SECRET):
 def test_startup_check_is_cheap_and_truthful_then_primes_one_slot(desk, monkeypatch):
     monkeypatch.setenv("STAR_SERVER_API_KEY", SECRET)
     settings, seen, order = lan_settings(), [], []
+    # Other tests in this xdist worker may have probed this same mock LAN
+    # endpoint. A fresh app startup starts with no prior in-process status.
+    monkeypatch.setattr(model_health, "_LAST_SERVER_CHECK", {})
     assert server_status(settings)["ok"] is None                      # "Not checked"
     report = warm_up(settings, home=desk.home, chat_id=desk.chat, transport=lan_transport(seen),
                      on_checked=lambda found: order.append(("checked", found["ok"], len(desk.models.requests))))

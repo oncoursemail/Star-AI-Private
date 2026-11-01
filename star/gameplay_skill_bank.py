@@ -106,6 +106,9 @@ class PracticeEvidence:
     trials: int
     successes: int
     most_recent_unix_s: int
+    # PRACTICE-only newest outcome. Optional for older callers constructing
+    # the four-field aggregate, and never includes held-out validation.
+    most_recent_success: bool | None = None
 
 
 class GameplaySkillBank:
@@ -253,16 +256,21 @@ class GameplaySkillBank:
 
     def practice_evidence(self, game_id: str, game_version: str,
                           objective_id: str, situation_id: str, *,
-                          now_unix_s: int) -> tuple[PracticeEvidence, ...]:
+                          now_unix_s: int,
+                          max_age_s: int = _PRACTICE_MAX_AGE_S) -> tuple[PracticeEvidence, ...]:
         """Summarize fresh, signed practice only; never disclose holdout results.
 
         External agents can use these aggregates to select which skill to
-        rehearse next. Neither withheld validation outcomes nor receipts, raw
+        rehearse next. An explicit short lookback window must be applied to
+        *every signed trial*, not just the most recent trial timestamp;
+        otherwise one fresh failure can revive weeks of historic wins. Neither withheld validation outcomes nor receipts, raw
         evidence, keys or individual run IDs leave this boundary. An invalid
         row fails closed rather than becoming training evidence.
         """
         scope = self._scope(game_id, game_version, objective_id, situation_id)
         now = _seconds(now_unix_s)
+        if type(max_age_s) is not int or not 1 <= max_age_s <= _PRACTICE_MAX_AGE_S:
+            raise ValueError("practice lookback must be 1..90 days")
         rows = self._db.execute(
             "SELECT trial_id, run_id, payload_json, receipt FROM gameplay_trials "
             "WHERE game_id=? AND game_version=? AND objective_id=? AND situation_id=?",
@@ -287,14 +295,24 @@ class GameplaySkillBank:
             if trial.split != "practice":
                 continue
             age = now - trial.observed_unix_s
-            if not 0 <= age <= _PRACTICE_MAX_AGE_S:
+            if not 0 <= age <= max_age_s:
                 continue
-            entry = aggregates.setdefault(trial.action_id, [0, 0, 0])
+            entry = aggregates.setdefault(trial.action_id, [0, 0, 0, 0])
             entry[0] += 1
             entry[1] += int(trial.outcome == "success")
-            entry[2] = max(entry[2], trial.observed_unix_s)
-        return tuple(PracticeEvidence(action, *totals)
-                     for action, totals in sorted(aggregates.items()))
+            # A recent failure must not be hidden by a strong historical
+            # aggregate. When events share a one-second timestamp, any
+            # failure wins the tie rather than depending on SQLite row order.
+            if trial.observed_unix_s > entry[2]:
+                entry[2] = trial.observed_unix_s
+                entry[3] = int(trial.outcome == "success")
+            elif trial.observed_unix_s == entry[2] and trial.outcome == "failure":
+                entry[3] = 0
+        return tuple(
+            PracticeEvidence(action, totals[0], totals[1], totals[2],
+                             bool(totals[3]))
+            for action, totals in sorted(aggregates.items())
+        )
 
     def verify_practice_trial(self, trial: GameTrial, *, now_unix_s: int) -> bool:
         """Match an *exact* PRACTICE outcome to an existing signed bank record.

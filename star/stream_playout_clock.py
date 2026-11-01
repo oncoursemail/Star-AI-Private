@@ -253,6 +253,20 @@ class StarPlayoutClock:
                 self._clear()
                 return False
 
+    def _cursor_live(self, now: float) -> bool:
+        """Check *physical* playout liveness, not the age of a rendered pose.
+
+        A frame issued just before a sample-age or progress-stall deadline
+        cannot extend that deadline. Called with the same lock held by both
+        sampling and final dispatch authorization.
+        """
+        return (
+            self._sampled_at is not None
+            and self._playing
+            and 0 <= now - self._sampled_at <= self._max_age
+            and 0 <= now - self._progress_at <= self._stall_after
+        )
+
     def sample(self, plan: StagePlan, *, now: float | None = None) -> PlayoutRigFrame | None:
         """Interpolate a rig pose at the *heard* playhead, not generated text."""
         with self._lock:
@@ -262,9 +276,7 @@ class StarPlayoutClock:
                 self._clear()
                 return None
             current = _seconds(self._clock() if now is None else now, "clock")
-            if (self._sampled_at is None or not self._playing
-                    or not 0 <= current - self._sampled_at <= self._max_age
-                    or not 0 <= current - self._progress_at <= self._stall_after):
+            if not self._cursor_live(current):
                 self._issued = None
                 self._counts["stale"] += 1
                 return None
@@ -294,6 +306,10 @@ class StarPlayoutClock:
                 current = _seconds(self._clock() if now is None else now, "clock")
             except ValueError:
                 self._issued = None
+                return False
+            if not self._cursor_live(current):
+                self._issued = None
+                self._counts["stale"] += 1
                 return False
             if not 0 <= current - frame.sampled_at <= min(self._max_age, 0.15):
                 self._issued = None

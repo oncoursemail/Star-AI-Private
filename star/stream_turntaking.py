@@ -20,6 +20,9 @@ _CONFIRM_MS = 120.0
 _RECENT_MS = 250.0
 _QUIET_MS = 350.0
 _MAX_GAP_MS = 150.0
+# A long silent interval cannot be counted as uninterrupted speech merely
+# because successive VAD frames have close *end* timestamps.
+_MAX_CONTINUOUS_SILENCE_MS = 40.0
 
 
 def _number(value: object, name: str, *, ceiling: float) -> float:
@@ -94,6 +97,7 @@ class TurnTakingGate:
         self._last: VoiceFrame | None = None
         self._owner_ms = 0.0
         self._guest_ms = 0.0
+        self._owner_yield_counted = False
         self._last_voice_ms: float | None = None
         self._counts = {"accepted": 0, "rejected": 0, "owner_yields": 0}
 
@@ -107,6 +111,7 @@ class TurnTakingGate:
     def _reset(self) -> None:
         self._last = None
         self._owner_ms = self._guest_ms = 0.0
+        self._owner_yield_counted = False
         self._last_voice_ms = None
 
     def disable(self) -> None:
@@ -127,8 +132,16 @@ class TurnTakingGate:
                 if gap <= 0 or frame.at_ms - frame.duration_ms < prev.at_ms - 1e-6:
                     self._counts["rejected"] += 1
                     raise ValueError("overlapping or reversed voice frames")
-                if gap > _MAX_GAP_MS:
+                # The previous end and the current *start* delimit actual
+                # unobserved silence. End-to-end gaps alone overcount short,
+                # disconnected voice bursts as one owner interruption.
+                unobserved_silence_ms = (
+                    frame.at_ms - frame.duration_ms - prev.at_ms
+                )
+                if (gap > _MAX_GAP_MS or
+                        unobserved_silence_ms > _MAX_CONTINUOUS_SILENCE_MS):
                     self._owner_ms = self._guest_ms = 0.0
+                    self._owner_yield_counted = False
             owner = (frame.echo_cleared and
                      frame.owner_probability >= _THRESHOLD and
                      frame.guest_probability < _THRESHOLD)
@@ -140,6 +153,9 @@ class TurnTakingGate:
             if max(frame.owner_probability, frame.guest_probability) >= 0.50:
                 self._last_voice_ms = frame.at_ms
             self._owner_ms = self._owner_ms + frame.duration_ms if owner else 0.0
+            if not owner:
+                # A new independently confirmed utterance is a new event.
+                self._owner_yield_counted = False
             self._guest_ms = self._guest_ms + frame.duration_ms if guest else 0.0
             self._last = frame
             self._counts["accepted"] += 1
@@ -160,8 +176,12 @@ class TurnTakingGate:
                 return TurnAdvice("hold", False, "echo_not_cleared")
             # A sustained owner-verified source is the only barge-in case.
             if self._owner_ms >= _CONFIRM_MS:
-                if star_speaking:
+                if star_speaking and not self._owner_yield_counted:
+                    # Polling the same frame repeatedly is not a new barge-in.
+                    # Keep should_interrupt actionable until the host stops
+                    # audio; only the *metric* is deduplicated here.
                     self._counts["owner_yields"] += 1
+                    self._owner_yield_counted = True
                 return TurnAdvice("yield_owner", star_speaking,
                                   "confirmed_authenticated_owner_voice")
             if self._guest_ms >= _CONFIRM_MS:

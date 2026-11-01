@@ -7,6 +7,9 @@ No event automatically causes speech or a tool call.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import RLock
+
+from .stream_load_governor import StreamLoadAdvice
 import hashlib
 import math
 import re
@@ -31,6 +34,9 @@ _GUIDANCE = {
 }
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
 _EVIDENCE = frozenset({"observed", "reported", "unknown"})
+# Bound stream-time dedupe and identity receipts under sustained chat floods.
+# Cache saturation rejects new viewer chatter rather than silently disabling dedupe.
+_MAX_SESSION_RECEIPTS = 4096
 
 
 def _reaction_digest(detail: str, game_scope: str = "") -> str:
@@ -111,13 +117,21 @@ class StreamDirector:
 
     def __init__(self, *, max_events: int = 48, gap_seconds: float = 2.2,
                  viewer_cooldown: float = 25.0,
-                 success_repeat_gap_seconds: float = 18.0) -> None:
+                 success_repeat_gap_seconds: float = 18.0,
+                 max_pending_per_viewer: int = 2) -> None:
         if type(max_events) is not int or not 1 <= max_events <= 128:
             raise ValueError("max_events must be between 1 and 128")
         self.gap_seconds = _clock(gap_seconds)
         self.viewer_cooldown = _clock(viewer_cooldown)
         self.success_repeat_gap_seconds = _clock(success_repeat_gap_seconds)
+        if (type(max_pending_per_viewer) is not int
+                or not 1 <= max_pending_per_viewer <= 16):
+            raise ValueError("max_pending_per_viewer must be an integer from 1 to 16")
+        self.max_pending_per_viewer = max_pending_per_viewer
         self.max_events = max_events
+        # Twitch ingestion, gameplay events, and TTS acknowledgement can arrive
+        # from distinct host threads. Treat every state transition atomically.
+        self._lock = RLock()
         self.enabled = False
         self._session_epoch = 0
         self._next_serial = 0
@@ -133,26 +147,30 @@ class StreamDirector:
         self._game_reactions: dict[str, tuple[float, str]] = {}
         self._counters = {"accepted": 0, "rejected": 0, "expired": 0,
                           "evicted": 0, "completed": 0, "abandoned": 0,
-                          "suppressed_reactions": 0}
+                          "suppressed_reactions": 0,
+                          "viewer_queue_limited": 0,
+                          "dedupe_capacity_rejected": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
-        if owner_approved is not True:
-            raise PermissionError("live-stream director requires owner approval")
-        if not self.enabled:
-            self._session_epoch += 1
-        self.enabled = True
+        with self._lock:
+            if owner_approved is not True:
+                raise PermissionError("live-stream director requires owner approval")
+            if not self.enabled:
+                self._session_epoch += 1
+            self.enabled = True
 
     def disable(self) -> None:
-        if self.enabled:
-            self._session_epoch += 1
-        self.enabled = False
-        self._events.clear()
-        self._event_serials.clear()
-        self._issued_intents.clear()
-        self._recent.clear()
-        self._viewer_last_spoken.clear()
-        self._game_reactions.clear()
-        self._last_speech_at = float("-inf")
+        with self._lock:
+            if self.enabled:
+                self._session_epoch += 1
+            self.enabled = False
+            self._events.clear()
+            self._event_serials.clear()
+            self._issued_intents.clear()
+            self._recent.clear()
+            self._viewer_last_spoken.clear()
+            self._game_reactions.clear()
+            self._last_speech_at = float("-inf")
 
     @staticmethod
     def _priority(event: StreamSignal, now: float) -> float:
@@ -215,137 +233,192 @@ class StreamDirector:
 
     def offer(self, event: StreamSignal, *, now: float) -> bool:
         """Offer a bounded event; never speak, call tools or broadcast."""
-        now = _clock(now)
-        if not isinstance(event, StreamSignal):
-            raise TypeError("event must be a StreamSignal")
-        self._expire(now)
-        ttl = _KINDS[event.kind][1]
-        if not self.enabled or event.timestamp > now + 0.5 or now - event.timestamp > ttl:
-            self._counters["rejected"] += 1
-            return False
-        # A stable canonical platform account ID is required for ALL direct
-        # viewer events, not only deferred inbox questions. Event IDs and
-        # nicknames do not provide meaningful per-viewer speech fairness.
-        # Account authentication/normalization remains a host responsibility.
-        if event.kind.startswith("viewer") and _ID.fullmatch(event.speaker_id) is None:
-            self._counters["rejected"] += 1
-            return False
-        if event.kind == "game_success":
-            last = self._game_reactions.get(_reaction_digest(event.detail, event.game_scope))
-            if last is not None and event.signal_id != last[1] and 0 <= now - last[0] < self.success_repeat_gap_seconds:
-                self._counters["suppressed_reactions"] += 1
+        with self._lock:
+            now = _clock(now)
+            if not isinstance(event, StreamSignal):
+                raise TypeError("event must be a StreamSignal")
+            self._expire(now)
+            ttl = _KINDS[event.kind][1]
+            if not self.enabled or event.timestamp > now + 0.5 or now - event.timestamp > ttl:
                 self._counters["rejected"] += 1
                 return False
-        if any(item.signal_id == event.signal_id for item in self._events):
-            self._counters["rejected"] += 1
-            return False
-        digest = hashlib.sha256(
-            (event.kind + "\x00" + event.speaker_id + "\x00" + event.detail.casefold()).encode("utf-8")
-        ).hexdigest()
-        # Viewer spam is different from a legitimate repeated gameplay or owner
-        # interrupt event. Never dedupe a second owner's stop instruction.
-        suppress_repeats = event.kind.startswith("viewer") or event.kind == "ambient"
-        last = self._recent.get(digest) if suppress_repeats else None
-        if last is not None and now - last < min(40.0, max(10.0, ttl)):
-            self._counters["rejected"] += 1
-            return False
-        if len(self._events) >= self.max_events:
-            lowest = min(self._events, key=lambda item: (self._priority(item, now), item.timestamp))
-            if self._priority(lowest, now) >= self._priority(event, now):
+            # A stable canonical platform account ID is required for ALL direct
+            # viewer events, not only deferred inbox questions. Event IDs and
+            # nicknames do not provide meaningful per-viewer speech fairness.
+            # Account authentication/normalization remains a host responsibility.
+            if event.kind.startswith("viewer") and _ID.fullmatch(event.speaker_id) is None:
                 self._counters["rejected"] += 1
                 return False
-            self._events.remove(lowest)
-            evicted_serial = self._event_serials.pop(lowest.signal_id, None)
-            if evicted_serial is not None:
-                self._issued_intents.pop(evicted_serial, None)
-            self._counters["evicted"] += 1
-        self._events.append(event)
-        self._next_serial += 1
-        self._event_serials[event.signal_id] = self._next_serial
-        if suppress_repeats:
-            self._recent[digest] = now
-        self._counters["accepted"] += 1
-        return True
+            if event.kind == "game_success":
+                last = self._game_reactions.get(_reaction_digest(event.detail, event.game_scope))
+                if last is not None and event.signal_id != last[1] and 0 <= now - last[0] < self.success_repeat_gap_seconds:
+                    self._counters["suppressed_reactions"] += 1
+                    self._counters["rejected"] += 1
+                    return False
+            if any(item.signal_id == event.signal_id for item in self._events):
+                self._counters["rejected"] += 1
+                return False
+            digest = hashlib.sha256(
+                (event.kind + "\x00" + event.speaker_id + "\x00" + event.detail.casefold()).encode("utf-8")
+            ).hexdigest()
+            # Viewer spam is different from a legitimate repeated gameplay or owner
+            # interrupt event. Never dedupe a second owner's stop instruction.
+            suppress_repeats = event.kind.startswith("viewer") or event.kind == "ambient"
+            last = self._recent.get(digest) if suppress_repeats else None
+            if last is not None and now - last < min(40.0, max(10.0, ttl)):
+                self._counters["rejected"] += 1
+                return False
+            # Distinct, moderated messages can arrive far faster than speech.
+            # Never let an unbounded dedupe dictionary turn a chat flood into
+            # high host-memory usage, or evict old digests to bypass replay checks.
+            # Host-attested owner/game events remain admissible under saturation.
+            if (suppress_repeats and digest not in self._recent
+                    and len(self._recent) >= _MAX_SESSION_RECEIPTS):
+                self._counters["rejected"] += 1
+                self._counters["dedupe_capacity_rejected"] += 1
+                return False
+            # Twitch EventSub delivery de-duplication is not flood control: one
+            # authenticated viewer can submit many distinct chat messages and fill
+            # the entire queue before anybody else has a chance to ask a question.
+            # Bound *pending* items per canonical host-verified speaker across
+            # viewer_question and viewer_comment. Reject the NEW event rather than
+            # evicting an already proposed intent (which may be synthesizing audio).
+            # This is chat admission only; it does not authorize speech or tools.
+            if event.kind.startswith("viewer"):
+                pending = sum(
+                    item.kind.startswith("viewer")
+                    and item.speaker_id == event.speaker_id
+                    for item in self._events
+                )
+                if pending >= self.max_pending_per_viewer:
+                    self._counters["viewer_queue_limited"] += 1
+                    self._counters["rejected"] += 1
+                    return False
+            if len(self._events) >= self.max_events:
+                lowest = min(self._events, key=lambda item: (self._priority(item, now), item.timestamp))
+                if self._priority(lowest, now) >= self._priority(event, now):
+                    self._counters["rejected"] += 1
+                    return False
+                self._events.remove(lowest)
+                evicted_serial = self._event_serials.pop(lowest.signal_id, None)
+                if evicted_serial is not None:
+                    self._issued_intents.pop(evicted_serial, None)
+                self._counters["evicted"] += 1
+            self._events.append(event)
+            self._next_serial += 1
+            self._event_serials[event.signal_id] = self._next_serial
+            if suppress_repeats:
+                self._recent[digest] = now
+            self._counters["accepted"] += 1
+            return True
 
     def propose(self, *, now: float, voice_speaking: bool = False,
-                viewer_speaking: bool = False, gameplay_critical: bool = False) -> SpeechIntent | None:
+                viewer_speaking: bool = False, gameplay_critical: bool = False,
+                load_advice: StreamLoadAdvice | None = None) -> SpeechIntent | None:
         """Return one non-binding candidate, leaving the queue untouched."""
-        now = _clock(now)
-        if not self.enabled:
-            return None
-        self._expire(now)
-        if viewer_speaking:
-            return None
-        eligible = []
-        for event in self._events:
-            # offer() tolerates up to 500 ms of source clock skew; that does
-            # not make a not-yet-observed event safe to narrate immediately.
-            if event.timestamp > now:
-                continue
-            if voice_speaking and event.kind != "owner_interrupt":
-                continue
-            if gameplay_critical and event.kind not in {"owner_interrupt", "game_danger"}:
-                continue
-            if (now - self._last_speech_at < self.gap_seconds
-                    and event.kind not in {"owner_interrupt", "game_danger"}):
-                continue
-            if (event.kind.startswith("viewer") and event.speaker_id
-                    and now - self._viewer_last_spoken.get(event.speaker_id, float("-inf"))
-                    < self.viewer_cooldown):
-                continue
-            eligible.append(event)
-        if not eligible:
-            return None
-        event = min(eligible, key=lambda item: (-self._priority(item, now), item.timestamp, item.signal_id))
-        intent = SpeechIntent(
-            signal_id=event.signal_id, kind=event.kind, context=event.detail,
-            evidence=event.evidence,
-            deadline_at=event.timestamp + _KINDS[event.kind][1],
-            instruction=_GUIDANCE[event.kind],
-            interrupt_current=voice_speaking and event.kind == "owner_interrupt",
-            untrusted_context=event.kind.startswith("viewer"),
-            session_epoch=self._session_epoch,
-            event_serial=self._event_serials[event.signal_id],
-        )
-        # A later proposal supersedes an earlier plan for this event. This
-        # is an identity check inside the process, not proof of OBS audio.
-        self._issued_intents[intent.event_serial] = intent
-        return intent
+        with self._lock:
+            now = _clock(now)
+            if load_advice is not None and not isinstance(load_advice, StreamLoadAdvice):
+                raise TypeError("load_advice must be an explicit StreamLoadAdvice")
+            if not self.enabled:
+                return None
+            self._expire(now)
+            if viewer_speaking:
+                return None
+            eligible = []
+            for event in self._events:
+                # Host-provided pressure advice is a speech admission filter,
+                # never an OBS or game executor. Missing advice keeps legacy
+                # behavior; caller must explicitly wire the trusted governor.
+                if load_advice is not None:
+                    profile = load_advice.profile
+                    if (profile == "constrained" and event.kind in
+                            {"ambient", "viewer_comment", "game_observation"}):
+                        continue
+                    if (profile not in {"normal", "constrained"} and
+                            event.kind not in {"owner_interrupt", "game_danger"}):
+                        continue
+                # offer() tolerates up to 500 ms of source clock skew; that does
+                # not make a not-yet-observed event safe to narrate immediately.
+                if event.timestamp > now:
+                    continue
+                if voice_speaking and event.kind != "owner_interrupt":
+                    continue
+                if gameplay_critical and event.kind not in {"owner_interrupt", "game_danger"}:
+                    continue
+                if (now - self._last_speech_at < self.gap_seconds
+                        and event.kind not in {"owner_interrupt", "game_danger"}):
+                    continue
+                if (event.kind.startswith("viewer") and event.speaker_id
+                        and now - self._viewer_last_spoken.get(event.speaker_id, float("-inf"))
+                        < self.viewer_cooldown):
+                    continue
+                eligible.append(event)
+            if not eligible:
+                return None
+            event = min(eligible, key=lambda item: (-self._priority(item, now), item.timestamp, item.signal_id))
+            intent = SpeechIntent(
+                signal_id=event.signal_id, kind=event.kind, context=event.detail,
+                evidence=event.evidence,
+                deadline_at=event.timestamp + _KINDS[event.kind][1],
+                instruction=_GUIDANCE[event.kind],
+                interrupt_current=voice_speaking and event.kind == "owner_interrupt",
+                untrusted_context=event.kind.startswith("viewer"),
+                session_epoch=self._session_epoch,
+                event_serial=self._event_serials[event.signal_id],
+            )
+            # A later proposal supersedes an earlier plan for this event. This
+            # is an identity check inside the process, not proof of OBS audio.
+            self._issued_intents[intent.event_serial] = intent
+            return intent
 
     def complete(self, intent: SpeechIntent, *, now: float, spoken: bool) -> bool:
         """Consume only an event still in this session. Do not commit a stale plan."""
-        now = _clock(now)
-        if not isinstance(intent, SpeechIntent) or type(spoken) is not bool:
-            raise TypeError("expected SpeechIntent and explicit bool spoken")
-        if (not self.enabled or intent.session_epoch != self._session_epoch
-                or intent.event_serial != self._event_serials.get(intent.signal_id)
-                or self._issued_intents.get(intent.event_serial) is not intent):
+        with self._lock:
+            now = _clock(now)
+            if not isinstance(intent, SpeechIntent) or type(spoken) is not bool:
+                raise TypeError("expected SpeechIntent and explicit bool spoken")
+            if (not self.enabled or intent.session_epoch != self._session_epoch
+                    or intent.event_serial != self._event_serials.get(intent.signal_id)
+                    or self._issued_intents.get(intent.event_serial) is not intent):
+                return False
+            self._expire(now)
+            for event in self._events:
+                if (event.signal_id == intent.signal_id and event.kind == intent.kind
+                        and event.detail == intent.context
+                        and event.timestamp + _KINDS[event.kind][1] == intent.deadline_at):
+                    self._events.remove(event)
+                    self._event_serials.pop(event.signal_id, None)
+                    self._issued_intents.pop(intent.event_serial, None)
+                    if spoken:
+                        self._last_speech_at = now
+                        if event.kind.startswith("viewer") and event.speaker_id:
+                            # A very long cooldown must not allow an unbounded
+                            # set of distinct viewers to accumulate across hours.
+                            if (event.speaker_id not in self._viewer_last_spoken
+                                    and len(self._viewer_last_spoken) >= _MAX_SESSION_RECEIPTS):
+                                oldest = min(self._viewer_last_spoken,
+                                             key=self._viewer_last_spoken.__getitem__)
+                                self._viewer_last_spoken.pop(oldest)
+                            self._viewer_last_spoken[event.speaker_id] = now
+                        # Only a genuinely observed success can suppress later
+                        # reactions. A reported/unknown victory may have been wrong;
+                        # it must never silence the later witnessed achievement.
+                        if event.kind == "game_success" and event.evidence == "observed":
+                            reaction = _reaction_digest(event.detail, event.game_scope)
+                            if (reaction not in self._game_reactions
+                                    and len(self._game_reactions) >= _MAX_SESSION_RECEIPTS):
+                                oldest = min(self._game_reactions,
+                                             key=lambda key: self._game_reactions[key][0])
+                                self._game_reactions.pop(oldest)
+                            self._game_reactions[reaction] = (now, event.signal_id)
+                        self._counters["completed"] += 1
+                    else:
+                        self._counters["abandoned"] += 1
+                    return True
             return False
-        self._expire(now)
-        for event in self._events:
-            if (event.signal_id == intent.signal_id and event.kind == intent.kind
-                    and event.detail == intent.context
-                    and event.timestamp + _KINDS[event.kind][1] == intent.deadline_at):
-                self._events.remove(event)
-                self._event_serials.pop(event.signal_id, None)
-                self._issued_intents.pop(intent.event_serial, None)
-                if spoken:
-                    self._last_speech_at = now
-                    if event.kind.startswith("viewer") and event.speaker_id:
-                        self._viewer_last_spoken[event.speaker_id] = now
-                    # Only a genuinely observed success can suppress later
-                    # reactions. A reported/unknown victory may have been wrong;
-                    # it must never silence the later witnessed achievement.
-                    if event.kind == "game_success" and event.evidence == "observed":
-                        self._game_reactions[
-                            _reaction_digest(event.detail, event.game_scope)
-                        ] = (now, event.signal_id)
-                    self._counters["completed"] += 1
-                else:
-                    self._counters["abandoned"] += 1
-                return True
-        return False
 
     def metrics(self) -> dict[str, int]:
         """No private audio, chat messages, or user IDs leave this method."""
-        return {**self._counters, "queued": len(self._events)}
+        with self._lock:
+            return {**self._counters, "queued": len(self._events)}

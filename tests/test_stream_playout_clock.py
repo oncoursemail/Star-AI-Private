@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-import math
 import unittest
 
 from star.stream_director import StreamSignal
@@ -153,6 +152,59 @@ class StarPlayoutClockTests(unittest.TestCase):
         host.observe_playhead(plan, position_s=0, sampled_at=clock.now)
         clock.advance(.161)
         self.assertIsNone(host.sample(plan))
+
+    def test_render_boundary_rechecks_audio_cursor_freshness(self):
+        # Render frames can still be within the frame lease after the last
+        # physical audio sample itself has become stale.
+        clock, _, plan, host = make_host()
+        self.assertTrue(arm(host, plan))
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=0.0, sampled_at=clock.now,
+        ))
+        clock.advance(.14)
+        frame = host.sample(plan)
+        self.assertIsNotNone(frame)
+        self.assertTrue(host.current(frame))
+        clock.advance(.03)
+        # Frame age .03 < .15, but physical audio cursor age .17 > .16.
+        self.assertFalse(host.current(frame))
+        self.assertIsNone(host.sample(plan))
+
+    def test_render_boundary_rechecks_audio_progress_stall(self):
+        # Fresh but unchanged cursor samples do not prove that a TTS output
+        # device is advancing, even if render occurs right after sampling.
+        clock, _, plan, host = make_host()
+        self.assertTrue(arm(host, plan))
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=0.0, sampled_at=clock.now,
+        ))
+        clock.advance(.18)
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=0.0, sampled_at=clock.now,
+        ))
+        clock.advance(.01)
+        frame = host.sample(plan)
+        self.assertIsNotNone(frame)
+        self.assertTrue(host.current(frame))
+        clock.advance(.03)
+        # .22 seconds since the last actual playout progress; the render
+        # lease is still young and the latest cursor sample is fresh.
+        self.assertFalse(host.current(frame))
+
+    def test_render_boundary_allows_recent_verified_progress(self):
+        clock, _, plan, host = make_host()
+        self.assertTrue(arm(host, plan))
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=0.0, sampled_at=clock.now,
+        ))
+        clock.advance(.08)
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=.08, sampled_at=clock.now,
+        ))
+        frame = host.sample(plan)
+        self.assertIsNotNone(frame)
+        clock.advance(.04)
+        self.assertTrue(host.current(frame))
 
     def test_late_render_batches_rejected(self):
         clock, _, plan, host = make_host()
