@@ -566,8 +566,10 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") ->
             continue
         need = (len(MERGE_PROMPT) + len(before) + len(m.group(0)) + len(after) + len(ours) + len(theirs)) / 3.5
         tries = [asker] * 3 if need <= WINDOW else []  # over her model's context: do not burn tries
-        if asker is ask and claude.ready():
-            tries += [ask_claude] * 2                  # her paid second opinion, only after her own model failed
+        if asker is ask and claude.ready() and not path.endswith((".md", ".txt", ".rst")):
+            tries = [ask_claude] * 2 + tries[:1]       # code: her local model rarely gets it right, Claude goes first
+        elif asker is ask and claude.ready():
+            tries += [ask_claude] * 2                  # docs: her paid second opinion, only after her own model failed
         if not tries:
             return None, f"{path}: conflict {i} is too big for her {WINDOW}-token window (~{need:.0f} tokens)"
         for who in tries:
@@ -618,7 +620,7 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         return {"pr": number, "result": "failed", "why": "git merge failed: " + (m.stdout + m.stderr)[-200:]}
     locks = [c for c in conflicted if (DEP_FILE.match(c) and c.endswith(".txt")) or c.endswith("Cargo.lock")]
     code = [c for c in conflicted if c not in locks]
-    if len(code) > 5 or any(NO_TOUCH.search(c) and not DEP_FILE.match(c) for c in code):
+    if len(code) > (12 if asker is ask and claude.ready() else 5) or any(NO_TOUCH.search(c) and not DEP_FILE.match(c) for c in code):
         sh(["git", "merge", "--abort"], cwd=tree)
         return {"pr": number, "result": "failed", "why": f"conflicts she does not resolve alone: {code[:8]}"}
     for c in locks:                                         # generated files: star/next's copy, rebuilt below

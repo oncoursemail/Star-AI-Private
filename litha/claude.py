@@ -39,7 +39,7 @@ def spent() -> tuple[float, float]:
 
 
 def ready() -> bool:
-    if not KEY.exists() or os.environ.get("LITHA_CLAUDE") == "off":
+    if not KEY.exists() or os.environ.get("LITHA_CLAUDE") == "off" or "PYTEST_CURRENT_TEST" in os.environ:
         return False
     total, day = spent()
     c = caps()

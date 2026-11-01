@@ -179,3 +179,7 @@ high for repairs) with the same prompt, and the same checks apply to its answer.
 and logged in `~/.star/litha-claude/spend.jsonl`; she stops at $150 total or $20 a day (override in
 `~/.star/litha-claude/cap.json`). Key: `~/.star/anthropic.key`, put there by the owner. No key = no calls.
 Off switch: set `LITHA_CLAUDE=off`.
+Since the same day: code conflicts go to Claude first (2 tries, then 1 local try; docs stay local-first); with Claude
+she takes PRs with up to 12 conflicted files (5 without); and right before every merge Claude reads the whole diff
+once per head commit (`~/.star/litha-claude/reviews.json`) and can stop the merge with a high-severity risk.
+Tests never pay: `claude.ready()` is off under pytest.

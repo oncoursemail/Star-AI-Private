@@ -374,6 +374,42 @@ def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_f
             "reasons": reasons, "review": rev, "files": len(files)}
 
 
+def confirm(pr: dict) -> tuple[bool, str]:
+    """Claude's look at the whole diff right before a merge, paid once per head commit; (True, "") without a key."""
+    from litha import claude
+    seen = claude.HOME / "reviews.json"
+    try:
+        done = json.loads(seen.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        done = {}
+    key = f"{REPO}#{pr['number']}@{pr['headRefOid']}"
+    if key not in done:
+        if not claude.ready():
+            return True, ""
+        diff = gh("pr", "diff", str(pr["number"]), "--repo", REPO, timeout=300)[:400_000]
+        text = claude.ask(f"{RUBRIC}\n\nTitle: {pr.get('title', '')}\nDescription: {(pr.get('body') or '')[:3000]}"
+                          f"\n\n{diff}", "high", what=f"review {key}")
+        try:
+            ans = json.loads(text[text.find("{"):text.rfind("}") + 1])
+        except ValueError:
+            return True, ""                                      # no answer: the other gates already passed
+        high = [f"{r.get('file')}:{r.get('line')} {r.get('why')}" for r in ans.get("risks") or []
+                if str(r.get("severity", "")).lower() == "high"]
+        done[key] = {"verdict": str(ans.get("verdict", "")).lower(), "high": high[:5]}
+        seen.write_text(json.dumps(done, indent=1), encoding="utf-8")
+    v = done[key]
+    if v["verdict"] == "hold" and v["high"]:
+        return False, "Claude: " + "; ".join(v["high"])[:600]
+    return True, ""
+
+
+def vetoed(row: dict, pr: dict) -> bool:
+    ok, why = confirm(pr)
+    if not ok:
+        row.update(action="hold", reasons=[why])
+    return not ok
+
+
 def merge(pr: dict) -> str:
     if BASE == "*" or pr.get("baseRefName") != BASE:             # belt and braces
         raise RuntimeError("refusing a merge outside " + BASE)
@@ -465,7 +501,7 @@ def others(apply: bool) -> int:
                     row = decide(pr, prove_fn=None, hunt_fn=None)
                 except Exception as e:  # noqa: BLE001 - one bad PR must not stop the queue
                     row = {"pr": pr["number"], "action": "hold", "reasons": [f"error: {str(e)[:200]}"]}
-                if row["action"] == "merge" and can_merge:
+                if row["action"] == "merge" and can_merge and not vetoed(row, pr):
                     try:
                         merge(pr)
                         row["merged"] = True
@@ -505,7 +541,7 @@ def main(argv: list[str] | None = None) -> int:
             row = decide(pr)
         except Exception as e:  # noqa: BLE001 - one bad PR must not stop the queue
             row = {"pr": pr["number"], "action": "hold", "reasons": [f"error: {str(e)[:200]}"]}
-        if row["action"] == "merge" and a.apply:
+        if row["action"] == "merge" and a.apply and not vetoed(row, pr):
             try:
                 merge(pr)
                 row["merged"] = True
