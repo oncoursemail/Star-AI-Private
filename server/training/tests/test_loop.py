@@ -2,6 +2,7 @@
 dropping a request in flight, and the checkpoint after every candidate (run on the PC)."""
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 import re
@@ -247,5 +248,7 @@ def test_the_report_counts_everything(env):
 
 
 def test_idle_gate_ordering_is_cheapest_first():
-    order = re.findall(r'"(G\d)"', Path(loop.__file__).read_text())
+    # Inspect only the gate runner: module-level policy sets may mention gate
+    # IDs before this function without changing runtime gate ordering.
+    order = re.findall(r'"(G\d)"', inspect.getsource(loop.Generator.run_gates))
     assert order.index("G0") < order.index("G6") < order.index("G8") < order.index("G7") < order.index("G1") < order.index("G3") < order.index("G4")
