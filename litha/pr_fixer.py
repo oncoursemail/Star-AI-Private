@@ -589,6 +589,22 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     if not ok:
         sh(["git", "merge", "--abort"], cwd=tree)
         return {**row, "why": "after resolving, tests fail: " + " ".join(FAILED.findall(out))[:250]}
+    if (tree / "Cargo.toml").is_file() and any(c.endswith(".rs") for c in code):
+        ok, fails, crates = rust_fix.crate_tests(tree, code)
+        row["tests"] += [f"cargo test -p {' -p '.join(crates)}"]
+        if not ok:
+            sh(["git", "merge", "--abort"], cwd=tree)
+            why = f"after resolving, cargo tests fail: {fails}"
+            if not dry:                                   # the authors decide which behaviour is right
+                try:
+                    gh("pr", "comment", str(number), "--repo", REPO, "--body",
+                       f"Litha tried to merge {BASE} into this PR. The conflicts resolve and compile, but then "
+                       f"`cargo test -p {' -p '.join(crates)}` fails:\n\n{fails[:1200]}\n\nThe two sides probably "
+                       "change the same behaviour in different ways; this PR needs a decision on which one is "
+                       "right before it can merge. She did not push anything.")
+                except RuntimeError:
+                    pass
+            return {**row, "result": "failed", "why": why[:400]}
     if dry:
         return row
     msg = f"[litha] merge {BASE} into #{number}: {', '.join(conflicted)}"
@@ -604,7 +620,7 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     body = (f"Litha brought #{number} up to date with {BASE} (her own branch; the original PR is unchanged).\n\n"
             f"Conflicts resolved: {', '.join(conflicted)}. Lock files were taken from {BASE} and rebuilt.\n"
             f"Checks before pushing: nothing either side added was dropped, every file parses, "
-            f"tests run: {', '.join(sorted(tests)[:6]) or 'none touched (CI runs the full suite)'}.\n"
+            f"tests run: {', '.join(row['tests']) or 'none touched (CI runs the full suite)'}.\n"
             f"Contains #{number}'s commits plus the merge; merging this lands both.")
     try:
         row["fix_pr"] = gh("pr", "create", "--repo", REPO, "--base", BASE, "--head", branch,

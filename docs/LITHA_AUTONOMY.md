@@ -155,6 +155,15 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Also found while checking her: star/next's red test `test_solo_p0_pauses_every_background_stream` was a test race
   (the proxy logs a request after answering it), not a slow runner; fixed by waiting for the 3 log rows (3/3 green).
   Her #853 doubled two lines outside the conflict (TS would reject it): closed, check added, #549 will be redone.
+- Checked again after CI ran: #485's fix compiled and 2165/2166 tests passed (the 1 is a 40 ms timing budget missed at
+  48 ms on the shared Windows runner; she reruns those). #486 (her merge of #442) compiled but broke main's
+  `raycast_normal_is_unit_even_from_inside_a_part`: #442 skips a part the ray starts inside, main (#34) hits it at
+  distance 0, and both have tests, so no merge keeps both. Closed; now every Rust merge runs `cargo test -p` for the
+  crates it touched before pushing, and on a failure she comments on the PR with the failing test and pushes nothing.
+- #484's repair gave up in 20 s: CI's own `-j 4` plus hers made cargo refuse every check, so she never saw a compiler
+  error. Fixed; she is also shown where each name in the errors is declared (with its `#[cfg]`), the crate's
+  `[features]` and the exact checks, plus one rule (gate the test, never the library). Dry run: 1 round, all 5 checks
+  green, `#![cfg(feature = "presentation")]` on `camera_api.rs`.
 
 ## 5. Rules that stay (do not remove)
 

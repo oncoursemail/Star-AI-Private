@@ -71,3 +71,41 @@ def test_the_repos_clippy_steps_run_after_her_fix_too(tmp_path):
     (wf / "ci.yml").write_text("steps:\n  - run: cargo fmt --check\n  - run: cargo clippy --workspace --all-targets -- -D "
                                "warnings\n", encoding="utf-8")
     assert R.later_checks(tmp_path) == [["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]]
+
+
+def test_a_ci_command_with_its_own_jobs_flag_is_not_given_a_second_one(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(R.subprocess, "run", lambda cmd, **k: seen.append(cmd) or
+                        type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    R.run(tmp_path, ["test", "--no-run", "-p", "x", "-j", "4"])
+    R.run(tmp_path, ["clippy", "--all-targets", "--", "-D", "warnings"])
+    assert seen[0][1:].count("-j") == 1                     # cargo refuses a second --jobs (seen on Studio #484)
+    assert seen[1][1:] == ["clippy", "--all-targets", "-j", "4", "--", "-D", "warnings"]
+
+
+def test_she_is_shown_where_the_names_live_with_their_cfg_and_the_features(tmp_path):
+    crate = tmp_path / "crates" / "rt"
+    (crate / "src").mkdir(parents=True)
+    (crate / "tests").mkdir()
+    (crate / "Cargo.toml").write_text('[package]\nname = "rt"\n\n[features]\ndefault = ["presentation"]\n'
+                                      'presentation = []\n\n[dependencies]\n', encoding="utf-8")
+    (crate / "src" / "lib.rs").write_text('mod game;\n#[cfg(feature = "presentation")]\npub use game::{Game};\n',
+                                          encoding="utf-8")
+    (crate / "tests" / "cam.rs").write_text("use rt::Game;\n", encoding="utf-8")
+    errs = [{"error": "error[E0432]: unresolved import `rt::Game`", "file": "crates/rt/tests/cam.rs", "line": 1}]
+    shown = R.declarations(tmp_path, errs)
+    assert 'presentation = []' in shown and '#[cfg(feature = "presentation")]\npub use game::{Game};' in shown
+    assert "cam.rs" not in shown                                  # the failing test itself is already shown
+
+
+def test_a_merge_that_compiles_but_breaks_a_crate_test_is_caught(tmp_path, monkeypatch):
+    (tmp_path / "crates" / "phys" / "src").mkdir(parents=True)
+    (tmp_path / "crates" / "phys" / "Cargo.toml").write_text('[package]\nname = "phys"\n', encoding="utf-8")
+    out = ("---- raycast_from_inside stdout ----\n\nthread 'raycast_from_inside' panicked at tests/p.rs:9:5:\n"
+           "assertion `left == right` failed\nfailures:\n")
+    calls = []
+    monkeypatch.setattr(R, "run", lambda tree, args, timeout=0: calls.append(args) or (False, out))
+    ok, fails, crates = R.crate_tests(tmp_path, ["crates/phys/src/lib.rs", "README.md"])
+    assert not ok and crates == ["phys"] and calls == [["test", "-p", "phys"]]
+    assert fails == "raycast_from_inside: assertion `left == right` failed"
+    assert R.crate_tests(tmp_path, ["README.md"]) == (True, "", [])

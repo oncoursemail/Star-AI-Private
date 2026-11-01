@@ -23,14 +23,22 @@ ERROR = re.compile(r"^(error(?:\[E\d+\])?: .+)\n(?:.*\n){0,3}?\s*--> ([^\s:]+):(
 RUN = re.compile(r"^(?:##\[group\])?Run (cargo .+)$", re.M)
 PROMPT = """You are Litha, fixing a pull request in {repo} (Rust) so it builds and passes its checks again.
 PR title: {title}
+The checks that must pass: {commands}
 The compiler's errors:
 {errors}
 
 The real code around every error (line numbers on the left, do not copy them):
 {code}
+
+Where the names in the errors are declared, and the crate features (cfg lines matter: a check run with
+--no-default-features does not see items behind a default feature):
+{names}
 {feedback}
 Fix the cause with the smallest correct change. You may edit any file shown, including a test file that cannot
 compile (for example a missing #![cfg(feature = ...)] gate or import), but never remove a test or an assertion.
+If a test uses items that a feature gates and the check turns that feature off, gate the test (put
+#![cfg(feature = "<that feature>")] as the first line of the test file); do not change the library's feature gates.
+Copy "find" text character for character from the code shown, blank lines included.
 Answer only JSON: {{"why": "<one sentence: the cause>", "edits": [{{"file": "<path>", "find": "<exact existing text,
 a few whole lines, unique in the file>", "replace": "<new text>"}}]}}"""
 
@@ -72,8 +80,9 @@ def checks(log: str) -> list[list[str]]:
 def run(tree: Path, args: list[str], timeout: float = 2400) -> tuple[bool, str]:
     env = {**os.environ, "CARGO_TERM_COLOR": "never",
            "CARGO_TARGET_DIR": str(Path.home() / ".star" / "litha-cargo" / tree.parent.name.replace(" ", "_"))}
-    extra = ["-j", JOBS] if args[0] in ("test", "build", "check", "clippy") else []
     head, _, tail = " ".join(args).partition(" -- ")
+    jobs = any(a == "--jobs" or a.startswith(("-j", "--jobs=")) for a in head.split())   # CI may set its own
+    extra = ["-j", JOBS] if args[0] in ("test", "build", "check", "clippy") and not jobs else []
     cmd = [cargo(), *head.split(), *extra, *(["--", *tail.split()] if tail else [])]
     try:
         r = subprocess.run(cmd, cwd=tree, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -109,6 +118,42 @@ def excerpts(tree: Path, errs: list[dict], around: int = 20, budget: int = 9000)
     return "\n\n".join(parts)
 
 
+NAME = re.compile(r"`[&*]?(?:[\w:]*::)?([A-Za-z_]\w{2,})`")
+
+
+def declarations(tree: Path, errs: list[dict], budget: int = 4000) -> str:
+    """Each name an error mentions: its declaration or re-export with the two lines above it (the #[cfg]), plus the
+    [features] of the Cargo.toml nearest each error file."""
+    names = list(dict.fromkeys(n for e in errs for n in NAME.findall(e["error"])))[:8]
+    parts: list[str] = []
+    for e in errs:
+        for d in Path(e["file"]).parents:
+            toml = tree / d / "Cargo.toml"
+            if toml.is_file():
+                m = re.search(r"^\[features\]\n(?:(?!\[).*(?:\n|$))*", toml.read_text(encoding="utf-8", errors="replace"), re.M)
+                if m and f"--- {toml.relative_to(tree).as_posix()}" not in "\n".join(parts):
+                    parts.append(f"--- {toml.relative_to(tree).as_posix()}\n{m.group(0).strip()}")
+                break
+    if names:
+        decl = re.compile(r"\b(?:struct|enum|trait|type|fn|mod)\s+(?:" + "|".join(names) + r")\b|\bpub use\b.*\b(?:"
+                          + "|".join(names) + r")\b")
+        for f in sorted(tree.rglob("*.rs")):
+            rel = f.relative_to(tree).as_posix()
+            if rel.startswith(("target/", ".git/")) or "/tests/" in f"/{rel}":
+                continue
+            lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+            for i, line in enumerate(lines):
+                if decl.search(line):
+                    parts.append(f"--- {rel}:{i + 1}\n" + "\n".join(lines[max(0, i - 2):i + 1]))
+    out, used = [], 0
+    for p in parts:
+        if used + len(p) > budget:
+            break
+        out.append(p)
+        used += len(p)
+    return "\n".join(out) or "(none found)"
+
+
 TESTS = re.compile(r"#\[(?:tokio::)?test\]|\bassert(?:_eq|_ne)?!")
 
 
@@ -138,6 +183,30 @@ def apply(tree: Path, edits: list) -> list[str]:
             continue
         f.write_bytes(text.replace(find, new).encode("utf-8"))
     return problems
+
+
+FAILED_TEST = re.compile(r"^---- (\S+) stdout ----\n(?:.*\n){0,6}?.*panicked at [^\n]*\n([^\n]*)", re.M)
+
+
+def crate_tests(tree: Path, files: list[str]) -> tuple[bool, str, list[str]]:
+    """(passed, failures, packages): the tests of every crate a merged .rs file belongs to. A merge can compile and
+    still be wrong (both sides fixed one bug two ways, and one side's test now fails); this catches it before a push."""
+    packages: list[str] = []
+    for f in files:
+        if not f.endswith(".rs"):
+            continue
+        for d in Path(f).parents:
+            toml = tree / d / "Cargo.toml"
+            m = re.search(r'^\[package\][^\[]*?^name\s*=\s*"([^"]+)"', toml.read_text(encoding="utf-8"), re.M | re.S) \
+                if toml.is_file() else None
+            if m:
+                packages += [m.group(1)] if m.group(1) not in packages else []
+                break
+    if not packages:
+        return True, "", []
+    ok, out = run(tree, ["test", *[a for p in packages for a in ("-p", p)]])
+    fails = "; ".join(f"{name}: {why.strip()[:200]}" for name, why in FAILED_TEST.findall(out)[:4])
+    return ok, fails or out[-600:], packages
 
 
 CLIPPY = re.compile(r"^\s*(?:-\s*)?run:\s*(cargo clippy[^\n#]*)", re.M)
@@ -170,6 +239,8 @@ def repair(tree: Path, repo: str, title: str, log: str, ask, rounds: int = ROUND
         if n == rounds or not errs:
             return False, "still failing: " + (" | ".join(e["error"] for e in errs) or out[-300:])
         prompt = PROMPT.format(repo=repo, title=title, code=excerpts(tree, errs), feedback=feedback,
+                               commands="; ".join("cargo " + " ".join(c) for c in cmds),
+                               names=declarations(tree, errs),
                                errors="\n".join(f"{e['file']}:{e['line']}: {e['error']}" for e in errs))
         try:
             ans = json.loads(ask(prompt))
