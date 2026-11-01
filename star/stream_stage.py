@@ -96,6 +96,7 @@ class StagePlan:
     context_record: str
     expression: str | None
     expression_strength: float
+    natural_gaze: bool = False
 
     def user_message(self) -> dict[str, str]:
         """Untrusted event record at USER priority, never a new system prompt."""
@@ -130,6 +131,7 @@ class StarStage:
         self._enabled = False
         self._mode = "normal"
         self._reduced_motion = False
+        self._natural_gaze = False
         self._sequence = 0
         self._plan: StagePlan | None = None
         self._intent: SpeechIntent | None = None
@@ -151,10 +153,11 @@ class StarStage:
         }
 
     def enable(self, *, owner_approved: bool = False,
-               mode: str = "normal", reduced_motion: bool = False) -> None:
+               mode: str = "normal", reduced_motion: bool = False,
+               natural_gaze: bool = False) -> None:
         if owner_approved is not True:
             raise PermissionError("stage needs explicit authorized host approval")
-        self._validate_look(mode, reduced_motion)
+        self._validate_look(mode, reduced_motion, natural_gaze)
         with self._lock:
             if self._plan is not None:
                 raise RuntimeError("finish or interrupt the current turn first")
@@ -162,22 +165,26 @@ class StarStage:
             self._quiet.reset()
             self._quiet_frame = None
             self._mode, self._reduced_motion = mode, reduced_motion
+            self._natural_gaze = natural_gaze
             self._enabled = True
 
     @staticmethod
-    def _validate_look(mode: str, reduced_motion: bool) -> None:
+    def _validate_look(mode: str, reduced_motion: bool,
+                       natural_gaze: bool = False) -> None:
         if type(mode) is not str or mode not in MODES:
             raise ValueError("mode must be normal, cat, or puppy")
-        if type(reduced_motion) is not bool:
-            raise ValueError("reduced_motion must be boolean")
+        if type(reduced_motion) is not bool or type(natural_gaze) is not bool:
+            raise ValueError("reduced_motion and natural_gaze must be boolean")
 
-    def configure(self, *, mode: str, reduced_motion: bool = False) -> None:
+    def configure(self, *, mode: str, reduced_motion: bool = False,
+                  natural_gaze: bool = False) -> None:
         """Mode changes are allowed only between turns (not mid-utterance)."""
-        self._validate_look(mode, reduced_motion)
+        self._validate_look(mode, reduced_motion, natural_gaze)
         with self._lock:
             if self._plan is not None:
                 raise RuntimeError("cannot swap rigs during a turn")
             self._mode, self._reduced_motion = mode, reduced_motion
+            self._natural_gaze = natural_gaze
             self._quiet.reset()
             self._quiet_frame = None
 
@@ -378,6 +385,7 @@ class StarStage:
                 deadline_at=intent.deadline_at, context_record=prompt,
                 expression=None if expression is None else expression[0],
                 expression_strength=0.0 if expression is None else expression[1],
+                natural_gaze=self._natural_gaze,
             )
             self._quiet_frame = None
             self._plan, self._intent, self._phase = plan, intent, "prepared"
@@ -448,12 +456,23 @@ class StarStage:
 
     def motion(self, plan: StagePlan, *, duration_s: float,
                audio_levels: Sequence[AudioLevel], fps: int = 30,
-               seed: int = 7) -> tuple[MotionFrame, ...]:
+               seed: int = 7, focus_target_x: float = 0.0,
+               focus_host_verified: bool = False) -> tuple[MotionFrame, ...]:
         """Sample original character movement against HOST-PLAYED audio levels.
 
         A non-audible/cancelled plan returns no frames, not a fake mouth cue.
         The renderer must confirm current(plan) on every dispatched batch.
         """
+        # A visual target is provided by an independently verified game/view
+        # host, not viewer text or the speech model. An unverified nonzero
+        # target cannot create an apparent eye movement toward fictional data.
+        if (type(focus_target_x) not in (int, float)
+                or not math.isfinite(focus_target_x)
+                or not -1.0 <= focus_target_x <= 1.0
+                or type(focus_host_verified) is not bool):
+            raise ValueError("focus target must be finite -1..1 and attested as bool")
+        if focus_target_x and not focus_host_verified:
+            raise PermissionError("a nonzero attention target requires trusted host evidence")
         # Snapshot the active plan under the short state lock, then release it
         # before bounded but potentially CPU-heavy envelope validation and
         # animation generation. Otherwise an expensive motion request blocks
@@ -466,12 +485,17 @@ class StarStage:
                 cues = (ExpressionCue(
                     at_s=0.0, kind=plan.expression,
                     strength=plan.expression_strength,
+                    target_x=(float(focus_target_x)
+                              if plan.expression == "focus"
+                              and plan.evidence == "observed"
+                              and focus_host_verified else 0.0),
                 ),)
 
         frames = plan_motion(
             duration_s=duration_s, audio_levels=list(audio_levels),
             cues=cues, mode=plan.mode, fps=fps,
             reduced_motion=plan.reduced_motion, seed=seed,
+            natural_gaze=plan.natural_gaze,
             # Recheck the identical audible plan every eight frames. The
             # expensive worker can then stop spending CPU on revoked speech,
             # not merely drop its completed frames at the output boundary.
@@ -566,6 +590,7 @@ class StarStage:
         with self._lock:
             return {**self._counts, "enabled": self._enabled,
                     "phase": self._phase, "mode": self._mode,
+                    "natural_gaze": self._natural_gaze,
                     "director": self._director.metrics(),
                     "host_playback_latency": {
                         "samples": len(self._prepare_to_host_playback_ms),

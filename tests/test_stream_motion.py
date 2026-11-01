@@ -57,6 +57,35 @@ class StreamMotionTests(unittest.TestCase):
         self.assertLess(frames[0].gaze_x, 0)
         self.assertEqual(frames[0].ear_left, 0)
 
+    def test_opt_in_focus_easing_has_no_preemptive_attention(self):
+        cues = (ExpressionCue(0.35, "focus", target_x=-1.0),)
+        direct = make(duration_s=2, cues=cues)
+        natural = make(duration_s=2, cues=cues, natural_gaze=True)
+        self.assertEqual(natural, make(duration_s=2, cues=cues, natural_gaze=True))
+        self.assertEqual(direct, make(duration_s=2, cues=cues, natural_gaze=False))
+        self.assertTrue(all(f.gaze_x == 0 for f in natural if f.at_s < 0.35))
+        self.assertLess(abs(natural[11].gaze_x), abs(direct[11].gaze_x))
+        self.assertLess(natural[14].gaze_x, -0.65)
+        self.assertTrue(all(-1 <= f.gaze_x <= 1 for f in natural))
+
+    def test_opt_in_gaze_reversal_is_less_abrupt_without_changing_audio(self):
+        cues = (ExpressionCue(0.15, "focus", target_x=-1),
+                ExpressionCue(0.7, "focus", target_x=1))
+        direct = make(duration_s=2, cues=cues)
+        natural = make(duration_s=2, cues=cues, natural_gaze=True)
+        index = 21  # 0.7 seconds: the gaze target reverses.
+        self.assertLess(abs(natural[index].gaze_x - natural[index - 1].gaze_x),
+                        abs(direct[index].gaze_x - direct[index - 1].gaze_x))
+        self.assertEqual([f.mouth_open for f in natural],
+                         [f.mouth_open for f in direct])
+        self.assertEqual([f.eye_open_left for f in natural],
+                         [f.eye_open_left for f in direct])
+
+    def test_no_focus_cue_means_no_invented_eye_attention(self):
+        plain = make(duration_s=2)
+        eased = make(duration_s=2, natural_gaze=True)
+        self.assertEqual([f.gaze_x for f in plain], [f.gaze_x for f in eased])
+
     def test_cat_and_puppy_mode_do_not_affect_normal_rig(self):
         normal = make(cues=(ExpressionCue(0, "surprise"),))
         cat = make(mode="cat", cues=(ExpressionCue(0, "surprise"),))
@@ -111,7 +140,7 @@ class StreamMotionTests(unittest.TestCase):
     def test_invalid_settings(self):
         for changes in ({"fps": 0}, {"fps": 29}, {"fps": True}, {"mode": "bird"},
                         {"reduced_motion": 1}, {"seed": -1}, {"seed": 2**33},
-                        {"seed": 1.5}):
+                        {"seed": 1.5}, {"natural_gaze": 1}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 make(**changes)
 

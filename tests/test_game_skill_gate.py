@@ -244,3 +244,50 @@ def test_real_cross_map_gain_does_not_fail_scenario_latency_guard():
     ]
     verdict = compare_game_skill(baseline, candidate)
     assert verdict.eligible and verdict.reasons == ()
+
+
+def test_single_lucky_holdout_win_cannot_claim_generalized_skill():
+    baseline = cases()
+    candidate = list(baseline)
+    candidate[0] = replace(candidate[0], progress=1.0, success=True)
+    verdict = compare_game_skill(baseline, candidate)
+    assert not verdict.eligible
+    assert "insufficient_repeated_improvement" in verdict.reasons
+    assert "improvement_not_cross_scenario" in verdict.reasons
+
+
+def test_only_one_map_improving_is_not_cross_map_learning():
+    baseline = cases()
+    candidate = [
+        replace(t, progress=1.0, success=True)
+        if t.scenario_id == "map_0" else t for t in baseline
+    ]
+    verdict = compare_game_skill(baseline, candidate)
+    assert not verdict.eligible
+    assert "improvement_not_cross_scenario" in verdict.reasons
+    assert "insufficient_repeated_improvement" not in verdict.reasons
+
+
+def test_cross_variant_cross_mode_practice_leak_is_invalid():
+    # Neither arm individually contains a seed in both splits, and the
+    # real-time holdouts are perfectly paired. Still, the combined
+    # experiment has exposed the candidate's paused holdout as baseline
+    # practice. Such mixed-mode studies cannot certify clean holdouts.
+    baseline = cases()
+    candidate = [replace(t, progress=0.8) for t in baseline]
+    baseline.append(replace(baseline[0], case_id="seen_in_practice",
+                            seed=999, mode="realtime", split="practice"))
+    candidate.append(replace(candidate[0], case_id="sealed_other_mode",
+                             seed=999, mode="paused", split="holdout"))
+    verdict = compare_game_skill(baseline, candidate)
+    assert not verdict.eligible and verdict.reasons == ("invalid_evidence",)
+
+
+def test_different_game_seed_does_not_contaminate_holdouts():
+    baseline = cases()
+    candidate = [replace(t, progress=0.8) for t in baseline]
+    baseline.append(replace(baseline[0], case_id="unrelated_game_practice",
+                            game_scope="different_game", seed=999, split="practice"))
+    candidate.append(replace(candidate[0], case_id="sealed_other_mode",
+                             seed=999, mode="paused", split="holdout"))
+    assert compare_game_skill(baseline, candidate).eligible
