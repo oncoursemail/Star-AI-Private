@@ -266,3 +266,49 @@ def test_both_sides_only_adding_merge_by_code_and_same_spot_only_in_docs():
     same = F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=True)
     assert same == "a\nX\nY\nb\n" and F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=False) is None
     assert F.both_added("a\nX\n", "a\nb\n", "a\nb\nY\n", docs=True) is None         # an ancestor line went away
+
+
+def test_mark_serializes_concurrent_attempts(tmp_path, monkeypatch):
+    """Parallel runs must not lose updates or leave invalid JSON behind."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    monkeypatch.setattr(F, "STATE", tmp_path / "tried.json")
+    barrier = Barrier(12)
+
+    def attempt(index):
+        barrier.wait()
+        return F.mark(f"owner/repo#{index}", str(index))
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        list(pool.map(attempt, range(12)))
+    assert json.loads(F.STATE.read_text(encoding="utf-8")) == {
+        f"owner/repo#{index}": str(index) for index in range(12)
+    }
+
+
+def test_mark_rejects_corrupt_state_without_overwriting(tmp_path, monkeypatch):
+    monkeypatch.setattr(F, "STATE", tmp_path / "tried.json")
+    F.STATE.write_text('{"queued":', encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError):
+        F.mark("owner/repo#1", "head")
+    assert F.STATE.read_text(encoding="utf-8") == '{"queued":'
+    F.STATE.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid PR-fixer state"):
+        F.mark("owner/repo#2", "head")
+    assert F.STATE.read_text(encoding="utf-8") == "[]"
+
+
+def test_mark_atomic_replace_failure_preserves_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(F, "STATE", tmp_path / "tried.json")
+    original = '{"requeued":"head"}'
+    F.STATE.write_text(original, encoding="utf-8")
+
+    def fail_replace(*_args):
+        raise OSError("simulated rename failure")
+
+    monkeypatch.setattr(F.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="simulated rename failure"):
+        F.mark("another", "new-head")
+    assert F.STATE.read_text(encoding="utf-8") == original
+    assert list(tmp_path.glob(".tried-*.json")) == []

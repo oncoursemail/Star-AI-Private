@@ -39,12 +39,46 @@ STATE = Path.home() / ".star" / "pr-fixer" / "tried.json"
 
 
 def mark(key: str, sha: str) -> dict:
-    """Record one attempt on the CURRENT file: a copy loaded at the start of a long run must not undo a re-queue
-    made meanwhile (seen 2026-11-01: four re-queued Studio PRs silently came back as tried)."""
-    tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
-    tried[key] = sha
-    STATE.write_text(json.dumps(tried), encoding="utf-8")
-    return tried
+    """Atomically mark a tried head without losing another fixer's writes.
+
+    Keep the lock file stable (do not unlink it), so every process locks the
+    same inode. A temp file and os.replace prevent truncated state on crashes.
+    Invalid state fails closed rather than silently discarding queued work.
+    """
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    with (STATE.parent / "tried.lock").open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
+            if not isinstance(tried, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in tried.items()
+            ):
+                raise ValueError("Invalid PR-fixer state: refusing to overwrite tried.json")
+            tried[key] = sha
+            fd, tmp = tempfile.mkstemp(prefix=".tried-", suffix=".json", dir=STATE.parent)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as file:
+                    json.dump(tried, file)
+                    file.flush()
+                    os.fsync(file.fileno())
+                os.replace(tmp, STATE)
+            finally:
+                Path(tmp).unlink(missing_ok=True)
+            return tried
+        finally:
+            if os.name == "nt":
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 LOG = Path.home() / ".star" / "pr-fixer" / "fixes.jsonl"
 ROUNDS = 5
 NO_TOUCH = re.compile(r"^(tests/|\.github/)|(^|/)(requirements[^/]*\.txt|pnpm-lock\.yaml|[^/]+\.lock)$")
