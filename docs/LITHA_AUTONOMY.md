@@ -145,7 +145,16 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   cargo fmt --check). `.github/` conflicts and more than 5 files stay with a person.
 - Dry run on 8 Studio PRs: 4 resolved (#448, #446, #442 incl. a real logic merge in physics raycast, #438), 4 refused
   (CI files / 7 files / no clean answer). Earlier versions of the same run produced 2 merges with a lost brace, both
-  caught by rustfmt.
+  caught by rustfmt. Live: #448 -> Studio #484, #446 -> Studio #485.
+- Rust CI repair (`litha/rust_fix.py`, others only, 1 build per repo per run, cargo -j 4, shared sccache, target in
+  ~/.star/litha-cargo): rustc errors + the failed job's cargo commands from the log -> her edits on the real code ->
+  the same commands locally as compile-only checks (+ the repo's clippy steps CI never reached; `cargo fmt` applied
+  without her) for up to 4 rounds. Edits may touch test files but never remove a test or an assertion. Her own
+  litha/ PR gets the commit; anyone else's gets `litha/fix-<n>-...`. Live: #485 broke on a hidden conflict (main moved
+  `Game.scripts` into `Game.simulation`); she fixed it in 1 round (`self.simulation.scripts.stats()`), 479 s.
+- Also found while checking her: star/next's red test `test_solo_p0_pauses_every_background_stream` was a test race
+  (the proxy logs a request after answering it), not a slow runner; fixed by waiting for the 3 log rows (3/3 green).
+  Her #853 doubled two lines outside the conflict (TS would reject it): closed, check added, #549 will be redone.
 
 ## 5. Rules that stay (do not remove)
 
