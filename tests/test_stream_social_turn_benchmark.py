@@ -1,0 +1,136 @@
+"""Synthetic paired VTuber turn timing and safety checks; no I/O or recordings."""
+import math
+import unittest
+
+from star.stream_social_turn_benchmark import (
+    SCENARIOS, SocialTurnMoment, assess_social_turns,
+)
+
+
+def case(index, scenario, variant, **overrides):
+    data = dict(
+        case_id=f"{scenario}-{index}", variant=variant, scenario=scenario,
+        independently_reviewed=True,
+    )
+    if scenario == "viewer_question":
+        data.update(first_audible_ms=600, overlap_ms=15)
+    elif scenario == "owner_barge_in":
+        data.update(interrupted=True, playback_stop_ms=125)
+    elif scenario == "gameplay_commentary":
+        data.update(first_audible_ms=250, overlap_ms=0)
+    data.update(overrides)
+    return SocialTurnMoment(**data)
+
+
+def batch():
+    return [case(i, scenario, variant) for scenario in SCENARIOS
+            for i in range(4) for variant in ("baseline", "candidate")]
+
+
+class SocialTurnBenchmarkTests(unittest.TestCase):
+    def test_full_reviewed_balanced_synthetic_case_only_allows_rehearsal(self):
+        report = assess_social_turns(batch())
+        self.assertEqual(report.status, "eligible_for_manual_rehearsal")
+        self.assertEqual(report.complete_pairs, 20)
+        self.assertEqual(report.reviewed_moments, 40)
+        self.assertEqual(report.candidate_question_p95_ms, 600)
+        self.assertEqual(report.candidate_stop_p95_ms, 125)
+        self.assertEqual(report.candidate_failures, 0)
+        self.assertFalse(report.authorized_to_stream)
+
+    def test_missing_variant_or_coverage_never_passes(self):
+        rows = batch()
+        self.assertEqual(assess_social_turns(rows[:-1]).status, "insufficient_evidence")
+        rows = batch()
+        rows[1] = case(0, "viewer_question", "candidate", independently_reviewed=False)
+        self.assertEqual(assess_social_turns(rows).status, "insufficient_evidence")
+
+    def test_true_owner_barge_in_must_actually_stop_audio(self):
+        rows = batch()
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "owner_barge_in" and r.variant == "candidate")
+        rows[idx] = case(0, "owner_barge_in", "candidate", interrupted=False, playback_stop_ms=None)
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "naturalness_regressed")
+        self.assertEqual(report.candidate_missed_barge_ins, 1)
+        self.assertEqual(report.new_case_regressions, 1)
+
+    def test_barge_in_slow_shutdown_is_a_regression(self):
+        rows = batch()
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "owner_barge_in" and r.variant == "candidate")
+        rows[idx] = case(0, "owner_barge_in", "candidate", playback_stop_ms=600)
+        self.assertEqual(assess_social_turns(rows).status, "naturalness_regressed")
+
+    def test_false_interruptions_from_noise_fail(self):
+        rows = batch()
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "incidental_noise" and r.variant == "candidate")
+        rows[idx] = case(0, "incidental_noise", "candidate", interrupted=True, playback_stop_ms=75)
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "naturalness_regressed")
+        self.assertEqual(report.candidate_false_interruptions, 1)
+
+    def test_gameplay_focus_blocks_nonessential_speech(self):
+        rows = batch()
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "critical_gameplay" and r.variant == "candidate")
+        rows[idx] = case(0, "critical_gameplay", "candidate", first_audible_ms=10)
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "naturalness_regressed")
+        self.assertEqual(report.candidate_critical_speech, 1)
+
+    def test_grounding_and_speech_overlap_measured(self):
+        for kwargs in (dict(grounded=False), dict(overlap_ms=400)):
+            rows = batch()
+            idx = next(i for i, r in enumerate(rows) if r.scenario == "viewer_question" and r.variant == "candidate")
+            rows[idx] = case(0, "viewer_question", "candidate", **kwargs)
+            self.assertEqual(assess_social_turns(rows).status, "naturalness_regressed")
+
+    def test_candidate_can_pass_absolute_latency_but_still_regress_over_baseline(self):
+        rows = [case(i, "viewer_question", variant, first_audible_ms=(500 if variant == "baseline" else 1000))
+                if scenario == "viewer_question" else case(i, scenario, variant)
+                for scenario in SCENARIOS for i in range(4) for variant in ("baseline", "candidate")]
+        report = assess_social_turns(rows)
+        self.assertEqual(report.status, "naturalness_regressed")
+        self.assertEqual(report.candidate_failures, 0)
+        self.assertEqual(report.candidate_question_p95_ms, 1000)
+
+    def test_baseline_missing_quoted_audio_cannot_claim_latency_gain(self):
+        rows = batch()
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "viewer_question" and r.variant == "baseline")
+        rows[idx] = case(0, "viewer_question", "baseline", first_audible_ms=None, overlap_ms=None)
+        self.assertEqual(assess_social_turns(rows).status, "naturalness_regressed")
+
+    def test_question_must_not_be_silently_dropped(self):
+        rows = batch()
+        idx = next(i for i, r in enumerate(rows) if r.scenario == "viewer_question" and r.variant == "candidate")
+        rows[idx] = case(0, "viewer_question", "candidate", first_audible_ms=None, overlap_ms=None)
+        self.assertEqual(assess_social_turns(rows).status, "naturalness_regressed")
+
+    def test_duplicate_case_or_scenario_swap_is_rejected(self):
+        with self.assertRaises(ValueError):
+            assess_social_turns(batch() + [batch()[0]])
+        rows = batch()
+        rows[1] = SocialTurnMoment(case_id=rows[0].case_id, variant="candidate",
+                                   scenario="critical_gameplay", independently_reviewed=True)
+        with self.assertRaises(ValueError):
+            assess_social_turns(rows)
+
+    def test_boolean_nan_and_shape_validation(self):
+        with self.assertRaises(ValueError):
+            case(0, "viewer_question", "baseline", first_audible_ms=math.nan)
+        with self.assertRaises(ValueError):
+            case(0, "owner_barge_in", "candidate", playback_stop_ms=None)
+        with self.assertRaises(ValueError):
+            case(0, "incidental_noise", "candidate", interrupted=1)
+        with self.assertRaises(ValueError):
+            case(0, "viewer_question", "candidate", overlap_ms=None)
+        with self.assertRaises(ValueError):
+            assess_social_turns(batch(), minimum_per_scenario=True)
+        with self.assertRaises(ValueError):
+            assess_social_turns(batch(), max_overlap_ms=float("inf"))
+
+    def test_required_scenario_roster_cannot_be_cherry_picked(self):
+        rows = [x for x in batch() if x.scenario != "owner_barge_in"]
+        self.assertEqual(assess_social_turns(rows).status, "insufficient_evidence")
+
+
+if __name__ == "__main__":
+    unittest.main()
