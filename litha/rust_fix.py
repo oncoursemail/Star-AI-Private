@@ -140,16 +140,32 @@ def apply(tree: Path, edits: list) -> list[str]:
     return problems
 
 
+CLIPPY = re.compile(r"^\s*(?:-\s*)?run:\s*(cargo clippy[^\n#]*)", re.M)
+
+
+def later_checks(tree: Path) -> list[list[str]]:
+    """The repo's clippy steps: CI never reached them when the build failed first, but they run after her fix."""
+    found = []
+    for wf in sorted((tree / ".github" / "workflows").glob("*.y*ml")):
+        for m in CLIPPY.finditer(wf.read_text(encoding="utf-8", errors="replace")):
+            args = m.group(1).split()[1:]
+            if args not in found:
+                found.append(args)
+    return found
+
+
 def repair(tree: Path, repo: str, title: str, log: str, ask, rounds: int = ROUNDS) -> tuple[bool, str]:
-    """(fixed, why). `log` is the failed CI log; the checks it ran decide."""
+    """(fixed, why). `log` is the failed CI log; the checks it ran decide, plus the repo's clippy steps."""
     cmds = checks(log)
     if not cmds:
         return False, "no cargo command found in the failed job log"
-    errs, feedback = errors(log), ""
+    cmds += [c for c in later_checks(tree) if c not in cmds]
+    errs, feedback, cause = errors(log), "", ""
     for n in range(rounds + 1):
         ok, out = verify(tree, cmds)
         if ok:
-            return True, f"builds and passes {', '.join('cargo ' + ' '.join(c) for c in cmds)} after {n} round(s)"
+            return True, (f"{cause} " if cause else "") + \
+                f"(checked: {', '.join('cargo ' + ' '.join(c) for c in cmds)}; {n} round(s))"
         errs = errors(out) or errs
         if n == rounds or not errs:
             return False, "still failing: " + (" | ".join(e["error"] for e in errs) or out[-300:])
@@ -160,6 +176,7 @@ def repair(tree: Path, repo: str, title: str, log: str, ask, rounds: int = ROUND
         except (ValueError, TypeError):
             feedback = "Your last answer was not valid JSON.\n"
             continue
+        cause = str(ans.get("why") or cause)[:160]
         problems = apply(tree, ans.get("edits") or [])
         feedback = ("Problems with your last edits: " + "; ".join(problems) + "\n") if problems else ""
     return False, "no fix found"

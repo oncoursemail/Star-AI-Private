@@ -58,8 +58,16 @@ def test_repair_loops_until_the_same_checks_pass(tmp_path, monkeypatch):
                                                     "replace": "    g.host().scripts.run();\n"}]}
     ok, why = R.repair(tmp_path, "o/r", "t", LOG.split("##[group]Run cargo clippy")[0],
                        lambda p: asked.append(p) or json.dumps(answer))
-    assert ok and "after 1 round" in why and len(asked) == 1
+    assert ok and why.startswith("the field moved (checked: ") and "1 round" in why and len(asked) == 1
     assert "game.rs:2" in asked[0] and "2:     g.scripts.run();" in asked[0]       # the real code, numbered
     assert ["fmt"] in runs                                                         # formatting fixed without her
     ok, why = R.repair(tmp_path, "o/r", "t", "no cargo here", lambda p: "{}")
     assert not ok and "no cargo command" in why
+
+
+def test_the_repos_clippy_steps_run_after_her_fix_too(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text("steps:\n  - run: cargo fmt --check\n  - run: cargo clippy --workspace --all-targets -- -D "
+                               "warnings\n", encoding="utf-8")
+    assert R.later_checks(tmp_path) == [["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"]]
