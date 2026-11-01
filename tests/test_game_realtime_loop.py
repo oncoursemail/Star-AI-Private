@@ -331,5 +331,90 @@ class TestRealtimeGameLoop(unittest.TestCase):
         )
 
 
+    def test_superseded_worker_remains_quarantined_across_multiple_frames(self):
+        loop = start()
+        oldest = frame()
+        old_lease = offer(loop, oldest)
+        self.assertEqual(old_lease.route, "reactive")
+        second = frame(seq=2, captured=1150)
+        self.assertEqual(
+            offer(loop, second, now=1200).reason,
+            "previous_inference_worker_not_stopped",
+        )
+        # This third observation used to forget the old worker's existence
+        # because the second observation cleared _lease.
+        third = frame(seq=3, captured=1250)
+        self.assertEqual(
+            offer(loop, third, now=1300).reason,
+            "previous_inference_worker_not_stopped",
+        )
+        self.assertTrue(loop.metrics()["worker_stop_pending"])
+        self.assertFalse(finish(loop, old_lease, oldest, now=1320).offered)
+        fourth = frame(seq=4, captured=1350)
+        self.assertEqual(
+            offer(loop, fourth, now=1400,
+                  previous_worker_stopped=True).route, "reactive",
+        )
+        self.assertFalse(loop.metrics()["worker_stop_pending"])
+
+    def test_stop_preserves_worker_quarantine_until_host_ack(self):
+        loop = start()
+        lease = offer(loop)
+        self.assertEqual(lease.route, "reactive")
+        loop.stop()
+        self.assertTrue(loop.metrics()["worker_stop_pending"])
+        with self.assertRaises(RuntimeError):
+            loop.start(SCOPE, ["jump"], owner_approved=True)
+        self.assertFalse(loop.acknowledge_worker_stopped())
+        self.assertFalse(loop.acknowledge_worker_stopped(
+            host_confirmed_stopped=False))
+        self.assertTrue(loop.acknowledge_worker_stopped(
+            host_confirmed_stopped=True))
+        self.assertFalse(loop.acknowledge_worker_stopped(
+            host_confirmed_stopped=True))
+        loop.start(SCOPE, ["jump"], owner_approved=True)
+
+    def test_worker_quarantine_survives_burst_of_new_game_frames(self):
+        loop = start()
+        self.assertEqual(offer(loop).route, "reactive")
+        for sequence in range(2, 130):
+            capture = 1000 + (sequence - 1) * 90
+            decision = offer(
+                loop, frame(seq=sequence, captured=capture),
+                now=capture + 50,
+            )
+            self.assertEqual(
+                decision.reason, "previous_inference_worker_not_stopped",
+            )
+        self.assertTrue(loop.metrics()["worker_stop_pending"])
+        with self.assertRaises(ValueError):
+            loop.acknowledge_worker_stopped(host_confirmed_stopped=1)
+        self.assertTrue(loop.acknowledge_worker_stopped(
+            host_confirmed_stopped=True))
+        capture = 1000 + 129 * 90
+        self.assertEqual(
+            offer(loop, frame(seq=130, captured=capture),
+                  now=capture + 50).route,
+            "reactive",
+        )
+
+    def test_unverified_new_frame_cannot_claim_worker_stop(self):
+        loop = start()
+        offer(loop)
+        stale = frame(seq=2, captured=1150)
+        self.assertEqual(offer(loop, stale, now=1200).route, "skip")
+        self.assertEqual(
+            offer(loop, frame(seq=3, captured=1250), now=1300,
+                  host_verified=False, previous_worker_stopped=True).reason,
+            "trusted_observation_missing",
+        )
+        self.assertTrue(loop.metrics()["worker_stop_pending"])
+        self.assertEqual(
+            offer(loop, frame(seq=3, captured=1250), now=1300).reason,
+            "previous_inference_worker_not_stopped",
+        )
+
+
+
 if __name__ == "__main__":
     unittest.main()
