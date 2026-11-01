@@ -99,3 +99,23 @@ def test_a_major_dependency_bump_waits_for_a_run_on_her_pc():
     files = M.parse_diff(diff)
     assert M.major_bumps(files) == ["huggingface-hub >=0.21,<2 -> >=2.4.0,<3"]
     assert any("major dependency bump" in w for w in M.gate_failures(GOOD, PASSED, files))
+
+
+def test_merging_into_main_needs_the_repo_to_allow_it(monkeypatch):
+    monkeypatch.setattr(M, "gh", lambda *a, **k: "merged")
+    monkeypatch.setattr(M, "BASE", "main")
+    for allowed, ok in ((False, False), (True, True)):
+        monkeypatch.setattr(M, "ALLOW_MAIN", allowed)
+        try:
+            M.merge({**GOOD, "baseRefName": "main"})
+            assert ok
+        except RuntimeError as e:
+            assert not ok and "main" in str(e)
+    monkeypatch.setattr(M, "BASE", "*")                                  # review-only repos never merge
+    try:
+        M.merge({**GOOD, "baseRefName": "anything"})
+        raise AssertionError("merged in a review-only repo")
+    except RuntimeError:
+        pass
+    repos = json.loads(M.REPOS.read_text(encoding="utf-8"))["repos"]
+    assert repos[0]["repo"] == M.REPO and all(r["mode"] in ("merge", "review") for r in repos)

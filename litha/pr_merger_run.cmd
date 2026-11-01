@@ -9,4 +9,5 @@ echo %date% %time% start >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.pr_fixer --max 1 --python "%~1" >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 "%~1" -m litha.pr_merger --apply >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 "%~1" -m litha.pr_promote --apply >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+"%~1" -m litha.pr_merger --apply --others >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 echo %date% %time% end rc=%errorlevel% >> "%USERPROFILE%\.star\pr-merger\run.log"

@@ -22,8 +22,10 @@ import subprocess
 import sys
 import time
 
-REPO = "oncoursemail/Star-AI-Private"
+REPOS = Path(__file__).with_name("repos.json")                # every repo she looks after (first = STAR's home)
+REPO = "oncoursemail/Star-AI-Project"
 BASE = "star/next"
+ALLOW_MAIN = False                                             # set per repo from repos.json (allow_main)
 LOG = Path.home() / ".star" / "pr-merger" / "decisions.jsonl"
 CHUNK = 12_000          # diff characters per Litha call (the GPU nodes run 8k-token contexts)
 OK_CHECKS = {"SUCCESS", "SKIPPED", "NEUTRAL"}
@@ -36,7 +38,7 @@ SECRET = re.compile(r"(?<![=\w.~^<>-])(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\
                     r"|\b(api[_-]?key|token|secret|password)\s*[:=]\s*['\"][^'\"\s]{12,}['\"]", re.I)
 DOC_IP = re.compile(r"\b(10\.0\.0\.\d+|192\.168\.0\.\d+|192\.168\.1\.\d+)\b")   # textbook examples, not ours
 
-RUBRIC = """You are Litha, reviewing one pull request for STAR's repository before it is merged into star/next.
+RUBRIC = """You are Litha, reviewing one pull request for the owner's repository before it is merged.
 Judge only from the diff below. Check: does the change do what the title says; could it break running code
 (wrong logic, missing import, changed function signature with old callers, removed behaviour, crash on empty input,
 race, resource leak); are there tests for the new behaviour; dead or debug code; anything unsafe (secrets, shell
@@ -62,7 +64,8 @@ FIELDS = "number,title,isDraft,baseRefName,headRefName,headRefOid,mergeable,merg
 def open_prs(number: int | None = None) -> list[dict]:
     if number:
         return [json.loads(gh("pr", "view", str(number), "--repo", REPO, "--json", FIELDS))]
-    return json.loads(gh("pr", "list", "--repo", REPO, "--base", BASE, "--state", "open", "--limit", "200",
+    return json.loads(gh("pr", "list", "--repo", REPO, *([] if BASE == "*" else ["--base", BASE]), "--state", "open",
+                         "--limit", "200",
                          "--json", FIELDS))
 
 
@@ -119,7 +122,7 @@ def major_bumps(files: dict) -> list[str]:
 def gate_failures(pr: dict, checks: list[dict], files: dict[str, dict]) -> list[str]:
     """Why this PR may not be merged, from facts only ([] = all hard gates pass)."""
     why = []
-    if pr.get("baseRefName") != BASE:
+    if BASE != "*" and pr.get("baseRefName") != BASE:
         why.append(f"base is {pr.get('baseRefName')}, only {BASE} is allowed")
     if pr.get("isDraft"):
         why.append("draft")
@@ -362,8 +365,10 @@ def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_f
 
 
 def merge(pr: dict) -> str:
-    if pr.get("baseRefName") != BASE:                            # belt and braces: never main
+    if BASE == "*" or pr.get("baseRefName") != BASE:             # belt and braces
         raise RuntimeError("refusing a merge outside " + BASE)
+    if BASE == "main" and not ALLOW_MAIN:                        # main only where the owner allowed it (repos.json)
+        raise RuntimeError("refusing a merge into main of " + REPO)
     return gh("pr", "merge", str(pr["number"]), "--repo", REPO, "--merge", "--match-head-commit", pr["headRefOid"])
 
 
@@ -428,13 +433,56 @@ def replay_hunt(n: int) -> dict:
     return score
 
 
+def others(apply: bool) -> int:
+    """The owner's other repos: same gates and review. No local clone there, so no test proofs and no bug hunt: an
+    unproven high-risk claim keeps holding. mode review = log ready/hold only, never merge."""
+    global REPO, BASE, ALLOW_MAIN
+    home = (REPO, BASE, ALLOW_MAIN)
+    try:
+        for entry in json.loads(REPOS.read_text(encoding="utf-8"))["repos"][1:]:
+            REPO, BASE, ALLOW_MAIN = entry["repo"], entry.get("base", "main"), bool(entry.get("allow_main"))
+            can_merge = apply and entry.get("mode") == "merge"
+            try:
+                prs = open_prs()
+            except RuntimeError as e:
+                print(f"{REPO}: cannot list PRs: {str(e)[:150]}", flush=True)
+                continue
+            merged = 0
+            for pr in prs:
+                if pr.get("isDraft"):
+                    continue
+                try:
+                    row = decide(pr, prove_fn=None, hunt_fn=None)
+                except Exception as e:  # noqa: BLE001 - one bad PR must not stop the queue
+                    row = {"pr": pr["number"], "action": "hold", "reasons": [f"error: {str(e)[:200]}"]}
+                if row["action"] == "merge" and can_merge:
+                    try:
+                        merge(pr)
+                        row["merged"] = True
+                        merged += 1
+                    except Exception as e:  # noqa: BLE001
+                        row.update(action="hold", reasons=[f"merge failed: {str(e)[:200]}"])
+                elif row["action"] == "merge":
+                    row["action"] = "ready"                     # review mode: she would merge it
+                log({"repo": REPO, **row})
+                print(f"{REPO}#{row['pr']} {row['action'].upper()}{' (merged)' if row.get('merged') else ''}: "
+                      f"{'; '.join(row['reasons'][:2]) or (row.get('review') or {}).get('summary', '')[:140]}", flush=True)
+            print(f"{REPO}: merged {merged}" if can_merge else f"{REPO}: review only", flush=True)
+    finally:
+        REPO, BASE, ALLOW_MAIN = home
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m litha.pr_merger")
     ap.add_argument("--apply", action="store_true", help="really merge the PRs that pass (default: dry run)")
     ap.add_argument("--pr", type=int, help="only this PR")
     ap.add_argument("--replay", type=int, help="blind replay on this many closed PRs")
     ap.add_argument("--replay-hunt", type=int, help="false holds of the bug hunt on this many merged PRs")
+    ap.add_argument("--others", action="store_true", help="every other repo in repos.json (review or merge mode)")
     a = ap.parse_args(argv)
+    if a.others:
+        return others(a.apply)
     if a.replay_hunt:
         print(json.dumps(replay_hunt(a.replay_hunt)))
         return 0
