@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "litha-local-ai-bridge"
+version = "0.1.1"
+description = "Opt-in, loopback-first adapters for Lemonade and AnythingLLM"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+litha-bridge = "litha_bridge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+litha_bridge = ["py.typed"]

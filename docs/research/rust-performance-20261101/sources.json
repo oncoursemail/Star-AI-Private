@@ -1,0 +1,366 @@
+{
+  "schema_version": 1,
+  "scope": "Rust and mixed-language performance for STAR",
+  "sources": [
+    {
+      "id": "PYO3_PERF",
+      "title": "PyO3 performance",
+      "url": "https://pyo3.rs/main/performance.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Boundary allocations and conversions matter; detach for Rust-only computation.",
+      "star_decision": "Batch operations and measure the complete Python call, not just the kernel.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "PYO3_CURRENT",
+      "title": "PyO3 current ABI features",
+      "url": "https://pyo3.rs/main/features",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Current documentation distinguishes abi3 and abi3t.",
+      "star_decision": "Do not apply moving-documentation features to the pinned 0.27.2 dependency without an explicit upgrade.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "PYO3_PIN",
+      "title": "PyO3 0.27.2 features",
+      "url": "https://pyo3.rs/v0.27.2/features.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Version-specific extension-module and abi3 feature documentation.",
+      "star_decision": "Use this versioned reference with the existing Cargo manifest.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "MATURIN",
+      "title": "Maturin distribution",
+      "url": "https://www.maturin.rs/distribution.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Wheel portability depends on platform libraries, tags and build environment.",
+      "star_decision": "A successful local build does not establish clean-machine Windows or Linux compatibility.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "PYTHON_ABI",
+      "title": "CPython C API and ABI stability",
+      "url": "https://docs.python.org/3/c-api/stable.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "abi3 and the Python 3.15 abi3t stable ABI have different compatibility rules.",
+      "star_decision": "Test interpreter/build flavors separately; stable ABI is not a cross-OS binary format.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "PYTHON_FT",
+      "title": "CPython free-threading guide",
+      "url": "https://docs.python.org/3/howto/free-threading-python.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Unsupported native extensions can re-enable the GIL.",
+      "star_decision": "Record the actual runtime GIL state after imports; never assume an interpreter label proves parallelism.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "RUST_PROFILES",
+      "title": "Cargo profiles",
+      "url": "https://doc.rust-lang.org/cargo/reference/profiles.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Release optimizations, LTO and codegen units are configurable; higher optimization is not universally faster.",
+      "star_decision": "Keep existing thin LTO as a baseline and compare controlled profiles.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "RUST_PGO",
+      "title": "rustc profile-guided optimization",
+      "url": "https://doc.rust-lang.org/rustc/profile-guided-optimization.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "PGO uses instrumented execution profiles in a subsequent optimized build.",
+      "star_decision": "Train profiles on representative development workloads, then validate on held-out workloads.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "RUST_CODEGEN",
+      "title": "rustc code generation options",
+      "url": "https://doc.rust-lang.org/rustc/codegen-options/index.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Target CPU/features and code generation choices affect generated binaries.",
+      "star_decision": "Separate portable release builds from machine-specific experiments.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "TOKIO",
+      "title": "Tokio spawn_blocking",
+      "url": "https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Running blocking tasks are not stopped by abort; CPU tasks need bounded concurrency.",
+      "star_decision": "Use cooperative deadlines or isolated processes for hard termination, and separate CPU from I/O scheduling.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "RAYON",
+      "title": "Rayon ThreadPoolBuilder",
+      "url": "https://docs.rs/rayon/latest/rayon/struct.ThreadPoolBuilder.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "A configurable worker pool can bound CPU parallelism.",
+      "star_decision": "Use a shared measured CPU budget instead of one unrestricted pool per agent.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "REQWEST",
+      "title": "Reqwest Client",
+      "url": "https://docs.rs/reqwest/latest/reqwest/struct.Client.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "The client maintains a connection pool and is intended for reuse.",
+      "star_decision": "A future Rust network service should reuse clients and retain privacy/URL policy.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "ASYNCIO",
+      "title": "Python asyncio runners",
+      "url": "https://docs.python.org/3/library/asyncio-runner.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "asyncio.run manages a loop and executor lifecycle; Runner supports reuse.",
+      "star_decision": "Profile lifecycle overhead before proposing a Rust service rewrite.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "SQLITE_FTS",
+      "title": "SQLite FTS5",
+      "url": "https://www.sqlite.org/fts5.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "FTS5 provides native full-text indexing, BM25 and maintenance controls.",
+      "star_decision": "Optimize current native SQL queries before adding a parallel search engine.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "SQLITE_WAL",
+      "title": "SQLite write-ahead logging",
+      "url": "https://www.sqlite.org/wal.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "WAL enables concurrent readers and a writer with checkpointing and same-host requirements.",
+      "star_decision": "Do not treat WAL as unlimited multiwriter concurrency or place its shared-memory design on a network filesystem.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "NUMPY",
+      "title": "NumPy global configuration",
+      "url": "https://numpy.org/doc/stable/reference/global_state.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Linear algebra may use threaded BLAS beneath Python.",
+      "star_decision": "Coordinate BLAS, native search and inference thread budgets.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "ARROW",
+      "title": "Apache Arrow columnar format",
+      "url": "https://arrow.apache.org/docs/format/Columnar.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Contiguous typed buffers support data locality and shared-memory access.",
+      "star_decision": "Use explicit ownership and schema/version metadata; zero-copy is not a universal promise.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "TANTIVY",
+      "title": "Tantivy repository",
+      "url": "https://github.com/quickwit-oss/tantivy",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Rust full-text search library with a Lucene-inspired design.",
+      "star_decision": "Candidate only when the existing FTS5 index fails measured scale or feature requirements.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "USEARCH",
+      "title": "USearch repository",
+      "url": "https://github.com/unum-cloud/USearch",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Native similarity search with multiple bindings, including Rust.",
+      "star_decision": "Candidate for a separate approximate-search experiment; compare recall and binding-specific features.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "TOKENIZERS",
+      "title": "Hugging Face Tokenizers",
+      "url": "https://huggingface.co/docs/tokenizers/index",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Rust-backed tokenization with alignment tracking.",
+      "star_decision": "Reuse compatible native tokenizers rather than reimplementing a model-specific tokenizer.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "SAFETENSORS",
+      "title": "SafeTensors repository",
+      "url": "https://github.com/safetensors/safetensors",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Tensor storage format designed for safe tensor loading and efficient access.",
+      "star_decision": "Treat tensor parsing separately from executable model repositories and trusted model identity.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "LLAMA_SERVER",
+      "title": "llama.cpp server",
+      "url": "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Native inference with prompt-cache, scheduling and decoding controls.",
+      "star_decision": "Benchmark installed-version features with fixed model, template and quantization.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "LLAMA_BENCH",
+      "title": "llama.cpp benchmark",
+      "url": "https://github.com/ggml-org/llama.cpp/blob/master/tools/llama-bench/README.md",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Separates prompt-processing and generation tests; tokenization and sampling are excluded from its timings.",
+      "star_decision": "Use engine benchmarks alongside, not instead of, end-to-end accepted-task latency.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "CANDLE",
+      "title": "Hugging Face Candle",
+      "url": "https://github.com/huggingface/candle/blob/main/README.md",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Rust ML framework with native CPU and GPU backends.",
+      "star_decision": "Evaluate narrow model-serving deployments, not an automatic replacement for a mature LLM backend.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "BURN",
+      "title": "Burn backend/device guide",
+      "url": "https://burn.dev/books/burn/building-blocks/backend.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Supports device/backend selection through supported Cargo features.",
+      "star_decision": "Require model/operator/precision equivalence before comparing runtime implementations.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "ORT_IO",
+      "title": "ONNX Runtime I/O binding",
+      "url": "https://onnxruntime.ai/docs/performance/tune-performance/iobinding.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Input/output placement and binding can avoid unnecessary device transfers.",
+      "star_decision": "Measure copies and synchronization for embeddings, rerankers and vision workloads.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "ORT_THREADS",
+      "title": "ONNX Runtime threading",
+      "url": "https://onnxruntime.ai/docs/performance/tune-performance/threading.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Intra-op and inter-op thread pools are separate performance controls.",
+      "star_decision": "Avoid nested oversubscription during concurrent local model tasks.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "CXX",
+      "title": "CXX Rust/C++ bridge",
+      "url": "https://cxx.rs/",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Typed Rust/C++ interop with generated boundary checks.",
+      "star_decision": "Reuse established C++ engines through narrow bindings when justified; it does not prove arbitrary foreign code safe.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "NAPI",
+      "title": "NAPI-RS getting started",
+      "url": "https://napi.rs/docs/introduction/getting-started",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Native Rust extensions for a Node.js host.",
+      "star_decision": "Use only for a real Node-hosted compute bottleneck, not directly from STAR browser React components.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "WASMTIME",
+      "title": "Wasmtime security",
+      "url": "https://docs.wasmtime.dev/security.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Documents the runtime sandbox and its security assumptions.",
+      "star_decision": "Consider restricted untrusted plugins with explicit host capabilities and resource limits, not native in-process execution.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "FUZZ",
+      "title": "Rust Fuzz Book",
+      "url": "https://rust-fuzz.github.io/book/cargo-fuzz.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "cargo-fuzz integrates coverage-guided fuzzing through libFuzzer.",
+      "star_decision": "Fuzz parsers and boundary validation with bounded fixtures; fuzzing is not a proof of correctness.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "DENY",
+      "title": "cargo-deny",
+      "url": "https://embarkstudios.github.io/cargo-deny/",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Checks dependency advisories, sources, bans and licenses.",
+      "star_decision": "Record database freshness and distinguish an unavailable advisory check from a clean result.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "MIRI",
+      "title": "Rust Miri",
+      "url": "https://github.com/rust-lang/miri",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Interpreter-based detection of certain undefined behaviors.",
+      "star_decision": "Apply to supported pure Rust tests; native FFI and driver paths still need separate checks.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "CRITERION",
+      "title": "Criterion.rs",
+      "url": "https://bheisler.github.io/criterion.rs/book/",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Statistical microbenchmarking with repeated measurements.",
+      "star_decision": "Keep kernel measurements distinct from full-call and application measurements.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "LEMONADE",
+      "title": "Lemonade FAQ",
+      "url": "https://lemonade-server.ai/docs/guide/faq/",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Documents comparable llama.cpp performance for the same model and quantization, and last-completion statistics.",
+      "star_decision": "Treat runtime management as the integration benefit until target-host benchmarks establish a speed benefit.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    },
+    {
+      "id": "RUST_FFI",
+      "title": "Rustonomicon foreign function interface",
+      "url": "https://doc.rust-lang.org/nomicon/ffi.html",
+      "checked_date": "2026-11-01",
+      "source_type": "primary_documentation_or_maintainer_repository",
+      "finding": "Foreign ownership, representation and unwinding need explicit boundary contracts.",
+      "star_decision": "Avoid ad hoc raw pointer interfaces and panic/exception propagation assumptions.",
+      "version_caveat": "Moving documentation unless the URL itself pins a version; not a dependency-upgrade instruction."
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+Command: <USER_HOME>\.cargo\bin\rustc.exe --edition=2021 -O --test <PUBLICATION_WORKSPACE>\repo\experiments\star-rust-20261101\historical\rust-pilot\rrf_pilot.rs -o <PUBLICATION_WORKSPACE>\build\rrf_tests.exe
+Exit code: 0
+
+

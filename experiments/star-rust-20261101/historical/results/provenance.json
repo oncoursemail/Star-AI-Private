@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-30",
+  "original_archive_sha256": "5e0e8f07008db2d2e5b3df2ac4e48ce7cccca0a00242a83963e6d1fb6d96f082",
+  "original_packaged_files": 14,
+  "original_offline_tests_passed": 25,
+  "reviewed_offline_tests_passed": 42,
+  "bridge_test_environment": "Assistant Linux container; Python 3.13.5; mock HTTP servers",
+  "rust_test_environment": "User Main Windows 11; Python 3.15.0; rustc 1.99.1; synthetic inputs only",
+  "rust_source_and_harness_sha256_verified_against_tested_files": {
+    "rrf_pilot.rs": "c032f4d88cf888889a206f479520cf52d5e55358d7e416e9019db69bd8aad945",
+    "benchmark.py": "c841f27b4133082e6de72e616ef7cdcc666933e6c3943426cff82988dcb93df0"
+  },
+  "star_core_forge_read_only_inspection": {
+    "path": "<CORE_FORGE_CHECKOUT>",
+    "commit_short": "e941c121",
+    "branch": "feat/star-core-forge-local-20261025",
+    "tracked_rust_files_found": 0,
+    "working_tree_at_inspection": "clean",
+    "context_layout_sha256": "f11840f6da6ba3ff84e627fe6e4bed7ab40b66122eb0f3375dc619475f90024b",
+    "starkb_search_sha256": "a43f1871b01d44562a97febbf9a3b37663e6d28e383539dc509614aed5ff8c8e"
+  },
+  "live_star_modified": false,
+  "github_commits_created": 0,
+  "live_inference_benchmarked": false
+}
