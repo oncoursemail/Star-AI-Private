@@ -60,7 +60,11 @@ Only failures controlled by the solution are eligible for repair: selected G0 co
 (G6), compile/type failures (G1/G2) and executable-test failures (G3). The loop never asks the solver to repair its
 way around decontamination/duplicate gates or weak-test sanity (G4).
 
-Kept rows record the repair round, failure trigger, before/after code hashes, a hash of the compact feedback, and
+Mechanical failures use a targeted local repair on the first retry. A semantic G3 test failure uses **fresh
+re-exploration** immediately: the failed solution is deliberately omitted from the new solver context to reduce
+anchoring on the same wrong approach. Any second or later retry also switches to fresh re-exploration.
+
+Kept rows record the repair round, strategy, failure trigger, before/after code hashes, a hash of the compact feedback, and
 repair-token cost. This makes repaired examples auditable without copying evaluator internals into model-facing
 training text.
 
