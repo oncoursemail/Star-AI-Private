@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import math
 import re
 from threading import RLock
-from typing import Mapping
+from typing import Mapping, cast
 
 from star.stream_rehearsal_recorder import StreamRehearsalRecorder
 
@@ -44,7 +44,7 @@ def _number(value: object, *, upper: float = 1e13) -> float:
     if type(value) not in (int, float):
         raise ValueError("host timestamp must be a finite number")
     try:
-        n = float(value)
+        n = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError("invalid host timestamp") from exc
     if not math.isfinite(n) or not 0 <= n <= upper:
