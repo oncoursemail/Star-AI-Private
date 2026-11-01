@@ -42,13 +42,17 @@ class TestStreamRehearsalRecorder(unittest.TestCase):
         record(r, "pcm_first_audible", 1180, opaque_id="s1")
         record(r, "avatar_frame_rendered", 1188, opaque_id="s1")
         record(r, "avatar_frame_rendered", 1190, opaque_id="s1")
-        record(r, "pcm_stopped", 1200, opaque_id="s1")
         record(r, "obs_stats_sampled", 1210, skipped_frames=3, total_frames=1000)
         record(r, "obs_stats_sampled", 1230, skipped_frames=4, total_frames=1100)
         for i in range(120):
-            record(r, "frame_presented", 1240 + i,
+            at = 1240 + i * 16
+            record(r, "frame_presented", at,
                    duration_ms=16 if i != 119 else 45)
-        r.end(at_ms=1400, host_verified=True)
+            if i in (9, 29, 49, 69, 89, 109):
+                record(r, "avatar_frame_rendered", at + 1, opaque_id="s1")
+        record(r, "pcm_stopped", 3200, opaque_id="s1")
+        record(r, "gpu_peak_measured", 3300, gpu_peak_mib=4100)
+        r.end(at_ms=3400, host_verified=True)
         report = r.report()
         self.assertTrue(report["clean_shutdown"])
         self.assertEqual(report["scene_to_action_p95_ms"], 80.0)
@@ -57,10 +61,15 @@ class TestStreamRehearsalRecorder(unittest.TestCase):
         self.assertEqual(report["obs_skipped_fraction"], 0.01)
         self.assertEqual(report["max_frame_time_ms"], 45.0)
         self.assertEqual(report["frame_samples"], 120)
+        self.assertEqual(report["avatar_frame_samples"], 8)
+        self.assertLessEqual(report["avatar_frame_gap_max_ms"], 550)
+        self.assertEqual(report["audible_frame_samples"], 120)
+        self.assertTrue(report["gpu_peak_measured"])
+        self.assertEqual(report["gpu_peak_mib"], 4100)
         self.assertEqual(report["workers_exited"], 1)
         run = r.to_realtime_run(
             pair_id="same_scene_1", variant="baseline", game_id="obby",
-            game_version="1", gpu_peak_mib=4100,
+            game_version="1",
         )
         self.assertIsInstance(run, RealtimeRun)
         self.assertEqual(run.first_audio_ms, 70)
@@ -195,7 +204,7 @@ class TestStreamRehearsalRecorder(unittest.TestCase):
         with self.assertRaises(ValueError):
             r.to_realtime_run(
                 pair_id="pair", variant="candidate", game_id="g",
-                game_version="1", gpu_peak_mib=4000,
+                game_version="1",
             )
 
     def test_bounded_samples_and_valid_events_do_not_mutate_after_limit(self):
@@ -224,8 +233,153 @@ class TestStreamRehearsalRecorder(unittest.TestCase):
         with self.assertRaises(ValueError):
             r.to_realtime_run(
                 pair_id="p", variant="candidate", game_id="g",
-                game_version="v", gpu_peak_mib=4000,
+                game_version="v",
             )
+
+    def _complete_host_run(self, *, avatar_times=(210, 550, 900, 1250, 1600, 1950, 2200),
+                           gpu_peak=4200, queue_ms=100, audible_ms=150,
+                           stopped_ms=2300, max_avatar_frame_gap_ms=550):
+        r = recorder(max_avatar_frame_gap_ms=max_avatar_frame_gap_ms)
+        record(r, "speech_queued", queue_ms, opaque_id="speech1")
+        record(r, "pcm_first_audible", audible_ms, opaque_id="speech1")
+        # Timestamp sorted across both real game presentation and avatar output.
+        frames = [
+            (200 + i * 16, "frame") for i in range(120)
+        ]
+        frames.extend((t, "avatar") for t in avatar_times)
+        for t, kind in sorted(frames):
+            if kind == "avatar":
+                record(r, "avatar_frame_rendered", t, opaque_id="speech1")
+            else:
+                record(r, "frame_presented", t, duration_ms=16.67)
+        record(r, "pcm_stopped", stopped_ms, opaque_id="speech1")
+        if gpu_peak is not None:
+            record(r, "gpu_peak_measured", 2400, gpu_peak_mib=gpu_peak)
+        r.end(at_ms=2410, host_verified=True)
+        return r
+
+    def test_export_fails_when_gpu_measurement_is_missing(self):
+        r = self._complete_host_run(gpu_peak=None)
+        self.assertTrue(r.report()["clean_shutdown"])
+        self.assertFalse(r.report()["gpu_peak_measured"])
+        with self.assertRaisesRegex(ValueError, "host-verified GPU peak"):
+            r.to_realtime_run(
+                pair_id="pair", variant="candidate",
+                game_id="g", game_version="v",
+            )
+        with self.assertRaises(TypeError):
+            r.to_realtime_run(
+                pair_id="pair", variant="candidate",
+                game_id="g", game_version="v", gpu_peak_mib=0,
+            )  # type: ignore[call-arg]
+
+    def test_gpu_event_is_host_verified_one_time_bounded_and_final(self):
+        r = recorder()
+        with self.assertRaises(PermissionError):
+            r.record("gpu_peak_measured", at_ms=10, gpu_peak_mib=4200)
+        with self.assertRaises(ValueError):
+            record(r, "gpu_peak_measured", 10, gpu_peak_mib=4200)
+        record(r, "frame_presented", 11, duration_ms=16.67)
+        with self.assertRaisesRegex(ValueError, "before completed audible speech"):
+            record(r, "gpu_peak_measured", 12, gpu_peak_mib=4200)
+        record(r, "speech_queued", 13, opaque_id="s")
+        record(r, "pcm_first_audible", 14, opaque_id="s")
+        record(r, "pcm_stopped", 15, opaque_id="s")
+        for bad in (float("nan"), True, 0, 262145):
+            with self.assertRaises(ValueError):
+                record(r, "gpu_peak_measured", 16, gpu_peak_mib=bad)
+        record(r, "gpu_peak_measured", 17, gpu_peak_mib=4200)
+        with self.assertRaises(ValueError):
+            record(r, "gpu_peak_measured", 18, gpu_peak_mib=1)
+        with self.assertRaisesRegex(ValueError, "after final GPU peak"):
+            record(r, "frame_presented", 19, duration_ms=20)
+        self.assertEqual(r.report()["frame_samples"], 1)
+        self.assertEqual(r.report()["gpu_peak_mib"], 4200)
+        self.assertEqual(r.report()["events"], 5)
+
+    def test_idle_frames_after_audio_do_not_qualify_realtime_game_fps(self):
+        r = recorder()
+        record(r, "speech_queued", 100, opaque_id="voice")
+        record(r, "pcm_first_audible", 150, opaque_id="voice")
+        record(r, "avatar_frame_rendered", 155, opaque_id="voice")
+        record(r, "pcm_stopped", 160, opaque_id="voice")
+        for i in range(120):
+            record(r, "frame_presented", 200 + i * 16, duration_ms=16.67)
+        record(r, "gpu_peak_measured", 2200, gpu_peak_mib=3000)
+        r.end(at_ms=2300, host_verified=True)
+        self.assertEqual(r.report()["frame_samples"], 120)
+        self.assertEqual(r.report()["audible_frame_samples"], 0)
+        with self.assertRaisesRegex(ValueError, "audible-game frames"):
+            r.to_realtime_run(
+                pair_id="pair", variant="candidate",
+                game_id="g", game_version="v",
+            )
+
+    def test_benchmark_uses_only_audio_concurrent_frame_durations(self):
+        r = recorder()
+        record(r, "speech_queued", 100, opaque_id="speech")
+        record(r, "pcm_first_audible", 110, opaque_id="speech")
+        for i in range(120):
+            at = 200 + i * 16
+            record(r, "frame_presented", at, duration_ms=20)
+            if i % 10 == 0:
+                record(r, "avatar_frame_rendered", at + 1, opaque_id="speech")
+        record(r, "pcm_stopped", 2150, opaque_id="speech")
+        for i in range(30):
+            record(r, "frame_presented", 2200 + i * 16, duration_ms=2)
+        record(r, "gpu_peak_measured", 2800, gpu_peak_mib=4050)
+        r.end(at_ms=2810, host_verified=True)
+        self.assertEqual(r.report()["frame_samples"], 150)
+        self.assertEqual(r.report()["audible_frame_samples"], 120)
+        run = r.to_realtime_run(
+            pair_id="pair", variant="candidate",
+            game_id="g", game_version="v",
+        )
+        self.assertEqual(len(run.frame_times_ms), 120)
+        self.assertEqual(set(run.frame_times_ms), {20})
+
+    def test_missing_avatar_is_not_eligible_for_streaming_comparison(self):
+        r = self._complete_host_run(avatar_times=())
+        self.assertTrue(r.report()["clean_shutdown"])
+        self.assertEqual(r.report()["avatar_frame_samples"], 0)
+        with self.assertRaisesRegex(ValueError, "missing or frozen avatar"):
+            r.to_realtime_run(
+                pair_id="pair", variant="candidate",
+                game_id="g", game_version="v",
+            )
+
+    def test_one_early_avatar_frame_then_long_freeze_is_rejected(self):
+        r = self._complete_host_run(avatar_times=(210,))
+        self.assertEqual(r.report()["avatar_frame_gap_max_ms"], 2090)
+        with self.assertRaisesRegex(ValueError, "missing or frozen avatar"):
+            r.to_realtime_run(
+                pair_id="pair", variant="candidate",
+                game_id="g", game_version="v",
+            )
+
+    def test_continuous_audio_avatar_cadence_allows_export(self):
+        r = self._complete_host_run()
+        self.assertEqual(r.report()["avatar_frame_gap_max_ms"], 350)
+        run = r.to_realtime_run(
+            pair_id="pair", variant="candidate",
+            game_id="g", game_version="v",
+        )
+        self.assertEqual(run.first_audio_ms, 50)
+        self.assertEqual(run.gpu_peak_mib, 4200)
+        self.assertEqual(len(run.frame_times_ms), 120)
+
+    def test_avatar_cadence_tunable_and_strict_validation(self):
+        with self.assertRaises(ValueError):
+            recorder(max_avatar_frame_gap_ms=0)
+        with self.assertRaises(ValueError):
+            recorder(max_avatar_frame_gap_ms=float("nan"))
+        with self.assertRaises(ValueError):
+            recorder(max_avatar_frame_gap_ms=True)
+        r = self._complete_host_run(avatar_times=(210, 590, 970, 1350, 1730, 2110))
+        self.assertEqual(r.report()["avatar_frame_gap_max_ms"], 380)
+        self.assertIsNotNone(r.to_realtime_run(
+            pair_id="pair", variant="candidate", game_id="g", game_version="v",
+        ))
 
     def test_concurrent_duplicate_scene_only_one_host_event_wins(self):
         r = recorder()
