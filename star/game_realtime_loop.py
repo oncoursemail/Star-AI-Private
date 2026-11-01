@@ -84,12 +84,16 @@ class RealtimeGameLoop:
         self._scope_key = ""
         self._lease: GameThinkLease | None = None
         self._lease_frame: GameFrame | None = None
+        # A superseded or stopped advisory can still have a live worker.
+        # Clearing its lease is NOT evidence that its process terminated.
+        self._worker_stop_pending = False
         self._permit: ActionPermit | None = None
         self._last_frame_sequence = 0
         self._last_capture_ms: float | None = None
         self._last_host_ms: float | None = None
         self._counts = dict(offered=0, skipped=0, superseded=0,
-                            finished=0, rejected=0, claimed=0, released=0)
+                            finished=0, rejected=0, claimed=0, released=0,
+                            worker_stops_confirmed=0)
 
     def start(
         self, scope: GameScope, action_ids: Sequence[str], *,
@@ -105,8 +109,9 @@ class RealtimeGameLoop:
              scope.episode_id).encode("utf-8")
         ).hexdigest()
         with self._lock:
-            if self._scope is not None or self._permit is not None:
-                raise RuntimeError("stop and confirm all key releases first")
+            if (self._scope is not None or self._permit is not None
+                    or self._worker_stop_pending):
+                raise RuntimeError("stop, attest worker termination, and release keys first")
             # Action gate refuses to start if a previous ticket still awaits
             # host-confirmed key-up, including after revoke().
             self._gate.start(scope, action_ids, owner_approved=True)
@@ -126,12 +131,30 @@ class RealtimeGameLoop:
     def stop(self) -> None:
         """Invalidate model work; pending host keys still require confirmation."""
         with self._lock:
+            if self._lease is not None:
+                self._worker_stop_pending = True
             self._lease = None
             self._lease_frame = None
             self._scope = None
             self._scope_key = ""
             self._router.disable()
             self._gate.revoke()
+
+    def acknowledge_worker_stopped(self, *, host_confirmed_stopped: bool = False) -> bool:
+        """Clear an invalidated worker only after independent termination proof.
+
+        Never infer termination from dropping a stale model response or
+        resetting a session. The trusted host owns the actual worker handle.
+        """
+        if type(host_confirmed_stopped) is not bool:
+            raise ValueError("host stop confirmation must be a strict boolean")
+        with self._lock:
+            if (not self._worker_stop_pending or not host_confirmed_stopped
+                    or self._lease is not None):
+                return False
+            self._worker_stop_pending = False
+            self._counts["worker_stops_confirmed"] += 1
+            return True
 
     def record_reactive_latency(
         self, *, sample_id: int, duration_ms: float, sample_host_ms: float,
@@ -191,13 +214,19 @@ class RealtimeGameLoop:
             self._last_host_ms = now
             self._last_frame_sequence = frame.sequence
             self._last_capture_ms = frame.captured_ms
-            had_inflight = self._lease is not None
-            if had_inflight:
+            if self._lease is not None:
                 self._counts["superseded"] += 1
+                self._worker_stop_pending = True
             self._lease = None
             self._lease_frame = None
-            if had_inflight and not previous_worker_stopped:
-                return self._skip("previous_inference_worker_not_stopped")
+            # Persistent quarantine: a second or third frame must NOT admit
+            # new inference simply because the first superseding frame
+            # discarded the prior lease. Only the host can attest termination.
+            if self._worker_stop_pending:
+                if not previous_worker_stopped:
+                    return self._skip("previous_inference_worker_not_stopped")
+                self._worker_stop_pending = False
+                self._counts["worker_stops_confirmed"] += 1
             if self._permit is not None:
                 return self._skip("pending_host_key_release")
             if not frame.focus_confirmed or not frame.playable:
@@ -344,4 +373,5 @@ class RealtimeGameLoop:
         with self._lock:
             return {**self._counts, "enabled": self._scope is not None,
                     "inflight": self._lease is not None,
+                    "worker_stop_pending": self._worker_stop_pending,
                     "awaiting_release": self._permit is not None}
