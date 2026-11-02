@@ -1,6 +1,7 @@
 """Adversarial paired-audio evidence: p95 alone cannot certify natural latency."""
 from __future__ import annotations
 
+import hashlib
 import math
 import unittest
 
@@ -16,7 +17,7 @@ def scenario(baseline: list[int], candidate: list[int]) -> tuple[StreamAuditTurn
         case = f"anonymous_case_{index}"
         for route, measured in (("baseline", before), ("candidate", after)):
             result.append(StreamAuditTurn(
-                case_id=case, context_sha256="a" * 64, route=route,
+                case_id=case, context_sha256=hashlib.sha256(case.encode()).hexdigest(), route=route,
                 should_reply=True, result="spoken", grounding="supported",
                 first_audible_ms=measured, overlap_ms=0, game_stall_ms=0,
                 reviewed=True,
