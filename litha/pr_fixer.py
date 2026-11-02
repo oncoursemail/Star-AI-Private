@@ -385,14 +385,25 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
     differ); each is applied, the failing test files run, and the one with the fewest failures (ties: the smallest
     edit) is the round's answer. The first candidate that passes ends it at once. k=1 is the one-answer loop."""
     k = max(1, k if k is not None else int(os.environ.get("LITHA_FIX_K") or K))
+    from litha import fix_reach                             # the traced run and the missing names (4j)
     ok, round_no = False, 0
-    feedback, why, best, kept_edits = "", "", len(FAILED.findall(out)) or 99, []
+    target = fails[0]["test"] if fails else ""
+
+    def score(text: str) -> tuple[int, int]:                 # fewer failures, then the target test failing later
+        return len(FAILED.findall(text)) or 99, -context_pack.failed_at(text, target)
+
+    feedback, why, best, kept_edits = "", "", score(out), []
     saved: dict[Path, bytes] = {}                           # file -> bytes when repair() started
     if not diff.strip():                                     # blind: show the wrong values instead of a diff
         deep = deep_failure(tree, fails, python)
         if deep:
-            fails = [{"test": fails[0]["test"], "section": deep}] + fails[1:]
+            block = failures(deep, 1)                        # its test's block, not the warnings summary after it
+            fails = [{"test": fails[0]["test"], "section": block[0]["section"] if block and block[0]["section"]
+                      else deep}] + fails[1:]
+    window = fix_reach.window(context_pack.WINDOW)            # 8192 when her first node has it (4l)
+    reached = fix_reach.trace(tree, fails[0]["test"], python) if fails else []   # what the failing test enters
     for round_no in range(1, ROUNDS + 1):
+        wide = not diff.strip() or round_no > 1              # no diff, or the diff-led round failed: real-fix context
         lessons = _lessons()
         tried: list[dict] = []
         applied = False                                      # the tree holds tried[-1]'s edits
@@ -402,21 +413,25 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
                 applied = False
             prompt = self_map.fitted("fix-python", lambda note: context_pack.fixer_prompt(  # + her weak spot, if it fits
                 tree, title=title, fails=fails, out=out, diff=source_diff(diff), lessons=lessons + note,
-                feedback=feedback, proposed=_proposed(tried)), 700)
+                feedback=feedback, proposed=_proposed(tried), window=window, reached=reached, wide=wide), 700,
+                window)
             try:
                 answer = json.loads(asker(prompt))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                if window > context_pack.WINDOW and "HTTP 400" in str(e):   # a 4096 node took it: narrow from now on
+                    window = context_pack.WINDOW
                 continue
             if not isinstance(answer, dict):
                 continue
             why = str(answer.get("why", ""))[:300]
-            edits, misses = answer.get("edits"), []
+            edits, misses = context_pack.inserts(tree, answer.get("edits")), []
             problems = _apply_saved(tree, edits, saved, misses)
             if misses and k == 1:                            # her find is nowhere: once more, with the nearest lines
-                again = context_pack.reask(tree, why, misses, asker)
+                again = context_pack.inserts(tree, context_pack.reask(tree, why, misses, asker))
                 if again:
                     problems = [p for p in problems if "'find' matched" not in p] + _apply_saved(tree, again, saved)
                     edits = [e for j, e in enumerate(edits or []) if j not in {m["index"] for m in misses}] + again
+            problems += context_pack.check_syntax(tree, edits)
             broken = _new_breakage(tree, saved, python)
             if broken:                                       # refused without a test run, undone like a failure
                 applied = True
@@ -428,7 +443,7 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
                 break
             applied = True
             tried.append({"why": why, "edits": edits, "problems": problems, "out": out,
-                          "now": len(FAILED.findall(out)) or 99, "size": _edit_size(edits)})
+                          "now": score(out), "size": _edit_size(edits)})
         if ok:
             break
         if not tried:
@@ -438,18 +453,21 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
         why, out, problems = tried[win]["why"], tried[win]["out"], tried[win]["problems"]
         others = "".join(f"\nAlso tried, no better: {json.dumps(t['edits'], ensure_ascii=False)[:300]}"
                          for j, t in enumerate(tried) if j != win)
-        if tried[win]["now"] < best:                        # fewer failures: keep this progress, fix the rest next
+        if tried[win]["now"] < best:                        # progress: keep it, fix the rest next
             if win != len(tried) - 1 or not applied:
                 _restore(tree, saved, kept_edits)
                 _apply_saved(tree, tried[win]["edits"], saved)
             best, fails = tried[win]["now"], failures(out) or fails
             kept_edits.append(tried[win]["edits"])
-            feedback = ("\nYour edits were kept: fewer tests fail now. The code above already includes them. "
-                        "Fix what still fails:\n" + out[-1500:] + "\n")
+            reached = fix_reach.trace(tree, fails[0]["test"], python) if fails else []
+            feedback = ("\nYour edits were kept: fewer tests fail now, or the test gets further. The code above "
+                        "already includes them. "
+                        "Fix what still fails:\n" + context_pack.tidy(out)[-1500:] + "\n")
             continue
         _restore(tree, saved, kept_edits)                    # no progress: back to the last kept state
         feedback = ("\nYour previous attempt did not work. " + ("Problems: " + "; ".join(problems) + ". " if problems
-                    else "") + "Test output after it:\n" + out[-1500:] + others + "\nTry a different fix.\n")
+                    else "") + "Test output after it:\n" + context_pack.tidy(out)[-1500:] + others
+                    + "\nTry a different fix.\n")
     if ok and _passes_without(tree, saved, tests, python):
         _restore(tree, saved, [])
         return False, FLAKY + "the failing tests pass without her edits too, so the edits fixed nothing", round_no
