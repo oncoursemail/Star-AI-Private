@@ -527,8 +527,9 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   is shown the blocks before hers already merged and the later ones as one note line each (her answers had merged 2-3
   neighbouring blocks at once: #174, #186). A bracket-only line she repeats from just after/before the block is cut
   when that balances her brackets; bracket misses are named (`you have 1 } too many ...`). A merge longer than her
-  1500-token answer is refused without asking (it came back as broken JSON 3 times). Files under `.github/`, `tests/`
-  (NO_TOUCH) merge only by these rules, never by her model; the 5-file limit counts only files her model must answer.
+  1500-token answer is refused without asking (it came back as broken JSON 3 times). Files under `tests/` merge only by these
+  rules, never by her model; `.github/` conflicts stay with a person (AGENTS.md: workflow changes get an independent
+  review); the 5-file limit counts only files her model must answer.
 - Bench (offline, `C:\Users\alexi\lw3c\bench`, not in the repo): (F) the 24 Studio PRs whose last attempt in
   fixes.jsonl failed on a conflict, rebuilt as `git merge` of the attempted head with main as of that attempt (97
   files, 202 blocks); (H) 127 merge commits on Studio PR branches whose re-merge conflicts, scored against what was
@@ -550,8 +551,9 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   | F all: model calls, seconds | 38, 951 s | 101, 1686 s (more files get past the gate) |
 
   Every resolved file passes rustfmt (Rust) / toml / json parsing in both columns. PR-level on F: 5 -> 10 of 24
-  (#233 #235 #245 #442 #448 + #357 #389 #397 #428 #434); 9 of the 10 PRs refused for `.github/` or >5 files now get
-  past the gate (#357, #406, #434's ci.yml merge by rule; #242's release.yml still needs a person). Steps measured on
+  (#233 #235 #245 #442 #448 + #357 #389 #397 #428 #434); the bench let `.github/` merge by rule (#357, #406, #434's
+  ci.yml), but the shipped gate refuses `.github/` again, so those stay with a person and the shipped gain is about
+  5 -> 8, not 10. Steps measured on
   F-tune: everything but the neighbour view 16 -> 32 files; showing the neighbours merged 32 -> 35. The bracket cut fixed 3 of 27
   bracket misses in her 90 answers. Read by hand: the one H block that regressed (be1229a ARCHITECTURE.md) is a line
   the branch itself had broken and the person repaired while merging; the rule kept the branch's edit.

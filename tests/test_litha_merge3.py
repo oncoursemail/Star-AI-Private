@@ -64,11 +64,12 @@ def test_she_sees_earlier_blocks_merged_and_later_ones_as_a_note():
     assert "    y(3);\n    mid();\n<<<<<<< HEAD\n    z(1);" in asked[1] and "y(1)" not in asked[1]
 
 
-def test_ci_files_merge_only_by_rule_and_the_file_limit_counts_her_files():
+def test_tests_merge_only_by_rule_ci_never_and_the_file_limit_counts_her_files():
     add = "<<<<<<< HEAD\n  - run: a\n||||||| base\n=======\n  - run: b\n>>>>>>> main\n"
     hard = "<<<<<<< HEAD\n  - run: a\n||||||| base\n  - run: x\n=======\n  - run: b\n>>>>>>> main\n"
-    assert F.triage([".github/workflows/ci.yml"], {".github/workflows/ci.yml": add}) == ""   # Studio #357, #406
-    assert "need a judgement" in F.triage([".github/workflows/ci.yml"], {".github/workflows/ci.yml": hard})
+    assert F.triage(["tests/test_a.py"], {"tests/test_a.py": add}) == ""
+    assert "need a judgement" in F.triage(["tests/test_a.py"], {"tests/test_a.py": hard})
+    assert "CI workflows" in F.triage([".github/workflows/ci.yml"], {".github/workflows/ci.yml": add})  # AGENTS.md
     files = {f"src/m{i}.rs": add for i in range(7)} | {"src/hard.rs": hard}
     assert F.triage(list(files), files) == ""                                  # 8 files, 1 needs her
     many = {f"src/h{i}.rs": hard for i in range(6)}

@@ -1466,13 +1466,15 @@ def mechanical_only(prompt: str) -> str:
 
 def triage(code: list[str], raws: dict[str, str]) -> str:
     """Why the PR's conflicts are not hers ('' = they are). Only files her model has to answer count: a guarded file
-    must merge mechanically, and at most 5 files may need her. On Studio's failed merges 9 of the 10 PRs the old rule
-    refused (.github/ or more than 5 files) get past this one; #242's release.yml still needs a person."""
+    must merge mechanically, at most 5 files may need her, and CI workflows (.github/) are never hers."""
     hers = [c for c in code if LOCKISH.search(c) or not CONFLICT.search(raws.get(c, "")) or
             any(p is None for p in planned(c, raws[c])[3])]
+    ci = [c for c in code if c.startswith(".github/")]
+    if ci:                                  # AGENTS.md: workflow changes pass an independent review, never her merge
+        return f"conflicts she does not resolve alone: {ci[:8]} are CI workflows (a person's review)"
     held = [c for c in hers if guarded(c) or LOCKISH.search(c)]
     if held:
-        return f"conflicts she does not resolve alone: {held[:8]} need a judgement (CI, tests and locks merge only mechanically)"
+        return f"conflicts she does not resolve alone: {held[:8]} need a judgement (tests and locks merge only mechanically)"
     if len(hers) > 5:
         return f"conflicts she does not resolve alone: {len(hers)} files need her model (1-5 handled): {hers[:8]}"
     return ""
