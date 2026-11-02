@@ -41,6 +41,19 @@ def _clock_ms(value: object) -> float:
     return now
 
 
+def _stream_epoch(value: object) -> int | None:
+    """Validate an optional *host-observed* OBS transition counter.
+
+    This only validates shape; the trusted desktop host must derive it from
+    lossless OBS output events, never from a model or untrusted game content.
+    """
+    if value is None:
+        return None
+    if type(value) is not int or not 0 <= value <= (2**63 - 1):
+        raise ValueError("stream_epoch must be a nonnegative 63-bit integer")
+    return value
+
+
 @dataclass(frozen=True)
 class GameThinkLease:
     """Host-only advice, not permission to launch a model or press a key."""
@@ -53,6 +66,8 @@ class GameThinkLease:
     authorized_to_play: bool = False
     # Snapshot of host-attested OBS state when this particular worker was offered.
     stream_live_at_offer: bool | None = None
+    # Optional strict, monotonic, host-attested OBS output transition epoch.
+    stream_epoch_at_offer: int | None = None
 
 
 class RealtimeGameLoop:
@@ -93,6 +108,8 @@ class RealtimeGameLoop:
         self._last_frame_sequence = 0
         self._last_capture_ms: float | None = None
         self._last_host_ms: float | None = None
+        self._last_stream_epoch: int | None = None
+        self._permit_stream_epoch: int | None = None
         self._counts = dict(offered=0, skipped=0, superseded=0,
                             finished=0, rejected=0, claimed=0, released=0,
                             worker_stops_confirmed=0)
@@ -129,6 +146,8 @@ class RealtimeGameLoop:
             self._last_frame_sequence = 0
             self._last_capture_ms = None
             self._last_host_ms = None
+            self._last_stream_epoch = None
+            self._permit_stream_epoch = None
 
     def stop(self) -> None:
         """Invalidate model work; pending host keys still require confirmation."""
@@ -185,6 +204,7 @@ class RealtimeGameLoop:
         stream_governor: StreamLoadGovernor | None = None,
         cpu_pressure: bool = False, gpu_pressure: bool = False,
         previous_worker_stopped: bool = False,
+        stream_epoch: int | None = None,
     ) -> GameThinkLease:
         """Offer an identity-bound fast-model slot for the newest game frame.
 
@@ -195,6 +215,7 @@ class RealtimeGameLoop:
         if not isinstance(frame, GameFrame):
             raise TypeError("frame must be GameFrame")
         now = _clock_ms(now_ms)
+        stream_epoch = _stream_epoch(stream_epoch)
         if any(type(flag) is not bool for flag in (
             host_verified, stream_live, cpu_pressure, gpu_pressure,
             previous_worker_stopped,
@@ -207,6 +228,13 @@ class RealtimeGameLoop:
                 return self._skip("disabled_or_wrong_game_session")
             if not host_verified:
                 return self._skip("trusted_observation_missing")
+            # Once OBS transition-event evidence is used in an episode, a
+            # later caller cannot silently drop it or rewind its counter.
+            if self._last_stream_epoch is not None:
+                if stream_epoch is None:
+                    return self._skip("stream_epoch_evidence_missing")
+                if stream_epoch < self._last_stream_epoch:
+                    return self._skip("stream_epoch_reversed")
             if self._last_host_ms is not None and now < self._last_host_ms:
                 return self._skip("host_clock_reversed")
             if (frame.sequence <= self._last_frame_sequence
@@ -261,7 +289,10 @@ class RealtimeGameLoop:
                 "reactive", "host_may_consider_fast_inference",
                 frame.sequence, expiry,
                 stream_live_at_offer=stream_live,
+                stream_epoch_at_offer=stream_epoch,
             )
+            if stream_epoch is not None:
+                self._last_stream_epoch = stream_epoch
             self._lease = lease
             self._lease_frame = frame
             self._counts["offered"] += 1
@@ -274,6 +305,7 @@ class RealtimeGameLoop:
         stream_live: bool = False,
         stream_governor: StreamLoadGovernor | None = None,
         cpu_pressure: bool = False, gpu_pressure: bool = False,
+        stream_epoch: int | None = None,
     ) -> ActionPermit:
         """Consume one lease and recheck deadline and stream before action gate.
 
@@ -283,6 +315,7 @@ class RealtimeGameLoop:
         if not isinstance(frame, GameFrame) or not isinstance(hint, GameActionHint):
             raise TypeError("expected GameFrame and GameActionHint")
         now = _clock_ms(now_ms)
+        stream_epoch = _stream_epoch(stream_epoch)
         if any(type(flag) is not bool for flag in (
             host_verified, stream_live, cpu_pressure, gpu_pressure,
         )):
@@ -318,6 +351,19 @@ class RealtimeGameLoop:
             # conditions. The final host state alone is not the offered state.
             if stream_live is not lease.stream_live_at_offer:
                 return reject("stream_state_changed_during_inference")
+            # A boolean can miss OFF->ON->OFF during inference. The trusted
+            # host must count *every* OBS output state transition and attest
+            # the same epoch at offer and completion.
+            if (lease.stream_epoch_at_offer is not None
+                    or stream_epoch is not None):
+                if lease.stream_epoch_at_offer is None or stream_epoch is None:
+                    return reject("stream_epoch_evidence_missing")
+                if (self._last_stream_epoch is not None
+                        and stream_epoch < self._last_stream_epoch):
+                    return reject("stream_epoch_reversed")
+                self._last_stream_epoch = stream_epoch
+                if stream_epoch != lease.stream_epoch_at_offer:
+                    return reject("stream_epoch_changed_during_inference")
             if telemetry is None or not telemetry.game_active:
                 return reject("game_telemetry_missing_or_inactive")
             if telemetry.live != stream_live:
@@ -343,20 +389,30 @@ class RealtimeGameLoop:
             if not permit.offered:
                 return reject(permit.reason)
             self._permit = permit
+            self._permit_stream_epoch = stream_epoch
             self._counts["finished"] += 1
             return permit
 
     def claim(
         self, permit: ActionPermit, *, now_ms: float,
         host_focus_and_permission: bool = False,
+        stream_epoch: int | None = None,
     ) -> bool:
         """Final host-only, identity-bound one-shot claim; no input dispatched."""
         now = _clock_ms(now_ms)
+        stream_epoch = _stream_epoch(stream_epoch)
         if type(host_focus_and_permission) is not bool:
             raise ValueError("host_focus_and_permission must be boolean")
         with self._lock:
             if permit is not self._permit or self._permit is None:
                 return False
+            if (self._permit_stream_epoch is not None
+                    or stream_epoch is not None):
+                if stream_epoch != self._permit_stream_epoch:
+                    # Revoke, not merely defer: restoring the old counter
+                    # must never make this previously stale ticket claimable.
+                    self._gate.revoke()
+                    return False
             accepted = self._gate.claim_offered(
                 permit, now_ms=now,
                 host_focus_and_permission=host_focus_and_permission,
@@ -382,6 +438,7 @@ class RealtimeGameLoop:
             ) if permit.ticket is not None else False
             if released:
                 self._permit = None
+                self._permit_stream_epoch = None
                 self._counts["released"] += 1
             return released
 
