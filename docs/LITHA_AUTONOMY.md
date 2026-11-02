@@ -516,6 +516,163 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
 - Not done: inputs recorded from the existing tests (the real call shapes, no model call), property-style boundary
   inputs generated from the changed constant without her, functions nested in another function (not callable).
 
+## 4l. Conflicts: merges by rule first, her model on the overlap only (2026-11-02, measured)
+
+- `litha/merge3.py`, used by `pr_fixer.mechanical()` / `narrow()` / `triage()`. Inside a diff3 block each side's
+  edits are taken against the ancestor: edits on different ancestor lines are both applied (git calls neighbouring
+  lines a conflict; Studio #255 task_lib.rs: one side rewrote a comment, the other the line under it), the same edit
+  twice is applied once, whitespace-only sides change nothing, Rust blocks of only `use` lines merge per imported
+  name, markdown/text merges word by word. Two additions at one place in code stay her call (as before). A block that
+  still overlaps is cut down: the merged lines become context and only the overlap is a (smaller) block for her. She
+  is shown the blocks before hers already merged and the later ones as one note line each (her answers had merged 2-3
+  neighbouring blocks at once: #174, #186). A bracket-only line she repeats from just after/before the block is cut
+  when that balances her brackets; bracket misses are named (`you have 1 } too many ...`). A merge longer than her
+  1500-token answer is refused without asking (it came back as broken JSON 3 times). Files under `tests/` merge only by these
+  rules, never by her model; `.github/` conflicts stay with a person (AGENTS.md: workflow changes get an independent
+  review); the 5-file limit counts only files her model must answer.
+- Bench (offline, `~/lw3c/bench` on the owner's PC, not in the repo): (F) the 24 Studio PRs whose last attempt in
+  fixes.jsonl failed on a conflict, rebuilt as `git merge` of the attempted head with main as of that attempt (97
+  files, 202 blocks); (H) 127 merge commits on Studio PR branches whose re-merge conflicts, scored against what was
+  committed (278 files, 510 blocks; 112 by people, 15 by Litha). Split by hash, 2/3 tune, 1/3 held out; the rules were
+  designed on F-tune cases (a few H blocks of both splits were read by hand on the way). Match = whitespace-insensitive equal to the committed text (per
+  block between the unchanged lines around it; the committed merge often also edits, so this undercounts).
+
+  | set | before | after |
+  |---|---|---|
+  | H all, no model: files resolved | 125/278 | 163/278 |
+  | H all, no model: PRs fully resolved | 45/121 | 65/121 |
+  | H all, no model: blocks = committed | 119/183 (65%) | 156/231 (68%; the 48 new: 37 = committed) |
+  | H held out, with her model: files | 78/112 | 88/112 |
+  | H held out, with her model: PRs | 26/43 | 30/43 |
+  | H held out, with her model: blocks = committed | 79/134 (59%) | 93/162 (57%) |
+  | H held out: model calls, model+check s | 83, 1458 s | 52, 622 s |
+  | F tune (13 PRs), with model: files / PRs | 16/45, 3/13 | 35/45, 6/13 |
+  | F held out (11 PRs), with model: files / PRs | 10/51, 2/11 | 36/51, 4/11 |
+  | F all: model calls, seconds | 38, 951 s | 101, 1686 s (more files get past the gate) |
+
+  Every resolved file passes rustfmt (Rust) / toml / json parsing in both columns. PR-level on F: 5 -> 10 of 24
+  (#233 #235 #245 #442 #448 + #357 #389 #397 #428 #434); the bench let `.github/` merge by rule (#357, #406, #434's
+  ci.yml), but the shipped gate refuses `.github/` again, so those stay with a person and the shipped gain is about
+  5 -> 8, not 10. Steps measured on
+  F-tune: everything but the neighbour view 16 -> 32 files; showing the neighbours merged 32 -> 35. The bracket cut fixed 3 of 27
+  bracket misses in her 90 answers. Read by hand: the one H block that regressed (be1229a ARCHITECTURE.md) is a line
+  the branch itself had broken and the person repaired while merging; the rule kept the branch's edit.
+- Not measured: cargo. The 12 "cargo tests fail after the merge" refusals are semantic (both sides changed one
+  behaviour) and this does not address them; a merge that now resolves but mismatches the committed one may still not
+  compile (seen: 787db5f gizmo.rs, a test calling main's old `update` signature). Not run live yet.
+
+## 4m. Merge review inside her window, fewer false claims (2026-11-02, measured)
+
+- Why: counted with her real tokenizer (llama-server `/tokenize`), the old 12,000-character chunks put **410 of 598**
+  review prompts of 62 closed PRs over 4096 tokens with the 700-token answer. Diffs run ~3.1 characters per token,
+  not the 3.5 that section 4k's "37 of 174" assumed, so most prompts only worked because the router sends to
+  star-pc (8192 ctx) first; owner-pc (4096 ctx) refuses them (HTTP 400, which read as "not JSON"). Nothing in her
+  code picks the 8192 node: `node_chat` takes the fastest usable node. Files over 12,000 characters were cut with
+  "[... file diff cut ...]", and 11 of the 16 high claims in `decisions.jsonl` (46 reviewed heads) were "the diff is
+  cut off". Measured on that log: refuted() and confirmed() refuted 15 of the 16, and the last one
+  (studio#511 `value_at`) is false too (its doc says the index must be in range).
+- `litha/review_pack.py` (new; only `pr_merger` uses it): hunks are ranked by file kind (code 3, config 2.5, test
+  1.2, docs 0.5, data/lockfiles 0.1) x (1 + removed guards, changed conditions, dangerous calls) and packed first-fit
+  into at most `MAX_PARTS` = 12 prompts per PR. A hunk bigger than one part is split at line boundaries with its real
+  start line. Token estimate from character classes (fit on 1600 real hunks: median 1.0x, worst 0.8x; whole prompts
+  worst 0.89x), budget = (4096 - 700) / 1.15. Each part names the files it does not show and says they are reviewed
+  elsewhere. Files that did not fit go to `not_reviewed` in the review. Offline over the 62 PRs: 565 prompts (old
+  598), 53% of changed code lines seen (old 59%, but the old ones were the first 12,000 characters of each file, not
+  the riskiest hunks); docs and data are mostly skipped by design.
+- Claims: every risk quotes a changed line (`+` or `-`). `anchor` moves the claim to the line it quotes (a quote of
+  12+ characters that is part of a line counts), and a quote that is not a changed line drops the claim. Without a
+  quote, the old added-line rule applies. The same line from two parts counts once. A high claim on a test or doc
+  file becomes low, unless it is about safety (JSON data/config claims are still checked, not downgraded). `SPECULATIVE` now also catches "if any other callers..." and
+  "if the file was deleted...".
+- Re-check question (`CONFIRM`): a third reviewer's claim, "claims are often wrong", her check before her verdict;
+  the proof line may drop a trailing `{`. A/B on 10 hand-judged false claims (from the log and the baseline) and 7
+  injected real bugs (removed guards, a flipped size check, an off-by-one loop, a null and a nil check), 2 asks
+  each: false kept 10/20 -> 7/20, true kept 12/14 -> 12/14. The true claim it missed was the off-by-one: she
+  proved it with the line minus its `{`, and the relaxed proof match fixes that (checked once by hand, not re-run).
+- `cached_review`: one review per PR head and review-code version every 6 h (`~/.star/pr-merger/reviews.json`).
+  In `decisions.jsonl` (48 h), 852 of 898 reviews re-read a head already reviewed (Metallic-RB#138 235 times), and 4
+  heads drew both verdicts from the same diff. A review with a part that was not JSON is not cached.
+- Measured, her model, `review()` only, nothing logged. The design was tuned on the tune set (17 odd-numbered home
+  PRs of the last 40 closed + #854 and #848 from the log, 7 studio PRs with logged claims + 5 more, Metallic-RB#138;
+  #797's diff is over GitHub's 20,000 lines). It was then frozen and run once on
+  the **held-out set**: the 20 even-numbered home PRs of the last 40 closed (not #854 or #848) and 10 even-numbered studio PRs. Old
+  and new code ran back to back on each PR, alternating which went first, all on star-pc:
+
+  | held-out, 30 PRs | review calls | over 4096 - 700 | over 4096 | wall s | high claims said | high that block | kept risks/PR | dropped |
+  |---|---|---|---|---|---|---|---|---|
+  | before (b2f3fd3e) | 253 (1 HTTP 400 at 8192) | 166 | 105 | 2115 | 41 | 6 | 1.67 | 26 |
+  | after | 229 + 15 re-checks | 0 (max 3116) | 0 | 1785 | 31 | 3 | 2.70 | 6 |
+
+  I read the real files for all 9 blocking claims, and none is a real bug. Before: #814 `list(...)` copy and
+  `[] or [{}]`, #486 `try_borrow`, #824 x2, #820. After: #858 (the method is defined in the file), #808 x2 (a bad
+  index or zone id would be a data error, not a PR bug). So 6/41 -> 3/31 high claims survive the checks, 0 of
+  them true either way. Recall on held-out is not measured: it holds no known real bug. On the tune set, 8 PRs
+  before vs after: blocking highs 3 -> 2, and all 5 are false. Seconds per call matched within the pairs (8.2 vs
+  7.3); an unpaired tune run in a busier hour took 18 s/call, so wall times are only comparable when paired.
+  The "after" side has more low notes (they never block) and keeps nearly every claim, because she now quotes.
+- After the held-out run (not in the numbers above): a claim that says it "cannot verify" is refuted with no
+  re-check. That is the #858 shape.
+- Not measured: a live merger run with the cache, owner-pc (4096) answering a review (all calls went to star-pc),
+  what the 47% of code lines a big PR no longer shows would have caught, and the re-check on more than 17 claims.
+- Tests: `tests/test_litha_review_pack.py`.
+
+## 4n. Real fixes: what the failing test reaches, new code, a wider window (2026-11-02, measured)
+
+- Why: 4j's real-fix set was 0/12 blind. Reading her 61 prompts and answers of that run: the traceback clip had cut
+  the `E AttributeError: ... has no attribute 'away'` line and the rest of the test (R01 failed on its first line, so
+  the asserts that say what to build were never shown); a module constant the test reads (R10 `inject.GENERAL_NOTE`)
+  was never shown because the packer follows calls only, and `mesh.*` imports (server/ on sys.path) resolved to no
+  file; she sent new functions as `{"find": "", "line": 43}` (5 of 5 on R04, all refused as an empty find); 4 of her
+  first 5 new functions closed a one-line docstring with one quote; and an edit that added the missing function
+  (the test then failed one assert later, same failure count) was undone as "no progress".
+- `litha/fix_reach.py` (new) and changes in `context_pack.py` / `repair()`:
+  - **Traced run** (`fix_reach.trace`): the first failing test is run once more (and again after kept progress)
+    under a `sys.settrace` pytest plugin written to a temp dir: every repo function it entered (tests/ excluded),
+    calls from the test, lines run, the line that raised. The packer adds them at 84 / 76 / 68 / ... by distance
+    (+4 where it raised); functions nested in another function (an HTTP handler class) as the lines that ran.
+    1-3 s per item here.
+  - **Missing names** (`fix_reach.missing_note`): "no attribute / cannot import / unexpected keyword / NameError" ->
+    "file X has no `away`, the test needs it: ADD it (or rename the old one)", with the test lines that use it.
+  - **Wide prompt** (`fixer_prompt(wide=True)`; blind, or from round 2 with a diff): the traced units, module-level
+    values the failing test reads (`constants_read`, 83), one more same-file callee hop (42), the whole failing test
+    unless the traceback printed all of it, the missing-name note, and an insert edit form
+    `{"file", "after": "<line>", "insert": "<new lines>"}` (after a def/class line: below the whole definition).
+    Every prompt: pytest noise dropped (`tidy`: warnings summary, fixture objects among the locals), E lines never
+    clipped away, the deep failure's own block instead of the run's tail.
+  - **Landing** (`inserts`, `mend`, `check_syntax`): her `{"find": "", "line": N}` becomes an insert (new top-level
+    code below the statement holding line N, else above line N); a one-line docstring closed with one quote is
+    closed (only when the triple quotes in her text do not pair up); an edit that leaves invalid Python is reported
+    with the exact error and line instead of a collection error's tail.
+  - **Progress** (`failed_at`): a candidate counts as progress when as many tests fail but the first failing test
+    now fails at a later line of its own file (her new function was kept, she fixes the next assert next round).
+  - **Window** (`fix_reach.window`): 8192 when the node her calls go to first (the fastest usable one, as
+    `llm.node_chat` picks; star-pc, ctx 8192) has it, else 4096 (owner-pc); `LITHA_FIX_WINDOW` overrides; never
+    probed under pytest; an HTTP 400 (a 4096 node took a wide prompt) narrows the rest of that repair. Output and
+    diff budgets grow 1.6x, the rest goes to code; prompts seen up to 6365 tokens.
+- Measured (real-fix set 12 items blind, standard suite 32 items with diff; K=1, lessons frozen, one bench at a time,
+  a private checkout, `PYTHONDONTWRITEBYTECODE=1` + a fresh `PYTHONPYCACHEPREFIX`; other lanes used the same model):
+
+  | code | real fixes | wall s | calls | standard suite | wall s | calls |
+  |---|---|---|---|---|---|---|
+  | before (b2f3fd3e) | 0/12 | 1265 | 61 | 31/32 | 637 | 43 |
+  | trace + missing note + insert form, 4096 (v1) | 1/12 | 1688 | 69 | - | | |
+  | + constants, mend, syntax errors, 4096 (v2) | 0/12 | 1932 | 70 | - | | |
+  | + `mesh.*` imports, progress by line, 4096 (v4) | 2/12 | 1124 | 64 | - | | |
+  | same code, 8192 (v3) | 3/12 | 1219 | 65 | - | | |
+  | final, window probed (8192) (v5) | 3/12 | 927 | 61 | 31/32 | 636 | 36 |
+
+  Honest reading: R10 (add the phrases to `GENERAL_NOTE`) was solved in all three runs that showed the constant
+  (v3, v4, v5), and R03 (keep the proof's `test` key in `bug_hunt.hunt`, the real fix's change there) in both 8192
+  runs. The others pass the tests with code fitted to them: R05 in v1 (a regex op turning `str(x)` into `str(b)` for
+  the one test line), R12 in v4 (the two test sentences hard-coded in `check_leak`), R02 in v3 and v5 (`later_checks`
+  returns a fixed clippy command instead of reading the workflows; v3 put her `why` in the success message, v5 the
+  test's literal). So: 0/12 before; after, 1-2 genuine per run plus 0-1 fitted (8192: 2 + 1 both runs; 4096: 1 + 1).
+  Run-to-run noise is large (v2 0/12 vs v4 2/12 on nearly the same code), so 8192 vs 4096 (3, 3 vs 2) is not
+  proven by these runs. The standard suite did not move (S20 drop-guard missed before and after; fewer calls).
+- Not done / not verified: plan-then-edit (ask which functions to change first) was not built; no check against
+  code fitted to the test's literals (the bench counts those as solved); the 400 fallback was tested only by
+  reading the code path (no 4096-only node was up); a live PR.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another

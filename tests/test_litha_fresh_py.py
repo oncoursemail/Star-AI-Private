@@ -66,3 +66,24 @@ def test_a_real_fix_still_counts(tmp_path):
                                asker=lambda p: edit, k=1)
     assert (ok, why, rounds) == (True, "plus", 1)
     assert "1 + 1" in src.read_text(encoding="utf-8")
+
+
+def test_an_edit_that_adds_an_undefined_name_is_refused_before_any_test_runs(tmp_path, monkeypatch):
+    """#905's edit: a module-level `if "tests/" in tests:` where `tests` exists nowhere. Refused (and undone)
+    without a test run; a correct fix in the next round still lands."""
+    pytest.importorskip("ruff")
+    src = _tree(tmp_path, "1 - 1")
+    ok, out = F.run_tests(tmp_path, ["tests/test_m.py"], sys.executable)
+    answers = iter([json.dumps({"why": "guard", "edits": [{"file": "star/m.py", "find": "def f():",
+                                                           "replace": "if 'tests/' in tests:\n    pass\n\n\ndef f():"}]}),
+                    json.dumps({"why": "plus", "edits": [{"file": "star/m.py", "find": "1 - 1", "replace": "1 + 1"}]})])
+    runs = []
+    real = F.run_tests
+    monkeypatch.setattr(F, "run_tests", lambda *a, **k: runs.append(1) or real(*a, **k))
+    prompts, runs_at_ask = [], []
+    ok, why, rounds = F.repair(tmp_path, "t", F.failures(out), out, ["tests/test_m.py"], sys.executable,
+                               asker=lambda p: prompts.append(p) or runs_at_ask.append(len(runs)) or next(answers), k=1)
+    assert (ok, why, rounds) == (True, "plus", 2)
+    assert "tests" not in src.read_text(encoding="utf-8")
+    assert "Undefined name `tests`" in prompts[1]
+    assert runs_at_ask[0] == runs_at_ask[1]               # no test run for the refused edit
