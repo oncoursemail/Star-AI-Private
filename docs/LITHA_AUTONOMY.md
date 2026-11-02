@@ -164,6 +164,28 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   error. Fixed; she is also shown where each name in the errors is declared (with its `#[cfg]`), the crate's
   `[features]` and the exact checks, plus one rule (gate the test, never the library). Dry run: 1 round, all 5 checks
   green, `#![cfg(feature = "presentation")]` on `camera_api.rs`.
+- Refusals re-checked (2026-11-02, measured): her log had 21 bracket refusals, 4 block-count and 3 too-big ones on
+  Studio. Reproduced on the 9 still-open PRs behind them (#174 #208 #210 #239 #255 #275 #401 #412 #421, each head
+  merged with main 78523c4 in diff3 style): 41 conflicted files. Before: 25 resolved, 16 refused, and 1 of the 25 was
+  wrong (#412 physics: `fn refresh_collisions` twice and an empty `add_entry`; rustfmt passes that, only cargo would
+  have stopped it). No bracket refusal had rejected a good answer: each time her answer went on with the code after
+  the block, or redid the blocks before it. Counting brackets outside strings, comments and char literals let one of
+  those through (#210, its `pub use` lines twice), so a line copied from the code around the block is now refused by
+  name. Also new: an exact copy of the lines just outside the block is cut instead of held against her; `use api{`
+  (24 of her 118 Rust answers) gets its `::` back and `assert_eq(` its `!` when the code only uses the macro; an
+  empty PR side is read as empty (it was read as the ancestor: #275's false "dropped row |"); code one side deleted
+  and the other changed is a person's call, said so without asking her (#401 and #210 game.rs);
+  modify/delete files say so (classes.rs, split into `classes/` on main); the 1-8 limit counts only the blocks she
+  is asked about; a too-big block is shown with 300 instead of 1500 characters around it before it is refused; a
+  file a checker rejects is redone with the mechanical merges kept first (#208 had failed redoing a block git
+  merged); a merged .rs that imports a name twice is rejected (rustc E0252). After, same files and her same answers
+  (replayed by prompt; 27 new asks where the prompt changed): 25 resolved, 16 refused, 0 wrong found. New: #421
+  `metallic_script/src/lib.rs`; gone: the wrong #412 merge. Checked: rustfmt parses all 25, a duplicated/lost-line
+  scan against both sides on all, every block that changed read by hand, `cargo check -p metallic_core
+  --all-targets` for #174 (the only crate whose conflicts all resolve). Not checked: cargo for the other crates
+  (other conflicted files in them stay unresolved), and no live PR yet. The 16 left: 11 are her answers (10 copy
+  code from around the block, 1 drops functions), 4 are deletions for a person (2 modify/delete, 2 blocks) and 1 is
+  still too big (#174 ARCHITECTURE.md).
 
 ## 4d. Type gate repair (2026-11-02, measured)
 

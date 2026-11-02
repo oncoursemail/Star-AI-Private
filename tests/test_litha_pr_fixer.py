@@ -372,3 +372,123 @@ def test_both_sides_only_adding_merge_by_code_and_same_spot_only_in_docs():
     same = F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=True)
     assert same == "a\nX\nY\nb\n" and F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=False) is None
     assert F.both_added("a\nX\n", "a\nb\n", "a\nb\nY\n", docs=True) is None         # an ancestor line went away
+
+
+def test_brackets_in_strings_comments_and_char_literals_do_not_count():
+    rust = "let c = '{'; // a ( here\nfn f<'a>(x: &'a str) -> &'a str { x }\nlet s = r#\"((\"#; let t = \"[\";\n"
+    assert F.balance(rust, "x.rs") == (0, 0, 0) and F.balance(rust) != (0, 0, 0)
+    assert F.balance("x = '('  # ) [\ny = \"\"\"{\n\"\"\"\n", "a.py") == (0, 0, 0)
+    assert F.balance("local s = \"(\" -- {\nlocal t = [[ [ ]]\n", "a.luau") == (0, 0, 0)
+    block = ('<<<<<<< HEAD\n    a.push("(");\n||||||| base\n=======\n    b.push("(");\n>>>>>>> origin/main\n')
+    good = '    a.push("(");\n    b.push("(");\n'                 # all brackets counted: (0, 2, 0) vs each side (0, 1, 0)
+    assert F.slips("x.rs", block, good) == ""
+    assert "{}" in F.slips("x.rs", block, '    a.push("(";\n    b.push("(");\n')        # a real lost bracket still is
+
+
+STUDIO_421 = ("    pub fn gui_event(&mut self, event: GuiEvent) {\n<<<<<<< HEAD\n        if keep(len) {\n"
+              "||||||| base\n        if self.run_client {\n=======\n        if self.role != Server {\n>>>>>>> main\n"
+              "            self.gui_events.push(event);\n        }\n    }\n")
+
+
+def test_lines_she_copies_from_around_the_block_are_cut_not_held_against_her():
+    block = STUDIO_421.split("{\n", 1)[1].split("            self.gui", 1)[0]
+    before, after = "    pub fn gui_event(&mut self, event: GuiEvent) {\n", STUDIO_421.split(">>>>>>> main\n")[1]
+    merged = "        if self.role != Server && keep(len) {\n"
+    tail = merged + after                                        # her merge, then the rest of the function again
+    assert F.echoed(tail, block, before, after) == merged
+    assert F.echoed("    /// her redo of the doc comment\n" + before + merged, block,
+                    "    /// doc\n>>>>>>> main\n" + before, after) == merged          # after the previous conflict
+    assert F.echoed(merged + "        }\n", block, before, after) == merged + "        }\n"   # no real line: kept
+    answers = iter([json.dumps({"resolved": tail})])
+    got, why = F.resolve_text("h.rs", STUDIO_421, "t", lambda p: next(answers))
+    assert why == "" and got == STUDIO_421.split("<<<<<<<")[0] + merged + after
+    use = "<<<<<<< HEAD\npub use api::{A, B};\n||||||| base\npub use api::A;\n=======\npub use api::{A, C};\n>>>>>>> m\n"
+    assert F.echoed("pub use api{A, B, C};\n", use, "", "", "lib.rs") == "pub use api::{A, B, C};\n"   # #317, #421
+
+
+def test_the_block_limit_counts_only_the_blocks_she_is_asked_about():
+    add = "<<<<<<< HEAD\nfn a{n}() {{}}\n||||||| base\n=======\nfn b{n}() {{}}\n>>>>>>> main\nfn x{n}() {{}}\n"
+    text = "".join(add.format(n=n) for n in range(9)) + DIFF3.replace("keep", "kept")
+    answers = iter([json.dumps({"resolved": "fn kept() {}\nfn pr_added() {}\nfn main_added() {}\n"})])
+    merged, why = F.resolve_text("s.rs", text, "t", lambda p: next(answers))          # Studio #412: 9 blocks
+    assert why == "" and merged.count("fn a") == merged.count("fn b") == 9 and "main_added" in merged
+    many = "".join(DIFF3.replace("keep", f"k{n}") for n in range(9))
+    assert "9 of 9 conflict blocks need her" in F.resolve_text("s.rs", many, "t", lambda p: 1 / 0)[1]
+
+
+def test_code_one_side_deleted_and_the_other_changed_is_a_persons_call():
+    text = "<<<<<<< HEAD\nfn a() { new(); }\n||||||| base\nfn a() { old(); }\n=======\n>>>>>>> main\n"
+    with patch.object(F, "BASE", "main"):
+        merged, why = F.resolve_text("g.rs", text, "t", lambda p: pytest.fail("no model call"))   # Studio #401
+    assert merged is None and "main deleted these lines and the PR changed them" in why
+    assert "no conflict lines" in F.resolve_text("classes.rs", "fn a() {}\n", "t", lambda p: 1 / 0)[1]
+
+
+def test_a_modify_delete_conflict_is_named_as_such(tmp_path):
+    def git(*a):
+        return subprocess.run(["git", *F.IDENTITY, *a], cwd=tmp_path, capture_output=True, text=True)
+    git("init", "-q", "-b", "main")
+    (tmp_path / "classes.rs").write_text("fn a() {}\n", encoding="utf-8")
+    git("add", "-A"), git("commit", "-qm", "base")
+    git("checkout", "-qb", "pr")
+    (tmp_path / "classes.rs").write_text("fn a() { changed(); }\n", encoding="utf-8")
+    git("commit", "-qam", "pr changes it")
+    git("checkout", "-q", "main"), git("rm", "-q", "classes.rs"), git("commit", "-qm", "main splits it")
+    git("checkout", "-q", "pr"), git("merge", "main")
+    with patch.object(F, "BASE", "main"):
+        assert "deleted on main and changed by this PR (modify/delete)" in F.deleted_side(tmp_path, "classes.rs")
+    assert F.deleted_side(tmp_path, "other.rs") == ""
+
+
+def test_a_big_block_is_shown_with_less_code_around_it_before_it_is_refused():
+    side = "".join(f"    let v{i} = {i};\n" for i in range(55))
+    far = "".join(f"// context line {i} padding padding padding\n" for i in range(60))
+    text = (far + f"<<<<<<< pr\n    a();\n{side}||||||| base\n{side}=======\n    b();\n{side}>>>>>>> main\n"
+            + far.replace("context", "after"))
+    shown = []
+    answer = json.dumps({"resolved": "    a();\n    b();\n" + side})
+    merged, why = F.resolve_text("x.rs", text, "t", lambda p: shown.append(p) or answer)
+    assert why == "" and len(shown) == 1 and "context line 0 " not in shown[0] and "context line 59" in shown[0]
+    assert "after line 0 " in shown[0] and "after line 59" not in shown[0]
+
+
+def test_a_rejected_file_is_redone_with_the_mechanical_blocks_kept(monkeypatch):
+    text = ("<<<<<<< HEAD\nfn a() {}\n||||||| base\n=======\nfn b() {}\n>>>>>>> main\nfn x() {}\n"
+            "<<<<<<< HEAD\n    y(1);\n||||||| base\n    y(0);\n=======\n    y(2);\n>>>>>>> main\n")
+    answers = iter([json.dumps({"resolved": "    y(1)?\n"}), json.dumps({"resolved": "    y(3);\n"})])
+    asked = []
+    monkeypatch.setattr(F, "broken", lambda tree, path, text: "rustfmt rejects it" if "?" in text else "")
+    merged, why = F.merge_file(Path("."), "s.rs", text, "t", lambda p: asked.append(p) or next(answers))
+    assert why == "" and merged == "fn a() {}\nfn b() {}\nfn x() {}\n    y(3);\n" and len(asked) == 2
+    assert "conflict 2 of 2" in asked[1] and "rustfmt rejects it" in asked[1]       # only her block again (#208)
+
+
+def test_an_empty_pr_side_is_read_as_empty_not_as_the_ancestor():
+    block = "<<<<<<< HEAD\n||||||| base\nfn old() {}\n=======\nfn old() { changed(); }\n>>>>>>> main\n"
+    assert F.sides(block) == ("", "fn old() {}", "fn old() { changed(); }\n")          # Studio #275 instance.rs
+    with patch.object(F, "BASE", "main"):
+        why = F.resolve_text("i.rs", block, "t", lambda p: pytest.fail("no model call"))[1]
+    assert "the PR deleted these lines and main changed them" in why
+
+
+def test_her_dropped_macro_bang_and_the_blank_line_before_a_copy_are_put_right():
+    block = ("<<<<<<< HEAD\n        let a = A { b: 1, c: true };\n||||||| base\n        let a = A { b: 1 };\n=======\n"
+             "        let a = A::new(1);\n>>>>>>> main\n")
+    after = "        assert_eq!(f(&[a]), Err(E::Cycle));\n    }\n"
+    answer = "\n        let a = A::new(1);\n        assert_eq(f(&[a]), Err(E::Cycle));\n    }\n"   # Studio #275 shape
+    got = F.echoed(answer.replace("assert_eq(", "assert_eq!("), block, "", after, "r.rs")
+    assert got == "        let a = A::new(1);\n"
+    assert F.echoed("        assert_eq(x, 1);\n", block, "", after, "r.rs") == "        assert_eq!(x, 1);\n"
+    assert F.echoed("        f(x);\n", block, "", after, "r.rs") == "        f(x);\n"     # f( is a call in the code
+
+
+def test_a_line_copied_from_around_the_block_is_refused_and_a_name_imported_twice_too():
+    block = "<<<<<<< HEAD\n//! PR note.\n||||||| base\n=======\n//! main note.\n>>>>>>> main\n"
+    after = "#![warn(missing_docs)]\n\npub use project::ProjectConfig;\n"
+    merged = "//! PR note.\n//! main note.\n"
+    assert F.slips("lib.rs", block, merged, "", after) == ""
+    assert "copies a line" in F.slips("lib.rs", block, merged + "pub use project::ProjectConfig;\n", "", after)  # #210
+    two = ("pub use game::{\n    FrameOutput, Game, TICK,\n};\n#[cfg(feature = \"presentation\")]\n"
+           "pub use game::{FrameOutput, Game};\n#[cfg(a)]\nuse x::Y;\n#[cfg(not(a))]\nuse z::Y;\n"
+           "fn f() {\n    use std::path::PathBuf;\n}\nuse std::path::PathBuf;\n")
+    assert F.double_uses(two) == {"FrameOutput", "Game"}
