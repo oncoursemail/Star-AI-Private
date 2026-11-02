@@ -9,7 +9,7 @@ anything here; every rule below exists because a measured run needed it.
 
 | File | Job | Runs |
 |---|---|---|
-| `pr_fixer.py` | failing PR -> CI log -> her edits -> failing test files pass locally -> her own branch + PR | task "Litha PR merger", every 30 min, 1 PR per run |
+| `pr_fixer.py` | failing PR -> CI log -> her edits -> failing test files pass locally -> her own branch + PR | task "Litha PR merger", every 10 min, 1 PR per run (3 at once when the owner is away, 4f) |
 | `pr_merger.py` | open PRs into `star/next`: hard gates, her review, proofs, merge | same task, after the fixer |
 | `bug_proof.py` | a blocking claim must be shown by a test that fails after the PR and passes before it | called by the merger |
 | `bug_hunt.py` | last look before a merge: she reads each changed function alone and names a bug; kept only if `bug_proof` proves it | called by the merger |
@@ -244,6 +244,33 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   #857 is skipped anyway (her own `litha/` branch: no fix on top of a fix).
 - Not verified yet: a run from the scheduled task on a real PR; the `npm run build` step (prerender scripts) is not
   repaired, only tsc and vitest.
+
+
+## 4f. Several PRs at once (2026-11-02, simulated, not yet seen live)
+
+- Why: one PR per 10-min run, while a run averages 40 s of work: the 23 logged STAR rows need 22 runs (3.7 h).
+- `python -m litha.pr_fixer [--workers N] [--max M]`: a thread pool (`pool()`) over the candidate PRs in the old
+  order. N defaults to 3 when the owner is away (`rust_fix.away()`: no input for 10 min) and 1 when the owner is
+  at the PC; M defaults to N. A PR starts only while counted + running < M, so a run still counts at most M PRs and a skip
+  still does not use one up; with N=1 it is the old serial loop. Each PR is queued once (a hunted PR is not queued
+  again), each keeps its own worktree (`litha-fix-<n>`, `litha-merge-<n>`).
+- Shared things: `RERUNS` allows ONE `rerun_failed` per run across workers (one CI runner); a second PR that needs a
+  rerun gets `RerunSpent`, is left unmarked and is taken next run; a rerun that restarted nothing gives the slot back.
+  `mark()` runs under a thread lock plus `tried.lock` and writes atomically; log rows go out under one lock.
+  `git -C <clone>` (fetch, worktree add/remove) and `star commit` run one at a time (`SHARED`); every cargo command
+  (`rust_fix.run`, `cargo metadata` in `resolve`) holds `rust_fix.BUILD`, so builds stay one at a time.
+  `--others N` resolves of one repo also run on N workers; the per-run caps there are unchanged.
+- Measured: `python -m litha.pr_pool_sim` replays the 23 STAR and 94 Studio rows of `fixes.jsonl` through the real
+  `main()`/`others()` with fake work sleeping each row's logged `seconds` (x0.005; the 2026-11-01 "reran 0" loop on
+  #700 left out: fixed since). STAR backlog drained in 22 runs / 3.7 h serial, 10 runs / 1.7 h with 3 workers,
+  9 runs / 1.5 h with 4; runs took 40 s mean serial, 61 s with 3 (max 143 -> 145 s); 1 CI rerun per run in every
+  configuration. The floor is that cap: 9 of the 23 rows need a rerun, so 4 workers gain little over 3. Studio
+  (`--others 2`, away): same 22 runs (the per-run caps did not change) but runs 283 -> 199 s mean, 843 -> 556 s
+  max, so fewer runs overrun 10 min: 4.2 -> 3.7 h; with `--others 3` and 3 workers 15 runs / 2.5 h (not switched on).
+- Not measured: real contention. The simulation sleeps; live, 3 workers share 12 CPU threads (pytest, pyright),
+  her model (`litha` through the mesh router: if one GPU node answers one request at a time, the model-bound part
+  of each fix does not overlap) and the GitHub API. Tests: `tests/test_litha_pr_pool.py` (fake fix/resolve: no PR
+  twice, one rerun, tried.json and log consistent, workers capped, cargo one at a time).
 
 ## 5. Rules that stay (do not remove)
 

@@ -374,7 +374,6 @@ def test_both_sides_only_adding_merge_by_code_and_same_spot_only_in_docs():
     assert F.both_added("a\nX\n", "a\nb\n", "a\nb\nY\n", docs=True) is None         # an ancestor line went away
 
 
-<<<<<<< HEAD
 def test_brackets_in_strings_comments_and_char_literals_do_not_count():
     rust = "let c = '{'; // a ( here\nfn f<'a>(x: &'a str) -> &'a str { x }\nlet s = r#\"((\"#; let t = \"[\";\n"
     assert F.balance(rust, "x.rs") == (0, 0, 0) and F.balance(rust) != (0, 0, 0)
@@ -493,7 +492,8 @@ def test_a_line_copied_from_around_the_block_is_refused_and_a_name_imported_twic
            "pub use game::{FrameOutput, Game};\n#[cfg(a)]\nuse x::Y;\n#[cfg(not(a))]\nuse z::Y;\n"
            "fn f() {\n    use std::path::PathBuf;\n}\nuse std::path::PathBuf;\n")
     assert F.double_uses(two) == {"FrameOutput", "Game"}
-=======
+
+
 # The React job's log as GitHub serves it (#857, 2026-11-01): tsc stops the `&&` chain, so vitest never ran there.
 REACT_LOG = (
     "2026-11-01T04:54:29.1022341Z ##[group]Run sh scripts/ci_heavy.sh sh -c 'npm run typecheck --prefix frontend && "
@@ -675,4 +675,3 @@ def test_the_node_modules_link_goes_and_the_shared_install_stays(tmp_path):
 
     assert F.fix_frontend(tmp_path, lambda p: "", runner)[::2] == (True, 0)
     assert not (tmp_path / "frontend" / "node_modules").exists() and (shared / "react").is_dir()
->>>>>>> origin/star/litha-wave-frontend-20261102
