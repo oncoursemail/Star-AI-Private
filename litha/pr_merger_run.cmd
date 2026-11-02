@@ -15,4 +15,6 @@ rem litha.self_check first (well under 1 s when healthy): stale locks and broken
 "%~1" -m litha.pr_promote --apply >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 "%~1" -m litha.pr_fixer --others 2 --python "%~1" >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 "%~1" -m litha.pr_merger --apply --others >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+rem The owner's own Git server gets main and star/next too (fast-forward only): step 1 of leaving GitHub.
+"%~1" -m litha.forge_sync >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 echo %date% %time% end rc=%errorlevel% >> "%USERPROFILE%\.star\pr-merger\run.log"
