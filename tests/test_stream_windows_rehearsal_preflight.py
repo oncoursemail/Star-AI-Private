@@ -43,6 +43,33 @@ class TestWindowsRehearsalPreflight(unittest.TestCase):
         for value in ("SomeGame.exe", "obs64.exe", "103.0", "llama-server.exe"):
             self.assertNotIn(value, report)
 
+    def test_infrastructure_pid_cannot_double_as_game(self):
+        # Regression: the old evaluator declared a rehearsal game-ready when
+        # the supposedly pinned game was the ONLY llama-server process.
+        for role, pid, created in (("OBS", 10, 100.0),
+                                   ("avatar", 11, 101.0),
+                                   ("model", 12, 102.0)):
+            with self.subTest(role=role):
+                report = probe(processes=witnesses()[:3], identity=(pid, created))
+                self.assertEqual(report.status, "deferred")
+                self.assertTrue(report.pinned_game_seen)
+                self.assertIn("pinned_game_is_infrastructure_process", report.reasons)
+                self.assertFalse(report.authorized_to_play)
+                self.assertFalse(report.authorized_to_broadcast)
+
+    def test_process_aliases_remain_consistent_for_game_collision(self):
+        for old, new in (("obs64.exe", "obs.exe"),
+                         ("VTube Studio.exe", "VTubeStudio.exe"),
+                         ("llama-server.exe", "llama-server")):
+            rows = tuple(ProcessWitness(new, p.pid, p.created_unix_s)
+                         if p.name == old else p for p in witnesses()[:3])
+            collision_pid = next(p for p in rows if p.name == new).pid
+            collision_created = next(p for p in rows if p.name == new).created_unix_s
+            with self.subTest(alias=new):
+                report = probe(processes=rows, identity=(collision_pid, collision_created))
+                self.assertEqual(report.status, "deferred")
+                self.assertIn("pinned_game_is_infrastructure_process", report.reasons)
+
     def test_approval_required_before_probes(self):
         with self.assertRaises(PermissionError):
             probe_windows_rehearsal(

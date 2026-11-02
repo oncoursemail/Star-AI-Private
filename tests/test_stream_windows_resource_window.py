@@ -65,6 +65,20 @@ class TestResourceStabilityWindow(unittest.TestCase):
         for forbidden in ("MyGame.exe", "obs64.exe", "103.0", "llama-server.exe"):
             self.assertNotIn(forbidden, repr(result))
 
+    def test_infrastructure_only_window_cannot_claim_stable_game(self):
+        infra_only = witnesses()[:3]
+        for pid, creation in ((10, 100.0), (11, 101.0), (12, 102.0)):
+            with self.subTest(infrastructure_pid=pid):
+                report = evaluate_resource_window(
+                    [sample(i * 0.5, processes=infra_only) for i in range(5)],
+                    pinned_game_identity=(pid, creation),
+                )
+                self.assertEqual(report.status, "deferred")
+                self.assertFalse(report.host_processes_stable)
+                self.assertIn("pinned_game_is_infrastructure_process", report.reasons)
+                self.assertFalse(report.authorized_to_play)
+                self.assertFalse(report.authorized_to_broadcast)
+
     def test_transient_vram_crash_cannot_be_averaged_out(self):
         samples = [sample(i * 0.5) for i in range(5)]
         samples[2] = sample(1.0, gpu_with_id(8192, 260, 3))
