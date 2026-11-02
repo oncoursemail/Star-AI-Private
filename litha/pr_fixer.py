@@ -435,8 +435,8 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
             broken = _new_breakage(tree, saved, python)
             if broken:                                       # refused without a test run, undone like a failure
                 applied = True
-                tried.append({"why": why, "edits": edits, "problems": problems + [broken], "out": broken, "now": 99,
-                              "size": _edit_size(edits)})
+                tried.append({"why": why, "edits": edits, "problems": problems + [broken], "out": broken,
+                              "now": (10**6, 0), "size": _edit_size(edits)})       # worse than any test run
                 continue
             ok, out = run_tests(tree, tests, python)
             if ok:
