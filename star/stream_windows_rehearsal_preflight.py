@@ -29,6 +29,14 @@ class ProcessWitness:
 
 _GPU_UUID_RE = re.compile(r"GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE)
 
+# One authoritative, case-folded inventory of infrastructure processes.
+# A model/OBS/avatar PID can never double as an independently pinned game.
+_INFRA_ROLE_BY_BASENAME = {
+    "obs64.exe": "obs", "obs.exe": "obs",
+    "vtube studio.exe": "avatar", "vtubestudio.exe": "avatar",
+    "llama-server.exe": "model", "llama-server": "model",
+}
+
 
 def _validated_gpu_uuid(value: str) -> str:
     """Bounded NVIDIA GPU UUID, normalized for comparisons; never emit in reports."""
@@ -151,8 +159,9 @@ def evaluate_preflight(
         raise ValueError("invalid bounded GPU admission thresholds")
     if gpu is not None and not isinstance(gpu, GpuHeadroom):
         raise TypeError("GPU evidence must be GpuHeadroom or unavailable")
-    names: dict[str, int] = {}
+    role_counts = {"obs": 0, "avatar": 0, "model": 0}
     matched_game = False
+    game_is_infrastructure = False
     seen_pids: set[int] = set()
     for i, row in enumerate(processes):
         if i >= 32768:
@@ -168,15 +177,18 @@ def evaluate_preflight(
         seen_pids.add(row.pid)
         name = row.name.casefold()
         # Count only process BASENAMES. Never retain the name in a report.
-        if name in {"obs64.exe", "obs.exe", "vtube studio.exe", "vtubestudio.exe",
-                    "llama-server.exe", "llama-server"}:
-            names[name] = names.get(name, 0) + 1
+        role = _INFRA_ROLE_BY_BASENAME.get(name)
+        if role is not None:
+            role_counts[role] += 1
         if game is not None and row.pid == game[0] and abs(row.created_unix_s - game[1]) <= 0.001:
             matched_game = True
+            # Without this, pinning llama-server (or OBS itself) produces a
+            # false "game-ready" report with zero actual game processes.
+            game_is_infrastructure = role is not None
 
-    obs = sum(names.get(n, 0) for n in ("obs64.exe", "obs.exe")) == 1
-    avatar = sum(names.get(n, 0) for n in ("vtube studio.exe", "vtubestudio.exe")) == 1
-    model = sum(names.get(n, 0) for n in ("llama-server.exe", "llama-server")) == 1
+    obs = role_counts["obs"] == 1
+    avatar = role_counts["avatar"] == 1
+    model = role_counts["model"] == 1
     reasons = []
     if not obs:
         reasons.append("obs_process_missing_or_ambiguous")
@@ -186,6 +198,8 @@ def evaluate_preflight(
         reasons.append("local_model_process_missing_or_ambiguous")
     if not matched_game:
         reasons.append("pinned_game_process_missing_or_restarted")
+    if game_is_infrastructure:
+        reasons.append("pinned_game_is_infrastructure_process")
     if gpu is None:
         reasons.append("gpu_sample_missing")
     else:

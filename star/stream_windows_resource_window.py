@@ -20,6 +20,7 @@ from typing import Callable, Iterable, Sequence
 from star.stream_windows_rehearsal_preflight import (
     GpuHeadroom,
     ProcessWitness,
+    _INFRA_ROLE_BY_BASENAME,
     _game_identity,
     _validated_gpu_uuid,
     enumerate_windows_processes,
@@ -66,14 +67,9 @@ def _process_fingerprint(
     pinned_game_identity: tuple[int, float] | None,
 ) -> tuple[tuple[str, int, float], ...]:
     """Local-only app PID + creation-time check, to detect restarts between samples."""
-    role_by_name = {
-        "obs64.exe": "obs", "obs.exe": "obs",
-        "vtube studio.exe": "avatar", "vtubestudio.exe": "avatar",
-        "llama-server.exe": "model", "llama-server": "model",
-    }
     identities = []
     for p in processes:
-        role = role_by_name.get(p.name.casefold())
+        role = _INFRA_ROLE_BY_BASENAME.get(p.name.casefold())
         if role is not None:
             identities.append((role, p.pid, p.created_unix_s))
         if pinned_game_identity is not None and p.pid == pinned_game_identity[0]:
@@ -160,8 +156,12 @@ def evaluate_resource_window(
     consistent_fingerprints = all(f == fingerprints[0] for f in fingerprints[1:])
     expected_roles = {"obs", "avatar", "model", "pinned_game"}
     roles = [role for role, _, _ in fingerprints[0]]
+    # Four role labels are not four distinct processes. A mistakenly pinned
+    # OBS/avatar/model worker must not count as an actual game process.
+    distinct_pids = {pid for _, pid, _ in fingerprints[0]}
     processes_stable = (consistent_fingerprints
-                        and len(roles) == 4 and set(roles) == expected_roles)
+                        and len(roles) == 4 and set(roles) == expected_roles
+                        and len(distinct_pids) == 4)
     if not consistent_fingerprints:
         reasons.append("process_identity_changed_during_window")
     return ResourceWindowReport(
