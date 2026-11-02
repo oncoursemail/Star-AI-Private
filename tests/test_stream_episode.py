@@ -121,6 +121,7 @@ class TestVerifiedGameplayEpisode(unittest.TestCase):
             now_unix_s=NOW + 1, public_action_ids=frozenset({"jump_left"}),
             broadcast_approved=True)
         self.assertIsInstance(packet, EpisodePacket)
+        self.assertEqual(packet.game_scope, self.episode.game_scope)
         self.assertEqual(packet.user_message()["role"], "user")
         self.assertNotIn(a.trial_id, packet.context_record)
         self.assertNotIn(a.run_id, packet.context_record)

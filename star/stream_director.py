@@ -179,6 +179,16 @@ class StreamDirector:
             self._active_game_scope = None
             self._last_speech_at = float("-inf")
 
+    @property
+    def active_game_scope(self) -> str | None:
+        """Read the host-bound scene; None means legacy/unbound mode.
+
+        Empty string is an EXPLICIT no-game binding and must not be confused
+        with None when protecting live memory from an old game.
+        """
+        with self._lock:
+            return self._active_game_scope
+
     def bind_game_scope(self, game_scope: str, *,
                         owner_approved: bool = False) -> int:
         """Host-attested scene handoff. Purge old game narration before reuse.
