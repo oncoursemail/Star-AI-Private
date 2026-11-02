@@ -322,8 +322,9 @@ class RealtimeGameLoop:
                 host_verified=True, stream_live=stream_live,
                 stream_governor=stream_governor,
                 cpu_pressure=cpu_pressure, gpu_pressure=gpu_pressure,
+                completed_inference=True,
             )
-            if advice.route != "reactive":
+            if advice.route != "completed":
                 return reject(advice.reason)
             permit = self._gate.request(
                 frame, hint, now_ms=now, host_verified=True,
