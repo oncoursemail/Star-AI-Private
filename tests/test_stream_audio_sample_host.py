@@ -133,6 +133,16 @@ class DeviceAudibleSampleHostTests(unittest.TestCase):
         self.assertTrue(played(host, ticket, samples=4800, clock=clk))
         self.assertIsNotNone(host.sample(ticket))
 
+    def test_same_clock_device_callbacks_cannot_fast_forward_avatar(self):
+        clk, _, plan, playout, host = fixture()
+        ticket = bind(host, plan)
+        self.assertTrue(played(host, ticket, samples=0, clock=clk))
+        self.assertTrue(played(host, ticket, samples=3360, clock=clk))
+        self.assertFalse(played(host, ticket, samples=6720, clock=clk))
+        self.assertFalse(host.metrics()["active"])
+        self.assertFalse(playout.metrics()["active"])
+        self.assertIsNone(host.sample(ticket))
+
     def test_stale_device_callback_cannot_keep_animating(self):
         clk, _, plan, _, host = fixture()
         ticket = bind(host, plan)
