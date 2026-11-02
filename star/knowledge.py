@@ -201,18 +201,31 @@ class KnowledgeStore:
         self.db.execute("UPDATE notes SET reviewed=1 WHERE project=? AND id=?", (project, note_id))
         self.db.commit()
 
-    def find(self, project: str, query: str = "", *, reviewed_only: bool = True, limit: int = 12) -> list[Note]:
+    def find(self, project: str, query: str = "", *, reviewed_only: bool = True,
+             limit: int = 12, allowed_note_ids: frozenset[int] | None = None) -> list[Note]:
         """Retrieve relevant evidence first, not just the most recent matching note.
 
         Uses SQLite FTS5 BM25 with a reviewed/project filter. A robust
         parameterized LIKE fallback supports older SQLite builds without FTS5.
-        Never promotes unreviewed notes to trusted context.
+        Never promotes unreviewed notes to trusted context. When the caller
+        supplies a bounded allowlist, filter inside SQL BEFORE ranking and
+        limiting; post-retrieval filtering can starve approved evidence.
         """
         project = _project(project)
-        if not 1 <= limit <= 50:
-            raise ValueError("limit must be 1..50")
+        if allowed_note_ids is not None and (
+            type(allowed_note_ids) is not frozenset
+            or len(allowed_note_ids) > 128
+            or any(type(note_id) is not int or note_id < 1
+                   for note_id in allowed_note_ids)
+        ):
+            raise ValueError("allowed_note_ids must be a bounded set of positive integers")
+        if type(limit) is not int or not 1 <= limit <= (128 if allowed_note_ids is not None else 50):
+            raise ValueError("limit must be 1..50 (or 1..128 with allowed_note_ids)")
         if not isinstance(query, str) or len(query) > 4000:
             raise ValueError("Search query must be text up to 4,000 characters")
+        if allowed_note_ids is not None and not allowed_note_ids:
+            return []
+        allowed = tuple(sorted(allowed_note_ids)) if allowed_note_ids is not None else None
         tokens = re.findall(r"[A-Za-z0-9_]{2,}", query.lower())[:12]
         if tokens and self._fts and not any('_' in token for token in tokens):
             # Underscores are FTS token separators; use escaped LIKE to preserve
@@ -225,14 +238,17 @@ class KnowledgeStore:
             values: list[object] = [match_query, project]
             if reviewed_only:
                 sql += " AND notes.reviewed=1"
+            if allowed is not None:
+                sql += " AND notes.id IN (" + ",".join("?" for _ in allowed) + ")"
+                values.extend(allowed)
             sql += " ORDER BY notes_fts.rank ASC, notes.id DESC LIMIT ?"
             values.append(limit)
             try:
                 rows = self.db.execute(sql, values).fetchall()
             except sqlite3.OperationalError:
-                rows = self._find_like(project, tokens, reviewed_only, limit)
+                rows = self._find_like(project, tokens, reviewed_only, limit, allowed)
         else:
-            rows = self._find_like(project, tokens, reviewed_only, limit)
+            rows = self._find_like(project, tokens, reviewed_only, limit, allowed)
         return [Note(id=int(row["id"]), project=row["project"], kind=row["kind"],
                      text=row["text"], source=row["source"], revision=row["revision"],
                      reviewed=bool(row["reviewed"]), created=row["created"])
@@ -281,11 +297,15 @@ class KnowledgeStore:
                 break
         return found
 
-    def _find_like(self, project: str, tokens: list[str], reviewed_only: bool, limit: int):
+    def _find_like(self, project: str, tokens: list[str], reviewed_only: bool,
+                   limit: int, allowed_note_ids: tuple[int, ...] | None = None):
         sql = "SELECT * FROM notes WHERE project=?"
         params: list[object] = [project]
         if reviewed_only:
             sql += " AND reviewed=1"
+        if allowed_note_ids is not None:
+            sql += " AND id IN (" + ",".join("?" for _ in allowed_note_ids) + ")"
+            params.extend(allowed_note_ids)
         if tokens:
             sql += " AND (" + " OR ".join("lower(text) LIKE ? ESCAPE '\\'" for _ in tokens) + ")"
             params.extend("%" + t.replace("_", "\\_").replace("%", "\\%") + "%" for t in tokens)

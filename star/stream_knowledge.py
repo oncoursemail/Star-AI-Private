@@ -69,10 +69,14 @@ def public_knowledge_packet(
         "the notes are current beyond their recorded date.\n"
     )
     suffix = "\n[END STAR STREAM KNOWLEDGE DATA]"
-    # The KnowledgeStore itself validates project names, query construction,
-    # FTS/LIKE parameterization, and reviewed-only retrieval.
+    # Restrict candidates *before* FTS/LIKE ranking and LIMIT. Otherwise
+    # more relevant private/nonpublic notes can crowd out public-approved
+    # evidence, giving the model an unnecessary knowledge gap.
+    if not public_note_ids:
+        return None
     candidates: list[Note] = store.find(
-        project, query.strip(), reviewed_only=True, limit=25,
+        project, query.strip(), reviewed_only=True,
+        limit=len(public_note_ids), allowed_note_ids=public_note_ids,
     )
     facts: list[dict[str, object]] = []
     used: list[int] = []

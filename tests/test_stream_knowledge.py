@@ -122,6 +122,52 @@ class StreamKnowledgeTests(unittest.TestCase):
         self.assertIn("river stone", p.context_record)
         self.assertLessEqual(len(p.context_record), 1400)
 
+    def test_public_approved_fact_survives_ranked_unapproved_crowding(self):
+        public = self.note(
+            "The checkpoint is behind the river stone near the waterfall.")
+        for index in range(70):
+            self.note(
+                f"checkpoint checkpoint checkpoint checkpoint rival note {index}")
+        # Baseline reproduction: initial global top-25 retrieval omits the
+        # explicitly owner-approved fact; filtering afterward cannot recover it.
+        ranked = self.store.find("game", "checkpoint", reviewed_only=True, limit=25)
+        self.assertNotIn(public, {item.id for item in ranked})
+        original_fts = self.store._fts
+        try:
+            for enabled in (original_fts, False):
+                with self.subTest(fts=enabled):
+                    self.store._fts = enabled
+                    packet = self.packet("checkpoint", [public])
+                    self.assertIsNotNone(packet)
+                    self.assertEqual(packet.note_ids, (public,))
+                    self.assertIn("river stone", packet.context_record)
+                    self.assertNotIn("rival note", packet.context_record)
+        finally:
+            self.store._fts = original_fts
+
+    def test_public_allowed_note_ids_bound_retrieval_before_limit(self):
+        target = self.note("checkpoint is at the start of the bridge")
+        other = self.note("checkpoint private location details")
+        rows = self.store.find(
+            "game", "checkpoint", reviewed_only=True, limit=1,
+            allowed_note_ids=frozenset({target}))
+        self.assertEqual([row.id for row in rows], [target])
+        self.assertNotIn(other, [row.id for row in rows])
+
+    def test_public_filter_rejects_invalid_allowlists(self):
+        target = self.note("checkpoint follows the orange door")
+        for bad in ({target}, frozenset({True}),
+                    frozenset({-1}), frozenset(range(1, 131))):
+            with self.subTest(bad_type=type(bad).__name__, size=len(bad)):
+                with self.assertRaises(ValueError):
+                    self.store.find(
+                        "game", "checkpoint", reviewed_only=True,
+                        allowed_note_ids=bad)
+        self.assertEqual(
+            self.store.find(
+                "game", "checkpoint", reviewed_only=True,
+                allowed_note_ids=frozenset()), [])
+
     def test_invalid_input_types_rejected(self):
         ident = self.note("A checkpoint event was observed.")
         cases = [
