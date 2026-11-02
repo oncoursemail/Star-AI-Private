@@ -373,6 +373,60 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   "fixability" weights (set by hand from the cause, not measured), and whether the note helps the conflict prompt.
 - Tests: `tests/test_litha_self.py` (fake `~/.star` in tmp_path for every test).
 
+## 4j. A bench whose numbers can be trusted (2026-11-02, measured)
+
+The old bench plants 6-8 random regex mutants per seed, so +-1-2 is noise and two runs never see the same bugs.
+Now there are fixed items, a stored baseline, and a gate for lessons (`litha/ast_mutants.py`, `litha/learn_loop.py`,
+`litha/real_fixes.py`; `bug_bench.py` only routes the new commands).
+
+- **AST mutants** (`ast_mutants.sites/apply`): one AST node's exact source bytes are edited, the rest of the file stays
+  byte-identical. Families: op-swap (+ -, * /, and or), cmp-flip (== !=, < >=, > <=, is / is not, in / not in),
+  off-by-one (< <=, > >=, int n -> n+1 in a compare, arithmetic, index or range), drop-return, swap-args,
+  drop-guard (an early `if ...: return/raise/continue/break` removed), bool-invert (`if c` -> `if not (c)`,
+  `not c` -> `c`, True/False). Never module constants, docstrings or f-string insides; works on CRLF checkouts.
+- **Standard suite** `litha/bench/standard_suite.json`: 32 items at star/next `91c3972d`, seed 32, recorded as
+  file + line + col + exact change + file hash; round-robin over the families (5/5/5/5/4/4/4), 30 files, at most 2 per
+  file. Kept only if the module's existing tests are green and < 60 s on the clean code AND fail with the mutant.
+  Building it took ~35 min of test runs. `bug_bench standard` replays exactly these, with the PR-style diff, in its
+  own checkout (`worktrees/litha-bench-std`). Bench runs never teach her: lessons are a frozen snapshot, no SFT or
+  nightly-bank rows (these are eval items).
+- **Real fixes** `litha/bench/real_fixes.json` (`bug_bench mine-real`): a fix commit replayed backwards (its source
+  files back to the parent, its tests kept); kept only if the tests pass on the fix and FAIL on the broken code (no
+  collection errors). Stored: repo, sha, parent, paths, failing test ids; nothing else. 12 items from 14 tried
+  commits. fixes.jsonl gave none: its Python-test rows are lock rebuilds (#831/#833), flaky reruns (#852/#899),
+  #832 (owner's call), and #848, whose fix (599c9786) changed the test's allow-list, not source (the tests pass with
+  the source reverted, correctly skipped). So all 12 are people's commits; several are behaviour changes with their
+  test (a renamed or new name the test asks for) rather than bug fixes. Run blind (failing tests + code only).
+- **Learning loop**: `pr_fixer.log_row` calls `learn_loop.after_fix(row)`. Every real Python test failure or fix on
+  this repo (real log only) appends a bench item to `~/.star/litha/real_items.jsonl` (the PR head that failed + its
+  failing test files); it is scored once `mine-real` finds the fix (her fix PR's head, or a star/next commit naming
+  the PR) and checks it. A fixed one also writes her cause sentence as a PENDING lesson
+  (`lessons-pending.json`); the fixer does not see it. `bug_bench gate [--margin 0]` runs the standard suite with the
+  pending lessons on top of the current ones and keeps them (into `lessons.json`, shown as "(a real fix)") only if
+  solved >= baseline - margin, else logs them to `lessons-rejected.jsonl`; exit 0 / 1 / 2 (no baseline). A real
+  item never sees the lesson made from itself. Nightly: `gate --if-pending` after the other runs. The old per-kind
+  lessons from `bug_bench run` are unchanged (not gated).
+- **Scoreboard** `bug_bench report [--last] [--no-real]`: both scores, wall time, calls, the baseline; one JSON row
+  per report in `~/.star/litha/scoreboard.jsonl` (runs in `bench-runs.jsonl`, baseline in `bench-baseline.json`).
+
+Measured, fixer at `ad330137` (K=1, lessons frozen), one bench at a time:
+
+| run | standard suite | wall s | model calls | real fixes (blind) |
+|---|---|---|---|---|
+| baseline (`standard --save-baseline`) | 17/32 | 1999 | 96 | - |
+| second run (`report`) | 16/32 | 1665 | 110 | 0/12 (1180 s, 60 calls) |
+
+Run-to-run noise on the SAME 32 items: 3 items flipped (S03, S17 solved -> missed; S15 missed -> solved), 15 solved
+both times, 18 at least once. So a change must move the standard suite by more than ~3/32 before one run can tell;
+`gate --margin` exists for that, default 0 as asked. By family (run 1 / run 2): op-swap 4/5, 5/5; cmp-flip 1/5, 1/5;
+off-by-one 4/5, 2/5; drop-return 2/5, 2/5; swap-args 2/4, 2/4; drop-guard 1/4, 1/4; bool-invert 3/4, 3/4. Misses
+burn all 5 rounds (5 calls); solves take 1-3. As in 4g, many misses name the right cause in `why` and still never land
+a passing edit (S02, S16, S18). Real fixes 0/12 blind: most need a missing or renamed name the test asks for
+(R01 `rust_fix.away`, R02 `later_checks`), which she diagnoses but does not write; this set is at its floor and shows
+no change smaller than one item. Not verified: the gate on a real pending lesson (no Python fix row since the hook
+landed; tested only with fakes), `fix_heads` against GitHub, items with a fixed PR head (`pull/<n>/head` fetch),
+and a second machine replaying the suite (file hashes ignore CRLF, so it should).
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another

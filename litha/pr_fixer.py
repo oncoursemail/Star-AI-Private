@@ -1634,6 +1634,11 @@ def log_row(t: float, row: dict) -> None:
         with LOG.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
         print(json.dumps(row), flush=True)
+    try:                                  # every real fix or failure becomes a bench item (+ a lesson to gate)
+        from litha.learn_loop import after_fix
+        after_fix(row)
+    except Exception:  # noqa: BLE001 - learning never costs a fix run
+        pass
 
 
 def pool(items: list, work, n: int, limit: int) -> list[dict]:

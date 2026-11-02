@@ -1,0 +1,211 @@
+{
+ "made": "2026-11-02",
+ "repo": "oncoursemail/Star-AI-Project",
+ "items": [
+  {
+   "id": "R01",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "f66598efd834a3ed3b3c85d4a00b1f37a896825a",
+   "parent": "25e028724fcf2d2bd75de55106002d11c1637420",
+   "src": [
+    "litha/pr_fixer.py",
+    "litha/rust_fix.py"
+   ],
+   "tests": [
+    "tests/test_litha_rust_fix.py"
+   ],
+   "fails": [
+    "tests/test_litha_rust_fix.py::test_a_ci_command_with_its_own_jobs_flag_is_not_given_a_second_one"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R02",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "13a7a937506b28d3490f6bf2b89ab8f5e71f9043",
+   "parent": "c411d2a852ee3e6964c06034189c2d1df1f38bc7",
+   "src": [
+    "litha/rust_fix.py"
+   ],
+   "tests": [
+    "tests/test_litha_rust_fix.py"
+   ],
+   "fails": [
+    "tests/test_litha_rust_fix.py::test_repair_loops_until_the_same_checks_pass",
+    "tests/test_litha_rust_fix.py::test_the_repos_clippy_steps_run_after_her_fix_too"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R03",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "39eab620bd456a615b0d3264452a37748688c347",
+   "parent": "39caf187297b998aa509be9598362361ff613023",
+   "src": [
+    "star/bug_hunt.py",
+    "star/pr_fixer.py",
+    "star/pr_merger.py"
+   ],
+   "tests": [
+    "tests/test_bug_bench.py"
+   ],
+   "fails": [
+    "tests/test_bug_bench.py::test_hunt_keeps_only_proven_flags_on_changed_functions"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R04",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "eb9f61a1cf257f737ae662b8ef206d829b9dd124",
+   "parent": "4e7e9a65a95c889bf71e5ccc61eaa4b0b39aa8ac",
+   "src": [
+    "star/bug_proof.py"
+   ],
+   "tests": [
+    "tests/test_bug_bench.py"
+   ],
+   "fails": [
+    "tests/test_bug_bench.py::test_the_prover_sees_the_module_shape_and_a_real_test_and_retries_a_wrong_expectation"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R05",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "4e7e9a65a95c889bf71e5ccc61eaa4b0b39aa8ac",
+   "parent": "c31f636239d0555af00c928209bda48adcd18923",
+   "src": [
+    "star/bug_bench.py"
+   ],
+   "tests": [
+    "tests/test_bug_bench.py"
+   ],
+   "fails": [
+    "tests/test_bug_bench.py::test_mutations_hit_code_lines_only_and_stay_valid_python"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R06",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "c31f636239d0555af00c928209bda48adcd18923",
+   "parent": "87eac61448eeff5884c09faefa183d9add9e986d",
+   "src": [
+    "star/bug_bench.py"
+   ],
+   "tests": [
+    "tests/test_bug_bench.py"
+   ],
+   "fails": [
+    "tests/test_bug_bench.py::test_mutations_hit_code_lines_only_and_stay_valid_python"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R07",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "d3e32b55ace81de3c4fdc7379ef5ac3aaf60ff5d",
+   "parent": "778eec2a8fb0d48b6b78dbcc204d298dd09bc251",
+   "src": [
+    "star/bug_bench.py",
+    "star/pr_fixer.py"
+   ],
+   "tests": [
+    "tests/test_bug_bench.py"
+   ],
+   "fails": [
+    "tests/test_bug_bench.py::test_bank_rows_go_to_the_nightly_work_dir",
+    "tests/test_bug_bench.py::test_sft_pairs_hold_the_real_answer"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R08",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "0d50da8bd677aa8307e3c2c04e8b33b2762ec273",
+   "parent": "091fd2ad940411acf813cf6461b46b8d94d7701c",
+   "src": [
+    "server/mesh/flaws/__main__.py",
+    "server/mesh/flaws/gate.py",
+    "server/mesh/flaws/hook.py",
+    "server/mesh/selfmodel/brief.py"
+   ],
+   "tests": [
+    "tests/test_mesh_flaws.py"
+   ],
+   "fails": [
+    "tests/test_mesh_flaws.py::test_gate_only_measures_turns_whose_request_changes",
+    "tests/test_mesh_flaws.py::test_long_turns_never_trip_the_rules"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R09",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "1f7b4da0c7d3b552e4d889742bcc0d33aba89872",
+   "parent": "648fdbe6bdd5ab718a359624e6d558a64ea46dd9",
+   "src": [
+    "server/mesh/polyglot/note.py",
+    "server/mesh/verify/core.py",
+    "server/mesh/verify/service.py"
+   ],
+   "tests": [
+    "tests/test_mesh_polyglot.py"
+   ],
+   "fails": [
+    "tests/test_mesh_polyglot.py::test_note_opt_out_for_internal_calls"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R10",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "13d64ee80e87b94e390fc4b75564721d346c29b9",
+   "parent": "0434ed9f1aa3a8f24471c28628d195aada20efa0",
+   "src": [
+    "server/mesh/general/inject.py"
+   ],
+   "tests": [
+    "tests/test_mesh_general.py"
+   ],
+   "fails": [
+    "tests/test_mesh_general.py::test_general_note_asks_for_only_what_the_model_is_sure_of"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R11",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "df9fc3be85304c06bfa348f036d17b461b6d339e",
+   "parent": "45d9101200ff37c9ffe03fd1e45fd4db15761c7b",
+   "src": [
+    "server/mesh/docs/service.py"
+   ],
+   "tests": [
+    "tests/test_mesh_docs.py"
+   ],
+   "fails": [
+    "tests/test_mesh_docs.py::test_service_endpoints"
+   ],
+   "source": "git"
+  },
+  {
+   "id": "R12",
+   "repo": "oncoursemail/Star-AI-Project",
+   "sha": "c6a635bc0524065b9bce6e150971eca7950aa79b",
+   "parent": "2eb671a3240119d64505b643d1ea98fe86ff1bfc",
+   "src": [
+    "star/human_checks.py",
+    "star/social/felt_time.py"
+   ],
+   "tests": [
+    "tests/test_human_evals.py"
+   ],
+   "fails": [
+    "tests/test_human_evals.py::test_leaks_and_invented_numbers"
+   ],
+   "source": "git"
+  }
+ ]
+}
