@@ -159,6 +159,7 @@ class RealtimeGameLoop:
     def record_reactive_latency(
         self, *, sample_id: int, duration_ms: float, sample_host_ms: float,
         host_measured: bool = False, completed: bool = True,
+        stream_live: bool = False,
     ) -> bool:
         """Pass independently measured *completion* timings, not model guesses."""
         with self._lock:
@@ -168,6 +169,7 @@ class RealtimeGameLoop:
                 game_scope=self._scope_key, sample_id=sample_id,
                 duration_ms=duration_ms, sample_host_ms=sample_host_ms,
                 host_measured=host_measured, completed=completed,
+                stream_live=stream_live,
             )
 
     def _skip(self, reason: str) -> GameThinkLease:
