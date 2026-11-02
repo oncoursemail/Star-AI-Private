@@ -48,6 +48,7 @@ def mark(key: str, sha: str) -> dict:
 LOG = Path.home() / ".star" / "pr-fixer" / "fixes.jsonl"
 ROUNDS = 5
 NO_TOUCH = re.compile(r"^(tests/|\.github/)|(^|/)(requirements[^/]*\.txt|pnpm-lock\.yaml|[^/]+\.lock)$")
+GATES = re.compile(r"^(scripts/pyright_baseline\.json|pyrightconfig\.json)$")   # her edits may not move the bar
 FAILED = re.compile(r"^FAILED (\S+::\S+)", re.M)
 FRAME = re.compile(r"^(?:\S+ +)?((?:star|server|metallic|tools|tests)/[\w/.-]+\.py):(\d+):", re.M)
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -161,7 +162,7 @@ def apply_edits(tree: Path, edits: list) -> list[str]:
             problems.append("an edit lacked file/find/replace")
             continue
         f = (tree / path).resolve()
-        if NO_TOUCH.search(path) or tree.resolve() not in f.parents:
+        if NO_TOUCH.search(path) or GATES.match(path) or tree.resolve() not in f.parents:
             problems.append(f"{path}: you may not edit this file (tests, CI and locks are the spec)")
             continue
         if not f.is_file():
@@ -253,7 +254,7 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
     return ok, why, round_no
 
 
-LINT = re.compile(r"^(star/[\w/.-]+\.py):(\d+):\d+: (\w+) (.*)$", re.M)
+LINT = re.compile(r"^((?:star|litha)/[\w/.-]+\.py):(\d+):\d+: (\w+) (.*)$", re.M)   # CI: ruff check star litha
 RUFF_CI = re.compile(r"Ruff \(\w+\)|ruff check star")         # the lint step failed (it runs before pytest in CI)
 LINT_PROMPT = """You are Litha, fixing ruff lint errors in STAR's Python code so CI passes. Keep behaviour the same.
 Errors, each with the real code around it (line numbers on the left, do not copy them):
@@ -265,7 +266,8 @@ the file>", "replace": "<new text>"}}]}}"""
 
 
 def lint(tree: Path, python: str) -> list[tuple[str, int, str]]:
-    r = sh([python, "-m", "ruff", "check", "star", "--output-format=concise", "--no-cache"], cwd=tree)
+    dirs = [d for d in ("star", "litha") if (tree / d).is_dir()]
+    r = sh([python, "-m", "ruff", "check", *dirs, "--output-format=concise", "--no-cache"], cwd=tree)
     return [(f, int(n), f"{rule} {msg}") for f, n, rule, msg in LINT.findall(r.stdout.replace("\\", "/"))]
 
 
@@ -302,6 +304,135 @@ def fix_lint(tree: Path, python: str, asker=ask) -> tuple[bool, str, int]:
         feedback = ("\nYour previous edits did not reduce the errors. " + ("Problems: " + "; ".join(problems) + ". "
                     if problems else "") + "Try a different fix.\n")
     return not lint(tree, python), why, ROUNDS
+
+
+TYPE_CI = re.compile(r"New pyright errors[^\n]*\n((?:.*\.py:\d+: .*\n?){1,4})")
+PYRIGHT = ["--yes", "pyright@1.1.414"]                      # the version CI pins (.github/workflows/tests.yml)
+BARE = Path.home() / ".star" / "pr-fixer" / "bare-python"   # no third-party packages, like CI's job venv
+IGNORE = re.compile(r"#\s*(type|pyright)\s*:\s*ignore")
+TYPE_PROMPT = """You are Litha, fixing new pyright type errors in STAR's Python code so the CI type gate passes.
+The gate counts errors per file and rule; these file/rule pairs now have more errors than scripts/pyright_baseline.json
+allows, so at least the listed number in each must go. Errors, each with the real code around it (line numbers on
+the left, do not copy them):
+{errors}
+{feedback}
+Fix the cause the way the type checker intends (narrow an Optional with an explicit check, correct a wrong
+annotation or call, give a variable one type). Keep behaviour the same. Never add "# type: ignore" or
+"# pyright: ignore", never edit the baseline. Answer only JSON: {{"why": "<one sentence>", "edits": [{{"file":
+"<path>", "find": "<exact existing text, unique in the file>", "replace": "<new text>"}}]}}"""
+
+
+def bare_python(python: str) -> str:
+    """A venv without packages (made once): with the owner's packages installed, library stubs change the counts."""
+    exe = BARE / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if not exe.is_file():
+        sh([python, "-m", "venv", "--without-pip", str(BARE)], timeout=300)
+    return str(exe) if exe.is_file() else python
+
+
+def run_pyright(tree: Path, python: str) -> list[dict] | None:
+    """Pyright's errors as CI computes them ({file, line, rule, message}, repo-relative), or None when it cannot run."""
+    npx = shutil.which("npx")
+    if not npx:
+        return None
+    r = sh([npx, *PYRIGHT, "--pythonpath", bare_python(python), "--outputjson"], cwd=tree, timeout=900)
+    try:
+        report = json.loads(r.stdout)
+    except ValueError:
+        return None
+    out = []
+    for d in report.get("generalDiagnostics", []):
+        if d.get("severity") != "error":
+            continue
+        try:
+            path = Path(d["file"]).resolve().relative_to(tree.resolve()).as_posix()
+        except ValueError:
+            path = str(d["file"]).replace("\\", "/")
+        out.append({"file": path, "line": d["range"]["start"]["line"] + 1, "rule": d.get("rule") or "unknown",
+                    "message": str(d.get("message", "")).splitlines()[0]})
+    return out
+
+
+def type_excess(tree: Path, errors: list[dict]) -> dict[str, tuple[int, int]]:
+    """file::rule -> (allowed, now) for every pair above the baseline: the same rule as scripts/pyright_baseline.py."""
+    f = tree / "scripts" / "pyright_baseline.json"
+    allowed = json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+    now: dict[str, int] = {}
+    for e in errors:
+        key = f"{e['file']}::{e['rule']}"
+        now[key] = now.get(key, 0) + 1
+    return {k: (allowed.get(k, 0), n) for k, n in sorted(now.items()) if n > allowed.get(k, 0)}
+
+
+def related_tests(tree: Path, files: list[str], limit: int = 6) -> list[str]:
+    """Test files that import a changed module: a type fix must not change what the code does."""
+    mods = {f[:-3].replace("/", ".") for f in files if f.endswith(".py")}
+    out = []
+    for t in sorted((tree / "tests").glob("test_*.py")) if (tree / "tests").is_dir() else []:
+        text = t.read_text(encoding="utf-8", errors="replace")
+        if any(re.search(rf"\b(from|import) {re.escape(m)}\b", text) for m in mods):
+            out.append(t.relative_to(tree).as_posix())
+        if len(out) == limit:
+            break
+    return out
+
+
+def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[bool, str, int]:
+    """Up to ROUNDS rounds of her edits against the pyright baseline gate. A round must lower the errors above the
+    baseline and add no ignore comment, else it is undone. Then the tests of every changed module must still pass.
+    Round 0 = nothing to do here (pyright cannot run, or the gate passes locally)."""
+    errors = checker(tree, python)
+    if errors is None:
+        return False, "pyright cannot run here (no npx)", 0
+    excess = type_excess(tree, errors)
+    if not excess:
+        return False, "the pyright gate passes locally (CI-only type failure)", 0
+    feedback, why, touched = "", "", set()
+    for round_no in range(1, ROUNDS + 1):
+        over = sum(n - a for a, n in excess.values())
+        listing = []
+        for e in [e for e in errors if f"{e['file']}::{e['rule']}" in excess][:12]:
+            a, n = excess[f"{e['file']}::{e['rule']}"]
+            lines = (tree / e["file"]).read_text(encoding="utf-8", errors="replace").splitlines()
+            near = "\n".join(f"{i + 1:5}: {lines[i]}" for i in range(max(0, e["line"] - 7), min(len(lines), e["line"] + 6)))
+            listing.append(f"{e['file']}:{e['line']}: {e['message']} [{e['rule']}] ({n} in this file/rule, "
+                           f"baseline allows {a})\n{near}")
+        files = {e["file"] for e in errors if f"{e['file']}::{e['rule']}" in excess}
+        before = {f: (tree / f).read_bytes() for f in files if (tree / f).is_file()}
+        try:
+            answer = json.loads(asker(TYPE_PROMPT.format(errors="\n\n".join(listing)[:7000], feedback=feedback)))
+        except (ValueError, TypeError):
+            feedback = "\nYour last answer was not valid JSON. Answer only the JSON object.\n"
+            continue
+        edits = answer.get("edits") if isinstance(answer.get("edits"), list) else []
+        if any(IGNORE.search(str(e.get("replace", ""))) and not IGNORE.search(str(e.get("find", "")))
+               for e in edits if isinstance(e, dict)):
+            feedback = "\nYour edits added an ignore comment. That hides the error; fix its cause instead.\n"
+            continue
+        before.update({p: (tree / p).read_bytes() for e in edits if isinstance(e, dict)
+                       for p in [str(e.get("file", "")).replace("\\", "/").lstrip("./")] if p and (tree / p).is_file()})
+        problems = apply_edits(tree, edits)
+        after = checker(tree, python) or []
+        left = type_excess(tree, after)
+        if sum(n - a for a, n in left.values()) < over:
+            why, feedback, errors, excess = str(answer.get("why", why))[:300], "", after, left
+            touched |= {f for f, data in before.items() if (tree / f).read_bytes() != data}
+            if not excess:
+                break
+            continue
+        for f, data in before.items():                     # no progress: undo this round
+            (tree / f).write_bytes(data)
+        feedback = ("\nYour previous edits did not reduce the new type errors. " + ("Problems: " + "; ".join(problems)
+                    + ". " if problems else "") + "Try a different fix.\n")
+    else:
+        return False, why or "the new type errors remain", ROUNDS
+    tests = related_tests(tree, sorted(touched))
+    if tests:
+        ok, out = run_tests(tree, tests, python)
+        if not ok:
+            failed = ", ".join(f["test"] for f in failures(out)) or out[-200:]
+            return False, "the type fix changed behaviour, these tests fail now: " + failed, round_no
+    return True, why, round_no
 
 
 LOCK_TOOL = "installer/star-home/pin_requirements.py"
@@ -728,11 +859,10 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
         return {"pr": number, "result": "rerun" if n else "skip",
                 "why": f"failed logs expired; reran {n} run(s)" + ("" if n else "; nothing could be restarted")}
     linting = not fails and bool(RUFF_CI.search(log))
-    typing = re.search(r"New pyright errors[^\n]*\n((?:.*\.py:\d+: .*\n?){1,4})", log)
-    if not found and not fails and not linting and typing:   # a type gate fails the same way every run: no rerun
-        return {"pr": number, "result": "failed", "kind": "types",
-                "why": "new pyright errors: " + " | ".join(re.findall(r"\S+\.py:\d+: [^\n]*", typing.group(1)))[:300]}
-    if not found and not fails and not linting:   # timeout, lost runner, setup (seen: #700 died after 9 h): one rerun
+    typing = None if found or fails or linting else TYPE_CI.search(log)   # fails the same every run: fix, no rerun
+    ci_types = ("new pyright errors: " + " | ".join(re.findall(r"\S+\.py:\d+: [^\n]*", typing.group(1)))[:300]
+                if typing else "")
+    if not found and not fails and not linting and not typing:   # timeout, lost runner, setup (seen: #700 died after 9 h): one rerun
         return {"pr": number, "result": "flaky-rerun",
                 "why": f"no test or lint failure in the failed logs; reran {rerun_failed(sha, number)} failed run(s) once"}
     day = dt.date.today().strftime("%Y%m%d")
@@ -767,6 +897,11 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
         if round_no == 0:
             return {"pr": number, "result": "skip", "why": why}
         tests = ["ruff check star"]
+    elif typing:
+        ok, why, round_no = fix_types(tree, python, asker)
+        if round_no == 0:                                   # cannot check it here: report what CI said
+            return {"pr": number, "result": "failed", "kind": "types", "why": f"{ci_types} ({why})"}
+        tests = ["pyright baseline gate"]
     else:
         diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
         ok, why, round_no = repair(tree, pr.get("title", ""), fails, out, tests, python, asker, diff)

@@ -91,6 +91,9 @@ def test_lint_failures_get_safe_autofixes_then_her_edits(tmp_path):
     assert ok and why == "unused local" and len(asked) == 1 and "F401" not in asked[0]      # os import: autofixed
     assert (tmp_path / "star" / "m.py").read_text(encoding="utf-8") == "\n\ndef f():\n    return 2\n"
     assert F.RUFF_CI.search("::error title=Ruff (F401),file=star/m.py,line=1::x")
+    (tmp_path / "litha").mkdir()                   # CI lints litha/ too: a lint error there is not "CI-only"
+    (tmp_path / "litha" / "x.py").write_text("import os\n", encoding="utf-8")
+    assert [e[0] for e in F.lint(tmp_path, sys.executable)] == ["litha/x.py"]
 
 
 def test_a_dependency_bump_gets_its_lock_regenerated_by_the_project_tool(tmp_path):
@@ -217,13 +220,85 @@ def test_a_conflict_too_big_for_her_window_is_refused_without_asking_her():
     assert merged is None and "too big for her 4096-token window" in why
 
 
-def test_a_pyright_gate_failure_is_reported_not_rerun(monkeypatch):
+def test_a_pyright_gate_failure_goes_to_her_type_fixer_not_a_rerun(monkeypatch):
     log = ("Python types\tCheck\t2026-11-01T07:50:00Z New pyright errors (fix them; the baseline only shrinks):\n"
            "Python types\tCheck\t2026-11-01T07:50:00Z   litha/pr_fixer.py:411: No overloads for \"run\" [reportCallIssue]\n")
     monkeypatch.setattr(F, "failed_logs", lambda sha: log)
     monkeypatch.setattr(F, "rerun_failed", lambda *a: pytest.fail("a type error is not flaky"))
+    monkeypatch.setattr(F, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+    monkeypatch.setattr(F, "gh", lambda *a, **k: "")
+    called = []
+    monkeypatch.setattr(F, "fix_types", lambda tree, python, asker: called.append(tree) or (False, "no npx", 0))
     row = F.fix({"headRefOid": "abc", "number": 848, "headRefName": "x"}, "python")
-    assert row["result"] == "failed" and row["kind"] == "types" and row["why"].startswith("new pyright errors: litha/pr_fixer.py:411: No overloads")
+    assert called and row["result"] == "failed" and row["kind"] == "types"
+    assert row["why"].startswith("new pyright errors: litha/pr_fixer.py:411: No overloads") and "(no npx)" in row["why"]
+    monkeypatch.setattr(F, "fix_types", lambda tree, python, asker: (True, "narrowed the Optional", 1))
+    row = F.fix({"headRefOid": "abc", "number": 848, "headRefName": "x"}, "python", dry=True)
+    assert row["result"] == "fixed" and row["tests"] == ["pyright baseline gate"]
+
+
+def _typed_repo(tmp_path, baseline=None):
+    (tmp_path / "star").mkdir()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "pyright_baseline.json").write_text(json.dumps(baseline or {}), encoding="utf-8")
+    (tmp_path / "star" / "m.py").write_text("def f(x: str | None) -> str:\n    return x.upper()  # BAD\n",
+                                            encoding="utf-8")
+
+    def checker(tree, python):                  # pyright stand-in: one error per line marked BAD
+        return [{"file": "star/m.py", "line": i + 1, "rule": "reportOptionalMemberAccess",
+                 "message": '"upper" is not a known attribute of "None"'}
+                for i, ln in enumerate((tree / "star" / "m.py").read_text(encoding="utf-8").splitlines()) if "BAD" in ln]
+    return checker
+
+
+GOOD = {"why": "narrow the Optional", "edits": [{"file": "star/m.py", "find": "    return x.upper()  # BAD\n",
+                                                 "replace": "    return x.upper() if x is not None else \"\"\n"}]}
+
+
+def test_type_errors_above_the_baseline_are_fixed_by_her_edits(tmp_path):
+    checker = _typed_repo(tmp_path)
+    asked = []
+    ok, why, rounds = F.fix_types(tmp_path, sys.executable, lambda p: asked.append(p) or json.dumps(GOOD), checker)
+    assert ok and why == "narrow the Optional" and rounds == 1
+    assert "star/m.py:2:" in asked[0] and "baseline allows 0" in asked[0] and "return x.upper()" in asked[0]
+    assert "BAD" not in (tmp_path / "star" / "m.py").read_text(encoding="utf-8")
+
+
+def test_an_ignore_comment_or_no_progress_is_undone_and_she_is_told(tmp_path):
+    checker = _typed_repo(tmp_path)
+    original = (tmp_path / "star" / "m.py").read_text(encoding="utf-8")
+    hide = {"why": "x", "edits": [{"file": "star/m.py", "find": "  # BAD\n", "replace": "  # BAD  # type: ignore\n"}]}
+    same = {"why": "x", "edits": [{"file": "star/m.py", "find": "def f(", "replace": "def  f("}]}
+    answers, asked = [hide, same, GOOD], []
+
+    def ask(prompt):
+        asked.append(prompt)
+        if len(asked) == 3:      # the no-progress round was undone before she is asked again
+            assert (tmp_path / "star" / "m.py").read_text(encoding="utf-8") == original
+        return json.dumps(answers[len(asked) - 1])
+
+    ok, _, rounds = F.fix_types(tmp_path, sys.executable, ask, checker)
+    assert ok and rounds == 3
+    assert "ignore comment" in asked[1] and "did not reduce" in asked[2]
+
+
+def test_the_type_fixer_respects_the_baseline_and_cannot_move_it(tmp_path):
+    checker = _typed_repo(tmp_path, {"star/m.py::reportOptionalMemberAccess": 1})
+    ok, why, rounds = F.fix_types(tmp_path, sys.executable, lambda p: pytest.fail("nothing is new"), checker)
+    assert (ok, rounds) == (False, 0) and "passes locally" in why
+    assert F.fix_types(tmp_path, sys.executable, lambda p: "", lambda t, p: None)[2] == 0      # no npx: round 0
+    problems = F.apply_edits(tmp_path, [{"file": "scripts/pyright_baseline.json", "find": "1", "replace": "2"}])
+    assert problems and "may not edit" in problems[0]
+
+
+def test_a_type_fix_that_breaks_the_modules_tests_is_not_kept(tmp_path):
+    checker = _typed_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_m.py").write_text(
+        "from star.m import f\n\n\ndef test_none():\n    assert f(None) == 'none'\n", encoding="utf-8")
+    assert F.related_tests(tmp_path, ["star/m.py"]) == ["tests/test_m.py"]
+    ok, why, _ = F.fix_types(tmp_path, sys.executable, lambda p: json.dumps(GOOD), checker)
+    assert not ok and "tests/test_m.py::test_none" in why
 
 
 def test_an_old_failure_superseded_by_later_passes_is_not_a_failure(monkeypatch):
