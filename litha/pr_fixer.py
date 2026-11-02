@@ -4,7 +4,9 @@ For an open, non-draft PR into star/next whose Python checks failed on the head 
 1. read the failed job log, take the pytest failures (test id + its traceback section);
 2. check the PR out on her own branch litha/fix-<pr>-<yyyymmdd> in a throwaway worktree;
 3. Litha gets the tracebacks + the real code around every frame and answers search/replace edits;
-4. edits that do not match the file exactly once, or touch tests / CI / locks, are refused and she is told why;
+4. her code is packed into her window by litha/context_pack.py (section 4i); a `find` that is not in the file
+   exactly is landed whitespace-tolerant or by a unique fuzzy match, else re-asked once; edits that touch tests /
+   CI / locks, or still name no single place, are refused and she is told why;
 5. the failing tests run locally; up to ROUNDS rounds, each with the new output;
 6. only when they pass: commit through `star commit` (secret checks), push HER branch (never the author's, never
    force), open a PR into star/next. The merger (star/pr_merger) merges it once CI is green there.
@@ -31,7 +33,7 @@ import threading
 import time
 import tomllib
 
-from litha import rust_fix
+from litha import context_pack, rust_fix
 from litha.pr_merger import BASE, REPO, gh, head_checks, latest_runs, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
@@ -210,26 +212,39 @@ def code_excerpts(tree: Path, sections: str, around: int = 25, budget: int = 900
     return text[:budget]
 
 
-def apply_edits(tree: Path, edits: list) -> list[str]:
-    """Apply search/replace edits; returns the problems (an edit with a problem is not applied)."""
+def apply_edits(tree: Path, edits: list, misses: list | None = None) -> list[str]:
+    """Apply search/replace edits; returns the problems (an edit with a problem is not applied). A `find` that is
+    not in the file exactly is landed whitespace-tolerant or by a unique fuzzy match (context_pack.land); one that
+    still names no single place goes to `misses` (for one re-ask). Every refusal is noted with its reason."""
     problems = []
-    for e in edits if isinstance(edits, list) else []:
+    for index, e in enumerate(edits if isinstance(edits, list) else []):
         try:
             path, find, new = str(e["file"]).replace("\\", "/").lstrip("./"), str(e["find"]), str(e["replace"])
         except (KeyError, TypeError):
             problems.append("an edit lacked file/find/replace")
+            context_pack.note_reject("", "", problems[-1])
             continue
         f = (tree / path).resolve()
         if NO_TOUCH.search(path) or GATES.match(path) or FRONT_SPEC.match(path) or tree.resolve() not in f.parents:
             problems.append(f"{path}: you may not edit this file (tests, CI and locks are the spec)")
+            context_pack.note_reject(path, find, problems[-1])
             continue
         if not f.is_file():
             problems.append(f"{path}: no such file")
+            context_pack.note_reject(path, find, problems[-1])
             continue
         text = f.read_text(encoding="utf-8")
         n = text.count(find) if find else 0
         if n != 1:
-            problems.append(f"{path}: 'find' matched {n} times, it must match exactly once")
+            got = context_pack.land(text, find, new, e.get("line"))
+            if isinstance(got, str):
+                problems.append(f"{path}: 'find' matched {n} times, it must match exactly once ({got})")
+                context_pack.note_reject(path, find, got)
+                if misses is not None:
+                    misses.append({**e, "file": path, "index": index, "reason": got})
+                continue
+            start, end, new, _ = got
+            f.write_bytes((text[:start] + new + text[end:]).encode("utf-8"))
             continue
         f.write_bytes(text.replace(find, new).encode("utf-8"))
     return problems
@@ -286,7 +301,7 @@ def _edit_size(edits) -> int:
     return n
 
 
-def _apply_saved(tree: Path, edits, saved: dict[Path, bytes]) -> list[str]:
+def _apply_saved(tree: Path, edits, saved: dict[Path, bytes], misses: list | None = None) -> list[str]:
     """apply_edits, first remembering the bytes of every file the edits name, so a candidate is undone exactly,
     also on a tree with uncommitted changes (`git checkout -- .` also erased the bench's planted bug)."""
     root = tree.resolve()
@@ -297,7 +312,7 @@ def _apply_saved(tree: Path, edits, saved: dict[Path, bytes]) -> list[str]:
             continue
         if f not in saved and root in f.parents and f.is_file():
             saved[f] = f.read_bytes()
-    return apply_edits(tree, edits)
+    return apply_edits(tree, edits, misses)
 
 
 def _restore(tree: Path, saved: dict[Path, bytes], kept: list) -> None:
@@ -330,16 +345,15 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
         if deep:
             fails = [{"test": fails[0]["test"], "section": deep}] + fails[1:]
     for round_no in range(1, ROUNDS + 1):
-        sections = "\n\n".join(f"{f['test']}\n{f['section']}" for f in fails) + "\n\nlocal run now:\n" + out[-1500:]
-        code, lessons = code_excerpts(tree, sections), _lessons()
+        lessons = _lessons()
         tried: list[dict] = []
         applied = False                                      # the tree holds tried[-1]'s edits
         for i in range(k):
             if applied:
                 _restore(tree, saved, kept_edits)
                 applied = False
-            prompt = PROMPT.format(title=title, failures=sections[:6000], code=code, lessons=lessons,
-                                   feedback=feedback + _proposed(tried), diff=source_diff(diff)[:5000] or "(not available)")
+            prompt = context_pack.fixer_prompt(tree, title=title, fails=fails, out=out, diff=source_diff(diff),
+                                               lessons=lessons, feedback=feedback, proposed=_proposed(tried))
             try:
                 answer = json.loads(asker(prompt))
             except (ValueError, TypeError):
@@ -347,13 +361,19 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
             if not isinstance(answer, dict):
                 continue
             why = str(answer.get("why", ""))[:300]
-            problems = _apply_saved(tree, answer.get("edits"), saved)
+            edits, misses = answer.get("edits"), []
+            problems = _apply_saved(tree, edits, saved, misses)
+            if misses and k == 1:                            # her find is nowhere: once more, with the nearest lines
+                again = context_pack.reask(tree, why, misses, asker)
+                if again:
+                    problems = [p for p in problems if "'find' matched" not in p] + _apply_saved(tree, again, saved)
+                    edits = [e for j, e in enumerate(edits) if j not in {m["index"] for m in misses}] + again
             ok, out = run_tests(tree, tests, python)
             if ok:
                 break
             applied = True
-            tried.append({"why": why, "edits": answer.get("edits"), "problems": problems, "out": out,
-                          "now": len(FAILED.findall(out)) or 99, "size": _edit_size(answer.get("edits"))})
+            tried.append({"why": why, "edits": edits, "problems": problems, "out": out,
+                          "now": len(FAILED.findall(out)) or 99, "size": _edit_size(edits)})
         if ok:
             break
         if not tried:
@@ -1767,6 +1787,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--others", type=int, metavar="N", help="instead: resolve up to N conflicting PRs per other repo")
     a = ap.parse_args(argv)
     STATE.parent.mkdir(parents=True, exist_ok=True)
+    context_pack.REJECT_LOG = STATE.parent / "rejected-edits.jsonl"   # why each edit of hers was refused
     n = max(1, a.workers or workers())
     if a.others is not None:
         return others(a.python, a.others, a.dry, n)

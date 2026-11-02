@@ -314,6 +314,56 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Not done: the regression guard (neighbouring passing tests) from the research brief, a `--k` CLI flag, a real
   temperature per candidate (the `asker` takes only the prompt), a live PR measured with K=3.
 
+## 4i. Context packer and edit landing (2026-11-02, measured)
+
+- Why: in 4g's misses she often named the cause and still never landed an edit. Measured on the old code (2 runs
+  of the 32 mutants): **152 of 210 edits she sent were refused, 147 of them because `find` was not in the file**;
+  nearly all were copies of the diff (`-old` / `+new` lines, often only the `-` side, which is not in the file). Her
+  old prompts were also up to 5755 tokens (6000 chars of test output + 5000 of diff + 9000 of code), and the bug
+  line was in the prompt for only 17 of the 32 mutants (offline count). No call failed here (prompts up to 5755 tokens
+  were answered, so they went to the 8192-token node); the 4096-token node would have refused every prompt above its window (HTTP 400, which
+  `repair()` counted as "not valid JSON").
+- `litha/context_pack.py` (new; `pr_fixer` only calls it from `repair()` and `apply_edits()`):
+  - **Packer** (`pick`, `pack`, `fixer_prompt`): `ast` picks the changed hunks (score 98), the traceback frames of
+    the first failure, deepest first (95, 91, ...), the failing test (90; only its failing lines when the traceback
+    already prints its source), the functions the test calls (85 for the call on the failing line, less with
+    distance; fallbacks via the test's imports, then the repo map), what the failing function called just before
+    it failed (78: the "returned None" case), then callees (50) and callers (40) one hop away. A unit full of the
+    failure's own words (E lines, `-l` locals) moves up a little and is cut around those lines. The prompt is
+    clipped part by part to 4096 - 700 tokens (700 kept for her answer); no unit takes more than ~45% of the code
+    budget. Every line shows its real line number; she is asked for the `line` of each `find`.
+    Offline, the bug line is now in the prompt for 30 of 32 (the 2 left are 2+ calls away from the test, blind).
+  - **Landing** (`land`, in `apply_edits` for every fixer): exact; without listing numbers / diff markers (the
+    `-` side when there is no `+` side); whitespace-tolerant (indentation re-applied to `replace`); then a fuzzy
+    whole-line match (similarity >= 0.88 and 0.06 ahead of any other place). Two equal places are told apart only
+    by the `line` she gave; anything else ambiguous is refused. A `find` that still names no place gets ONE re-ask
+    (K=1 only; with K>1 the other candidates are the retry) showing the 2 nearest real runs of lines, numbered.
+    Every refusal is noted with its reason (`context_pack.REJECTS`; the live fixer writes
+    `~/.star/pr-fixer/rejected-edits.jsonl`). Test/CI/lock/gate refusals run before any matching, unchanged.
+  - **Repo map** (`repo_map`): module -> public names with signature and first docstring line, cached per git tree
+    hash in `~/.star/pr-fixer/repomap/` (a new tree reuses unchanged modules by blob sha). It resolves names the
+    test calls and adds a short "where things live" list for the files shown.
+- Measured, `bug_bench run --n 8`, seeds 11 and 12, with diff and blind (the same 32 mutants as 4g on a private
+  checkout of a3926af4, lessons frozen, no learning writes, K=1, one bench at a time; another lane's hunt benches
+  were running on the same PC and model during all four passes):
+
+  | code | solved | wall s | model calls | edits sent | refused |
+  |---|---|---|---|---|---|
+  | before (wave2 head ad330137), run 1 | 16/32 (4, 4, 5, 3) | 2105 | 104 | 105 | 75 |
+  | before, run 2 | 17/32 (4, 4, 6, 3) | 1909 | 102 | 105 | 77 |
+  | after, run 1 | 28/32 (8, 7, 8, 5) | 921 | 51 | 50 | 1 |
+  | after, run 2 | 28/32 (8, 6, 8, 6) | 835 | 63 | 66 | 1 |
+
+  Order in brackets: s11 diff, s11 blind, s12 diff, s12 blind. With the diff: 16/16 in both runs (was 8-10/16),
+  almost all in round 1. Blind: 12/16 twice (was 7/16 twice). Of the 116 edits after, 15 landed by the new matching
+  (4 fuzzy, 9 whitespace, 2 numbers/markers), 2 were refused and both re-asks returned an edit; the gain is mostly
+  that she now copies `find` from numbered lines instead of the diff. Max prompt 3380 tokens (was 5755).
+  Still missed blind: isnone-flip (game_closed_loop, twice), eq-flip in luau_run_review and lower-upper in
+  computer/draw (twice; both 2+ calls from the test, not in her window), add-not / drop-not once each.
+- Not separated: how much comes from the packed code versus the new prompt wording (`line` field, "not part of the
+  file"); no ablation was run. Not measured: a live PR, the 4096-token node (all calls went to the 8192 one), K=3
+  with the packer, whether a fuzzy landing ever hit a wrong place on a solved item (all 4 here were then solved).
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
