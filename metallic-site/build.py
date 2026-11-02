@@ -24,7 +24,8 @@ SRC = HERE / "src"
 FRONT = re.compile(r"<!--\s*(\w+):\s*(.*?)\s*-->")
 NAV = ("home", "downloads", "news")
 LIVE_FILES = ("revivals.json", "news.json", "projects.json")
-RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip")
+RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip", ".apk")
+RELEASE_MANIFESTS = ("latest.json", "quest.json")  # Windows updater manifest; the Meta Quest APK {"version","url","notes"}
 
 
 def esc(text: str) -> str:
@@ -64,10 +65,10 @@ def render_page(layout: str, rel: str, meta: dict, body: str, site_url: str, ver
 
 
 def copy_releases(src: Path, dest: Path) -> None:
-    """latest.json plus the installers it names. Nothing else (no keys, no old channel files)."""
+    """latest.json, quest.json and the installers and APKs. Nothing else (no keys, no old channel files)."""
     dest.mkdir(parents=True, exist_ok=True)
     for p in sorted(src.iterdir()):
-        if p.is_file() and (p.name == "latest.json" or p.suffix.lower() in RELEASE_SUFFIXES):
+        if p.is_file() and (p.name in RELEASE_MANIFESTS or p.suffix.lower() in RELEASE_SUFFIXES):
             shutil.copy2(p, dest / p.name)
 
 

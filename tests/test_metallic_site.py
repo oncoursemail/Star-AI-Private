@@ -199,6 +199,22 @@ def test_release_folder_copies_only_the_manifest_and_installers(built):
     assert m["platforms"]["windows-x86_64"]["url"].endswith("/releases/Metallic_0.1.0_x64-setup.exe")
 
 
+def test_quest_apk_and_its_manifest_are_copied_and_shown(tmp_path):
+    mod = load_build()
+    rel = tmp_path / "rel"
+    rel.mkdir()
+    (rel / "Metallic_0.2.8_quest.apk").write_bytes(b"apk bytes")
+    (rel / "quest.json").write_text(json.dumps({"version": "0.2.8", "url": "/releases/Metallic_0.2.8_quest.apk"}))
+    (rel / "metallic-quest.jks").write_bytes(b"keystore")  # the signing key is never copied
+    out = tmp_path / "dist"
+    mod.build(out, SITE_URL, rel)
+    assert sorted(p.name for p in (out / "releases").iterdir()) == ["Metallic_0.2.8_quest.apk", "quest.json"]
+    dl = js(out, "downloads.js")
+    assert '"/releases/quest.json"' in dl and "data-quest-dl" in dl
+    page = (out / "downloads" / "index.html").read_text(encoding="utf-8")
+    assert 'id="quest"' in page and "data-quest-dl" in page and "SideQuest" in page
+
+
 def test_sample_live_data_is_copied_only_when_asked(built, tmp_path):
     out, _, _, mod = built
     assert not (out / "live").exists()
