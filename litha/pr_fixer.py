@@ -49,6 +49,8 @@ LOG = Path.home() / ".star" / "pr-fixer" / "fixes.jsonl"
 ROUNDS = 5
 NO_TOUCH = re.compile(r"^(tests/|\.github/)|(^|/)(requirements[^/]*\.txt|pnpm-lock\.yaml|[^/]+\.lock)$")
 GATES = re.compile(r"^(scripts/pyright_baseline\.json|pyrightconfig\.json)$")   # her edits may not move the bar
+FRONT_SPEC = re.compile(r"^frontend/(.*\.test\.[cm]?[jt]sx?|src/test-[^/]+\.ts|tsconfig[^/]*\.json|vite\.config\.\w+|"
+                        r"vitest\.config\.\w+|package(-lock)?\.json)$")   # the React job's tests and its configs
 FAILED = re.compile(r"^FAILED (\S+::\S+)", re.M)
 FRAME = re.compile(r"^(?:\S+ +)?((?:star|server|metallic|tools|tests)/[\w/.-]+\.py):(\d+):", re.M)
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -162,7 +164,7 @@ def apply_edits(tree: Path, edits: list) -> list[str]:
             problems.append("an edit lacked file/find/replace")
             continue
         f = (tree / path).resolve()
-        if NO_TOUCH.search(path) or GATES.match(path) or tree.resolve() not in f.parents:
+        if NO_TOUCH.search(path) or GATES.match(path) or FRONT_SPEC.match(path) or tree.resolve() not in f.parents:
             problems.append(f"{path}: you may not edit this file (tests, CI and locks are the spec)")
             continue
         if not f.is_file():
@@ -433,6 +435,296 @@ def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[
             failed = ", ".join(f["test"] for f in failures(out)) or out[-200:]
             return False, "the type fix changed behaviour, these tests fail now: " + failed, round_no
     return True, why, round_no
+
+
+FRONT = "frontend"                          # CI: npm run typecheck / test --prefix frontend (tests.yml, job "react")
+REACT_CI = re.compile(r"React UI compile and tests|npm run (?:typecheck|test|build) --prefix frontend")
+TSC = re.compile(r"(?:^|\s|##\[error\])((?:frontend/)?[\w./-]+\.[cm]?tsx?)(?:\((\d+),(\d+)\):|:(\d+):(\d+) -) error (TS\d+): ([^\r\n]*)",
+                 re.M)                      # tsc plain "f(l,c): error TSn: m" and pretty "f:l:c - error TSn: m"
+VITEST = re.compile(r"^\s*FAIL\s+((?:frontend/)?[\w./-]+\.test\.[cm]?[jt]sx?)(?: \[[^\]\n]*\])?(?: > ([^\n]*?))?\s*$",
+                    re.M)
+VFRAME = re.compile(r"(?:❯|at )\s*\(?((?:frontend/)?src/[\w./-]+\.[cm]?[jt]sx?):(\d+):\d+")
+SILENCE = re.compile(r"@ts-(?:ignore|expect-error|nocheck)|\bas\s+any\b|:\s*any\b|<any>|\bany\[\]|eslint-disable")
+DEPS = Path.home() / ".star" / "pr-fixer" / "frontend-deps"   # node_modules per package.json, made once, shared
+FRONT_PROMPT = """You are Litha, fixing the failing "React UI compile and tests" check (tsc + vitest) of STAR's React
+frontend so CI passes. PR title: {title}
+What this PR changed in the frontend (the cause is most likely in these lines):
+{diff}
+
+Errors now ({count} in all), each with the real code around it (line numbers on the left, do not copy them):
+{errors}
+{feedback}
+Fix the cause in the source code. Test files (*.test.ts, *.test.tsx) describe the wanted behaviour: never edit them,
+nor tsconfig, vite/vitest config, package.json or lock files. Never silence an error: no // @ts-ignore,
+@ts-expect-error, @ts-nocheck, "as any", ": any" or eslint-disable. Give values their real types. Paths start with
+frontend/. Copy "find" from the code listing (the file as it is now), never from the diff: no leading + or -.
+Make the smallest correct change. Answer only JSON: {{"why": "<one sentence: the cause>", "edits":
+[{{"file": "<path>", "find": "<exact existing text, a few whole lines, unique in the file>", "replace": "<new text>"}}]}}"""
+
+
+def _front(path: str) -> str:
+    path = path.replace("\\", "/").lstrip("./")
+    return path if path.startswith(f"{FRONT}/") else f"{FRONT}/{path}"
+
+
+def frontend_failures(log: str) -> dict | None:
+    """The React job's failures in a CI log: tsc errors and vitest FAIL lines, repo-relative. None = none in the log."""
+    log = STAMP.sub("", ANSI.sub("", log))
+    tsc = [{"file": _front(f), "line": int(a or c), "code": code, "message": msg.strip()}
+           for f, a, _, c, _, code, msg in TSC.findall(log)]
+    tsc = list({(e["file"], e["line"], e["code"]): e for e in tsc}.values())
+    tests = list(dict.fromkeys((_front(f), (name or "").strip()) for f, name in VITEST.findall(log)))
+    if not tsc and not tests:
+        return None
+    return {"tsc": tsc, "vitest": [{"file": f, "test": t, "section": ""} for f, t in tests]}
+
+
+def vitest_sections(out: str) -> list[dict]:
+    """Each vitest failure with the text under its FAIL line (the assertion and the stack frames)."""
+    out = ANSI.sub("", out)
+    marks = list(VITEST.finditer(out))
+    got: dict[tuple[str, str], dict] = {}
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(out)
+        body = re.split(r"(?m)^\s*⎯{3,}", out[m.end():end], maxsplit=1)[0]
+        key = (_front(m.group(1)), (m.group(2) or "").strip())
+        if key not in got or len(body) > len(got[key]["section"]):
+            got[key] = {"file": key[0], "test": key[1], "section": body.strip()[:1500]}
+    return list(got.values())
+
+
+def _link(target: Path, link: Path) -> None:
+    if sys.platform == "win32":                            # a junction needs no admin rights (a symlink does)
+        import _winapi
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+def _unlink(link: Path) -> None:
+    """Remove the node_modules link only, never what it points to (rmdir of a junction removes just the junction)."""
+    try:
+        if sys.platform == "win32" and (link.is_symlink() or link.is_junction()):
+            os.rmdir(link)
+        elif link.is_symlink():
+            link.unlink()
+    except OSError:
+        pass
+
+
+def frontend_deps(tree: Path) -> str:
+    """frontend/node_modules from the shared cache: one `npm install` per package.json (+ lock) content, the same
+    command CI runs (the frontend has no lockfile; npm's own lock is kept in the cache entry). '' = ready, else why."""
+    import hashlib
+    npm = shutil.which("npm")
+    pkg = tree / FRONT / "package.json"
+    if not npm or not pkg.is_file():
+        return "npm is not installed" if not npm else "no frontend/package.json"
+    lock = tree / FRONT / "package-lock.json"
+    key = hashlib.sha256(pkg.read_bytes() + (lock.read_bytes() if lock.is_file() else b"")).hexdigest()[:16]
+    cache = DEPS / key
+    if not (cache / ".ok").is_file():
+        shutil.rmtree(cache, ignore_errors=True)
+        cache.mkdir(parents=True)
+        shutil.copy2(pkg, cache / "package.json")
+        if lock.is_file():
+            shutil.copy2(lock, cache / "package-lock.json")
+        r = sh([npm, "ci" if lock.is_file() else "install", "--no-audit", "--no-fund"], cwd=cache, timeout=1800)
+        if r.returncode:
+            return "npm install failed: " + (r.stdout + r.stderr)[-300:]
+        (cache / ".ok").write_text(dt.datetime.now().isoformat(), encoding="utf-8")
+        for old in sorted((d for d in DEPS.iterdir() if d.is_dir() and d != cache), key=lambda d: d.stat().st_mtime)[:-2]:
+            shutil.rmtree(old, ignore_errors=True)         # keep the newest 3 entries
+    mods = tree / FRONT / "node_modules"
+    if not mods.exists():
+        _link(cache / "node_modules", mods)
+    return ""
+
+
+def run_frontend(tree: Path, files: list[str] | None = None) -> dict | None:
+    """CI's React commands here: `npm run typecheck` and `npm run test` (only `files` when given, else all).
+    {tsc: [...], vitest: [...]} like frontend_failures (vitest with each failure's section), None = cannot run."""
+    npm = shutil.which("npm")
+    if not npm or frontend_deps(tree):
+        return None
+    env = dict(os.environ, CI="1", NO_COLOR="1", FORCE_COLOR="0")
+    r = sh([npm, "run", "typecheck", "--prefix", FRONT], cwd=tree, timeout=900, env=env)
+    found = frontend_failures(r.stdout + r.stderr) or {"tsc": [], "vitest": []}
+    tsc = found["tsc"]
+    if r.returncode and not tsc:                           # tsc failed without an error line: count it, show it
+        tsc = [{"file": "", "line": 0, "code": "tsc", "message": (r.stdout + r.stderr).strip()[-400:]}]
+    rel = [f[len(FRONT) + 1:] if f.startswith(f"{FRONT}/") else f for f in files or []]
+    r = sh([npm, "run", "test", "--prefix", FRONT, "--", *rel], cwd=tree, timeout=1800, env=env)
+    out = r.stdout + r.stderr
+    tests = vitest_sections(out)
+    if r.returncode and not tests:
+        tests = [{"file": "", "test": "vitest", "section": out.strip()[-1200:]}]
+    return {"tsc": tsc, "vitest": tests}
+
+
+def _count(found: dict) -> int:
+    return len(found["tsc"]) + len(found["vitest"])
+
+
+def _near(tree: Path, path: str, line: int, around: int = 6) -> str:
+    f = tree / path
+    if not path or not f.is_file() or line < 1:
+        return ""
+    lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(f"{i + 1:5}: {lines[i]}" for i in range(max(0, line - around - 1), min(len(lines), line + around)))
+
+
+TS_SKIP = {"expect", "it", "test", "describe", "render", "within", "waitFor", "act", "toBe", "toEqual", "toContain",
+           "toMatch", "toHaveLength", "toBeTruthy", "toBeNull", "toHaveBeenCalled", "toHaveBeenCalledWith", "map",
+           "filter", "find", "some", "every", "push", "String", "Number", "Array", "Object", "JSON"}
+
+
+def ts_definitions(tree: Path, section: str, limit: int = 3, max_lines: int = 30) -> list[str]:
+    """The source of the functions a failing vitest assertion calls (the failing line first): the frames point into
+    the test only, and without the function she guesses its code (seen in the second live trial)."""
+    def calls(text: str) -> list[str]:
+        return [n for n in re.findall(r"\b([A-Za-z_]\w{2,})\(", text) if n not in TS_SKIP]
+
+    def definition(name: str) -> tuple[str, list[str]] | None:
+        decl = re.compile(rf"^export\s+(?:async\s+)?(?:function\s+{re.escape(name)}\b|(?:const|let)\s+"
+                          rf"{re.escape(name)}\s*[=:])")
+        for f in src:
+            text = f.read_text(encoding="utf-8", errors="replace").splitlines()
+            start = next((i for i, ln in enumerate(text) if decl.match(ln)), None)
+            if start is None:
+                continue
+            end = start + 1
+            while end < len(text) and end - start < max_lines:
+                if text[end].startswith("}"):             # the body's closing brace ends it
+                    end += 1
+                    break
+                if text[end].strip() and not text[end][0].isspace():   # the next top-level statement
+                    break
+                end += 1
+            return f.relative_to(tree).as_posix(), [f"{i + 1:5}: {text[i]}" for i in range(start, end)]
+        return None
+
+    src = sorted(p for p in (tree / FRONT / "src").rglob("*.ts*") if ".test." not in p.name and p.suffix in (".ts", ".tsx")
+                 and "node_modules" not in p.parts) if (tree / FRONT / "src").is_dir() else []
+    lines = section.splitlines()
+    hit = [lines[i - 1] for i in range(1, len(lines)) if re.match(r"^\s*\|\s*\^", lines[i])]
+    queue, seen, out = calls("\n".join(hit)) or calls(section), set(), []
+    while queue and len(out) < limit:
+        name = queue.pop(0)
+        if name in seen:
+            continue
+        seen.add(name)
+        got = definition(name)
+        if got:
+            out.append(f"--- {got[0]} (called by the test)\n" + "\n".join(got[1]))
+            queue = calls("\n".join(got[1][1:])) + queue  # what that function calls comes next
+    return out
+
+
+def front_listing(tree: Path, found: dict, budget: int = 7000) -> str:
+    out = []
+    for e in found["tsc"][:10]:
+        out.append(f"{e['file']}({e['line']}): error {e['code']}: {e['message']}\n{_near(tree, e['file'], e['line'])}")
+    for t in found["vitest"][:4]:
+        frames = list(dict.fromkeys((_front(p), int(n)) for p, n in VFRAME.findall(t["section"])))[:3]
+        code = "\n".join([f"--- {p}\n{_near(tree, p, n)}" for p, n in frames if (tree / p).is_file()]
+                         + ts_definitions(tree, t["section"]))
+        out.append(f"vitest FAIL {t['file']} > {t['test']}\n{t['section'][:1200]}\n{code}")
+    return "\n\n".join(out)[:budget]
+
+
+NUMBERED = re.compile(r"(?m)^ *\d+: ")                     # the "   27: " the code listings put before each line
+
+
+def as_in_file(tree: Path, edit: dict) -> dict:
+    """Her 'find' as the file really has it, when she copied it with what the prompt adds around the code. Seen live:
+    '-old' / '+new' lines from the diff (5 rounds in a row) and the listing's line numbers with a shifted indent (#857,
+    5 rounds). The fixed text is used only when it names exactly one run of lines in the file (indentation aside)."""
+    f = tree / str(edit.get("file", "")).replace("\\", "/").lstrip("./")
+    find, new = str(edit.get("find", "")), str(edit.get("replace", ""))
+    if not find or not f.is_file():
+        return edit
+    text = f.read_text(encoding="utf-8", errors="replace")
+    if find in text:
+        return edit
+    lines = find.split("\n")
+    if any(ln[:1] in "+-" for ln in lines if ln) and all(ln[:1] in "+- " for ln in lines if ln):
+        lines = [ln[1:] for ln in lines if ln[:1] in "+ " and ln]          # the '+' side is what the file has now
+    elif NUMBERED.search(find):
+        lines, new = [NUMBERED.sub("", ln) for ln in lines], NUMBERED.sub("", new)
+    want = [ln.strip() for ln in lines]
+    while want and not want[-1]:
+        want.pop()
+    have = text.split("\n")
+    hits = [i for i in range(len(have) - len(want) + 1) if want and [h.strip() for h in have[i:i + len(want)]] == want]
+    if len(hits) != 1:
+        return edit
+    return {**edit, "find": "\n".join(have[hits[0]:hits[0] + len(want)]), "replace": new}
+
+
+def fix_frontend(tree: Path, asker=ask, runner=run_frontend, title: str = "", diff: str = "") -> tuple[bool, str, int]:
+    """Up to ROUNDS rounds of her edits against CI's React commands (tsc, then vitest). A round must lower the count of
+    tsc errors + failing tests and add nothing that silences an error, else it is undone and she is told why. At the
+    end the whole vitest suite runs once (a fix must not break another test). Round 0: (False, why) = it cannot run
+    here (no npm, install failed); (True, why) = it passes here, i.e. CI-only (flaky)."""
+    mods = tree / FRONT / "node_modules"
+    linked = not mods.exists()                              # the link is ours: removed again at the end
+    try:
+        found = runner(tree, None)
+        if found is None:
+            return False, "the React checks cannot run here (" + (frontend_deps(tree) or "npm failed") + ")", 0
+        if not _count(found):
+            return True, "tsc and vitest pass locally (CI-only failure)", 0
+        files = sorted({t["file"] for t in found["vitest"] if t["file"]})
+        front_diff = "".join(p for p in re.split(r"(?m)^(?=diff --git )", diff)
+                             if re.match(rf"diff --git a/{FRONT}/", p) and not FRONT_SPEC.match(
+                                 p.split(" b/", 1)[-1].split("\n", 1)[0]))
+        feedback, why, edited = "", "", False
+        for round_no in range(1, ROUNDS + 1):
+            before_n = _count(found)
+            prompt = FRONT_PROMPT.format(title=title, diff=front_diff[:4000] or "(not available)", count=before_n,
+                                         errors=front_listing(tree, found), feedback=feedback)
+            try:
+                answer = json.loads(asker(prompt))
+            except (ValueError, TypeError):
+                feedback = "\nYour last answer was not valid JSON. Answer only the JSON object.\n"
+                continue
+            edits = [as_in_file(tree, e) for e in answer.get("edits") or [] if isinstance(e, dict)] \
+                if isinstance(answer.get("edits"), list) else []
+            if any(len(SILENCE.findall(str(e.get("replace", "")))) > len(SILENCE.findall(str(e.get("find", ""))))
+                   for e in edits):
+                feedback = ("\nYour edits silenced an error (ts-ignore, ts-expect-error or any). That hides it; "
+                            "fix its cause instead.\n")
+                continue
+            paths = {str(e.get("file", "")).replace("\\", "/").lstrip("./") for e in edits}
+            before = {p: (tree / p).read_bytes() for p in paths if p and (tree / p).is_file()}
+            problems = apply_edits(tree, edits)
+            after = runner(tree, files) or found
+            if _count(after) < before_n:
+                why, feedback, found, edited = str(answer.get("why", why))[:300], "", after, True
+                files = sorted(set(files) | {t["file"] for t in after["vitest"] if t["file"]})
+                if not _count(found):
+                    break
+                feedback = (f"\nYour edits were kept: {before_n} -> {_count(found)} errors. The code above already "
+                            "includes them. Fix what is left.\n")
+                continue
+            for p, data in before.items():                  # no progress: undo this round
+                (tree / p).write_bytes(data)
+            feedback = (f"\nYour previous edits did not lower the errors ({before_n} -> {_count(after)}). "
+                        + ("Problems: " + "; ".join(problems) + ". " if problems else "") + "Try a different fix.\n")
+        else:
+            return False, why or "the React errors remain", ROUNDS
+        if not edited:
+            return False, "nothing changed", round_no
+        final = runner(tree, None)                           # the whole suite once: nothing else may break
+        if final is None or _count(final):
+            left = "; ".join([f"{e['file']}({e['line']}) {e['code']}" for e in (final or {}).get("tsc", [])] +
+                             [f"{t['file']} > {t['test']}" for t in (final or {}).get("vitest", [])])
+            return False, "after her fix the full React run fails: " + (left or "it could not run")[:300], round_no
+        return True, why, round_no
+    finally:
+        if linked:
+            _unlink(mods)
 
 
 LOCK_TOOL = "installer/star-home/pin_requirements.py"
@@ -862,7 +1154,11 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
     typing = None if found or fails or linting else TYPE_CI.search(log)   # fails the same every run: fix, no rerun
     ci_types = ("new pyright errors: " + " | ".join(re.findall(r"\S+\.py:\d+: [^\n]*", typing.group(1)))[:300]
                 if typing else "")
-    if not found and not fails and not linting and not typing:   # timeout, lost runner, setup (seen: #700 died after 9 h): one rerun
+    react = None if found or fails or linting or typing or not REACT_CI.search(log) else frontend_failures(log)
+    ci_react = ("React UI fails: " + " | ".join(
+        [f"{e['file']}({e['line']}): {e['code']} {e['message']}" for e in react["tsc"][:3]] +
+        [f"FAIL {t['file']} > {t['test']}" for t in react["vitest"][:3]]))[:300] if react else ""
+    if not found and not fails and not linting and not typing and not react:   # timeout, lost runner, setup (seen: #700 died after 9 h): one rerun
         return {"pr": number, "result": "flaky-rerun",
                 "why": f"no test or lint failure in the failed logs; reran {rerun_failed(sha, number)} failed run(s) once"}
     day = dt.date.today().strftime("%Y%m%d")
@@ -902,6 +1198,15 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
         if round_no == 0:                                   # cannot check it here: report what CI said
             return {"pr": number, "result": "failed", "kind": "types", "why": f"{ci_types} ({why})"}
         tests = ["pyright baseline gate"]
+    elif react:
+        diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
+        ok, why, round_no = fix_frontend(tree, asker, title=pr.get("title", ""), diff=diff)
+        if round_no == 0 and ok:                            # passes here: flaky (vitest under load), one rerun
+            return {"pr": number, "result": "flaky-rerun", "kind": "frontend",
+                    "why": f"{why}; reran {rerun_failed(sha, number)} failed run(s) once"}
+        if round_no == 0:                                   # cannot run it here: report what CI said, no rerun
+            return {"pr": number, "result": "failed", "kind": "frontend", "why": f"{ci_react} ({why})"}
+        tests = ["tsc", "vitest"]
     else:
         diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
         ok, why, round_no = repair(tree, pr.get("title", ""), fails, out, tests, python, asker, diff)

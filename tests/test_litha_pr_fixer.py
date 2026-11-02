@@ -341,3 +341,186 @@ def test_both_sides_only_adding_merge_by_code_and_same_spot_only_in_docs():
     same = F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=True)
     assert same == "a\nX\nY\nb\n" and F.both_added("a\nX\nb\n", "a\nb\n", "a\nY\nb\n", docs=False) is None
     assert F.both_added("a\nX\n", "a\nb\n", "a\nb\nY\n", docs=True) is None         # an ancestor line went away
+
+
+# The React job's log as GitHub serves it (#857, 2026-11-01): tsc stops the `&&` chain, so vitest never ran there.
+REACT_LOG = (
+    "2026-11-01T04:54:29.1022341Z ##[group]Run sh scripts/ci_heavy.sh sh -c 'npm run typecheck --prefix frontend && "
+    "npm run test --prefix frontend && npm run build --prefix frontend'\n"
+    "2026-11-01T04:54:29.1301146Z > star-intelligence-interface@2.0.0 typecheck\n"
+    "2026-11-01T04:54:29.1301822Z > tsc -b\n"
+    "2026-11-01T04:54:31.5403118Z ##[error]src/SettingsPage.tsx(27,2): error TS2300: Duplicate identifier 'companions'.\n"
+    "2026-11-01T04:54:31.5408811Z ##[error]src/SettingsPage.tsx(29,2): error TS2300: Duplicate identifier 'companions'.\n"
+    "2026-11-01T04:54:31.5605233Z ##[error]Process completed with exit code 1.\n")
+# vitest 5's output for a failing test (captured from `npm run test --prefix frontend` on star/next with a planted bug).
+VITEST_OUT = """ ❯ src/activity.test.ts (18 tests | 1 failed) 38ms
+     × settles open and queued steps truthfully when a run ends 7ms
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 21 passed (22)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/activity.test.ts > activity timeline is driven only by backend events > settles open and queued steps \
+truthfully when a run ends
+AssertionError: expected 'Stopped after 9s' to be 'Stopped after 9.0s' // Object.is equality
+
+ ❯ src/activity.test.ts:155:37
+    154|     expect(stateWord(stopped.steps[1])).toBe('Not started')
+    155|     expect(headline(stopped, 9000)).toBe('Stopped after 9.0s')
+       |                                     ^
+    156|     expect(states(settleRun(live, 'failed', 9000))[0]).toBe('Evidence:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+"""
+
+
+def test_the_react_jobs_tsc_and_vitest_failures_are_read_from_the_log():
+    got = F.frontend_failures(REACT_LOG)
+    assert got is not None
+    assert [(e["file"], e["line"], e["code"]) for e in got["tsc"]] == [
+        ("frontend/src/SettingsPage.tsx", 27, "TS2300"), ("frontend/src/SettingsPage.tsx", 29, "TS2300")]
+    assert got["tsc"][0]["message"] == "Duplicate identifier 'companions'." and got["vitest"] == []
+    pretty = F.frontend_failures("src/App.tsx:12:5 - error TS2322: Type 'string' is not assignable to type 'number'.\n")
+    assert pretty is not None and pretty["tsc"][0]["line"] == 12                 # tsc --pretty form too
+    tests = F.vitest_sections(VITEST_OUT)
+    assert [(t["file"], t["test"].split(" > ")[-1]) for t in tests] == [
+        ("frontend/src/activity.test.ts", "settles open and queued steps truthfully when a run ends")]
+    assert "Stopped after 9.0s" in tests[0]["section"] and "[1/1]" not in tests[0]["section"]
+    assert F.frontend_failures("FAILED tests/test_x.py::test_y - assert 1 == 2\n") is None
+
+
+def _front_repo(tmp_path):
+    src = tmp_path / "frontend" / "src"
+    src.mkdir(parents=True)
+    (src / "activity.ts").write_text(
+        "export function headline(run: Run, now: number): string {\n"
+        "  const time = formatElapsed(runElapsed(run, now), run.outcome)  // BAD\n"
+        "  return 'Stopped after ' + time  // WRONG\n}\n", encoding="utf-8")
+    (src / "activity.test.ts").write_text("expect(headline(stopped, 9000)).toBe('Stopped after 9.0s')\n",
+                                          encoding="utf-8")
+    calls = []
+
+    def runner(tree, files):                 # tsc + vitest stand-in: BAD = a tsc error, WRONG = a failing test
+        calls.append(files)
+        text = (tree / "frontend" / "src" / "activity.ts").read_text(encoding="utf-8")
+        return {"tsc": [{"file": "frontend/src/activity.ts", "line": 2, "code": "TS2345",
+                         "message": "Argument of type 'RunOutcome' is not assignable"}] * text.count("BAD"),
+                "vitest": [{"file": "frontend/src/activity.test.ts", "test": "headline",
+                            "section": VITEST_OUT.split(" FAIL  ", 1)[1]}] * text.count("WRONG")}
+    return runner, calls
+
+
+FIX_BAD = {"file": "frontend/src/activity.ts", "find": "run.outcome)  // BAD", "replace": "run.outcome === 'running')"}
+FIX_WRONG = {"file": "frontend/src/activity.ts", "find": "  return 'Stopped after ' + time  // WRONG",
+             "replace": "  return 'Stopped after ' + time"}
+
+
+def _answers(*answers):
+    asked = []
+
+    def ask(prompt):
+        asked.append(prompt)
+        return json.dumps(answers[len(asked) - 1])
+    return ask, asked
+
+
+def test_her_react_rounds_must_lower_the_errors_and_the_whole_suite_runs_at_the_end(tmp_path):
+    runner, calls = _front_repo(tmp_path)
+    ask, asked = _answers({"why": "x", "edits": [{"file": "frontend/src/activity.ts", "find": "string {",
+                                                   "replace": "string  {"}]},
+                          {"why": "a RunOutcome went where a boolean belongs", "edits": [FIX_BAD]},
+                          {"why": "keep the decimal", "edits": [FIX_WRONG]})
+    ok, why, rounds = F.fix_frontend(tmp_path, ask, runner, title="t")
+    assert ok and rounds == 3 and why == "keep the decimal"
+    assert "frontend/src/activity.ts(2): error TS2345" in asked[0] and "2 in all" in asked[0]
+    assert "string {" in (tmp_path / "frontend" / "src" / "activity.ts").read_text(encoding="utf-8")   # undone
+    assert "did not lower the errors (2 -> 2)" in asked[1] and "were kept: 2 -> 1" in asked[2]
+    assert calls[0] is None and calls[-1] is None and calls[1] == ["frontend/src/activity.test.ts"]  # full, few, full
+
+
+def test_she_may_not_silence_errors_or_edit_the_tests_and_configs(tmp_path):
+    runner, _ = _front_repo(tmp_path)
+    ask, asked = _answers(
+        {"why": "x", "edits": [{"file": "frontend/src/activity.ts", "find": "  const time",
+                                "replace": "  // @ts-ignore\n  const time"}]},
+        {"why": "x", "edits": [{"file": "frontend/src/activity.ts", "find": "run.outcome)",
+                                "replace": "run.outcome as any)"}]},
+        {"why": "x", "edits": [{"file": "frontend/src/activity.test.ts", "find": "9.0s", "replace": "9s"}]},
+        {"why": "y", "edits": [FIX_BAD, FIX_WRONG]})
+    ok, _, rounds = F.fix_frontend(tmp_path, ask, runner)
+    assert ok and rounds == 4
+    assert "silenced an error" in asked[1] and "silenced an error" in asked[2] and "may not edit" in asked[3]
+    assert (tmp_path / "frontend" / "src" / "activity.test.ts").read_text(encoding="utf-8").endswith("9.0s')\n")
+    for path in ("frontend/tsconfig.json", "frontend/package.json", "frontend/vite.config.ts",
+                 "frontend/src/test-animation-event.ts", "frontend/src/a.test.tsx", "frontend/package-lock.json"):
+        assert F.FRONT_SPEC.match(path), path
+    assert not F.FRONT_SPEC.match("frontend/src/activity.ts")
+
+
+def test_round_zero_and_a_fix_that_breaks_another_test(tmp_path):
+    runner, _ = _front_repo(tmp_path)
+    assert F.fix_frontend(tmp_path, lambda p: pytest.fail("cannot run"), lambda t, f: None)[::2] == (False, 0)
+    clean = {"tsc": [], "vitest": []}
+    assert F.fix_frontend(tmp_path, lambda p: pytest.fail("passes"), lambda t, f: clean)[::2] == (True, 0)
+    other = {"tsc": [], "vitest": [{"file": "frontend/src/other.test.tsx", "test": "renders", "section": ""}]}
+
+    def full(tree, files):                   # the whole suite at the end finds a test her fix broke
+        fixed = "WRONG" not in (tree / "frontend" / "src" / "activity.ts").read_text(encoding="utf-8")
+        return other if files is None and fixed else runner(tree, files)
+
+    ok, why, _ = F.fix_frontend(tmp_path, lambda p: json.dumps({"why": "y", "edits": [FIX_BAD, FIX_WRONG]}), full)
+    assert not ok and "frontend/src/other.test.tsx > renders" in why
+
+
+def test_a_find_copied_with_diff_markers_or_listing_numbers_is_read_as_the_file_has_it(tmp_path):
+    _front_repo(tmp_path)
+    f, line2 = "frontend/src/activity.ts", "  const time = formatElapsed(runElapsed(run, now), run.outcome)  // BAD"
+    from_diff = {"file": f, "find": "-  const time = 0\n+" + line2, "replace": "  const time = 1"}   # live trial 1
+    assert F.as_in_file(tmp_path, from_diff)["find"] == line2
+    numbered = {"file": f, "find": "   2: " + line2 + "\n    3:  return 'Stopped after ' + time  // WRONG",
+                "replace": "    3:   return 'x'"}                                                  # seen on #857
+    got = F.as_in_file(tmp_path, numbered)
+    assert got["find"].startswith("  const time") and got["find"].endswith("// WRONG") and got["replace"] == "  return 'x'"
+    assert F.as_in_file(tmp_path, {"file": f, "find": "nothing like it", "replace": ""})["find"] == "nothing like it"
+
+
+def test_she_sees_the_source_of_what_the_failing_assertion_calls(tmp_path):
+    _front_repo(tmp_path)
+    (tmp_path / "frontend" / "src" / "time.ts").write_text(
+        "export function formatElapsed(ms: number, live = false): string {\n  return live ? 's' : '0.0s'\n}\n"
+        "const local = 1\n", encoding="utf-8")
+    text = "\n".join(F.ts_definitions(tmp_path, VITEST_OUT.split(" FAIL  ", 1)[1]))
+    assert "export function headline" in text and "export function formatElapsed" in text     # and what it calls
+    assert text.index("headline") < text.index("formatElapsed") and "const local" not in text
+
+
+def test_a_react_failure_goes_to_her_frontend_lane_not_a_rerun(monkeypatch):
+    monkeypatch.setattr(F, "failed_logs", lambda sha: F.STAMP.sub("", REACT_LOG))
+    monkeypatch.setattr(F, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+    monkeypatch.setattr(F, "gh", lambda *a, **k: "")
+    reruns = []
+    monkeypatch.setattr(F, "rerun_failed", lambda *a: reruns.append(a) or 1)
+    pr = {"headRefOid": "abc", "number": 857, "headRefName": "x"}
+    monkeypatch.setattr(F, "fix_frontend", lambda tree, asker, **k: (False, "the React checks cannot run here", 0))
+    row = F.fix(pr, "python")
+    assert row["result"] == "failed" and row["kind"] == "frontend" and not reruns
+    assert row["why"].startswith("React UI fails: frontend/src/SettingsPage.tsx(27): TS2300 Duplicate identifier")
+    monkeypatch.setattr(F, "fix_frontend", lambda tree, asker, **k: (True, "passes locally", 0))
+    assert F.fix(pr, "python")["result"] == "flaky-rerun" and reruns          # vitest under load: one rerun
+    monkeypatch.setattr(F, "fix_frontend", lambda tree, asker, **k: (True, "drop the doubled prop", 1))
+    row = F.fix(pr, "python", dry=True)
+    assert row["result"] == "fixed" and row["tests"] == ["tsc", "vitest"]
+
+
+def test_the_node_modules_link_goes_and_the_shared_install_stays(tmp_path):
+    shared = tmp_path / "cache" / "node_modules"
+    (shared / "react").mkdir(parents=True)
+    (tmp_path / "frontend").mkdir()
+
+    def runner(tree, files):
+        F._link(shared, tree / "frontend" / "node_modules")
+        return {"tsc": [], "vitest": []}
+
+    assert F.fix_frontend(tmp_path, lambda p: "", runner)[::2] == (True, 0)
+    assert not (tmp_path / "frontend" / "node_modules").exists() and (shared / "react").is_dir()
