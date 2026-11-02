@@ -88,7 +88,8 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
    compare the claim with the PR body before holding.
 3. **Multi-line bugs** in the bench (swallowed exception, wrong variable, missing `await`): mutate an AST node,
    not a line regex.
-4. **Pyright / vitest / tsc failures for the fixer**. Pyright: DONE 2026-11-02 (`fix_types`, see 4d). Left: vitest/tsc.
+4. **Pyright / vitest / tsc failures for the fixer**. Pyright: DONE 2026-11-02 (`fix_types`, see 4d). tsc/vitest:
+   DONE 2026-11-02 (`fix_frontend`, see 4e).
 5. **Gate the nightly adapter on the bench**: the nightly gate (server/training/nightly, PR #847) scores
    game-building answers only. Before `auto_deploy`, serve the candidate adapter and run
    `bug_bench run --n 10 --seed <held-out>` against it; ship only if the solved count does not drop.
@@ -209,6 +210,40 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Also fixed: CI lints `star litha`, the fixer linted only `star`, so a ruff error in `litha/` was reported as
   "CI-only" and never fixed.
 - PRs recorded in `tried.json` as type failures before this change are retried only when their head moves.
+
+## 4e. React UI repair (2026-11-02, measured)
+
+- Why: a red "React UI compile and tests" check (tsc + vitest in `frontend/`) had no test or lint line the fixer
+  knew, so it was treated as flaky and rerun, and failed the same way again.
+- `fix_frontend()`: reads CI's tsc lines (`##[error]src/X.tsx(27,2): error TS2300: ...`, also the `--pretty` form) and
+  vitest `FAIL file > test` lines, then runs CI's own commands here (`npm run typecheck` / `npm run test --prefix
+  frontend`). `node_modules` comes from `~/.star/pr-fixer/frontend-deps/<hash of package.json>`: one `npm install
+  --no-audit --no-fund` (CI's command; the frontend has no lockfile) per package.json, linked in (a junction on
+  Windows) and unlinked at the end. First install 26 s; full tsc + vitest on star/next 83 s, green.
+- Each round must lower tsc errors + failing tests, else it is undone and she is told why. Refused: `@ts-ignore`,
+  `@ts-expect-error`, `@ts-nocheck`, added `any` casts, `eslint-disable`; edits to `*.test.*`, `src/test-*.ts`,
+  tsconfig, vite/vitest config, package.json, lockfiles (`FRONT_SPEC`). Rounds rerun only the failing test files;
+  at the end the whole suite runs once. Round 0: no npm / install failed -> CI's lines reported, no rerun; passes
+  here -> one rerun (flaky). She sees each error with code around it, plus the source of the exported functions the
+  failing assertion calls (one level deep).
+- Real case, star/next with two planted type errors in `activity.ts` (`.toFixed(0)` into a `number`, a `RunOutcome`
+  into the `live` boolean; also breaks one vitest test), local only, her model:
+  - first version: 5 rounds, 175 s, failed. The tsc lines were never parsed (regex bug), and every round she copied
+    the diff's `-`/`+` lines into `find`.
+  - fixed, with the PR diff: 1 round, 159 s (model 10 s), her edit is exactly star/next's code again.
+  - without a diff: 5 rounds, 148 s, failed. Round 1 cleared both tsc errors but flipped `live`, then she guessed at
+    code she was never shown. With the called functions shown: 1 round, 191 s, full suite green (`Math.round(...)`
+    and `false`; both pass every test, `false` behaves the same).
+  - `as_in_file()` now reads a `find` copied with diff markers or the listing's line numbers as the file has it, only
+    when that names exactly one run of lines.
+- Live PR #857 (only "React UI" red; dry, nothing pushed): CI's 2x TS2300 (doubled `companions?` prop from her #549
+  merge) parsed; locally there is also 1 vitest failure CI never reached (tsc stops the `&&` chain):
+  `settings-page.test.tsx`, 7 unlabelled checkboxes in Basics. 5 rounds, 264 s each try. Round 1 clears tsc (kept);
+  the test failure stays: #549 renders `props.companions` in Basics while star/next moved companions to their own
+  section, a choice for a person. She then tried the test file (refused) and invented code (undone). In `fix()`
+  #857 is skipped anyway (her own `litha/` branch: no fix on top of a fix).
+- Not verified yet: a run from the scheduled task on a real PR; the `npm run build` step (prerender scripts) is not
+  repaired, only tsc and vitest.
 
 ## 5. Rules that stay (do not remove)
 
