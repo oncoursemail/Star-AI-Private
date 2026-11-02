@@ -142,3 +142,57 @@ def test_no_gameplay_evidence_means_no_memory_even_with_public_consent():
     )
     assert plan is not None
     assert "STAR SESSION GAME MOMENTS" not in plan.context_record
+
+
+def _bound_question(scope: str) -> StarStage:
+    """A trusted game transition may outpace a second host scene observer."""
+    stage = StarStage(clock=lambda: 100.0)
+    stage.enable(owner_approved=True)
+    stage.transition_game(game_scope=scope, now=100.0, owner_approved=True)
+    assert stage.offer(
+        StreamSignal(
+            signal_id="journal_q", kind="viewer_question", timestamp=100.0,
+            detail="What happened before?", speaker_id="viewer_journal",
+        ),
+        now=100.0, moderated=True,
+    )
+    return stage
+
+
+def test_journal_respects_bound_scene_on_host_disagreement():
+    """Consent to speak is not permission to use another game's memories."""
+    journal = journal_with_moments()
+    stage = _bound_question("arena_v1")
+    # The independent host observation is stale at obby_v1; the director
+    # has already transitioned into arena_v1.
+    plan = stage.prepare(
+        now=100.0, journal=journal, current_game_scope="obby_v1",
+        episode_broadcast_approved=True,
+    )
+    assert plan is not None and plan.kind == "viewer_question"
+    assert "STAR SESSION GAME MOMENTS" not in plan.context_record
+    assert "reached a checkpoint" not in plan.context_record
+    assert "bridge_1" not in plan.context_record
+
+
+def test_journal_does_not_revive_old_game_after_no_game_transition():
+    journal = journal_with_moments()
+    stage = _bound_question("")
+    plan = stage.prepare(
+        now=100.0, journal=journal, current_game_scope="obby_v1",
+        episode_broadcast_approved=True,
+    )
+    assert plan is not None and plan.kind == "viewer_question"
+    assert "STAR SESSION GAME MOMENTS" not in plan.context_record
+
+
+def test_journal_still_recalled_when_both_host_scopes_agree():
+    journal = journal_with_moments()
+    stage = _bound_question("obby_v1")
+    plan = stage.prepare(
+        now=100.0, journal=journal, current_game_scope="obby_v1",
+        episode_broadcast_approved=True,
+    )
+    assert plan is not None
+    assert "reached a checkpoint" in plan.context_record
+    assert "arena_3" not in plan.context_record
