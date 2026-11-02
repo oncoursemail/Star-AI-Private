@@ -314,6 +314,65 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Not done: the regression guard (neighbouring passing tests) from the research brief, a `--k` CLI flag, a real
   temperature per candidate (the `asker` takes only the prompt), a live PR measured with K=3.
 
+## 4k. She knows herself: self-map, planner, health check (2026-11-02, measured on her real logs)
+
+- Why: her weak spots were only visible to a person reading `fixes.jsonl` by hand (e.g. the #700 "reran 0" loop
+  logged 30 times before anyone saw it), and a stale lock or a half-written `tried.json` would stop her silently.
+- `python -m litha.self_map`: reads her code with `ast` (nothing imported or run), the two .cmd scripts, this file
+  and her logs. Map: per module the docstring, `python -m` usage, CLI flags, UPPER limits (ROUNDS, K, WINDOW, CHUNK),
+  compiled gate patterns, `~/.star` paths, which litha modules it uses, and per function the messages it refuses
+  with (`why.append(...)`, `{"result": "failed", "why": ...}`, `return None, "..."`, `raise X("...")`); the schedule
+  (steps and OFF switches); open items of section 4; measured rates per lane (tries / fixed / failed / refused /
+  rerun / noop / error + top reasons) from `fixes.jsonl`, her review claims from `decisions.jsonl`, the newest
+  bench row per mode. The code part is cached per tree hash (`~/.star/litha/self_map/<hash>.json`, line endings
+  normalised); writes `~/.star/litha/self_map.{json,txt}`. Summary on the real tree: ~1456 tokens (budget 1500,
+  lines are dropped from the least useful end), 0.28 s cold, 0.09 s cached.
+- `python -m litha.self_plan`: every logged failure of the last 7 days goes in a bucket by its reason (22 patterns:
+  `BUCKETS`, first match wins; plus merger gh errors, refused merges, non-JSON reviews and her refuted/unproven
+  high claims, each once per PR head). Rank = recency-weighted count (half-life 2 days) x fixability (mechanical
+  0.8-0.9, her answers 0.5-0.7, a person's call by design 0.1). A bucket whose lane logged 3+ later attempts without
+  it is "quiet" (probably fixed) and scores x0.1. Writes `~/.star/litha/next_steps.json`: bucket, lane and the code
+  that lane lives in, examples (PR numbers), suspected cause, count, last seen, score.
+- Real data, 2026-11-02 04:30 (170 rows: 149 fixer + 21 merger, 31 fixed), top 5:
+  1. `merger-gh-error` [merge-gates] 9 PR heads (studio#259, studio#45, #737, #861, #833): gh/GraphQL timeouts (TLS
+     handshake) turned into holds; a retry inside the run would save a 10-min wait.
+  2. `conflict-brackets` [resolve] 11 rows, 7 PRs (studio#421 #412 #401 #255 #208): her block does not balance
+     brackets like both sides (code copied from around the block, or its end dropped).
+  3. `review-false-claims` [merge-review] 9 PR heads (studio#441, Metallic-RB#138, studio#488, #854, #849): over 44
+     reviewed heads she named 15 high risks; 12 were refuted by the real file, 3 stood.
+  4. `rerun-restarted-nothing` [ci-rerun] 30 rows, #700 only, quiet since 2026-11-01 08:01 (the known loop, fixed).
+  5. `no-reason-logged` [fix-python] #831 #832 #833 (2026-10-31): failed rows with an empty `why`.
+  Next after these: flaky CI (10 PRs), conflict-parse (rustfmt rejects her merge, 6 PRs), merged-tests-fail (9 PRs,
+  semantic conflicts), push-rejected, review-not-json. `conflict-needs-person` (16 rows) ranks low on purpose.
+- `python -m litha.self_check` (first step of `pr_merger_run.cmd`, `--quiet`): from files only, no network, no
+  model. Last start/end in `run.log` (late after 30 min, hung after 60, rc != 0, a traceback in the last finished
+  run, each step's result line: merger, promote, other repos); `decisions.jsonl` fresh (30 min) and `bench.jsonl`
+  (26 h) unless their OFF switch is set; logs over 50 MB; a PR logged the same way 4+ times in 48 h (a problem while
+  the last one is under 6 h old, else "stopped"); `tried.json` over 300 PRs / 64 KB (never pruned); her worktrees
+  (`litha-fix|merge|proof|base-<n>`) older than `--stale-hours` (3). Repairs only: her `*.lock` files older than
+  3 h are removed; `tried.json` / `hunted.json` / `lessons.json` that no longer parse are restored from
+  `<name>.good` (refreshed by every check while the file parses) or a leftover atomic-write `.tmp` that parses,
+  under the fixer's own `tried.lock`, the broken file kept as `<name>.corrupt-<time>`. Everything else is reported.
+  Refreshes `next_steps.json` when `fixes.jsonl` changed (at most every 30 min). Report: `~/.star/litha/health.json`.
+  Always exits 0 (`--strict` for 1). Timed on the real state: 0.012-0.02 s inside, 0.11-0.47 s for the whole
+  process; result "ok" (the three repeat-loggers #700, studio#255, studio#434 had stopped 12-20 h before).
+- Prompts: `self_map.fitted(lane, build, answer_tokens)` puts one measured line (the lane's top non-quiet bucket
+  advice, at most 280 characters) into the fixer's repair prompt (`fix-python`), the conflict prompt (`resolve`) and
+  the merger's review prompt (`merge-review`) only when `LITHA_SELF_NOTE=1` and prompt + note + answer fit 4096
+  tokens; otherwise the prompt is byte-identical to before (tested). OFF by default: see the measurement below.
+  Measured sizes, review prompts of the last 20 closed PRs: 174 prompts, the note (52 tokens) fits 67; 37 of the 174
+  are already over 4096 tokens without any note (CHUNK = 12,000 characters + rubric + description, ~3.5 characters
+  per token), so the review only works on a node with a larger context than 4096. `fix-python` has no advice yet
+  (its buckets are logging gaps), so its prompt never changes.
+- Review note A/B (her model, review() only, nothing logged): the 8 closed PRs among the last 40 whose review has
+  at most 3 chunks and room for the note (#894 #864 #850 #847 #846 #831 #830 #807, all merged): note off 8/8 agree,
+  0 high claims, 125 s; note on 8/8, 0 high claims, 79 s. No difference to show (these PRs drew no claims at all),
+  so the note stays off. To measure it properly: PRs where she DID make refuted claims (studio#441, #854, #849 ...).
+- Not verified: a self_check repair on her real state (none was needed; repairs are tested on fake state dirs), a
+  scheduled run with the new first step (the .cmd change takes effect on the next run from this tree), the
+  "fixability" weights (set by hand from the cause, not measured), and whether the note helps the conflict prompt.
+- Tests: `tests/test_litha_self.py` (fake `~/.star` in tmp_path for every test).
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another

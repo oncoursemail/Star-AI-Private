@@ -31,7 +31,7 @@ import threading
 import time
 import tomllib
 
-from litha import rust_fix
+from litha import rust_fix, self_map
 from litha.pr_merger import BASE, REPO, gh, head_checks, latest_runs, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
@@ -338,8 +338,9 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
             if applied:
                 _restore(tree, saved, kept_edits)
                 applied = False
-            prompt = PROMPT.format(title=title, failures=sections[:6000], code=code, lessons=lessons,
-                                   feedback=feedback + _proposed(tried), diff=source_diff(diff)[:5000] or "(not available)")
+            prompt = self_map.fitted("fix-python", lambda note: PROMPT.format(  # her measured weak spot, if it fits
+                title=title, failures=sections[:6000], code=code, lessons=lessons + note,
+                feedback=feedback + _proposed(tried), diff=source_diff(diff)[:5000] or "(not available)"), 1500)
             try:
                 answer = json.loads(asker(prompt))
             except (ValueError, TypeError):
@@ -1265,9 +1266,9 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
             return None, f"{path}: conflict {i} is too big for her {WINDOW}-token window (~{need:.0f} tokens)"
         for _ in range(3):
             try:
-                ans = json.loads(asker(MERGE_PROMPT.format(repo=REPO, base=BASE, title=title, path=path, i=i,
-                                                           n=len(blocks), feedback=feedback,
-                                                           context=shown[0] + m.group(0) + shown[1])))
+                ans = json.loads(asker(self_map.fitted("resolve", lambda note: MERGE_PROMPT.format(
+                    repo=REPO, base=BASE, title=title, path=path, i=i, n=len(blocks), feedback=feedback + note,
+                    context=shown[0] + m.group(0) + shown[1]), (len(ours) + len(theirs)) / 3.5)))
                 new = echoed(str(ans["resolved"]), m.group(0), before, after, path)
             except (ValueError, TypeError, KeyError):
                 feedback = "Your last answer was not valid JSON with a \"resolved\" string.\n"

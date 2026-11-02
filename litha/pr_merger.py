@@ -22,6 +22,8 @@ import subprocess
 import sys
 import time
 
+from litha import self_map
+
 REPOS = Path(__file__).with_name("repos.json")                # every repo she looks after (first = STAR's home)
 REPO = "oncoursemail/Star-AI-Project"
 BASE = "star/next"
@@ -246,7 +248,8 @@ def review(pr: dict, files: dict[str, dict], ask=ask_litha, read=head_file) -> d
     """Litha's verdict over every diff chunk. Risks that do not point at an added line are dropped."""
     verdicts, summaries, risks, dropped = [], [], [], 0
     for part in chunks(files):
-        prompt = f"{RUBRIC}\n\nTitle: {pr.get('title', '')}\nDescription: {(pr.get('body') or '')[:1200]}\n\n{part}"
+        prompt = self_map.fitted("merge-review", lambda note: f"{RUBRIC}{note}\n\nTitle: {pr.get('title', '')}\n"
+                                 f"Description: {(pr.get('body') or '')[:1200]}\n\n{part}", 700)
         try:
             answer = json.loads(ask(prompt))
         except (ValueError, TypeError):
