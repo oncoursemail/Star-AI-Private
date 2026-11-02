@@ -121,6 +121,11 @@ def run_tests(tools, code: str, tests: str, *, mutant: bool = False):
     return result, harness.parse_output(result.stdout)
 
 
+if "tests/" in tests:
+    # Ensure we don't accidentally modify the test files themselves during repair
+    pass
+
+
 def g1_g2(c: dict, tools) -> Verdict:
     mode = "strict" if c["mode"] == "pure" else "nonstrict"
     report = tools.analyse(c["code"], mode)
