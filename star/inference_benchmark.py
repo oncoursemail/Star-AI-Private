@@ -15,6 +15,7 @@ import asyncio
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 from statistics import median
 from time import monotonic
 
@@ -28,6 +29,26 @@ class Probe:
     ok: bool
     case_id: str = ""
     canary_ok: bool | None = None
+
+    def __post_init__(self) -> None:
+        # Reject corrupted host measurements before they can inflate speed or
+        # report a clean cache check with a contradictory correctness flag.
+        if type(self.elapsed_ms) is not int or not 0 <= self.elapsed_ms <= 86_400_000:
+            raise ValueError("probe latency must be a bounded integer in ms")
+        if self.output_tokens is not None and (
+            type(self.output_tokens) is not int
+            or not 0 <= self.output_tokens <= 2**31 - 1
+        ):
+            raise ValueError("probe token count must be a nonnegative integer")
+        if type(self.ok) is not bool:
+            raise ValueError("probe success must be a strict boolean")
+        if (type(self.case_id) is not str or
+            (self.case_id and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,39}", self.case_id) is None)):
+            raise ValueError("probe case_id must be an opaque canonical identifier")
+        if self.canary_ok is not None and type(self.canary_ok) is not bool:
+            raise ValueError("canary_ok must be boolean or absent")
+        if (self.canary_ok is True and not self.ok) or (self.canary_ok is False and self.ok):
+            raise ValueError("canary correctness contradicts probe success")
 
 
 @dataclass(frozen=True)
@@ -135,7 +156,9 @@ def summarize_probes(
     samples: list[Probe], wall_ms: int, *, parallel: int,
     workload: str = "unlabeled", workload_digest: str | None = None,
 ) -> dict:
-    if not samples or wall_ms <= 0 or type(parallel) is not int or not 1 <= parallel <= 4:
+    if (not samples or type(wall_ms) is not int
+            or not 1 <= wall_ms <= 86_400_000
+            or type(parallel) is not int or not 1 <= parallel <= 4):
         raise ValueError("No valid measurements")
     if type(workload) is not str or workload not in {"unlabeled", "mixed", "repeat", "canary"}:
         raise ValueError("Unknown benchmark workload")
@@ -146,6 +169,12 @@ def summarize_probes(
         raise ValueError("invalid synthetic workload digest")
     if any(not isinstance(sample, Probe) for sample in samples):
         raise TypeError("expected Probe measurements")
+    if workload == "canary" and any(
+        sample.ok and sample.canary_ok is not True for sample in samples
+    ):
+        # A successful transport with an unverified canary is not a verified
+        # response. Missing verdicts must not appear as zero mismatches.
+        raise ValueError("successful canary must explicitly match its expected token")
     succeeded = [sample for sample in samples if sample.ok]
     durations = sorted(sample.elapsed_ms for sample in succeeded)
     # Partial usage metadata undercounts output and misleads comparisons.
@@ -235,7 +264,13 @@ async def benchmark_local_model(
                     ],
                     max_tokens=96, temperature=0,
                 )
-                output = str(result.choices[0].message.content or "").strip()
+                choice = result.choices[0]
+                # Throughput from a length-truncated/tool-diverted or
+                # unverified response is not usable gaming/voice intelligence.
+                # The OpenAI-compatible API reports "stop" on completion.
+                if getattr(choice, "finish_reason", None) != "stop":
+                    raise RuntimeError("Unverified or unfinished completion")
+                output = str(choice.message.content or "").strip()
                 if not output:
                     raise RuntimeError("Empty model output")
                 usage = getattr(result, "usage", None)

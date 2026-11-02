@@ -83,6 +83,12 @@ def summarize_stream_startup(
             or p.first_speakable_ms + 1 < p.first_visible_ms))
         or p.status not in {"ok", "empty", "incomplete", "truncated",
                             "canary_mismatch", "failed", "timeout"}
+        or (p.status == "ok" and p.first_visible_ms is None)
+        or (p.canary_ok is not None and type(p.canary_ok) is not bool)
+        or (p.canary_ok is True and p.status != "ok")
+        or (p.canary_ok is False and p.status != "canary_mismatch")
+        or (p.status == "canary_mismatch" and p.canary_ok is not False)
+        or (workload == "canary" and p.status == "ok" and p.canary_ok is not True)
         for p in probes
     ):
         raise ValueError("invalid probe state")
