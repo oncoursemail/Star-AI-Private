@@ -122,12 +122,28 @@ def prose(ours: str, base: str, theirs: str) -> str | None:
 
 
 W = re.compile(r"\s+")
+# where indentation is meaning (a line moved into an `if`, a YAML key under another), only line ends may differ
+INDENTED = re.compile(r"(\.(py|pyi|ya?ml|md|mk|nim|coffee|pug|sass|styl|haml)|(^|/)Makefile)$", re.I)
+STRING = re.compile(r'r#*"[\s\S]*?"#*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\\n])\'|`(?:\\.|[^`\\])*`')
 
 
-def formatting_only(ours: str, base: str, theirs: str) -> str | None:
-    """A side that differs from the ancestor (or from the other side) only in whitespace changed nothing: the other
-    side's text. (Rust is put back in the repo's format by rustfmt afterwards.)"""
-    o, b, t = (W.sub("", s) for s in (ours, base, theirs))
+def _layout_free(s: str, path: str) -> str:
+    """The text without what formatting may change: trailing spaces (indented languages), else every whitespace
+    run outside string literals (whitespace inside a string is data)."""
+    if INDENTED.search(path):
+        return "\n".join(ln.rstrip() for ln in s.replace("\r\n", "\n").split("\n"))
+    out, pos = [], 0
+    for m in STRING.finditer(s):
+        out += [W.sub("", s[pos:m.start()]), m.group(0)]
+        pos = m.end()
+    return "".join(out) + W.sub("", s[pos:])
+
+
+def formatting_only(ours: str, base: str, theirs: str, path: str = "") -> str | None:
+    """A side that differs from the ancestor (or from the other side) only in layout changed nothing: the other
+    side's text. (Rust is put back in the repo's format by rustfmt afterwards.) Litha's review of #912: with all
+    whitespace removed, a Python line moved into an `if` and a changed string literal counted as formatting."""
+    o, b, t = (_layout_free(s, path) for s in (ours, base, theirs))
     if o == t:
         return ours
     if o == b:

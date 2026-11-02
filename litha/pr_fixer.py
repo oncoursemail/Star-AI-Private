@@ -1379,7 +1379,7 @@ def mechanical(path: str, block: str, before: str, after: str) -> str | None:
     if near is None:
         near = both_added(ours, base, theirs, docs=path.endswith((".md", ".txt", ".rst")))
     if near is None:
-        near = merge3.formatting_only(ours, base, theirs)
+        near = merge3.formatting_only(ours, base, theirs, path)
     if near is None and path.endswith(".rs"):
         near = merge3.use_lists(ours, base, theirs)
     if near is None:

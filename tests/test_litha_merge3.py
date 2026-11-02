@@ -77,3 +77,13 @@ def test_tests_merge_only_by_rule_ci_never_and_the_file_limit_counts_her_files()
     with pytest.raises(ValueError):
         F.mechanical_only("prompt")
     assert F.guarded(".github/workflows/ci.yml") and not F.guarded("crates/a/tests/t.rs")
+
+
+def test_layout_is_not_meaning_where_indentation_or_strings_matter():
+    """Litha's review of #912: a line moved into an `if` (Python, YAML) and a changed string are real changes."""
+    base, moved, other = "if x:\n    a()\nb()\n", "if x:\n    a()\n    b()\n", "if x:\n    a()\nc()\n"
+    assert merge3.formatting_only(moved, base, other, "m.py") is None
+    assert merge3.formatting_only("k:\n  v: 1\n", "k:\nv: 1\n", "k:\nw: 1\n", "c.yaml") is None
+    assert merge3.formatting_only('let s = "a  b";\n', 'let s = "a b";\n', 'let t = "a b";\n', "x.rs") is None
+    assert merge3.formatting_only("f(a,\n  b)\n", "f(a, b)\n", "g(a, b)\n", "x.rs") == "g(a, b)\n"
+    assert merge3.formatting_only("x = 1   \n", "x = 1\n", "y = 1\n", "m.py") == "y = 1\n"   # trailing spaces only
