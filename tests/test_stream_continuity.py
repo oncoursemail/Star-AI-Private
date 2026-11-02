@@ -85,6 +85,21 @@ def test_consent_signed_attempts_and_past_episode_recall(bank, tmp_path):
         )
         assert packet is not None
         assert packet.action_ids == ("jump_left",)
+        assert packet.game_scope == store.game_scope
+        assert packet.game_scope.startswith("episode.")
+        # Independent producers must use the *whole* game/version/objective/
+        # situation identity, rather than just the shared game title.
+        from star.stream_episode import StreamEpisode
+        same = StreamEpisode(
+            bank, game_id=SCOPE[0], game_version=SCOPE[1],
+            objective_id=SCOPE[2], situation_id=SCOPE[3],
+        )
+        different = StreamEpisode(
+            bank, game_id=SCOPE[0], game_version=SCOPE[1],
+            objective_id=SCOPE[2], situation_id="different_level",
+        )
+        assert same.game_scope == store.game_scope
+        assert different.game_scope != store.game_scope
         assert '"successes":1' in packet.context_record
         assert '"failures":1' in packet.context_record
         assert '"success_after_prior_failure":true' in packet.context_record

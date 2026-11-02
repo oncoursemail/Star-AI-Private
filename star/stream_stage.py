@@ -150,6 +150,7 @@ class StarStage:
             "prepared": 0, "queued": 0, "audible": 0,
             "abandoned": 0, "interrupted": 0, "motion_requests": 0,
             "journal_recall_skipped": 0, "off_game_context": 0,
+            "off_game_memory": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -376,16 +377,47 @@ class StarStage:
             # unsolicited idle remark or high-priority gameplay interruption.
             if knowledge is not None and intent.kind == "viewer_question":
                 prompt += "\n" + knowledge.context_record
-            # Session-scoped, signed-practice aggregates: never attach them to
-            # urgent warnings, idle banter or unrelated viewer comments.
+            # Data produced by an older game can remain in a host's memory
+            # queue after scene changes. Even when that packet was legitimately
+            # signed/approved for game A, it is not context for game B. Check
+            # BOTH the director's actual bound game and an optional independent
+            # host observation; a stale host observation must not override a
+            # newer scene binding. Empty bound scope means no game.
+            bound_scope = self._director.active_game_scope
+            scope_conflict = (
+                bound_scope is not None and bool(current_game_scope)
+                and bound_scope != current_game_scope
+            )
+            expected_scope = (
+                bound_scope if bound_scope is not None else current_game_scope
+            )
+
+            def relevant_memory(packet_scope: str) -> bool:
+                if scope_conflict:
+                    return False
+                if expected_scope:
+                    return packet_scope == expected_scope
+                # The explicitly bound no-game state never consumes gameplay
+                # memories. Legacy unbound callers retain their old opt-in
+                # behavior but production hosts should always bind a game.
+                return bound_scope is None
+
+            # Session-only signed-practice data may accompany a verified game
+            # cue or an actual viewer question, never unprompted idle banter.
             if episode is not None and intent.kind in {
                 "game_observation", "game_success", "viewer_question"
             }:
-                prompt += "\n" + episode.context_record
-            # Earlier sealed episodes belong in answers to viewer questions
-            # ONLY. Never narrate them over a current game emergency.
+                if relevant_memory(episode.game_scope):
+                    prompt += "\n" + episode.context_record
+                else:
+                    self._counts["off_game_memory"] += 1
+            # Earlier sealed episodes are historical context for questions,
+            # not proof of current success or permission to switch scenes.
             if continuity is not None and intent.kind == "viewer_question":
-                prompt += "\n" + continuity.context_record
+                if relevant_memory(continuity.game_scope):
+                    prompt += "\n" + continuity.context_record
+                else:
+                    self._counts["off_game_memory"] += 1
             # A question about the ongoing session may draw on recent *observed*
             # game moments, but ONLY with separate public-speaking approval.
             # Never let a journal fact trigger speech, override gameplay, or

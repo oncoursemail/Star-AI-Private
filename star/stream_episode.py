@@ -37,6 +37,9 @@ class EpisodePacket:
 
     action_ids: tuple[str, ...]
     context_record: str
+    # A stable host-curated game/version/objective/situation fingerprint.
+    # This is context provenance, NOT a signature or authority to disclose.
+    game_scope: str = ""
 
     def user_message(self) -> dict[str, str]:
         return {"role": "user", "content": self.context_record}
@@ -221,7 +224,10 @@ class StreamEpisode:
             if len(record) > _MAX_PACKET:
                 return None
             self._counts["packets"] += 1
-            return EpisodePacket(tuple(cast(str, f["action_id"]) for f in facts), record)
+            return EpisodePacket(
+                tuple(cast(str, f["action_id"]) for f in facts),
+                record, game_scope=self._game_scope,
+            )
 
     def metrics(self) -> dict[str, int | bool]:
         """No raw IDs, receipts, on-air text, players, screenshots or timestamps."""

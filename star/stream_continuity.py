@@ -46,6 +46,9 @@ class ContinuityPacket:
 
     action_ids: tuple[str, ...]
     context_record: str
+    # Must agree with StarStage's host-bound current game for on-air use.
+    # An opaque digest is not independent proof of source authenticity.
+    game_scope: str = ""
 
     def user_message(self) -> dict[str, str]:
         return {"role": "user", "content": self.context_record}
@@ -83,6 +86,11 @@ class StreamContinuityVault:
                 or not 1 <= len(recordable_action_ids) <= 32):
             raise ValueError("curate 1..32 recordable actions")
         self._actions = frozenset(_symbol(v) for v in recordable_action_ids)
+        # Identical stable identity scheme to StreamEpisode.game_scope.
+        # It is not a secret or an authentication receipt.
+        self._game_scope = "episode." + sha256(
+            chr(0).join(self._scope).encode("ascii")
+        ).hexdigest()[:40]
         self._bank, self._key = bank, integrity_key
         self._db = sqlite3.connect(path, isolation_level=None, timeout=10)
         self._db.execute("PRAGMA trusted_schema=OFF")
@@ -127,6 +135,11 @@ class StreamContinuityVault:
     def game_id(self) -> str:
         """Public symbolic project scope for trusted host compatibility checks."""
         return self._scope[0]
+
+    @property
+    def game_scope(self) -> str:
+        """Host-stable full game/version/objective/situation identity."""
+        return self._game_scope
 
     def _thread(self) -> None:
         if get_ident() != self._owner_thread:
@@ -332,7 +345,10 @@ class StreamContinuityVault:
             if len(record) > _MAX_PACKET:
                 return None
             self._stats["packets"] += 1
-            return ContinuityPacket(tuple(str(f["action_id"]) for f in facts), record)
+            return ContinuityPacket(
+                tuple(str(f["action_id"]) for f in facts),
+                record, game_scope=self._game_scope,
+            )
 
     def forget_all(self, *, owner_approved: bool = False) -> None:
         """Forget this vault's game/version/objective/situation only.
