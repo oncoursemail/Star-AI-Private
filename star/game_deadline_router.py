@@ -80,7 +80,8 @@ class GameDeadlineRouter:
     def __init__(self, *, minimum_samples: int = 8,
                  history: int = 64, dispatch_reserve_ms: float = 40.0,
                  reactive_device: str = "cpu",
-                 max_latency_sample_age_ms: float = 15_000.0) -> None:
+                 max_latency_sample_age_ms: float = 15_000.0,
+                 strict_workload_profile: bool = False) -> None:
         if type(minimum_samples) is not int or not 5 <= minimum_samples <= 64:
             raise ValueError("minimum_samples must be 5..64")
         if type(history) is not int or not minimum_samples <= history <= 256:
@@ -94,6 +95,9 @@ class GameDeadlineRouter:
                                    "max_latency_sample_age_ms", minimum=250)
         if sample_age > 60_000:
             raise ValueError("latency sample age must be <=60 seconds")
+        if type(strict_workload_profile) is not bool:
+            raise ValueError("strict_workload_profile must be boolean")
+        self._strict_workload_profile = strict_workload_profile
         self._max_latency_age = sample_age
         self._minimum = minimum_samples
         self._reserve = reserve
@@ -101,7 +105,9 @@ class GameDeadlineRouter:
         self._lock = RLock()
         self._enabled = False
         self._scope = ""
-        self._reactive: deque[tuple[float, float]] = deque(maxlen=history)
+        # Tag measured completion speed with the independently attested OBS
+        # state. In strict mode, idle timings never qualify live decisions.
+        self._reactive: deque[tuple[float, float, bool]] = deque(maxlen=history)
         self._last_sample_id = 0
         self._last_sample_ms: float | None = None
         self._last_advice_ms: float | None = None
@@ -138,6 +144,7 @@ class GameDeadlineRouter:
         self, *, game_scope: str, sample_id: int, duration_ms: float,
         sample_host_ms: float,
         host_measured: bool = False, completed: bool = True,
+        stream_live: bool = False,
     ) -> bool:
         """Only accept host-measured *completed* quick-path inference latency.
 
@@ -153,8 +160,10 @@ class GameDeadlineRouter:
             raise ValueError("invalid timing sample ID")
         duration = _milliseconds(duration_ms, "duration_ms", minimum=0.001)
         at = _clock_ms(sample_host_ms, "sample_host_ms")
-        if type(host_measured) is not bool or type(completed) is not bool:
-            raise ValueError("host_measured and completed must be booleans")
+        if any(type(flag) is not bool for flag in (
+            host_measured, completed, stream_live,
+        )):
+            raise ValueError("timing attestation flags must be booleans")
         with self._lock:
             if not self._enabled or not host_measured or game_scope != self._scope:
                 return False
@@ -164,7 +173,7 @@ class GameDeadlineRouter:
                 return False
             self._last_sample_id = sample_id
             self._last_sample_ms = at
-            self._reactive.append((at, duration if completed else 5000.0))
+            self._reactive.append((at, duration if completed else 5000.0, stream_live))
             self._counts["measured"] += 1
             if not completed:
                 self._counts["timeouts"] += 1
@@ -305,10 +314,15 @@ class GameDeadlineRouter:
                     "completed", "verified_completion_fits_scene_deadline",
                     round(remaining, 3),
                 )
-            fresh = [duration for at, duration in self._reactive
-                     if 0 <= now - at <= self._max_latency_age]
+            fresh = [duration for at, duration, observed_stream_live in self._reactive
+                     if 0 <= now - at <= self._max_latency_age
+                     and (not self._strict_workload_profile
+                          or observed_stream_live == stream_live)]
             if len(fresh) < self._minimum:
-                return skip("insufficient_recent_latency_samples", remaining=remaining)
+                reason = ("insufficient_matching_workload_latency_samples"
+                          if self._strict_workload_profile else
+                          "insufficient_recent_latency_samples")
+                return skip(reason, remaining=remaining)
             profiled = _p95(fresh)
             if profiled is None or profiled >= remaining:
                 return skip("reactive_p95_exceeds_scene_slack",
@@ -322,7 +336,7 @@ class GameDeadlineRouter:
         with self._lock:
             return {**self._counts, "enabled": self._enabled,
                     "timing_samples": len(self._reactive),
-                    "reactive_p95_ms": _p95([duration for _, duration in self._reactive])}
+                    "reactive_p95_ms": _p95([duration for _, duration, _ in self._reactive])}
 
 
 __all__ = ["DeadlineAdvice", "GameDeadlineRouter"]
