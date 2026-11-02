@@ -21,6 +21,8 @@
   const file = decodeURIComponent(r.url.split("?")[0].split("/").pop() || "");
   if (file) $('[data-f="file"]').textContent = file;
 
+  M.downloads.then((n) => { if (n != null) $('[data-f="downloads"]').textContent = M.num(n); });
+
   // size: only asked for when the installer is on this site (connect-src 'self')
   const size = $('[data-f="size"]');
   size.textContent = "Not stated";

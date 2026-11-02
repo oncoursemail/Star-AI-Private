@@ -52,12 +52,16 @@ M.release = M.json("/releases/latest.json").then((m) => {
   const url = typeof win.url === "string" && (win.url.startsWith("/") || M.href(win.url)) ? win.url : null;
   return url ? { version: m.version, notes: typeof m.notes === "string" ? m.notes : "", date: m.pub_date || null, url } : null;
 });
-M.release.then((r) => {
+// installer downloads from the site (self-updates not included), counted by metallic-live
+M.downloads = M.json("/live/downloads.json").then((d) => (d && typeof d.downloads === "number" ? d.downloads : null));
+M.release.then(async (r) => {
   if (!r) return;
   document.querySelectorAll("[data-dl]").forEach((a) => {
     if (!a.classList.contains("small")) a.href = r.url;
   });
-  document.querySelectorAll("[data-dl-note]").forEach((n) => { n.textContent = "Early Access " + r.version + " · Windows 10 and 11, 64-bit"; });
+  const n = await M.downloads;
+  const count = n == null ? "" : " · " + M.num(n) + (n === 1 ? " download" : " downloads");
+  document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + r.version + " · Windows 10 and 11, 64-bit" + count; });
 });
 
 // entrances: parts of each section rise in, staggered, once. Only for what starts below the fold, so nothing flashes.
