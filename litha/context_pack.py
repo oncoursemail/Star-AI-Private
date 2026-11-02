@@ -25,6 +25,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import textwrap
 import threading
 import time
 
@@ -44,14 +45,18 @@ Failing tests and their output:
 What this PR changed (the cause is most likely in these lines):
 {diff}
 
-The code that matters, picked from the tracebacks, the tests and the change. Each line starts with its line number
+{missing}The code that matters, picked from the tracebacks, the tests and the change. Each line starts with its line number
 in the file and ": "; the number is not part of the file:
 {code}
 {repo_map}{lessons}{feedback}
 Fix the cause in the source code. The tests describe the wanted behaviour: never edit files under tests/.
 Edit only files shown above, with exactly those paths. Make the smallest correct change. Answer only JSON:
 {{"why": "<one sentence: the cause>", "edits": [{{"file": "<path>", "line": <number of the first line of find>,
-"find": "<exact existing lines copied without their numbers, unique in the file>", "replace": "<new text>"}}]}}"""
+"find": "<exact existing lines copied without their numbers, unique in the file>", "replace": "<new text>"}}]}}{insert}"""
+
+INSERT = """
+To ADD code (a new function, constant or branch) an edit may instead be {"file": "<path>", "after": "<one existing
+line, copied>", "insert": "<the new lines>"}; after a "def" or "class" line it goes below that whole definition."""
 
 REASK = """You are Litha. Your fix was: {why}
 These edits did not apply because their "find" text is not in the file:
@@ -239,8 +244,9 @@ def parse(tree: Path, path: str, cache: dict[str, Module | None]) -> Module | No
 
 
 def module_file(tree: Path, dotted: str) -> str | None:
+    """The file of a dotted module; `mesh.x` is server/mesh/x.py (the server tests put server/ on sys.path)."""
     base = dotted.replace(".", "/")
-    for cand in (base + ".py", base + "/__init__.py"):
+    for cand in (base + ".py", base + "/__init__.py", "server/" + base + ".py", "server/" + base + "/__init__.py"):
         if (tree / cand).is_file():
             return cand
     return None
@@ -339,7 +345,7 @@ class Picker:
                 if c.qual not in seen and c is not d:
                     seen.add(c.qual)
                     out.append(c)
-        for c in out[:limit]:
+        for c in out[:limit] if why else []:            # why "": only look, add nothing
             self.add_def(c, score, why)
         return out[:limit]
 
@@ -352,10 +358,53 @@ class Picker:
             self.add_def(c, score, why)
 
 
+REACHED = 12                    # traced functions considered (fix_reach.trace), nearest to the test first
+
+
+def constants_read(p: Picker, path: str, name: str, limit: int = 4) -> list[tuple[str, int, int, str]]:
+    """(file, first, last line, name) of the module-level assignments the test `name` reads: `module.NAME` and
+    names it imported (a test of a constant, e.g. `"never guess" in inject.GENERAL_NOTE`, calls nothing)."""
+    m = p.mod(path)
+    d = next((x for x in m.named(name)), None) if m is not None else None
+    if m is None or d is None:
+        return []
+    try:
+        node = ast.parse(textwrap.dedent("\n".join(m.lines[d.start - 1:d.end])))
+    except SyntaxError:
+        return []
+    want: list[tuple[str, str]] = []                 # (dotted module, attribute)
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name) and sub.value.id in m.imports:
+            dotted, attr = m.imports[sub.value.id]
+            want.append((f"{dotted}.{attr}" if attr else dotted, sub.attr))
+        elif isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Load) and sub.id in m.imports:
+            dotted, attr = m.imports[sub.id]
+            if attr:
+                want.append((dotted, attr))
+    out: list[tuple[str, int, int, str]] = []
+    for dotted, attr in dict.fromkeys(want):
+        src = module_file(p.tree, dotted)
+        if not src or src.startswith("tests/"):
+            continue
+        other = p.mod(src)
+        try:
+            body = ast.parse("\n".join(other.lines)).body if other is not None else []
+        except SyntaxError:
+            continue
+        for n in body:
+            targets = n.targets if isinstance(n, ast.Assign) else [n.target] if isinstance(n, ast.AnnAssign) else []
+            if any(isinstance(t, ast.Name) and t.id == attr for t in targets):
+                out.append((src, n.lineno, n.end_lineno or n.lineno, attr))
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
 def pick(tree: Path, fails: list[dict], text: str, diff: str = "",
-         symbols: dict[str, list[str]] | None = None) -> list[Unit]:
+         symbols: dict[str, list[str]] | None = None, reached: list[dict] | None = None) -> list[Unit]:
     """The ranked units for a failure. Scores: changed by the PR 98, deepest source frame 95, failing test 90,
-    function the test calls 80, other source frames 75, callee 50, caller 40, other test frames 30."""
+    function the test calls 80, other source frames 75, traced (`reached`) 84 / 76 / 68 / ... by calls from the
+    test (+4 where it raised), callee 50, caller 40, other test frames 30."""
     p = Picker(tree, symbols)
     src_defs: list[Def] = []
     for path, lines in changed_lines(diff).items():
@@ -414,8 +463,33 @@ def pick(tree: Path, fails: list[dict], text: str, diff: str = "",
     for path, line in fr:
         if path.startswith("tests/"):
             p.around(path, line, 30, "traceback (test helper)")
+    if reached is not None:                             # wide: the module-level values the failing tests read
+        for i, (path, name) in enumerate(test_ids(fails, text)[:2]):
+            for src, start, end, attr in constants_read(p, path, name):
+                p.add(src, start, end, 83 if i == 0 else 66, f"read by {name} ({attr})")
+    for r in (reached or [])[:REACHED]:                 # traced run: what the test really entered, nearest first
+        m = p.mod(str(r.get("path", "")))
+        start = int(r.get("start") or 0)
+        d = m.enclosing(start) if m is not None else None
+        if d is None or d.path.startswith("tests/"):
+            continue
+        depth = int(r.get("depth") or 9)
+        raised = {int(r["raised"])} if r.get("raised") else set()
+        score, why = max(55, 92 - 8 * depth) + (4 if raised else 0), \
+            "the test reaches it" + (" directly" if depth == 1 else f", {depth} calls deep")
+        if d.name != r.get("name"):                     # nested (a handler class inside a function): the lines it ran
+            ran = [int(n) for n in r.get("lines") or []]
+            p.add(d.path, start, min(d.end, max(ran + [start]) + 2), score, f"{why} ({r.get('qual')})", raised)
+            continue
+        p.add_def(d, score, why, raised)
+        if d not in src_defs:
+            src_defs.append(d)
     for d in src_defs[:6]:
-        p.callees(d, 50, f"called by {d.name}")
+        for c in p.callees(d, 50, f"called by {d.name}"):
+            if reached is not None:                     # wide: one hop more, same file only (night() via jobs())
+                for c2 in p.callees(c, 0, "")[:3]:
+                    if c2.path == c.path:
+                        p.add_def(c2, 42, f"called by {c.name}")
         p.callers(d, 40, f"calls {d.name}")
     relevance(p, text)
     return p.units
@@ -531,8 +605,9 @@ def pack(tree: Path, units: list[Unit], budget: int, shown: str = "") -> tuple[s
                 continue
         lines = cache[u.path]
         cap = budget * (60 if i == 0 else 45) // 100
-        if u.path.startswith("tests/") and u.focus and lines[u.start - 1].strip() in shown:
-            cap = 120                                   # the traceback already printed this test's source
+        if u.path.startswith("tests/") and u.focus and lines[u.start - 1].strip() in shown \
+                and lines[min(u.end, len(lines)) - 1].strip() in shown:
+            cap = 120                                   # the traceback already printed this whole test
         nums = _span(u, lines, min(cap, budget - used))
         if not nums:
             continue
@@ -546,33 +621,84 @@ def pack(tree: Path, units: list[Unit], budget: int, shown: str = "") -> tuple[s
     return "\n".join(out), paths
 
 
+NOISE = re.compile(r"^(?:\S.*: (?:Syntax|Deprecation|User|Resource|Pending\w*)Warning: .*|\s*warnings\.warn\(.*|"
+                   r"(?:tmp_path|tmp_path_factory|monkeypatch|capsys|capfd|caplog|request|recwarn)\s+= .*|"
+                   r"-- Docs: https://docs\.pytest\.org.*|!{5,} .*)$")
+
+
+def tidy(text: str) -> str:
+    """Pytest output without what never helps a fix: the warnings summary, fixture objects among the locals."""
+    out, skip = [], False
+    for ln in text.splitlines():
+        if re.match(r"^=+ warnings summary =+$", ln):
+            skip = True
+            continue
+        if skip and re.match(r"^=+ .* =+$", ln):
+            skip = False
+        if skip or NOISE.match(ln):
+            continue
+        out.append(ln)
+    return "\n".join(out)
+
+
+def failed_at(out: str, test: str) -> int:
+    """The line of `test`'s own file where it failed in this pytest output (0: not found); 10**6 once it passes.
+    A later line is progress even when as many tests fail (a new function added: the test gets one assert further)."""
+    if "::" not in test:
+        return 0
+    path, _, rest = test.partition("::")
+    name = re.sub(r"\[.*$", "", rest.split("::")[-1])
+    if not re.search(rf"^FAILED {re.escape(test)}\b", out, re.M) and f"ERROR {test}" not in out:
+        return 10 ** 6
+    m = re.search(rf"^_{{3,}} (?:\w+\.)?{re.escape(name)}(?:\[.*?\])? _{{3,}}$(.*?)(?=^_{{3,}} |^=+ |\Z)", out,
+                  re.M | re.S)
+    where = re.escape(path).replace("/", "[/\\\\]")      # Windows prints tests\test_x.py
+    at = re.search(where + r":(\d+):", m.group(1) if m else "")
+    return int(at.group(1)) if at else 0
+
+
 def failure_text(fails: list[dict], out: str, budget: int = 1100) -> str:
     """The failing tests for the prompt: most of the budget for the first one (its head and its tail), a little for
     the others and for the tail of the latest local run."""
     parts = []
     for i, f in enumerate(fails):
         share = budget * 2 // 3 if i == 0 else budget // 8
-        parts.append(clip(f"{f.get('test', '')}\n{f.get('section', '')}", share, "both"))
+        section = tidy(str(f.get("section", "")))
+        errors = "\n".join(dict.fromkeys(ln[:300] for ln in section.splitlines() if ln.startswith("E ")))
+        text = clip(f"{f.get('test', '')}\n{section}", share, "both")
+        lost = clip("\n".join(ln for ln in errors.splitlines() if ln not in text), share // 3, "head")
+        if lost.strip():                                # the E lines say what is wrong: never clipped away
+            text = clip(f"{f.get('test', '')}\n{section}", share - tokens(lost), "both") + "\n" + lost
+        parts.append(text)
     said = "\n".join(ln for ln in out.splitlines() if re.match(r"\s*(E |FAILED |\S+\.py:\d+)", ln))
     parts.append("local run now:\n" + clip(said or out, budget // 8, "tail"))
     return clip("\n\n".join(parts), budget, "head")
 
 
 def fixer_prompt(tree: Path, *, title: str, fails: list[dict], out: str, diff: str, lessons: str = "",
-                 feedback: str = "", proposed: str = "", window: int = WINDOW, symbols=None) -> str:
-    """The fixer's prompt, every part clipped to its share of her window; the code listing gets the rest."""
+                 feedback: str = "", proposed: str = "", window: int = WINDOW, symbols=None,
+                 reached: list[dict] | None = None, wide: bool = False) -> str:
+    """The fixer's prompt, every part clipped to its share of her window; the code listing gets the rest.
+    wide (real fixes): the traced functions (`reached`), what the failure says is missing, the insert edit form, and
+    the whole failing test even when the traceback printed its first lines."""
+    from litha import fix_reach
     total = window - ANSWER
+    grow = max(1.0, min(1.6, window / WINDOW))          # a wider window: a little more output, the rest is code
     sections = "\n\n".join(f"{f.get('test', '')}\n{f.get('section', '')}" for f in fails) + "\n\n" + out
-    parts = {"title": title[:200], "failures": failure_text(fails, out),
-             "diff": clip(diff, 450, "head") if diff.strip() else "(not available)",
+    sections = tidy(sections) if wide else sections     # a warning's file:line is no frame of the failure
+    parts = {"title": title[:200], "failures": failure_text(fails, out, int(1100 * grow)),
+             "diff": clip(diff, int(450 * grow), "head") if diff.strip() else "(not available)",
              "lessons": clip(lessons, 200, "head"),
-             "feedback": clip(feedback, 450, "both") + clip(proposed, 300, "head")}
+             "feedback": clip(feedback, int(450 * grow), "both") + clip(proposed, 300, "head"),
+             "missing": "", "insert": INSERT if wide else ""}
+    if wide:
+        parts["missing"] = clip(fix_reach.missing_note(tree, sections, test_ids(fails, sections))[0], 350, "head")
     if symbols is None:
         symbols = symbol_index(tree)
-    units = pick(tree, fails, sections, diff, symbols)
+    units = pick(tree, fails, sections, diff, symbols, reached if wide else None)
     fixed = tokens(FIX_PROMPT.format(code="", repo_map="", **parts))
     budget = total - fixed
-    code, paths = pack(tree, units, max(200, budget - 150), sections)
+    code, paths = pack(tree, units, max(200, budget - 150), parts["failures"] if wide else sections)
     rest = budget - tokens(code)
     where = map_text(tree, paths, max(0, min(150, rest - 10))) if rest > 60 else ""
     return FIX_PROMPT.format(code=code or "(no code found for these failures)", repo_map=where, **parts)
@@ -581,6 +707,131 @@ def fixer_prompt(tree: Path, *, title: str, fails: list[dict], out: str, diff: s
 # ---------------------------------------------------------------- landing her edits
 
 NUMBERED = re.compile(r"(?m)^ *\d+: ")
+HEADER = re.compile(r"^\s*(?:@\w|(?:async\s+)?def\s|class\s)")
+
+
+def _at_line(tree: Path, e: dict) -> dict:
+    """{find: "", line: N, replace: new} (seen 5 of 5 times on a real fix that needed a new function: all refused as
+    an empty find) as an {after, insert} edit: new top-level code goes below the top-level statement holding line N,
+    anything else just above line N."""
+    path = str(e.get("file", "")).replace("\\", "/").lstrip("./")
+    new = NUMBERED.sub("", str(e["replace"])).strip("\n")
+    try:
+        no = int(str(e.get("line")))
+        lines = (tree / path).read_text(encoding="utf-8").split("\n")
+        body = ast.parse("\n".join(lines)).body
+    except (TypeError, ValueError, OSError, SyntaxError):
+        return e
+    if not new.strip() or not 1 <= no <= len(lines) + 1:
+        return e
+    top = not new.lstrip("\n")[:1].isspace()
+    if top:
+        held = [n for n in body if min([d.lineno for d in getattr(n, "decorator_list", [])] + [n.lineno]) <= no
+                <= (n.end_lineno or n.lineno)]
+        last = held[0] if held else max((n for n in body if (n.end_lineno or n.lineno) < no),
+                                        key=lambda n: n.lineno, default=None)
+        if last is not None:                            # a def/class: its header line; else its last line
+            at = last.lineno if HEADER.match(lines[last.lineno - 1]) else (last.end_lineno or last.lineno)
+            return {"file": path, "after": lines[at - 1], "insert": new, "line": at}
+    at = no if no <= len(lines) and lines[no - 1].strip() else next(
+        (i for i in range(no, len(lines) + 1) if lines[i - 1].strip()), 0)
+    if not at:
+        return e
+    return {"file": path, "find": lines[at - 1], "line": at,
+            "replace": _reindent(new, new, lines[at - 1]) + "\n" + lines[at - 1]}
+
+
+def inserts(tree: Path, edits) -> list:
+    """Her edits with every {after, insert} turned into find/replace: `after` is one existing line (landed like a
+    find); after a def/class/decorator line the new lines go below that whole definition, at its indentation."""
+    out = []
+    for e in mend(edits):
+        if isinstance(e, dict) and "find" in e and not str(e["find"]).strip() and "replace" in e:
+            e = _at_line(tree, e)                       # her own insert form: an empty find at a line number
+        if not isinstance(e, dict) or "find" in e or "after" not in e or "insert" not in e:
+            out.append(e)
+            continue
+        path = str(e.get("file", "")).replace("\\", "/").lstrip("./")
+        after, new = NUMBERED.sub("", str(e["after"])).rstrip("\n"), NUMBERED.sub("", str(e["insert"])).strip("\n")
+        try:
+            text = (tree / path).read_text(encoding="utf-8")
+        except OSError:
+            out.append({"file": path, "find": after, "replace": after + "\n" + new})
+            continue
+        got = land(text, after, after, e.get("line"))
+        if isinstance(got, str):                        # no such line: apply_edits reports it (and re-asks)
+            out.append({"file": path, "find": after, "replace": after + "\n" + new, "line": e.get("line")})
+            continue
+        start, end = got[0], got[1]
+        line_end = text.find("\n", end)
+        end = len(text) if line_end < 0 else line_end
+        first = text[start:end].split("\n")[0]
+        if HEADER.match(first):                          # below the whole def / class
+            try:
+                tree_ = ast.parse(text)
+            except SyntaxError:
+                tree_ = None
+            no = _line_of(text, start)
+            for n in ast.walk(tree_) if tree_ else []:
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and \
+                        min([d.lineno for d in n.decorator_list] + [n.lineno]) <= no <= n.lineno:
+                    lines = text.split("\n")
+                    start = sum(len(h) + 1 for h in lines[:min([d.lineno for d in n.decorator_list] + [n.lineno]) - 1])
+                    end = sum(len(h) + 1 for h in lines[:n.end_lineno or n.lineno]) - 1
+                    new = _reindent(new, new, lines[n.lineno - 1])
+                    new = ("\n\n\n" if not lines[n.lineno - 1].startswith((" ", "\t")) else "\n\n") + new
+                    break
+            else:
+                new = "\n" + new
+        elif not first[:1].isspace() and not new[:1].isspace() and not first.rstrip().endswith(":"):
+            new = "\n\n\n" + new                         # top-level code below a top-level statement
+        else:                                            # below that line, at its indentation (deeper after a ':')
+            new = "\n" + _reindent(new, new, _indent(first) + ("    " if first.rstrip().endswith(":") else "") + "x")
+        out.append({"file": path, "find": text[start:end], "replace": text[start:end] + new,
+                    "line": _line_of(text, start)})
+    return out
+
+
+HALF_DOC = re.compile(r'^(\s*)("""|\'\'\')(.*?[^"\'])(["\'])\s*$')
+
+
+def mend(edits) -> list:
+    """`\"\"\"Doc."` -> `\"\"\"Doc.\"\"\"` in her new code: a one-line docstring closed with one quote (4 of her first 5 new
+    functions on a real fix; each a syntax error). Only in a replace/insert whose triple quotes do not pair up."""
+    out = []
+    for e in edits if isinstance(edits, list) else []:
+        if isinstance(e, dict):
+            for key in ("replace", "insert"):
+                text = e.get(key)
+                if isinstance(text, str) and (text.count('"""') % 2 or text.count("'''") % 2):
+                    lines = text.split("\n")
+                    for i, ln in enumerate(lines):
+                        m = HALF_DOC.match(ln)
+                        if m and m.group(4) == m.group(2)[0] and text.count(m.group(2)) % 2:
+                            lines[i] = m.group(1) + m.group(2) + m.group(3) + m.group(2)
+                    e = {**e, key: "\n".join(lines)}
+        out.append(e)
+    return out
+
+
+def check_syntax(tree: Path, edits) -> list[str]:
+    """After her edits land: the exact syntax error of every edited .py file that no longer parses, so she does not
+    get the tail of a collection error instead."""
+    problems: list[str] = []
+    for path in dict.fromkeys(str(e.get("file", "")).replace("\\", "/").lstrip("./") for e in edits or []
+                              if isinstance(e, dict)):
+        f = tree / path
+        if not path.endswith(".py") or not f.is_file():
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        try:
+            ast.parse(text)
+            continue
+        except SyntaxError as err:
+            no = err.lineno or 0
+            near = text.split("\n")[max(0, no - 2):no + 1]
+            problems.append(f"{path}: your edit is not valid Python: {err.msg} at line {no}: " + " | ".join(near))
+    return problems
 
 
 def _indent(s: str) -> str:

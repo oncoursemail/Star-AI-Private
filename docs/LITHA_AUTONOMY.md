@@ -516,6 +516,63 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
 - Not done: inputs recorded from the existing tests (the real call shapes, no model call), property-style boundary
   inputs generated from the changed constant without her, functions nested in another function (not callable).
 
+## 4l. Real fixes: what the failing test reaches, new code, a wider window (2026-11-02, measured)
+
+- Why: 4j's real-fix set was 0/12 blind. Reading her 61 prompts and answers of that run: the traceback clip had cut
+  the `E AttributeError: ... has no attribute 'away'` line and the rest of the test (R01 failed on its first line, so
+  the asserts that say what to build were never shown); a module constant the test reads (R10 `inject.GENERAL_NOTE`)
+  was never shown because the packer follows calls only, and `mesh.*` imports (server/ on sys.path) resolved to no
+  file; she sent new functions as `{"find": "", "line": 43}` (5 of 5 on R04, all refused as an empty find); 4 of her
+  first 5 new functions closed a one-line docstring with one quote; and an edit that added the missing function
+  (the test then failed one assert later, same failure count) was undone as "no progress".
+- `litha/fix_reach.py` (new) and changes in `context_pack.py` / `repair()`:
+  - **Traced run** (`fix_reach.trace`): the first failing test is run once more (and again after kept progress)
+    under a `sys.settrace` pytest plugin written to a temp dir: every repo function it entered (tests/ excluded),
+    calls from the test, lines run, the line that raised. The packer adds them at 84 / 76 / 68 / ... by distance
+    (+4 where it raised); functions nested in another function (an HTTP handler class) as the lines that ran.
+    1-3 s per item here.
+  - **Missing names** (`fix_reach.missing_note`): "no attribute / cannot import / unexpected keyword / NameError" ->
+    "file X has no `away`, the test needs it: ADD it (or rename the old one)", with the test lines that use it.
+  - **Wide prompt** (`fixer_prompt(wide=True)`; blind, or from round 2 with a diff): the traced units, module-level
+    values the failing test reads (`constants_read`, 83), one more same-file callee hop (42), the whole failing test
+    unless the traceback printed all of it, the missing-name note, and an insert edit form
+    `{"file", "after": "<line>", "insert": "<new lines>"}` (after a def/class line: below the whole definition).
+    Every prompt: pytest noise dropped (`tidy`: warnings summary, fixture objects among the locals), E lines never
+    clipped away, the deep failure's own block instead of the run's tail.
+  - **Landing** (`inserts`, `mend`, `check_syntax`): her `{"find": "", "line": N}` becomes an insert (new top-level
+    code below the statement holding line N, else above line N); a one-line docstring closed with one quote is
+    closed (only when the triple quotes in her text do not pair up); an edit that leaves invalid Python is reported
+    with the exact error and line instead of a collection error's tail.
+  - **Progress** (`failed_at`): a candidate counts as progress when as many tests fail but the first failing test
+    now fails at a later line of its own file (her new function was kept, she fixes the next assert next round).
+  - **Window** (`fix_reach.window`): 8192 when the node her calls go to first (the fastest usable one, as
+    `llm.node_chat` picks; star-pc, ctx 8192) has it, else 4096 (owner-pc); `LITHA_FIX_WINDOW` overrides; never
+    probed under pytest; an HTTP 400 (a 4096 node took a wide prompt) narrows the rest of that repair. Output and
+    diff budgets grow 1.6x, the rest goes to code; prompts seen up to 6365 tokens.
+- Measured (real-fix set 12 items blind, standard suite 32 items with diff; K=1, lessons frozen, one bench at a time,
+  a private checkout, `PYTHONDONTWRITEBYTECODE=1` + a fresh `PYTHONPYCACHEPREFIX`; other lanes used the same model):
+
+  | code | real fixes | wall s | calls | standard suite | wall s | calls |
+  |---|---|---|---|---|---|---|
+  | before (b2f3fd3e) | 0/12 | 1265 | 61 | 31/32 | 637 | 43 |
+  | trace + missing note + insert form, 4096 (v1) | 1/12 | 1688 | 69 | - | | |
+  | + constants, mend, syntax errors, 4096 (v2) | 0/12 | 1932 | 70 | - | | |
+  | + `mesh.*` imports, progress by line, 4096 (v4) | 2/12 | 1124 | 64 | - | | |
+  | same code, 8192 (v3) | 3/12 | 1219 | 65 | - | | |
+  | final, window probed (8192) (v5) | 3/12 | 927 | 61 | 31/32 | 636 | 36 |
+
+  Honest reading: R10 (add the phrases to `GENERAL_NOTE`) was solved in all three runs that showed the constant
+  (v3, v4, v5), and R03 (keep the proof's `test` key in `bug_hunt.hunt`, the real fix's change there) in both 8192
+  runs. The others pass the tests with code fitted to them: R05 in v1 (a regex op turning `str(x)` into `str(b)` for
+  the one test line), R12 in v4 (the two test sentences hard-coded in `check_leak`), R02 in v3 and v5 (`later_checks`
+  returns a fixed clippy command instead of reading the workflows; v3 put her `why` in the success message, v5 the
+  test's literal). So: 0/12 before; after, 1-2 genuine per run plus 0-1 fitted (8192: 2 + 1 both runs; 4096: 1 + 1).
+  Run-to-run noise is large (v2 0/12 vs v4 2/12 on nearly the same code), so 8192 vs 4096 (3, 3 vs 2) is not
+  proven by these runs. The standard suite did not move (S20 drop-guard missed before and after; fewer calls).
+- Not done / not verified: plan-then-edit (ask which functions to change first) was not built; no check against
+  code fitted to the test's literals (the bench counts those as solved); the 400 fallback was tested only by
+  reading the code path (no 4096-only node was up); a live PR.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
