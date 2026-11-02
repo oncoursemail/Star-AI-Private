@@ -51,6 +51,8 @@ class GameThinkLease:
     expires_ms: float | None = None
     authorizes_model_launch: bool = False
     authorized_to_play: bool = False
+    # Snapshot of host-attested OBS state when this particular worker was offered.
+    stream_live_at_offer: bool | None = None
 
 
 class RealtimeGameLoop:
@@ -258,6 +260,7 @@ class RealtimeGameLoop:
             lease = GameThinkLease(
                 "reactive", "host_may_consider_fast_inference",
                 frame.sequence, expiry,
+                stream_live_at_offer=stream_live,
             )
             self._lease = lease
             self._lease_frame = frame
@@ -310,6 +313,11 @@ class RealtimeGameLoop:
             self._last_host_ms = now
             if lease.expires_ms is None or now >= lease.expires_ms:
                 return reject("inference_finished_after_scene_deadline")
+            # A worker admitted before OBS entered or exited broadcast mode
+            # cannot become an action under different live resource/consent
+            # conditions. The final host state alone is not the offered state.
+            if stream_live is not lease.stream_live_at_offer:
+                return reject("stream_state_changed_during_inference")
             if telemetry is None or not telemetry.game_active:
                 return reject("game_telemetry_missing_or_inactive")
             if telemetry.live != stream_live:
