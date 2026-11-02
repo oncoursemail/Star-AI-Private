@@ -126,6 +126,7 @@ class _Reservation:
     regime: str
     started_ms: float
     expires_ms: float
+    recovery_probe: bool = False
 
 
 class AdaptiveQoS:
@@ -138,13 +139,22 @@ class AdaptiveQoS:
     """
 
     def __init__(self, *, minimum_headroom_mib: float = 1536,
-                 lease_cap_ms: float = 10_000) -> None:
+                 lease_cap_ms: float = 10_000,
+                 allow_recovery_probes: bool = False,
+                 recovery_cooldown_ms: float = 10_000) -> None:
         reserve = _number(minimum_headroom_mib, "minimum_headroom_mib", 8192)
         cap = _number(lease_cap_ms, "lease_cap_ms", 120_000)
+        cooldown = _number(recovery_cooldown_ms, "recovery_cooldown_ms", 120_000)
         if reserve < 512 or not 250 <= cap <= 30_000:
             raise ValueError("invalid realtime headroom or lease cap")
+        if type(allow_recovery_probes) is not bool or cooldown < 1000:
+            raise ValueError("recovery requires explicit boolean and safe cooldown")
         self.minimum_headroom_mib = reserve
         self.lease_cap_ms = cap
+        # Disabled by default. Only nonbroadcast, host-observed workers are
+        # eligible for one half-open trial after a bounded cooldown.
+        self.allow_recovery_probes = allow_recovery_probes
+        self.recovery_cooldown_ms = cooldown
         self._lock = RLock()
         self._enabled = False
         self._clock_ms: float | None = None
@@ -154,6 +164,8 @@ class AdaptiveQoS:
         self._ids: set[str] = set()
         self._samples: dict[tuple[str, str, str], deque[tuple[float, float]]] = {}
         self._consecutive_failures: dict[tuple[str, str], int] = {}
+        self._recovery_ready_ms: dict[tuple[str, str], float] = {}
+        self._probe_pending: set[tuple[str, str]] = set()
         self._last_vision_ms: float | None = None
         self._gpu_voice_guarded = False
         self._gpu_recovery_since_ms: float | None = None
@@ -182,6 +194,8 @@ class AdaptiveQoS:
         self._ids.clear()
         self._samples.clear()
         self._consecutive_failures.clear()
+        self._recovery_ready_ms.clear()
+        self._probe_pending.clear()
         self._last_vision_ms = None
         self._gpu_voice_guarded = False
         self._gpu_recovery_since_ms = None
@@ -199,6 +213,15 @@ class AdaptiveQoS:
             if not self._inflight:
                 self._reset()
 
+    def _mark_failure(self, key: tuple[str, str], now: float) -> None:
+        failures = self._consecutive_failures.get(key, 0) + 1
+        self._consecutive_failures[key] = failures
+        if self.allow_recovery_probes and failures >= 3:
+            # Back off on repeated failed probes. No wall-clock sleep, and
+            # expiry never releases a worker whose stop was not host-verified.
+            delay = min(120_000.0, self.recovery_cooldown_ms * 2 ** min(7, failures - 3))
+            self._recovery_ready_ms[key] = now + delay
+
     def _advance(self, now_ms: float) -> float:
         now = _number(now_ms, "now_ms", _CLOCK_CEILING)
         if self._clock_ms is not None and now < self._clock_ms:
@@ -211,7 +234,7 @@ class AdaptiveQoS:
                 key = (active.job.kind, active.device)
                 # A timed-out model is not a speed success. Quarantine its
                 # memory and slot until a trusted host confirms it stopped.
-                self._consecutive_failures[key] = self._consecutive_failures.get(key, 0) + 1
+                self._mark_failure(key, now)
         return now
 
     def _observe_game_fps(self, snap: QoSSnapshot, now: float) -> None:
@@ -277,8 +300,17 @@ class AdaptiveQoS:
         """Check a single device; return predicted latency and admission note."""
         stream = snap.stream
         key = (job.kind, device)
-        if self._consecutive_failures.get(key, 0) >= 3:
-            return None
+        recovery = self._consecutive_failures.get(key, 0) >= 3
+        if recovery:
+            # Never use live viewers as the experiment for a broken route.
+            # Require a quiet offline window, cooldown and exclusive half-open
+            # probe. An unknown/expired worker blocks recovery until host stop.
+            if (not self.allow_recovery_probes or stream.live or stream.game_active
+                    or now < self._recovery_ready_ms.get(key, float("inf"))
+                    or key in self._probe_pending
+                    or any((p.job.kind, p.device) == key
+                           for p in self._inflight.values())):
+                return None
         if sum(p.device == device for p in self._inflight.values()) >= (
                 snap.cpu_slots if device == "cpu" else snap.gpu_slots):
             return None
@@ -294,6 +326,9 @@ class AdaptiveQoS:
                      else 1024 if stream.live else 512)
             if stream.free_vram_mib - reserved < job.vram_mib + floor:
                 return None
+        # Old pre-failure p95 cannot certify the repaired route.
+        if recovery:
+            return None, "unmeasured_circuit_recovery_probe"
         estimate = _p95(
             self._samples.get((job.kind, device, _regime(snap)), deque()),
             now_ms=now,
@@ -384,8 +419,12 @@ class AdaptiveQoS:
             self._serial += 1
             ticket = self._serial
             expires = min(job.deadline_ms, now + self.lease_cap_ms)
+            recovering = self._consecutive_failures.get((job.kind, device), 0) >= 3
+            if recovering:
+                self._probe_pending.add((job.kind, device))
             self._inflight[ticket] = _Reservation(
-                job, device, _regime(snap), now, expires)
+                job, device, _regime(snap), now, expires,
+                recovery_probe=recovering)
             self._ids.add(job.job_id)
             if stream.live and job.kind == "vision":
                 self._last_vision_ms = now
@@ -403,6 +442,9 @@ class AdaptiveQoS:
             self._expired.discard(ticket)
             if pending is None:
                 return False
+            key = (pending.job.kind, pending.device)
+            if pending.recovery_probe:
+                self._probe_pending.discard(key)
             if not self._enabled:
                 # A revoked ticket is solely an acknowledgement that the host
                 # actually stopped a worker. It must not count as successful.
@@ -412,8 +454,14 @@ class AdaptiveQoS:
             if was_expired:
                 return False
             elapsed = now - pending.started_ms
-            key = (pending.job.kind, pending.device)
             if succeeded:
+                self._recovery_ready_ms.pop(key, None)
+                if pending.recovery_probe:
+                    # Hardware/model may have changed since earlier failures.
+                    # Never reuse pre-breaker latency calibration to certify it.
+                    for calibration_key in tuple(self._samples):
+                        if calibration_key[:2] == key:
+                            del self._samples[calibration_key]
                 self._samples.setdefault(
                     (pending.job.kind, pending.device, pending.regime),
                     deque(maxlen=32),
@@ -421,7 +469,7 @@ class AdaptiveQoS:
                 self._consecutive_failures[key] = 0
                 self._counts["completed"] += 1
             else:
-                self._consecutive_failures[key] = self._consecutive_failures.get(key, 0) + 1
+                self._mark_failure(key, now)
                 self._counts["failed"] += 1
             return True
 
@@ -442,6 +490,13 @@ class AdaptiveQoS:
                     if (value := _p95(samples, now_ms=self._clock_ms or 0)) is not None
                 },
                 "unhealthy_routes": sum(n >= 3 for n in self._consecutive_failures.values()),
+                "recovery_probes_enabled": self.allow_recovery_probes,
+                "recovery_probes_inflight": len(self._probe_pending),
+                "recovery_routes_cooling": sum(
+                    1 for key, ready in self._recovery_ready_ms.items()
+                    if self._consecutive_failures.get(key, 0) >= 3
+                    and (self._clock_ms is None or self._clock_ms < ready)
+                ),
                 "gpu_voice_fps_guarded": self._gpu_voice_guarded,
                 "gpu_voice_recovering": self._gpu_recovery_since_ms is not None,
                 "basis": "host-provided same-clock elapsed times; advisory only",
