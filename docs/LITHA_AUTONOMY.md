@@ -477,6 +477,41 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   file"); no ablation was run. Not measured: a live PR, the 4096-token node (all calls went to the 8192 one), K=3
   with the packer, whether a fuzzy landing ever hit a wrong place on a solved item (all 4 here were then solved).
 
+## 4h. Survivors: a new test from the same calls before and after (2026-11-02, measured)
+
+- `litha/bug_diff.py`, called by `bug_proof.prove()` after the existing-tests step and before her free-form test. She
+  sees the changed function with the exact old line under each changed one (`was:`), the module outline and an example
+  test, and names up to 6 calls (plus optional `setup` statements that build a store or config). Each batch runs in a
+  fresh pytest on the base and on the PR code, twice per side, under the suite's own conftest isolation and in a temp
+  cwd. The first call that is stable on both sides, reaches the suspect line (+-1, traced) and differs becomes a plain
+  test asserting the OLD result. It counts only when (a) the old code could take the call (exceptions raised by the
+  call itself, e.g. a new parameter or name, never count), (b) neither result holds the checkout's own path or a
+  memory address, (c) she says the new result is wrong after seeing both results and the PR's title and body, and
+  (d) the test fails twice on the PR code and passes twice on the base. 2 rounds; round 2 sees what round 1 got.
+- Measured, star/next a3926af4, same mutants per seed, each seed run twice (before and after), 1 bench at a time:
+
+  | set | before (run 1, run 2) | after (run 1, run 2) | wall s before -> after |
+  |---|---|---|---|
+  | survivors seed 3 n 6 | 0/6, 1/6 | 3/6, 2/6 | 254, 376 -> 455, 503 |
+  | survivors seed 5 n 6 | 1/6, 1/6 | 1/6, 1/6 | 306, 400 -> 576, 668 |
+  | killed seed 3 n 6 | 5/6 (0 wrong-line) | 5/6 (0) | 105 -> 198 |
+  | killed seed 5 n 8 | 5/8 (0) | 5/8 (0) | 327 -> 482 |
+
+  Survivors 1/12 and 2/12 -> 4/12 and 3/12; 6 of the 7 after-catches were differential tests. The steady new catch is
+  team_deadlines any-all (0/2 -> 2/2: a non-number now raises TypeError, not ValueError); research_activity all-any
+  went 1/2 -> 2/2, human_checks ge-edge was caught in all 4 runs. Seed 5's other 5 need a LifeStore, an eval suite or
+  a Studio atlas she does not build correctly yet. Killed sets: same items caught and missed (the same 3
+  roblox_cutscene_studio misses on seed 5; the earlier 8/8 there did not reproduce today, before or after). The cost
+  is time: survivors +80%, killed +50 to +90% (misses now also try the differential step).
+- Tried and dropped: the `was:` line in the HUNT prompt as well (3/6 and 0/6, no gain over 3/6 and 1/6, and it puts
+  every intended change in front of her as a suspect). `was:` stays in the differential prompt only.
+- False holds: `--replay-hunt 8` (merged #859-#897, star/next before vs after each merge): 0/8 flagged, 494 s. Weak
+  evidence for the judge step: only 4 suspects reached the differential there (3 were new files with no base, so
+  no differential; 1 found no differing input), so the judge never saw an intended change on a real PR. Its unit
+  test (`test_a_difference_she_judges_intended_holds_nothing...`) is the only check of that path so far.
+- Not done: inputs recorded from the existing tests (the real call shapes, no model call), property-style boundary
+  inputs generated from the changed constant without her, functions nested in another function (not callable).
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another

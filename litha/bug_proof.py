@@ -10,7 +10,9 @@ With a base (the code before the change), the module's EXISTING tests run first:
 (twice: no flake) and passes on the base is the proof as it is, trimmed to that one test (no model call). For an
 existing test, failing means an assert OR an exception raised inside the changed module: the test passes on the base,
 so it is not misusing the code (measured: all 4 misses on seed 5 were exceptions raised in the module, no assert).
-One that fails but is not a clean proof is her starting point to edit. Only without either does she invent a test.
+One that fails but is not a clean proof is her starting point to edit. When no existing test fails (a bug the tests
+miss), the differential step comes next (litha.bug_diff): she names a few calls, they run on both sides, and the first
+real difference she judges a bug becomes a test asserting the old result. Only after that does she invent a test.
 """
 from __future__ import annotations
 
@@ -240,9 +242,12 @@ def run_proof(tree: Path, code: str, python: str) -> tuple[str, str]:
     return "proven", out
 
 
-def prove(tree: Path, risk: dict, python: str, asker=ask, tries: int = 3, base: Path | None = None) -> dict:
+def prove(tree: Path, risk: dict, python: str, asker=ask, tries: int = 3, base: Path | None = None,
+          intent: str = "", diff_asker=None) -> dict:
     """base = a checkout of the code BEFORE the PR. With it, a proof also needs the same test to PASS there: the
-    PR introduced the failure (her own wrong expectation fails on both and proves nothing)."""
+    PR introduced the failure (her own wrong expectation fails on both and proves nothing). Order: an existing test
+    that fails now (no model call), then a differential test (same calls on both sides, litha.bug_diff), then a
+    test she writes herself. diff_asker answers the differential's prompts (default: her, when asker is her)."""
     src = (tree / risk["file"]).read_text(encoding="utf-8", errors="replace").splitlines()
     lo, hi = max(0, risk["line"] - 40), min(len(src), risk["line"] + 40)
     excerpt = "\n".join(f"{i + 1}: {src[i]}" for i in range(lo, hi))
@@ -255,6 +260,14 @@ def prove(tree: Path, risk: dict, python: str, asker=ask, tries: int = 3, base: 
         found, start = existing_proof(tree, base, risk["file"], python)
         if found:
             return found
+        from litha import bug_diff
+        diff_asker = diff_asker or (bug_diff.ask if asker is ask else None)
+        if diff_asker is not None:
+            diff = bug_diff.differential(tree, base, risk, python, diff_asker, intent,
+                                         shape=f"What the module defines:\n{shape['outline'][:1200]}\n"
+                                               f"{shape['example'][:1500]}")
+            if diff.get("proven"):
+                return diff
     feedback = ""
     for n in range(1, tries + 1):
         try:

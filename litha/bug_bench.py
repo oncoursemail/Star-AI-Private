@@ -415,7 +415,7 @@ def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str, survivors:
     items = killed(tree, candidates(tree, kinds, rng, max_files=25), n, python, rng, survivors)
     score = {"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "seed": seed,
              "mode": "hunt-survivors" if survivors else "hunt", "n": len(items), "caught": 0, "wrong_line": 0,
-             "by_existing_test": 0, "by_kind": {}, "seconds": 0}
+             "by_existing_test": 0, "by_differential": 0, "by_kind": {}, "seconds": 0}
     t0 = time.time()
     for it in items:
         f = tree / it["file"]
@@ -433,7 +433,9 @@ def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str, survivors:
         hit = any(abs(x["line"] - it["line"]) <= 1 for x in found)
         score["caught"] += int(hit)
         score["wrong_line"] += int(bool(found) and not hit)
-        score["by_existing_test"] += int(hit and any(x["proof"].get("via") for x in found))
+        vias = [str(x["proof"].get("via", "")) for x in found] if hit else []
+        score["by_existing_test"] += any(v.startswith("existing") for v in vias)
+        score["by_differential"] += any(v.startswith("differential") for v in vias)
         k = score["by_kind"].setdefault(it["kind"], [0, 0])
         k[0] += int(hit)
         k[1] += 1

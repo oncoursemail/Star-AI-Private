@@ -106,7 +106,8 @@ def hunt(head: Path, base: Path, changed: dict[str, set[int]], python: str, aske
                 if not first <= line <= last:
                     continue
                 risk = {"file": path, "line": line, "severity": "high", "why": why}
-                proof = prove(head, risk, python, asker, base=base)
+                more = {"intent": intent} if prove is bug_proof.prove else {}
+                proof = prove(head, risk, python, asker, base=base, **more)
                 if proof.get("proven"):
                     found.append({**risk, "test": proof.get("test", ""),
                                   "proof": {k: v for k, v in proof.items() if k != "test"}})
