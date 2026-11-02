@@ -323,6 +323,35 @@ def _restore(tree: Path, saved: dict[Path, bytes], kept: list) -> None:
         apply_edits(tree, edits)
 
 
+BREAKS = ("F821", "F822", "F823")                            # undefined names (ruff also reports syntax errors)
+ISSUE = re.compile(r"^\S+:\d+:\d+: (.*)$", re.M)              # ruff --output-format=concise
+
+
+def _ruff(python: str, rel: str, data: bytes) -> list[str]:
+    try:
+        r = subprocess.run([python, "-m", "ruff", "check", "--isolated", "--no-cache", "--select", ",".join(BREAKS),
+                            "--output-format=concise", "--stdin-filename", rel, "-"], input=data, capture_output=True,
+                           timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return ISSUE.findall(r.stdout.decode("utf-8", errors="replace"))
+
+
+def _new_breakage(tree: Path, saved: dict[Path, bytes], python: str) -> str:
+    """An edit that adds an undefined name or a syntax error to a .py file (#905: `if "tests/" in tests:` at module
+    level, where `tests` exists nowhere) is refused before any test runs; '' when none (or ruff is not there)."""
+    root = tree.resolve()
+    for f, data in saved.items():
+        if f.suffix != ".py" or not f.is_file() or f.read_bytes() == data:
+            continue
+        rel = f.relative_to(root).as_posix() if root in f.parents else f.name
+        old, new = _ruff(python, rel, data), _ruff(python, rel, f.read_bytes())
+        added = [m for m in new if m not in old]
+        if len(new) > len(old) and added:
+            return f"{rel}: your edit broke the code: {added[0][:160]}"
+    return ""
+
+
 FLAKY = "flaky: "
 
 
@@ -388,6 +417,12 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
                 if again:
                     problems = [p for p in problems if "'find' matched" not in p] + _apply_saved(tree, again, saved)
                     edits = [e for j, e in enumerate(edits or []) if j not in {m["index"] for m in misses}] + again
+            broken = _new_breakage(tree, saved, python)
+            if broken:                                       # refused without a test run, undone like a failure
+                applied = True
+                tried.append({"why": why, "edits": edits, "problems": problems + [broken], "out": broken, "now": 99,
+                              "size": _edit_size(edits)})
+                continue
             ok, out = run_tests(tree, tests, python)
             if ok:
                 break
