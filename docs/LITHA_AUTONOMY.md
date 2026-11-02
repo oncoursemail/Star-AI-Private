@@ -99,8 +99,9 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
    #851 in 61 s; #832 onnxruntime-gpu stops: a test pins the GPU build on purpose, owner's call). The merger holds
    a MAJOR bump of a STAR Home package (`major_bumps()`): CI never installs them, so it must run on her PC first.
 9. **Hunt benchmark measures the wrong bugs**: it plants bugs the module's tests already catch, i.e. bugs CI
-   already blocks. The hunt's real value is bugs the tests miss. Next: plant mutants that SURVIVE the tests and
-   count how many she proves (expect some mutants to be harmless: those cannot be proven, which is correct).
+   already blocks. The hunt's real value is bugs the tests miss. DONE 2026-11-02: `bug_bench hunt --survivors`
+   plants only mutants that SURVIVE the tests (seed 3: 1-2/6 proven, see 3b; some survivors are harmless, which
+   cannot be proven, correctly). Raising that number is the open part.
 8. **Codex's stacked drafts**: once marked ready, walk them bottom-up (base first), one per run.
 
 ## 3b. Hunt measured
@@ -110,10 +111,24 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   on the old code. Then 1/6 caught, 0 wrong-line flags (different mutants: 10 kinds were added in between).
 - Then the hunt also sees how the tests call the function and names up to 2 suspects (each proven): same 6
   mutants, 1/6 again (a different one caught: run-to-run noise, no measured gain). Not yet checked whether the
-  misses are wrong suspects or failed proofs (one traced miss earlier was a failed proof). Next lever: let the proof run the module's existing tests on head vs base first and give her the
-  first assert that differs, instead of asking her to invent a new test.
+  misses are wrong suspects or failed proofs (one traced miss earlier was a failed proof).
 - False holds: `python -m litha.pr_merger --replay-hunt 8` on merged PRs #816-#847: 0/7 flagged (one had no Python
   change).
+- **Existing tests first (2026-11-02, measured, same star/next a3926af4 and same mutants per seed)**. `prove()` with a
+  base now runs the module's own tests on the PR code; one that fails there (twice: no flake) and PASSES on the base,
+  trimmed to that single test, is the proof without a model call. Failing = an assert, or an exception raised inside
+  the changed module (the test passes on the base, so it is not misusing the code). A failing test that is no clean
+  proof is her starting point to edit; the hunt prompt also shows her the assert that differs. Caught (wrong-line
+  flags) on killed mutants: seed 3 n 6: 1/6 (0) before -> 5/6 (0); seed 5 n 8: 2/8 (0) -> 8/8 (0). Hunting time
+  seed 3: 332 s -> 96 s. Steps: proof only (asserts) 5/6 and 3/8; + differing assert in the hunt prompt 5/6 and 4/8;
+  + exceptions in the module 5/6 and 8/8 (all 4 seed-5 misses before it were TypeError/AttributeError raised in the
+  module, traced). The one seed-3 miss left (drop-return, music_recognition) is her suspect choice, not the proof.
+  `--replay-hunt 8` (#858-#894): 0/8 flagged. Honest limit: these mutants are ones the tests already kill, i.e. CI
+  blocks them anyway; on a green PR no existing test fails and this path does nothing.
+- **Survivors** (`bug_bench hunt --survivors`: only mutants the module's tests MISS, the hunt's real job): seed 3 n 6:
+  2/6 before, 1/6 with existing-tests-first (different mutants caught each run: noise; the lever cannot fire there by
+  construction, not rerun with the module-exception step since no existing test fails). Next lever is for these:
+  give her the callers and ask her to edit the closest existing test of the function, not write one from scratch.
 
 ## 4b. Added 2026-10-31 evening (measured where it says so)
 

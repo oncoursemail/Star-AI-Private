@@ -19,7 +19,7 @@ from litha import bug_proof
 HUNT = """You are Litha, a careful code reviewer. This function was just changed (changed lines are marked >>).
 {intent}{doc}
 {func}
-{uses}
+{uses}{fails}
 Read every condition, comparison and return value slowly. Is there a line whose logic is wrong: an inverted
 condition, `and`/`or` swapped, `<` vs `<=`, `is None` vs `is not None`, a wrong variable, min/max swapped, a missing
 `not`, an off-by-one, a dropped `return`, swapped arguments? Only a changed line can hold the bug. A behaviour
@@ -78,12 +78,17 @@ def hunt(head: Path, base: Path, changed: dict[str, set[int]], python: str, aske
          prove=bug_proof.prove, max_funcs: int = 6, intent: str = "") -> list[dict]:
     found = []
     budget = max_funcs
+    failing: dict[str, str] = {}
     for path, lines in changed.items():
         if not path.endswith(".py") or path.startswith("tests/"):
             continue
         source = (head / path).read_text(encoding="utf-8", errors="replace")
         src_lines = source.splitlines()
         doc = ast.get_docstring(ast.parse(source)) or ""
+        if prove is bug_proof.prove and base is not None:     # the assert that differs: where to look
+            shown, _ = bug_proof.existing_proof(head, base, path, python)
+            failing[path] = (f"An existing test passed on the code before the change and fails now "
+                             f"({shown['via'][14:]}):\n{shown['failure']}\n") if shown else ""
         for first, last in functions_touching(source, lines):
             if budget <= 0:
                 return found
@@ -93,7 +98,8 @@ def hunt(head: Path, base: Path, changed: dict[str, set[int]], python: str, aske
             try:
                 said = f"What the author says the change is for: {intent[:1200]}\n" if intent else ""
                 ans = json.loads(asker(HUNT.format(intent=said, doc=f"Module docstring: {doc[:800]}" if doc else "",
-                                                   func=func, uses=test_uses(head, name.group(1)) if name else "")))
+                                                   func=func, uses=test_uses(head, name.group(1)) if name else "",
+                                                   fails=failing.get(path, ""))))
             except (ValueError, TypeError):
                 continue
             for line, why in suspects(ans if isinstance(ans, dict) else {}):
