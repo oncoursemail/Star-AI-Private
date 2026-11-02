@@ -80,6 +80,21 @@ domain. The credentials JSON stays on the server and is never committed.
   installers (their names carry the version); one hour on `/assets/*`.
 - Hidden files (for example metallic-live's `.revivals-history.json`) are not served. Errors show `/404.html`.
 - Range requests work for the installers, so interrupted downloads resume.
+- Only two access logs are kept, both read by metallic-live and neither with an address or a header:
+  `/var/log/caddy/downloads.log` (installer requests and their user agent, for the download count) and
+  `/var/log/caddy/beats.log` (people in Metallic now, below). Every other request is not logged.
+
+### People in Metallic now
+
+Each running launcher (also minimized or in the tray) asks for `/live/metallic.json` every 2 minutes with the header
+`X-Metallic-Session: <32 hex>`, a random ID it makes at start, keeps only in memory and replaces on every start. Caddy
+writes only those requests to `beats.log`, keeping the ID and the time and deleting the request (address, headers, path),
+the response headers and the user agent; the log rolls at 1 MiB and keeps one older copy. Visitors' requests for the same
+file carry no ID and are not logged. metallic-live counts the distinct IDs seen in the last 5 minutes and writes
+`/live/metallic.json`: `{"at", "online", "peak_24h", "discord": {"online", "members", "icon"}}`. `discord` is the online
+count of Metallic's own server (invite `discord.gg/yMytc2uAmj`), asked for by metallic-live, never by visitors'
+browsers. The pages show "N people in Metallic right now" only when `online` is above 0 and the file is under 10
+minutes old. Needs Caddy 2.9 or newer (`log_name`); `deploy.sh` validates the Caddyfile before reloading.
 
 ## 4. Publishing a release
 
@@ -101,4 +116,5 @@ Metallic Early Access updates itself with Tauri's updater, which reads `/release
 
 It sets no cookies, has no forms or accounts, loads no scripts or fonts from other companies (fonts are self-hosted) and
 no images except the revivals' own Discord artwork. Live numbers are shown as published: "in game" only where a revival
-publishes its player count, and Discord's online count is always labelled "online in Discord", never players.
+publishes its player count, and Discord's online count is always labelled "online in Discord", never players. "In
+Metallic right now" counts open launchers, not people in a revival.

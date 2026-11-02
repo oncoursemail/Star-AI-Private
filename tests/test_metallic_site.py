@@ -14,6 +14,7 @@ SITE = REPO / "metallic-site"
 SERVER = REPO / "server" / "metallic-site"
 SITE_URL = "https://metallic.example"
 PAGES = ["404.html", "downloads/index.html", "index.html", "news/index.html"]
+DISCORD = "https://discord.gg/yMytc2uAmj"  # Metallic's own Discord server: the one outside link a page may carry
 
 
 class Page(HTMLParser):
@@ -145,6 +146,8 @@ def test_internal_links_assets_and_anchors_resolve(built):
         for href in p.links + p.assets:
             if not href or href.startswith(("mailto:", "data:")):
                 continue
+            if href == DISCORD:
+                continue
             assert not href.startswith(("http://", "https://", "//")), f"{rel}: external reference {href}"
             assert target_exists(out, href, page), f"{rel}: broken {href}"
         for img in p.imgs:
@@ -180,6 +183,42 @@ def test_live_data_and_release_are_read_same_origin(built):
     assert "M.cdn(" in home and "M.cdn(" in news  # images only through the CDN check
 
 
+class Anchors(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.found = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self.found.append(dict(attrs))
+
+
+def test_the_official_discord_is_linked_from_every_page(built):
+    out, res, _, _ = built
+    for rel in res["pages"]:
+        a = Anchors()
+        a.feed((out / rel).read_text(encoding="utf-8"))
+        dc = [x for x in a.found if x.get("href") == DISCORD]
+        assert len(dc) >= 2, f"{rel}: header and footer"
+        assert all(x.get("rel") == "noopener" for x in dc), rel
+    home = (out / "index.html").read_text(encoding="utf-8")
+    assert 'id="discord-h"' in home and "Join the Discord" in home
+    assert "data-discord-online" in home  # live count, filled from /live/metallic.json
+
+
+def test_people_in_metallic_and_the_discord_count_come_from_metallic_json(built):
+    out, _, _, _ = built
+    site = js(out, "site.js")
+    assert '"/live/metallic.json"' in site and "M.live" in site
+    assert "discord.com" not in site  # metallic-live asks Discord; visitors' browsers never do
+    for page in ("index.html", "downloads/index.html"):
+        text = (out / page).read_text(encoding="utf-8")
+        assert "data-presence hidden" in text, page  # shown only once launchers report
+    assert "in Metallic right now" in site and "online in the Metallic Discord" in site
+    assert "online > 0" in site  # hidden at 0, before launchers send the beat
+    assert "STALE" in site  # a stopped metallic-live leaves an old file: not shown as "right now"
+
+
 def test_counts_are_labelled_truthfully():
     home = (SITE / "src" / "assets" / "home.js").read_text(encoding="utf-8")
     assert 'const players = (r) => (typeof r.players === "number" ? r.players : null);' in home
@@ -204,11 +243,12 @@ def test_sample_live_data_is_copied_only_when_asked(built, tmp_path):
     assert not (out / "live").exists()
     sample = tmp_path / "sample"
     sample.mkdir()
-    for name in ("revivals.json", "news.json", "projects.json", ".revivals-history.json", "other.json"):
+    for name in ("revivals.json", "news.json", "projects.json", "metallic.json", ".revivals-history.json",
+                 ".metallic-history.json", "other.json"):
         (sample / name).write_text("{}")
     dest = tmp_path / "with"
     mod.build(dest, SITE_URL, None, sample)
-    assert sorted(p.name for p in (dest / "live").iterdir()) == ["news.json", "projects.json", "revivals.json"]
+    assert sorted(p.name for p in (dest / "live").iterdir()) == ["metallic.json", "news.json", "projects.json", "revivals.json"]
 
 
 def test_cli_build_works(tmp_path, capsys):
@@ -253,10 +293,22 @@ def test_server_files_match_the_hosting_plan():
     assert '@fresh path /live/* /releases/latest.json\n\theader @fresh Cache-Control "no-store"' in caddy
     assert 'header @installers Cache-Control "public, max-age=31536000, immutable"' in caddy
     # download count: only installer requests are logged, without addresses or headers, readable by metallic-live
-    assert "@not_installer not path /releases/*.exe\n\tlog_skip @not_installer" in caddy
+    assert "@unlogged {\n\t\tnot path /releases/*.exe\n" in caddy and "log_skip @unlogged" in caddy
     assert "output file /var/log/caddy/downloads.log" in caddy and "mode 0644" in caddy
     assert "request>headers delete" in caddy and "request>remote_ip delete" in caddy and "request>client_ip delete" in caddy
     assert "log_append ua {http.request.header.User-Agent}" in caddy
+    # people in Metallic now: only launcher beats (metallic.json asked for with the session header) reach beats.log,
+    # carrying the random session ID and the time; no address, headers, user agent or path
+    assert "@beat {\n\t\tpath /live/metallic.json\n\t\theader X-Metallic-Session *\n\t}" in caddy
+    assert "\tnot {\n\t\t\tpath /live/metallic.json\n\t\t\theader X-Metallic-Session *\n\t\t}" in caddy  # beats not skipped
+    assert "log_name @beat beats" in caddy and "log_append @beat session {http.request.header.X-Metallic-Session}" in caddy
+    beats = caddy[caddy.index("log beats {"):]
+    beats = beats[:beats.index("\n\t}\n")]
+    assert "no_hostname" in beats and "output file /var/log/caddy/beats.log" in beats and "mode 0644" in beats
+    assert "roll_size 1MiB" in beats and "roll_keep 1" in beats and "roll_uncompressed" in beats
+    for field in ("request", "resp_headers", "ua", "user_id"):
+        assert f"\t\t\t{field} delete" in beats, field
+    assert caddy.count("/var/log/caddy/downloads.log") == 1
     svc = (SERVER / "metallic-live.service").read_text(encoding="utf-8")
     assert "User=metallic" in svc and "ExecStart=/opt/metallic/metallic-live --out /srv/metallic/dist/live" in svc
     assert "ReadWritePaths=/srv/metallic/dist/live" in svc
@@ -268,7 +320,7 @@ def test_server_files_match_the_hosting_plan():
     deploy = (SERVER / "deploy.sh").read_text(encoding="utf-8")
     assert deploy.startswith("#!/usr/bin/env bash") and "set -euo pipefail" in deploy
     assert "dl.cloudsmith.io/public/caddy/stable" in deploy and "pkg.cloudflare.com/cloudflared" in deploy
-    assert "--exclude /live/ --exclude /releases/" in deploy
+    assert "--exclude /live/ --exclude /releases/ --exclude /revivals/" in deploy  # Metallic-hosted revival files (Stella)
     for text in (caddy, svc, timer, cf, deploy):
         assert not px.scrub({"mode": "public", "x": text})
 
@@ -277,7 +329,8 @@ def test_hosting_guide_covers_the_tunnel_setup():
     guide = (SITE / "HOSTING.md").read_text(encoding="utf-8")
     for needle in ("Caddy", "127.0.0.1:8088", "cloudflared", "Cloudflare Tunnel", "metallic-live", "every 2 minutes",
                    "img-src 'self' data: https://cdn.discordapp.com", "no-store", "immutable", "latest.json",
-                   "windows-x86_64", "deploy.sh", "online in Discord"):
+                   "windows-x86_64", "deploy.sh", "online in Discord", "X-Metallic-Session", "beats.log",
+                   "metallic.json", "discord.gg/yMytc2uAmj"):
         assert needle in guide, needle
     assert not px.scrub({"mode": "public", "x": guide})
 

@@ -2,7 +2,7 @@
 
     python metallic-site/build.py --out dist [--site-url https://metallic.club]
                                   [--releases DIR]       a folder with latest.json (Tauri updater manifest) and installers
-                                  [--sample-live DIR]    copy revivals/news/projects JSON into dist/live (previews only)
+                                  [--sample-live DIR]    copy revivals/news/projects/metallic JSON into dist/live (previews only)
 
 Nothing runs on a server: dist/ is HTML, CSS, a little JavaScript, fonts and images. The live data (/live/*.json) is
 written on the server every 2 minutes by metallic-live; the newest build is /releases/latest.json. The pages read both
@@ -23,7 +23,7 @@ HERE = Path(__file__).resolve().parent
 SRC = HERE / "src"
 FRONT = re.compile(r"<!--\s*(\w+):\s*(.*?)\s*-->")
 NAV = ("home", "downloads", "news")
-LIVE_FILES = ("revivals.json", "news.json", "projects.json")
+LIVE_FILES = ("revivals.json", "news.json", "projects.json", "metallic.json")
 RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip")
 
 
@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default=str(HERE / "dist"))
     p.add_argument("--site-url", default="https://metallic.club")
     p.add_argument("--releases", help="folder holding latest.json and the installer files")
-    p.add_argument("--sample-live", help="folder with sample revivals.json/news.json/projects.json, for previews only")
+    p.add_argument("--sample-live", help="folder with sample revivals.json/news.json/projects.json/metallic.json, for previews only")
     a = p.parse_args(argv)
     res = build(Path(a.out), a.site_url, Path(a.releases) if a.releases else None,
                 Path(a.sample_live) if a.sample_live else None)

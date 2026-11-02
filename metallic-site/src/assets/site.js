@@ -64,11 +64,40 @@ M.release.then(async (r) => {
   document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + r.version + " · Windows 10 and 11, 64-bit" + count; });
 });
 
+// people in Metallic now (launchers that sent their anonymous beat in the last 5 minutes) and the Metallic Discord's
+// online count, both written by metallic-live every 2 minutes. A file older than STALE seconds (metallic-live stopped) is
+// not shown as "right now"; 0 stays hidden (before launchers send the beat).
+const STALE = 600;
+M.live = () => M.json("/live/metallic.json").then((d) => (d && typeof d.at === "number" && Date.now() / 1000 - d.at < STALE ? d : null));
+const showLive = async () => {
+  const d = await M.live();
+  const online = d && typeof d.online === "number" ? d.online : 0;
+  document.querySelectorAll("[data-presence]").forEach((box) => {
+    box.hidden = !(online > 0);
+    if (box.hidden) return;
+    box.querySelector("[data-presence-n]").textContent = M.num(online);
+    box.querySelector("[data-presence-label]").textContent = (online === 1 ? "person" : "people") + " in Metallic right now";
+    const peak = typeof d.peak_24h === "number" && d.peak_24h > online ? d.peak_24h : null;
+    box.querySelector("[data-presence-peak]").textContent = peak ? "24-hour peak " + M.num(peak) : "";
+  });
+  const dc = d && d.discord;
+  document.querySelectorAll("[data-discord-online]").forEach((box) => {
+    box.hidden = !(dc && typeof dc.online === "number" && dc.online > 0);
+    if (box.hidden) return;
+    const members = typeof dc.members === "number" ? " · " + M.num(dc.members) + " members" : "";
+    box.querySelector("[data-discord-text]").textContent = M.num(dc.online) + " online in the Metallic Discord" + members;
+  });
+};
+if (document.querySelector("[data-presence], [data-discord-online]")) {
+  showLive();
+  setInterval(() => { if (!document.hidden) showLive(); }, 120000);
+}
+
 // entrances: parts of each section rise in, staggered, once. Only for what starts below the fold, so nothing flashes.
 M.reveal = (root) => {
   if (M.reduced || !("IntersectionObserver" in window)) return;
   const parts = (root || document).querySelectorAll(".sec-head, .card, .empty, .fine, .steps li, .news-card, .project, .cta-band, " +
-    ".facts > div, .notes-body > *, .req-item, .scene, .np-row, .np-month, .np-lead, .np-filter");
+    ".facts > div, .notes-body > *, .req-item, .scene, .np-row, .np-month, .np-lead, .np-filter, .discord-band");
   const io = new IntersectionObserver((entries) => {
     entries.forEach((en) => {
       if (!en.isIntersecting) return;

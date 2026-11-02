@@ -182,6 +182,26 @@ a.p-name:hover { text-decoration: underline; text-decoration-color: rgba(var(--a
 .cta-band h2 { font-size: clamp(28px, 3.2vw, 40px); }
 .cta-band p { margin-top: 8px; color: var(--ink2); }
 
+/* ---- people in Metallic now (hero, downloads) and the Metallic Discord ---- */
+.presence { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 18px; padding: 8px 16px 8px 13px;
+  border-radius: 999px; border: 1px solid rgba(var(--acc-rgb), .26); background: rgba(var(--acc-rgb), .08); font-size: 14px; color: var(--ink2); }
+.presence b { color: var(--ink); font: 700 15px/1 var(--disp); font-variant-numeric: tabular-nums; }
+.presence-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--acc); flex: none;
+  box-shadow: 0 0 0 3px rgba(var(--acc-rgb), .18); }
+.presence-dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--acc); opacity: 0; animation: beat 2.4s infinite; }
+.presence-peak { color: var(--ink3); font-size: 13px; }
+.presence-peak:empty { display: none; }
+.presence-peak::before { content: "·"; margin-right: 10px; }
+.discord-band { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: clamp(20px, 3vw, 36px);
+  padding: clamp(28px, 4vw, 44px); border-radius: 20px; border: 1px solid var(--rim); box-shadow: var(--shadow);
+  background: radial-gradient(90% 160% at 0 100%, rgba(var(--acc-rgb), .12), rgba(var(--acc-rgb), 0) 60%), var(--glass); }
+.db-mark { width: 64px; height: 64px; padding: 14px; border-radius: 18px; background: var(--solid2); border: 1px solid var(--rim); }
+.discord-band h2 { font-size: clamp(26px, 2.8vw, 36px); }
+.db-text > p:not(.kicker) { margin-top: 8px; color: var(--ink2); max-width: 34em; }
+.db-text .kicker { margin-bottom: 10px; }
+.db-live { display: flex; align-items: center; gap: 10px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.db-text .db-live { margin-top: 14px; color: var(--ink); }
+
 /* ---- page heads (downloads, news, 404) ---- */
 .page-head { padding: clamp(56px, 8vw, 104px) 0 clamp(32px, 4vw, 48px); border-bottom: 1px solid var(--line);
   background: radial-gradient(80% 120% at 85% -20%, rgba(var(--acc-rgb), .1), rgba(var(--acc-rgb), 0) 60%); }
@@ -288,6 +308,9 @@ main > section:last-child { padding-bottom: 0; }
   .stats div { padding-right: 18px; margin-right: 18px; }
   .stats dd { font-size: 22px; }
   .cta-band { flex-direction: column; align-items: stretch; }
+  .discord-band { grid-template-columns: minmax(0, 1fr); }
+  .presence-peak { display: none; }
+  .db-mark { width: 52px; height: 52px; padding: 11px; }
   .facts { grid-template-columns: minmax(0, 1fr); }
   .facts div:nth-child(odd):not(.wide) { border-right: 0; }
   .foot-end { margin-left: 0; }

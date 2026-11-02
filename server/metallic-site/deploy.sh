@@ -45,7 +45,7 @@ chown root:root "$ROOT" && chmod 755 "$ROOT"
 chown metallic:metallic "$ROOT/live" && chmod 755 "$ROOT/live"
 
 step "5/7 site files -> $ROOT (live/ and releases/ are kept)"
-rsync -a --delete --exclude /live/ --exclude /releases/ "$DIST/" "$ROOT/"
+rsync -a --delete --exclude /live/ --exclude /releases/ --exclude /revivals/ "$DIST/" "$ROOT/"
 chown -R root:root "$ROOT/assets" && find "$ROOT" -path "$ROOT/live" -prune -o -type f -exec chmod 644 {} +
 echo "$(find "$ROOT" -type f | wc -l) files"
 

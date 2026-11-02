@@ -31,10 +31,25 @@
 	@installers path /releases/*.exe /releases/*.msi /releases/*.sig /releases/*.zip
 	header @installers Cache-Control "public, max-age=31536000, immutable"
 
-	# download count: metallic-live reads this log. Only installer requests, and no addresses or headers, only the user
-	# agent (to keep the launcher's self-updates apart).
-	@not_installer not path /releases/*.exe
-	log_skip @not_installer
+	# Two logs for metallic-live, nothing else is logged. No addresses or headers in either.
+	# downloads.log: installer requests, with the user agent only (to keep the launcher's self-updates apart).
+	# beats.log: people in Metallic now. A running launcher asks for /live/metallic.json every 2 minutes with a random
+	# ID it made at start (X-Metallic-Session: kept in memory only, new every start); only that ID and the time are kept.
+	# metallic-live counts the IDs seen in the last 5 minutes. Visitors' own requests for that file are not logged.
+	@beat {
+		path /live/metallic.json
+		header X-Metallic-Session *
+	}
+	@unlogged {
+		not path /releases/*.exe
+		not {
+			path /live/metallic.json
+			header X-Metallic-Session *
+		}
+	}
+	log_skip @unlogged
+	log_name @beat beats
+	log_append @beat session {http.request.header.X-Metallic-Session}
 	log_append ua {http.request.header.User-Agent}
 	log {
 		output file /var/log/caddy/downloads.log {
@@ -47,6 +62,21 @@
 			request>remote_port delete
 			request>client_ip delete
 			request>tls delete
+		}
+	}
+	log beats {
+		no_hostname
+		output file /var/log/caddy/beats.log {
+			mode 0644
+			roll_size 1MiB
+			roll_keep 1
+			roll_uncompressed
+		}
+		format filter {
+			request delete
+			resp_headers delete
+			user_id delete
+			ua delete
 		}
 	}
 
