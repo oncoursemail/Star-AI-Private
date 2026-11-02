@@ -516,6 +516,51 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
 - Not done: inputs recorded from the existing tests (the real call shapes, no model call), property-style boundary
   inputs generated from the changed constant without her, functions nested in another function (not callable).
 
+## 4l. Conflicts: merges by rule first, her model on the overlap only (2026-11-02, measured)
+
+- `litha/merge3.py`, used by `pr_fixer.mechanical()` / `narrow()` / `triage()`. Inside a diff3 block each side's
+  edits are taken against the ancestor: edits on different ancestor lines are both applied (git calls neighbouring
+  lines a conflict; Studio #255 task_lib.rs: one side rewrote a comment, the other the line under it), the same edit
+  twice is applied once, whitespace-only sides change nothing, Rust blocks of only `use` lines merge per imported
+  name, markdown/text merges word by word. Two additions at one place in code stay her call (as before). A block that
+  still overlaps is cut down: the merged lines become context and only the overlap is a (smaller) block for her. She
+  is shown the blocks before hers already merged and the later ones as one note line each (her answers had merged 2-3
+  neighbouring blocks at once: #174, #186). A bracket-only line she repeats from just after/before the block is cut
+  when that balances her brackets; bracket misses are named (`you have 1 } too many ...`). A merge longer than her
+  1500-token answer is refused without asking (it came back as broken JSON 3 times). Files under `tests/` merge only by these
+  rules, never by her model; `.github/` conflicts stay with a person (AGENTS.md: workflow changes get an independent
+  review); the 5-file limit counts only files her model must answer.
+- Bench (offline, `C:\Users\alexi\lw3c\bench`, not in the repo): (F) the 24 Studio PRs whose last attempt in
+  fixes.jsonl failed on a conflict, rebuilt as `git merge` of the attempted head with main as of that attempt (97
+  files, 202 blocks); (H) 127 merge commits on Studio PR branches whose re-merge conflicts, scored against what was
+  committed (278 files, 510 blocks; 112 by people, 15 by Litha). Split by hash, 2/3 tune, 1/3 held out; the rules were
+  designed on F-tune cases (a few H blocks of both splits were read by hand on the way). Match = whitespace-insensitive equal to the committed text (per
+  block between the unchanged lines around it; the committed merge often also edits, so this undercounts).
+
+  | set | before | after |
+  |---|---|---|
+  | H all, no model: files resolved | 125/278 | 163/278 |
+  | H all, no model: PRs fully resolved | 45/121 | 65/121 |
+  | H all, no model: blocks = committed | 119/183 (65%) | 156/231 (68%; the 48 new: 37 = committed) |
+  | H held out, with her model: files | 78/112 | 88/112 |
+  | H held out, with her model: PRs | 26/43 | 30/43 |
+  | H held out, with her model: blocks = committed | 79/134 (59%) | 93/162 (57%) |
+  | H held out: model calls, model+check s | 83, 1458 s | 52, 622 s |
+  | F tune (13 PRs), with model: files / PRs | 16/45, 3/13 | 35/45, 6/13 |
+  | F held out (11 PRs), with model: files / PRs | 10/51, 2/11 | 36/51, 4/11 |
+  | F all: model calls, seconds | 38, 951 s | 101, 1686 s (more files get past the gate) |
+
+  Every resolved file passes rustfmt (Rust) / toml / json parsing in both columns. PR-level on F: 5 -> 10 of 24
+  (#233 #235 #245 #442 #448 + #357 #389 #397 #428 #434); the bench let `.github/` merge by rule (#357, #406, #434's
+  ci.yml), but the shipped gate refuses `.github/` again, so those stay with a person and the shipped gain is about
+  5 -> 8, not 10. Steps measured on
+  F-tune: everything but the neighbour view 16 -> 32 files; showing the neighbours merged 32 -> 35. The bracket cut fixed 3 of 27
+  bracket misses in her 90 answers. Read by hand: the one H block that regressed (be1229a ARCHITECTURE.md) is a line
+  the branch itself had broken and the person repaired while merging; the rule kept the branch's edit.
+- Not measured: cargo. The 12 "cargo tests fail after the merge" refusals are semantic (both sides changed one
+  behaviour) and this does not address them; a merge that now resolves but mismatches the committed one may still not
+  compile (seen: 787db5f gizmo.rs, a test calling main's old `update` signature). Not run live yet.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
