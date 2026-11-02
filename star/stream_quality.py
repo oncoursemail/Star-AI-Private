@@ -172,6 +172,22 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
                 one.grounding == "unreviewed" or two.grounding == "unreviewed"):
             return {"decision": "insufficient_or_unpaired_evidence", "owner_review_required": True,
                     "promoted": False, "reason": "unreviewed or context-mismatched pair"}
+    # Distinct symbolic case IDs are not evidence of distinct observations.
+    # Replaying the same normalized scene/transcript as many "cases" would
+    # give the sign test false precision (e.g. 20 identical successes report
+    # p=2^-20). Check the common host-supplied context digest for each
+    # baseline/candidate pair before treating them as independent trials.
+    # Unique digests are necessary, NOT proof of statistical independence:
+    # nearby moments in one episode can still be correlated.
+    unique_contexts = {row.context_sha256 for row in baseline.values()}
+    if len(unique_contexts) != len(baseline):
+        return {
+            "decision": "insufficient_or_unpaired_evidence",
+            "owner_review_required": True, "promoted": False,
+            "reason": "repeated context digest across distinct case IDs",
+            "paired_cases": len(baseline),
+            "distinct_contexts": len(unique_contexts),
+        }
     before = _summary(list(baseline.values()))
     after = _summary(list(candidate.values()))
     reasons: list[str] = []
@@ -265,6 +281,7 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
         "baseline": before, "candidate": after,
         "p95_relative_latency_gain": gain,
         "min_useful_reply_ratio": min_useful_reply_ratio,
+        "distinct_contexts": len(unique_contexts),
         "matched_audible_cases": len(matched),
         "new_unexpected_speech_cases": new_unexpected_speech_cases,
         "new_talkover_cases": new_talkover_cases,

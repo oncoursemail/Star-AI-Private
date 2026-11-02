@@ -1,4 +1,5 @@
 """Independent paired-stream quality gate; synthetic records only."""
+import hashlib
 import math
 import unittest
 
@@ -9,8 +10,9 @@ SHA = "c" * 64
 
 def turn(case="case0", *, route="baseline", needed=True, outcome="spoken",
          grade="supported", first=1000, overlap=0, stall=0,
-         digest=SHA, reviewed=True):
-    return StreamAuditTurn(case, digest, route, needed, outcome, grade,
+         digest=None, reviewed=True):
+    return StreamAuditTurn(case, hashlib.sha256(case.encode()).hexdigest() if digest is None else digest,
+                           route, needed, outcome, grade,
                            first if outcome == "spoken" else None, overlap, stall, reviewed)
 
 
@@ -29,6 +31,7 @@ class StreamQualityTests(unittest.TestCase):
         self.assertEqual(report["decision"], "candidate_for_independent_review")
         self.assertFalse(report["promoted"])
         self.assertTrue(report["owner_review_required"])
+        self.assertEqual(report["distinct_contexts"], 20)
         self.assertEqual(report["baseline"]["useful_replies"], 20)
         self.assertEqual(report["candidate"]["useful_replies"], 20)
         self.assertEqual(report["p95_relative_latency_gain"], .4)
@@ -226,6 +229,30 @@ class StreamQualityTests(unittest.TestCase):
     def test_very_small_samples_do_not_count(self):
         report = compare_stream_profiles(pairs(5))
         self.assertEqual(report["decision"], "insufficient_or_unpaired_evidence")
+
+    def test_identical_contexts_with_distinct_ids_are_not_independent(self):
+        # IDs differ, but the host supplied one and the same context for
+        # every purported trial. Treating these as 20 independent samples
+        # would create a misleading 2^-20 paired sign-test p-value.
+        records = tuple(
+            turn(row.case_id, route=row.route, first=row.first_audible_ms,
+                 digest=SHA) for row in pairs()
+        )
+        result = compare_stream_profiles(records)
+        self.assertEqual(result["decision"], "insufficient_or_unpaired_evidence")
+        self.assertEqual(result["distinct_contexts"], 1)
+        self.assertEqual(result["paired_cases"], 20)
+        self.assertIn("context", result["reason"])
+
+    def test_one_duplicate_context_blocks_a_pseudoreplicated_cohort(self):
+        records = list(pairs())
+        for index, record in enumerate(records):
+            if record.case_id == "trial_19":
+                records[index] = turn(record.case_id, route=record.route,
+                                      first=record.first_audible_ms,
+                                      digest=hashlib.sha256(b"trial_0").hexdigest())
+        result = compare_stream_profiles(tuple(records))
+        self.assertEqual(result["decision"], "insufficient_or_unpaired_evidence")
 
     def test_invalid_row_inputs(self):
         cases = (
