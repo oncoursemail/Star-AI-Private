@@ -530,7 +530,7 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   1500-token answer is refused without asking (it came back as broken JSON 3 times). Files under `tests/` merge only by these
   rules, never by her model; `.github/` conflicts stay with a person (AGENTS.md: workflow changes get an independent
   review); the 5-file limit counts only files her model must answer.
-- Bench (offline, `C:\Users\alexi\lw3c\bench`, not in the repo): (F) the 24 Studio PRs whose last attempt in
+- Bench (offline, `~/lw3c/bench` on the owner's PC, not in the repo): (F) the 24 Studio PRs whose last attempt in
   fixes.jsonl failed on a conflict, rebuilt as `git merge` of the attempted head with main as of that attempt (97
   files, 202 blocks); (H) 127 merge commits on Studio PR branches whose re-merge conflicts, scored against what was
   committed (278 files, 510 blocks; 112 by people, 15 by Litha). Split by hash, 2/3 tune, 1/3 held out; the rules were
