@@ -231,7 +231,7 @@ def refuted(risk: dict, source: str | None) -> str:
     return ""
 
 
-NO_HIGH = ("test", "docs", "data")     # CI ran the tests; a doc or data change cannot break running code
+NO_HIGH = ("test", "docs")     # CI ran the tests; a doc cannot break running code (JSON data/config still can)
 # also "if any other callers ..." and "if the file was deleted ...": the two blocking claims left on 8 tune PRs
 SPECULATIVE = re.compile(r"\b(might|could|may|potential(ly)?|if [^.]* (were|was) ever|in theory)\b"
                          r"|\bif (any|some) (other )?callers?\b"
@@ -303,7 +303,7 @@ def review(pr: dict, files: dict[str, dict], ask=ask_litha, read=head_file) -> d
     cache: dict[str, str | None] = {}
     for r in risks:                     # check every high claim against the real file before it may block a merge
         if r["severity"] == "high" and review_pack.kind(r["file"]) in NO_HIGH and not SAFETY.search(r["why"]):
-            r.update(severity="low", note="a test, doc or data file cannot break running code")
+            r.update(severity="low", note="a test or doc file cannot break running code")
         elif r["severity"] == "high":
             if r["file"] not in cache:
                 cache[r["file"]] = read(pr, r["file"])

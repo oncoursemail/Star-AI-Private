@@ -536,8 +536,8 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   the riskiest hunks); docs and data are mostly skipped by design.
 - Claims: every risk quotes a changed line (`+` or `-`). `anchor` moves the claim to the line it quotes (a quote of
   12+ characters that is part of a line counts), and a quote that is not a changed line drops the claim. Without a
-  quote, the old added-line rule applies. The same line from two parts counts once. A high claim on a test, doc or
-  data file becomes low, unless it is about safety. `SPECULATIVE` now also catches "if any other callers..." and
+  quote, the old added-line rule applies. The same line from two parts counts once. A high claim on a test or doc
+  file becomes low, unless it is about safety (JSON data/config claims are still checked, not downgraded). `SPECULATIVE` now also catches "if any other callers..." and
   "if the file was deleted...".
 - Re-check question (`CONFIRM`): a third reviewer's claim, "claims are often wrong", her check before her verdict;
   the proof line may drop a trailing `{`. A/B on 10 hand-judged false claims (from the log and the baseline) and 7
