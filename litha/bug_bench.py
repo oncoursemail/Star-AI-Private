@@ -14,7 +14,8 @@
 
     python -m litha.bug_bench list  [--limit 40]                    which mutants exist (tests must kill them)
     python -m litha.bug_bench run   [--n 10] [--seed -1] [--kind K] [--blind]  the fix benchmark; prints the score
-    python -m litha.bug_bench hunt  [--n 10] [--seed -1]   review catch rate: she must find AND prove the bug
+    python -m litha.bug_bench hunt  [--n 10] [--seed -1] [--survivors]   review catch rate: she must find AND prove
+                                    the bug (--survivors: only bugs the module's tests miss, the ones CI lets through)
 Runs in worktrees/litha-bench (a detached star/next checkout). Every item is reset with git afterwards.
 """
 from __future__ import annotations
@@ -310,8 +311,10 @@ def bank_row(prompt: str, answer: dict, item: dict, config: Path = Path.home() /
 
 # ---------------------------------------------------------------- the benchmark
 
-def killed(tree: Path, items: list[dict], n: int, python: str, rng: random.Random) -> list[dict]:
-    """Up to n mutants that the module's tests really catch (tried in random order, one kind per file line)."""
+def killed(tree: Path, items: list[dict], n: int, python: str, rng: random.Random,
+           survivors: bool = False) -> list[dict]:
+    """Up to n mutants that the module's tests really catch (tried in random order, one kind per file line).
+    survivors=True: the ones the tests MISS instead (bugs CI would let through; some are harmless rewrites)."""
     by_kind: dict[str, list[dict]] = {}
     for it in items:
         by_kind.setdefault(it["kind"], []).append(it)
@@ -337,7 +340,7 @@ def killed(tree: Path, items: list[dict], n: int, python: str, rng: random.Rando
             continue
         f.write_bytes(new.encode("utf-8"))
         ok, out_text = run_tests(tree, it["tests"], python)
-        if not ok:
+        if ok == survivors:
             out.append({**it, "bad": new.split("\n")[it["line"] - 1], "fail": out_text,
                         "diff": sh(["git", "diff"], cwd=tree).stdout})
         reset(tree)
@@ -399,14 +402,17 @@ def ensure_base() -> Path:
     return base
 
 
-def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
-    """Review catch rate: plant a bug, let her hunt it in the changed function, count only proven finds."""
+def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str, survivors: bool = False) -> dict:
+    """Review catch rate: plant a bug, let her hunt it in the changed function, count only proven finds.
+    survivors=True plants only bugs the module's tests miss: the hunt's real job (CI blocks the others)."""
     from litha import bug_hunt
     tree, base = ensure_bench(), ensure_base()
     rng = random.Random(seed)
-    items = killed(tree, candidates(tree, kinds, rng, max_files=25), n, python, rng)
-    score = {"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "seed": seed, "mode": "hunt",
-             "n": len(items), "caught": 0, "wrong_line": 0, "by_kind": {}}
+    items = killed(tree, candidates(tree, kinds, rng, max_files=25), n, python, rng, survivors)
+    score = {"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "seed": seed,
+             "mode": "hunt-survivors" if survivors else "hunt", "n": len(items), "caught": 0, "wrong_line": 0,
+             "by_existing_test": 0, "by_kind": {}, "seconds": 0}
+    t0 = time.time()
     for it in items:
         f = tree / it["file"]
         new = mutate(f.read_text(encoding="utf-8"), it["line"], it["kind"])
@@ -423,11 +429,13 @@ def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
         hit = any(abs(x["line"] - it["line"]) <= 1 for x in found)
         score["caught"] += int(hit)
         score["wrong_line"] += int(bool(found) and not hit)
+        score["by_existing_test"] += int(hit and any(x["proof"].get("via") for x in found))
         k = score["by_kind"].setdefault(it["kind"], [0, 0])
         k[0] += int(hit)
         k[1] += 1
         print(f"{'CAUGHT' if hit else 'missed'} {it['kind']:<15} {it['file']}:{it['line']} {round(time.time() - t)} s "
               f"{(found[0]['why'] if found else '')[:90]}", flush=True)
+    score["seconds"] = round(time.time() - t0)
     HISTORY.parent.mkdir(parents=True, exist_ok=True)
     with HISTORY.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(score) + "\n")
@@ -441,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seed", type=int, default=-1, help="-1 = today's date (new bugs every day)")
     ap.add_argument("--blind", action="store_true", help="no diff: find the bug from the failing tests alone")
     ap.add_argument("--kind", action="append")
+    ap.add_argument("--survivors", action="store_true", help="hunt: only bugs the module's tests miss")
     ap.add_argument("--limit", type=int, default=40)
     ap.add_argument("--python", default=sys.executable)
     a = ap.parse_args(argv)
@@ -455,7 +464,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     seed = a.seed if a.seed >= 0 else int(dt.date.today().strftime("%Y%m%d"))
     if a.cmd == "hunt":
-        print(json.dumps(hunt_run(a.n, seed, a.kind, a.python)))
+        print(json.dumps(hunt_run(a.n, seed, a.kind, a.python, a.survivors)))
         return 0
     print(json.dumps(run(a.n, seed, a.kind, a.python, blind=a.blind)))
     return 0
