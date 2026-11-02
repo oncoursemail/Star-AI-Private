@@ -16,6 +16,8 @@
     python -m litha.bug_bench run   [--n 10] [--seed -1] [--kind K] [--blind]  the fix benchmark; prints the score
     python -m litha.bug_bench hunt  [--n 10] [--seed -1] [--survivors]   review catch rate: she must find AND prove
                                     the bug (--survivors: only bugs the module's tests miss, the ones CI lets through)
+    python -m litha.bug_bench standard | real | report | gate | build-standard | mine-real
+                                    the fixed AST-mutant suite, real-fix items, scoreboard, lesson gate (learn_loop)
 Runs in worktrees/litha-bench (a detached star/next checkout). Every item is reset with git afterwards.
 """
 from __future__ import annotations
@@ -275,6 +277,8 @@ def lessons_text(limit: int = 5) -> str:
         if ex.get("bad") and ex.get("good"):
             line += f"; e.g. `{ex['bad'].strip()[:90]}` should be `{ex['good'].strip()[:90]}`"
         rows.append(line)
+    for v in [v for v in lessons.values() if v.get("real")][-2:]:      # real-fix lessons the gate kept (learn_loop)
+        rows.append(f"- {v['hint'][:160]} (a real fix)")
     return ("Lessons from your past fixes (look for these first):\n" + "\n".join(rows) + "\n") if rows else ""
 
 
@@ -443,6 +447,10 @@ def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str, survivors:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in ("standard", "real", "report", "gate", "build-standard", "mine-real"):
+        from litha import learn_loop                      # the fixed suites, scoreboard and lesson gate
+        return learn_loop.main(argv)
     ap = argparse.ArgumentParser(prog="python -m litha.bug_bench")
     ap.add_argument("cmd", choices=["list", "run", "hunt"])
     ap.add_argument("--n", type=int, default=10)

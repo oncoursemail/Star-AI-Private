@@ -9,3 +9,5 @@ cd /d "%~dp0.."
 "%~1" -m litha.bug_bench run --n 10 --python "%~1" >> "%USERPROFILE%\.star\litha\bench.log" 2>&1
 "%~1" -m litha.bug_bench run --n 6 --blind --python "%~1" >> "%USERPROFILE%\.star\litha\bench.log" 2>&1
 "%~1" -m litha.bug_bench hunt --n 6 --python "%~1" >> "%USERPROFILE%\.star\litha\bench.log" 2>&1
+rem Real-fix lessons wait in lessons-pending.json until the standard suite shows they do not lower her score.
+"%~1" -m litha.bug_bench gate --if-pending --python "%~1" >> "%USERPROFILE%\.star\litha\bench.log" 2>&1
