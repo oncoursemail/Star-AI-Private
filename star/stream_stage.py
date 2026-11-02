@@ -423,9 +423,15 @@ class StarStage:
             # Never let a journal fact trigger speech, override gameplay, or
             # become a high-priority instruction. The host supplies the game
             # scope and uses the same monotonic clock as the journal.
+            # A current host observation is not sufficient when the director
+            # has already bound a different game (or explicitly no game).
+            # Apply the same fail-closed scope agreement as signed memories:
+            # a stale observer must never re-introduce old-game moments into
+            # an otherwise legitimate viewer response.
             if (journal is not None and episode_broadcast_approved
                     and current_game_scope and intent.kind == "viewer_question"
-                    and not gameplay_critical and not measured_pressure):
+                    and not gameplay_critical and not measured_pressure
+                    and relevant_memory(current_game_scope)):
                 # An optional memory provider may have received timestamps
                 # from a different monotonic-clock domain. An out-of-order
                 # recall must not strand an issued speech intent or interrupt
