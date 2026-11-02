@@ -180,8 +180,9 @@ class GameDeadlineRouter:
         offline_teacher_approved: bool = False,
         stream_live: bool = False,
         stream_governor: StreamLoadGovernor | None = None,
+        completed_inference: bool = False,
     ) -> DeadlineAdvice:
-        """Pre-inference advisory. The host rechecks fresh data at input time.
+        """Admission or completed-inference advisory, not game permission.
 
         For live play, success means the profiled p95 PLUS dispatch reserve is
         strictly within the remaining *scene* lifetime. These are anonymous
@@ -195,10 +196,17 @@ class GameDeadlineRouter:
         when game_active is False. The live GPU fast path requires fresh,
         normal stream telemetry; CPU fast play can continue through missing
         stream telemetry unless independent CPU pressure forbids it.
+
+        Only a trusted caller holding the original, previously admitted and
+        now host-verified *completed* inference lease may request the
+        completed_inference postflight route. It repeats the scope, deadline,
+        host-clock, OBS and hardware checks without charging an already-finished
+        inference its estimated p95 latency a second time. This advisory
+        NEVER authorizes a model launch or game action by itself.
         """
         if any(type(flag) is not bool for flag in (
             game_active, host_verified, cpu_pressure, gpu_pressure,
-            offline_teacher_approved, stream_live,
+            offline_teacher_approved, stream_live, completed_inference,
         )):
             raise ValueError("flags must be strict booleans")
         if stream_governor is not None and not isinstance(stream_governor, StreamLoadGovernor):
@@ -286,6 +294,17 @@ class GameDeadlineRouter:
                         return skip("stream_critical_pressure", remaining=remaining)
                     if self._device == "gpu" and stream_advice.profile != "normal":
                         return skip("stream_gpu_headroom_unverified", remaining=remaining)
+            # At admission, budget a complete p95 inference. At completion,
+            # that work has *already happened*. Charging p95 again can reject
+            # a genuinely timely model response despite the host-verified
+            # game scene and action gate still having enough time to act.
+            # The completed route is advisory only; RealtimeGameLoop.finish
+            # holds the original object-identity-bound lease before using it.
+            if completed_inference:
+                return DeadlineAdvice(
+                    "completed", "verified_completion_fits_scene_deadline",
+                    round(remaining, 3),
+                )
             fresh = [duration for at, duration in self._reactive
                      if 0 <= now - at <= self._max_latency_age]
             if len(fresh) < self._minimum:

@@ -201,6 +201,24 @@ class TestRealtimeGameLoop(unittest.TestCase):
         self.assertTrue(loop.release(
             permit, now_ms=1204, host_confirmed_released=True))
 
+    def test_completed_inference_must_not_pay_its_p95_cost_twice(self):
+        # Admission already budgeted p95=60ms. The actual worker finishes
+        # before its scene lease expires, even though there is no longer
+        # enough time left to run a SECOND 60ms inference. The completed
+        # result should still be eligible for the independent action gate.
+        loop = start()
+        scene = frame()
+        lease = offer(loop, scene, now=1100)
+        self.assertEqual(lease.route, "reactive")
+        self.assertEqual(lease.expires_ms, 1310)
+        permit = finish(loop, lease, scene, now=1280)
+        self.assertTrue(permit.offered, permit.reason)
+        self.assertFalse(permit.authorized_to_press_keys)
+        self.assertTrue(loop.claim(
+            permit, now_ms=1285, host_focus_and_permission=True))
+        self.assertTrue(loop.release(
+            permit, now_ms=1290, host_confirmed_released=True))
+
     def test_expired_completion_is_not_offered_to_action_gate(self):
         loop = start()
         scene = frame()

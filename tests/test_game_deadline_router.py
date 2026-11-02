@@ -213,6 +213,48 @@ def test_profiled_fast_route_accepted_only_with_deadline_slack():
     assert not verdict.authorized_to_play and not verdict.authorizes_model_launch
 
 
+def test_completed_inference_rechecks_reality_but_not_another_p95_run():
+    gate = router()
+    train(gate, durations=[60] * 8)
+    # No NEW model can finish within the remaining 30ms budget.
+    ordinary = decide(gate, observation_age_ms=280, now_host_ms=1000)
+    assert ordinary.reason == "reactive_p95_exceeds_scene_slack"
+    # A caller with an already-completed, independently verified worker
+    # may validate the postflight without paying its p95 twice.
+    complete = decide(gate, observation_age_ms=280, now_host_ms=1000,
+                      completed_inference=True)
+    assert complete.route == "completed"
+    assert complete.remaining_ms == 30
+    assert not complete.authorizes_model_launch
+    assert not complete.authorized_to_play
+    # Still fail closed on owner/host evidence, pressure and expiration.
+    assert decide(gate, observation_age_ms=280, now_host_ms=1000,
+                  completed_inference=True, host_verified=False).route == "skip"
+    assert decide(gate, observation_age_ms=280, now_host_ms=1000,
+                  completed_inference=True, cpu_pressure=True).reason == "hardware_pressure"
+    assert decide(gate, observation_age_ms=311, now_host_ms=1000,
+                  completed_inference=True).reason == "scene_deadline_expired"
+    with pytest.raises(ValueError):
+        decide(gate, completed_inference=1)
+
+
+def test_completed_gpu_postflight_still_rejects_stale_obs_or_encoder_pressure():
+    gate = router(device="gpu")
+    train(gate)
+    governor = _warm_stream()
+    assert decide(gate, observation_age_ms=280, now_host_ms=12_100,
+                  stream_live=True, stream_governor=governor,
+                  completed_inference=True).route == "completed"
+    assert governor.ingest(_load_sample("encode-bad", 13.0, encoder_pct=3.0),
+                           now_s=13.0, host_verified=True)
+    assert decide(gate, observation_age_ms=280, now_host_ms=13_100,
+                  stream_live=True, stream_governor=governor,
+                  completed_inference=True).reason == "stream_critical_pressure"
+    assert decide(gate, observation_age_ms=280, now_host_ms=20_000,
+                  stream_live=True, stream_governor=governor,
+                  completed_inference=True).reason == "stream_gpu_headroom_unverified"
+
+
 def test_unknown_speed_cannot_assume_inference_is_fast():
     gate = router()
     for i in range(1, 8):
