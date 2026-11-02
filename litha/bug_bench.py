@@ -26,7 +26,6 @@ import argparse
 import ast
 import datetime as dt
 import json
-import os
 from pathlib import Path
 import random
 import re
@@ -34,6 +33,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+from litha import fresh_py
 
 HOME = Path.home() / ".star" / "litha"
 LESSONS = HOME / "lessons.json"
@@ -197,7 +198,7 @@ def mutate(text: str, line: int, kind: str) -> str | None:
 
 
 def run_tests(tree: Path, tests: list[str], python: str) -> tuple[bool, str]:
-    env = dict(os.environ, APPDATA=tempfile.mkdtemp(prefix="litha-bench-"))
+    env = fresh_py.env(tree, APPDATA=tempfile.mkdtemp(prefix="litha-bench-"))
     try:
         r = subprocess.run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf", "-x", *tests], cwd=tree,
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600, env=env)

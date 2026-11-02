@@ -33,7 +33,7 @@ import threading
 import time
 import tomllib
 
-from litha import context_pack, rust_fix, self_map
+from litha import context_pack, fresh_py, rust_fix, self_map
 from litha.pr_merger import BASE, REPO, gh, head_checks, latest_runs, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
@@ -265,7 +265,7 @@ def source_diff(diff: str) -> str:
 
 
 def run_tests(tree: Path, tests: list[str], python: str, extra: tuple[str, ...] = ()) -> tuple[bool, str]:
-    env = dict(os.environ, APPDATA=tempfile.mkdtemp(prefix="litha-fix-"))
+    env = fresh_py.env(tree, APPDATA=tempfile.mkdtemp(prefix="litha-fix-"))
     r = sh([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf", *extra, *tests], cwd=tree, timeout=900,
            env=env)
     return r.returncode == 0, (r.stdout + r.stderr)[-3000:]
@@ -321,6 +321,25 @@ def _restore(tree: Path, saved: dict[Path, bytes], kept: list) -> None:
         f.write_bytes(data)
     for edits in kept:
         apply_edits(tree, edits)
+
+
+FLAKY = "flaky: "
+
+
+def _passes_without(tree: Path, saved: dict[Path, bytes], tests: list[str], python: str) -> bool:
+    """A passing fix is run once more on the code repair() started from: passing there too means the tests were
+    flaky and her edits fixed nothing (#905: a no-op line in a file no failing test imports 'fixed' #903, whose
+    first run had read stale bytecode). Her edits are back in the tree afterwards."""
+    now = {f: f.read_bytes() for f in saved}
+    if all(now[f] == data for f, data in saved.items()):
+        return False
+    for f, data in saved.items():
+        f.write_bytes(data)
+    try:
+        return run_tests(tree, tests, python)[0]
+    finally:
+        for f, data in now.items():
+            f.write_bytes(data)
 
 
 def _proposed(tried: list[dict]) -> str:
@@ -396,6 +415,9 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
         _restore(tree, saved, kept_edits)                    # no progress: back to the last kept state
         feedback = ("\nYour previous attempt did not work. " + ("Problems: " + "; ".join(problems) + ". " if problems
                     else "") + "Test output after it:\n" + out[-1500:] + others + "\nTry a different fix.\n")
+    if ok and _passes_without(tree, saved, tests, python):
+        _restore(tree, saved, [])
+        return False, FLAKY + "the failing tests pass without her edits too, so the edits fixed nothing", round_no
     return ok, why, round_no
 
 
@@ -1557,6 +1579,9 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
     else:
         diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
         ok, why, round_no = repair(tree, pr.get("title", ""), fails, out, tests, python, asker, diff)
+        if not ok and why.startswith(FLAKY):
+            return {"pr": number, "result": "flaky-rerun", "tests": tests,
+                    "why": f"{why}; reran {rerun_failed(sha, number)} failed run(s) once"}
     if not ok:
         return {"pr": number, "result": "failed", "rounds": ROUNDS, "tests": tests, "why": why}
     changed = [ln[3:] for ln in sh(["git", "status", "--porcelain"], cwd=tree).stdout.splitlines()]

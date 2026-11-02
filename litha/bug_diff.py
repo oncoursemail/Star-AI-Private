@@ -23,6 +23,8 @@ import re
 import subprocess
 import tempfile
 
+from litha import fresh_py
+
 CALLS = """A pull request changed this code (changed lines marked >>, the line before the change under it as `was:`):
 {func}
 {shape}Suspected bug at line {line}: {why}
@@ -186,8 +188,8 @@ def probe(tree: Path, module: str, file: str, calls: list[str], lines: set[int],
                                                "calls": calls, "setup": setup, "out": str(tmp / "out.json"),
                                                "root": str(tree.resolve())}), encoding="utf-8")
     (tree / PROBE).write_text(RUNNER, encoding="utf-8")
-    env = dict(os.environ, APPDATA=str(tmp), PYTHONHASHSEED="0", LITHA_DIFF_SPEC=str(tmp / "spec.json"),
-               PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=os.pathsep.join([str(tree), os.environ.get("PYTHONPATH", "")]))
+    env = fresh_py.env(tree, APPDATA=str(tmp), PYTHONHASHSEED="0", LITHA_DIFF_SPEC=str(tmp / "spec.json"),
+                        PYTHONPATH=os.pathsep.join([str(tree), os.environ.get("PYTHONPATH", "")]))
     (tmp / "cwd").mkdir()                                  # files her calls write land here, not in the checkout
     try:
         subprocess.run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", str(tree / PROBE)],

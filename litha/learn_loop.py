@@ -38,6 +38,7 @@ import time
 
 from litha import ast_mutants as M
 from litha import bug_bench as B
+from litha import fresh_py
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITE = ROOT / "litha" / "bench" / "standard_suite.json"
@@ -67,7 +68,7 @@ def git(args: list[str], cwd: Path, timeout: float = 600) -> subprocess.Complete
 def run_tests(tree: Path, tests: list[str], python: str, timeout: float = 300,
               extra: tuple[str, ...] = ()) -> tuple[bool, str, bool]:
     """(passed, output tail, timed out) for pytest on these files in this tree (its own code, a scratch APPDATA)."""
-    env = dict(os.environ, APPDATA=tempfile.mkdtemp(prefix="litha-std-"), PYTHONPATH=str(tree))
+    env = fresh_py.env(tree, APPDATA=tempfile.mkdtemp(prefix="litha-std-"), PYTHONPATH=str(tree))
     try:
         r = subprocess.run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf", *extra, *tests], cwd=tree,
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,

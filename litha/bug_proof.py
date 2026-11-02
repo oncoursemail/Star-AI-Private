@@ -19,11 +19,12 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import subprocess
 import tempfile
+
+from litha import fresh_py
 
 PROOF = "tests/_litha_proof_test.py"
 ASK = """You claimed this bug in a pull request:
@@ -125,7 +126,7 @@ def failing_tests(tree: Path, file: str, python: str, limit: int = 3) -> list[di
     key = (str(tree), file, digest)
     if key in _RUNS:
         return _RUNS[key]
-    env = dict(os.environ, APPDATA=tempfile.mkdtemp(prefix="litha-proof-"))
+    env = fresh_py.env(tree, APPDATA=tempfile.mkdtemp(prefix="litha-proof-"))
     try:
         r = subprocess.run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf", "--tb=short", *tests],
                            cwd=tree, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
@@ -224,7 +225,7 @@ def run_proof(tree: Path, code: str, python: str) -> tuple[str, str]:
     """('proven' | 'passed' | 'useless', output)."""
     f = tree / PROOF
     f.write_text(code, encoding="utf-8")
-    env = dict(os.environ, APPDATA=tempfile.mkdtemp(prefix="litha-proof-"))
+    env = fresh_py.env(tree, APPDATA=tempfile.mkdtemp(prefix="litha-proof-"))
     try:
         r = subprocess.run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", PROOF], cwd=tree, capture_output=True,
                            text=True, encoding="utf-8", errors="replace", timeout=180, env=env)
