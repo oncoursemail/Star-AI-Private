@@ -11,6 +11,7 @@ in the browser and still look complete when they are missing. See HOSTING.md.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import re
 import shutil
@@ -39,13 +40,23 @@ def parse_page(text: str) -> tuple[dict, str]:
     return meta, "\n".join(lines[i:]).strip()
 
 
-def render_page(layout: str, rel: str, meta: dict, body: str, site_url: str) -> str:
+def assets_version() -> str:
+    """A short hash of every asset, added as ?v= to the CSS and script links so a new build never runs a cached old script."""
+    h = hashlib.sha256()
+    for p in sorted((SRC / "assets").rglob("*")):
+        if p.is_file():
+            h.update(p.relative_to(SRC).as_posix().encode() + b"\0" + p.read_bytes())
+    return h.hexdigest()[:10]
+
+
+def render_page(layout: str, rel: str, meta: dict, body: str, site_url: str, version: str = "") -> str:
     page = meta.get("page", "")
     path = "/" if rel == "index.html" else "/" + rel.removesuffix("index.html")
-    scripts = "".join(f'<script src="{esc(s if s.startswith("/") else "/assets/" + s)}" defer></script>'
+    v = f"?v={version}" if version else ""
+    scripts = "".join(f'<script src="{esc(s if s.startswith("/") else "/assets/" + s)}{v}" defer></script>'
                       for s in (x.strip() for x in meta.get("scripts", "").split(",")) if s)
     values = {"title": esc(meta["title"]), "description": esc(meta["description"]), "page": esc(page),
-              "canonical": esc(site_url.rstrip("/") + path), "content": body, "scripts": scripts,
+              "canonical": esc(site_url.rstrip("/") + path), "content": body, "scripts": scripts, "v": v,
               "year": str(datetime.now(timezone.utc).year)}
     for n in NAV:
         values[f"cur_{n}"] = ' aria-current="page"' if page == n else ""
@@ -74,6 +85,7 @@ def build(out: Path, site_url: str, releases: Path | None = None, sample_live: P
     out.mkdir(parents=True)
     layout = (SRC / "_layout.html").read_text(encoding="utf-8")
     shutil.copytree(SRC / "assets", out / "assets")
+    version = assets_version()
     pages = []
     for page in sorted(SRC.rglob("*.html")):
         rel = page.relative_to(SRC).as_posix()
@@ -85,7 +97,7 @@ def build(out: Path, site_url: str, releases: Path | None = None, sample_live: P
                 raise SystemExit(f"{rel}: missing '{key}' front matter")
         dest = out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(render_page(layout, rel, meta, body, site_url), encoding="utf-8")
+        dest.write_text(render_page(layout, rel, meta, body, site_url, version), encoding="utf-8")
         pages.append(rel)
     if releases:
         copy_releases(Path(releases), out / "releases")

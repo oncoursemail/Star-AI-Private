@@ -117,6 +117,7 @@ def test_old_pages_and_formats_are_gone(built):
 
 def target_exists(out: Path, href: str, src_page: Path) -> bool:
     path, _, frag = href.partition("#")
+    path = path.split("?")[0]
     if path:
         t = out / path.lstrip("/")
         if t.is_dir():
@@ -126,6 +127,14 @@ def target_exists(out: Path, href: str, src_page: Path) -> bool:
     else:
         t = src_page
     return not frag or (t.suffix == ".html" and frag in parse(t).ids)
+
+
+def test_css_and_scripts_carry_the_assets_version(built):
+    out, _, _, mod = built
+    v = mod.assets_version()
+    text = (out / "index.html").read_text(encoding="utf-8")
+    for ref in ("/assets/site.css", "/assets/site.js", "/assets/home.js"):
+        assert f'{ref}?v={v}"' in text, ref
 
 
 def test_internal_links_assets_and_anchors_resolve(built):
