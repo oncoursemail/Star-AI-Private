@@ -15,7 +15,10 @@ The tests are the spec: she may not edit them. Tried heads are remembered so a P
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 import datetime as dt
+import difflib
 import json
 import shutil
 import os
@@ -24,6 +27,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 
@@ -38,17 +42,64 @@ IDENTITY = ["-c", "user.name=oncoursemail", "-c", "user.email=84545815+oncoursem
 STATE = Path.home() / ".star" / "pr-fixer" / "tried.json"
 
 
+TRIED = threading.Lock()
+
+
+@contextmanager
+def file_lock(path: Path, wait: float = 60, stale: float = 120):
+    """Another process (a re-queue, a second run) writing the same file waits here; a lock older than `stale` s is
+    left over from a dead process and is taken over."""
+    end = time.time() + wait
+    while True:
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                old = time.time() - path.stat().st_mtime > stale
+            except FileNotFoundError:
+                continue
+            if old or time.time() > end:
+                path.touch()
+                break
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Readers see the old file or the new one, never half of it (Windows refuses a replace while a reader has the
+    file open: retry briefly)."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    for i in range(40):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == 39:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05)
+
+
 def mark(key: str, sha: str) -> dict:
     """Record one attempt on the CURRENT file: a copy loaded at the start of a long run must not undo a re-queue
-    made meanwhile (seen 2026-11-01: four re-queued Studio PRs silently came back as tried)."""
-    tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
-    tried[key] = sha
-    STATE.write_text(json.dumps(tried), encoding="utf-8")
+    made meanwhile (seen 2026-11-01: four re-queued Studio PRs silently came back as tried). Several workers mark at
+    once: read-modify-write under a thread lock and a file lock, written atomically."""
+    with TRIED, file_lock(STATE.with_name("tried.lock")):
+        tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
+        tried[key] = sha
+        write_atomic(STATE, json.dumps(tried))
     return tried
 LOG = Path.home() / ".star" / "pr-fixer" / "fixes.jsonl"
 ROUNDS = 5
 NO_TOUCH = re.compile(r"^(tests/|\.github/)|(^|/)(requirements[^/]*\.txt|pnpm-lock\.yaml|[^/]+\.lock)$")
 GATES = re.compile(r"^(scripts/pyright_baseline\.json|pyrightconfig\.json)$")   # her edits may not move the bar
+FRONT_SPEC = re.compile(r"^frontend/(.*\.test\.[cm]?[jt]sx?|src/test-[^/]+\.ts|tsconfig[^/]*\.json|vite\.config\.\w+|"
+                        r"vitest\.config\.\w+|package(-lock)?\.json)$")   # the React job's tests and its configs
 FAILED = re.compile(r"^FAILED (\S+::\S+)", re.M)
 FRAME = re.compile(r"^(?:\S+ +)?((?:star|server|metallic|tools|tests)/[\w/.-]+\.py):(\d+):", re.M)
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -71,9 +122,16 @@ Edit only files shown above, with exactly those paths. Make the smallest correct
 unique in the file>", "replace": "<new text>"}}]}}"""
 
 
+SHARED = threading.RLock()     # the shared clone (fetch, worktree add/remove, star commit): one worker at a time
+
+
 def sh(args: list[str], cwd: Path | None = None, timeout: float = 600, env: dict | None = None):
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=timeout, env=env)
+    tool = Path(args[0]).stem.lower() if args else ""
+    shared = (tool == "git" and args[1:2] == ["-C"]) or tool == "star"
+    lock = rust_fix.BUILD if tool == "cargo" else SHARED if shared else nullcontext()
+    with lock:
+        return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout, env=env)
 
 
 def failed_logs(sha: str) -> str:
@@ -162,7 +220,7 @@ def apply_edits(tree: Path, edits: list) -> list[str]:
             problems.append("an edit lacked file/find/replace")
             continue
         f = (tree / path).resolve()
-        if NO_TOUCH.search(path) or GATES.match(path) or tree.resolve() not in f.parents:
+        if NO_TOUCH.search(path) or GATES.match(path) or FRONT_SPEC.match(path) or tree.resolve() not in f.parents:
             problems.append(f"{path}: you may not edit this file (tests, CI and locks are the spec)")
             continue
         if not f.is_file():
@@ -215,42 +273,108 @@ def ask(prompt: str) -> str:
     return text
 
 
+K = 1                                   # candidate edit sets per round, best one kept (LITHA_FIX_K overrides; 1 = off; 3 measured +2/32, 2.1x time)
+
+
+def _edit_size(edits) -> int:
+    """Lines an edit set removes + adds: the tie-break between candidates that leave as many failures."""
+    n = 0
+    for e in edits if isinstance(edits, list) else []:
+        if isinstance(e, dict):
+            old, new = str(e.get("find", "")).splitlines(), str(e.get("replace", "")).splitlines()
+            n += sum(1 for ln in difflib.ndiff(old, new) if ln[:1] in "+-")
+    return n
+
+
+def _apply_saved(tree: Path, edits, saved: dict[Path, bytes]) -> list[str]:
+    """apply_edits, first remembering the bytes of every file the edits name, so a candidate is undone exactly,
+    also on a tree with uncommitted changes (`git checkout -- .` also erased the bench's planted bug)."""
+    root = tree.resolve()
+    for e in edits if isinstance(edits, list) else []:
+        try:
+            f = (tree / str(e["file"]).replace("\\", "/").lstrip("./")).resolve()
+        except (KeyError, TypeError):
+            continue
+        if f not in saved and root in f.parents and f.is_file():
+            saved[f] = f.read_bytes()
+    return apply_edits(tree, edits)
+
+
+def _restore(tree: Path, saved: dict[Path, bytes], kept: list) -> None:
+    """Back to the state repair() started from, plus the kept edits of earlier rounds."""
+    for f, data in saved.items():
+        f.write_bytes(data)
+    for edits in kept:
+        apply_edits(tree, edits)
+
+
+def _proposed(tried: list[dict]) -> str:
+    """For candidate 2..K of a round: the fixes already proposed, so she gives a different one."""
+    shown = "\n".join(f"- {t['why'][:120]}: {json.dumps(t['edits'], ensure_ascii=False)[:500]}" for t in tried)
+    return ("\nThese fixes were already proposed for this same code; give a DIFFERENT fix (another line or another "
+            "change), not one of these:\n" + shown + "\n") if tried else ""
+
+
 def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str], python: str,
-           asker=ask, diff: str = "") -> tuple[bool, str, int]:
-    """Up to ROUNDS rounds of Litha's edits + the tests; progress (fewer failures) is kept between rounds."""
+           asker=ask, diff: str = "", k: int | None = None) -> tuple[bool, str, int]:
+    """Up to ROUNDS rounds of Litha's edits + the tests; progress (fewer failures) is kept between rounds.
+    Each round she proposes up to k edit sets from the same code (the 2nd.. are told the earlier ones and must
+    differ); each is applied, the failing test files run, and the one with the fewest failures (ties: the smallest
+    edit) is the round's answer. The first candidate that passes ends it at once. k=1 is the one-answer loop."""
+    k = max(1, k if k is not None else int(os.environ.get("LITHA_FIX_K") or K))
     ok, round_no = False, 0
     feedback, why, best, kept_edits = "", "", len(FAILED.findall(out)) or 99, []
+    saved: dict[Path, bytes] = {}                           # file -> bytes when repair() started
     if not diff.strip():                                     # blind: show the wrong values instead of a diff
         deep = deep_failure(tree, fails, python)
         if deep:
             fails = [{"test": fails[0]["test"], "section": deep}] + fails[1:]
     for round_no in range(1, ROUNDS + 1):
         sections = "\n\n".join(f"{f['test']}\n{f['section']}" for f in fails) + "\n\nlocal run now:\n" + out[-1500:]
-        prompt = PROMPT.format(title=title, failures=sections[:6000],
-                               code=code_excerpts(tree, sections), feedback=feedback, lessons=_lessons(),
-                               diff=source_diff(diff)[:5000] or "(not available)")
-        try:
-            answer = json.loads(asker(prompt))
-        except (ValueError, TypeError):
-            feedback = "\nYour last answer was not valid JSON. Answer only the JSON object.\n"
-            continue
-        why = str(answer.get("why", ""))[:300]
-        problems = apply_edits(tree, answer.get("edits"))
-        ok, out = run_tests(tree, tests, python)
+        code, lessons = code_excerpts(tree, sections), _lessons()
+        tried: list[dict] = []
+        applied = False                                      # the tree holds tried[-1]'s edits
+        for i in range(k):
+            if applied:
+                _restore(tree, saved, kept_edits)
+                applied = False
+            prompt = PROMPT.format(title=title, failures=sections[:6000], code=code, lessons=lessons,
+                                   feedback=feedback + _proposed(tried), diff=source_diff(diff)[:5000] or "(not available)")
+            try:
+                answer = json.loads(asker(prompt))
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(answer, dict):
+                continue
+            why = str(answer.get("why", ""))[:300]
+            problems = _apply_saved(tree, answer.get("edits"), saved)
+            ok, out = run_tests(tree, tests, python)
+            if ok:
+                break
+            applied = True
+            tried.append({"why": why, "edits": answer.get("edits"), "problems": problems, "out": out,
+                          "now": len(FAILED.findall(out)) or 99, "size": _edit_size(answer.get("edits"))})
         if ok:
             break
-        now = len(FAILED.findall(out)) or 99
-        if now < best:                                      # fewer failures: keep this progress, fix the rest next
-            best, fails = now, failures(out) or fails
-            kept_edits.append(answer.get("edits"))
+        if not tried:
+            feedback = "\nYour last answer was not valid JSON. Answer only the JSON object.\n"
+            continue
+        win = min(range(len(tried)), key=lambda j: (tried[j]["now"], tried[j]["size"]))
+        why, out, problems = tried[win]["why"], tried[win]["out"], tried[win]["problems"]
+        others = "".join(f"\nAlso tried, no better: {json.dumps(t['edits'], ensure_ascii=False)[:300]}"
+                         for j, t in enumerate(tried) if j != win)
+        if tried[win]["now"] < best:                        # fewer failures: keep this progress, fix the rest next
+            if win != len(tried) - 1 or not applied:
+                _restore(tree, saved, kept_edits)
+                _apply_saved(tree, tried[win]["edits"], saved)
+            best, fails = tried[win]["now"], failures(out) or fails
+            kept_edits.append(tried[win]["edits"])
             feedback = ("\nYour edits were kept: fewer tests fail now. The code above already includes them. "
                         "Fix what still fails:\n" + out[-1500:] + "\n")
             continue
-        sh(["git", "checkout", "--", "."], cwd=tree)        # no progress: back to the last kept state
-        for kept in kept_edits:
-            apply_edits(tree, kept)
+        _restore(tree, saved, kept_edits)                    # no progress: back to the last kept state
         feedback = ("\nYour previous attempt did not work. " + ("Problems: " + "; ".join(problems) + ". " if problems
-                    else "") + "Test output after it:\n" + out[-1500:] + "\nTry a different fix.\n")
+                    else "") + "Test output after it:\n" + out[-1500:] + others + "\nTry a different fix.\n")
     return ok, why, round_no
 
 
@@ -330,12 +454,13 @@ def bare_python(python: str) -> str:
     return str(exe) if exe.is_file() else python
 
 
-def run_pyright(tree: Path, python: str) -> list[dict] | None:
-    """Pyright's errors as CI computes them ({file, line, rule, message}, repo-relative), or None when it cannot run."""
+def run_pyright(tree: Path, python: str, files: list[str] | None = None) -> list[dict] | None:
+    """Pyright's errors as CI computes them ({file, line, rule, message}, repo-relative), or None when it cannot run.
+    With `files`, only those are checked (~3 s a file instead of ~50 s for the repo; same counts for them)."""
     npx = shutil.which("npx")
     if not npx:
         return None
-    r = sh([npx, *PYRIGHT, "--pythonpath", bare_python(python), "--outputjson"], cwd=tree, timeout=900)
+    r = sh([npx, *PYRIGHT, "--pythonpath", bare_python(python), "--outputjson", *(files or [])], cwd=tree, timeout=900)
     try:
         report = json.loads(r.stdout)
     except ValueError:
@@ -364,6 +489,18 @@ def type_excess(tree: Path, errors: list[dict]) -> dict[str, tuple[int, int]]:
     return {k: (allowed.get(k, 0), n) for k, n in sorted(now.items()) if n > allowed.get(k, 0)}
 
 
+def _counts(errors: list[dict], files: set[str]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for e in errors:
+        if e["file"] in files:
+            out[f"{e['file']}::{e['rule']}"] = out.get(f"{e['file']}::{e['rule']}", 0) + 1
+    return out
+
+
+def excess_files(excess: dict[str, tuple[int, int]]) -> list[str]:
+    return sorted({k.rsplit("::", 1)[0] for k in excess})
+
+
 def related_tests(tree: Path, files: list[str], limit: int = 6) -> list[str]:
     """Test files that import a changed module: a type fix must not change what the code does."""
     mods = {f[:-3].replace("/", ".") for f in files if f.endswith(".py")}
@@ -380,13 +517,19 @@ def related_tests(tree: Path, files: list[str], limit: int = 6) -> list[str]:
 def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[bool, str, int]:
     """Up to ROUNDS rounds of her edits against the pyright baseline gate. A round must lower the errors above the
     baseline and add no ignore comment, else it is undone. Then the tests of every changed module must still pass.
-    Round 0 = nothing to do here (pyright cannot run, or the gate passes locally)."""
+    Round 0 = nothing to do here (pyright cannot run, or the gate passes locally).
+    Speed: after the first full run a round re-checks only the files above the baseline (their counts do not depend
+    on what else is checked; probed once here, else every round is a full run), and when those reach zero a full run
+    decides, so success always means the whole repo passes."""
     errors = checker(tree, python)
     if errors is None:
         return False, "pyright cannot run here (no npx)", 0
     excess = type_excess(tree, errors)
     if not excess:
         return False, "the pyright gate passes locally (CI-only type failure)", 0
+    probe_files = excess_files(excess)
+    probe = checker(tree, python, probe_files)
+    fast = probe is not None and _counts(probe, set(probe_files)) == _counts(errors, set(probe_files))
     feedback, why, touched = "", "", set()
     for round_no in range(1, ROUNDS + 1):
         over = sum(n - a for a, n in excess.values())
@@ -412,8 +555,11 @@ def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[
         before.update({p: (tree / p).read_bytes() for e in edits if isinstance(e, dict)
                        for p in [str(e.get("file", "")).replace("\\", "/").lstrip("./")] if p and (tree / p).is_file()})
         problems = apply_edits(tree, edits)
-        after = checker(tree, python) or []
+        after = (checker(tree, python, excess_files(excess)) if fast else checker(tree, python)) or []
         left = type_excess(tree, after)
+        if fast and not left:                             # those files are clean: the whole repo decides
+            after = checker(tree, python) or []
+            left = type_excess(tree, after)
         if sum(n - a for a, n in left.values()) < over:
             why, feedback, errors, excess = str(answer.get("why", why))[:300], "", after, left
             touched |= {f for f, data in before.items() if (tree / f).read_bytes() != data}
@@ -433,6 +579,296 @@ def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[
             failed = ", ".join(f["test"] for f in failures(out)) or out[-200:]
             return False, "the type fix changed behaviour, these tests fail now: " + failed, round_no
     return True, why, round_no
+
+
+FRONT = "frontend"                          # CI: npm run typecheck / test --prefix frontend (tests.yml, job "react")
+REACT_CI = re.compile(r"React UI compile and tests|npm run (?:typecheck|test|build) --prefix frontend")
+TSC = re.compile(r"(?:^|\s|##\[error\])((?:frontend/)?[\w./-]+\.[cm]?tsx?)(?:\((\d+),(\d+)\):|:(\d+):(\d+) -) error (TS\d+): ([^\r\n]*)",
+                 re.M)                      # tsc plain "f(l,c): error TSn: m" and pretty "f:l:c - error TSn: m"
+VITEST = re.compile(r"^\s*FAIL\s+((?:frontend/)?[\w./-]+\.test\.[cm]?[jt]sx?)(?: \[[^\]\n]*\])?(?: > ([^\n]*?))?\s*$",
+                    re.M)
+VFRAME = re.compile(r"(?:❯|at )\s*\(?((?:frontend/)?src/[\w./-]+\.[cm]?[jt]sx?):(\d+):\d+")
+SILENCE = re.compile(r"@ts-(?:ignore|expect-error|nocheck)|\bas\s+any\b|:\s*any\b|<any>|\bany\[\]|eslint-disable")
+DEPS = Path.home() / ".star" / "pr-fixer" / "frontend-deps"   # node_modules per package.json, made once, shared
+FRONT_PROMPT = """You are Litha, fixing the failing "React UI compile and tests" check (tsc + vitest) of STAR's React
+frontend so CI passes. PR title: {title}
+What this PR changed in the frontend (the cause is most likely in these lines):
+{diff}
+
+Errors now ({count} in all), each with the real code around it (line numbers on the left, do not copy them):
+{errors}
+{feedback}
+Fix the cause in the source code. Test files (*.test.ts, *.test.tsx) describe the wanted behaviour: never edit them,
+nor tsconfig, vite/vitest config, package.json or lock files. Never silence an error: no // @ts-ignore,
+@ts-expect-error, @ts-nocheck, "as any", ": any" or eslint-disable. Give values their real types. Paths start with
+frontend/. Copy "find" from the code listing (the file as it is now), never from the diff: no leading + or -.
+Make the smallest correct change. Answer only JSON: {{"why": "<one sentence: the cause>", "edits":
+[{{"file": "<path>", "find": "<exact existing text, a few whole lines, unique in the file>", "replace": "<new text>"}}]}}"""
+
+
+def _front(path: str) -> str:
+    path = path.replace("\\", "/").lstrip("./")
+    return path if path.startswith(f"{FRONT}/") else f"{FRONT}/{path}"
+
+
+def frontend_failures(log: str) -> dict | None:
+    """The React job's failures in a CI log: tsc errors and vitest FAIL lines, repo-relative. None = none in the log."""
+    log = STAMP.sub("", ANSI.sub("", log))
+    tsc = [{"file": _front(f), "line": int(a or c), "code": code, "message": msg.strip()}
+           for f, a, _, c, _, code, msg in TSC.findall(log)]
+    tsc = list({(e["file"], e["line"], e["code"]): e for e in tsc}.values())
+    tests = list(dict.fromkeys((_front(f), (name or "").strip()) for f, name in VITEST.findall(log)))
+    if not tsc and not tests:
+        return None
+    return {"tsc": tsc, "vitest": [{"file": f, "test": t, "section": ""} for f, t in tests]}
+
+
+def vitest_sections(out: str) -> list[dict]:
+    """Each vitest failure with the text under its FAIL line (the assertion and the stack frames)."""
+    out = ANSI.sub("", out)
+    marks = list(VITEST.finditer(out))
+    got: dict[tuple[str, str], dict] = {}
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(out)
+        body = re.split(r"(?m)^\s*⎯{3,}", out[m.end():end], maxsplit=1)[0]
+        key = (_front(m.group(1)), (m.group(2) or "").strip())
+        if key not in got or len(body) > len(got[key]["section"]):
+            got[key] = {"file": key[0], "test": key[1], "section": body.strip()[:1500]}
+    return list(got.values())
+
+
+def _link(target: Path, link: Path) -> None:
+    if sys.platform == "win32":                            # a junction needs no admin rights (a symlink does)
+        import _winapi
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+def _unlink(link: Path) -> None:
+    """Remove the node_modules link only, never what it points to (rmdir of a junction removes just the junction)."""
+    try:
+        if sys.platform == "win32" and (link.is_symlink() or link.is_junction()):
+            os.rmdir(link)
+        elif link.is_symlink():
+            link.unlink()
+    except OSError:
+        pass
+
+
+def frontend_deps(tree: Path) -> str:
+    """frontend/node_modules from the shared cache: one `npm install` per package.json (+ lock) content, the same
+    command CI runs (the frontend has no lockfile; npm's own lock is kept in the cache entry). '' = ready, else why."""
+    import hashlib
+    npm = shutil.which("npm")
+    pkg = tree / FRONT / "package.json"
+    if not npm or not pkg.is_file():
+        return "npm is not installed" if not npm else "no frontend/package.json"
+    lock = tree / FRONT / "package-lock.json"
+    key = hashlib.sha256(pkg.read_bytes() + (lock.read_bytes() if lock.is_file() else b"")).hexdigest()[:16]
+    cache = DEPS / key
+    if not (cache / ".ok").is_file():
+        shutil.rmtree(cache, ignore_errors=True)
+        cache.mkdir(parents=True)
+        shutil.copy2(pkg, cache / "package.json")
+        if lock.is_file():
+            shutil.copy2(lock, cache / "package-lock.json")
+        r = sh([npm, "ci" if lock.is_file() else "install", "--no-audit", "--no-fund"], cwd=cache, timeout=1800)
+        if r.returncode:
+            return "npm install failed: " + (r.stdout + r.stderr)[-300:]
+        (cache / ".ok").write_text(dt.datetime.now().isoformat(), encoding="utf-8")
+        for old in sorted((d for d in DEPS.iterdir() if d.is_dir() and d != cache), key=lambda d: d.stat().st_mtime)[:-2]:
+            shutil.rmtree(old, ignore_errors=True)         # keep the newest 3 entries
+    mods = tree / FRONT / "node_modules"
+    if not mods.exists():
+        _link(cache / "node_modules", mods)
+    return ""
+
+
+def run_frontend(tree: Path, files: list[str] | None = None) -> dict | None:
+    """CI's React commands here: `npm run typecheck` and `npm run test` (only `files` when given, else all).
+    {tsc: [...], vitest: [...]} like frontend_failures (vitest with each failure's section), None = cannot run."""
+    npm = shutil.which("npm")
+    if not npm or frontend_deps(tree):
+        return None
+    env = dict(os.environ, CI="1", NO_COLOR="1", FORCE_COLOR="0")
+    r = sh([npm, "run", "typecheck", "--prefix", FRONT], cwd=tree, timeout=900, env=env)
+    found = frontend_failures(r.stdout + r.stderr) or {"tsc": [], "vitest": []}
+    tsc = found["tsc"]
+    if r.returncode and not tsc:                           # tsc failed without an error line: count it, show it
+        tsc = [{"file": "", "line": 0, "code": "tsc", "message": (r.stdout + r.stderr).strip()[-400:]}]
+    rel = [f[len(FRONT) + 1:] if f.startswith(f"{FRONT}/") else f for f in files or []]
+    r = sh([npm, "run", "test", "--prefix", FRONT, "--", *rel], cwd=tree, timeout=1800, env=env)
+    out = r.stdout + r.stderr
+    tests = vitest_sections(out)
+    if r.returncode and not tests:
+        tests = [{"file": "", "test": "vitest", "section": out.strip()[-1200:]}]
+    return {"tsc": tsc, "vitest": tests}
+
+
+def _count(found: dict) -> int:
+    return len(found["tsc"]) + len(found["vitest"])
+
+
+def _near(tree: Path, path: str, line: int, around: int = 6) -> str:
+    f = tree / path
+    if not path or not f.is_file() or line < 1:
+        return ""
+    lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(f"{i + 1:5}: {lines[i]}" for i in range(max(0, line - around - 1), min(len(lines), line + around)))
+
+
+TS_SKIP = {"expect", "it", "test", "describe", "render", "within", "waitFor", "act", "toBe", "toEqual", "toContain",
+           "toMatch", "toHaveLength", "toBeTruthy", "toBeNull", "toHaveBeenCalled", "toHaveBeenCalledWith", "map",
+           "filter", "find", "some", "every", "push", "String", "Number", "Array", "Object", "JSON"}
+
+
+def ts_definitions(tree: Path, section: str, limit: int = 3, max_lines: int = 30) -> list[str]:
+    """The source of the functions a failing vitest assertion calls (the failing line first): the frames point into
+    the test only, and without the function she guesses its code (seen in the second live trial)."""
+    def calls(text: str) -> list[str]:
+        return [n for n in re.findall(r"\b([A-Za-z_]\w{2,})\(", text) if n not in TS_SKIP]
+
+    def definition(name: str) -> tuple[str, list[str]] | None:
+        decl = re.compile(rf"^export\s+(?:async\s+)?(?:function\s+{re.escape(name)}\b|(?:const|let)\s+"
+                          rf"{re.escape(name)}\s*[=:])")
+        for f in src:
+            text = f.read_text(encoding="utf-8", errors="replace").splitlines()
+            start = next((i for i, ln in enumerate(text) if decl.match(ln)), None)
+            if start is None:
+                continue
+            end = start + 1
+            while end < len(text) and end - start < max_lines:
+                if text[end].startswith("}"):             # the body's closing brace ends it
+                    end += 1
+                    break
+                if text[end].strip() and not text[end][0].isspace():   # the next top-level statement
+                    break
+                end += 1
+            return f.relative_to(tree).as_posix(), [f"{i + 1:5}: {text[i]}" for i in range(start, end)]
+        return None
+
+    src = sorted(p for p in (tree / FRONT / "src").rglob("*.ts*") if ".test." not in p.name and p.suffix in (".ts", ".tsx")
+                 and "node_modules" not in p.parts) if (tree / FRONT / "src").is_dir() else []
+    lines = section.splitlines()
+    hit = [lines[i - 1] for i in range(1, len(lines)) if re.match(r"^\s*\|\s*\^", lines[i])]
+    queue, seen, out = calls("\n".join(hit)) or calls(section), set(), []
+    while queue and len(out) < limit:
+        name = queue.pop(0)
+        if name in seen:
+            continue
+        seen.add(name)
+        got = definition(name)
+        if got:
+            out.append(f"--- {got[0]} (called by the test)\n" + "\n".join(got[1]))
+            queue = calls("\n".join(got[1][1:])) + queue  # what that function calls comes next
+    return out
+
+
+def front_listing(tree: Path, found: dict, budget: int = 7000) -> str:
+    out = []
+    for e in found["tsc"][:10]:
+        out.append(f"{e['file']}({e['line']}): error {e['code']}: {e['message']}\n{_near(tree, e['file'], e['line'])}")
+    for t in found["vitest"][:4]:
+        frames = list(dict.fromkeys((_front(p), int(n)) for p, n in VFRAME.findall(t["section"])))[:3]
+        code = "\n".join([f"--- {p}\n{_near(tree, p, n)}" for p, n in frames if (tree / p).is_file()]
+                         + ts_definitions(tree, t["section"]))
+        out.append(f"vitest FAIL {t['file']} > {t['test']}\n{t['section'][:1200]}\n{code}")
+    return "\n\n".join(out)[:budget]
+
+
+NUMBERED = re.compile(r"(?m)^ *\d+: ")                     # the "   27: " the code listings put before each line
+
+
+def as_in_file(tree: Path, edit: dict) -> dict:
+    """Her 'find' as the file really has it, when she copied it with what the prompt adds around the code. Seen live:
+    '-old' / '+new' lines from the diff (5 rounds in a row) and the listing's line numbers with a shifted indent (#857,
+    5 rounds). The fixed text is used only when it names exactly one run of lines in the file (indentation aside)."""
+    f = tree / str(edit.get("file", "")).replace("\\", "/").lstrip("./")
+    find, new = str(edit.get("find", "")), str(edit.get("replace", ""))
+    if not find or not f.is_file():
+        return edit
+    text = f.read_text(encoding="utf-8", errors="replace")
+    if find in text:
+        return edit
+    lines = find.split("\n")
+    if any(ln[:1] in "+-" for ln in lines if ln) and all(ln[:1] in "+- " for ln in lines if ln):
+        lines = [ln[1:] for ln in lines if ln[:1] in "+ " and ln]          # the '+' side is what the file has now
+    elif NUMBERED.search(find):
+        lines, new = [NUMBERED.sub("", ln) for ln in lines], NUMBERED.sub("", new)
+    want = [ln.strip() for ln in lines]
+    while want and not want[-1]:
+        want.pop()
+    have = text.split("\n")
+    hits = [i for i in range(len(have) - len(want) + 1) if want and [h.strip() for h in have[i:i + len(want)]] == want]
+    if len(hits) != 1:
+        return edit
+    return {**edit, "find": "\n".join(have[hits[0]:hits[0] + len(want)]), "replace": new}
+
+
+def fix_frontend(tree: Path, asker=ask, runner=run_frontend, title: str = "", diff: str = "") -> tuple[bool, str, int]:
+    """Up to ROUNDS rounds of her edits against CI's React commands (tsc, then vitest). A round must lower the count of
+    tsc errors + failing tests and add nothing that silences an error, else it is undone and she is told why. At the
+    end the whole vitest suite runs once (a fix must not break another test). Round 0: (False, why) = it cannot run
+    here (no npm, install failed); (True, why) = it passes here, i.e. CI-only (flaky)."""
+    mods = tree / FRONT / "node_modules"
+    linked = not mods.exists()                              # the link is ours: removed again at the end
+    try:
+        found = runner(tree, None)
+        if found is None:
+            return False, "the React checks cannot run here (" + (frontend_deps(tree) or "npm failed") + ")", 0
+        if not _count(found):
+            return True, "tsc and vitest pass locally (CI-only failure)", 0
+        files = sorted({t["file"] for t in found["vitest"] if t["file"]})
+        front_diff = "".join(p for p in re.split(r"(?m)^(?=diff --git )", diff)
+                             if re.match(rf"diff --git a/{FRONT}/", p) and not FRONT_SPEC.match(
+                                 p.split(" b/", 1)[-1].split("\n", 1)[0]))
+        feedback, why, edited = "", "", False
+        for round_no in range(1, ROUNDS + 1):
+            before_n = _count(found)
+            prompt = FRONT_PROMPT.format(title=title, diff=front_diff[:4000] or "(not available)", count=before_n,
+                                         errors=front_listing(tree, found), feedback=feedback)
+            try:
+                answer = json.loads(asker(prompt))
+            except (ValueError, TypeError):
+                feedback = "\nYour last answer was not valid JSON. Answer only the JSON object.\n"
+                continue
+            edits = [as_in_file(tree, e) for e in answer.get("edits") or [] if isinstance(e, dict)] \
+                if isinstance(answer.get("edits"), list) else []
+            if any(len(SILENCE.findall(str(e.get("replace", "")))) > len(SILENCE.findall(str(e.get("find", ""))))
+                   for e in edits):
+                feedback = ("\nYour edits silenced an error (ts-ignore, ts-expect-error or any). That hides it; "
+                            "fix its cause instead.\n")
+                continue
+            paths = {str(e.get("file", "")).replace("\\", "/").lstrip("./") for e in edits}
+            before = {p: (tree / p).read_bytes() for p in paths if p and (tree / p).is_file()}
+            problems = apply_edits(tree, edits)
+            after = runner(tree, files) or found
+            if _count(after) < before_n:
+                why, feedback, found, edited = str(answer.get("why", why))[:300], "", after, True
+                files = sorted(set(files) | {t["file"] for t in after["vitest"] if t["file"]})
+                if not _count(found):
+                    break
+                feedback = (f"\nYour edits were kept: {before_n} -> {_count(found)} errors. The code above already "
+                            "includes them. Fix what is left.\n")
+                continue
+            for p, data in before.items():                  # no progress: undo this round
+                (tree / p).write_bytes(data)
+            feedback = (f"\nYour previous edits did not lower the errors ({before_n} -> {_count(after)}). "
+                        + ("Problems: " + "; ".join(problems) + ". " if problems else "") + "Try a different fix.\n")
+        else:
+            return False, why or "the React errors remain", ROUNDS
+        if not edited:
+            return False, "nothing changed", round_no
+        final = runner(tree, None)                           # the whole suite once: nothing else may break
+        if final is None or _count(final):
+            left = "; ".join([f"{e['file']}({e['line']}) {e['code']}" for e in (final or {}).get("tsc", [])] +
+                             [f"{t['file']} > {t['test']}" for t in (final or {}).get("vitest", [])])
+            return False, "after her fix the full React run fails: " + (left or "it could not run")[:300], round_no
+        return True, why, round_no
+    finally:
+        if linked:
+            _unlink(mods)
 
 
 LOCK_TOOL = "installer/star-home/pin_requirements.py"
@@ -455,7 +891,18 @@ def fix_lock(tree: Path, python: str) -> tuple[bool, str]:
 
 def rerun_failed(sha: str, number: int | None = None) -> int:
     """Run the failed jobs of this commit again; returns how many workflow runs were restarted. When GitHub refuses
-    every rerun ("cannot be retried", seen on a 4-day-old run), closing and reopening the PR starts a fresh CI run."""
+    every rerun ("cannot be retried", seen on a 4-day-old run), closing and reopening the PR starts a fresh CI run.
+    There is one CI runner: RERUNS caps the reruns of a whole run, across workers (RerunSpent when it is used up)."""
+    if not RERUNS.take():
+        raise RerunSpent(f"#{number}: this run's CI rerun is already used")
+    try:
+        return _rerun(sha, number)
+    except BaseException:
+        RERUNS.give()
+        raise
+
+
+def _rerun(sha: str, number: int | None) -> int:
     checks = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs"))["check_runs"]
     runs = {m.group(1) for c in checks if c.get("conclusion") == "failure"
             for m in [re.search(r"/runs/(\d+)/", c.get("details_url") or "")] if m}
@@ -473,6 +920,8 @@ def rerun_failed(sha: str, number: int | None = None) -> int:
             done = 1
         except RuntimeError:
             pass
+    if not done:                                   # nothing restarted: the runner is still free for another PR
+        RERUNS.give()
     return done
 
 
@@ -508,6 +957,8 @@ def sides(block: str) -> tuple[str, str, str]:
     """(PR side, ancestor, base side) of one diff3 conflict block."""
     body = block.split("\n", 1)[1].rsplit(">>>>>>> ", 1)[0]
     head, theirs = body.split("\n=======\n", 1) if "\n=======\n" in body else body.split("=======\n", 1)
+    if head.startswith("|||||||"):                     # the PR side is empty (seen: Studio #275, instance.rs)
+        head = "\n" + head
     ours, _, base = head.partition("\n|||||||")
     return ours, base.split("\n", 1)[1] if "\n" in base else "", theirs
 
@@ -562,7 +1013,26 @@ def broken(tree: Path, path: str, text: str) -> str:
     if original.returncode or check(original.stdout):
         return ""
     why = check(text)
-    return f"{tool} rejects it: {why}" if why else ""
+    if why:
+        return f"{tool} rejects it: {why}"
+    twice = sorted(double_uses(text) - double_uses(original.stdout)) if tool == "rustfmt" else []
+    return f"it imports {', '.join(twice[:4])} twice (`use` lines of both sides kept)" if twice else ""
+
+
+USE = re.compile(r"^((?:#\[cfg\([^\n]*\)\]\n)?)(?:pub(?:\([\w:]+\))?\s+)?use\s+([^;]+);", re.M)
+
+
+def double_uses(text: str) -> set[str]:
+    """Names a file's top-level `use` lines bring in more than once (rustc E0252), counted per `#[cfg(...)]`; an
+    unconditional one clashes with every cfg. Seen in Studio #210: the PR's `pub use game::{.., Game, ..}` and main's
+    `#[cfg(feature = "presentation")] pub use game::{FrameOutput, Game}` both kept."""
+    seen: dict[str, list[str]] = {}
+    for m in USE.finditer(text):
+        for leaf in re.split(r"[{},]", m.group(2)):
+            name = re.split(r"\s+as\s+", leaf.strip())[-1].rsplit("::", 1)[-1].strip()
+            if name and name not in ("*", "self", "super", "crate", "_"):
+                seen.setdefault(name, []).append(m.group(1).strip())
+    return {n for n, cfgs in seen.items() if len(cfgs) > 1 and ("" in cfgs or len(set(cfgs)) < len(cfgs))}
 
 
 def tidy(tree: Path, path: str, text: str) -> str:
@@ -588,15 +1058,39 @@ def tidy(tree: Path, path: str, text: str) -> str:
 BRACKETED = re.compile(r"\.(rs|py|ts|tsx|js|jsx|wgsl|cs|java|kt|go|c|h|cc|cpp|hpp|json|lua|luau)$")
 
 
-def balance(text: str) -> tuple[int, int, int]:
-    return text.count("{") - text.count("}"), text.count("(") - text.count(")"), text.count("[") - text.count("]")
+_C_LIKE = r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"'
+LITERALS = {   # comments, strings and char literals per language: brackets inside them are not code
+    "rs": re.compile(r'//[^\n]*|/\*.*?\*/|(?<![\w])b?r(#*)".*?"\1|b?"(?:\\.|[^"\\])*"'
+                     r"|b?'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{2}|.)|[^\\'\n])'", re.S),  # 'a alone: lifetime
+    "py": re.compile(r'#[^\n]*|(?i:[rbuf]{0,2})(?:"""(?:\\.|.)*?"""|\'\'\'(?:\\.|.)*?\'\'\''
+                     r'|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\')', re.S),
+    "js": re.compile(_C_LIKE + r"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`", re.S),
+    "c": re.compile(_C_LIKE + r"|'(?:\\.|[^'\\\n])*'|`[^`]*`", re.S),            # (go: `raw strings`)
+    "lua": re.compile(r'--\[(=*)\[.*?\]\1\]|--[^\n]*|\[(=*)\[.*?\]\2\]|"(?:\\.|[^"\\\n])*"'
+                      r"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`", re.S),
+    "json": re.compile(r'"(?:\\.|[^"\\\n])*"'),
+}
+LANG = {"rs": "rs", "py": "py", "ts": "js", "tsx": "js", "js": "js", "jsx": "js", "lua": "lua", "luau": "lua",
+        "json": "json", "wgsl": "c", "cs": "c", "java": "c", "kt": "c", "go": "c", "c": "c", "h": "c", "cc": "c",
+        "cpp": "c", "hpp": "c"}
+
+
+def balance(text: str, path: str = "") -> tuple[int, int, int]:
+    """Open minus closed {}, () and [] in the code of `text`: brackets in comments, strings and char literals do not
+    count (seen in Studio: Lua source inside Rust raw strings, '{' char literals, `(` in doc comments). A literal the
+    text cuts off (a block that starts or ends inside a string) simply counts as code, the same for every side."""
+    lexer = LITERALS.get(LANG.get(path.rsplit(".", 1)[-1].lower(), ""))
+    code = lexer.sub(" ", text) if lexer else text
+    return code.count("{") - code.count("}"), code.count("(") - code.count(")"), code.count("[") - code.count("]")
 
 
 def slips(path: str, block: str, new: str, before: str = "", after: str = "") -> str:
     r"""Mistakes a merge of two sides never needs: the line just outside the block repeated inside it (seen: a doubled
     `data:BootData` field in #853), brackets that no longer balance the way BOTH sides do (seen: a lost closing brace
-    of an impl), and escape sequences turned into real characters (seen: a Rust \n became a line break)."""
-    ours, _, theirs = sides(block)
+    of an impl), any other real line copied from the code shown around the block (seen in Studio #210: her answer to
+    a doc-comment conflict went on with the file's `pub use` lines, which then stood twice), and escape sequences
+    turned into real characters (seen: a Rust \n became a line break)."""
+    ours, base, theirs = sides(block)
     lines = [ln for ln in new.splitlines() if ln.strip()]
     edge = [(lines[:1], before.rstrip("\n").rsplit("\n", 1)[-1], "before"),
             (lines[-1:], after.lstrip("\n").split("\n", 1)[0], "after")]
@@ -605,13 +1099,71 @@ def slips(path: str, block: str, new: str, before: str = "", after: str = "") ->
                 {ln.strip() for ln in (ours + "\n" + theirs).splitlines()}:
             return (f"Your text repeats the line just {where} the conflict ({outside.strip()[:80]}), which stays in "
                     "the file anyway. Give only what replaces the lines between the markers.\n")
-    if BRACKETED.search(path) and balance(ours) == balance(theirs) != balance(new):
-        return ("Your text does not open and close {}, () and [] the way both sides do (each side: "
-                f"{balance(ours)}, yours: {balance(new)}). Keep every bracket the sides have.\n")
+    inside = {ln.strip() for ln in (ours + "\n" + base + "\n" + theirs).splitlines()}
+    around = {ln.strip() for ln in (before + "\n" + after).splitlines()} - inside
+    copied = [x for x in (ln.strip() for ln in lines) if x in around and len(x) >= 12 and re.search(r"\w", x)]
+    if copied:
+        return (f"Your text copies a line from outside the conflict ({copied[0][:80]}), which stays in the file "
+                "anyway. Give only what replaces the lines between the markers, merged from the two sides.\n")
+    for lang in (path, ""):                     # the code's brackets; all of them when the sides only agree on that
+        if BRACKETED.search(path) and balance(ours, lang) == balance(theirs, lang):
+            if balance(new, lang) != balance(ours, lang):
+                return ("Your text does not open and close {}, () and [] the way both sides do (each side: "
+                        f"{balance(ours, lang)}, yours: {balance(new, lang)}). Keep every bracket the sides have; "
+                        "brackets that open in the conflict may close after it (and the other way round).\n")
+            break
     if new.count("\\") < min(ours.count("\\"), theirs.count("\\")):
         return (r"You turned escape sequences such as \n into real characters. Inside the JSON string write a "
                 r"backslash as \\ so the code keeps \n, \t and \" exactly as the sides have them." "\n")
     return ""
+
+
+MARKER = re.compile(r"^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)( |$)")
+USE_BRACE = re.compile(r"\b(use\s+[\w:]*\w)\{")     # `use api{`: never Rust; she writes it for `use api::{`
+
+
+def echoed(new: str, block: str, before: str, after: str, path: str = "") -> str:
+    """Her answer without the lines she copied from just outside the block, which stay in the file anyway (seen in
+    Studio #421 and #255: the merged block followed by the rest of the statement after it, so the brackets that close
+    after the block closed twice). Only an exact copy is cut, and only one with a real line that is in neither side;
+    `use api{` (never Rust; she writes it for `use api::{`, seen in #317, #245, #421, #210) gets its `::` back."""
+    ours, base, theirs = sides(block)
+    inside = {ln.strip() for ln in (ours + "\n" + base + "\n" + theirs).splitlines()}
+    real = re.compile(r"\w")
+    lines = new.splitlines(keepends=True)
+    tail = after.split("\n")
+    for i in range(len(lines)):                      # earliest i: everything from lines[i] on is the start of `after`
+        rest = [ln.strip() for ln in lines[i:]]
+        if len(rest) > len(tail) or not any(real.search(x) and x not in inside for x in rest):
+            continue
+        if i and all(x == tail[k].strip() for k, x in enumerate(rest[:-1])) and \
+                tail[len(rest) - 1].strip().startswith(rest[-1]):          # (her last line may stop short)
+            lines = lines[:i]
+            break
+    head = before.split("\n")
+    head = head[:-1] if head and not head[-1] else head      # `before` ends with the newline of its last line
+    for i in range(len(lines), 0, -1):              # latest i: lines[:i] ends with a copy of the end of `before`
+        k = 0
+        while k < i and k < len(head) and lines[i - 1 - k].strip() == head[-1 - k].strip():
+            k += 1
+        copied = [x.strip() for x in head[len(head) - k:]] if k else []
+        if k and i < len(lines) and any(real.search(x) and x not in inside for x in copied) and \
+                (k == i or (k < len(head) and MARKER.match(head[-1 - k]))):  # (what came before: her redo of the
+            lines = lines[i:]                                               #  previous conflict, merged on its own)
+            break
+    out = "".join(lines)
+    if out.strip() and lines != new.splitlines(keepends=True):   # cut: without the blank lines she put between
+        if not (ours.startswith("\n") or theirs.startswith("\n")):  # her merge and the copy
+            out = out.lstrip("\n")
+        if not (ours.endswith("\n\n") or theirs.endswith("\n\n")):
+            out = out.rstrip("\n") + "\n"
+    if path.endswith(".rs"):
+        seen = ours + base + theirs + before + after
+        if not USE_BRACE.search(ours + base + theirs):
+            out = USE_BRACE.sub(r"\1::{", out)
+        for name in set(re.findall(r"\b(\w+)!\(", seen)) - set(re.findall(r"(?<![!\w])(\w+)\(", seen)):
+            out = re.sub(rf"(?<![\w.:]){name}\(", f"{name}!(", out)    # `assert_eq(` for `assert_eq!(` (#275)
+    return out
 
 
 WINDOW = 4096                       # litha-fast's context (prompt + answer); ~3.5 characters per token for code
@@ -661,39 +1213,62 @@ def both_added(ours: str, base: str, theirs: str, docs: bool) -> str | None:
     return "".join(out)
 
 
-def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") -> tuple[str | None, str]:
+def mechanical(path: str, block: str, before: str, after: str) -> str | None:
+    """The block's merge when it needs no judgement (diff3 blocks only), else None: both sides only added at an empty
+    ancestor (both kept, as written), one side only added next to what the other changed, or both only inserted."""
+    if "\n|||||||" not in block:
+        return None
+    ours, base, theirs = sides(block)
+    union = ours.rstrip("\n") + "\n" + theirs if ours.strip() and theirs.strip() else ""
+    if not base.strip() and union and not slips(path, block, union, before, after):
+        return union
+    near = adjacent(ours, base, theirs)
+    if near is None:
+        near = both_added(ours, base, theirs, docs=path.endswith((".md", ".txt", ".rst")))
+    return near if near is not None and not slips(path, block, near, before, after) else None
+
+
+def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
+                 keep: bool = False) -> tuple[str | None, str]:
     """Every conflict block of one file resolved by her; (None, why) when she cannot make valid code of it. A hint is a
-    checker's complaint about her previous attempt at this file."""
+    checker's complaint about her previous attempt at this file; with it she redoes every block, or with keep only the
+    blocks she answered (the mechanical merges stay). The 1-8 limit counts only the blocks she is asked
+    about: Studio's #412 had 9 blocks in instance.rs, most of them mechanical."""
     blocks = list(CONFLICT.finditer(text))
-    if not blocks or len(blocks) > 8:
-        return None, f"{path}: {len(blocks)} conflict blocks (1-8 handled)"
+    if not blocks:
+        return None, (f"{path}: git marked no conflict lines in it (deleted on one side and changed on the other, "
+                      "a rename, or a binary file)")
+    around = [(text[max(0, m.start() - 1500):m.start()].split("\n", 1)[-1],
+               text[m.end():m.end() + 1500].rsplit("\n", 1)[0]) for m in blocks]
+    plan = [None if hint and not keep else mechanical(path, m.group(0), *around[k]) for k, m in enumerate(blocks)]
+    asks = sum(p is None for p in plan)
+    if asks > 8:
+        return None, f"{path}: {asks} of {len(blocks)} conflict blocks need her (1-8 handled)"
     out, last, feedback = [], 0, hint
     for i, m in enumerate(blocks, 1):
-        before = text[max(0, m.start() - 1500):m.start()].split("\n", 1)[-1]
-        after = text[m.end():m.end() + 1500].rsplit("\n", 1)[0]
+        before, after = around[i - 1]
+        if plan[i - 1] is not None:
+            out += [text[last:m.start()], plan[i - 1]]
+            last = m.end()
+            continue
         ours, base, theirs = sides(m.group(0))
-        union = ours.rstrip("\n") + "\n" + theirs if ours.strip() and theirs.strip() else ""
-        if not hint and "\n|||||||" in m.group(0) and not base.strip() and union \
-                and not slips(path, m.group(0), union, before, after):
-            out += [text[last:m.start()], union]       # both sides only ADDED here: keep both, exactly as written
-            last = m.end()
-            continue
-        near = adjacent(ours, base, theirs) if not hint and "\n|||||||" in m.group(0) else None
-        if near is None and not hint and "\n|||||||" in m.group(0):
-            near = both_added(ours, base, theirs, docs=path.endswith((".md", ".txt", ".rst")))
-        if near is not None and not slips(path, m.group(0), near, before, after):
-            out += [text[last:m.start()], near]        # one side only added next to what the other changed
-            last = m.end()
-            continue
+        if base.strip() and (not ours.strip()) != (not theirs.strip()) and base not in (ours, theirs):
+            gone, kept = (("the PR", BASE) if not ours.strip() else (BASE, "the PR"))
+            return None, (f"{path}: conflict {i}: {gone} deleted these lines and {kept} changed them; where that code "
+                          "went is a person's call")
+        shown = before, after
         need = (len(MERGE_PROMPT) + len(before) + len(m.group(0)) + len(after) + len(ours) + len(theirs)) / 3.5
-        if need > WINDOW:                              # it cannot fit her model's context: say so, do not burn tries
+        if need > WINDOW:                              # less of the code around it, then give up (do not burn tries)
+            shown = before[-300:].split("\n", 1)[-1], after[:300].rsplit("\n", 1)[0]
+            need -= (len(before) + len(after) - len(shown[0]) - len(shown[1])) / 3.5
+        if need > WINDOW:
             return None, f"{path}: conflict {i} is too big for her {WINDOW}-token window (~{need:.0f} tokens)"
         for _ in range(3):
             try:
                 ans = json.loads(asker(MERGE_PROMPT.format(repo=REPO, base=BASE, title=title, path=path, i=i,
                                                            n=len(blocks), feedback=feedback,
-                                                           context=before + m.group(0) + after)))
-                new = str(ans["resolved"])
+                                                           context=shown[0] + m.group(0) + shown[1])))
+                new = echoed(str(ans["resolved"]), m.group(0), before, after, path)
             except (ValueError, TypeError, KeyError):
                 feedback = "Your last answer was not valid JSON with a \"resolved\" string.\n"
                 continue
@@ -714,6 +1289,34 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") ->
         out += [text[last:m.start()], new if new.endswith("\n") or not new else new + "\n"]
         last, feedback = m.end(), hint
     return "".join(out) + text[last:], ""
+
+
+def merge_file(tree: Path, path: str, raw: str, title: str, asker=ask) -> tuple[str | None, str]:
+    """One conflicted file merged and parsed; when a checker rejects it she tries again, told why: first only the
+    blocks she answered (the mechanical merges stay; seen in Studio #208, where redoing all 6 blocks failed on one git
+    could merge), then every block."""
+    merged, why = resolve_text(path, raw, title, asker)
+    why = why or broken(tree, path, merged or "")
+    for keep in (True, False) if merged is not None and why else ():
+        merged, why = resolve_text(path, raw, title, asker, keep=keep,
+                                   hint=f"Your previous merge of this file was rejected: {why[:400]}\n")
+        why = why or broken(tree, path, merged or "")
+        if merged is not None and not why:
+            break
+    return merged, why
+
+
+def deleted_side(tree: Path, path: str) -> str:
+    """'' unless git's conflict on this file is modify/delete (seen: Studio main split classes.rs into classes/ while
+    #421 and #275 changed classes.rs). There is no block to merge: the change has to go where the code now lives."""
+    stages = {ln.split()[2] for ln in sh(["git", "ls-files", "-u", "--", path], cwd=tree).stdout.splitlines()
+              if len(ln.split()) >= 4}
+    if not stages or {"2", "3"} <= stages:
+        return ""
+    if "3" not in stages:
+        return (f"{path}: deleted on {BASE} and changed by this PR (modify/delete); the PR's change has to be "
+                f"redone where {BASE} moved that code, a person's call")
+    return f"{path}: deleted by this PR and changed on {BASE} (modify/delete); a person's call"
 
 
 def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
@@ -744,13 +1347,12 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     tests: set[str] = set()
     raws: dict[str, str] = {}                          # each file with its conflict markers, to redo a merge
     for c in code:
+        why = deleted_side(tree, c)
+        if why:
+            sh(["git", "merge", "--abort"], cwd=tree)
+            return {"pr": number, "result": "failed", "why": why}
         raw = raws[c] = (tree / c).read_text(encoding="utf-8", errors="replace")
-        merged, why = resolve_text(c, raw, pr.get("title", ""), asker)
-        why = why or broken(tree, c, merged or "")
-        if merged is not None and why:                     # one more try at the file, told what the checker said
-            merged, why = resolve_text(c, raw, pr.get("title", ""), asker,
-                                       hint=f"Your previous merge of this file was rejected: {why[:400]}\n")
-            why = why or broken(tree, c, merged or "")
+        merged, why = merge_file(tree, c, raw, pr.get("title", ""), asker)
         if merged is None or why:
             sh(["git", "merge", "--abort"], cwd=tree)
             return {"pr": number, "result": "failed", "why": why if why.startswith(c) else f"{c}: {why}"}
@@ -862,7 +1464,11 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
     typing = None if found or fails or linting else TYPE_CI.search(log)   # fails the same every run: fix, no rerun
     ci_types = ("new pyright errors: " + " | ".join(re.findall(r"\S+\.py:\d+: [^\n]*", typing.group(1)))[:300]
                 if typing else "")
-    if not found and not fails and not linting and not typing:   # timeout, lost runner, setup (seen: #700 died after 9 h): one rerun
+    react = None if found or fails or linting or typing or not REACT_CI.search(log) else frontend_failures(log)
+    ci_react = ("React UI fails: " + " | ".join(
+        [f"{e['file']}({e['line']}): {e['code']} {e['message']}" for e in react["tsc"][:3]] +
+        [f"FAIL {t['file']} > {t['test']}" for t in react["vitest"][:3]]))[:300] if react else ""
+    if not found and not fails and not linting and not typing and not react:   # timeout, lost runner, setup (seen: #700 died after 9 h): one rerun
         return {"pr": number, "result": "flaky-rerun",
                 "why": f"no test or lint failure in the failed logs; reran {rerun_failed(sha, number)} failed run(s) once"}
     day = dt.date.today().strftime("%Y%m%d")
@@ -902,6 +1508,15 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
         if round_no == 0:                                   # cannot check it here: report what CI said
             return {"pr": number, "result": "failed", "kind": "types", "why": f"{ci_types} ({why})"}
         tests = ["pyright baseline gate"]
+    elif react:
+        diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
+        ok, why, round_no = fix_frontend(tree, asker, title=pr.get("title", ""), diff=diff)
+        if round_no == 0 and ok:                            # passes here: flaky (vitest under load), one rerun
+            return {"pr": number, "result": "flaky-rerun", "kind": "frontend",
+                    "why": f"{why}; reran {rerun_failed(sha, number)} failed run(s) once"}
+        if round_no == 0:                                   # cannot run it here: report what CI said, no rerun
+            return {"pr": number, "result": "failed", "kind": "frontend", "why": f"{ci_react} ({why})"}
+        tests = ["tsc", "vitest"]
     else:
         diff = gh("pr", "diff", str(number), "--repo", REPO, timeout=300)
         ok, why, round_no = repair(tree, pr.get("title", ""), fails, out, tests, python, asker, diff)
@@ -974,9 +1589,95 @@ def fix_rust(pr: dict, log: str, dry: bool = False, asker=ask) -> dict:
     return row
 
 
-def others(python: str, limit: int, dry: bool = False) -> int:
+class RerunSpent(Exception):
+    """This run's CI rerun is used: the PR is left untouched (not marked tried) for the next run."""
+
+
+class Budget:
+    """A count shared by all workers; None = no limit."""
+
+    def __init__(self, left: int | None = None):
+        self.left, self.lock = left, threading.Lock()
+
+    def set(self, left: int | None) -> None:
+        with self.lock:
+            self.left = left
+
+    def take(self) -> bool:
+        with self.lock:
+            if self.left is None:
+                return True
+            if self.left <= 0:
+                return False
+            self.left -= 1
+            return True
+
+    def give(self) -> None:
+        with self.lock:
+            if self.left is not None:
+                self.left += 1
+
+
+RERUNS = Budget()                    # main() sets 1 per run: one CI runner
+LOGGED = threading.Lock()            # one fixes.jsonl row + its printed line at a time
+WORKERS_AWAY, WORKERS_ACTIVE = 3, 1  # PRs at once: the owner away (no input for 10 min) / at the PC
+
+
+def workers() -> int:
+    return WORKERS_AWAY if rust_fix.away() else WORKERS_ACTIVE
+
+
+def log_row(t: float, row: dict) -> None:
+    line = json.dumps({"ts": round(t), **row})
+    with LOGGED:
+        with LOG.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        print(json.dumps(row), flush=True)
+
+
+def pool(items: list, work, n: int, limit: int) -> list[dict]:
+    """work(item) on up to n threads, in the items' order. work returns None (not a candidate, or deferred) or
+    (row, counts). An item starts only while counted + running < limit, so a run never counts more than `limit` PRs,
+    as the serial loop did; with n=1 it IS the serial loop. Each item is taken once: no PR gets two workers."""
+    todo, rows = iter(items), []
+    cond = threading.Condition()
+    state = {"counted": 0, "running": 0}
+
+    def worker() -> None:
+        while True:
+            with cond:
+                while state["counted"] + state["running"] >= limit and state["running"]:
+                    cond.wait()
+                item = next(todo, None) if state["counted"] < limit else None
+                if item is None:
+                    cond.notify_all()
+                    return
+                state["running"] += 1
+            got = None
+            try:
+                got = work(item)
+            except Exception as e:  # noqa: BLE001 - work logs its own errors; a worker must never hang the run
+                print(f"worker error: {str(e)[:300]}", flush=True)
+            finally:
+                with cond:
+                    state["running"] -= 1
+                    if got is not None:
+                        rows.append(got[0])
+                        state["counted"] += bool(got[1])
+                    cond.notify_all()
+
+    threads = [threading.Thread(target=worker, name=f"litha-pr-{i}") for i in range(max(1, min(n, limit)))]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    return rows
+
+
+def others(python: str, limit: int, dry: bool = False, n: int = 1) -> int:
     """The owner's other repos with a local clone (repos.json "clone", mode merge): she resolves conflicting PRs on
-    her own branch, and reruns a failed check once per head (flaky runners). Their CI and her merger's review decide."""
+    her own branch, and reruns a failed check once per head (flaky runners). Their CI and her merger's review decide.
+    Up to n resolves / repairs of one repo run at once; cargo stays one build at a time (rust_fix.BUILD)."""
     global REPO, BASE, CLONE, WORK
     from litha import pr_merger
     lock = STATE.parent / "others.lock"           # cargo builds take minutes: never two runs in the same worktrees
@@ -989,6 +1690,21 @@ def others(python: str, limit: int, dry: bool = False) -> int:
         lock.touch()                              # a run that died over 2 h ago: take over
     home = (REPO, BASE, CLONE, WORK, pr_merger.REPO, pr_merger.BASE)
     tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
+
+    def finish(repo: str, key: str, pr: dict, t: float, row: dict) -> None:
+        row = {"repo": repo, **row, "seconds": round(time.time() - t)}
+        if not dry:                               # a dry run must not use up the real attempt
+            mark(key, pr["headRefOid"])
+        log_row(t, row)
+
+    def job(repo: str, key: str, pr: dict, fn, *args) -> None:
+        t = time.time()
+        try:
+            row = fn(*args)
+        except Exception as e:  # noqa: BLE001 - one PR must not stop the others
+            row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
+        finish(repo, key, pr, t, row)
+
     try:
         for entry in json.loads(pr_merger.REPOS.read_text(encoding="utf-8"))["repos"][1:]:
             if entry.get("mode") != "merge" or not entry.get("clone"):
@@ -1004,119 +1720,120 @@ def others(python: str, limit: int, dry: bool = False) -> int:
             prs = open_prs()
             busy = {m.group(1) for p in prs for m in [re.match(r"litha/merge-(\d+)-", p.get("headRefName", ""))] if m}
             done = reruns = repairs = 0
-            for pr in prs:
-                key = f"{REPO}#{pr['number']}"
-                if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(key) == pr["headRefOid"]:
-                    continue
-                if pr.get("mergeable") == "CONFLICTING" and done < most and str(pr["number"]) not in busy \
-                        and not str(pr.get("headRefName", "")).startswith("litha/"):
-                    t = time.time()
-                    try:
-                        row = resolve(pr, python, dry)
-                    except Exception as e:  # noqa: BLE001 - one PR must not stop the others
-                        row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
-                    done += 1
-                elif pr.get("mergeable") == "MERGEABLE" and (reruns < 3 or repairs < builds):
-                    checks = head_checks(pr["headRefOid"])
-                    if not any(c["conclusion"] == "FAILURE" for c in checks) or \
-                            any(c["status"] != "completed" for c in checks):
+            # the globals above stay fixed until every job of this repo is finished (the with-block waits)
+            with ThreadPoolExecutor(max_workers=max(1, n), thread_name_prefix="litha-other") as ex:
+                for pr in prs:
+                    key = f"{REPO}#{pr['number']}"
+                    if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(key) == pr["headRefOid"]:
                         continue
-                    t = time.time()
-                    log = failed_logs(pr["headRefOid"])
-                    if rust_fix.checks(log) and (rust_fix.errors(log) or "Diff in " in log):
-                        if repairs >= builds:             # 1 build per repo per run (2 at night): cargo is slow
+                    if pr.get("mergeable") == "CONFLICTING" and done < most and str(pr["number"]) not in busy \
+                            and not str(pr.get("headRefName", "")).startswith("litha/"):
+                        ex.submit(job, REPO, key, pr, resolve, pr, python, dry)
+                        done += 1
+                    elif pr.get("mergeable") == "MERGEABLE" and (reruns < 3 or repairs < builds):
+                        checks = head_checks(pr["headRefOid"])
+                        if not any(c["conclusion"] == "FAILURE" for c in checks) or \
+                                any(c["status"] != "completed" for c in checks):
                             continue
-                        try:
-                            row = fix_rust(pr, log, dry)
-                        except Exception as e:  # noqa: BLE001 - one PR must not stop the others
-                            row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
-                        repairs += 1
-                    elif reruns < 3:
-                        row = {"pr": pr["number"], "result": "flaky-rerun",
-                               "why": f"reran {0 if dry else rerun_failed(pr['headRefOid'], pr['number'])} failed "
-                                      "run(s) once for this head"}
-                        reruns += 1
-                    else:
-                        continue
-                else:
-                    continue
-                row = {"repo": REPO, **row, "seconds": round(time.time() - t)}
-                if not dry:                               # a dry run must not use up the real attempt
-                    tried = mark(key, pr["headRefOid"])
-                with LOG.open("a", encoding="utf-8") as f:
-                    f.write(json.dumps({"ts": round(t), **row}) + "\n")
-                print(json.dumps(row), flush=True)
+                        t = time.time()
+                        log = failed_logs(pr["headRefOid"])
+                        if rust_fix.checks(log) and (rust_fix.errors(log) or "Diff in " in log):
+                            if repairs >= builds:             # 1 build per repo per run (2 at night): cargo is slow
+                                continue
+                            ex.submit(job, REPO, key, pr, fix_rust, pr, log, dry)
+                            repairs += 1
+                        elif reruns < 3:
+                            finish(REPO, key, pr, t, {
+                                "pr": pr["number"], "result": "flaky-rerun",
+                                "why": f"reran {0 if dry else rerun_failed(pr['headRefOid'], pr['number'])} failed "
+                                       "run(s) once for this head"})
+                            reruns += 1
     finally:
         REPO, BASE, CLONE, WORK, pr_merger.REPO, pr_merger.BASE = home
         lock.unlink(missing_ok=True)
     return 0
 
 
+COUNTED = ("fixed", "failed", "error", "rerun", "flaky-rerun")   # a skip does not use up a PR of the run
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m litha.pr_fixer")
     ap.add_argument("--pr", type=int)
-    ap.add_argument("--max", type=int, default=1, help="PRs to work on per run")
+    ap.add_argument("--max", type=int, help="PRs to work on per run (default: one per worker)")
+    ap.add_argument("--workers", type=int, help="PRs at the same time (default: 3 when the owner is away, else 1)")
     ap.add_argument("--dry", action="store_true", help="fix and test locally, do not commit or push")
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--others", type=int, metavar="N", help="instead: resolve up to N conflicting PRs per other repo")
     a = ap.parse_args(argv)
     STATE.parent.mkdir(parents=True, exist_ok=True)
+    n = max(1, a.workers or workers())
     if a.others is not None:
-        return others(a.python, a.others, a.dry)
+        return others(a.python, a.others, a.dry, n)
+    most = a.max if a.max is not None else n
     tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
-    done = 0
     from litha.pr_merger import HUNTED
     hunted = json.loads(HUNTED.read_text(encoding="utf-8")) if HUNTED.exists() else {}
-    for pr in open_prs(a.pr):                           # first: bugs her review proved -> her fix with her test
-        item = hunted.pop(str(pr["number"]), None)
-        if done >= a.max or not item or item.get("head") != pr["headRefOid"] or not item.get("test"):
-            continue
+    hunt_lock = threading.Lock()
+    prs, jobs = open_prs(a.pr), []
+    for pr in prs:                                      # first: bugs her review proved -> her fix with her test
+        item = hunted.get(str(pr["number"]))
+        if item and item.get("head") == pr["headRefOid"] and item.get("test"):
+            jobs.append((pr, item))
+        elif item:                                      # stale proof (head moved): dropped, as before
+            hunted.pop(str(pr["number"]))
+    first = {pr["number"] for pr, _ in jobs}
+    jobs += [(pr, None) for pr in prs if pr["number"] not in first]     # each PR once: never two workers on one PR
+
+    def work(job: tuple) -> tuple[dict, bool] | None:
+        pr, item = job
         t = time.time()
-        try:
-            row = fix(pr, a.python, a.dry, found=item)
-        except Exception as e:  # noqa: BLE001 - one PR must not stop the others
-            row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
-        row["seconds"], row["kind"] = round(time.time() - t), "hunted"
-        HUNTED.write_text(json.dumps(hunted), encoding="utf-8")
-        with LOG.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"ts": round(t), **row}) + "\n")
-        print(json.dumps(row), flush=True)
-        done += 1
-    for pr in open_prs(a.pr):
-        if done >= a.max:
-            break
+        if item:
+            try:
+                row = fix(pr, a.python, a.dry, found=item)
+            except Exception as e:  # noqa: BLE001 - one PR must not stop the others
+                row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
+            row["seconds"], row["kind"] = round(time.time() - t), "hunted"
+            with hunt_lock:
+                hunted.pop(str(pr["number"]), None)
+                write_atomic(HUNTED, json.dumps(hunted))
+            log_row(t, row)
+            return row, True
         if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(str(pr["number"])) == pr["headRefOid"]:
-            continue
+            return None
         if pr.get("mergeable") == "CONFLICTING" and not str(pr.get("headRefName", "")).startswith("litha/"):
-            t = time.time()
             try:
                 row = resolve(pr, a.python, a.dry)
             except Exception as e:  # noqa: BLE001 - one PR must not stop the others
                 row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
             row["seconds"] = round(time.time() - t)
-            tried = mark(str(pr["number"]), pr["headRefOid"])
-            with LOG.open("a", encoding="utf-8") as f:
-                f.write(json.dumps({"ts": round(t), **row}) + "\n")
-            print(json.dumps(row), flush=True)
-            done += 1
-            continue
+            mark(str(pr["number"]), pr["headRefOid"])
+            log_row(t, row)
+            return row, True
         if pr.get("mergeable") != "MERGEABLE":                 # her own branches too: flaky reruns
-            continue
+            return None
         checks = head_checks(pr["headRefOid"])
         if not any(c["conclusion"] == "FAILURE" for c in checks) or any(c["status"] != "completed" for c in checks):
-            continue
+            return None
         t = time.time()
         try:
             row = fix(pr, a.python, a.dry)
+        except RerunSpent as e:           # another worker used the run's one CI rerun: next run, untouched
+            print(json.dumps({"pr": pr["number"], "result": "deferred", "why": str(e)}), flush=True)
+            return None
         except Exception as e:  # noqa: BLE001 - one PR must not stop the others
             row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
         row["seconds"] = round(time.time() - t)
         if row["result"] != "rerun":      # a rerun is looked at again once its fresh log exists
-            tried = mark(str(pr["number"]), pr["headRefOid"])
-        with LOG.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": round(t), **row}) + "\n")
-        print(json.dumps(row), flush=True)
-        done += row["result"] in ("fixed", "failed", "error", "rerun", "flaky-rerun")   # one CI rerun per run
+            mark(str(pr["number"]), pr["headRefOid"])
+        log_row(t, row)
+        return row, row["result"] in COUNTED
+
+    RERUNS.set(1)                         # one CI runner: one rerun per run, whatever the number of workers
+    try:
+        pool(jobs, work, n, most)
+    finally:
+        RERUNS.set(None)
     return 0
 
 

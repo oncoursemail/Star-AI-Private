@@ -16,9 +16,11 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import threading
 
 ROUNDS = 4
 JOBS = "4"                                   # a third of this PC's 12 threads: the owner keeps working meanwhile
+BUILD = threading.RLock()                    # cargo runs one at a time, however many PRs she works on at once
 
 
 def away(minutes: float = 10) -> bool:
@@ -101,8 +103,9 @@ def run(tree: Path, args: list[str], timeout: float = 2400) -> tuple[bool, str]:
     extra = ["-j", jobs()] if args[0] in ("test", "build", "check", "clippy") and not own else []
     cmd = [cargo(), *head.split(), *extra, *(["--", *tail.split()] if tail else [])]
     try:
-        r = subprocess.run(cmd, cwd=tree, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           timeout=timeout, env=env)
+        with BUILD:
+            r = subprocess.run(cmd, cwd=tree, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return False, f"timed out after {timeout:.0f} s: cargo {' '.join(args)}"
     return r.returncode == 0, (r.stdout + r.stderr)[-12000:]

@@ -9,7 +9,7 @@ anything here; every rule below exists because a measured run needed it.
 
 | File | Job | Runs |
 |---|---|---|
-| `pr_fixer.py` | failing PR -> CI log -> her edits -> failing test files pass locally -> her own branch + PR | task "Litha PR merger", every 30 min, 1 PR per run |
+| `pr_fixer.py` | failing PR -> CI log -> her edits -> failing test files pass locally -> her own branch + PR | task "Litha PR merger", every 10 min, 1 PR per run (3 at once when the owner is away, 4f) |
 | `pr_merger.py` | open PRs into `star/next`: hard gates, her review, proofs, merge | same task, after the fixer |
 | `bug_proof.py` | a blocking claim must be shown by a test that fails after the PR and passes before it | called by the merger |
 | `bug_hunt.py` | last look before a merge: she reads each changed function alone and names a bug; kept only if `bug_proof` proves it | called by the merger |
@@ -88,7 +88,8 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
    compare the claim with the PR body before holding.
 3. **Multi-line bugs** in the bench (swallowed exception, wrong variable, missing `await`): mutate an AST node,
    not a line regex.
-4. **Pyright / vitest / tsc failures for the fixer**. Pyright: DONE 2026-11-02 (`fix_types`, see 4d). Left: vitest/tsc.
+4. **Pyright / vitest / tsc failures for the fixer**. Pyright: DONE 2026-11-02 (`fix_types`, see 4d). tsc/vitest:
+   DONE 2026-11-02 (`fix_frontend`, see 4e).
 5. **Gate the nightly adapter on the bench**: the nightly gate (server/training/nightly, PR #847) scores
    game-building answers only. Before `auto_deploy`, serve the candidate adapter and run
    `bug_bench run --n 10 --seed <held-out>` against it; ship only if the solved count does not drop.
@@ -164,6 +165,28 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   error. Fixed; she is also shown where each name in the errors is declared (with its `#[cfg]`), the crate's
   `[features]` and the exact checks, plus one rule (gate the test, never the library). Dry run: 1 round, all 5 checks
   green, `#![cfg(feature = "presentation")]` on `camera_api.rs`.
+- Refusals re-checked (2026-11-02, measured): her log had 21 bracket refusals, 4 block-count and 3 too-big ones on
+  Studio. Reproduced on the 9 still-open PRs behind them (#174 #208 #210 #239 #255 #275 #401 #412 #421, each head
+  merged with main 78523c4 in diff3 style): 41 conflicted files. Before: 25 resolved, 16 refused, and 1 of the 25 was
+  wrong (#412 physics: `fn refresh_collisions` twice and an empty `add_entry`; rustfmt passes that, only cargo would
+  have stopped it). No bracket refusal had rejected a good answer: each time her answer went on with the code after
+  the block, or redid the blocks before it. Counting brackets outside strings, comments and char literals let one of
+  those through (#210, its `pub use` lines twice), so a line copied from the code around the block is now refused by
+  name. Also new: an exact copy of the lines just outside the block is cut instead of held against her; `use api{`
+  (24 of her 118 Rust answers) gets its `::` back and `assert_eq(` its `!` when the code only uses the macro; an
+  empty PR side is read as empty (it was read as the ancestor: #275's false "dropped row |"); code one side deleted
+  and the other changed is a person's call, said so without asking her (#401 and #210 game.rs);
+  modify/delete files say so (classes.rs, split into `classes/` on main); the 1-8 limit counts only the blocks she
+  is asked about; a too-big block is shown with 300 instead of 1500 characters around it before it is refused; a
+  file a checker rejects is redone with the mechanical merges kept first (#208 had failed redoing a block git
+  merged); a merged .rs that imports a name twice is rejected (rustc E0252). After, same files and her same answers
+  (replayed by prompt; 27 new asks where the prompt changed): 25 resolved, 16 refused, 0 wrong found. New: #421
+  `metallic_script/src/lib.rs`; gone: the wrong #412 merge. Checked: rustfmt parses all 25, a duplicated/lost-line
+  scan against both sides on all, every block that changed read by hand, `cargo check -p metallic_core
+  --all-targets` for #174 (the only crate whose conflicts all resolve). Not checked: cargo for the other crates
+  (other conflicted files in them stay unresolved), and no live PR yet. The 16 left: 11 are her answers (10 copy
+  code from around the block, 1 drops functions), 4 are deletions for a person (2 modify/delete, 2 blocks) and 1 is
+  still too big (#174 ARCHITECTURE.md).
 
 ## 4d. Type gate repair (2026-11-02, measured)
 
@@ -179,9 +202,102 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Live check on star/next: 339 errors, 0 above the baseline (CI's script agrees). Trial on #878 (draft, local only,
   nothing pushed): 1 round, 83 s, `created is not None and ...` narrowing; `scripts/pyright_baseline.py check` on
   the result: "none new".
+- Speed (measured 2026-11-02 on this branch): a full run is 51 s (717 files), the 3 files with the most baseline
+  errors together 4.1 s, one file 4.0 s, all 77 files with errors 17 s, with exactly the full run's file/rule counts.
+  So after the first full run a round re-checks only the files above the baseline (probed once against the full run;
+  if they differ every round is a full run), and a full run decides whenever they reach zero, so a fix that adds
+  errors elsewhere is still caught. A round that does not finish costs ~4 s instead of ~50 s.
 - Also fixed: CI lints `star litha`, the fixer linted only `star`, so a ruff error in `litha/` was reported as
   "CI-only" and never fixed.
 - PRs recorded in `tried.json` as type failures before this change are retried only when their head moves.
+
+## 4e. React UI repair (2026-11-02, measured)
+
+- Why: a red "React UI compile and tests" check (tsc + vitest in `frontend/`) had no test or lint line the fixer
+  knew, so it was treated as flaky and rerun, and failed the same way again.
+- `fix_frontend()`: reads CI's tsc lines (`##[error]src/X.tsx(27,2): error TS2300: ...`, also the `--pretty` form) and
+  vitest `FAIL file > test` lines, then runs CI's own commands here (`npm run typecheck` / `npm run test --prefix
+  frontend`). `node_modules` comes from `~/.star/pr-fixer/frontend-deps/<hash of package.json>`: one `npm install
+  --no-audit --no-fund` (CI's command; the frontend has no lockfile) per package.json, linked in (a junction on
+  Windows) and unlinked at the end. First install 26 s; full tsc + vitest on star/next 83 s, green.
+- Each round must lower tsc errors + failing tests, else it is undone and she is told why. Refused: `@ts-ignore`,
+  `@ts-expect-error`, `@ts-nocheck`, added `any` casts, `eslint-disable`; edits to `*.test.*`, `src/test-*.ts`,
+  tsconfig, vite/vitest config, package.json, lockfiles (`FRONT_SPEC`). Rounds rerun only the failing test files;
+  at the end the whole suite runs once. Round 0: no npm / install failed -> CI's lines reported, no rerun; passes
+  here -> one rerun (flaky). She sees each error with code around it, plus the source of the exported functions the
+  failing assertion calls (one level deep).
+- Real case, star/next with two planted type errors in `activity.ts` (`.toFixed(0)` into a `number`, a `RunOutcome`
+  into the `live` boolean; also breaks one vitest test), local only, her model:
+  - first version: 5 rounds, 175 s, failed. The tsc lines were never parsed (regex bug), and every round she copied
+    the diff's `-`/`+` lines into `find`.
+  - fixed, with the PR diff: 1 round, 159 s (model 10 s), her edit is exactly star/next's code again.
+  - without a diff: 5 rounds, 148 s, failed. Round 1 cleared both tsc errors but flipped `live`, then she guessed at
+    code she was never shown. With the called functions shown: 1 round, 191 s, full suite green (`Math.round(...)`
+    and `false`; both pass every test, `false` behaves the same).
+  - `as_in_file()` now reads a `find` copied with diff markers or the listing's line numbers as the file has it, only
+    when that names exactly one run of lines.
+- Live PR #857 (only "React UI" red; dry, nothing pushed): CI's 2x TS2300 (doubled `companions?` prop from her #549
+  merge) parsed; locally there is also 1 vitest failure CI never reached (tsc stops the `&&` chain):
+  `settings-page.test.tsx`, 7 unlabelled checkboxes in Basics. 5 rounds, 264 s each try. Round 1 clears tsc (kept);
+  the test failure stays: #549 renders `props.companions` in Basics while star/next moved companions to their own
+  section, a choice for a person. She then tried the test file (refused) and invented code (undone). In `fix()`
+  #857 is skipped anyway (her own `litha/` branch: no fix on top of a fix).
+- Not verified yet: a run from the scheduled task on a real PR; the `npm run build` step (prerender scripts) is not
+  repaired, only tsc and vitest.
+
+
+## 4f. Several PRs at once (2026-11-02, simulated, not yet seen live)
+
+- Why: one PR per 10-min run, while a run averages 40 s of work: the 23 logged STAR rows need 22 runs (3.7 h).
+- `python -m litha.pr_fixer [--workers N] [--max M]`: a thread pool (`pool()`) over the candidate PRs in the old
+  order. N defaults to 3 when the owner is away (`rust_fix.away()`: no input for 10 min) and 1 when the owner is
+  at the PC; M defaults to N. A PR starts only while counted + running < M, so a run still counts at most M PRs and a skip
+  still does not use one up; with N=1 it is the old serial loop. Each PR is queued once (a hunted PR is not queued
+  again), each keeps its own worktree (`litha-fix-<n>`, `litha-merge-<n>`).
+- Shared things: `RERUNS` allows ONE `rerun_failed` per run across workers (one CI runner); a second PR that needs a
+  rerun gets `RerunSpent`, is left unmarked and is taken next run; a rerun that restarted nothing gives the slot back.
+  `mark()` runs under a thread lock plus `tried.lock` and writes atomically; log rows go out under one lock.
+  `git -C <clone>` (fetch, worktree add/remove) and `star commit` run one at a time (`SHARED`); every cargo command
+  (`rust_fix.run`, `cargo metadata` in `resolve`) holds `rust_fix.BUILD`, so builds stay one at a time.
+  `--others N` resolves of one repo also run on N workers; the per-run caps there are unchanged.
+- Measured: `python -m litha.pr_pool_sim` replays the 23 STAR and 94 Studio rows of `fixes.jsonl` through the real
+  `main()`/`others()` with fake work sleeping each row's logged `seconds` (x0.005; the 2026-11-01 "reran 0" loop on
+  #700 left out: fixed since). STAR backlog drained in 22 runs / 3.7 h serial, 10 runs / 1.7 h with 3 workers,
+  9 runs / 1.5 h with 4; runs took 40 s mean serial, 61 s with 3 (max 143 -> 145 s); 1 CI rerun per run in every
+  configuration. The floor is that cap: 9 of the 23 rows need a rerun, so 4 workers gain little over 3. Studio
+  (`--others 2`, away): same 22 runs (the per-run caps did not change) but runs 283 -> 199 s mean, 843 -> 556 s
+  max, so fewer runs overrun 10 min: 4.2 -> 3.7 h; with `--others 3` and 3 workers 15 runs / 2.5 h (not switched on).
+- Not measured: real contention. The simulation sleeps; live, 3 workers share 12 CPU threads (pytest, pyright),
+  her model (`litha` through the mesh router: if one GPU node answers one request at a time, the model-bound part
+  of each fix does not overlap) and the GitHub API. Tests: `tests/test_litha_pr_pool.py` (fake fix/resolve: no PR
+  twice, one rerun, tried.json and log consistent, workers capped, cargo one at a time).
+
+## 4g. Best-of-K per fixer round (2026-11-02, measured)
+
+- `repair(..., k=None)`: each round she gives up to K edit sets for the same code (K = `pr_fixer.K`, default 1 = off since the gain below is not shown; env
+  `LITHA_FIX_K`; the 2nd and later are shown the fixes already proposed and must give a different one). Each is
+  applied, the failing test files run, then it is undone; the round keeps the one with the fewest failures (ties:
+  fewest changed lines). The first candidate that passes ends the round. Kept progress, undo on no progress and the
+  test/CI/lock refusals are unchanged; K=1 is the old loop (same prompts, same calls).
+- **Bug found first: the bench's numbers were inflated.** A round was undone with a git checkout of the whole tree;
+  on the bench the planted bug is an uncommitted change, so the undo erased the bug and the next round "solved" it
+  with no fix. Undo now restores the bytes each file had when `repair()` started (plus the kept edits). On a PR
+  checkout (clean tree) nothing changes. Section 3's 8/8 results (rounds 2+) were partly this.
+- Measured, `bug_bench run --n 8`, seeds 11 and 12, with diff and blind (same 32 mutants each time, lessons frozen,
+  no learning between runs, 1 bench at a time):
+
+  | mode | solved | wall s | model calls | per solve |
+  |---|---|---|---|---|
+  | before (old undo) | 32/32 (inflated) | 1110 | 53 | - |
+  | K=1, undo fixed | 18/32 (4, 4, 7, 3) | 1389 | 97 | 5.4 calls, 77 s |
+  | K=3, undo fixed | 20/32 (6, 4, 6, 4) | 2863 | 249 | 12.5 calls, 143 s |
+
+  K=3 solved 3 items K=1 missed (any-all, isnone-flip, lower-upper) and missed 1 K=1 solved (le-edge, 325 s): +2/32
+  for 2.1x the time and 2.6x the calls. That is within run-to-run noise (temperature 0.2), so the gain is NOT shown
+  yet. Several misses (both K, e.g. drop-return, any-all) name the right cause in `why` but never land a passing edit: look there next
+  (rejected `find` texts, which edit she sends), and repeat on 16+ items before trusting either number.
+- Not done: the regression guard (neighbouring passing tests) from the research brief, a `--k` CLI flag, a real
+  temperature per candidate (the `asker` takes only the prompt), a live PR measured with K=3.
 
 ## 5. Rules that stay (do not remove)
 
