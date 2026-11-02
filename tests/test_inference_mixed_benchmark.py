@@ -28,7 +28,8 @@ class StubCompletions:
                 raise RuntimeError("offline injected failure")
             return SimpleNamespace(
                 choices=[SimpleNamespace(
-                    message=SimpleNamespace(content="Synthetic answer")
+                    message=SimpleNamespace(content="Synthetic answer"),
+                    finish_reason="stop"
                 )],
                 usage=(None if call == self.no_usage_on else
                        SimpleNamespace(completion_tokens=8)),
@@ -164,7 +165,8 @@ class CanaryModel(StubCompletions):
         self.previous = token
         await asyncio.sleep(0)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=response))],
+            choices=[SimpleNamespace(message=SimpleNamespace(content=response),
+                                     finish_reason="stop")],
             usage=SimpleNamespace(completion_tokens=5),
         )
 
