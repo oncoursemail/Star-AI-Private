@@ -52,9 +52,20 @@ Answer only JSON: {"verdict": "merge" or "hold", "summary": "<one sentence>",
 "risks": [{"file": "<path>", "line": <number>, "severity": "high" or "low", "why": "<short>"}]}"""
 
 
-def gh(*args: str, timeout: float = 120) -> str:
-    out = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                         timeout=timeout)
+TRANSIENT = re.compile(r"TLS handshake timeout|i/o timeout|connection (reset|refused)|timed out|unexpected EOF|"
+                       r"HTTP 50[234]|no such host", re.I)
+READS = {("pr", "view"), ("pr", "list"), ("pr", "diff"), ("pr", "checks"), ("run", "list"), ("run", "view")}
+
+
+def gh(*args: str, timeout: float = 120, tries: int = 3, wait: float = 5) -> str:
+    """A network blip (TLS timeout, 502) on a read is retried, so it does not hold a PR for a run. Writes never are."""
+    for attempt in range(tries if tuple(args[:2]) in READS else 1):
+        if attempt:
+            time.sleep(wait * attempt)
+        out = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=timeout)
+        if out.returncode == 0 or not TRANSIENT.search(out.stderr):
+            break
     if out.returncode != 0:
         raise RuntimeError(f"gh {args[0]} {args[1] if len(args) > 1 else ''}: {out.stderr.strip()[:300]}")
     return out.stdout
