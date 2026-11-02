@@ -1621,6 +1621,7 @@ class Budget:
 
 RERUNS = Budget()                    # main() sets 1 per run: one CI runner
 LOGGED = threading.Lock()            # one fixes.jsonl row + its printed line at a time
+LEARNING = threading.Lock()          # one learn_loop.after_fix at a time
 WORKERS_AWAY, WORKERS_ACTIVE = 3, 1  # PRs at once: the owner away (no input for 10 min) / at the PC
 
 
@@ -1636,7 +1637,8 @@ def log_row(t: float, row: dict) -> None:
         print(json.dumps(row), flush=True)
     try:                                  # every real fix or failure becomes a bench item (+ a lesson to gate)
         from litha.learn_loop import after_fix
-        after_fix(row)
+        with LEARNING:                    # workers share its queue/pending files (read-modify-write)
+            after_fix(row)
     except Exception:  # noqa: BLE001 - learning never costs a fix run
         pass
 
