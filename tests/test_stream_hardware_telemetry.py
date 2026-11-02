@@ -300,3 +300,75 @@ def test_audio_timestamps_and_long_backlogs_are_rejected():
         h.report_audio_backlog(backlog_ms=120001, at_ms=s.now)
     assert not h.report_audio_backlog(backlog_ms=0, at_ms=s.now - 900)
     assert not h.report_audio_backlog(backlog_ms=0, at_ms=s.now + 99)
+
+
+def test_old_failed_speaker_probe_cannot_clear_new_session_audio():
+    """A late exception from yesterday's output epoch must not mute today."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    sensors = Sensors()
+    h = host(sensors, live=True, game=False)
+    assert h.refresh_hardware()
+    assert h.report_audio_backlog(backlog_ms=50, at_ms=sensors.now)
+    started, release = Event(), Event()
+
+    class DelayedFailure:
+        def pending_seconds(self):
+            started.set()
+            assert release.wait(3)
+            raise RuntimeError("old output device disappeared")
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(h.sample_speaker, DelayedFailure())
+        assert started.wait(3)
+        h.set_context(live=True, game_active=False, owner_approved=True)
+        assert h.refresh_hardware()
+        assert h.report_audio_backlog(backlog_ms=15, at_ms=sensors.now)
+        release.set()
+        assert pending.result(timeout=3) is False
+    assert h.status()["audio_ready"]
+    assert h.snapshot().telemetry.speech_backlog_ms == 15
+
+
+def test_old_successful_speaker_probe_cannot_forge_new_session_audio():
+    """An in-flight old callback must not populate the just-reset epoch."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    sensors = Sensors()
+    h = host(sensors, live=True, game=False)
+    assert h.refresh_hardware()
+    started, release = Event(), Event()
+
+    class DelayedSuccess:
+        def pending_seconds(self):
+            started.set()
+            assert release.wait(3)
+            return .001
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(h.sample_speaker, DelayedSuccess())
+        assert started.wait(3)
+        h.set_context(live=True, game_active=False, owner_approved=True)
+        assert h.refresh_hardware()
+        release.set()
+        assert pending.result(timeout=3) is False
+    assert not h.status()["audio_ready"]
+    assert h.snapshot() is None  # no new-session physical speaker reading
+
+
+def test_invalid_speaker_sample_revokes_same_session_stale_backlog():
+    sensors = Sensors()
+    h = host(sensors, live=True, game=False)
+    assert h.refresh_hardware()
+    assert h.report_audio_backlog(backlog_ms=25, at_ms=sensors.now)
+    assert h.snapshot() is not None
+
+    class NonNumericSpeaker:
+        def pending_seconds(self):
+            return True  # bool must not masquerade as a sample duration
+
+    assert not h.sample_speaker(NonNumericSpeaker())
+    assert not h.status()["audio_ready"]
+    assert h.snapshot() is None

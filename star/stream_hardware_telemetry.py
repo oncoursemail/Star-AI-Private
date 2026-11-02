@@ -261,17 +261,33 @@ class RealtimeTelemetryHost:
             return True
 
     def sample_speaker(self, speaker: SpeakerBacklog) -> bool:
-        """Read only pending duration; do not capture voice or private audio."""
+        """Read pending duration, but never carry it across a session reset.
+
+        The device callback may block while the host changes the active game,
+        output device or stream epoch. Both a late successful read and a late
+        exception belong to the OLD generation and cannot modify new audio
+        evidence. Hold the reentrant lock across the final generation check
+        and report so a reset cannot interleave with their commit.
+        """
+        with self._lock:
+            if not self._enabled:
+                return False
+            generation = self._generation
         try:
             seconds = speaker.pending_seconds()
             if type(seconds) not in (float, int):
-                return False
+                raise ValueError("invalid speaker backlog")
             ms = _limited(seconds * 1000, "speaker backlog", 120000)
-            return self.report_audio_backlog(backlog_ms=ms, at_ms=self._now())
+            at = self._now()
         except Exception:
             with self._lock:
-                self._audio = None
+                if self._enabled and self._generation == generation:
+                    self._audio = None
             return False
+        with self._lock:
+            if not self._enabled or self._generation != generation:
+                return False
+            return self.report_audio_backlog(backlog_ms=ms, at_ms=at)
 
     def snapshot(self) -> LiveHostSample | None:
         """Zero blocking I/O; never infer missing game/audio/hardware values."""
