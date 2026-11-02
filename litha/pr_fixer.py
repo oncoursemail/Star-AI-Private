@@ -18,6 +18,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 import datetime as dt
+import difflib
 import json
 import shutil
 import os
@@ -272,42 +273,108 @@ def ask(prompt: str) -> str:
     return text
 
 
+K = 1                                   # candidate edit sets per round, best one kept (LITHA_FIX_K overrides; 1 = off; 3 measured +2/32, 2.1x time)
+
+
+def _edit_size(edits) -> int:
+    """Lines an edit set removes + adds: the tie-break between candidates that leave as many failures."""
+    n = 0
+    for e in edits if isinstance(edits, list) else []:
+        if isinstance(e, dict):
+            old, new = str(e.get("find", "")).splitlines(), str(e.get("replace", "")).splitlines()
+            n += sum(1 for ln in difflib.ndiff(old, new) if ln[:1] in "+-")
+    return n
+
+
+def _apply_saved(tree: Path, edits, saved: dict[Path, bytes]) -> list[str]:
+    """apply_edits, first remembering the bytes of every file the edits name, so a candidate is undone exactly,
+    also on a tree with uncommitted changes (`git checkout -- .` also erased the bench's planted bug)."""
+    root = tree.resolve()
+    for e in edits if isinstance(edits, list) else []:
+        try:
+            f = (tree / str(e["file"]).replace("\\", "/").lstrip("./")).resolve()
+        except (KeyError, TypeError):
+            continue
+        if f not in saved and root in f.parents and f.is_file():
+            saved[f] = f.read_bytes()
+    return apply_edits(tree, edits)
+
+
+def _restore(tree: Path, saved: dict[Path, bytes], kept: list) -> None:
+    """Back to the state repair() started from, plus the kept edits of earlier rounds."""
+    for f, data in saved.items():
+        f.write_bytes(data)
+    for edits in kept:
+        apply_edits(tree, edits)
+
+
+def _proposed(tried: list[dict]) -> str:
+    """For candidate 2..K of a round: the fixes already proposed, so she gives a different one."""
+    shown = "\n".join(f"- {t['why'][:120]}: {json.dumps(t['edits'], ensure_ascii=False)[:500]}" for t in tried)
+    return ("\nThese fixes were already proposed for this same code; give a DIFFERENT fix (another line or another "
+            "change), not one of these:\n" + shown + "\n") if tried else ""
+
+
 def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str], python: str,
-           asker=ask, diff: str = "") -> tuple[bool, str, int]:
-    """Up to ROUNDS rounds of Litha's edits + the tests; progress (fewer failures) is kept between rounds."""
+           asker=ask, diff: str = "", k: int | None = None) -> tuple[bool, str, int]:
+    """Up to ROUNDS rounds of Litha's edits + the tests; progress (fewer failures) is kept between rounds.
+    Each round she proposes up to k edit sets from the same code (the 2nd.. are told the earlier ones and must
+    differ); each is applied, the failing test files run, and the one with the fewest failures (ties: the smallest
+    edit) is the round's answer. The first candidate that passes ends it at once. k=1 is the one-answer loop."""
+    k = max(1, k if k is not None else int(os.environ.get("LITHA_FIX_K") or K))
     ok, round_no = False, 0
     feedback, why, best, kept_edits = "", "", len(FAILED.findall(out)) or 99, []
+    saved: dict[Path, bytes] = {}                           # file -> bytes when repair() started
     if not diff.strip():                                     # blind: show the wrong values instead of a diff
         deep = deep_failure(tree, fails, python)
         if deep:
             fails = [{"test": fails[0]["test"], "section": deep}] + fails[1:]
     for round_no in range(1, ROUNDS + 1):
         sections = "\n\n".join(f"{f['test']}\n{f['section']}" for f in fails) + "\n\nlocal run now:\n" + out[-1500:]
-        prompt = PROMPT.format(title=title, failures=sections[:6000],
-                               code=code_excerpts(tree, sections), feedback=feedback, lessons=_lessons(),
-                               diff=source_diff(diff)[:5000] or "(not available)")
-        try:
-            answer = json.loads(asker(prompt))
-        except (ValueError, TypeError):
-            feedback = "\nYour last answer was not valid JSON. Answer only the JSON object.\n"
-            continue
-        why = str(answer.get("why", ""))[:300]
-        problems = apply_edits(tree, answer.get("edits"))
-        ok, out = run_tests(tree, tests, python)
+        code, lessons = code_excerpts(tree, sections), _lessons()
+        tried: list[dict] = []
+        applied = False                                      # the tree holds tried[-1]'s edits
+        for i in range(k):
+            if applied:
+                _restore(tree, saved, kept_edits)
+                applied = False
+            prompt = PROMPT.format(title=title, failures=sections[:6000], code=code, lessons=lessons,
+                                   feedback=feedback + _proposed(tried), diff=source_diff(diff)[:5000] or "(not available)")
+            try:
+                answer = json.loads(asker(prompt))
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(answer, dict):
+                continue
+            why = str(answer.get("why", ""))[:300]
+            problems = _apply_saved(tree, answer.get("edits"), saved)
+            ok, out = run_tests(tree, tests, python)
+            if ok:
+                break
+            applied = True
+            tried.append({"why": why, "edits": answer.get("edits"), "problems": problems, "out": out,
+                          "now": len(FAILED.findall(out)) or 99, "size": _edit_size(answer.get("edits"))})
         if ok:
             break
-        now = len(FAILED.findall(out)) or 99
-        if now < best:                                      # fewer failures: keep this progress, fix the rest next
-            best, fails = now, failures(out) or fails
-            kept_edits.append(answer.get("edits"))
+        if not tried:
+            feedback = "\nYour last answer was not valid JSON. Answer only the JSON object.\n"
+            continue
+        win = min(range(len(tried)), key=lambda j: (tried[j]["now"], tried[j]["size"]))
+        why, out, problems = tried[win]["why"], tried[win]["out"], tried[win]["problems"]
+        others = "".join(f"\nAlso tried, no better: {json.dumps(t['edits'], ensure_ascii=False)[:300]}"
+                         for j, t in enumerate(tried) if j != win)
+        if tried[win]["now"] < best:                        # fewer failures: keep this progress, fix the rest next
+            if win != len(tried) - 1 or not applied:
+                _restore(tree, saved, kept_edits)
+                _apply_saved(tree, tried[win]["edits"], saved)
+            best, fails = tried[win]["now"], failures(out) or fails
+            kept_edits.append(tried[win]["edits"])
             feedback = ("\nYour edits were kept: fewer tests fail now. The code above already includes them. "
                         "Fix what still fails:\n" + out[-1500:] + "\n")
             continue
-        sh(["git", "checkout", "--", "."], cwd=tree)        # no progress: back to the last kept state
-        for kept in kept_edits:
-            apply_edits(tree, kept)
+        _restore(tree, saved, kept_edits)                    # no progress: back to the last kept state
         feedback = ("\nYour previous attempt did not work. " + ("Problems: " + "; ".join(problems) + ". " if problems
-                    else "") + "Test output after it:\n" + out[-1500:] + "\nTry a different fix.\n")
+                    else "") + "Test output after it:\n" + out[-1500:] + others + "\nTry a different fix.\n")
     return ok, why, round_no
 
 
