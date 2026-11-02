@@ -197,6 +197,16 @@ class TurnTakingGate:
                 return TurnAdvice("hold", False, "vad_missing_or_stale")
             if not frame.echo_cleared:
                 return TurnAdvice("hold", False, "echo_not_cleared")
+            # Delayed host VAD callbacks must never retroactively stop speech.
+            # In verified-quiet mode the 75-ms freshness bound applies to
+            # owner interruption and guest hold, not just speaking clearance.
+            # Keep legacy behavior unchanged for non-opted-in hosts.
+            if (self._require_verified_quiet
+                    and now - frame.at_ms > _QUIET_FRAME_RECENT_MS):
+                reason = ("quiet_frame_not_recent"
+                          if max(frame.owner_probability, frame.guest_probability)
+                          <= _QUIET_PROBABILITY_MAX else "voice_frame_not_recent")
+                return TurnAdvice("hold", False, reason)
             # A sustained owner-verified source is the only barge-in case.
             if self._owner_ms >= _CONFIRM_MS:
                 if star_speaking and not self._owner_yield_counted:
@@ -213,8 +223,6 @@ class TurnTakingGate:
                     now - self._last_voice_ms < _QUIET_MS):
                 return TurnAdvice("hold", False, "speech_or_noise_hangover")
             if self._require_verified_quiet:
-                if now - frame.at_ms > _QUIET_FRAME_RECENT_MS:
-                    return TurnAdvice("hold", False, "quiet_frame_not_recent")
                 if self._quiet_ms < _QUIET_MS:
                     return TurnAdvice("hold", False, "quiet_window_unverified")
             return TurnAdvice("speak", False, "trusted_silence")
