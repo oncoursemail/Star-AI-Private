@@ -118,15 +118,20 @@ class StreamInterruptionHost:
             "stale": 0, "stale_stops": 0, "faults": 0,
         }
 
-    def enable(self, *, owner_approved: bool = False) -> None:
+    def enable(self, *, owner_approved: bool = False,
+               require_verified_quiet: bool = False) -> None:
         if owner_approved is not True:
             raise PermissionError("owner must explicitly enable the VAD source")
+        if type(require_verified_quiet) is not bool:
+            raise ValueError("require_verified_quiet must be boolean")
         with self._lock:
             if self._fault or self._active is not None or self._busy:
                 raise RuntimeError("recover hardware or finish the current epoch first")
             if self._stage.metrics()["enabled"] is not True:
                 raise RuntimeError("stage must already be owner-enabled")
-            self._turns.enable(owner_approved=True)
+            self._turns.enable(
+                owner_approved=True, require_verified_quiet=require_verified_quiet
+            )
             self._enabled = True
 
     def arm(self, plan: StagePlan, *, playback_epoch: str) -> bool:

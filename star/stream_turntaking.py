@@ -19,6 +19,10 @@ _THRESHOLD = 0.75
 _CONFIRM_MS = 120.0
 _RECENT_MS = 250.0
 _QUIET_MS = 350.0
+# Verified-quiet mode needs a live capture stream, not a lone silent frame.
+_QUIET_MAX_UNOBSERVED_MS = 5.0
+_QUIET_FRAME_RECENT_MS = 75.0
+_QUIET_PROBABILITY_MAX = 0.10
 _MAX_GAP_MS = 150.0
 # A long silent interval cannot be counted as uninterrupted speech merely
 # because successive VAD frames have close *end* timestamps.
@@ -94,6 +98,8 @@ class TurnTakingGate:
     def __init__(self) -> None:
         self._lock = RLock()
         self._enabled = False
+        self._require_verified_quiet = False
+        self._quiet_ms = 0.0
         self._last: VoiceFrame | None = None
         self._owner_ms = 0.0
         self._guest_ms = 0.0
@@ -101,22 +107,28 @@ class TurnTakingGate:
         self._last_voice_ms: float | None = None
         self._counts = {"accepted": 0, "rejected": 0, "owner_yields": 0}
 
-    def enable(self, *, owner_approved: bool = False) -> None:
+    def enable(self, *, owner_approved: bool = False,
+               require_verified_quiet: bool = False) -> None:
         if owner_approved is not True:
             raise PermissionError("turn-taking requires explicit host approval")
+        if type(require_verified_quiet) is not bool:
+            raise ValueError("require_verified_quiet must be boolean")
         with self._lock:
             self._reset()
+            self._require_verified_quiet = require_verified_quiet
             self._enabled = True
 
     def _reset(self) -> None:
         self._last = None
         self._owner_ms = self._guest_ms = 0.0
+        self._quiet_ms = 0.0
         self._owner_yield_counted = False
         self._last_voice_ms = None
 
     def disable(self) -> None:
         with self._lock:
             self._enabled = False
+            self._require_verified_quiet = False
             self._reset()
 
     def observe(self, frame: VoiceFrame) -> bool:
@@ -127,6 +139,7 @@ class TurnTakingGate:
             if not self._enabled:
                 return False
             prev = self._last
+            unobserved_silence_ms = 0.0
             if prev is not None:
                 gap = frame.at_ms - prev.at_ms
                 if gap <= 0 or frame.at_ms - frame.duration_ms < prev.at_ms - 1e-6:
@@ -142,6 +155,10 @@ class TurnTakingGate:
                         unobserved_silence_ms > _MAX_CONTINUOUS_SILENCE_MS):
                     self._owner_ms = self._guest_ms = 0.0
                     self._owner_yield_counted = False
+                # A capture hole is unknown audio, never verified silence.
+                # Use observed frame durations, not wall-clock gaps.
+                if unobserved_silence_ms > _QUIET_MAX_UNOBSERVED_MS:
+                    self._quiet_ms = 0.0
             owner = (frame.echo_cleared and
                      frame.owner_probability >= _THRESHOLD and
                      frame.guest_probability < _THRESHOLD)
@@ -157,6 +174,12 @@ class TurnTakingGate:
                 # A new independently confirmed utterance is a new event.
                 self._owner_yield_counted = False
             self._guest_ms = self._guest_ms + frame.duration_ms if guest else 0.0
+            quiet = (
+                frame.echo_cleared
+                and frame.owner_probability <= _QUIET_PROBABILITY_MAX
+                and frame.guest_probability <= _QUIET_PROBABILITY_MAX
+            )
+            self._quiet_ms = self._quiet_ms + frame.duration_ms if quiet else 0.0
             self._last = frame
             self._counts["accepted"] += 1
             return True
@@ -189,6 +212,11 @@ class TurnTakingGate:
             if (self._last_voice_ms is not None and
                     now - self._last_voice_ms < _QUIET_MS):
                 return TurnAdvice("hold", False, "speech_or_noise_hangover")
+            if self._require_verified_quiet:
+                if now - frame.at_ms > _QUIET_FRAME_RECENT_MS:
+                    return TurnAdvice("hold", False, "quiet_frame_not_recent")
+                if self._quiet_ms < _QUIET_MS:
+                    return TurnAdvice("hold", False, "quiet_window_unverified")
             return TurnAdvice("speak", False, "trusted_silence")
 
     def metrics(self) -> dict[str, int | bool]:
