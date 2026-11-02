@@ -76,6 +76,11 @@ class StreamEpisode:
             raise ValueError("lookback_seconds must be 30..7200")
         self._bank = bank
         self._scope = scope
+        # Compute once, outside the hot verified-reaction path. The delimiter
+        # cannot occur in bounded symbolic scope IDs, avoiding tuple ambiguity.
+        self._game_scope = "episode." + sha256(
+            chr(0).join(scope).encode("ascii")
+        ).hexdigest()[:40]
         self._max_events = max_events
         self._lookback = lookback_seconds
         self._lock = RLock()
@@ -88,6 +93,15 @@ class StreamEpisode:
         self._seen: set[str] = set()
         self._counts = {"accepted": 0, "rejected": 0, "expired": 0,
                         "evicted": 0, "packets": 0}
+
+    @property
+    def game_scope(self) -> str:
+        """Opaque stable scene identity across game/version/objective/situation.
+
+        Never use a chat-provided string as a game identity. The trusted host
+        can bind this to StarStage.transition_game() for verified reactions.
+        """
+        return self._game_scope
 
     def start(self, *, owner_approved: bool = False, now_unix_s: int) -> None:
         now = _timestamp(now_unix_s)
