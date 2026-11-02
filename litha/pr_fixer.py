@@ -1122,7 +1122,7 @@ def balance(text: str, path: str = "") -> tuple[int, int, int]:
 
 
 def deficit(want: tuple[int, int, int], got: tuple[int, int, int]) -> str:
-    """The bracket difference in words, per kind: one `}` too many is usually the closing line after the block again."""
+    """The bracket difference in words, per kind of bracket, for her feedback (its effect alone is not measured)."""
     out = []
     for (o, c), w, g in zip(("{}", "()", "[]"), want, got):
         if g < w:
