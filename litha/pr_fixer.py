@@ -33,7 +33,7 @@ import threading
 import time
 import tomllib
 
-from litha import context_pack, rust_fix, self_map
+from litha import context_pack, merge3, rust_fix, self_map
 from litha.pr_merger import BASE, REPO, gh, head_checks, latest_runs, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
@@ -1121,6 +1121,45 @@ def balance(text: str, path: str = "") -> tuple[int, int, int]:
     return code.count("{") - code.count("}"), code.count("(") - code.count(")"), code.count("[") - code.count("]")
 
 
+def deficit(want: tuple[int, int, int], got: tuple[int, int, int]) -> str:
+    """The bracket difference in words, per kind: one `}` too many is usually the closing line after the block again."""
+    out = []
+    for (o, c), w, g in zip(("{}", "()", "[]"), want, got):
+        if g < w:
+            out.append(f"you have {w - g} `{c}` too many (or lost {w - g} `{o}`); the code after the conflict "
+                       f"already closes what the sides leave open")
+        elif g > w:
+            out.append(f"you lost {g - w} `{c}` (or added {g - w} `{o}`)")
+    return "; ".join(out)
+
+
+CLOSING = re.compile(r"^\s*[)\]}]+[;,)]*\s*$")
+
+
+def rebalanced(path: str, block: str, new: str, before: str, after: str) -> str:
+    """Her answer without the bracket-only lines she repeated from just after (or before) the block, when cutting them
+    makes her brackets balance the way both sides do; else her answer unchanged. echoed() keeps such lines (a lone `}`
+    is no real line). Replayed on her 90 answers to Studio tune-set blocks: 27 bracket misses, 3 of them this."""
+    ours, _, theirs = sides(block)
+    want = balance(ours, path)
+    if not BRACKETED.search(path) or want != balance(theirs, path) or balance(new, path) == want:
+        return new
+    lines = new.splitlines(keepends=True)
+    tail = [ln for ln in after.splitlines() if ln.strip()]
+    head = [ln for ln in before.splitlines() if ln.strip()]
+    for k in range(1, 4):                            # her last k lines are the first k lines after the block
+        cut = lines[:-k]
+        if len(lines) > k and all(CLOSING.match(x) for x in lines[-k:]) and len(tail) >= k and \
+                [x.strip() for x in lines[-k:]] == [x.strip() for x in tail[:k]] and balance("".join(cut), path) == want:
+            return "".join(cut)
+    for k in range(1, 3):                            # her first k lines are the last k lines before it
+        cut = lines[k:]
+        if len(lines) > k and len(head) >= k and [x.strip() for x in lines[:k]] == [x.strip() for x in head[-k:]] \
+                and balance("".join(cut), path) == want:
+            return "".join(cut)
+    return new
+
+
 def slips(path: str, block: str, new: str, before: str = "", after: str = "") -> str:
     r"""Mistakes a merge of two sides never needs: the line just outside the block repeated inside it (seen: a doubled
     `data:BootData` field in #853), brackets that no longer balance the way BOTH sides do (seen: a lost closing brace
@@ -1146,7 +1185,8 @@ def slips(path: str, block: str, new: str, before: str = "", after: str = "") ->
         if BRACKETED.search(path) and balance(ours, lang) == balance(theirs, lang):
             if balance(new, lang) != balance(ours, lang):
                 return ("Your text does not open and close {}, () and [] the way both sides do (each side: "
-                        f"{balance(ours, lang)}, yours: {balance(new, lang)}). Keep every bracket the sides have; "
+                        f"{balance(ours, lang)}, yours: {balance(new, lang)}): "
+                        f"{deficit(balance(ours, lang), balance(new, lang))}. Keep every bracket the sides have; "
                         "brackets that open in the conflict may close after it (and the other way round).\n")
             break
     if new.count("\\") < min(ours.count("\\"), theirs.count("\\")):
@@ -1204,6 +1244,7 @@ def echoed(new: str, block: str, before: str, after: str, path: str = "") -> str
 
 
 WINDOW = 4096                       # litha-fast's context (prompt + answer); ~3.5 characters per token for code
+ANSWER = 1500                       # ask()'s max_tokens (#207 ARCHITECTURE.md: ~1690 needed, 3 answers, none valid JSON)
 
 
 def adjacent(ours: str, base: str, theirs: str) -> str | None:
@@ -1262,7 +1303,61 @@ def mechanical(path: str, block: str, before: str, after: str) -> str | None:
     near = adjacent(ours, base, theirs)
     if near is None:
         near = both_added(ours, base, theirs, docs=path.endswith((".md", ".txt", ".rst")))
+    if near is None:
+        near = merge3.formatting_only(ours, base, theirs)
+    if near is None and path.endswith(".rs"):
+        near = merge3.use_lists(ours, base, theirs)
+    if near is None:
+        pieces = merge3.merge(ours, base, theirs)
+        near = "".join(p for p in pieces if isinstance(p, str)) if pieces and all(isinstance(p, str) for p in pieces) \
+            else None
+    if near is None and path.endswith((".md", ".txt", ".rst")):
+        near = merge3.prose(ours, base, theirs)
     return near if near is not None and not slips(path, block, near, before, after) else None
+
+
+def narrow(path: str, text: str) -> tuple[str, set[str]]:
+    """The file with every block that is not mechanical cut down to the edits that really overlap (merge3): the rest
+    of the block merged, the overlap a smaller block with git's own marker lines. Returns the new text and those
+    smaller blocks, which go to her as they are (an addition both sides made at one place stays her call there)."""
+    out, last, small = [], 0, set()
+    for m in CONFLICT.finditer(text):
+        block = m.group(0)
+        if "\n|||||||" not in block or mechanical(path, block, text[max(0, m.start() - 1500):m.start()].split("\n", 1)[-1],
+                                                  text[m.end():m.end() + 1500].rsplit("\n", 1)[0]) is not None:
+            continue
+        pieces = merge3.merge(*sides(block))
+        marks = [ln for ln in block.splitlines(keepends=True) if MARKER.match(ln)]
+        if not pieces or not any(isinstance(p, tuple) for p in pieces) or len(marks) != 4:
+            continue
+        subs = [p if isinstance(p, str) else marks[0] + p[0] + marks[1] + p[1] + marks[2] + p[2] + marks[3]
+                for p in pieces]
+        small.update(x for x, p in zip(subs, pieces) if isinstance(p, tuple))
+        out += [text[last:m.start()], *subs]
+        last = m.end()
+    return "".join(out) + text[last:], small
+
+
+def settled(head: str, tail: str, i: int) -> tuple[str, str]:
+    """The code she is shown around conflict i: the blocks before it as already merged, the ones after it as one note
+    line each, never their markers (seen: Studio #174 physics, where her answer merged the 3 blocks she saw at once)."""
+    k = iter(range(i + 1, 10**6))
+    tail = CONFLICT.sub(lambda _: f"    ... (conflict {next(k)}, merged on its own) ...\n", tail)
+    return head[-1500:].split("\n", 1)[-1] if len(head) > 1500 else head, tail[:1500].rsplit("\n", 1)[0]
+
+
+def planned(path: str, text: str, redo: bool = False):
+    """(text, blocks, the code around each, each block's mechanical merge or None = hers). With redo every block of
+    the file as git wrote it is hers; otherwise the file is narrowed first and the overlaps are hers."""
+    small: set[str] = set()
+    if not redo:
+        text, small = narrow(path, text)
+    blocks = list(CONFLICT.finditer(text))
+    around = [(text[max(0, m.start() - 1500):m.start()].split("\n", 1)[-1],
+               text[m.end():m.end() + 1500].rsplit("\n", 1)[0]) for m in blocks]
+    plan = [None if redo or m.group(0) in small else mechanical(path, m.group(0), *around[k])
+            for k, m in enumerate(blocks)]
+    return text, blocks, around, plan
 
 
 def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
@@ -1271,13 +1366,10 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
     checker's complaint about her previous attempt at this file; with it she redoes every block, or with keep only the
     blocks she answered (the mechanical merges stay). The 1-8 limit counts only the blocks she is asked
     about: Studio's #412 had 9 blocks in instance.rs, most of them mechanical."""
-    blocks = list(CONFLICT.finditer(text))
-    if not blocks:
+    if not CONFLICT.search(text):
         return None, (f"{path}: git marked no conflict lines in it (deleted on one side and changed on the other, "
                       "a rename, or a binary file)")
-    around = [(text[max(0, m.start() - 1500):m.start()].split("\n", 1)[-1],
-               text[m.end():m.end() + 1500].rsplit("\n", 1)[0]) for m in blocks]
-    plan = [None if hint and not keep else mechanical(path, m.group(0), *around[k]) for k, m in enumerate(blocks)]
+    text, blocks, around, plan = planned(path, text, redo=bool(hint and not keep))
     asks = sum(p is None for p in plan)
     if asks > 8:
         return None, f"{path}: {asks} of {len(blocks)} conflict blocks need her (1-8 handled)"
@@ -1293,6 +1385,7 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
             gone, kept = (("the PR", BASE) if not ours.strip() else (BASE, "the PR"))
             return None, (f"{path}: conflict {i}: {gone} deleted these lines and {kept} changed them; where that code "
                           "went is a person's call")
+        before, after = settled("".join(out) + text[last:m.start()], text[m.end():], i)
         shown = before, after
         need = (len(MERGE_PROMPT) + len(before) + len(m.group(0)) + len(after) + len(ours) + len(theirs)) / 3.5
         if need > WINDOW:                              # less of the code around it, then give up (do not burn tries)
@@ -1300,12 +1393,15 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
             need -= (len(before) + len(after) - len(shown[0]) - len(shown[1])) / 3.5
         if need > WINDOW:
             return None, f"{path}: conflict {i} is too big for her {WINDOW}-token window (~{need:.0f} tokens)"
+        if (len(ours) + len(theirs) - len(base)) / 3.5 > ANSWER:
+            return None, f"{path}: conflict {i}'s merge is longer than her {ANSWER}-token answer"
         for _ in range(3):
             try:
                 ans = json.loads(asker(self_map.fitted("resolve", lambda note: MERGE_PROMPT.format(
                     repo=REPO, base=BASE, title=title, path=path, i=i, n=len(blocks), feedback=feedback + note,
                     context=shown[0] + m.group(0) + shown[1]), (len(ours) + len(theirs)) / 3.5)))
-                new = echoed(str(ans["resolved"]), m.group(0), before, after, path)
+                new = rebalanced(path, m.group(0), echoed(str(ans["resolved"]), m.group(0), before, after, path),
+                                 before, after)
             except (ValueError, TypeError, KeyError):
                 feedback = "Your last answer was not valid JSON with a \"resolved\" string.\n"
                 continue
@@ -1356,6 +1452,32 @@ def deleted_side(tree: Path, path: str) -> str:
     return f"{path}: deleted by this PR and changed on {BASE} (modify/delete); a person's call"
 
 
+LOCKISH = re.compile(r"(^|/)(pnpm-lock\.yaml|[^/]+\.lock)$")
+
+
+def guarded(path: str) -> bool:
+    """CI, tests and the like (NO_TOUCH): merged only where git-like rules decide, never by her model."""
+    return bool(NO_TOUCH.search(path)) and not DEP_FILE.match(path)
+
+
+def mechanical_only(prompt: str) -> str:
+    raise ValueError("a guarded file: no model answer")       # (resolve_text reads it as no usable answer)
+
+
+def triage(code: list[str], raws: dict[str, str]) -> str:
+    """Why the PR's conflicts are not hers ('' = they are). Only files her model has to answer count: a guarded file
+    must merge mechanically, and at most 5 files may need her. On Studio's failed merges 9 of the 10 PRs the old rule
+    refused (.github/ or more than 5 files) get past this one; #242's release.yml still needs a person."""
+    hers = [c for c in code if LOCKISH.search(c) or not CONFLICT.search(raws.get(c, "")) or
+            any(p is None for p in planned(c, raws[c])[3])]
+    held = [c for c in hers if guarded(c) or LOCKISH.search(c)]
+    if held:
+        return f"conflicts she does not resolve alone: {held[:8]} need a judgement (CI, tests and locks merge only mechanically)"
+    if len(hers) > 5:
+        return f"conflicts she does not resolve alone: {len(hers)} files need her model (1-5 handled): {hers[:8]}"
+    return ""
+
+
 def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     """A PR that conflicts with star/next: merge star/next into a copy of it on HER branch, resolve (lock files are
     taken from star/next and rebuilt; code conflicts are hers), prove nothing broke, open her own PR."""
@@ -1376,20 +1498,21 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         return {"pr": number, "result": "failed", "why": "git merge failed: " + (m.stdout + m.stderr)[-200:]}
     locks = [c for c in conflicted if (DEP_FILE.match(c) and c.endswith(".txt")) or c.endswith("Cargo.lock")]
     code = [c for c in conflicted if c not in locks]
-    if len(code) > 5 or any(NO_TOUCH.search(c) and not DEP_FILE.match(c) for c in code):
+    raws: dict[str, str] = {c: (tree / c).read_text(encoding="utf-8", errors="replace") if (tree / c).is_file() else ""
+                            for c in code}                # each file with its conflict markers, to redo a merge
+    why = triage(code, raws)
+    if why:
         sh(["git", "merge", "--abort"], cwd=tree)
-        return {"pr": number, "result": "failed", "why": f"conflicts she does not resolve alone: {code[:8]}"}
+        return {"pr": number, "result": "failed", "why": why}
     for c in locks:                                         # generated files: star/next's copy, rebuilt below
         sh(["git", "checkout", "--theirs", "--", c], cwd=tree)
     tests: set[str] = set()
-    raws: dict[str, str] = {}                          # each file with its conflict markers, to redo a merge
     for c in code:
         why = deleted_side(tree, c)
         if why:
             sh(["git", "merge", "--abort"], cwd=tree)
             return {"pr": number, "result": "failed", "why": why}
-        raw = raws[c] = (tree / c).read_text(encoding="utf-8", errors="replace")
-        merged, why = merge_file(tree, c, raw, pr.get("title", ""), asker)
+        merged, why = merge_file(tree, c, raws[c], pr.get("title", ""), mechanical_only if guarded(c) else asker)
         if merged is None or why:
             sh(["git", "merge", "--abort"], cwd=tree)
             return {"pr": number, "result": "failed", "why": why if why.startswith(c) else f"{c}: {why}"}
