@@ -561,6 +561,61 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   behaviour) and this does not address them; a merge that now resolves but mismatches the committed one may still not
   compile (seen: 787db5f gizmo.rs, a test calling main's old `update` signature). Not run live yet.
 
+## 4m. Merge review inside her window, fewer false claims (2026-11-02, measured)
+
+- Why: counted with her real tokenizer (llama-server `/tokenize`), the old 12,000-character chunks put **410 of 598**
+  review prompts of 62 closed PRs over 4096 tokens with the 700-token answer. Diffs run ~3.1 characters per token,
+  not the 3.5 that section 4k's "37 of 174" assumed, so most prompts only worked because the router sends to
+  star-pc (8192 ctx) first; owner-pc (4096 ctx) refuses them (HTTP 400, which read as "not JSON"). Nothing in her
+  code picks the 8192 node: `node_chat` takes the fastest usable node. Files over 12,000 characters were cut with
+  "[... file diff cut ...]", and 11 of the 16 high claims in `decisions.jsonl` (46 reviewed heads) were "the diff is
+  cut off". Measured on that log: refuted() and confirmed() refuted 15 of the 16, and the last one
+  (studio#511 `value_at`) is false too (its doc says the index must be in range).
+- `litha/review_pack.py` (new; only `pr_merger` uses it): hunks are ranked by file kind (code 3, config 2.5, test
+  1.2, docs 0.5, data/lockfiles 0.1) x (1 + removed guards, changed conditions, dangerous calls) and packed first-fit
+  into at most `MAX_PARTS` = 12 prompts per PR. A hunk bigger than one part is split at line boundaries with its real
+  start line. Token estimate from character classes (fit on 1600 real hunks: median 1.0x, worst 0.8x; whole prompts
+  worst 0.89x), budget = (4096 - 700) / 1.15. Each part names the files it does not show and says they are reviewed
+  elsewhere. Files that did not fit go to `not_reviewed` in the review. Offline over the 62 PRs: 565 prompts (old
+  598), 53% of changed code lines seen (old 59%, but the old ones were the first 12,000 characters of each file, not
+  the riskiest hunks); docs and data are mostly skipped by design.
+- Claims: every risk quotes a changed line (`+` or `-`). `anchor` moves the claim to the line it quotes (a quote of
+  12+ characters that is part of a line counts), and a quote that is not a changed line drops the claim. Without a
+  quote, the old added-line rule applies. The same line from two parts counts once. A high claim on a test or doc
+  file becomes low, unless it is about safety (JSON data/config claims are still checked, not downgraded). `SPECULATIVE` now also catches "if any other callers..." and
+  "if the file was deleted...".
+- Re-check question (`CONFIRM`): a third reviewer's claim, "claims are often wrong", her check before her verdict;
+  the proof line may drop a trailing `{`. A/B on 10 hand-judged false claims (from the log and the baseline) and 7
+  injected real bugs (removed guards, a flipped size check, an off-by-one loop, a null and a nil check), 2 asks
+  each: false kept 10/20 -> 7/20, true kept 12/14 -> 12/14. The true claim it missed was the off-by-one: she
+  proved it with the line minus its `{`, and the relaxed proof match fixes that (checked once by hand, not re-run).
+- `cached_review`: one review per PR head and review-code version every 6 h (`~/.star/pr-merger/reviews.json`).
+  In `decisions.jsonl` (48 h), 852 of 898 reviews re-read a head already reviewed (Metallic-RB#138 235 times), and 4
+  heads drew both verdicts from the same diff. A review with a part that was not JSON is not cached.
+- Measured, her model, `review()` only, nothing logged. The design was tuned on the tune set (17 odd-numbered home
+  PRs of the last 40 closed + #854 and #848 from the log, 7 studio PRs with logged claims + 5 more, Metallic-RB#138;
+  #797's diff is over GitHub's 20,000 lines). It was then frozen and run once on
+  the **held-out set**: the 20 even-numbered home PRs of the last 40 closed (not #854 or #848) and 10 even-numbered studio PRs. Old
+  and new code ran back to back on each PR, alternating which went first, all on star-pc:
+
+  | held-out, 30 PRs | review calls | over 4096 - 700 | over 4096 | wall s | high claims said | high that block | kept risks/PR | dropped |
+  |---|---|---|---|---|---|---|---|---|
+  | before (b2f3fd3e) | 253 (1 HTTP 400 at 8192) | 166 | 105 | 2115 | 41 | 6 | 1.67 | 26 |
+  | after | 229 + 15 re-checks | 0 (max 3116) | 0 | 1785 | 31 | 3 | 2.70 | 6 |
+
+  I read the real files for all 9 blocking claims, and none is a real bug. Before: #814 `list(...)` copy and
+  `[] or [{}]`, #486 `try_borrow`, #824 x2, #820. After: #858 (the method is defined in the file), #808 x2 (a bad
+  index or zone id would be a data error, not a PR bug). So 6/41 -> 3/31 high claims survive the checks, 0 of
+  them true either way. Recall on held-out is not measured: it holds no known real bug. On the tune set, 8 PRs
+  before vs after: blocking highs 3 -> 2, and all 5 are false. Seconds per call matched within the pairs (8.2 vs
+  7.3); an unpaired tune run in a busier hour took 18 s/call, so wall times are only comparable when paired.
+  The "after" side has more low notes (they never block) and keeps nearly every claim, because she now quotes.
+- After the held-out run (not in the numbers above): a claim that says it "cannot verify" is refuted with no
+  re-check. That is the #858 shape.
+- Not measured: a live merger run with the cache, owner-pc (4096) answering a review (all calls went to star-pc),
+  what the 47% of code lines a big PR no longer shows would have caught, and the re-check on more than 17 claims.
+- Tests: `tests/test_litha_review_pack.py`.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another

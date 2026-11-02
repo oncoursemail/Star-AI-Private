@@ -2,7 +2,7 @@
 
 A merge needs ALL of: hard gates that really ran (base star/next, not a draft, GitHub says mergeable + CLEAN, every
 check on the exact head passed, no secret / private-address / forbidden file in the added lines) AND Litha's review
-of the diff with no high-risk finding. Every risk she names must point at a changed line of the diff; claims that do
+of the diff with no high-risk finding. Every risk she names must quote a changed line of the diff; claims that do
 not are dropped (a model's guess is not evidence). Anything else is held with the reasons, never merged.
 
     python -m litha.pr_merger                 dry run over the open PRs into star/next (prints decisions)
@@ -15,21 +15,22 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 import time
 
-from litha import self_map
+from litha import review_pack, self_map
 
 REPOS = Path(__file__).with_name("repos.json")                # every repo she looks after (first = STAR's home)
 REPO = "oncoursemail/Star-AI-Project"
 BASE = "star/next"
 ALLOW_MAIN = False                                             # set per repo from repos.json (allow_main)
 LOG = Path.home() / ".star" / "pr-merger" / "decisions.jsonl"
-CHUNK = 12_000          # diff characters per Litha call (the GPU nodes run 8k-token contexts)
 OK_CHECKS = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 FORBIDDEN_FILES = re.compile(r"(^|/)(pnpm-lock\.yaml|pnpm-workspace\.yaml|[^/]+\.tsbuildinfo|[^/]+\.(gguf|safetensors|"
                              r"pem|key|pfx|p12)|\.env(\.[a-z]+)?)$")
@@ -44,12 +45,13 @@ RUBRIC = """You are Litha, reviewing one pull request for the owner's repository
 Judge only from the diff below. Check: does the change do what the title says; could it break running code
 (wrong logic, missing import, changed function signature with old callers, removed behaviour, crash on empty input,
 race, resource leak); are there tests for the new behaviour; dead or debug code; anything unsafe (secrets, shell
-injection, deleting user data). Do not invent problems: every risk MUST name the exact file and a line number that
-is shown with '+' in the diff. Severity "high" only for something that would break, lose data or leak secrets.
-The diff shows only changed lines: names defined elsewhere in the file or repository DO exist, so never report a
+injection, deleting user data). Do not invent problems: every risk MUST name the file and line, and quote one
+changed line ('+' or '-') of the diff exactly as shown, without the +/-. Severity "high" only for something that
+would break, lose data or leak secrets. The diff shows only changed lines and a big PR is reviewed in parts: names
+defined elsewhere in the file or repository DO exist and files not shown are reviewed separately, so never report a
 name as undefined or missing just because the diff does not show it, and never report that the diff is cut off.
-Answer only JSON: {"verdict": "merge" or "hold", "summary": "<one sentence>",
-"risks": [{"file": "<path>", "line": <number>, "severity": "high" or "low", "why": "<short>"}]}"""
+Answer only JSON: {"verdict": "merge" or "hold", "summary": "<one sentence>", "risks": [{"file": "<path>",
+"line": <number>, "quote": "<the changed line, copied exactly>", "severity": "high" or "low", "why": "<short>"}]}"""
 
 
 TRANSIENT = re.compile(r"TLS handshake timeout|i/o timeout|connection (reset|refused)|timed out|unexpected EOF|"
@@ -173,15 +175,13 @@ def gate_failures(pr: dict, checks: list[dict], files: dict[str, dict]) -> list[
     return why
 
 
-def chunks(files: dict[str, dict], limit: int = CHUNK) -> list[str]:
-    out, cur = [], ""
-    for f in files.values():
-        text = f["text"] if len(f["text"]) <= limit else f["text"][:limit] + "\n[... file diff cut ...]\n"
-        if cur and len(cur) + len(text) > limit:
-            out.append(cur)
-            cur = ""
-        cur += text
-    return out + ([cur] if cur else [])
+def review_prompts(pr: dict, files: dict[str, dict]) -> tuple[list[str], list[str]]:
+    """(one prompt per part, files not reviewed). Each prompt fits her 4096-token window with the answer (estimated;
+    on 62 real PRs the real count of every prompt fit), most important hunks first (review_pack)."""
+    head = self_map.fitted("merge-review", lambda note: f"{RUBRIC}{note}\n\nTitle: {pr.get('title', '')}\n"
+                           f"Description: {(pr.get('body') or '')[:1200]}\n", review_pack.ANSWER + 200)
+    parts, left = review_pack.pack(files, review_pack.budget_for(head, files))
+    return [f"{head}{review_pack.others_note(p, files, left)}\n{p}" for p in parts], left
 
 
 def ask_litha(prompt: str) -> str:                       # one place to swap the model / transport
@@ -194,6 +194,7 @@ def ask_litha(prompt: str) -> str:                       # one place to swap the
 VISIBILITY = re.compile(r"truncat|cut off|incomplete|not (shown|included|visible|present) in|missing from the diff|"
                         r"provided diff|in the diff", re.I)
 UNDEFINED = re.compile(r"not (defined|imported)|undefined|NameError|missing import|does not import", re.I)
+CANT_VERIFY = re.compile(r"(impossible|not possible|unable|cannot|can't|can not) (to )?(be )?verif", re.I)
 
 
 def head_file(pr: dict, path: str) -> str | None:
@@ -207,6 +208,8 @@ def head_file(pr: dict, path: str) -> str | None:
 def refuted(risk: dict, source: str | None) -> str:
     """Why a high-risk claim is false when checked against the real file ('' = it stands)."""
     why = risk["why"]
+    if CANT_VERIFY.search(why):        # held-out #858: "... not included in the diff, making it impossible to verify"
+        return "she says she cannot verify it"
     if VISIBILITY.search(why) and not UNDEFINED.search(why):
         return "about what the diff shows, not about the code"
     if source is None:
@@ -228,20 +231,29 @@ def refuted(risk: dict, source: str | None) -> str:
     return ""
 
 
-SPECULATIVE = re.compile(r"\b(might|could|may|potential(ly)?|if [^.]* (were|was) ever|in theory)\b", re.I)
-CONFIRM = """You claimed this about a pull request:
+NO_HIGH = ("test", "docs")     # CI ran the tests; a doc cannot break running code (JSON data/config still can)
+# also "if any other callers ..." and "if the file was deleted ...": the two blocking claims left on 8 tune PRs
+SPECULATIVE = re.compile(r"\b(might|could|may|potential(ly)?|if [^.]* (were|was) ever|in theory)\b"
+                         r"|\bif (any|some) (other )?callers?\b"
+                         r"|\bif [^.]* (is|was|were|gets?|got) (deleted|removed|replaced|moved|missing|inaccessible)\b",
+                         re.I)
+# A third reviewer's claim, her check before her verdict: on 10 false and 7 true labelled claims, 2 asks each, this
+# kept 7/20 false (her old "You claimed..., is it true?" kept 10/20) and 12/14 true (old 12/14).
+CONFIRM = """A code reviewer made this claim about a pull request:
 {file}:{line}: {why}
 Here is the real file around that line (line numbers on the left):
 {excerpt}
-Is the claim definitely true for THIS code (not a guess about code you cannot see)? Answer only JSON:
-{{"true": true or false, "proof": "<the one exact code line from above that proves it, copied character for character>"}}"""
+Reviewers' claims are often wrong: they misread a bound, miss a guard a few lines away, or guess about code they
+cannot see. Check it yourself against the lines above, then decide. Answer only JSON, in this order:
+{{"check": "<1-3 sentences: the lines that decide it and what they really do>", "true": true or false,
+"proof": "<the one exact code line from above that shows the problem, copied character for character>"}}"""
 
 
 def confirmed(risk: dict, source: str, ask=None) -> str:
     """Litha re-checks a high claim against the real code; '' when she proves it with a line that really is there."""
     lines = source.splitlines()
     lo, hi = max(0, risk["line"] - 40), min(len(lines), risk["line"] + 40)
-    excerpt = "\n".join(f"{i + 1}: {lines[i]}" for i in range(lo, hi))
+    excerpt = "\n".join(f"{i + 1}: {lines[i][:200]}" for i in range(lo, hi))   # 80 lines stay inside 4096 tokens
     try:
         answer = json.loads((ask or ask_litha)(CONFIRM.format(excerpt=excerpt, **risk)))
     except (ValueError, TypeError):
@@ -250,21 +262,24 @@ def confirmed(risk: dict, source: str, ask=None) -> str:
     proof = re.sub(r"^\d+:\s?", "", proof).strip()
     if answer.get("true") is not True:
         return "she withdrew it after reading the real code"
-    if len(proof) < 4 or not any(proof == ln.strip() for ln in lines[lo:hi]):
+    if len(proof) < 4 or not any(review_pack.quotes(proof, ln) for ln in lines[lo:hi]):
         return "no real code line proves it"
     return ""
 
 
 def review(pr: dict, files: dict[str, dict], ask=ask_litha, read=head_file) -> dict:
-    """Litha's verdict over every diff chunk. Risks that do not point at an added line are dropped."""
-    verdicts, summaries, risks, dropped = [], [], [], 0
-    for part in chunks(files):
-        prompt = self_map.fitted("merge-review", lambda note: f"{RUBRIC}{note}\n\nTitle: {pr.get('title', '')}\n"
-                                 f"Description: {(pr.get('body') or '')[:1200]}\n\n{part}", 700)
+    """Litha's verdict over every part of the diff. A risk whose quote is not a changed line of that file (or, with
+    no quote, whose line is not an added line) is dropped; the same line named in two parts counts once."""
+    verdicts, summaries, risks, dropped, why_dropped, not_json = [], [], {}, 0, [], 0
+    prompts, left = review_prompts(pr, files)
+    for prompt in prompts:
         try:
             answer = json.loads(ask(prompt))
         except (ValueError, TypeError):
+            answer = None
+        if not isinstance(answer, dict):
             answer = {"verdict": "hold", "summary": "review answer was not JSON", "risks": []}
+            not_json += 1
         verdicts.append(str(answer.get("verdict", "hold")).lower())
         summaries.append(str(answer.get("summary", ""))[:300])
         for r in answer.get("risks") or []:
@@ -272,15 +287,24 @@ def review(pr: dict, files: dict[str, dict], ask=ask_litha, read=head_file) -> d
                 path, line = str(r["file"]), int(r["line"])
             except (KeyError, TypeError, ValueError):
                 dropped += 1
+                why_dropped.append("no file or line")
                 continue
-            if path in files and line in files[path]["added"]:
-                risks.append({"file": path, "line": line, "severity": str(r.get("severity", "low")).lower(),
-                              "why": str(r.get("why", ""))[:300]})
-            else:
+            at, no = review_pack.anchor({**r, "line": line}, files[path]) if path in files else (None, "no such file")
+            if at is None:
                 dropped += 1
+                why_dropped.append(no)
+                continue
+            risk = {"file": path, "line": at, "severity": str(r.get("severity", "low")).lower(),
+                    "why": str(r.get("why", ""))[:300], **({"quote": str(r["quote"])[:200]} if r.get("quote") else {})}
+            old = risks.get((path, at))
+            if old is None or (risk["severity"] == "high" and old["severity"] != "high"):
+                risks[(path, at)] = risk
+    risks = list(risks.values())
     cache: dict[str, str | None] = {}
     for r in risks:                     # check every high claim against the real file before it may block a merge
-        if r["severity"] == "high":
+        if r["severity"] == "high" and review_pack.kind(r["file"]) in NO_HIGH and not SAFETY.search(r["why"]):
+            r.update(severity="low", note="a test or doc file cannot break running code")
+        elif r["severity"] == "high":
             if r["file"] not in cache:
                 cache[r["file"]] = read(pr, r["file"])
             no = refuted(r, cache[r["file"]])
@@ -295,7 +319,38 @@ def review(pr: dict, files: dict[str, dict], ask=ask_litha, read=head_file) -> d
     high = [r for r in risks if r["severity"] == "high"]
     # a bare "hold" with no line-backed high risk is not evidence enough to block; a high risk always is
     return {"verdict": "hold" if high else "merge", "said": verdicts, "summary": " ".join(summaries)[:600],
-            "risks": risks, "dropped_claims": dropped}
+            "risks": risks, "dropped_claims": dropped, "dropped_why": why_dropped[:10], "parts": len(prompts),
+            "not_reviewed": left[:20], "not_json": not_json}
+
+
+REVIEWS = LOG.with_name("reviews.json")
+REVIEW_TTL = 6 * 3600
+
+
+def cached_review(pr: dict, files: dict[str, dict], ask=ask_litha, path: Path | None = None) -> dict:
+    """review(), at most once per PR head (and review code) every REVIEW_TTL seconds. In decisions.jsonl (48 h to
+    2026-11-02) 852 of 898 reviews re-read a head already reviewed (Metallic-RB#138: 235 times), and 4 heads drew
+    both verdicts from the same diff. Only her live model is cached; tests and replays pass their own ask."""
+    if ask is not ask_litha:
+        return review(pr, files, ask)
+    path = path or REVIEWS
+    key = f"{REPO}#{pr['number']}@{pr['headRefOid']}:" + hashlib.sha1(
+        f"{RUBRIC}{CONFIRM}{review_pack.MAX_PARTS}{self_map.WINDOW}".encode()).hexdigest()[:8]
+    now = time.time()
+    try:
+        cache = {k: v for k, v in json.loads(path.read_text(encoding="utf-8")).items() if now - v["ts"] < REVIEW_TTL}
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        cache = {}
+    if key in cache:
+        return {**cache[key]["review"], "cached": round(now - cache[key]["ts"])}
+    rev = review(pr, files, ask)
+    if not rev["not_json"]:                             # a part that failed is asked again next run
+        cache[key] = {"ts": round(now), "review": rev}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cache), encoding="utf-8")
+        os.replace(tmp, path)
+    return json.loads(json.dumps(rev))                  # prove_high_risks edits its copy, not the cached one
 
 
 SAFETY = re.compile(r"secret|token|password|credential|injection|rm -rf|delet|data loss|leak|privilege|sandbox escape",
@@ -376,7 +431,7 @@ def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_f
     files = parse_diff(diff)
     checks = checks_fn(pr["headRefOid"])
     gates = gate_failures(pr, checks, files)
-    rev = review(pr, files, ask) if not gates else None          # no model time on a PR the gates already block
+    rev = cached_review(pr, files, ask) if not gates else None   # no model time on a PR the gates already block
     if rev and rev["verdict"] == "hold" and prove_fn:
         prove_fn(pr, rev, ask)                                   # a high claim must be shown by a failing test
     if rev and rev["verdict"] == "merge" and not gates and hunt_fn:
