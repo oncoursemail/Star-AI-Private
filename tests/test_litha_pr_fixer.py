@@ -244,10 +244,13 @@ def _typed_repo(tmp_path, baseline=None):
     (tmp_path / "star" / "m.py").write_text("def f(x: str | None) -> str:\n    return x.upper()  # BAD\n",
                                             encoding="utf-8")
 
-    def checker(tree, python):                  # pyright stand-in: one error per line marked BAD
-        return [{"file": "star/m.py", "line": i + 1, "rule": "reportOptionalMemberAccess",
+    def checker(tree, python, files=None):      # pyright stand-in: one error per line marked BAD, in every star/ file
+        checker.calls.append(files)
+        return [{"file": f"star/{p.name}", "line": i + 1, "rule": "reportOptionalMemberAccess",
                  "message": '"upper" is not a known attribute of "None"'}
-                for i, ln in enumerate((tree / "star" / "m.py").read_text(encoding="utf-8").splitlines()) if "BAD" in ln]
+                for p in sorted((tree / "star").glob("*.py")) if files is None or f"star/{p.name}" in files
+                for i, ln in enumerate(p.read_text(encoding="utf-8").splitlines()) if "BAD" in ln]
+    checker.calls = []
     return checker
 
 
@@ -262,6 +265,34 @@ def test_type_errors_above_the_baseline_are_fixed_by_her_edits(tmp_path):
     assert ok and why == "narrow the Optional" and rounds == 1
     assert "star/m.py:2:" in asked[0] and "baseline allows 0" in asked[0] and "return x.upper()" in asked[0]
     assert "BAD" not in (tmp_path / "star" / "m.py").read_text(encoding="utf-8")
+
+
+def test_rounds_recheck_only_the_files_above_the_baseline_and_a_full_run_decides_success(tmp_path):
+    checker = _typed_repo(tmp_path)
+    (tmp_path / "star" / "other.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "star" / "m.py").write_text("a  # BAD\nb  # BAD\nc  # BAD\n", encoding="utf-8")
+    one = {"why": "first", "edits": [{"file": "star/m.py", "find": "a  # BAD", "replace": "a"}]}
+    two = {"why": "second", "edits": [{"file": "star/m.py", "find": "b  # BAD", "replace": "b"},
+                                      {"file": "star/m.py", "find": "c  # BAD", "replace": "c"},
+                                      {"file": "star/other.py", "find": "x = 1", "replace": "x = 1  # BAD"}]}
+    fix = {"why": "third", "edits": [{"file": "star/other.py", "find": "x = 1  # BAD", "replace": "x = 1"}]}
+    answers = iter([one, two, fix])
+    ok, why, rounds = F.fix_types(tmp_path, sys.executable, lambda p: json.dumps(next(answers)), checker)
+    assert ok and why == "third" and rounds == 3
+    # full, probe, round 1 (m.py only), round 2 (m.py clean -> the full run finds the new error in other.py, 1 above
+    # the baseline instead of 2: kept), round 3 (other.py clean -> full run: done)
+    assert checker.calls == [None, ["star/m.py"], ["star/m.py"], ["star/m.py"], None, ["star/other.py"], None]
+
+
+def test_when_per_file_counts_differ_from_the_full_run_every_round_is_a_full_run(tmp_path):
+    checker = _typed_repo(tmp_path)
+
+    def odd(tree, python, files=None):          # a checker whose per-file answer is not the full run's
+        return checker(tree, python) + ([dict(checker(tree, python)[0], line=9)] if files else [])
+    odd_calls = []
+    ok, _, rounds = F.fix_types(tmp_path, sys.executable, lambda p: json.dumps(GOOD),
+                                lambda t, p, files=None: odd_calls.append(files) or odd(t, p, files))
+    assert ok and rounds == 1 and odd_calls == [None, ["star/m.py"], None]
 
 
 def test_an_ignore_comment_or_no_progress_is_undone_and_she_is_told(tmp_path):
@@ -286,7 +317,7 @@ def test_the_type_fixer_respects_the_baseline_and_cannot_move_it(tmp_path):
     checker = _typed_repo(tmp_path, {"star/m.py::reportOptionalMemberAccess": 1})
     ok, why, rounds = F.fix_types(tmp_path, sys.executable, lambda p: pytest.fail("nothing is new"), checker)
     assert (ok, rounds) == (False, 0) and "passes locally" in why
-    assert F.fix_types(tmp_path, sys.executable, lambda p: "", lambda t, p: None)[2] == 0      # no npx: round 0
+    assert F.fix_types(tmp_path, sys.executable, lambda p: "", lambda t, p, files=None: None)[2] == 0   # no npx
     problems = F.apply_edits(tmp_path, [{"file": "scripts/pyright_baseline.json", "find": "1", "replace": "2"}])
     assert problems and "may not edit" in problems[0]
 
