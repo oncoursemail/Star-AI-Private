@@ -192,6 +192,19 @@ def test_counts_are_labelled_truthfully():
     assert "it is not a player count" in page
 
 
+def test_linux_builds_are_offered_to_linux_visitors_when_published():
+    site = (SITE / "src" / "assets" / "site.js").read_text(encoding="utf-8")
+    dl = (SITE / "src" / "assets" / "downloads.js").read_text(encoding="utf-8")
+    page = (SITE / "src" / "downloads" / "index.html").read_text(encoding="utf-8")
+    assert '"linux-x86_64"' in site and '"linux-x86_64-deb"' in site and "M.onLinux" in site and "!/Android/" in site
+    assert "data-linux hidden" in page and "data-dl-appimage" in page and "data-dl-deb" in page  # hidden until published
+    assert "r.linux" in dl and '$("[data-linux]").hidden = false' in dl
+    caddy = (SERVER / "Caddyfile").read_text(encoding="utf-8")
+    assert "/releases/*.AppImage /releases/*.deb" in caddy and "@not_installer not path /releases/*.exe /releases/*.AppImage /releases/*.deb" in caddy
+    build = (SITE / "build.py").read_text(encoding="utf-8")
+    assert '".appimage", ".deb"' in build
+
+
 def test_release_folder_copies_only_the_manifest_and_installers(built):
     out, _, _, _ = built
     assert sorted(p.name for p in (out / "releases").iterdir()) == ["Metallic_0.1.0_x64-setup.exe", "latest.json"]
@@ -253,7 +266,7 @@ def test_server_files_match_the_hosting_plan():
     assert '@fresh path /live/* /releases/latest.json\n\theader @fresh Cache-Control "no-store"' in caddy
     assert 'header @installers Cache-Control "public, max-age=31536000, immutable"' in caddy
     # download count: only installer requests are logged, without addresses or headers, readable by metallic-live
-    assert "@not_installer not path /releases/*.exe\n\tlog_skip @not_installer" in caddy
+    assert "@not_installer not path /releases/*.exe /releases/*.AppImage /releases/*.deb\n\tlog_skip @not_installer" in caddy
     assert "output file /var/log/caddy/downloads.log" in caddy and "mode 0644" in caddy
     assert "request>headers delete" in caddy and "request>remote_ip delete" in caddy and "request>client_ip delete" in caddy
     assert "log_append ua {http.request.header.User-Agent}" in caddy
