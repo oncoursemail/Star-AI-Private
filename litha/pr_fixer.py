@@ -508,6 +508,8 @@ def sides(block: str) -> tuple[str, str, str]:
     """(PR side, ancestor, base side) of one diff3 conflict block."""
     body = block.split("\n", 1)[1].rsplit(">>>>>>> ", 1)[0]
     head, theirs = body.split("\n=======\n", 1) if "\n=======\n" in body else body.split("=======\n", 1)
+    if head.startswith("|||||||"):                     # the PR side is empty (seen: Studio #275, instance.rs)
+        head = "\n" + head
     ours, _, base = head.partition("\n|||||||")
     return ours, base.split("\n", 1)[1] if "\n" in base else "", theirs
 
@@ -562,7 +564,26 @@ def broken(tree: Path, path: str, text: str) -> str:
     if original.returncode or check(original.stdout):
         return ""
     why = check(text)
-    return f"{tool} rejects it: {why}" if why else ""
+    if why:
+        return f"{tool} rejects it: {why}"
+    twice = sorted(double_uses(text) - double_uses(original.stdout)) if tool == "rustfmt" else []
+    return f"it imports {', '.join(twice[:4])} twice (`use` lines of both sides kept)" if twice else ""
+
+
+USE = re.compile(r"^((?:#\[cfg\([^\n]*\)\]\n)?)(?:pub(?:\([\w:]+\))?\s+)?use\s+([^;]+);", re.M)
+
+
+def double_uses(text: str) -> set[str]:
+    """Names a file's top-level `use` lines bring in more than once (rustc E0252), counted per `#[cfg(...)]`; an
+    unconditional one clashes with every cfg. Seen in Studio #210: the PR's `pub use game::{.., Game, ..}` and main's
+    `#[cfg(feature = "presentation")] pub use game::{FrameOutput, Game}` both kept."""
+    seen: dict[str, list[str]] = {}
+    for m in USE.finditer(text):
+        for leaf in re.split(r"[{},]", m.group(2)):
+            name = re.split(r"\s+as\s+", leaf.strip())[-1].rsplit("::", 1)[-1].strip()
+            if name and name not in ("*", "self", "super", "crate", "_"):
+                seen.setdefault(name, []).append(m.group(1).strip())
+    return {n for n, cfgs in seen.items() if len(cfgs) > 1 and ("" in cfgs or len(set(cfgs)) < len(cfgs))}
 
 
 def tidy(tree: Path, path: str, text: str) -> str:
@@ -588,15 +609,39 @@ def tidy(tree: Path, path: str, text: str) -> str:
 BRACKETED = re.compile(r"\.(rs|py|ts|tsx|js|jsx|wgsl|cs|java|kt|go|c|h|cc|cpp|hpp|json|lua|luau)$")
 
 
-def balance(text: str) -> tuple[int, int, int]:
-    return text.count("{") - text.count("}"), text.count("(") - text.count(")"), text.count("[") - text.count("]")
+_C_LIKE = r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"'
+LITERALS = {   # comments, strings and char literals per language: brackets inside them are not code
+    "rs": re.compile(r'//[^\n]*|/\*.*?\*/|(?<![\w])b?r(#*)".*?"\1|b?"(?:\\.|[^"\\])*"'
+                     r"|b?'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{2}|.)|[^\\'\n])'", re.S),  # 'a alone: lifetime
+    "py": re.compile(r'#[^\n]*|(?i:[rbuf]{0,2})(?:"""(?:\\.|.)*?"""|\'\'\'(?:\\.|.)*?\'\'\''
+                     r'|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\')', re.S),
+    "js": re.compile(_C_LIKE + r"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`", re.S),
+    "c": re.compile(_C_LIKE + r"|'(?:\\.|[^'\\\n])*'|`[^`]*`", re.S),            # (go: `raw strings`)
+    "lua": re.compile(r'--\[(=*)\[.*?\]\1\]|--[^\n]*|\[(=*)\[.*?\]\2\]|"(?:\\.|[^"\\\n])*"'
+                      r"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`", re.S),
+    "json": re.compile(r'"(?:\\.|[^"\\\n])*"'),
+}
+LANG = {"rs": "rs", "py": "py", "ts": "js", "tsx": "js", "js": "js", "jsx": "js", "lua": "lua", "luau": "lua",
+        "json": "json", "wgsl": "c", "cs": "c", "java": "c", "kt": "c", "go": "c", "c": "c", "h": "c", "cc": "c",
+        "cpp": "c", "hpp": "c"}
+
+
+def balance(text: str, path: str = "") -> tuple[int, int, int]:
+    """Open minus closed {}, () and [] in the code of `text`: brackets in comments, strings and char literals do not
+    count (seen in Studio: Lua source inside Rust raw strings, '{' char literals, `(` in doc comments). A literal the
+    text cuts off (a block that starts or ends inside a string) simply counts as code, the same for every side."""
+    lexer = LITERALS.get(LANG.get(path.rsplit(".", 1)[-1].lower(), ""))
+    code = lexer.sub(" ", text) if lexer else text
+    return code.count("{") - code.count("}"), code.count("(") - code.count(")"), code.count("[") - code.count("]")
 
 
 def slips(path: str, block: str, new: str, before: str = "", after: str = "") -> str:
     r"""Mistakes a merge of two sides never needs: the line just outside the block repeated inside it (seen: a doubled
     `data:BootData` field in #853), brackets that no longer balance the way BOTH sides do (seen: a lost closing brace
-    of an impl), and escape sequences turned into real characters (seen: a Rust \n became a line break)."""
-    ours, _, theirs = sides(block)
+    of an impl), any other real line copied from the code shown around the block (seen in Studio #210: her answer to
+    a doc-comment conflict went on with the file's `pub use` lines, which then stood twice), and escape sequences
+    turned into real characters (seen: a Rust \n became a line break)."""
+    ours, base, theirs = sides(block)
     lines = [ln for ln in new.splitlines() if ln.strip()]
     edge = [(lines[:1], before.rstrip("\n").rsplit("\n", 1)[-1], "before"),
             (lines[-1:], after.lstrip("\n").split("\n", 1)[0], "after")]
@@ -605,13 +650,71 @@ def slips(path: str, block: str, new: str, before: str = "", after: str = "") ->
                 {ln.strip() for ln in (ours + "\n" + theirs).splitlines()}:
             return (f"Your text repeats the line just {where} the conflict ({outside.strip()[:80]}), which stays in "
                     "the file anyway. Give only what replaces the lines between the markers.\n")
-    if BRACKETED.search(path) and balance(ours) == balance(theirs) != balance(new):
-        return ("Your text does not open and close {}, () and [] the way both sides do (each side: "
-                f"{balance(ours)}, yours: {balance(new)}). Keep every bracket the sides have.\n")
+    inside = {ln.strip() for ln in (ours + "\n" + base + "\n" + theirs).splitlines()}
+    around = {ln.strip() for ln in (before + "\n" + after).splitlines()} - inside
+    copied = [x for x in (ln.strip() for ln in lines) if x in around and len(x) >= 12 and re.search(r"\w", x)]
+    if copied:
+        return (f"Your text copies a line from outside the conflict ({copied[0][:80]}), which stays in the file "
+                "anyway. Give only what replaces the lines between the markers, merged from the two sides.\n")
+    for lang in (path, ""):                     # the code's brackets; all of them when the sides only agree on that
+        if BRACKETED.search(path) and balance(ours, lang) == balance(theirs, lang):
+            if balance(new, lang) != balance(ours, lang):
+                return ("Your text does not open and close {}, () and [] the way both sides do (each side: "
+                        f"{balance(ours, lang)}, yours: {balance(new, lang)}). Keep every bracket the sides have; "
+                        "brackets that open in the conflict may close after it (and the other way round).\n")
+            break
     if new.count("\\") < min(ours.count("\\"), theirs.count("\\")):
         return (r"You turned escape sequences such as \n into real characters. Inside the JSON string write a "
                 r"backslash as \\ so the code keeps \n, \t and \" exactly as the sides have them." "\n")
     return ""
+
+
+MARKER = re.compile(r"^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)( |$)")
+USE_BRACE = re.compile(r"\b(use\s+[\w:]*\w)\{")     # `use api{`: never Rust; she writes it for `use api::{`
+
+
+def echoed(new: str, block: str, before: str, after: str, path: str = "") -> str:
+    """Her answer without the lines she copied from just outside the block, which stay in the file anyway (seen in
+    Studio #421 and #255: the merged block followed by the rest of the statement after it, so the brackets that close
+    after the block closed twice). Only an exact copy is cut, and only one with a real line that is in neither side;
+    `use api{` (never Rust; she writes it for `use api::{`, seen in #317, #245, #421, #210) gets its `::` back."""
+    ours, base, theirs = sides(block)
+    inside = {ln.strip() for ln in (ours + "\n" + base + "\n" + theirs).splitlines()}
+    real = re.compile(r"\w")
+    lines = new.splitlines(keepends=True)
+    tail = after.split("\n")
+    for i in range(len(lines)):                      # earliest i: everything from lines[i] on is the start of `after`
+        rest = [ln.strip() for ln in lines[i:]]
+        if len(rest) > len(tail) or not any(real.search(x) and x not in inside for x in rest):
+            continue
+        if i and all(x == tail[k].strip() for k, x in enumerate(rest[:-1])) and \
+                tail[len(rest) - 1].strip().startswith(rest[-1]):          # (her last line may stop short)
+            lines = lines[:i]
+            break
+    head = before.split("\n")
+    head = head[:-1] if head and not head[-1] else head      # `before` ends with the newline of its last line
+    for i in range(len(lines), 0, -1):              # latest i: lines[:i] ends with a copy of the end of `before`
+        k = 0
+        while k < i and k < len(head) and lines[i - 1 - k].strip() == head[-1 - k].strip():
+            k += 1
+        copied = [x.strip() for x in head[len(head) - k:]] if k else []
+        if k and i < len(lines) and any(real.search(x) and x not in inside for x in copied) and \
+                (k == i or (k < len(head) and MARKER.match(head[-1 - k]))):  # (what came before: her redo of the
+            lines = lines[i:]                                               #  previous conflict, merged on its own)
+            break
+    out = "".join(lines)
+    if out.strip() and lines != new.splitlines(keepends=True):   # cut: without the blank lines she put between
+        if not (ours.startswith("\n") or theirs.startswith("\n")):  # her merge and the copy
+            out = out.lstrip("\n")
+        if not (ours.endswith("\n\n") or theirs.endswith("\n\n")):
+            out = out.rstrip("\n") + "\n"
+    if path.endswith(".rs"):
+        seen = ours + base + theirs + before + after
+        if not USE_BRACE.search(ours + base + theirs):
+            out = USE_BRACE.sub(r"\1::{", out)
+        for name in set(re.findall(r"\b(\w+)!\(", seen)) - set(re.findall(r"(?<![!\w])(\w+)\(", seen)):
+            out = re.sub(rf"(?<![\w.:]){name}\(", f"{name}!(", out)    # `assert_eq(` for `assert_eq!(` (#275)
+    return out
 
 
 WINDOW = 4096                       # litha-fast's context (prompt + answer); ~3.5 characters per token for code
@@ -661,39 +764,62 @@ def both_added(ours: str, base: str, theirs: str, docs: bool) -> str | None:
     return "".join(out)
 
 
-def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") -> tuple[str | None, str]:
+def mechanical(path: str, block: str, before: str, after: str) -> str | None:
+    """The block's merge when it needs no judgement (diff3 blocks only), else None: both sides only added at an empty
+    ancestor (both kept, as written), one side only added next to what the other changed, or both only inserted."""
+    if "\n|||||||" not in block:
+        return None
+    ours, base, theirs = sides(block)
+    union = ours.rstrip("\n") + "\n" + theirs if ours.strip() and theirs.strip() else ""
+    if not base.strip() and union and not slips(path, block, union, before, after):
+        return union
+    near = adjacent(ours, base, theirs)
+    if near is None:
+        near = both_added(ours, base, theirs, docs=path.endswith((".md", ".txt", ".rst")))
+    return near if near is not None and not slips(path, block, near, before, after) else None
+
+
+def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
+                 keep: bool = False) -> tuple[str | None, str]:
     """Every conflict block of one file resolved by her; (None, why) when she cannot make valid code of it. A hint is a
-    checker's complaint about her previous attempt at this file."""
+    checker's complaint about her previous attempt at this file; with it she redoes every block, or with keep only the
+    blocks she answered (the mechanical merges stay). The 1-8 limit counts only the blocks she is asked
+    about: Studio's #412 had 9 blocks in instance.rs, most of them mechanical."""
     blocks = list(CONFLICT.finditer(text))
-    if not blocks or len(blocks) > 8:
-        return None, f"{path}: {len(blocks)} conflict blocks (1-8 handled)"
+    if not blocks:
+        return None, (f"{path}: git marked no conflict lines in it (deleted on one side and changed on the other, "
+                      "a rename, or a binary file)")
+    around = [(text[max(0, m.start() - 1500):m.start()].split("\n", 1)[-1],
+               text[m.end():m.end() + 1500].rsplit("\n", 1)[0]) for m in blocks]
+    plan = [None if hint and not keep else mechanical(path, m.group(0), *around[k]) for k, m in enumerate(blocks)]
+    asks = sum(p is None for p in plan)
+    if asks > 8:
+        return None, f"{path}: {asks} of {len(blocks)} conflict blocks need her (1-8 handled)"
     out, last, feedback = [], 0, hint
     for i, m in enumerate(blocks, 1):
-        before = text[max(0, m.start() - 1500):m.start()].split("\n", 1)[-1]
-        after = text[m.end():m.end() + 1500].rsplit("\n", 1)[0]
+        before, after = around[i - 1]
+        if plan[i - 1] is not None:
+            out += [text[last:m.start()], plan[i - 1]]
+            last = m.end()
+            continue
         ours, base, theirs = sides(m.group(0))
-        union = ours.rstrip("\n") + "\n" + theirs if ours.strip() and theirs.strip() else ""
-        if not hint and "\n|||||||" in m.group(0) and not base.strip() and union \
-                and not slips(path, m.group(0), union, before, after):
-            out += [text[last:m.start()], union]       # both sides only ADDED here: keep both, exactly as written
-            last = m.end()
-            continue
-        near = adjacent(ours, base, theirs) if not hint and "\n|||||||" in m.group(0) else None
-        if near is None and not hint and "\n|||||||" in m.group(0):
-            near = both_added(ours, base, theirs, docs=path.endswith((".md", ".txt", ".rst")))
-        if near is not None and not slips(path, m.group(0), near, before, after):
-            out += [text[last:m.start()], near]        # one side only added next to what the other changed
-            last = m.end()
-            continue
+        if base.strip() and (not ours.strip()) != (not theirs.strip()) and base not in (ours, theirs):
+            gone, kept = (("the PR", BASE) if not ours.strip() else (BASE, "the PR"))
+            return None, (f"{path}: conflict {i}: {gone} deleted these lines and {kept} changed them; where that code "
+                          "went is a person's call")
+        shown = before, after
         need = (len(MERGE_PROMPT) + len(before) + len(m.group(0)) + len(after) + len(ours) + len(theirs)) / 3.5
-        if need > WINDOW:                              # it cannot fit her model's context: say so, do not burn tries
+        if need > WINDOW:                              # less of the code around it, then give up (do not burn tries)
+            shown = before[-300:].split("\n", 1)[-1], after[:300].rsplit("\n", 1)[0]
+            need -= (len(before) + len(after) - len(shown[0]) - len(shown[1])) / 3.5
+        if need > WINDOW:
             return None, f"{path}: conflict {i} is too big for her {WINDOW}-token window (~{need:.0f} tokens)"
         for _ in range(3):
             try:
                 ans = json.loads(asker(MERGE_PROMPT.format(repo=REPO, base=BASE, title=title, path=path, i=i,
                                                            n=len(blocks), feedback=feedback,
-                                                           context=before + m.group(0) + after)))
-                new = str(ans["resolved"])
+                                                           context=shown[0] + m.group(0) + shown[1])))
+                new = echoed(str(ans["resolved"]), m.group(0), before, after, path)
             except (ValueError, TypeError, KeyError):
                 feedback = "Your last answer was not valid JSON with a \"resolved\" string.\n"
                 continue
@@ -714,6 +840,34 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "") ->
         out += [text[last:m.start()], new if new.endswith("\n") or not new else new + "\n"]
         last, feedback = m.end(), hint
     return "".join(out) + text[last:], ""
+
+
+def merge_file(tree: Path, path: str, raw: str, title: str, asker=ask) -> tuple[str | None, str]:
+    """One conflicted file merged and parsed; when a checker rejects it she tries again, told why: first only the
+    blocks she answered (the mechanical merges stay; seen in Studio #208, where redoing all 6 blocks failed on one git
+    could merge), then every block."""
+    merged, why = resolve_text(path, raw, title, asker)
+    why = why or broken(tree, path, merged or "")
+    for keep in (True, False) if merged is not None and why else ():
+        merged, why = resolve_text(path, raw, title, asker, keep=keep,
+                                   hint=f"Your previous merge of this file was rejected: {why[:400]}\n")
+        why = why or broken(tree, path, merged or "")
+        if merged is not None and not why:
+            break
+    return merged, why
+
+
+def deleted_side(tree: Path, path: str) -> str:
+    """'' unless git's conflict on this file is modify/delete (seen: Studio main split classes.rs into classes/ while
+    #421 and #275 changed classes.rs). There is no block to merge: the change has to go where the code now lives."""
+    stages = {ln.split()[2] for ln in sh(["git", "ls-files", "-u", "--", path], cwd=tree).stdout.splitlines()
+              if len(ln.split()) >= 4}
+    if not stages or {"2", "3"} <= stages:
+        return ""
+    if "3" not in stages:
+        return (f"{path}: deleted on {BASE} and changed by this PR (modify/delete); the PR's change has to be "
+                f"redone where {BASE} moved that code, a person's call")
+    return f"{path}: deleted by this PR and changed on {BASE} (modify/delete); a person's call"
 
 
 def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
@@ -744,13 +898,12 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     tests: set[str] = set()
     raws: dict[str, str] = {}                          # each file with its conflict markers, to redo a merge
     for c in code:
+        why = deleted_side(tree, c)
+        if why:
+            sh(["git", "merge", "--abort"], cwd=tree)
+            return {"pr": number, "result": "failed", "why": why}
         raw = raws[c] = (tree / c).read_text(encoding="utf-8", errors="replace")
-        merged, why = resolve_text(c, raw, pr.get("title", ""), asker)
-        why = why or broken(tree, c, merged or "")
-        if merged is not None and why:                     # one more try at the file, told what the checker said
-            merged, why = resolve_text(c, raw, pr.get("title", ""), asker,
-                                       hint=f"Your previous merge of this file was rejected: {why[:400]}\n")
-            why = why or broken(tree, c, merged or "")
+        merged, why = merge_file(tree, c, raw, pr.get("title", ""), asker)
         if merged is None or why:
             sh(["git", "merge", "--abort"], cwd=tree)
             return {"pr": number, "result": "failed", "why": why if why.startswith(c) else f"{c}: {why}"}
