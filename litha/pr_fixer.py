@@ -330,12 +330,13 @@ def bare_python(python: str) -> str:
     return str(exe) if exe.is_file() else python
 
 
-def run_pyright(tree: Path, python: str) -> list[dict] | None:
-    """Pyright's errors as CI computes them ({file, line, rule, message}, repo-relative), or None when it cannot run."""
+def run_pyright(tree: Path, python: str, files: list[str] | None = None) -> list[dict] | None:
+    """Pyright's errors as CI computes them ({file, line, rule, message}, repo-relative), or None when it cannot run.
+    With `files`, only those are checked (~3 s a file instead of ~50 s for the repo; same counts for them)."""
     npx = shutil.which("npx")
     if not npx:
         return None
-    r = sh([npx, *PYRIGHT, "--pythonpath", bare_python(python), "--outputjson"], cwd=tree, timeout=900)
+    r = sh([npx, *PYRIGHT, "--pythonpath", bare_python(python), "--outputjson", *(files or [])], cwd=tree, timeout=900)
     try:
         report = json.loads(r.stdout)
     except ValueError:
@@ -364,6 +365,18 @@ def type_excess(tree: Path, errors: list[dict]) -> dict[str, tuple[int, int]]:
     return {k: (allowed.get(k, 0), n) for k, n in sorted(now.items()) if n > allowed.get(k, 0)}
 
 
+def _counts(errors: list[dict], files: set[str]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for e in errors:
+        if e["file"] in files:
+            out[f"{e['file']}::{e['rule']}"] = out.get(f"{e['file']}::{e['rule']}", 0) + 1
+    return out
+
+
+def excess_files(excess: dict[str, tuple[int, int]]) -> list[str]:
+    return sorted({k.rsplit("::", 1)[0] for k in excess})
+
+
 def related_tests(tree: Path, files: list[str], limit: int = 6) -> list[str]:
     """Test files that import a changed module: a type fix must not change what the code does."""
     mods = {f[:-3].replace("/", ".") for f in files if f.endswith(".py")}
@@ -380,13 +393,19 @@ def related_tests(tree: Path, files: list[str], limit: int = 6) -> list[str]:
 def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[bool, str, int]:
     """Up to ROUNDS rounds of her edits against the pyright baseline gate. A round must lower the errors above the
     baseline and add no ignore comment, else it is undone. Then the tests of every changed module must still pass.
-    Round 0 = nothing to do here (pyright cannot run, or the gate passes locally)."""
+    Round 0 = nothing to do here (pyright cannot run, or the gate passes locally).
+    Speed: after the first full run a round re-checks only the files above the baseline (their counts do not depend
+    on what else is checked; probed once here, else every round is a full run), and when those reach zero a full run
+    decides, so success always means the whole repo passes."""
     errors = checker(tree, python)
     if errors is None:
         return False, "pyright cannot run here (no npx)", 0
     excess = type_excess(tree, errors)
     if not excess:
         return False, "the pyright gate passes locally (CI-only type failure)", 0
+    probe_files = excess_files(excess)
+    probe = checker(tree, python, probe_files)
+    fast = probe is not None and _counts(probe, set(probe_files)) == _counts(errors, set(probe_files))
     feedback, why, touched = "", "", set()
     for round_no in range(1, ROUNDS + 1):
         over = sum(n - a for a, n in excess.values())
@@ -412,8 +431,11 @@ def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[
         before.update({p: (tree / p).read_bytes() for e in edits if isinstance(e, dict)
                        for p in [str(e.get("file", "")).replace("\\", "/").lstrip("./")] if p and (tree / p).is_file()})
         problems = apply_edits(tree, edits)
-        after = checker(tree, python) or []
+        after = (checker(tree, python, excess_files(excess)) if fast else checker(tree, python)) or []
         left = type_excess(tree, after)
+        if fast and not left:                             # those files are clean: the whole repo decides
+            after = checker(tree, python) or []
+            left = type_excess(tree, after)
         if sum(n - a for a, n in left.values()) < over:
             why, feedback, errors, excess = str(answer.get("why", why))[:300], "", after, left
             touched |= {f for f, data in before.items() if (tree / f).read_bytes() != data}

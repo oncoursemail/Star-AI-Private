@@ -179,6 +179,11 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Live check on star/next: 339 errors, 0 above the baseline (CI's script agrees). Trial on #878 (draft, local only,
   nothing pushed): 1 round, 83 s, `created is not None and ...` narrowing; `scripts/pyright_baseline.py check` on
   the result: "none new".
+- Speed (measured 2026-11-02 on this branch): a full run is 51 s (717 files), the 3 files with the most baseline
+  errors together 4.1 s, one file 4.0 s, all 77 files with errors 17 s, with exactly the full run's file/rule counts.
+  So after the first full run a round re-checks only the files above the baseline (probed once against the full run;
+  if they differ every round is a full run), and a full run decides whenever they reach zero, so a fix that adds
+  errors elsewhere is still caught. A round that does not finish costs ~4 s instead of ~50 s.
 - Also fixed: CI lints `star litha`, the fixer linted only `star`, so a ruff error in `litha/` was reported as
   "CI-only" and never fixed.
 - PRs recorded in `tried.json` as type failures before this change are retried only when their head moves.
