@@ -197,6 +197,31 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
                    "failed_reply_opportunities", "cancelled_reply_opportunities"):
         if after[metric] > before[metric]:
             reasons.append("increased_" + metric)
+    # Comparing aggregate harms alone can hide *where* they occurred.
+    # Reallocating a single unwanted utterance, interruption or frame stall
+    # onto another previously unaffected viewer/game moment is a regression,
+    # even when the global harm totals are unchanged or lower. This is
+    # matched-case protection, not a claim of independently verified audio.
+    new_unexpected_speech_cases = sum(
+        not old.should_reply and old.result != "spoken"
+        and candidate[case_id].result == "spoken"
+        for case_id, old in baseline.items()
+    )
+    new_talkover_cases = sum(
+        candidate[case_id].overlap_ms >
+        old.overlap_ms + max(10.0, old.overlap_ms * 0.10)
+        for case_id, old in baseline.items()
+    )
+    new_game_stall_cases = sum(
+        old.game_stall_ms <= 50 < candidate[case_id].game_stall_ms
+        for case_id, old in baseline.items()
+    )
+    if new_unexpected_speech_cases:
+        reasons.append("new_unexpected_speech_cases")
+    if new_talkover_cases:
+        reasons.append("new_talkover_cases")
+    if new_game_stall_cases:
+        reasons.append("new_game_stall_cases")
     # A faster result obtained by silently dropping the slowest opportunities
     # is not a latency win. Score the exact same *audible* opportunities only.
     # "spoken" implies first_audible_ms (checked in StreamAuditTurn); the None checks only narrow the type.
@@ -241,6 +266,9 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
         "p95_relative_latency_gain": gain,
         "min_useful_reply_ratio": min_useful_reply_ratio,
         "matched_audible_cases": len(matched),
+        "new_unexpected_speech_cases": new_unexpected_speech_cases,
+        "new_talkover_cases": new_talkover_cases,
+        "new_game_stall_cases": new_game_stall_cases,
         "paired_faster_cases": faster,
         "paired_slower_cases": slower,
         "paired_neutral_cases": neutral,

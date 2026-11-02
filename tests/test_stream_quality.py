@@ -157,6 +157,72 @@ class StreamQualityTests(unittest.TestCase):
         result = compare_stream_profiles(tuple(source))
         self.assertIn("increased_unexpected_speech", result["reasons"])
 
+    def test_relocated_unwanted_speech_is_new_harm_not_aggregate_tie(self):
+        # Both profiles have exactly one bad unsolicited reply. Moving it to
+        # a previously quiet game moment is a NEW viewer-facing regression.
+        rows = []
+        for index in range(20):
+            case = f"trial_{index}"
+            needed = index < 18
+            old_spoken = needed or index == 18
+            new_spoken = needed or index == 19
+            rows.append(turn(case, needed=needed,
+                             outcome="spoken" if old_spoken else "silent",
+                             grade="supported" if old_spoken else "not_applicable"))
+            rows.append(turn(case, needed=needed, route="candidate", first=600,
+                             outcome="spoken" if new_spoken else "silent",
+                             grade="supported" if new_spoken else "not_applicable"))
+        result = compare_stream_profiles(tuple(rows))
+        self.assertEqual(result["baseline"]["unexpected_speech"], 1)
+        self.assertEqual(result["candidate"]["unexpected_speech"], 1)
+        self.assertEqual(result["decision"], "do_not_promote")
+        self.assertIn("new_unexpected_speech_cases", result["reasons"])
+
+    def test_relocated_user_talkover_is_new_harm_not_aggregate_tie(self):
+        rows = []
+        for index in range(20):
+            case = f"trial_{index}"
+            rows.append(turn(case, first=1000,
+                             overlap=100 if index == 0 else 0))
+            rows.append(turn(case, route="candidate", first=600,
+                             overlap=100 if index == 1 else 0))
+        result = compare_stream_profiles(tuple(rows))
+        self.assertEqual(result["baseline"]["total_overlap_ms"], 100)
+        self.assertEqual(result["candidate"]["total_overlap_ms"], 100)
+        self.assertEqual(result["decision"], "do_not_promote")
+        self.assertIn("new_talkover_cases", result["reasons"])
+
+    def test_lower_total_overlap_still_cannot_hide_newly_interrupted_case(self):
+        # Cutting one old 200 ms talk-over to zero does not erase the harm
+        # of introducing a 20 ms interruption into a different interaction.
+        rows = []
+        for index in range(20):
+            case = f"trial_{index}"
+            rows.append(turn(case, first=1000,
+                             overlap=200 if index == 0 else 0))
+            rows.append(turn(case, route="candidate", first=600,
+                             overlap=20 if index == 1 else 0))
+        report = compare_stream_profiles(tuple(rows))
+        self.assertLess(report["candidate"]["total_overlap_ms"],
+                        report["baseline"]["total_overlap_ms"])
+        self.assertEqual(report["new_talkover_cases"], 1)
+        self.assertEqual(report["decision"], "do_not_promote")
+        self.assertIn("new_talkover_cases", report["reasons"])
+
+    def test_relocated_game_stall_is_new_harm_not_aggregate_tie(self):
+        rows = []
+        for index in range(20):
+            case = f"trial_{index}"
+            rows.append(turn(case, first=1000,
+                             stall=75 if index == 0 else 0))
+            rows.append(turn(case, route="candidate", first=600,
+                             stall=75 if index == 1 else 0))
+        result = compare_stream_profiles(tuple(rows))
+        self.assertEqual(result["baseline"]["game_stalls_over_50ms"], 1)
+        self.assertEqual(result["candidate"]["game_stalls_over_50ms"], 1)
+        self.assertEqual(result["decision"], "do_not_promote")
+        self.assertIn("new_game_stall_cases", result["reasons"])
+
     def test_very_small_samples_do_not_count(self):
         report = compare_stream_profiles(pairs(5))
         self.assertEqual(report["decision"], "insufficient_or_unpaired_evidence")
