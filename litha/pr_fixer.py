@@ -15,6 +15,8 @@ The tests are the spec: she may not edit them. Tried heads are remembered so a P
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 import datetime as dt
 import json
 import shutil
@@ -24,6 +26,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 
@@ -38,12 +41,57 @@ IDENTITY = ["-c", "user.name=oncoursemail", "-c", "user.email=84545815+oncoursem
 STATE = Path.home() / ".star" / "pr-fixer" / "tried.json"
 
 
+TRIED = threading.Lock()
+
+
+@contextmanager
+def file_lock(path: Path, wait: float = 60, stale: float = 120):
+    """Another process (a re-queue, a second run) writing the same file waits here; a lock older than `stale` s is
+    left over from a dead process and is taken over."""
+    end = time.time() + wait
+    while True:
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                old = time.time() - path.stat().st_mtime > stale
+            except FileNotFoundError:
+                continue
+            if old or time.time() > end:
+                path.touch()
+                break
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Readers see the old file or the new one, never half of it (Windows refuses a replace while a reader has the
+    file open: retry briefly)."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    for i in range(40):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == 39:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05)
+
+
 def mark(key: str, sha: str) -> dict:
     """Record one attempt on the CURRENT file: a copy loaded at the start of a long run must not undo a re-queue
-    made meanwhile (seen 2026-11-01: four re-queued Studio PRs silently came back as tried)."""
-    tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
-    tried[key] = sha
-    STATE.write_text(json.dumps(tried), encoding="utf-8")
+    made meanwhile (seen 2026-11-01: four re-queued Studio PRs silently came back as tried). Several workers mark at
+    once: read-modify-write under a thread lock and a file lock, written atomically."""
+    with TRIED, file_lock(STATE.with_name("tried.lock")):
+        tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
+        tried[key] = sha
+        write_atomic(STATE, json.dumps(tried))
     return tried
 LOG = Path.home() / ".star" / "pr-fixer" / "fixes.jsonl"
 ROUNDS = 5
@@ -71,9 +119,16 @@ Edit only files shown above, with exactly those paths. Make the smallest correct
 unique in the file>", "replace": "<new text>"}}]}}"""
 
 
+SHARED = threading.RLock()     # the shared clone (fetch, worktree add/remove, star commit): one worker at a time
+
+
 def sh(args: list[str], cwd: Path | None = None, timeout: float = 600, env: dict | None = None):
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=timeout, env=env)
+    tool = Path(args[0]).stem.lower() if args else ""
+    shared = (tool == "git" and args[1:2] == ["-C"]) or tool == "star"
+    lock = rust_fix.BUILD if tool == "cargo" else SHARED if shared else nullcontext()
+    with lock:
+        return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout, env=env)
 
 
 def failed_logs(sha: str) -> str:
@@ -455,7 +510,18 @@ def fix_lock(tree: Path, python: str) -> tuple[bool, str]:
 
 def rerun_failed(sha: str, number: int | None = None) -> int:
     """Run the failed jobs of this commit again; returns how many workflow runs were restarted. When GitHub refuses
-    every rerun ("cannot be retried", seen on a 4-day-old run), closing and reopening the PR starts a fresh CI run."""
+    every rerun ("cannot be retried", seen on a 4-day-old run), closing and reopening the PR starts a fresh CI run.
+    There is one CI runner: RERUNS caps the reruns of a whole run, across workers (RerunSpent when it is used up)."""
+    if not RERUNS.take():
+        raise RerunSpent(f"#{number}: this run's CI rerun is already used")
+    try:
+        return _rerun(sha, number)
+    except BaseException:
+        RERUNS.give()
+        raise
+
+
+def _rerun(sha: str, number: int | None) -> int:
     checks = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs"))["check_runs"]
     runs = {m.group(1) for c in checks if c.get("conclusion") == "failure"
             for m in [re.search(r"/runs/(\d+)/", c.get("details_url") or "")] if m}
@@ -473,6 +539,8 @@ def rerun_failed(sha: str, number: int | None = None) -> int:
             done = 1
         except RuntimeError:
             pass
+    if not done:                                   # nothing restarted: the runner is still free for another PR
+        RERUNS.give()
     return done
 
 
@@ -974,9 +1042,95 @@ def fix_rust(pr: dict, log: str, dry: bool = False, asker=ask) -> dict:
     return row
 
 
-def others(python: str, limit: int, dry: bool = False) -> int:
+class RerunSpent(Exception):
+    """This run's CI rerun is used: the PR is left untouched (not marked tried) for the next run."""
+
+
+class Budget:
+    """A count shared by all workers; None = no limit."""
+
+    def __init__(self, left: int | None = None):
+        self.left, self.lock = left, threading.Lock()
+
+    def set(self, left: int | None) -> None:
+        with self.lock:
+            self.left = left
+
+    def take(self) -> bool:
+        with self.lock:
+            if self.left is None:
+                return True
+            if self.left <= 0:
+                return False
+            self.left -= 1
+            return True
+
+    def give(self) -> None:
+        with self.lock:
+            if self.left is not None:
+                self.left += 1
+
+
+RERUNS = Budget()                    # main() sets 1 per run: one CI runner
+LOGGED = threading.Lock()            # one fixes.jsonl row + its printed line at a time
+WORKERS_AWAY, WORKERS_ACTIVE = 3, 1  # PRs at once: the owner away (no input for 10 min) / at the PC
+
+
+def workers() -> int:
+    return WORKERS_AWAY if rust_fix.away() else WORKERS_ACTIVE
+
+
+def log_row(t: float, row: dict) -> None:
+    line = json.dumps({"ts": round(t), **row})
+    with LOGGED:
+        with LOG.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        print(json.dumps(row), flush=True)
+
+
+def pool(items: list, work, n: int, limit: int) -> list[dict]:
+    """work(item) on up to n threads, in the items' order. work returns None (not a candidate, or deferred) or
+    (row, counts). An item starts only while counted + running < limit, so a run never counts more than `limit` PRs,
+    as the serial loop did; with n=1 it IS the serial loop. Each item is taken once: no PR gets two workers."""
+    todo, rows = iter(items), []
+    cond = threading.Condition()
+    state = {"counted": 0, "running": 0}
+
+    def worker() -> None:
+        while True:
+            with cond:
+                while state["counted"] + state["running"] >= limit and state["running"]:
+                    cond.wait()
+                item = next(todo, None) if state["counted"] < limit else None
+                if item is None:
+                    cond.notify_all()
+                    return
+                state["running"] += 1
+            got = None
+            try:
+                got = work(item)
+            except Exception as e:  # noqa: BLE001 - work logs its own errors; a worker must never hang the run
+                print(f"worker error: {str(e)[:300]}", flush=True)
+            finally:
+                with cond:
+                    state["running"] -= 1
+                    if got is not None:
+                        rows.append(got[0])
+                        state["counted"] += bool(got[1])
+                    cond.notify_all()
+
+    threads = [threading.Thread(target=worker, name=f"litha-pr-{i}") for i in range(max(1, min(n, limit)))]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    return rows
+
+
+def others(python: str, limit: int, dry: bool = False, n: int = 1) -> int:
     """The owner's other repos with a local clone (repos.json "clone", mode merge): she resolves conflicting PRs on
-    her own branch, and reruns a failed check once per head (flaky runners). Their CI and her merger's review decide."""
+    her own branch, and reruns a failed check once per head (flaky runners). Their CI and her merger's review decide.
+    Up to n resolves / repairs of one repo run at once; cargo stays one build at a time (rust_fix.BUILD)."""
     global REPO, BASE, CLONE, WORK
     from litha import pr_merger
     lock = STATE.parent / "others.lock"           # cargo builds take minutes: never two runs in the same worktrees
@@ -989,6 +1143,21 @@ def others(python: str, limit: int, dry: bool = False) -> int:
         lock.touch()                              # a run that died over 2 h ago: take over
     home = (REPO, BASE, CLONE, WORK, pr_merger.REPO, pr_merger.BASE)
     tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
+
+    def finish(repo: str, key: str, pr: dict, t: float, row: dict) -> None:
+        row = {"repo": repo, **row, "seconds": round(time.time() - t)}
+        if not dry:                               # a dry run must not use up the real attempt
+            mark(key, pr["headRefOid"])
+        log_row(t, row)
+
+    def job(repo: str, key: str, pr: dict, fn, *args) -> None:
+        t = time.time()
+        try:
+            row = fn(*args)
+        except Exception as e:  # noqa: BLE001 - one PR must not stop the others
+            row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
+        finish(repo, key, pr, t, row)
+
     try:
         for entry in json.loads(pr_merger.REPOS.read_text(encoding="utf-8"))["repos"][1:]:
             if entry.get("mode") != "merge" or not entry.get("clone"):
@@ -1004,119 +1173,120 @@ def others(python: str, limit: int, dry: bool = False) -> int:
             prs = open_prs()
             busy = {m.group(1) for p in prs for m in [re.match(r"litha/merge-(\d+)-", p.get("headRefName", ""))] if m}
             done = reruns = repairs = 0
-            for pr in prs:
-                key = f"{REPO}#{pr['number']}"
-                if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(key) == pr["headRefOid"]:
-                    continue
-                if pr.get("mergeable") == "CONFLICTING" and done < most and str(pr["number"]) not in busy \
-                        and not str(pr.get("headRefName", "")).startswith("litha/"):
-                    t = time.time()
-                    try:
-                        row = resolve(pr, python, dry)
-                    except Exception as e:  # noqa: BLE001 - one PR must not stop the others
-                        row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
-                    done += 1
-                elif pr.get("mergeable") == "MERGEABLE" and (reruns < 3 or repairs < builds):
-                    checks = head_checks(pr["headRefOid"])
-                    if not any(c["conclusion"] == "FAILURE" for c in checks) or \
-                            any(c["status"] != "completed" for c in checks):
+            # the globals above stay fixed until every job of this repo is finished (the with-block waits)
+            with ThreadPoolExecutor(max_workers=max(1, n), thread_name_prefix="litha-other") as ex:
+                for pr in prs:
+                    key = f"{REPO}#{pr['number']}"
+                    if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(key) == pr["headRefOid"]:
                         continue
-                    t = time.time()
-                    log = failed_logs(pr["headRefOid"])
-                    if rust_fix.checks(log) and (rust_fix.errors(log) or "Diff in " in log):
-                        if repairs >= builds:             # 1 build per repo per run (2 at night): cargo is slow
+                    if pr.get("mergeable") == "CONFLICTING" and done < most and str(pr["number"]) not in busy \
+                            and not str(pr.get("headRefName", "")).startswith("litha/"):
+                        ex.submit(job, REPO, key, pr, resolve, pr, python, dry)
+                        done += 1
+                    elif pr.get("mergeable") == "MERGEABLE" and (reruns < 3 or repairs < builds):
+                        checks = head_checks(pr["headRefOid"])
+                        if not any(c["conclusion"] == "FAILURE" for c in checks) or \
+                                any(c["status"] != "completed" for c in checks):
                             continue
-                        try:
-                            row = fix_rust(pr, log, dry)
-                        except Exception as e:  # noqa: BLE001 - one PR must not stop the others
-                            row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
-                        repairs += 1
-                    elif reruns < 3:
-                        row = {"pr": pr["number"], "result": "flaky-rerun",
-                               "why": f"reran {0 if dry else rerun_failed(pr['headRefOid'], pr['number'])} failed "
-                                      "run(s) once for this head"}
-                        reruns += 1
-                    else:
-                        continue
-                else:
-                    continue
-                row = {"repo": REPO, **row, "seconds": round(time.time() - t)}
-                if not dry:                               # a dry run must not use up the real attempt
-                    tried = mark(key, pr["headRefOid"])
-                with LOG.open("a", encoding="utf-8") as f:
-                    f.write(json.dumps({"ts": round(t), **row}) + "\n")
-                print(json.dumps(row), flush=True)
+                        t = time.time()
+                        log = failed_logs(pr["headRefOid"])
+                        if rust_fix.checks(log) and (rust_fix.errors(log) or "Diff in " in log):
+                            if repairs >= builds:             # 1 build per repo per run (2 at night): cargo is slow
+                                continue
+                            ex.submit(job, REPO, key, pr, fix_rust, pr, log, dry)
+                            repairs += 1
+                        elif reruns < 3:
+                            finish(REPO, key, pr, t, {
+                                "pr": pr["number"], "result": "flaky-rerun",
+                                "why": f"reran {0 if dry else rerun_failed(pr['headRefOid'], pr['number'])} failed "
+                                       "run(s) once for this head"})
+                            reruns += 1
     finally:
         REPO, BASE, CLONE, WORK, pr_merger.REPO, pr_merger.BASE = home
         lock.unlink(missing_ok=True)
     return 0
 
 
+COUNTED = ("fixed", "failed", "error", "rerun", "flaky-rerun")   # a skip does not use up a PR of the run
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m litha.pr_fixer")
     ap.add_argument("--pr", type=int)
-    ap.add_argument("--max", type=int, default=1, help="PRs to work on per run")
+    ap.add_argument("--max", type=int, help="PRs to work on per run (default: one per worker)")
+    ap.add_argument("--workers", type=int, help="PRs at the same time (default: 3 when the owner is away, else 1)")
     ap.add_argument("--dry", action="store_true", help="fix and test locally, do not commit or push")
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--others", type=int, metavar="N", help="instead: resolve up to N conflicting PRs per other repo")
     a = ap.parse_args(argv)
     STATE.parent.mkdir(parents=True, exist_ok=True)
+    n = max(1, a.workers or workers())
     if a.others is not None:
-        return others(a.python, a.others, a.dry)
+        return others(a.python, a.others, a.dry, n)
+    most = a.max if a.max is not None else n
     tried = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
-    done = 0
     from litha.pr_merger import HUNTED
     hunted = json.loads(HUNTED.read_text(encoding="utf-8")) if HUNTED.exists() else {}
-    for pr in open_prs(a.pr):                           # first: bugs her review proved -> her fix with her test
-        item = hunted.pop(str(pr["number"]), None)
-        if done >= a.max or not item or item.get("head") != pr["headRefOid"] or not item.get("test"):
-            continue
+    hunt_lock = threading.Lock()
+    prs, jobs = open_prs(a.pr), []
+    for pr in prs:                                      # first: bugs her review proved -> her fix with her test
+        item = hunted.get(str(pr["number"]))
+        if item and item.get("head") == pr["headRefOid"] and item.get("test"):
+            jobs.append((pr, item))
+        elif item:                                      # stale proof (head moved): dropped, as before
+            hunted.pop(str(pr["number"]))
+    first = {pr["number"] for pr, _ in jobs}
+    jobs += [(pr, None) for pr in prs if pr["number"] not in first]     # each PR once: never two workers on one PR
+
+    def work(job: tuple) -> tuple[dict, bool] | None:
+        pr, item = job
         t = time.time()
-        try:
-            row = fix(pr, a.python, a.dry, found=item)
-        except Exception as e:  # noqa: BLE001 - one PR must not stop the others
-            row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
-        row["seconds"], row["kind"] = round(time.time() - t), "hunted"
-        HUNTED.write_text(json.dumps(hunted), encoding="utf-8")
-        with LOG.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"ts": round(t), **row}) + "\n")
-        print(json.dumps(row), flush=True)
-        done += 1
-    for pr in open_prs(a.pr):
-        if done >= a.max:
-            break
+        if item:
+            try:
+                row = fix(pr, a.python, a.dry, found=item)
+            except Exception as e:  # noqa: BLE001 - one PR must not stop the others
+                row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
+            row["seconds"], row["kind"] = round(time.time() - t), "hunted"
+            with hunt_lock:
+                hunted.pop(str(pr["number"]), None)
+                write_atomic(HUNTED, json.dumps(hunted))
+            log_row(t, row)
+            return row, True
         if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(str(pr["number"])) == pr["headRefOid"]:
-            continue
+            return None
         if pr.get("mergeable") == "CONFLICTING" and not str(pr.get("headRefName", "")).startswith("litha/"):
-            t = time.time()
             try:
                 row = resolve(pr, a.python, a.dry)
             except Exception as e:  # noqa: BLE001 - one PR must not stop the others
                 row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
             row["seconds"] = round(time.time() - t)
-            tried = mark(str(pr["number"]), pr["headRefOid"])
-            with LOG.open("a", encoding="utf-8") as f:
-                f.write(json.dumps({"ts": round(t), **row}) + "\n")
-            print(json.dumps(row), flush=True)
-            done += 1
-            continue
+            mark(str(pr["number"]), pr["headRefOid"])
+            log_row(t, row)
+            return row, True
         if pr.get("mergeable") != "MERGEABLE":                 # her own branches too: flaky reruns
-            continue
+            return None
         checks = head_checks(pr["headRefOid"])
         if not any(c["conclusion"] == "FAILURE" for c in checks) or any(c["status"] != "completed" for c in checks):
-            continue
+            return None
         t = time.time()
         try:
             row = fix(pr, a.python, a.dry)
+        except RerunSpent as e:           # another worker used the run's one CI rerun: next run, untouched
+            print(json.dumps({"pr": pr["number"], "result": "deferred", "why": str(e)}), flush=True)
+            return None
         except Exception as e:  # noqa: BLE001 - one PR must not stop the others
             row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
         row["seconds"] = round(time.time() - t)
         if row["result"] != "rerun":      # a rerun is looked at again once its fresh log exists
-            tried = mark(str(pr["number"]), pr["headRefOid"])
-        with LOG.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": round(t), **row}) + "\n")
-        print(json.dumps(row), flush=True)
-        done += row["result"] in ("fixed", "failed", "error", "rerun", "flaky-rerun")   # one CI rerun per run
+            mark(str(pr["number"]), pr["headRefOid"])
+        log_row(t, row)
+        return row, row["result"] in COUNTED
+
+    RERUNS.set(1)                         # one CI runner: one rerun per run, whatever the number of workers
+    try:
+        pool(jobs, work, n, most)
+    finally:
+        RERUNS.set(None)
     return 0
 
 
