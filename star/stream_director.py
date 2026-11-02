@@ -105,6 +105,8 @@ class SpeechIntent:
     session_epoch: int = 0
     # Monotonic per-offer sequence rejects replacement events within a session.
     event_serial: int = 0
+    # Trusted host-bound game context; empty means legacy/ungrounded event.
+    game_scope: str = ""
 
 
 class StreamDirector:
@@ -141,6 +143,8 @@ class StreamDirector:
         # must not alter streamer cooldowns or verified-reaction receipts.
         self._issued_intents: dict[int, SpeechIntent] = {}
         self._events: list[StreamSignal] = []
+        # None preserves legacy opt-in behavior; "" explicitly means no active game.
+        self._active_game_scope: str | None = None
         self._recent: dict[str, float] = {}
         self._last_speech_at = float("-inf")
         self._viewer_last_spoken: dict[str, float] = {}
@@ -149,7 +153,9 @@ class StreamDirector:
                           "evicted": 0, "completed": 0, "abandoned": 0,
                           "suppressed_reactions": 0,
                           "viewer_queue_limited": 0,
-                          "dedupe_capacity_rejected": 0}
+                          "dedupe_capacity_rejected": 0,
+                          "scene_transitions": 0, "scene_dropped": 0,
+                          "off_scope_rejected": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
         with self._lock:
@@ -170,7 +176,40 @@ class StreamDirector:
             self._recent.clear()
             self._viewer_last_spoken.clear()
             self._game_reactions.clear()
+            self._active_game_scope = None
             self._last_speech_at = float("-inf")
+
+    def bind_game_scope(self, game_scope: str, *,
+                        owner_approved: bool = False) -> int:
+        """Host-attested scene handoff. Purge old game narration before reuse.
+
+        Does NOT stop physical audio or avatar motion: callers must revoke any
+        prepared/queued/audible stage turn first. An empty scope means no game.
+        Rebinding even the same scope starts a new scene/round and invalidates
+        old game reaction receipts, but preserves viewer cooldown and questions.
+        """
+        if type(game_scope) is not str or (
+            game_scope and _ID.fullmatch(game_scope) is None
+        ):
+            raise ValueError("game_scope must be a host-stable bounded ID")
+        if owner_approved is not True:
+            raise PermissionError("game scene changes require trusted host approval")
+        with self._lock:
+            if not self.enabled:
+                raise RuntimeError("stream director must be enabled")
+            old = [event for event in self._events
+                   if event.kind.startswith("game_")]
+            for event in old:
+                serial = self._event_serials.pop(event.signal_id, None)
+                if serial is not None:
+                    self._issued_intents.pop(serial, None)
+            self._events = [event for event in self._events
+                            if not event.kind.startswith("game_")]
+            self._game_reactions.clear()
+            self._active_game_scope = game_scope
+            self._counters["scene_transitions"] += 1
+            self._counters["scene_dropped"] += len(old)
+            return len(old)
 
     @staticmethod
     def _priority(event: StreamSignal, now: float) -> float:
@@ -240,6 +279,12 @@ class StreamDirector:
             self._expire(now)
             ttl = _KINDS[event.kind][1]
             if not self.enabled or event.timestamp > now + 0.5 or now - event.timestamp > ttl:
+                self._counters["rejected"] += 1
+                return False
+            if (event.kind.startswith("game_")
+                    and self._active_game_scope is not None
+                    and event.game_scope != self._active_game_scope):
+                self._counters["off_scope_rejected"] += 1
                 self._counters["rejected"] += 1
                 return False
             # A stable canonical platform account ID is required for ALL direct
@@ -366,6 +411,7 @@ class StreamDirector:
                 untrusted_context=event.kind.startswith("viewer"),
                 session_epoch=self._session_epoch,
                 event_serial=self._event_serials[event.signal_id],
+                game_scope=event.game_scope,
             )
             # A later proposal supersedes an earlier plan for this event. This
             # is an identity check inside the process, not proof of OBS audio.

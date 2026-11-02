@@ -70,7 +70,8 @@ class VerifiedReactionTests(unittest.TestCase):
         self.assertTrue(result.practice_recorded)
         self.assertTrue(result.reaction_queued)
         self.assertIn("practice_successes", result.episode.context_record)
-        plan = self.stage.prepare(now=501)
+        # The exact signed episode scope now reaches the live speech director.
+        plan = self.stage.prepare(now=501, current_game_scope=self.episode.game_scope)
         self.assertEqual(plan.kind, "game_success")
         self.assertEqual(plan.expression, "joy")
         self.assertEqual(plan.mode, "cat")

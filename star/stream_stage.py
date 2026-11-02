@@ -149,7 +149,7 @@ class StarStage:
         self._counts = {
             "prepared": 0, "queued": 0, "audible": 0,
             "abandoned": 0, "interrupted": 0, "motion_requests": 0,
-            "journal_recall_skipped": 0,
+            "journal_recall_skipped": 0, "off_game_context": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
@@ -196,6 +196,38 @@ class StarStage:
             self._enabled = False
             self._quiet_frame = None
             self._quiet.reset()
+            return neutral_frame()
+
+    def transition_game(self, *, game_scope: str,
+                        owner_approved: bool = False,
+                        audio_stopped_and_flushed: bool = False,
+                        now: float | None = None) -> MotionFrame:
+        """Revoke old scene turns and bind verified game identity for the next.
+
+        A playing/queued utterance requires a separate physical device stop
+        and flush *before* host acknowledgement. No audio, game, or OBS command
+        is issued by this planner. The caller must also reset the actual rig.
+        """
+        current = _time(self._clock() if now is None else now)
+        if (type(game_scope) is not str or
+                (game_scope and re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}", game_scope
+                ) is None)):
+            raise ValueError("game_scope must be canonical host-stable scene ID")
+        if type(audio_stopped_and_flushed) is not bool:
+            raise TypeError("audio stop attestation must be a boolean")
+        if owner_approved is not True:
+            raise PermissionError("trusted host approval required for game change")
+        with self._lock:
+            if not self._enabled:
+                raise RuntimeError("stage is disabled")
+            if (self._phase in {"queued", "audible"}
+                    and not audio_stopped_and_flushed):
+                raise RuntimeError("stop and flush physical audio before scene change")
+            self._drop(interrupted=self._plan is not None, now=current)
+            self._quiet_frame = None
+            self._quiet.reset()
+            self._director.bind_game_scope(game_scope, owner_approved=True)
             return neutral_frame()
 
     def offer(self, event: StreamSignal, *,
@@ -323,6 +355,14 @@ class StarStage:
                 gameplay_critical=gameplay_critical or measured_pressure,
             )
             if intent is None:
+                return None
+            # A scene may change after a game cue was queued. Even without
+            # transition_game(), an independently supplied current game scope
+            # must never lead to spoken commentary about another game.
+            if (intent.kind.startswith("game_") and current_game_scope
+                    and intent.game_scope != current_game_scope):
+                self._director.complete(intent, now=current, spoken=False)
+                self._counts["off_game_context"] += 1
                 return None
             self._sequence += 1
             expression = _CUES[intent.kind]

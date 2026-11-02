@@ -231,7 +231,10 @@ class VerifiedGameReactionHost:
             signal_id = "verified." + sha256(
                 (trial.trial_id + "\0" + trial.evidence_sha256).encode("ascii")
             ).hexdigest()[:40]
-            signal = StreamSignal(signal_id, kind, now, detail, evidence="observed")
+            signal = StreamSignal(
+                signal_id, kind, now, detail, evidence="observed",
+                game_scope=self._episode.game_scope,
+            )
             if not self._stage.offer(signal, now=now):
                 self._counts["stage_busy"] += 1
                 return ReactionDecision("stage_unavailable", True, False)
