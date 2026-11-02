@@ -261,6 +261,38 @@ class StarPlayoutClockTests(unittest.TestCase):
         ))
         self.assertIsNone(host.sample(plan))
 
+    def test_repeated_same_timestamp_cursors_cannot_mint_audio_progress(self):
+        # An 80-ms jitter allowance must be shared across callbacks,
+        # not freshly granted to every 70-ms advance at the same time.
+        clock, _, plan, host = make_host()
+        self.assertTrue(arm(host, plan))
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=0.0, sampled_at=clock.now,
+        ))
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=.07, sampled_at=clock.now,
+        ))
+        self.assertFalse(host.observe_playhead(
+            plan, position_s=.14, sampled_at=clock.now,
+        ))
+        self.assertIsNone(host.sample(plan))
+        self.assertFalse(host.metrics()["active"])
+
+    def test_playback_slack_replenishes_from_real_clock_progress(self):
+        clock, _, plan, host = make_host()
+        self.assertTrue(arm(host, plan))
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=0.0, sampled_at=clock.now,
+        ))
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=.07, sampled_at=clock.now,
+        ))
+        clock.advance(.05)
+        self.assertTrue(host.observe_playhead(
+            plan, position_s=.12, sampled_at=clock.now,
+        ))
+        self.assertIsNotNone(host.sample(plan))
+
     def test_backward_playhead_rejected_but_minor_audio_jitter_clamped(self):
         clock, _, plan, host = make_host()
         arm(host, plan)

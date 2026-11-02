@@ -48,6 +48,10 @@ class PlayoutRigFrame:
     motion: MotionFrame
 
 
+# One jitter allowance per moving playout window, never per callback.
+_PLAYHEAD_JITTER_S = 0.08
+
+
 _MOTION_CHANNELS = tuple(field.name for field in fields(MotionFrame)
                          if field.name != "at_s")
 
@@ -106,6 +110,7 @@ class StarPlayoutClock:
         self._sampled_at: float | None = None
         self._position = 0.0
         self._progress_at = 0.0
+        self._playhead_slack_s = _PLAYHEAD_JITTER_S
         self._playing = False
         self._issued: PlayoutRigFrame | None = None
         self._tick = 0
@@ -127,6 +132,7 @@ class StarPlayoutClock:
         self._duration = 0.0
         self._sampled_at = None
         self._position = 0.0
+        self._playhead_slack_s = _PLAYHEAD_JITTER_S
         self._playing = False
         self._issued = None
 
@@ -238,8 +244,16 @@ class StarPlayoutClock:
                     progressed = position - self._position
                     if elapsed < 0 or progressed < -0.015:
                         raise ValueError("playout cursor moved backward")
-                    if progressed > self._max_rate * elapsed + 0.08:
+                    # Jitter is a finite token bucket, not a new 80-ms gift
+                    # for every callback. Repeated reports at one monotonic
+                    # timestamp cannot mint extra seconds of heard speech.
+                    allowance = self._max_rate * elapsed + self._playhead_slack_s
+                    if progressed > allowance + 1e-9:
                         raise ValueError("playout cursor advanced implausibly")
+                    self._playhead_slack_s = min(
+                        _PLAYHEAD_JITTER_S,
+                        max(0.0, allowance - max(0.0, progressed)),
+                    )
                     if progressed > 0.002 or (playing and not self._playing):
                         self._progress_at = stamp
                 self._position = max(self._position, position)
