@@ -70,9 +70,88 @@ def test_repair_runs_her_edit_against_the_real_tests(tmp_path):
     answers = iter([json.dumps({"why": "wrong place", "edits": [{"file": "tests/test_calc.py", "find": "3", "replace": "-1"}]}),
                     json.dumps({"why": "subtracts", "edits": [{"file": "star/calc.py", "find": "a - b", "replace": "a + b"}]})])
     ok, why, rounds = F.repair(tmp_path, "add", F.failures(out), out, ["tests/test_calc.py"], sys.executable,
-                               asker=lambda p: next(answers))
+                               asker=lambda p: next(answers), k=1)
     assert (ok, why, rounds) == (True, "subtracts", 2)
     assert "a + b" in (tmp_path / "star" / "calc.py").read_text(encoding="utf-8")
+
+
+def _calc(tmp_path, code):
+    (tmp_path / "star").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "star" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "star" / "calc.py").write_text(code, encoding="utf-8")
+    (tmp_path / "tests" / "test_calc.py").write_text(
+        "from star.calc import add, mul\n\n\ndef test_add():\n    assert add(1, 2) == 3\n\n\n"
+        "def test_mul():\n    assert mul(2, 3) == 6\n", encoding="utf-8")
+    return F.run_tests(tmp_path, ["tests/test_calc.py"], sys.executable)[1]
+
+
+TWO_BUGS = "def add(a, b):\n    return a - b\n\n\ndef mul(a, b):\n    return a + b\n"
+
+
+def _edit(why, find, replace):
+    return json.dumps({"why": why, "edits": [{"file": "star/calc.py", "find": find, "replace": replace}]})
+
+
+def test_best_of_k_keeps_the_candidate_with_fewest_failures_then_the_smallest(tmp_path):
+    out = _calc(tmp_path, TWO_BUGS)
+    answers = iter([_edit("nothing", "return a * a", "return 0"),                    # refused: no match
+                    _edit("add, big", "def add(a, b):\n    return a - b", "def add(a, b):\n    x = 1\n    return a + b"),
+                    _edit("add", "return a - b", "return a + b"),                     # same failures, smaller
+                    _edit("mul", "def mul(a, b):\n    return a + b", "def mul(a, b):\n    return a * b")])
+    prompts = []
+
+    def asker(p):
+        prompts.append(p)
+        return next(answers)
+
+    ok, why, rounds = F.repair(tmp_path, "calc", F.failures(out), out, ["tests/test_calc.py"], sys.executable,
+                               asker=asker, k=3)
+    assert (ok, why, rounds) == (True, "mul", 2)
+    assert len(prompts) == 4                       # 3 candidates in round 1, the first of round 2 passed at once
+    assert "already proposed" not in prompts[0] and "return a * a" in prompts[1] and "x = 1" in prompts[2]
+    assert "were kept" in prompts[3] and "already proposed" not in prompts[3]
+    assert (tmp_path / "star" / "calc.py").read_text(encoding="utf-8") == (
+        "def add(a, b):\n    return a + b\n\n\ndef mul(a, b):\n    return a * b\n")   # the small add fix, not x = 1
+
+
+def test_a_candidate_that_passes_ends_the_round_without_asking_for_more(tmp_path):
+    out = _calc(tmp_path, "def add(a, b):\n    return a - b\n\n\ndef mul(a, b):\n    return a * b\n")
+    calls = []
+    ok, why, rounds = F.repair(tmp_path, "add", F.failures(out), out, ["tests/test_calc.py"], sys.executable,
+                               asker=lambda p: calls.append(p) or _edit("sub", "a - b", "a + b"), k=3)
+    assert (ok, why, rounds, len(calls)) == (True, "sub", 1, 1)
+
+
+def test_k_comes_from_the_environment_and_one_means_one_answer_per_round(tmp_path, monkeypatch):
+    out = _calc(tmp_path, TWO_BUGS)
+    monkeypatch.setattr(F, "ROUNDS", 2)
+    monkeypatch.setenv("LITHA_FIX_K", "1")
+    calls = []
+    ok, _, rounds = F.repair(tmp_path, "calc", F.failures(out), out, ["tests/test_calc.py"], sys.executable,
+                             asker=lambda p: calls.append(p) or "not json")
+    assert (ok, rounds, len(calls)) == (False, 2, 2)
+    assert "not valid JSON" in calls[1]
+
+
+def test_undoing_a_candidate_keeps_uncommitted_changes_like_the_benchs_planted_bug(tmp_path, monkeypatch):
+    """A round used to be undone with a git checkout of the whole tree: on the bench that erased the planted bug
+    itself, so the next round 'solved' it with no fix at all."""
+    if not shutil.which("git"):
+        pytest.skip("no git")
+    good = "def add(a, b):\n    return a + b\n\n\ndef mul(a, b):\n    return a * b\n"
+    _calc(tmp_path, good)
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+    for args in (["init", "-q"], ["add", "."], ["commit", "-qm", "ok"]):
+        subprocess.run([*git, *args], cwd=tmp_path, check=True, capture_output=True)
+    src = tmp_path / "star" / "calc.py"
+    src.write_text(good.replace("a + b", "a - b"), encoding="utf-8")                  # the planted bug, uncommitted
+    ok, out = F.run_tests(tmp_path, ["tests/test_calc.py"], sys.executable)
+    monkeypatch.setattr(F, "ROUNDS", 2)
+    ok, _, rounds = F.repair(tmp_path, "add", F.failures(out), out, ["tests/test_calc.py"], sys.executable,
+                             asker=lambda p: _edit("no-op", "def mul(a, b):", "def mul(a, b):  # looked"), k=2)
+    assert (ok, rounds) == (False, 2)
+    assert src.read_text(encoding="utf-8") == good.replace("a + b", "a - b")
 
 
 def test_lint_failures_get_safe_autofixes_then_her_edits(tmp_path):

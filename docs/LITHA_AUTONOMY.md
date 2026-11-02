@@ -183,6 +183,33 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   "CI-only" and never fixed.
 - PRs recorded in `tried.json` as type failures before this change are retried only when their head moves.
 
+## 4g. Best-of-K per fixer round (2026-11-02, measured)
+
+- `repair(..., k=None)`: each round she gives up to K edit sets for the same code (K = `pr_fixer.K` = 3, env
+  `LITHA_FIX_K`; the 2nd and later are shown the fixes already proposed and must give a different one). Each is
+  applied, the failing test files run, then it is undone; the round keeps the one with the fewest failures (ties:
+  fewest changed lines). The first candidate that passes ends the round. Kept progress, undo on no progress and the
+  test/CI/lock refusals are unchanged; K=1 is the old loop (same prompts, same calls).
+- **Bug found first: the bench's numbers were inflated.** A round was undone with a git checkout of the whole tree;
+  on the bench the planted bug is an uncommitted change, so the undo erased the bug and the next round "solved" it
+  with no fix. Undo now restores the bytes each file had when `repair()` started (plus the kept edits). On a PR
+  checkout (clean tree) nothing changes. Section 3's 8/8 results (rounds 2+) were partly this.
+- Measured, `bug_bench run --n 8`, seeds 11 and 12, with diff and blind (same 32 mutants each time, lessons frozen,
+  no learning between runs, 1 bench at a time):
+
+  | mode | solved | wall s | model calls | per solve |
+  |---|---|---|---|---|
+  | before (old undo) | 32/32 (inflated) | 1110 | 53 | - |
+  | K=1, undo fixed | 18/32 (4, 4, 7, 3) | 1389 | 97 | 5.4 calls, 77 s |
+  | K=3, undo fixed | 20/32 (6, 4, 6, 4) | 2863 | 249 | 12.5 calls, 143 s |
+
+  K=3 solved 3 items K=1 missed (any-all, isnone-flip, lower-upper) and missed 1 K=1 solved (le-edge, 325 s): +2/32
+  for 2.1x the time and 2.6x the calls. That is within run-to-run noise (temperature 0.2), so the gain is NOT shown
+  yet. Several misses (both K, e.g. drop-return, any-all) name the right cause in `why` but never land a passing edit: look there next
+  (rejected `find` texts, which edit she sends), and repeat on 16+ items before trusting either number.
+- Not done: the regression guard (neighbouring passing tests) from the research brief, a `--k` CLI flag, a real
+  temperature per candidate (the `asker` takes only the prompt), a live PR measured with K=3.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
