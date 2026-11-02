@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import re
-from typing import Iterable
+from typing import Iterable, cast
 
 _CASE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 _VARIANTS = frozenset({"baseline", "candidate"})
@@ -24,7 +24,7 @@ def _ms(value: object, field: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{field} requires finite numeric milliseconds")
     try:
-        number = float(value)
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{field} requires finite numeric milliseconds") from exc
     if not math.isfinite(number) or not 0 <= number <= 10_000:
