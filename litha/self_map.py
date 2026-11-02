@@ -60,7 +60,7 @@ def _text(node: ast.AST) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.JoinedStr):
-        return "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in node.values)
+        return "".join(str(v.value) if isinstance(v, ast.Constant) else "{}" for v in node.values)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
         a, b = _text(node.left), _text(node.right)
         return a + b if a is not None and b is not None else (a or b)

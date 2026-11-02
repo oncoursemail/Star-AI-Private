@@ -193,8 +193,8 @@ def merger_rows(rows: list[dict]) -> list[dict]:
     for d in rows:
         if d.get("replay") or d.get("replay_hunt") or "pr" not in d:
             continue
-        reasons = d.get("reasons") if isinstance(d.get("reasons"), list) else []
-        rev = d.get("review") if isinstance(d.get("review"), dict) else {}
+        reasons = d["reasons"] if isinstance(d.get("reasons"), list) else []
+        rev = d["review"] if isinstance(d.get("review"), dict) else {}
         found = []
         if any(str(x).startswith("error:") for x in reasons):
             found.append(("merger-gh-error", next(str(x) for x in reasons if str(x).startswith("error:"))))

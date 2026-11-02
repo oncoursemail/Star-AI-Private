@@ -392,6 +392,23 @@ def test_an_ignore_comment_or_no_progress_is_undone_and_she_is_told(tmp_path):
     assert "ignore comment" in asked[1] and "did not reduce" in asked[2]
 
 
+def test_a_type_fix_that_breaks_the_syntax_is_undone_even_if_the_error_count_drops(tmp_path):
+    checker = _typed_repo(tmp_path)          # the stand-in counts BAD lines, so this edit "lowers" the count
+    original = (tmp_path / "star" / "m.py").read_text(encoding="utf-8")
+    broken = {"why": "x", "edits": [{"file": "star/m.py", "find": "    return x.upper()  # BAD\n",
+                                     "replace": "    return x.upper() if x else\n        \"\"\n"}]}
+    answers, asked = [broken, GOOD], []
+
+    def ask(prompt):
+        asked.append(prompt)
+        if len(asked) == 2:
+            assert (tmp_path / "star" / "m.py").read_text(encoding="utf-8") == original
+        return json.dumps(answers[len(asked) - 1])
+
+    ok, _, rounds = F.fix_types(tmp_path, sys.executable, ask, checker)
+    assert ok and rounds == 2 and "syntax error in star/m.py" in asked[1]
+
+
 def test_the_type_fixer_respects_the_baseline_and_cannot_move_it(tmp_path):
     checker = _typed_repo(tmp_path, {"star/m.py::reportOptionalMemberAccess": 1})
     ok, why, rounds = F.fix_types(tmp_path, sys.executable, lambda p: pytest.fail("nothing is new"), checker)

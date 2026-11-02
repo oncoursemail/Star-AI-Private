@@ -368,7 +368,7 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
                 again = context_pack.reask(tree, why, misses, asker)
                 if again:
                     problems = [p for p in problems if "'find' matched" not in p] + _apply_saved(tree, again, saved)
-                    edits = [e for j, e in enumerate(edits) if j not in {m["index"] for m in misses}] + again
+                    edits = [e for j, e in enumerate(edits or []) if j not in {m["index"] for m in misses}] + again
             ok, out = run_tests(tree, tests, python)
             if ok:
                 break
@@ -535,6 +535,14 @@ def related_tests(tree: Path, files: list[str], limit: int = 6) -> list[str]:
     return out
 
 
+def _parses(path: Path) -> bool:
+    try:
+        compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+    except (SyntaxError, ValueError):
+        return False
+    return True
+
+
 def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[bool, str, int]:
     """Up to ROUNDS rounds of her edits against the pyright baseline gate. A round must lower the errors above the
     baseline and add no ignore comment, else it is undone. Then the tests of every changed module must still pass.
@@ -576,6 +584,14 @@ def fix_types(tree: Path, python: str, asker=ask, checker=run_pyright) -> tuple[
         before.update({p: (tree / p).read_bytes() for e in edits if isinstance(e, dict)
                        for p in [str(e.get("file", "")).replace("\\", "/").lstrip("./")] if p and (tree / p).is_file()})
         problems = apply_edits(tree, edits)
+        broken = [f for f, data in before.items() if f.endswith(".py") and (tree / f).read_bytes() != data
+                  and not _parses(tree / f)]
+        if broken:                                        # a syntax error can still lower pyright's count: undo
+            for f, data in before.items():
+                (tree / f).write_bytes(data)
+            feedback = (f"\nYour previous edits left a syntax error in {', '.join(broken)} and were undone. Keep the "
+                        "code's indentation and syntax exactly; change only what fixes the type error.\n")
+            continue
         after = (checker(tree, python, excess_files(excess)) if fast else checker(tree, python)) or []
         left = type_excess(tree, after)
         if fast and not left:                             # those files are clean: the whole repo decides

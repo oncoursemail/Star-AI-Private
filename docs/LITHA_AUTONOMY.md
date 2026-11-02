@@ -225,6 +225,10 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Also fixed: CI lints `star litha`, the fixer linted only `star`, so a ruff error in `litha/` was reported as
   "CI-only" and never fixed.
 - PRs recorded in `tried.json` as type failures before this change are retried only when their head moves.
+- Live trial 2026-11-02 on this wave's own 14 new errors (7 file/rule pairs): after 5 rounds (121 s) she had kept
+  rounds that left a syntax error in `bug_diff.py` and a mis-indented block in `self_check.py`, because pyright's count
+  still dropped. A round whose changed .py file no longer compiles is now undone and she is told; the errors were fixed
+  by hand. Most of her edits were also redundant `is not None` checks: narrowing advice is the next gap here.
 
 ## 4e. React UI repair (2026-11-02, measured)
 

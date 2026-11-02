@@ -106,7 +106,8 @@ def check_runs(home: Path, now: float, rep: Report) -> None:
     if now - t_end > LATE:
         rep.problems.append(f'the 10-minute run last finished {_age(now - t_end)} ago (task "Litha PR merger" '
                             "not running, or switched off)")
-    rc = int(re.search(r"rc=(-?\d+)", lines[last_end]).group(1))
+    m = re.search(r"rc=(-?\d+)", lines[last_end])
+    rc = int(m.group(1)) if m else 0
     if rc != 0:
         rep.problems.append(f"the last run ended with rc={rc}")
     if starts and starts[-1] > last_end:

@@ -322,9 +322,10 @@ def _differential(tree: Path, base: Path, risk: dict, python: str, asker, intent
         runs = [probe(t, module, file, calls, near, python, setup) for t in (base, base, tree, tree)]
         if any(r is None for r in runs):
             return {"proven": False, "why": "the code could not be imported and run", "rounds": n}
-        diff = first_difference(*(r["rows"] for r in runs))
+        ran = [r for r in runs if r is not None]            # all four (checked above)
+        diff = first_difference(*(r["rows"] for r in ran))
         if diff is None:
-            feedback = "Your last calls showed no bug:\n" + "\n".join(seen(r, line) for r in runs[2]["rows"][:6]) + \
+            feedback = "Your last calls showed no bug:\n" + "\n".join(seen(r, line) for r in ran[2]["rows"][:6]) + \
                 "\nTry other inputs.\n"
             continue
         b, a = diff["before"], diff["after"]
@@ -339,7 +340,7 @@ def _differential(tree: Path, base: Path, risk: dict, python: str, asker, intent
         if not (isinstance(verdict, dict) and verdict.get("bug") is True):
             return {"proven": False, "why": "the new result is what the change meant", "rounds": n,
                     "difference": {"call": a["call"], "before": said(b), "after": said(a)}}
-        test = build_test(module, a["call"], b, runs[0]["names"], func, setup)
+        test = build_test(module, a["call"], b, ran[0]["names"], func, setup)
 
         def fails(result: str, out: str) -> bool:
             return result == "proven" or (result == "crashed" and bug_proof.raised_in(out, file))
