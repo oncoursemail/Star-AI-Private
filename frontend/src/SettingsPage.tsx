@@ -23,8 +23,6 @@ export type SettingsSectionId='basics'|'appearance'|'models'|'voice'|'companions
 /** Everything the page needs from the desktop shell. The shell keeps the state; this page only lays it out. */
 export type SettingsPageProps={
  appearance?:ReactNode
- /** Companion controls when the Studio layout's Appearance drawer is off. */
- companions?:ReactNode
  /** Companion choices (CompanionControls); shown on the Companions section. */
  companions?:ReactNode
  /** Sign-in and Metallic block from the shell; a plain note shows when it is absent. */
@@ -282,7 +280,6 @@ export function SettingsPage(props:SettingsPageProps) {
        <Switch label="Search the web when a question needs it" hint="News, prices and weather questions are sent to your search provider without asking." checked={draft.web_auto_search!==false} onChange={on=>set({web_auto_search:on})}/>
        <Switch label="Create images straight from chat" hint="A message that clearly asks for a picture goes to your image tools instead of the text model." checked={draft.media_chat_auto!==false} onChange={on=>set({media_chat_auto:on})}/>
      </Panel>
-     {props.companions&&<Panel className="settings-section"><h3 className="settings-group-title">Companions</h3>{props.companions}</Panel>}
    </Block>
    <Block id="motion" keywords="animation motion accessibility calm">
      <Panel className="settings-section"><h3 className="settings-group-title">Comfort</h3>
