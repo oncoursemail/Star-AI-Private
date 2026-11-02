@@ -165,9 +165,14 @@ class TurnTakingGate:
             guest = (frame.echo_cleared and
                      frame.guest_probability >= _THRESHOLD and
                      frame.owner_probability < _THRESHOLD)
-            # Prevent simultaneous labels or playback echo from forging an owner
-            # identity or a barge-in, but remain quiet on uncertain activity.
-            if max(frame.owner_probability, frame.guest_probability) >= 0.50:
+            # Ambiguous VAD activity is not verified silence. Previously,
+            # probabilities in (0.10, 0.50) never updated the hangover clock,
+            # so legacy (non-verified-quiet) hosts could speak immediately over
+            # a hesitant viewer. Echo-uncleared audio is also unknown, not
+            # affirmative quiet. Neither condition grants owner authority.
+            if (not frame.echo_cleared or max(
+                    frame.owner_probability, frame.guest_probability,
+            ) > _QUIET_PROBABILITY_MAX):
                 self._last_voice_ms = frame.at_ms
             self._owner_ms = self._owner_ms + frame.duration_ms if owner else 0.0
             if not owner:
@@ -219,12 +224,14 @@ class TurnTakingGate:
                                   "confirmed_authenticated_owner_voice")
             if self._guest_ms >= _CONFIRM_MS:
                 return TurnAdvice("hold", False, "confirmed_guest_voice")
+            # In strict mode the independent continuous-quiet witness is
+            # authoritative (and its reason is stable for host diagnostics).
+            # Legacy hosts still require a hangover after weak activity.
+            if self._require_verified_quiet and self._quiet_ms < _QUIET_MS:
+                return TurnAdvice("hold", False, "quiet_window_unverified")
             if (self._last_voice_ms is not None and
                     now - self._last_voice_ms < _QUIET_MS):
                 return TurnAdvice("hold", False, "speech_or_noise_hangover")
-            if self._require_verified_quiet:
-                if self._quiet_ms < _QUIET_MS:
-                    return TurnAdvice("hold", False, "quiet_window_unverified")
             return TurnAdvice("speak", False, "trusted_silence")
 
     def metrics(self) -> dict[str, int | bool]:

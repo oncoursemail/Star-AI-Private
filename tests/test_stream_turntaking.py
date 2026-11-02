@@ -210,6 +210,75 @@ class TurnTakingTests(unittest.TestCase):
         self.assertIsNone(stage.prepare(now=100,
                                         turn=TurnAdvice("hold", False, "quiet")))
 
+    def test_ambiguous_voice_keeps_legacy_turn_taker_from_talking_over_people(self):
+        # Neither label is strong enough to prove who is speaking, but
+        # probabilities above the calibrated quiet floor are NOT silence.
+        for role, probability in (("owner", .35), ("guest", .42)):
+            with self.subTest(role=role):
+                gate = TurnTakingGate()
+                gate.enable(owner_approved=True)
+                gate.observe(frame(100, **{role: probability}))
+                uncertain = gate.advise(now_ms=100, star_speaking=False)
+                self.assertEqual(uncertain.action, "hold")
+                self.assertFalse(uncertain.should_interrupt)
+                self.assertEqual(uncertain.reason, "speech_or_noise_hangover")
+                gate.observe(frame(130))
+                self.assertEqual(
+                    gate.advise(now_ms=130, star_speaking=False).action, "hold"
+                )
+                # Only after the hangover has elapsed may legacy mode speak.
+                gate.observe(frame(450))
+                self.assertEqual(
+                    gate.advise(now_ms=450, star_speaking=False).action, "speak"
+                )
+
+    def test_mixed_low_confidence_voice_is_not_trusted_silence(self):
+        self.gate.enable(owner_approved=True)
+        self.gate.observe(frame(100, owner=.25, guest=.25))
+        advice = self.gate.advise(now_ms=100, star_speaking=True)
+        self.assertFalse(advice.should_interrupt)
+        self.assertEqual(advice.action, "hold")
+        self.assertEqual(self.gate.metrics()["owner_yields"], 0)
+        # A true quiet frame at the calibrated floor is still available.
+        self.gate.observe(frame(500, owner=.10, guest=.10))
+        self.assertEqual(
+            self.gate.advise(now_ms=500, star_speaking=False).action, "speak"
+        )
+
+    def test_uncleared_echo_cannot_become_instant_silence_after_one_frame(self):
+        self.gate.enable(owner_approved=True)
+        self.gate.observe(frame(100, echo=False))
+        self.assertEqual(
+            self.gate.advise(now_ms=100, star_speaking=False).reason,
+            "echo_not_cleared",
+        )
+        self.gate.observe(frame(130))
+        self.assertEqual(
+            self.gate.advise(now_ms=130, star_speaking=False).action, "hold"
+        )
+        self.gate.observe(frame(450))
+        self.assertEqual(
+            self.gate.advise(now_ms=450, star_speaking=False).action, "speak"
+        )
+
+    def test_stage_uses_ambiguous_voice_hold_before_creating_spoken_turn(self):
+        stage = StarStage(clock=lambda: 100.0)
+        stage.enable(owner_approved=True)
+        self.gate.enable(owner_approved=True)
+        event = StreamSignal(
+            "question2", "viewer_question", 100.0, "How does that work?",
+            speaker_id="moderated-viewer", evidence="unknown",
+        )
+        self.assertTrue(stage.offer(event, now=100, moderated=True))
+        self.gate.observe(frame(100, guest=.35))
+        uncertain = self.gate.advise(now_ms=100, star_speaking=False)
+        self.assertTrue(uncertain.hold)
+        self.assertIsNone(stage.prepare(now=100.1, turn=uncertain))
+        self.gate.observe(frame(500))
+        quiet = self.gate.advise(now_ms=500, star_speaking=False)
+        self.assertEqual(quiet.action, "speak")
+        self.assertIsNotNone(stage.prepare(now=100.5, turn=quiet))
+
     def test_only_counts_leave_metrics(self):
         self.gate.enable(owner_approved=True)
         self.gate.observe(frame(100, owner=.98765))
