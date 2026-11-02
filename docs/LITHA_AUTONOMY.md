@@ -88,7 +88,7 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
    compare the claim with the PR body before holding.
 3. **Multi-line bugs** in the bench (swallowed exception, wrong variable, missing `await`): mutate an AST node,
    not a line regex.
-4. **Pyright / vitest / tsc failures for the fixer** (pyright: parse `file:line - error:` lines like ruff).
+4. **Pyright / vitest / tsc failures for the fixer**. Pyright: DONE 2026-11-02 (`fix_types`, see 4d). Left: vitest/tsc.
 5. **Gate the nightly adapter on the bench**: the nightly gate (server/training/nightly, PR #847) scores
    game-building answers only. Before `auto_deploy`, serve the candidate adapter and run
    `bug_bench run --n 10 --seed <held-out>` against it; ship only if the solved count does not drop.
@@ -164,6 +164,24 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   error. Fixed; she is also shown where each name in the errors is declared (with its `#[cfg]`), the crate's
   `[features]` and the exact checks, plus one rule (gate the test, never the library). Dry run: 1 round, all 5 checks
   green, `#![cfg(feature = "presentation")]` on `camera_api.rs`.
+
+## 4d. Type gate repair (2026-11-02, measured)
+
+- Why: her logs held 4 non-draft STAR PRs on "Python types (pyright basic, baseline gate)" and 27 open PRs had that
+  check red; the fixer only reported "new pyright errors" and stopped, so those PRs waited for a person.
+- `fix_types()`: runs the pyright CI pins (`npx --yes pyright@1.1.414`) against a package-free venv
+  (`~/.star/pr-fixer/bare-python`, made once, like CI's job venv) and applies the rule of
+  `scripts/pyright_baseline.py` (per file and rule, only growth counts). She gets each pair above the baseline with the
+  code around it; a round must lower the excess, may not add `# type: ignore` / `# pyright: ignore`, and may not edit
+  the baseline or `pyrightconfig.json` (`GATES` in `apply_edits`), else it is undone and she is told why. After the
+  gate passes, the test files that import a changed module must still pass (a type fix must not change behaviour).
+  No npx, or the gate passes locally: reported as before with CI's lines, no rerun.
+- Live check on star/next: 339 errors, 0 above the baseline (CI's script agrees). Trial on #878 (draft, local only,
+  nothing pushed): 1 round, 83 s, `created is not None and ...` narrowing; `scripts/pyright_baseline.py check` on
+  the result: "none new".
+- Also fixed: CI lints `star litha`, the fixer linted only `star`, so a ruff error in `litha/` was reported as
+  "CI-only" and never fixed.
+- PRs recorded in `tried.json` as type failures before this change are retried only when their head moves.
 
 ## 5. Rules that stay (do not remove)
 
