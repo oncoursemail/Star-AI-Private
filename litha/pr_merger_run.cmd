@@ -8,6 +8,8 @@ if exist "%USERPROFILE%\.star\pr-merger\OFF" exit /b 0
 if not exist "%USERPROFILE%\.star\pr-merger" mkdir "%USERPROFILE%\.star\pr-merger"
 cd /d "%~dp0.."
 echo %date% %time% start >> "%USERPROFILE%\.star\pr-merger\run.log"
+rem litha.self_check first (well under 1 s when healthy): stale locks and broken JSON state repaired, rest reported.
+"%~1" -m litha.self_check --quiet >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 "%~1" -m litha.pr_fixer --python "%~1" >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 "%~1" -m litha.pr_merger --apply >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 "%~1" -m litha.pr_promote --apply >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
