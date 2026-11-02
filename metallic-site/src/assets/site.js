@@ -63,8 +63,8 @@ M.release.then((r) => {
 // entrances: parts of each section rise in, staggered, once. Only for what starts below the fold, so nothing flashes.
 M.reveal = (root) => {
   if (M.reduced || !("IntersectionObserver" in window)) return;
-  const parts = (root || document).querySelectorAll("main h2, main .lede, .board-meta, .two-tone, .tabs, .band, .board-empty, .fine, .lcard, .how-steps p, .mode-text, " +
-    ".switch-big, .ledger-lede, .rows li, .hl, .facts > div, .notes-body > *, .req-item, .scene, .scenes-head p, .dl-main > *, .facts, .auto p, .np-row, .np-month, .np-lead img, .np-lead-text, .np-filter, .more-link");
+  const parts = (root || document).querySelectorAll(".sec-head, .card, .empty, .fine, .steps li, .news-card, .project, .cta-band, " +
+    ".facts > div, .notes-body > *, .req-item, .scene, .np-row, .np-month, .np-lead, .np-filter");
   const io = new IntersectionObserver((entries) => {
     entries.forEach((en) => {
       if (!en.isIntersecting) return;

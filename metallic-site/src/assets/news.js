@@ -10,7 +10,13 @@
   const byId = {};
   (rv && Array.isArray(rv.revivals) ? rv.revivals : []).forEach((r) => { if (r && r.id) byId[r.id] = r; });
   const name = (id) => (byId[id] && (byId[id].catalogName || byId[id].name)) || String(id || "Revival");
-  const icon = (id) => byId[id] && byId[id].discord && M.cdn(byId[id].discord.icon);
+  const LOCAL_ICONS = { uranium: "/assets/icons/uranium.png" };
+  const icon = (id) => (byId[id] && byId[id].discord && M.cdn(byId[id].discord.icon)) || LOCAL_ICONS[id] || null;
+  const badge = (id, size) => {  // the revival's icon over its first letter, which shows when there is no icon
+    const b = M.el("span", "ic", name(id).replace(/[^A-Za-z0-9]/g, "").charAt(0).toUpperCase() || "?");
+    if (icon(id)) { b.classList.add("has-img"); b.append(M.img(icon(id), "", size)); }
+    return b;
+  };
   const art = (id) => byId[id] && byId[id].discord && (M.cdn(byId[id].discord.banner) || M.cdn(byId[id].discord.splash));
   const list = $("[data-news]"), filter = $("[data-filter]");
   let only = null;
@@ -37,8 +43,8 @@
       const m = d ? d.toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : "Undated";
       if (m !== month) { month = m; out.push(M.el("h2", "np-month", m)); }
       const row = M.el("article", "np-row");
-      const who = M.el("span", "np-who"), ic = icon(n.revival);
-      who.append(ic ? M.img(ic, "", 28) : M.el("i"), M.el("span", null, name(n.revival)));
+      const who = M.el("span", "np-who");
+      who.append(badge(n.revival, 24), M.el("span", null, name(n.revival)));
       const a = M.el("a", "np-title", String(n.title));
       a.href = M.href(n.link); a.rel = "noopener";
       const pic = M.el("span", "np-pic"), src = art(n.revival);
@@ -55,8 +61,7 @@
       const b = M.el("button", "chip");
       b.type = "button";
       b.setAttribute("aria-pressed", String(id === only));
-      const ic = id && icon(id);
-      if (ic) b.append(M.img(ic, "", 20));
+      if (id) b.append(badge(id, 20));
       b.append(label);
       b.addEventListener("click", () => {
         only = id;

@@ -16,21 +16,25 @@
 <body data-page="{{page}}">
 <a class="skip" href="#main">Skip to content</a>
 <header class="top">
-  <a class="mark" href="/" aria-label="Metallic, home"><img src="/assets/brand/crow-silhouette-silver.svg" alt="" width="28" height="28"><span>Metallic</span></a>
-  <nav class="links" aria-label="Main">
-    <a href="/#revivals">Revivals</a>
-    <a href="/downloads/"{{cur_downloads}}>Downloads</a>
-    <a href="/news/"{{cur_news}}>News</a>
-  </nav>
-  <a class="btn small" href="/downloads/" data-dl>Download</a>
+  <div class="top-in">
+    <a class="mark" href="/" aria-label="Metallic, home"><img src="/assets/brand/crow-silhouette-silver.svg" alt="" width="26" height="26"><span class="word">Metallic</span><span class="ea">Early Access</span></a>
+    <nav class="links" aria-label="Main">
+      <a href="/#revivals">Revivals</a>
+      <a href="/news/"{{cur_news}}>News</a>
+      <a href="/downloads/"{{cur_downloads}}>Downloads</a>
+    </nav>
+    <a class="btn small" href="/downloads/" data-dl>Download</a>
+  </div>
 </header>
 <main id="main">
 {{content}}
 </main>
 <footer class="foot">
-  <p>Metallic Early Access, for Windows</p>
-  <nav aria-label="Footer"><a href="/">Home</a><a href="/#revivals">Revivals</a><a href="/downloads/">Downloads</a><a href="/news/">News</a></nav>
-  <p class="foot-end">&copy; {{year}} Metallic. No cookies, no trackers.</p>
+  <div class="foot-in">
+    <a class="mark" href="/" aria-label="Metallic, home"><img src="/assets/brand/crow-silhouette-silver.svg" alt="" width="22" height="22"><span class="word">Metallic</span></a>
+    <nav aria-label="Footer"><a href="/#revivals">Revivals</a><a href="/news/">News</a><a href="/downloads/">Downloads</a></nav>
+    <p class="foot-end">&copy; {{year}} Metallic Early Access, for Windows. No cookies, no trackers.</p>
+  </div>
 </footer>
 <script src="/assets/site.js" defer></script>
 {{scripts}}
