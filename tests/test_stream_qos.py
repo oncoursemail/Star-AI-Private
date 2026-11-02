@@ -498,3 +498,125 @@ def test_disabled_expired_reservation_requires_host_stop():
     assert not q.finish(row.ticket, now_ms=1010, succeeded=True)
     q.enable(owner_approved=True)
     assert q.status()["inflight"] == 0
+
+def test_opt_in_circuit_recovers_after_cooldown_and_success_resets_failures():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    for i in range(3):
+        at = 1000 + i * 1000
+        row = q.admit(job(f"fail-{i}", at, device="cpu"),
+                      snap(at), now_ms=at)
+        assert row.admitted
+        assert q.finish(row.ticket, now_ms=at + 100, succeeded=False)
+
+    # Three failures must never restart the same route immediately.
+    early = q.admit(job("early", 8099, device="cpu"),
+                    snap(8099), now_ms=8099)
+    assert not early.admitted
+    recovered = q.admit(job("probe", 8100, device="cpu"),
+                        snap(8100), now_ms=8100)
+    assert recovered.admitted and recovered.device == "cpu"
+    assert recovered.reason == "unmeasured_circuit_recovery_probe"
+    assert recovered.predicted_p95_ms is None
+    assert q.status()["recovery_probes_inflight"] == 1
+    assert q.finish(recovered.ticket, now_ms=8200, succeeded=True)
+    assert q.status()["unhealthy_routes"] == 0
+    assert q.status()["recovery_probes_inflight"] == 0
+    assert q.admit(job("normal", 8400, device="cpu"),
+                   snap(8400), now_ms=8400).admitted
+
+
+def test_circuit_recovery_is_single_flight_and_exponential_on_repeat_failure():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    for i in range(3):
+        at = 1000 + 500 * i
+        r = q.admit(job(f"fail-{i}", at, device="cpu"),
+                    snap(at, cpu_slots=2), now_ms=at)
+        assert r.admitted
+        assert q.finish(r.ticket, now_ms=at + 100, succeeded=False)
+    # Last failure at 2100; cool down for 5 seconds.
+    probe = q.admit(job("probe", 7100, device="cpu"),
+                    snap(7100, cpu_slots=2), now_ms=7100)
+    assert probe.admitted
+    concurrent = q.admit(job("other", 7101, device="cpu"),
+                         snap(7101, cpu_slots=2), now_ms=7101)
+    assert not concurrent.admitted  # no parallel half-open requests
+    assert q.finish(probe.ticket, now_ms=7200, succeeded=False)
+    # Fourth failure doubles the quarantine to 10 seconds.
+    assert not q.admit(job("retry-too-early", 17199, device="cpu"),
+                       snap(17199), now_ms=17199).admitted
+    assert q.admit(job("second-probe", 17200, device="cpu"),
+                   snap(17200), now_ms=17200).admitted
+
+
+def test_recovery_never_probes_during_broadcast_and_expired_probe_stays_quarantined():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    for i in range(3):
+        at = 1000 + i * 500
+        r = q.admit(job(f"crash-{i}", at, device="cpu"),
+                    snap(at), now_ms=at)
+        assert r.admitted
+        assert q.finish(r.ticket, now_ms=at + 100, succeeded=False)
+    assert not q.admit(job("live-probe", 7100, device="cpu"),
+                       snap(7100, live=True, game=True), now_ms=7100).admitted
+    r = q.admit(job("offline-probe", 7200, device="cpu", ttl=400),
+                snap(7200), now_ms=7200)
+    assert r.admitted
+    # The host has not proved this timed-out process stopped.
+    assert not q.admit(job("still-running", 25000, device="cpu"),
+                       snap(25000, cpu_slots=2), now_ms=25000).admitted
+    assert q.status()["expired_awaiting_host_stop"] == 1
+    assert q.status()["recovery_probes_inflight"] == 1
+    assert not q.finish(r.ticket, now_ms=25100, succeeded=True)
+    assert q.status()["recovery_probes_inflight"] == 0
+    assert q.status()["unhealthy_routes"] == 1
+    assert q.admit(job("next-safe-probe", 36200, device="cpu"),
+                   snap(36200), now_ms=36200).admitted
+
+
+@pytest.mark.parametrize("opts", [
+    {"allow_recovery_probes": 1},
+    {"recovery_cooldown_ms": True},
+    {"recovery_cooldown_ms": 999},
+    {"recovery_cooldown_ms": 150000},
+    {"recovery_cooldown_ms": float("nan")},
+])
+def test_recovery_configuration_rejects_unsafe_values(opts):
+    with pytest.raises(ValueError):
+        AdaptiveQoS(**opts)
+
+def test_recovery_probes_do_not_compete_with_unbroadcast_gameplay():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    for i in range(3):
+        at = 1000 + i * 500
+        r = q.admit(job(f"fail-game-{i}", at, device="gpu"),
+                    snap(at), now_ms=at)
+        assert r.admitted
+        assert q.finish(r.ticket, now_ms=at + 100, succeeded=False)
+    assert not q.admit(job("game-running", 8000, device="gpu"),
+                       snap(8000, game=True), now_ms=8000).admitted
+    assert q.admit(job("game-idle", 8100, device="gpu"),
+                   snap(8100), now_ms=8100).admitted
+
+
+def test_recovered_route_discards_old_speed_calibration():
+    q = AdaptiveQoS(allow_recovery_probes=True, recovery_cooldown_ms=5000)
+    q.enable(owner_approved=True)
+    train_route(q, kind="speech", device="cpu", duration=80)
+    assert q.status()["route_p95_ms"]["speech:cpu:idle"] == 80
+    for i in range(3):
+        at = 18000 + i * 500
+        row = q.admit(job(f"crashed-{i}", at, device="cpu"),
+                      snap(at), now_ms=at)
+        assert row.admitted
+        assert q.finish(row.ticket, now_ms=at + 100, succeeded=False)
+    repaired = q.admit(job("recovery", 25000, device="cpu"),
+                       snap(25000), now_ms=25000)
+    assert repaired.admitted
+    assert repaired.predicted_p95_ms is None
+    assert q.finish(repaired.ticket, now_ms=25100, succeeded=True)
+    # One slow/fast recovery run cannot prove the old p95 is still accurate.
+    assert "speech:cpu:idle" not in q.status()["route_p95_ms"]
