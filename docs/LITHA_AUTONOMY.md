@@ -100,8 +100,9 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
    #851 in 61 s; #832 onnxruntime-gpu stops: a test pins the GPU build on purpose, owner's call). The merger holds
    a MAJOR bump of a STAR Home package (`major_bumps()`): CI never installs them, so it must run on her PC first.
 9. **Hunt benchmark measures the wrong bugs**: it plants bugs the module's tests already catch, i.e. bugs CI
-   already blocks. The hunt's real value is bugs the tests miss. Next: plant mutants that SURVIVE the tests and
-   count how many she proves (expect some mutants to be harmless: those cannot be proven, which is correct).
+   already blocks. The hunt's real value is bugs the tests miss. DONE 2026-11-02: `bug_bench hunt --survivors`
+   plants only mutants that SURVIVE the tests (seed 3: 1-2/6 proven, see 3b; some survivors are harmless, which
+   cannot be proven, correctly). Raising that number is the open part.
 8. **Codex's stacked drafts**: once marked ready, walk them bottom-up (base first), one per run.
 
 ## 3b. Hunt measured
@@ -111,10 +112,24 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   on the old code. Then 1/6 caught, 0 wrong-line flags (different mutants: 10 kinds were added in between).
 - Then the hunt also sees how the tests call the function and names up to 2 suspects (each proven): same 6
   mutants, 1/6 again (a different one caught: run-to-run noise, no measured gain). Not yet checked whether the
-  misses are wrong suspects or failed proofs (one traced miss earlier was a failed proof). Next lever: let the proof run the module's existing tests on head vs base first and give her the
-  first assert that differs, instead of asking her to invent a new test.
+  misses are wrong suspects or failed proofs (one traced miss earlier was a failed proof).
 - False holds: `python -m litha.pr_merger --replay-hunt 8` on merged PRs #816-#847: 0/7 flagged (one had no Python
   change).
+- **Existing tests first (2026-11-02, measured, same star/next a3926af4 and same mutants per seed)**. `prove()` with a
+  base now runs the module's own tests on the PR code; one that fails there (twice: no flake) and PASSES on the base,
+  trimmed to that single test, is the proof without a model call. Failing = an assert, or an exception raised inside
+  the changed module (the test passes on the base, so it is not misusing the code). A failing test that is no clean
+  proof is her starting point to edit; the hunt prompt also shows her the assert that differs. Caught (wrong-line
+  flags) on killed mutants: seed 3 n 6: 1/6 (0) before -> 5/6 (0); seed 5 n 8: 2/8 (0) -> 8/8 (0). Hunting time
+  seed 3: 332 s -> 96 s. Steps: proof only (asserts) 5/6 and 3/8; + differing assert in the hunt prompt 5/6 and 4/8;
+  + exceptions in the module 5/6 and 8/8 (all 4 seed-5 misses before it were TypeError/AttributeError raised in the
+  module, traced). The one seed-3 miss left (drop-return, music_recognition) is her suspect choice, not the proof.
+  `--replay-hunt 8` (#858-#894): 0/8 flagged. Honest limit: these mutants are ones the tests already kill, i.e. CI
+  blocks them anyway; on a green PR no existing test fails and this path does nothing.
+- **Survivors** (`bug_bench hunt --survivors`: only mutants the module's tests MISS, the hunt's real job): seed 3 n 6:
+  2/6 before, 1/6 with existing-tests-first (different mutants caught each run: noise; the lever cannot fire there by
+  construction, not rerun with the module-exception step since no existing test fails). Next lever is for these:
+  give her the callers and ask her to edit the closest existing test of the function, not write one from scratch.
 
 ## 4b. Added 2026-10-31 evening (measured where it says so)
 
@@ -210,6 +225,10 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
 - Also fixed: CI lints `star litha`, the fixer linted only `star`, so a ruff error in `litha/` was reported as
   "CI-only" and never fixed.
 - PRs recorded in `tried.json` as type failures before this change are retried only when their head moves.
+- Live trial 2026-11-02 on this wave's own 14 new errors (7 file/rule pairs): after 5 rounds (121 s) she had kept
+  rounds that left a syntax error in `bug_diff.py` and a mis-indented block in `self_check.py`, because pyright's count
+  still dropped. A round whose changed .py file no longer compiles is now undone and she is told; the errors were fixed
+  by hand. Most of her edits were also redundant `is not None` checks: narrowing advice is the next gap here.
 
 ## 4e. React UI repair (2026-11-02, measured)
 
@@ -298,6 +317,204 @@ bench pairs written to the nightly bank (`bank-litha-fixes.jsonl`, kind "correct
   (rejected `find` texts, which edit she sends), and repeat on 16+ items before trusting either number.
 - Not done: the regression guard (neighbouring passing tests) from the research brief, a `--k` CLI flag, a real
   temperature per candidate (the `asker` takes only the prompt), a live PR measured with K=3.
+
+## 4k. She knows herself: self-map, planner, health check (2026-11-02, measured on her real logs)
+
+- Why: her weak spots were only visible to a person reading `fixes.jsonl` by hand (e.g. the #700 "reran 0" loop
+  logged 30 times before anyone saw it), and a stale lock or a half-written `tried.json` would stop her silently.
+- `python -m litha.self_map`: reads her code with `ast` (nothing imported or run), the two .cmd scripts, this file
+  and her logs. Map: per module the docstring, `python -m` usage, CLI flags, UPPER limits (ROUNDS, K, WINDOW, CHUNK),
+  compiled gate patterns, `~/.star` paths, which litha modules it uses, and per function the messages it refuses
+  with (`why.append(...)`, `{"result": "failed", "why": ...}`, `return None, "..."`, `raise X("...")`); the schedule
+  (steps and OFF switches); open items of section 4; measured rates per lane (tries / fixed / failed / refused /
+  rerun / noop / error + top reasons) from `fixes.jsonl`, her review claims from `decisions.jsonl`, the newest
+  bench row per mode. The code part is cached per tree hash (`~/.star/litha/self_map/<hash>.json`, line endings
+  normalised); writes `~/.star/litha/self_map.{json,txt}`. Summary on the real tree: ~1456 tokens (budget 1500,
+  lines are dropped from the least useful end), 0.28 s cold, 0.09 s cached.
+- `python -m litha.self_plan`: every logged failure of the last 7 days goes in a bucket by its reason (22 patterns:
+  `BUCKETS`, first match wins; plus merger gh errors, refused merges, non-JSON reviews and her refuted/unproven
+  high claims, each once per PR head). Rank = recency-weighted count (half-life 2 days) x fixability (mechanical
+  0.8-0.9, her answers 0.5-0.7, a person's call by design 0.1). A bucket whose lane logged 3+ later attempts without
+  it is "quiet" (probably fixed) and scores x0.1. Writes `~/.star/litha/next_steps.json`: bucket, lane and the code
+  that lane lives in, examples (PR numbers), suspected cause, count, last seen, score.
+- Real data, 2026-11-02 04:30 (170 rows: 149 fixer + 21 merger, 31 fixed), top 5:
+  1. `merger-gh-error` [merge-gates] 9 PR heads (studio#259, studio#45, #737, #861, #833): gh/GraphQL timeouts (TLS
+     handshake) turned into holds; a retry inside the run would save a 10-min wait.
+  2. `conflict-brackets` [resolve] 11 rows, 7 PRs (studio#421 #412 #401 #255 #208): her block does not balance
+     brackets like both sides (code copied from around the block, or its end dropped).
+  3. `review-false-claims` [merge-review] 9 PR heads (studio#441, Metallic-RB#138, studio#488, #854, #849): over 44
+     reviewed heads she named 15 high risks; 12 were refuted by the real file, 3 stood.
+  4. `rerun-restarted-nothing` [ci-rerun] 30 rows, #700 only, quiet since 2026-11-01 08:01 (the known loop, fixed).
+  5. `no-reason-logged` [fix-python] #831 #832 #833 (2026-10-31): failed rows with an empty `why`.
+  Next after these: flaky CI (10 PRs), conflict-parse (rustfmt rejects her merge, 6 PRs), merged-tests-fail (9 PRs,
+  semantic conflicts), push-rejected, review-not-json. `conflict-needs-person` (16 rows) ranks low on purpose.
+- `python -m litha.self_check` (first step of `pr_merger_run.cmd`, `--quiet`): from files only, no network, no
+  model. Last start/end in `run.log` (late after 30 min, hung after 60, rc != 0, a traceback in the last finished
+  run, each step's result line: merger, promote, other repos); `decisions.jsonl` fresh (30 min) and `bench.jsonl`
+  (26 h) unless their OFF switch is set; logs over 50 MB; a PR logged the same way 4+ times in 48 h (a problem while
+  the last one is under 6 h old, else "stopped"); `tried.json` over 300 PRs / 64 KB (never pruned); her worktrees
+  (`litha-fix|merge|proof|base-<n>`) older than `--stale-hours` (3). Repairs only: her `*.lock` files older than
+  3 h are removed; `tried.json` / `hunted.json` / `lessons.json` that no longer parse are restored from
+  `<name>.good` (refreshed by every check while the file parses) or a leftover atomic-write `.tmp` that parses,
+  under the fixer's own `tried.lock`, the broken file kept as `<name>.corrupt-<time>`. Everything else is reported.
+  Refreshes `next_steps.json` when `fixes.jsonl` changed (at most every 30 min). Report: `~/.star/litha/health.json`.
+  Always exits 0 (`--strict` for 1). Timed on the real state: 0.012-0.02 s inside, 0.11-0.47 s for the whole
+  process; result "ok" (the three repeat-loggers #700, studio#255, studio#434 had stopped 12-20 h before).
+- Prompts: `self_map.fitted(lane, build, answer_tokens)` puts one measured line (the lane's top non-quiet bucket
+  advice, at most 280 characters) into the fixer's repair prompt (`fix-python`), the conflict prompt (`resolve`) and
+  the merger's review prompt (`merge-review`) only when `LITHA_SELF_NOTE=1` and prompt + note + answer fit 4096
+  tokens; otherwise the prompt is byte-identical to before (tested). OFF by default: see the measurement below.
+  Measured sizes, review prompts of the last 20 closed PRs: 174 prompts, the note (52 tokens) fits 67; 37 of the 174
+  are already over 4096 tokens without any note (CHUNK = 12,000 characters + rubric + description, ~3.5 characters
+  per token), so the review only works on a node with a larger context than 4096. `fix-python` has no advice yet
+  (its buckets are logging gaps), so its prompt never changes.
+- Review note A/B (her model, review() only, nothing logged): the 8 closed PRs among the last 40 whose review has
+  at most 3 chunks and room for the note (#894 #864 #850 #847 #846 #831 #830 #807, all merged): note off 8/8 agree,
+  0 high claims, 125 s; note on 8/8, 0 high claims, 79 s. No difference to show (these PRs drew no claims at all),
+  so the note stays off. To measure it properly: PRs where she DID make refuted claims (studio#441, #854, #849 ...).
+- Not verified: a self_check repair on her real state (none was needed; repairs are tested on fake state dirs), a
+  scheduled run with the new first step (the .cmd change takes effect on the next run from this tree), the
+  "fixability" weights (set by hand from the cause, not measured), and whether the note helps the conflict prompt.
+- Tests: `tests/test_litha_self.py` (fake `~/.star` in tmp_path for every test).
+
+## 4j. A bench whose numbers can be trusted (2026-11-02, measured)
+
+The old bench plants 6-8 random regex mutants per seed, so +-1-2 is noise and two runs never see the same bugs.
+Now there are fixed items, a stored baseline, and a gate for lessons (`litha/ast_mutants.py`, `litha/learn_loop.py`,
+`litha/real_fixes.py`; `bug_bench.py` only routes the new commands).
+
+- **AST mutants** (`ast_mutants.sites/apply`): one AST node's exact source bytes are edited, the rest of the file stays
+  byte-identical. Families: op-swap (+ -, * /, and or), cmp-flip (== !=, < >=, > <=, is / is not, in / not in),
+  off-by-one (< <=, > >=, int n -> n+1 in a compare, arithmetic, index or range), drop-return, swap-args,
+  drop-guard (an early `if ...: return/raise/continue/break` removed), bool-invert (`if c` -> `if not (c)`,
+  `not c` -> `c`, True/False). Never module constants, docstrings or f-string insides; works on CRLF checkouts.
+- **Standard suite** `litha/bench/standard_suite.json`: 32 items at star/next `91c3972d`, seed 32, recorded as
+  file + line + col + exact change + file hash; round-robin over the families (5/5/5/5/4/4/4), 30 files, at most 2 per
+  file. Kept only if the module's existing tests are green and < 60 s on the clean code AND fail with the mutant.
+  Building it took ~35 min of test runs. `bug_bench standard` replays exactly these, with the PR-style diff, in its
+  own checkout (`worktrees/litha-bench-std`). Bench runs never teach her: lessons are a frozen snapshot, no SFT or
+  nightly-bank rows (these are eval items).
+- **Real fixes** `litha/bench/real_fixes.json` (`bug_bench mine-real`): a fix commit replayed backwards (its source
+  files back to the parent, its tests kept); kept only if the tests pass on the fix and FAIL on the broken code (no
+  collection errors). Stored: repo, sha, parent, paths, failing test ids; nothing else. 12 items from 14 tried
+  commits. fixes.jsonl gave none: its Python-test rows are lock rebuilds (#831/#833), flaky reruns (#852/#899),
+  #832 (owner's call), and #848, whose fix (599c9786) changed the test's allow-list, not source (the tests pass with
+  the source reverted, correctly skipped). So all 12 are people's commits; several are behaviour changes with their
+  test (a renamed or new name the test asks for) rather than bug fixes. Run blind (failing tests + code only).
+- **Learning loop**: `pr_fixer.log_row` calls `learn_loop.after_fix(row)`. Every real Python test failure or fix on
+  this repo (real log only) appends a bench item to `~/.star/litha/real_items.jsonl` (the PR head that failed + its
+  failing test files); it is scored once `mine-real` finds the fix (her fix PR's head, or a star/next commit naming
+  the PR) and checks it. A fixed one also writes her cause sentence as a PENDING lesson
+  (`lessons-pending.json`); the fixer does not see it. `bug_bench gate [--margin 0]` runs the standard suite with the
+  pending lessons on top of the current ones and keeps them (into `lessons.json`, shown as "(a real fix)") only if
+  solved >= baseline - margin, else logs them to `lessons-rejected.jsonl`; exit 0 / 1 / 2 (no baseline). A real
+  item never sees the lesson made from itself. Nightly: `gate --if-pending` after the other runs. The old per-kind
+  lessons from `bug_bench run` are unchanged (not gated).
+- **Scoreboard** `bug_bench report [--last] [--no-real]`: both scores, wall time, calls, the baseline; one JSON row
+  per report in `~/.star/litha/scoreboard.jsonl` (runs in `bench-runs.jsonl`, baseline in `bench-baseline.json`).
+
+Measured, fixer at `ad330137` (K=1, lessons frozen), one bench at a time:
+
+| run | standard suite | wall s | model calls | real fixes (blind) |
+|---|---|---|---|---|
+| baseline (`standard --save-baseline`) | 17/32 | 1999 | 96 | - |
+| second run (`report`) | 16/32 | 1665 | 110 | 0/12 (1180 s, 60 calls) |
+
+Run-to-run noise on the SAME 32 items: 3 items flipped (S03, S17 solved -> missed; S15 missed -> solved), 15 solved
+both times, 18 at least once. So a change must move the standard suite by more than ~3/32 before one run can tell;
+`gate --margin` exists for that, default 0 as asked. By family (run 1 / run 2): op-swap 4/5, 5/5; cmp-flip 1/5, 1/5;
+off-by-one 4/5, 2/5; drop-return 2/5, 2/5; swap-args 2/4, 2/4; drop-guard 1/4, 1/4; bool-invert 3/4, 3/4. Misses
+burn all 5 rounds (5 calls); solves take 1-3. As in 4g, many misses name the right cause in `why` and still never land
+a passing edit (S02, S16, S18). Real fixes 0/12 blind: most need a missing or renamed name the test asks for
+(R01 `rust_fix.away`, R02 `later_checks`), which she diagnoses but does not write; this set is at its floor and shows
+no change smaller than one item. Not verified: the gate on a real pending lesson (no Python fix row since the hook
+landed; tested only with fakes), `fix_heads` against GitHub, items with a fixed PR head (`pull/<n>/head` fetch),
+and a second machine replaying the suite (file hashes ignore CRLF, so it should).
+
+## 4i. Context packer and edit landing (2026-11-02, measured)
+
+- Why: in 4g's misses she often named the cause and still never landed an edit. Measured on the old code (2 runs
+  of the 32 mutants): **152 of 210 edits she sent were refused, 147 of them because `find` was not in the file**;
+  nearly all were copies of the diff (`-old` / `+new` lines, often only the `-` side, which is not in the file). Her
+  old prompts were also up to 5755 tokens (6000 chars of test output + 5000 of diff + 9000 of code), and the bug
+  line was in the prompt for only 17 of the 32 mutants (offline count). No call failed here (prompts up to 5755 tokens
+  were answered, so they went to the 8192-token node); the 4096-token node would have refused every prompt above its window (HTTP 400, which
+  `repair()` counted as "not valid JSON").
+- `litha/context_pack.py` (new; `pr_fixer` only calls it from `repair()` and `apply_edits()`):
+  - **Packer** (`pick`, `pack`, `fixer_prompt`): `ast` picks the changed hunks (score 98), the traceback frames of
+    the first failure, deepest first (95, 91, ...), the failing test (90; only its failing lines when the traceback
+    already prints its source), the functions the test calls (85 for the call on the failing line, less with
+    distance; fallbacks via the test's imports, then the repo map), what the failing function called just before
+    it failed (78: the "returned None" case), then callees (50) and callers (40) one hop away. A unit full of the
+    failure's own words (E lines, `-l` locals) moves up a little and is cut around those lines. The prompt is
+    clipped part by part to 4096 - 700 tokens (700 kept for her answer); no unit takes more than ~45% of the code
+    budget. Every line shows its real line number; she is asked for the `line` of each `find`.
+    Offline, the bug line is now in the prompt for 30 of 32 (the 2 left are 2+ calls away from the test, blind).
+  - **Landing** (`land`, in `apply_edits` for every fixer): exact; without listing numbers / diff markers (the
+    `-` side when there is no `+` side); whitespace-tolerant (indentation re-applied to `replace`); then a fuzzy
+    whole-line match (similarity >= 0.88 and 0.06 ahead of any other place). Two equal places are told apart only
+    by the `line` she gave; anything else ambiguous is refused. A `find` that still names no place gets ONE re-ask
+    (K=1 only; with K>1 the other candidates are the retry) showing the 2 nearest real runs of lines, numbered.
+    Every refusal is noted with its reason (`context_pack.REJECTS`; the live fixer writes
+    `~/.star/pr-fixer/rejected-edits.jsonl`). Test/CI/lock/gate refusals run before any matching, unchanged.
+  - **Repo map** (`repo_map`): module -> public names with signature and first docstring line, cached per git tree
+    hash in `~/.star/pr-fixer/repomap/` (a new tree reuses unchanged modules by blob sha). It resolves names the
+    test calls and adds a short "where things live" list for the files shown.
+- Measured, `bug_bench run --n 8`, seeds 11 and 12, with diff and blind (the same 32 mutants as 4g on a private
+  checkout of a3926af4, lessons frozen, no learning writes, K=1, one bench at a time; another lane's hunt benches
+  were running on the same PC and model during all four passes):
+
+  | code | solved | wall s | model calls | edits sent | refused |
+  |---|---|---|---|---|---|
+  | before (wave2 head ad330137), run 1 | 16/32 (4, 4, 5, 3) | 2105 | 104 | 105 | 75 |
+  | before, run 2 | 17/32 (4, 4, 6, 3) | 1909 | 102 | 105 | 77 |
+  | after, run 1 | 28/32 (8, 7, 8, 5) | 921 | 51 | 50 | 1 |
+  | after, run 2 | 28/32 (8, 6, 8, 6) | 835 | 63 | 66 | 1 |
+
+  Order in brackets: s11 diff, s11 blind, s12 diff, s12 blind. With the diff: 16/16 in both runs (was 8-10/16),
+  almost all in round 1. Blind: 12/16 twice (was 7/16 twice). Of the 116 edits after, 15 landed by the new matching
+  (4 fuzzy, 9 whitespace, 2 numbers/markers), 2 were refused and both re-asks returned an edit; the gain is mostly
+  that she now copies `find` from numbered lines instead of the diff. Max prompt 3380 tokens (was 5755).
+  Still missed blind: isnone-flip (game_closed_loop, twice), eq-flip in luau_run_review and lower-upper in
+  computer/draw (twice; both 2+ calls from the test, not in her window), add-not / drop-not once each.
+- Not separated: how much comes from the packed code versus the new prompt wording (`line` field, "not part of the
+  file"); no ablation was run. Not measured: a live PR, the 4096-token node (all calls went to the 8192 one), K=3
+  with the packer, whether a fuzzy landing ever hit a wrong place on a solved item (all 4 here were then solved).
+
+## 4h. Survivors: a new test from the same calls before and after (2026-11-02, measured)
+
+- `litha/bug_diff.py`, called by `bug_proof.prove()` after the existing-tests step and before her free-form test. She
+  sees the changed function with the exact old line under each changed one (`was:`), the module outline and an example
+  test, and names up to 6 calls (plus optional `setup` statements that build a store or config). Each batch runs in a
+  fresh pytest on the base and on the PR code, twice per side, under the suite's own conftest isolation and in a temp
+  cwd. The first call that is stable on both sides, reaches the suspect line (+-1, traced) and differs becomes a plain
+  test asserting the OLD result. It counts only when (a) the old code could take the call (exceptions raised by the
+  call itself, e.g. a new parameter or name, never count), (b) neither result holds the checkout's own path or a
+  memory address, (c) she says the new result is wrong after seeing both results and the PR's title and body, and
+  (d) the test fails twice on the PR code and passes twice on the base. 2 rounds; round 2 sees what round 1 got.
+- Measured, star/next a3926af4, same mutants per seed, each seed run twice (before and after), 1 bench at a time:
+
+  | set | before (run 1, run 2) | after (run 1, run 2) | wall s before -> after |
+  |---|---|---|---|
+  | survivors seed 3 n 6 | 0/6, 1/6 | 3/6, 2/6 | 254, 376 -> 455, 503 |
+  | survivors seed 5 n 6 | 1/6, 1/6 | 1/6, 1/6 | 306, 400 -> 576, 668 |
+  | killed seed 3 n 6 | 5/6 (0 wrong-line) | 5/6 (0) | 105 -> 198 |
+  | killed seed 5 n 8 | 5/8 (0) | 5/8 (0) | 327 -> 482 |
+
+  Survivors 1/12 and 2/12 -> 4/12 and 3/12; 6 of the 7 after-catches were differential tests. The steady new catch is
+  team_deadlines any-all (0/2 -> 2/2: a non-number now raises TypeError, not ValueError); research_activity all-any
+  went 1/2 -> 2/2, human_checks ge-edge was caught in all 4 runs. Seed 5's other 5 need a LifeStore, an eval suite or
+  a Studio atlas she does not build correctly yet. Killed sets: same items caught and missed (the same 3
+  roblox_cutscene_studio misses on seed 5; the earlier 8/8 there did not reproduce today, before or after). The cost
+  is time: survivors +80%, killed +50 to +90% (misses now also try the differential step).
+- Tried and dropped: the `was:` line in the HUNT prompt as well (3/6 and 0/6, no gain over 3/6 and 1/6, and it puts
+  every intended change in front of her as a suspect). `was:` stays in the differential prompt only.
+- False holds: `--replay-hunt 8` (merged #859-#897, star/next before vs after each merge): 0/8 flagged, 494 s. Weak
+  evidence for the judge step: only 4 suspects reached the differential there (3 were new files with no base, so
+  no differential; 1 found no differing input), so the judge never saw an intended change on a real PR. Its unit
+  test (`test_a_difference_she_judges_intended_holds_nothing...`) is the only check of that path so far.
+- Not done: inputs recorded from the existing tests (the real call shapes, no model call), property-style boundary
+  inputs generated from the changed constant without her, functions nested in another function (not callable).
 
 ## 5. Rules that stay (do not remove)
 

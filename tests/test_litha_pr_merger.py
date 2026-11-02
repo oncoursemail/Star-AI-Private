@@ -119,3 +119,63 @@ def test_merging_into_main_needs_the_repo_to_allow_it(monkeypatch):
         pass
     repos = json.loads(M.REPOS.read_text(encoding="utf-8"))["repos"]
     assert repos[0]["repo"] == M.REPO and all(r["mode"] in ("merge", "review") for r in repos)
+
+
+def test_an_intended_change_with_its_updated_test_is_not_a_hunt_hold(tmp_path):
+    """The hunt's existing-test proof on a green PR: the PR changed the behaviour AND its test, so the module's tests
+    pass on the head and nothing is proven (running the base's old test on the head would be a false hold)."""
+    import sys
+
+    from litha import bug_hunt
+
+    def tree(name, body, test):
+        t = tmp_path / name
+        (t / "star").mkdir(parents=True)
+        (t / "tests").mkdir()
+        (t / "star" / "__init__.py").write_text("", encoding="utf-8")
+        (t / "star" / "calc.py").write_text(body, encoding="utf-8")
+        (t / "tests" / "test_calc.py").write_text(f"from star.calc import cap\n\n\ndef test_cap():\n    {test}\n",
+                                                  encoding="utf-8")
+        return t
+
+    base = tree("base", "def cap(x):\n    return min(x, 10)\n", "assert cap(50) == 10")
+    head = tree("head", "def cap(x):\n    return min(x, 20)\n", "assert cap(50) == 20")    # meant: the PR body says so
+    suspect = lambda p: json.dumps({"suspects": [{"line": 2, "why": "cap should stay 10"}]})  # noqa: E731
+    no_test = lambda p: json.dumps({"possible": False})                                     # noqa: E731
+    asks = iter([suspect, no_test, no_test, no_test])
+    found = bug_hunt.hunt(head, base, {"star/calc.py": {2}}, sys.executable, lambda p: next(asks)(p))
+    assert found == []
+
+
+def _fake_gh(monkeypatch, results):
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd[1:])
+        code, err = results.pop(0)
+        return type("R", (), {"returncode": code, "stdout": "ok" if code == 0 else "", "stderr": err})()
+    monkeypatch.setattr(M.subprocess, "run", run)
+    monkeypatch.setattr(M.time, "sleep", lambda s: None)
+    return calls
+
+
+def test_a_network_blip_on_a_read_is_retried_instead_of_holding_the_pr(monkeypatch):
+    calls = _fake_gh(monkeypatch, [(1, 'Post "https://api.github.com/graphql": net/http: TLS handshake timeout'),
+                                   (0, "")])
+    assert M.gh("pr", "diff", "5") == "ok"
+    assert len(calls) == 2
+
+
+def test_a_write_or_a_real_error_is_never_retried(monkeypatch):
+    calls = _fake_gh(monkeypatch, [(1, "net/http: TLS handshake timeout")])
+    try:
+        M.gh("pr", "merge", "5")
+    except RuntimeError:
+        pass
+    assert len(calls) == 1
+    calls = _fake_gh(monkeypatch, [(1, "GraphQL: Could not resolve to a PullRequest")])
+    try:
+        M.gh("pr", "view", "5")
+    except RuntimeError:
+        pass
+    assert len(calls) == 1

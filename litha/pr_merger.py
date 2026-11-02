@@ -22,6 +22,8 @@ import subprocess
 import sys
 import time
 
+from litha import self_map
+
 REPOS = Path(__file__).with_name("repos.json")                # every repo she looks after (first = STAR's home)
 REPO = "oncoursemail/Star-AI-Project"
 BASE = "star/next"
@@ -50,9 +52,20 @@ Answer only JSON: {"verdict": "merge" or "hold", "summary": "<one sentence>",
 "risks": [{"file": "<path>", "line": <number>, "severity": "high" or "low", "why": "<short>"}]}"""
 
 
-def gh(*args: str, timeout: float = 120) -> str:
-    out = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                         timeout=timeout)
+TRANSIENT = re.compile(r"TLS handshake timeout|i/o timeout|connection (reset|refused)|timed out|unexpected EOF|"
+                       r"HTTP 50[234]|no such host", re.I)
+READS = {("pr", "view"), ("pr", "list"), ("pr", "diff"), ("pr", "checks"), ("run", "list"), ("run", "view")}
+
+
+def gh(*args: str, timeout: float = 120, tries: int = 3, wait: float = 5) -> str:
+    """A network blip (TLS timeout, 502) on a read is retried, so it does not hold a PR for a run. Writes never are."""
+    for attempt in range(tries if tuple(args[:2]) in READS else 1):
+        if attempt:
+            time.sleep(wait * attempt)
+        out = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=timeout)
+        if out.returncode == 0 or not TRANSIENT.search(out.stderr):
+            break
     if out.returncode != 0:
         raise RuntimeError(f"gh {args[0]} {args[1] if len(args) > 1 else ''}: {out.stderr.strip()[:300]}")
     return out.stdout
@@ -246,7 +259,8 @@ def review(pr: dict, files: dict[str, dict], ask=ask_litha, read=head_file) -> d
     """Litha's verdict over every diff chunk. Risks that do not point at an added line are dropped."""
     verdicts, summaries, risks, dropped = [], [], [], 0
     for part in chunks(files):
-        prompt = f"{RUBRIC}\n\nTitle: {pr.get('title', '')}\nDescription: {(pr.get('body') or '')[:1200]}\n\n{part}"
+        prompt = self_map.fitted("merge-review", lambda note: f"{RUBRIC}{note}\n\nTitle: {pr.get('title', '')}\n"
+                                 f"Description: {(pr.get('body') or '')[:1200]}\n\n{part}", 700)
         try:
             answer = json.loads(ask(prompt))
         except (ValueError, TypeError):

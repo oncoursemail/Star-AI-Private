@@ -14,7 +14,10 @@
 
     python -m litha.bug_bench list  [--limit 40]                    which mutants exist (tests must kill them)
     python -m litha.bug_bench run   [--n 10] [--seed -1] [--kind K] [--blind]  the fix benchmark; prints the score
-    python -m litha.bug_bench hunt  [--n 10] [--seed -1]   review catch rate: she must find AND prove the bug
+    python -m litha.bug_bench hunt  [--n 10] [--seed -1] [--survivors]   review catch rate: she must find AND prove
+                                    the bug (--survivors: only bugs the module's tests miss, the ones CI lets through)
+    python -m litha.bug_bench standard | real | report | gate | build-standard | mine-real
+                                    the fixed AST-mutant suite, real-fix items, scoreboard, lesson gate (learn_loop)
 Runs in worktrees/litha-bench (a detached star/next checkout). Every item is reset with git afterwards.
 """
 from __future__ import annotations
@@ -23,7 +26,6 @@ import argparse
 import ast
 import datetime as dt
 import json
-import os
 from pathlib import Path
 import random
 import re
@@ -31,6 +33,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+from litha import fresh_py
 
 HOME = Path.home() / ".star" / "litha"
 LESSONS = HOME / "lessons.json"
@@ -194,7 +198,7 @@ def mutate(text: str, line: int, kind: str) -> str | None:
 
 
 def run_tests(tree: Path, tests: list[str], python: str) -> tuple[bool, str]:
-    env = dict(os.environ, APPDATA=tempfile.mkdtemp(prefix="litha-bench-"))
+    env = fresh_py.env(tree, APPDATA=tempfile.mkdtemp(prefix="litha-bench-"))
     try:
         r = subprocess.run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf", "-x", *tests], cwd=tree,
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600, env=env)
@@ -274,6 +278,8 @@ def lessons_text(limit: int = 5) -> str:
         if ex.get("bad") and ex.get("good"):
             line += f"; e.g. `{ex['bad'].strip()[:90]}` should be `{ex['good'].strip()[:90]}`"
         rows.append(line)
+    for v in [v for v in lessons.values() if v.get("real")][-2:]:      # real-fix lessons the gate kept (learn_loop)
+        rows.append(f"- {v['hint'][:160]} (a real fix)")
     return ("Lessons from your past fixes (look for these first):\n" + "\n".join(rows) + "\n") if rows else ""
 
 
@@ -310,8 +316,10 @@ def bank_row(prompt: str, answer: dict, item: dict, config: Path = Path.home() /
 
 # ---------------------------------------------------------------- the benchmark
 
-def killed(tree: Path, items: list[dict], n: int, python: str, rng: random.Random) -> list[dict]:
-    """Up to n mutants that the module's tests really catch (tried in random order, one kind per file line)."""
+def killed(tree: Path, items: list[dict], n: int, python: str, rng: random.Random,
+           survivors: bool = False) -> list[dict]:
+    """Up to n mutants that the module's tests really catch (tried in random order, one kind per file line).
+    survivors=True: the ones the tests MISS instead (bugs CI would let through; some are harmless rewrites)."""
     by_kind: dict[str, list[dict]] = {}
     for it in items:
         by_kind.setdefault(it["kind"], []).append(it)
@@ -337,7 +345,7 @@ def killed(tree: Path, items: list[dict], n: int, python: str, rng: random.Rando
             continue
         f.write_bytes(new.encode("utf-8"))
         ok, out_text = run_tests(tree, it["tests"], python)
-        if not ok:
+        if ok == survivors:
             out.append({**it, "bad": new.split("\n")[it["line"] - 1], "fail": out_text,
                         "diff": sh(["git", "diff"], cwd=tree).stdout})
         reset(tree)
@@ -399,14 +407,17 @@ def ensure_base() -> Path:
     return base
 
 
-def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
-    """Review catch rate: plant a bug, let her hunt it in the changed function, count only proven finds."""
+def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str, survivors: bool = False) -> dict:
+    """Review catch rate: plant a bug, let her hunt it in the changed function, count only proven finds.
+    survivors=True plants only bugs the module's tests miss: the hunt's real job (CI blocks the others)."""
     from litha import bug_hunt
     tree, base = ensure_bench(), ensure_base()
     rng = random.Random(seed)
-    items = killed(tree, candidates(tree, kinds, rng, max_files=25), n, python, rng)
-    score = {"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "seed": seed, "mode": "hunt",
-             "n": len(items), "caught": 0, "wrong_line": 0, "by_kind": {}}
+    items = killed(tree, candidates(tree, kinds, rng, max_files=25), n, python, rng, survivors)
+    score = {"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "seed": seed,
+             "mode": "hunt-survivors" if survivors else "hunt", "n": len(items), "caught": 0, "wrong_line": 0,
+             "by_existing_test": 0, "by_differential": 0, "by_kind": {}, "seconds": 0}
+    t0 = time.time()
     for it in items:
         f = tree / it["file"]
         new = mutate(f.read_text(encoding="utf-8"), it["line"], it["kind"])
@@ -423,11 +434,15 @@ def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
         hit = any(abs(x["line"] - it["line"]) <= 1 for x in found)
         score["caught"] += int(hit)
         score["wrong_line"] += int(bool(found) and not hit)
+        vias = [str(x["proof"].get("via", "")) for x in found] if hit else []
+        score["by_existing_test"] += any(v.startswith("existing") for v in vias)
+        score["by_differential"] += any(v.startswith("differential") for v in vias)
         k = score["by_kind"].setdefault(it["kind"], [0, 0])
         k[0] += int(hit)
         k[1] += 1
         print(f"{'CAUGHT' if hit else 'missed'} {it['kind']:<15} {it['file']}:{it['line']} {round(time.time() - t)} s "
               f"{(found[0]['why'] if found else '')[:90]}", flush=True)
+    score["seconds"] = round(time.time() - t0)
     HISTORY.parent.mkdir(parents=True, exist_ok=True)
     with HISTORY.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(score) + "\n")
@@ -435,12 +450,17 @@ def hunt_run(n: int, seed: int, kinds: list[str] | None, python: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in ("standard", "real", "report", "gate", "build-standard", "mine-real"):
+        from litha import learn_loop                      # the fixed suites, scoreboard and lesson gate
+        return learn_loop.main(argv)
     ap = argparse.ArgumentParser(prog="python -m litha.bug_bench")
     ap.add_argument("cmd", choices=["list", "run", "hunt"])
     ap.add_argument("--n", type=int, default=10)
     ap.add_argument("--seed", type=int, default=-1, help="-1 = today's date (new bugs every day)")
     ap.add_argument("--blind", action="store_true", help="no diff: find the bug from the failing tests alone")
     ap.add_argument("--kind", action="append")
+    ap.add_argument("--survivors", action="store_true", help="hunt: only bugs the module's tests miss")
     ap.add_argument("--limit", type=int, default=40)
     ap.add_argument("--python", default=sys.executable)
     a = ap.parse_args(argv)
@@ -455,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     seed = a.seed if a.seed >= 0 else int(dt.date.today().strftime("%Y%m%d"))
     if a.cmd == "hunt":
-        print(json.dumps(hunt_run(a.n, seed, a.kind, a.python)))
+        print(json.dumps(hunt_run(a.n, seed, a.kind, a.python, a.survivors)))
         return 0
     print(json.dumps(run(a.n, seed, a.kind, a.python, blind=a.blind)))
     return 0
