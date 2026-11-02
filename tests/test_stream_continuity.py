@@ -210,3 +210,106 @@ def test_wrong_types_threads_backward_time_crash_and_expiry(bank, tmp_path):
             now_unix_s=NOW+91*86400,
             public_action_ids=frozenset({"jump_left"}), broadcast_approved=True,
         ) is None
+
+
+def _other_game_vault(bank, path):
+    """Second game intentionally reuses the owner's independent vault key."""
+    return StreamContinuityVault(
+        bank, path, integrity_key=MEMORY,
+        game_id="boss", game_version="v1", objective_id="checkpoint",
+        situation_id="ledge", recordable_action_ids=frozenset({"jump_left"}),
+    )
+
+
+def test_shared_database_scopes_session_ids_recall_and_forget(bank, tmp_path):
+    path = tmp_path / "shared.sqlite"
+    with vault(bank, path) as obby, _other_game_vault(bank, path) as boss:
+        obby.enable(owner_approved=True)
+        boss.enable(owner_approved=True)
+        assert obby.start_episode("session_same", now_unix_s=NOW)
+        assert boss.start_episode("session_same", now_unix_s=NOW)
+        assert obby.record(trial(bank, 1, game="obby"), now_unix_s=NOW + 1)
+        assert boss.record(trial(bank, 2, game="boss"), now_unix_s=NOW + 2)
+        assert obby.finish_episode(now_unix_s=NOW + 3)
+        assert boss.finish_episode(now_unix_s=NOW + 3)
+
+        a = obby.public_packet(
+            now_unix_s=NOW + 4, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        )
+        b = boss.public_packet(
+            now_unix_s=NOW + 4, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        )
+        assert a is not None and '"game_id":"obby"' in a.context_record
+        assert b is not None and '"game_id":"boss"' in b.context_record
+        assert '"game_id":"boss"' not in a.context_record
+        assert '"game_id":"obby"' not in b.context_record
+        assert obby.status()["events"] == boss.status()["events"] == 1
+
+        # An owner choosing to forget one game must not erase a second game.
+        obby.forget_all(owner_approved=True)
+        assert obby.status()["events"] == 0
+        assert boss.status()["events"] == 1
+        assert boss.public_packet(
+            now_unix_s=NOW + 5, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        ) is not None
+    # Reopening the other scope with the same key retains its fact.
+    with _other_game_vault(bank, path) as boss:
+        boss.enable(owner_approved=True)
+        assert boss.public_packet(
+            now_unix_s=NOW + 6, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        ) is not None
+
+
+def test_other_game_recent_episodes_cannot_starve_own_memory(bank, tmp_path):
+    path = tmp_path / "shared.sqlite"
+    with vault(bank, path) as obby, _other_game_vault(bank, path) as boss:
+        obby.enable(owner_approved=True)
+        boss.enable(owner_approved=True)
+        assert obby.start_episode("good_obby", now_unix_s=NOW)
+        assert obby.record(trial(bank, 1), now_unix_s=NOW + 1)
+        assert obby.finish_episode(now_unix_s=NOW + 2)
+        for idx in range(70):
+            at = NOW + 10 + idx
+            assert boss.start_episode(f"quiet_{idx}", now_unix_s=at)
+            assert boss.finish_episode(now_unix_s=at)
+        # The 64 most recent episodes in the *database* belong to boss.
+        # Selection must be scoped *before* its bounded LIMIT.
+        packet = obby.public_packet(
+            now_unix_s=NOW + 90, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        )
+        assert packet is not None and '"game_id":"obby"' in packet.context_record
+        assert obby.status()["integrity_failures"] == 0
+
+
+def test_corrupt_foreign_game_does_not_silence_valid_game(bank, tmp_path):
+    path = tmp_path / "shared.sqlite"
+    with vault(bank, path) as obby, _other_game_vault(bank, path) as boss:
+        obby.enable(owner_approved=True)
+        boss.enable(owner_approved=True)
+        assert obby.start_episode("one", now_unix_s=NOW)
+        assert obby.record(trial(bank, 1), now_unix_s=NOW + 1)
+        assert obby.finish_episode(now_unix_s=NOW + 2)
+        assert boss.start_episode("two", now_unix_s=NOW + 3)
+        assert boss.record(trial(bank, 4, game="boss"), now_unix_s=NOW + 4)
+        assert boss.finish_episode(now_unix_s=NOW + 5)
+        with sqlite3.connect(path) as direct:
+            direct.execute(
+                "UPDATE continuity_events SET outcome='failure' "
+                "WHERE episode_key IN (SELECT episode_key FROM continuity_episodes "
+                "WHERE game_id='boss')"
+            )
+        assert obby.public_packet(
+            now_unix_s=NOW + 6, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        ) is not None
+        assert obby.status()["integrity_failures"] == 0
+        assert boss.public_packet(
+            now_unix_s=NOW + 6, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        ) is None
+        assert boss.status()["integrity_failures"] == 1

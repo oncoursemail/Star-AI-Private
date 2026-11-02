@@ -2,6 +2,8 @@
 
 Remembering a real attempt is more believable than manufacturing a backstory.
 Only host-verified PRACTICE actions enter this bounded local SQLite journal.
+Multiple curated game scopes may safely share a database without mixing
+their recall, erasure or episode identities.
 A separate owner/broadcast gate releases small factual summaries; no recordings,
 viewer identities, chat, signing keys, raw evidence or holdout scores are stored.
 
@@ -106,6 +108,13 @@ class StreamContinuityVault:
             "CREATE INDEX IF NOT EXISTS continuity_sealed_by_time "
             "ON continuity_episodes(ended DESC)"
         )
+        # Scope first, then time: large multi-game vaults should not scan
+        # unrelated episodes just to fill a tiny model-context packet.
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS continuity_sealed_by_scope_time "
+            "ON continuity_episodes(game_id, game_version, objective_id, "
+            "situation_id, ended DESC, episode_key)"
+        )
         self._lock = RLock()
         self._owner_thread = get_ident()
         self._enabled = False
@@ -157,7 +166,9 @@ class StreamContinuityVault:
             now = self._time(now_unix_s)
             if not self._enabled or self._active is not None:
                 return False
-            key = self._sign("episode-id", (episode_id,))
+            # Bind the opaque episode ID to the game/version/objective/situation.
+            # Shared vault files may legitimately reuse host session IDs.
+            key = self._sign("episode-id", (*self._scope, episode_id))
             if self._db.execute(
                 "SELECT 1 FROM continuity_episodes WHERE episode_key=?", (key,)
             ).fetchone():
@@ -251,9 +262,11 @@ class StreamContinuityVault:
             if not self._enabled or not broadcast_approved or not visible:
                 return None
             rows = self._db.execute(
-                "SELECT * FROM continuity_episodes WHERE ended>0 AND ended<=? "
-                "AND ended>=? ORDER BY ended DESC, episode_key ASC LIMIT 64",
-                (now, now - 90 * 86400),
+                "SELECT * FROM continuity_episodes WHERE game_id=? "
+                "AND game_version=? AND objective_id=? AND situation_id=? "
+                "AND ended>0 AND ended<=? AND ended>=? "
+                "ORDER BY ended DESC, episode_key ASC LIMIT 64",
+                (*self._scope, now, now - 90 * 86400),
             ).fetchall()
             facts: list[dict[str, object]] = []
             for row in rows:
@@ -322,13 +335,34 @@ class StreamContinuityVault:
             return ContinuityPacket(tuple(str(f["action_id"]) for f in facts), record)
 
     def forget_all(self, *, owner_approved: bool = False) -> None:
-        """Erase all past events and invalidate the current active episode."""
+        """Forget this vault's game/version/objective/situation only.
+
+        One SQLite database may hold other curated games. Never silently
+        erase their unrelated episodes when the owner forgets this scope.
+        The paired deletes are atomic even if SQLite reports an error.
+        """
         if owner_approved is not True:
             raise PermissionError("owner approval required to erase continuity")
         self._thread()
         with self._lock:
-            self._db.execute("DELETE FROM continuity_events")
-            self._db.execute("DELETE FROM continuity_episodes")
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                self._db.execute(
+                    "DELETE FROM continuity_events WHERE episode_key IN "
+                    "(SELECT episode_key FROM continuity_episodes WHERE "
+                    "game_id=? AND game_version=? AND objective_id=? "
+                    "AND situation_id=?)",
+                    self._scope,
+                )
+                self._db.execute(
+                    "DELETE FROM continuity_episodes WHERE game_id=? "
+                    "AND game_version=? AND objective_id=? AND situation_id=?",
+                    self._scope,
+                )
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
             self._enabled = False
             self._active = self._started = self._clock = None
 
@@ -339,7 +373,12 @@ class StreamContinuityVault:
             return {**self._stats, "enabled": self._enabled,
                     "active": self._active is not None,
                     "events": self._db.execute(
-                        "SELECT COUNT(*) FROM continuity_events"
+                        "SELECT COUNT(*) FROM continuity_events AS e "
+                        "JOIN continuity_episodes AS p "
+                        "ON e.episode_key=p.episode_key "
+                        "WHERE p.game_id=? AND p.game_version=? "
+                        "AND p.objective_id=? AND p.situation_id=?",
+                        self._scope,
                     ).fetchone()[0]}
 
     def close(self) -> None:
