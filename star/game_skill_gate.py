@@ -10,7 +10,7 @@ does not authenticate a compromised host. No player IDs, chat or videos here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import ceil, isfinite
+from math import ceil, comb, isfinite
 import re
 from typing import Sequence, cast
 
@@ -89,6 +89,7 @@ class GameSkillVerdict:
     evidence: str = "host_attested_not_cryptographic_proof"
     authorized_to_promote: bool = False
     authorized_to_play: bool = False
+    paired_sign_pvalue: float | None = None
 
 
 def _key(t: GamePerformanceTrial) -> tuple[str, str, int, str]:
@@ -135,6 +136,18 @@ def _p95(values: list[float]) -> float:
     return ordered[ceil(0.95 * len(ordered)) - 1]
 
 
+def _one_sided_sign_pvalue(positive: int, negative: int) -> float | None:
+    """Exact one-sided paired sign test, excluding ties.
+
+    This is a conservative screening diagnostic, NOT proof that correlated
+    seeds, repeated peeks, or a compromised host are independent evidence.
+    """
+    n = positive + negative
+    if n == 0:
+        return None
+    return sum(comb(n, k) for k in range(positive, n + 1)) / (1 << n)
+
+
 def compare_game_skill(
     baseline: Sequence[GamePerformanceTrial], candidate: Sequence[GamePerformanceTrial], *,
     mode: str = "realtime", min_holdouts: int = 20,
@@ -146,6 +159,9 @@ def compare_game_skill(
     must remain won. Per-case progress/latency regressions and p95 latency
     regressions block eligibility, regardless of aggregate score.
     Paused and real-time evidence MUST be compared separately.
+    A descriptive one-sided paired sign test rejects weak directional
+    evidence despite an impressive mean. It assumes genuinely independent,
+    preregistered seeds; the advisory verdict is NEVER deployment authority.
     """
     if mode not in _MODES or type(mode) is not str:
         raise ValueError("mode must be realtime or paused")
@@ -153,7 +169,8 @@ def compare_game_skill(
         raise ValueError("min_holdouts must be 4..1024")
 
     def verdict(reasons: tuple[str, ...], base: list[GamePerformanceTrial] | None = None,
-                new: list[GamePerformanceTrial] | None = None) -> GameSkillVerdict:
+                new: list[GamePerformanceTrial] | None = None,
+                sign_p: float | None = None) -> GameSkillVerdict:
         b, n = base or [], new or []
         return GameSkillVerdict(
             eligible=not reasons, reasons=reasons, mode=mode, matched_holdouts=len(b),
@@ -163,6 +180,7 @@ def compare_game_skill(
             candidate_mean_progress=sum(t.progress for t in n) / len(n) if n else 0.0,
             baseline_p95_action_delay_ms=_p95([t.action_delay_ms for t in b]),
             candidate_p95_action_delay_ms=_p95([t.action_delay_ms for t in n]),
+            paired_sign_pvalue=sign_p,
         )
 
     try:
@@ -251,7 +269,35 @@ def compare_game_skill(
             reasons.append("insufficient_repeated_improvement")
         if len(set(benefited)) < 2:
             reasons.append("improvement_not_cross_scenario")
-    return verdict(tuple(reasons), b, n)
+    paired_p: float | None = None
+    if wins or progress or faster:
+        # Count independent *paired directions*, not how many scenarios or
+        # magnitude of a lucky win. Ties do not increase the evidence count.
+        # Gameplay outcomes take priority; latency is tested for speed-only
+        # improvements. Never select whichever metric has the lowest p-value.
+        if wins or progress:
+            directions = [
+                1 if (new.success and not old.success
+                      or (old.success == new.success
+                          and new.progress - old.progress >= 0.005))
+                else -1 if (old.success and not new.success
+                           or (old.success == new.success
+                               and old.progress - new.progress >= 0.005))
+                else 0
+                for old, new in zip(b, n)
+            ]
+        else:
+            directions = [
+                1 if old.action_delay_ms - new.action_delay_ms >= 2
+                else -1 if new.action_delay_ms - old.action_delay_ms >= 2
+                else 0 for old, new in zip(b, n)
+            ]
+        paired_p = _one_sided_sign_pvalue(
+            directions.count(1), directions.count(-1),
+        )
+        if paired_p is None or paired_p >= 0.05:
+            reasons.append("paired_gain_not_statistically_supported")
+    return verdict(tuple(reasons), b, n, paired_p)
 
 
 __all__ = ["GamePerformanceTrial", "GameSkillVerdict", "compare_game_skill"]

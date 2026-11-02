@@ -291,3 +291,48 @@ def test_different_game_seed_does_not_contaminate_holdouts():
     candidate.append(replace(candidate[0], case_id="sealed_other_mode",
                              seed=999, mode="paused", split="holdout"))
     assert compare_game_skill(baseline, candidate).eligible
+
+
+def test_random_looking_win_gain_with_mild_losses_needs_paired_evidence():
+    # Six positive seed outcomes and one small negative outcome pass the
+    # original average-score, cross-map, no-major-regression screens.
+    # Yet a one-sided exact sign test is 8/128 = 0.0625, not below 0.05.
+    baseline = cases()
+    candidate = list(baseline)
+    for i in range(6):
+        candidate[i] = replace(candidate[i], progress=0.55, success=True)
+    candidate[12] = replace(candidate[12], progress=0.38)
+    verdict = compare_game_skill(baseline, candidate)
+    assert not verdict.eligible
+    assert "paired_gain_not_statistically_supported" in verdict.reasons
+    assert "scenario_progress_regression" not in verdict.reasons
+    assert "progress_regression" not in verdict.reasons
+    assert verdict.paired_sign_pvalue == 0.0625
+
+
+def test_robust_cross_scenario_wins_survive_paired_evidence_gate():
+    baseline = cases()
+    candidate = list(baseline)
+    for i in range(7):
+        candidate[i] = replace(candidate[i], progress=0.55, success=True)
+    candidate[12] = replace(candidate[12], progress=0.38)
+    verdict = compare_game_skill(baseline, candidate)
+    assert verdict.eligible
+    assert "paired_gain_not_statistically_supported" not in verdict.reasons
+    assert verdict.paired_sign_pvalue == 9 / 256  # seven up, one down
+
+
+def test_speed_only_paired_gain_uses_latency_not_tied_progress():
+    original = cases(delay=100)
+    candidate = [replace(t, action_delay_ms=70) for t in original]
+    verdict = compare_game_skill(original, candidate)
+    assert verdict.eligible
+    assert verdict.paired_sign_pvalue is not None
+    assert verdict.paired_sign_pvalue < 0.05
+
+
+def test_no_improvement_does_not_fabricate_a_significance_score():
+    original = cases()
+    verdict = compare_game_skill(original, original)
+    assert not verdict.eligible
+    assert verdict.paired_sign_pvalue is None
