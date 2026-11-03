@@ -33,7 +33,7 @@ import threading
 import time
 import tomllib
 
-from litha import claude, context_pack, fresh_py, merge3, rust_fix, self_map
+from litha import build_check, claude, context_pack, fresh_py, merge3, rust_fix, self_map
 from litha.pr_merger import BASE, REPO, gh, head_checks, latest_runs, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
@@ -136,11 +136,13 @@ def sh(args: list[str], cwd: Path | None = None, timeout: float = 600, env: dict
                               timeout=timeout, env=env)
 
 
-def failed_logs(sha: str) -> str:
-    """The text of every failed check's job log on this commit (GitHub Actions jobs only)."""
+def failed_logs(sha: str, every: bool = False) -> str:
+    """The text of every failed check's job log on this commit (GitHub Actions jobs only): the newest run of each
+    check, or every run (every=True: did this base commit's own CI ever fail a test)."""
     data = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"))
     out = []
-    for c in latest_runs(data.get("check_runs", [])):
+    runs = data.get("check_runs", [])
+    for c in runs if every else latest_runs(runs):
         if (c.get("conclusion") or "") != "failure":
             continue
         m = re.search(r"/job/(\d+)", c.get("details_url") or "")
@@ -1082,6 +1084,72 @@ def _rerun(sha: str, number: int | None) -> int:
     return done
 
 
+MERGED_INTO = re.compile(r"Merge ([0-9a-f]{40}) into ([0-9a-f]{40})")   # actions/checkout of a pull_request run
+
+
+def base_fault(log: str, pr: dict, fails: list[dict]) -> tuple[str, str]:
+    """(kind, why) when CI's failure is (also) the base's: CI tested the head merged into a base commit whose own CI
+    failed one of the same tests (#857 #899 #903 #905, all on star/next 91c3972d). kind "stale": the base has moved
+    on and its newest commit has no failed check, so a fresh run on today's base is what the PR needs (a rerun
+    replays the same old merge commit, so it fails the same way; the caller first runs every failing test on the
+    head merged with today's base); "broken": every failing test is the base's and the base still fails, so it is
+    not this PR's to fix ('' = the PR's own failure)."""
+    bases = {b for h, b in MERGED_INTO.findall(log) if h == pr.get("headRefOid")}
+    names = [f["test"] for f in fails]
+    if len(bases) != 1 or not names:
+        return "", ""
+    ci_base = bases.pop()
+    seen = set(FAILED.findall(failed_logs(ci_base, every=True)))
+    shared = [n for n in names if n in seen]
+    if not shared:
+        return "", ""
+    why = (f"CI tested this head merged into {BASE} at {ci_base[:8]}, whose own CI failed "
+           f"{len(shared)} of its {len(names)} failing test(s): {', '.join(shared)[:200]}")
+    now = pr.get("baseRefOid") or ""
+    every = len(shared) == len(names)
+    if not now or now == ci_base:
+        return ("broken", f"{why}; {BASE} has not moved since: not this PR's failure") if every else ("", "")
+    if any(c["conclusion"] == "FAILURE" for c in head_checks(now)):
+        return ("broken", f"{why}; {BASE} still fails at {now[:8]}: not this PR's failure") if every else ("", "")
+    return "stale", f"{why}; {BASE} has no failed check at {now[:8]}"
+
+
+def fresh_run(sha: str, number: int, base: str) -> int:
+    """A CI run on today's base: close and reopen the PR (a pull_request run merges the head into the base of its
+    start; a rerun would replay the old merge commit). Nothing is pushed. Once per (head, base); RERUNS caps it."""
+    key = f"{sha}^{base}"
+    if reran(key):
+        return 0
+    if not RERUNS.take():
+        raise RerunSpent(f"#{number}: this run's CI rerun is already used")
+    try:
+        gh("pr", "close", str(number), "--repo", REPO)
+        gh("pr", "reopen", str(number), "--repo", REPO)
+    except RuntimeError:
+        RERUNS.give()
+        return 0
+    _note_rerun(key)
+    return 1
+
+
+def on_base(pr: dict, tests: list[str], python: str) -> tuple[bool | None, str]:
+    """The failing test files on the head merged with today's base (a throwaway worktree): (passed, output);
+    passed None = the head does not merge cleanly (the conflict path takes it next run)."""
+    number, base = pr["number"], pr.get("baseRefOid") or f"origin/{BASE}"
+    tree = WORK / f"litha-fresh-{number}"
+    if tree.exists():
+        sh(["git", "-C", str(CLONE), "worktree", "remove", "--force", str(tree)])
+    sh(["git", "-C", str(CLONE), "fetch", "-q", "origin", BASE, f"pull/{number}/head:refs/litha-check/{number}",
+        "--force"])
+    sh(["git", "-C", str(CLONE), "worktree", "add", "-q", "--detach", str(tree), pr["headRefOid"]])
+    try:
+        if sh(["git", *IDENTITY, "merge", "--no-ff", "--no-commit", base], cwd=tree).returncode:
+            return None, "the head does not merge cleanly with today's base"
+        return run_tests(tree, tests, python)
+    finally:
+        sh(["git", "-C", str(CLONE), "worktree", "remove", "--force", str(tree)])
+
+
 CONFLICT = re.compile(r"^<<<<<<< [^\n]*\n.*?^>>>>>>> [^\n]*\n", re.M | re.S)
 MERGE_PROMPT = """You are Litha, resolving a git merge conflict in {repo} so a pull request can merge into {base}.
 Pull request: {title}
@@ -1715,10 +1783,14 @@ def triage(code: list[str], raws: dict[str, str]) -> str:
 
 def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     """A PR that conflicts with star/next: merge star/next into a copy of it on HER branch, resolve (lock files are
-    taken from star/next and rebuilt; code conflicts are hers), prove nothing broke, open her own PR."""
+    taken from star/next and rebuilt; code conflicts are hers), prove nothing broke, open her own PR. Her own
+    litha/ PR (#851: her fix of #833 conflicted and waited for a person) gets the merge on its own branch instead."""
     number = pr["number"]
     day = dt.date.today().strftime("%Y%m%d")
+    own = str(pr.get("headRefName", "")).startswith("litha/")
     branch, tree = f"litha/merge-{number}-{day}-{dt.datetime.now():%H%M}", WORK / f"litha-merge-{number}"
+    if own:
+        branch = f"litha-work/merge-{number}"                # local name; pushed to pr["headRefName"]
     if tree.exists():
         sh(["git", "-C", str(CLONE), "worktree", "remove", "--force", str(tree)])
     sh(["git", "-C", str(CLONE), "fetch", "-q", "origin", BASE])
@@ -1788,6 +1860,13 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     if not ok:
         sh(["git", "merge", "--abort"], cwd=tree)
         return {**row, "why": "after resolving, tests fail: " + " ".join(FAILED.findall(out))[:250]}
+    front = build_check.plan(tree, conflicted)                  # tsc (+ touched vitest files) for frontend merges:
+    if front["tsc"]:                                           # #853/#857 doubled a prop (TS2300) and were pushed
+        built = build_check.run(tree, conflicted, python, steps={"tsc": True, "vitest": front["vitest"]})
+        row["tests"] += built["ran"]
+        if not built["ok"]:
+            sh(["git", "merge", "--abort"], cwd=tree)
+            return {**row, "result": "failed", "why": f"after resolving, {built['failed']}"[:400]}
     if (tree / "Cargo.toml").is_file() and any(c.endswith(".rs") for c in code):
         ok, fails, crates, out = rust_fix.crate_tests(tree, code + moved)
         mine = sorted({e["file"] for e in rust_fix.errors(out)} & set(code)) if not ok else []
@@ -1844,6 +1923,10 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         c = sh(["git", *IDENTITY, "commit", "-q", "--no-verify", "-m", msg], cwd=tree)
     if c.returncode:
         return {**row, "result": "failed", "why": "commit refused: " + (c.stdout + c.stderr)[-300:]}
+    if own:                                               # her own branch: fast-forward only (no force)
+        if sh(["git", "push", "-q", "origin", f"HEAD:refs/heads/{pr['headRefName']}"], cwd=tree).returncode:
+            return {**row, "result": "failed", "why": "push to her own branch failed (it moved?)"}
+        return {**row, "fix_pr": f"#{number}", "why": row["why"] + " (on her own branch)"}
     if sh(["git", "push", "-q", "-u", "origin", branch], cwd=tree).returncode:
         return {**row, "result": "failed", "why": "push failed"}
     body = (f"Litha brought #{number} up to date with {BASE} (her own branch; the original PR is unchanged).\n\n"
@@ -1872,6 +1955,20 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
         n = rerun_failed(sha, number)                     # nothing restarted: not a rerun, or it loops every run
         return {"pr": number, "result": "rerun" if n else "skip",
                 "why": f"failed logs expired; reran {n} run(s)" + ("" if n else "; nothing could be restarted")}
+    kind, base_why = base_fault(log, pr, fails) if fails and not found else ("", "")
+    if kind == "broken":                    # no fix, no rerun: tried again when the base moves (work() marks it so)
+        return {"pr": number, "result": "skip", "kind": "base", "why": base_why}
+    if kind == "stale":                     # a fresh run on today's base, once the tests pass there
+        files = sorted({f["test"].split("::")[0] for f in fails})
+        ok, out = on_base(pr, files, python)
+        if ok:
+            n = 0 if dry else fresh_run(sha, number, pr["baseRefOid"])
+            return {"pr": number, "result": "rerun" if n or dry else "skip", "kind": "base", "tests": files,
+                    "why": f"{base_why}; all {len(files)} failing file(s) pass here on the head merged with "
+                           "today's base; "
+                           + ("a fresh CI run on it (closed and reopened)" if n else "no fresh run (dry, or done)")}
+        if ok is None:
+            return {"pr": number, "result": "skip", "kind": "base", "why": f"{base_why}; {out}"}
     linting = not fails and bool(RUFF_CI.search(log))
     typing = None if found or fails or linting else TYPE_CI.search(log)   # fails the same every run: fix, no rerun
     ci_types = ("new pyright errors: " + " | ".join(re.findall(r"\S+\.py:\d+: [^\n]*", typing.group(1)))[:300]
@@ -1941,6 +2038,10 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
         return {"pr": number, "result": "failed", "rounds": ROUNDS, "tests": tests, "why": why}
     changed = [ln[3:] for ln in sh(["git", "status", "--porcelain"], cwd=tree).stdout.splitlines()]
     row = {"pr": number, "result": "fixed", "round": round_no, "why": why, "tests": tests, "files": changed}
+    built = build_check.run(tree, changed, python)              # what her edit touches still builds and passes
+    row["build"] = {"ran": built["ran"], "seconds": built["seconds"]}
+    if not built["ok"]:
+        return {**row, "result": "failed", "why": f"{why}; but then {built['failed']}"[:400]}
     if dry:
         return row
     msg = f"[litha] fix #{number}: {why}\n\nFailing tests now pass locally: {', '.join(tests)}"
@@ -2227,9 +2328,10 @@ def main(argv: list[str] | None = None) -> int:
                 write_atomic(HUNTED, json.dumps(hunted))
             log_row(t, row)
             return row, True
-        if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(str(pr["number"])) == pr["headRefOid"]:
+        seen = (pr["headRefOid"], f"{pr['headRefOid']}^{pr.get('baseRefOid')}")   # head, or head on this base
+        if pr.get("isDraft") or pr.get("baseRefName") != BASE or tried.get(str(pr["number"])) in seen:
             return None
-        if pr.get("mergeable") == "CONFLICTING" and not str(pr.get("headRefName", "")).startswith("litha/"):
+        if pr.get("mergeable") == "CONFLICTING":           # her own litha/ PRs too: on their own branch
             try:
                 row = resolve(pr, a.python, a.dry)
             except Exception as e:  # noqa: BLE001 - one PR must not stop the others
@@ -2253,7 +2355,7 @@ def main(argv: list[str] | None = None) -> int:
             row = {"pr": pr["number"], "result": "error", "why": str(e)[:300]}
         row["seconds"] = round(time.time() - t)
         if row["result"] != "rerun":      # a rerun is looked at again once its fresh log exists
-            mark(str(pr["number"]), pr["headRefOid"])
+            mark(str(pr["number"]), seen[1] if row.get("kind") == "base" else seen[0])   # base fault: when it moves
         log_row(t, row)
         return row, row["result"] in COUNTED
 

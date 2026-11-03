@@ -11,6 +11,7 @@ anything here; every rule below exists because a measured run needed it.
 |---|---|---|
 | `pr_fixer.py` | failing PR -> CI log -> her edits -> failing test files pass locally -> her own branch + PR | task "Litha PR merger", every 10 min, 1 PR per run (3 at once when the owner is away, 4f) |
 | `pr_merger.py` | open PRs into `star/next`: hard gates, her review, proofs, merge | same task, after the fixer |
+| `build_check.py` | the head merged with today's base builds and passes the tests the diff touches (4s) | called by the merger and the fixer |
 | `bug_proof.py` | a blocking claim must be shown by a test that fails after the PR and passes before it | called by the merger |
 | `bug_hunt.py` | last look before a merge: she reads each changed function alone and names a bug; kept only if `bug_proof` proves it | called by the merger |
 | `pr_promote.py` | `star/next` -> `main` (auto-publishes a release) only with all release receipts | same task, last |
@@ -793,6 +794,79 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   The whole-file rule changed no real outcome (reasons only). Load-only test failures: not seen in these replays (235
   passed the timing test this time), so pass_alone is covered by tests only.
 - Not done: WGSL drift after a merge (#428), delete-vs-change blocks, the 8-block limit with Claude.
+
+## 4s. Base faults, her own branches, and a build/test check before every decision (2026-11-02 night, wave 7, measured)
+
+- Why: no refused PR of hers became a merged PR, and she could call a PR merge-ready, or push her own merge, on
+  reading alone. Two of her merges (#853 and #857 at 0dcf8231, both of #549) doubled props in `SettingsPage.tsx`
+  (tsc TS2300) and went out; Studio #486 compiled but broke main's raycast test.
+- Buckets (STAR, the repo she merges into; Studio is off limits; RC/RB/MC/PX/plateform are review-only and have no
+  clone). `decisions.jsonl` held 44 STAR PRs (79 PR-heads); 18 merged, 12 drafts (not hers), 4 gh blips. The
+  non-draft heads that never merged at that head, by real cause (CI logs read for each):
+  | cause | PR-heads | what she did |
+  |---|---|---|
+  | CI's failure was the base's: the run merged the head into star/next 91c3972d, whose own CI failed `test_undoing_a_candidate...` | 4 (#857 #899 #903@b2f3fd3e #905) | #899 #905 #903: "pass locally" -> a rerun, which replays the same old merge commit and fails again; #903: she also "fixed" it (#905, which then failed the same way); #857: "no fix on top of a fix", skipped forever |
+  | her own merge did not build (tsc TS2300) | 2 (#853, #857@0dcf8231) | pushed; #853 closed, #857 fixed by hand |
+  | her own litha/ branch conflicts | 1 (#851, her lock fix of #833) | never looked at: the fixer skipped conflicting litha/ branches |
+  | lock pins a choice (onnxruntime-gpu) | 2 (#832 x2) | correctly refused (needs a person) |
+  | conflicts of other PRs | 3 (#549 #756 #859) | resolved; #756 and #859 merged via her PRs |
+  | pyright gate | 2 (#921, #848@25e8) | type fixer, 5 rounds, failed (#921); #848 merged later |
+  | major dependency bump | #833/#851 | a deliberate hold (run it on STAR's PC first) |
+- Fix 1, base faults (`pr_fixer.base_fault`, `on_base`, `fresh_run`): the job log names the merge CI tested
+  (`Merge <head> into <base>`). When the base commit's own CI (every run, `failed_logs(sha, every=True)`) failed
+  any of the same tests: base moved and its tip has no failed check ("stale") -> every failing test file is run on
+  the head merged with today's base in a throwaway worktree; all pass -> a fresh CI run on today's base (close and
+  reopen: nothing is pushed; once per head and base; the run's one-rerun budget); some fail -> her usual repair.
+  Every failing test is the base's and the base has not moved or still fails ("broken") -> no fix, no rerun; the
+  head is remembered with its base (`tried.json` value `<head>^<base>`), so she looks again only when the base moves.
+- Fix 2, her own branches: a conflicting litha/ PR is resolved on its own branch (the merge is pushed there,
+  fast-forward only; no second PR, no comment). A failing litha/ branch still gets no fix on top of a fix, but the
+  base-fault path above now applies to it (#857, #905).
+- Fix 3, the build/test check (`litha/build_check.py`): `plan()` = pytest on the test files the diff touches, the
+  test files that import a changed module (at most 8) and CI's quick file `tests/test_star_research.py`; tsc for any
+  frontend change (+ vitest for touched frontend tests); `cargo test -p <crate>` for the crates of changed .rs files
+  (one cargo at a time). `run()` stops at the first failing step and names it (`pytest: tests/x.py::test_y`,
+  `tsc: frontend/src/SettingsPage.tsx(25): TS2300 ...`, `cargo test -p metallic_physics: raycast::...`); a step past
+  the time box (900 s) fails the check. Where it runs:
+  - merger: `decide(..., build_fn=)` last, only for a PR that would merge: the head merged with today's base in a
+    throwaway worktree; failure = hold with the failing test named (`build check: ...`), recorded in the row's
+    `build`. Cached per (repo, PR, head, base) in `~/.star/pr-merger/build_checks.json` (7 days). Skipped when every
+    green check on the head started after the base tip's commit time (the run then tested this exact merge).
+    Home repo always; another repo only when repos.json gives it a `clone`. No npm = tsc noted as not run, not a hold.
+  - fixer, before a push: `resolve()` runs tsc (+ touched vitest files) when a conflicted file is frontend code;
+    `fix()` runs the plan of the files her edit changed after the failing tests pass.
+- Measured, before/after on the same 7 real cases (dry replays: today's inputs, no gh writes, no model, $0;
+  "before" = branch star/litha-wave5-20261102 at 53c882ad, "after" = this branch):
+  | PR@head | before | after |
+  |---|---|---|
+  | #857@6f382103 (her merge of #549) | skip: "her own fix branch fails for real" (forever: tried) | base fault -> failing file passes on head + star/next 32c381ca -> fresh run (106 s) |
+  | #899@9860a31e | flaky-rerun: the rerun replays the 91c3972d merge (its real rerun failed again) | fresh run (1 of its 2 failing tests was the base's; both pass today) |
+  | #903@b2f3fd3e | flaky-rerun (the live run made fix PR #905 for the base's test) | fresh run (1 of 2 the base's; 2 files pass today) |
+  | #905@eaf89f99 (her fix of #903) | flaky-rerun | fresh run |
+  | #851@8cc6bd84 (her lock fix of #833, CONFLICTING) | never attempted | merged on its own branch: requirements-home.txt from the base, rebuilt, test_home_installer passes (44 s); still holds on the major-bump gate by design |
+  | #832@49b0a05c | failed: lock test pins onnxruntime (a person's call) | same |
+  | #833@0a09a33e | fixed (lock regenerated; her #851 already exists) | same |
+  Cases with a step that can turn them green: before 1 of 7 (#833), after 6 of 7. The merger's build check on the
+  same heads merged with today's star/next (a stand-in for the fresh CI run): #857, #899, #903, #905 all pass, so
+  each would be merge-ready once its fresh run is green. #903's first timing run failed on
+  `test_litha_bug_diff.py::test_an_exception_raised_inside_the_module_after_the_change_is_a_difference` (known to fail
+  only under load); failing ids (at most 3) are now run once more alone, and a second run passed.
+- Measured, the build check:
+  - Must-refuse merges as she committed them (`run()` on her merge commit, offline scratch clones): #853 (1b242fd0)
+    refused, `tsc: frontend/src/SettingsPage.tsx(25): TS2300 Duplicate identifier 'appearance'` (+ 'data'), 3.4 s;
+    #857@0dcf8231 refused, `TS2300 Duplicate identifier 'companions'`, 3.3 s; #486: measured after midnight, see the next line of this section when filled (cargo).
+  - Time per decision (merger, head merged with today's star/next, cold / cached): #857 (165 files, 9 test files +
+    tsc + 5 vitest files) 49 s / 0 s; #899 (6 files) 240 s / 0 s; #905 (26 files) 331 s / 0 s; #903@b2f3 (29 files)
+    360-386 s / 0 s. All under the 900 s box. The Litha-heavy PRs are slow because test_litha_pr_fixer.py and
+    test_litha_bug_diff.py are.
+  - Skipped by "CI covered": the last 5 merges into star/next (#917 #912 #903 #897 #894): in 5 of 5 CI's green runs
+    started after the base tip's commit, so the check costs one fetch and a `git show` there. It runs only when the
+    base moved after CI.
+- Not done: the fresh-run path was replayed dry only (no PR was closed/reopened); a fixed own-branch merge (#851) still
+  holds on the major-bump gate by design; "CI covered" compares the base tip's commit time with the runs' start: exact for
+  star/next, whose commits are all PR merges made on GitHub (commit time = push time); a base commit pushed long after
+  it was committed could make the check skip when it should run; #832 needs a
+  person; pyright (#921) unchanged.
 
 ## 5. Rules that stay (do not remove)
 
