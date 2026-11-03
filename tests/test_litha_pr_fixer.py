@@ -520,20 +520,78 @@ def test_code_one_side_deleted_and_the_other_changed_is_a_persons_call():
     assert "no conflict lines" in F.resolve_text("classes.rs", "fn a() {}\n", "t", lambda p: 1 / 0)[1]
 
 
-def test_a_modify_delete_conflict_is_named_as_such(tmp_path):
+def _repo(tmp_path):
     def git(*a):
         return subprocess.run(["git", *F.IDENTITY, *a], cwd=tmp_path, capture_output=True, text=True)
     git("init", "-q", "-b", "main")
-    (tmp_path / "classes.rs").write_text("fn a() {}\n", encoding="utf-8")
+    git("config", "core.autocrlf", "false")
+    return git
+
+
+CODE = "".join(f"fn f{i}() {{\n    step({i});\n}}\n\n" for i in range(8))
+
+
+def _split(tmp_path, moved: str):
+    """main moves classes.rs into classes/mod.rs among much new code (too little alike for git to see a rename), the
+    PR changes f3 in classes.rs: modify/delete."""
+    moved = "".join(f"pub fn new{i}() -> u32 {{\n    {i}\n}}\n\n" for i in range(40)) + moved
+    git = _repo(tmp_path)
+    (tmp_path / "classes.rs").write_text(CODE, encoding="utf-8")
     git("add", "-A"), git("commit", "-qm", "base")
     git("checkout", "-qb", "pr")
-    (tmp_path / "classes.rs").write_text("fn a() { changed(); }\n", encoding="utf-8")
-    git("commit", "-qam", "pr changes it")
-    git("checkout", "-q", "main"), git("rm", "-q", "classes.rs"), git("commit", "-qm", "main splits it")
-    git("checkout", "-q", "pr"), git("merge", "main")
+    (tmp_path / "classes.rs").write_text(CODE.replace("step(3);", "step(3);\n    more(3);"), encoding="utf-8")
+    git("commit", "-qam", "pr changes f3")
+    git("checkout", "-q", "main"), git("rm", "-q", "classes.rs")
+    (tmp_path / "classes").mkdir()
+    (tmp_path / "classes" / "mod.rs").write_text(moved, encoding="utf-8")
+    git("add", "-A"), git("commit", "-qm", "main splits it")
+    git("update-ref", "refs/remotes/origin/main", "main")
+    git("checkout", "-q", "pr"), git("-c", "merge.conflictStyle=diff3", "merge", "--no-commit", "origin/main")
+    return git
+
+
+def test_a_change_to_a_file_the_base_only_moved_is_applied_where_the_code_now_is(tmp_path):
+    moved = "// the classes, one module now\n" + CODE.replace("fn f0", "pub fn f0") + "fn extra() {}\n"
+    git = _split(tmp_path, moved)
     with patch.object(F, "BASE", "main"):
-        assert "deleted on main and changed by this PR (modify/delete)" in F.deleted_side(tmp_path, "classes.rs")
-    assert F.deleted_side(tmp_path, "other.rs") == ""
+        why, wrote = F.whole_file(tmp_path, "classes.rs", (tmp_path / "classes.rs").read_text(encoding="utf-8"))
+    assert why == "" and wrote == ["classes/mod.rs"]                 # Studio #421/#275 shape, but a pure move
+    got = (tmp_path / "classes" / "mod.rs").read_text(encoding="utf-8")
+    assert "    step(3);\n    more(3);\n" in got and "pub fn f0" in got and "fn extra" in got
+    assert not (tmp_path / "classes.rs").exists() and git("diff", "--name-only", "--diff-filter=U").stdout == ""
+
+
+def test_a_change_to_code_the_base_rewrote_is_refused_with_where_it_went(tmp_path):
+    _split(tmp_path, CODE.replace("step(3);", "step(3, ctx);"))         # main also changed f3: no exact place
+    with patch.object(F, "BASE", "main"):
+        why, wrote = F.whole_file(tmp_path, "classes.rs", (tmp_path / "classes.rs").read_text(encoding="utf-8"))
+    assert wrote == [] and "deleted on main and changed by this PR (modify/delete)" in why
+    assert "(classes/mod.rs)" in why and "only 0 of the 1 hunks" in why and "a person's call" in why
+    assert (tmp_path / "classes.rs").exists()                          # nothing written: resolve() aborts the merge
+
+
+def test_a_file_without_conflict_blocks_is_not_a_whole_file_case_unless_git_wrote_none(tmp_path):
+    assert F.whole_file(tmp_path, "a.rs", "<<<<<<< HEAD\na\n||||||| b\n=======\nb\n>>>>>>> main\n") == (None, [])
+    git = _repo(tmp_path)
+    (tmp_path / "logo.bin").write_bytes(b"\x00\x01base")
+    git("add", "-A"), git("commit", "-qm", "base")
+    git("checkout", "-qb", "pr")
+    (tmp_path / "logo.bin").write_bytes(b"\x00\x01pr")
+    git("commit", "-qam", "pr")
+    git("checkout", "-q", "main")
+    (tmp_path / "logo.bin").write_bytes(b"\x00\x01main")
+    git("commit", "-qam", "main"), git("checkout", "-q", "pr"), git("merge", "main")
+    why, wrote = F.whole_file(tmp_path, "logo.bin", "")
+    assert wrote == [] and "binary file" in why and "a person's call" in why
+
+
+def test_hunks_are_read_from_a_unified_diff():
+    diff = ("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@ fn a\n a\n-b\n+B\n c\n"
+            "@@ -9,2 +9,3 @@\n x\n y\n+z\n\\ No newline at end of file\n")
+    assert F.hunks(diff) == [("a\nb\nc\n", "a\nB\nc\n"), ("x\ny\n", "x\ny\nz\n")]
+    files = {"m.rs": "a\nb\nc\n", "n.rs": "x\ny\nx\ny\n"}
+    assert F.place(F.hunks(diff), files) == ({}, 1)                   # x/y stands twice: no reliable place
+    assert F.place(F.hunks(diff)[:1], files) == ({"m.rs": "a\nB\nc\n"}, 1)
 
 
 def test_a_big_block_is_shown_with_less_code_around_it_before_it_is_refused():

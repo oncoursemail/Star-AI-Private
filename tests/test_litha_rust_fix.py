@@ -121,3 +121,61 @@ def test_a_merged_build_that_breaks_is_read_as_her_repair_job():
     log = "Run cargo test -p metallic_script -p metallic_core\n" + out       # what resolve() hands rust_fix.repair
     assert R.checks(log) == [["test", "--no-run", "-p", "metallic_script", "-p", "metallic_core"]]
     assert R.errors(log)[0]["file"] == "crates/metallic_script/src/host.rs"
+
+
+def test_tests_that_fail_only_under_load_pass_when_run_alone(monkeypatch):
+    out = ("---- trim_pattern_on_100kb_works stdout ----\nthread 'x' panicked at tests/vm.rs:9:5:\nScript timeout\n"
+           "---- trim_pattern_on_100kb_works stdout ----\n")
+    assert R.failed_names(out) == ["trim_pattern_on_100kb_works"]          # Studio #389 and #235
+    calls = []
+    monkeypatch.setattr(R, "run", lambda tree, args, timeout=0: calls.append(args) or (True, ""))
+    assert R.pass_alone(None, ["metallic_script"], ["trim_pattern_on_100kb_works"])
+    assert calls == [["test", "-p", "metallic_script", "--no-fail-fast", "--", "--exact", "--skip",
+                      "trim_pattern_on_100kb_works"],                     # everything else still has to pass
+                     ["test", "-p", "metallic_script", "--", "--exact", "--test-threads=1",
+                      "trim_pattern_on_100kb_works"]]
+    monkeypatch.setattr(R, "run", lambda tree, args, timeout=0: (args[-1] != "--test-threads=1" and
+                                                                   "--skip" in args, ""))
+    assert not R.pass_alone(None, ["s"], ["t"])                         # fails alone too: a real failure
+    assert not R.pass_alone(None, ["s"], ["a", "b", "c", "d"])          # many failures are no load problem
+
+
+def test_claudes_repair_sees_whole_files_full_errors_type_bodies_and_the_base_diff(tmp_path, monkeypatch):
+    import subprocess
+    src = tmp_path / "crates" / "render" / "src"
+    src.mkdir(parents=True)
+    (src / "views.rs").write_text("use crate::Uniforms;\n" + "// filler\n" * 30 +
+                                  "fn make() -> Uniforms {\n    Uniforms {\n        material: [0.0; 4],\n    }\n}\n",
+                                  encoding="utf-8")
+    (src / "lib.rs").write_text("/// What the shader reads.\npub struct Uniforms {\n    pub material: u32,\n}\n",
+                                encoding="utf-8")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run([*git, "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run([*git, "commit", "-qm", "x"], cwd=tmp_path, check=True)
+    out = ("warning: unused variable\n --> crates/render/src/views.rs:1:1\n\n"
+           "error[E0308]: mismatched types\n   --> crates/render/src/views.rs:34:19\n    |\n34  |"
+           "         material: [0.0; 4],\n    |                   ^^^^^^^^ expected `u32`, found `[{float}; 4]`\n")
+    errs = R.errors(out)
+    prompt = R.wide_prompt(tmp_path, "o/r", "Debug views", [["test", "--no-run", "-p", "render"]], out, errs,
+                           "HEAD", "")
+    assert "\n// filler\n" not in prompt and "31: // filler" in prompt and "36: }" in prompt  # whole file, numbered
+    assert "expected `u32`, found `[{float}; 4]`" in prompt and "unused variable" not in prompt
+    assert "/// What the shader reads.\npub struct Uniforms {\n    pub material: u32,\n}" in prompt  # Studio #428
+    assert "--no-default-features does not see items" in prompt and "gate the test" in prompt  # (#428's clippy)
+    seen = []
+    monkeypatch.setattr(R, "verify", lambda tree, cmds: (False, out))
+    R.repair(tmp_path, "o/r", "t", "Run cargo test -p render\n" + out, lambda p: seen.append(p) or "{}",
+             rounds=1, wide="HEAD")
+    assert seen and "Every file with an error, in full" in seen[0]
+    seen.clear()
+    R.repair(tmp_path, "o/r", "t", "Run cargo test -p render\n" + out, lambda p: seen.append(p) or "{}", rounds=1)
+    assert seen and "Every file with an error, in full" not in seen[0]      # her own 4K-window prompt unchanged
+
+
+def test_a_long_erroring_file_shows_its_error_regions_so_every_file_fits(tmp_path):
+    (tmp_path / "big.rs").write_text("".join(f"// line {i}\n" for i in range(1, 3001)), encoding="utf-8")
+    (tmp_path / "t.rs").write_text("use rt::Game;\n", encoding="utf-8")
+    errs = [{"file": "big.rs", "line": 1500, "error": "e"}, {"file": "t.rs", "line": 1, "error": "e"}]
+    shown = R.whole_files(tmp_path, errs, budget=20000)
+    assert "1500: // line 1500" in shown and "1: // line 1\n" not in shown and "--- t.rs\n1: use rt::Game;" in shown

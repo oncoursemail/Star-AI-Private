@@ -1535,17 +1535,118 @@ def merge_file(tree: Path, path: str, raw: str, title: str, asker=ask) -> tuple[
     return merged, why
 
 
-def deleted_side(tree: Path, path: str) -> str:
-    """'' unless git's conflict on this file is modify/delete (seen: Studio main split classes.rs into classes/ while
-    #421 and #275 changed classes.rs). There is no block to merge: the change has to go where the code now lives."""
-    stages = {ln.split()[2] for ln in sh(["git", "ls-files", "-u", "--", path], cwd=tree).stdout.splitlines()
-              if len(ln.split()) >= 4}
-    if not stages or {"2", "3"} <= stages:
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@[^\n]*\n((?:[ +\-\\][^\n]*(?:\n|$))*)", re.M)
+
+
+def hunks(diff: str) -> list[tuple[str, str]]:
+    """(old text, new text) of each hunk of a unified diff: context plus removed lines, context plus added lines."""
+    out = []
+    for m in HUNK.finditer(diff):
+        old, new = [], []
+        for ln in m.group(1).splitlines(keepends=True):
+            if ln[:1] in " -":
+                old.append(ln[1:])
+            if ln[:1] in " +":
+                new.append(ln[1:])
+        out.append(("".join(old), "".join(new)))
+    return out
+
+
+def targets(tree: Path, deleter: str, skip: str) -> dict[str, str]:
+    """The files `deleter` added or changed since the merge base, as they are in the merge now (without conflict
+    markers, text only): where code it deleted from `skip` may have gone."""
+    mb = sh(["git", "merge-base", "HEAD", f"origin/{BASE}"], cwd=tree).stdout.strip()
+    files: dict[str, str] = {}
+    for name in sh(["git", "diff", "--name-only", "--diff-filter=AMR", mb, deleter], cwd=tree).stdout.split():
+        f = tree / name
+        if name != skip and f.is_file() and f.stat().st_size < 2_000_000:
+            text = f.read_text(encoding="utf-8", errors="replace")    # (\r\n read as \n, like git diff's lines)
+            if not CONFLICT.search(text) and "\x00" not in text:
+                files[name] = text
+    return files
+
+
+def place(parts: list[tuple[str, str]], files: dict[str, str]) -> tuple[dict[str, str], int]:
+    """Each (old, new) hunk applied where its old text (ancestor lines with their context) stands exactly once in all
+    of `files`; ({file: new text} of the files changed when EVERY hunk landed, else {}, hunks placed). A hunk with
+    fewer than 2 real lines of old text has no reliable place and counts as not placed."""
+    placed, out = 0, dict(files)
+    for old, new in parts:
+        if sum(1 for ln in old.splitlines() if re.search(r"\w", ln)) < 2:
+            continue
+        where = [n for n, t in out.items() if t.count(old)]
+        if len(where) != 1 or out[where[0]].count(old) != 1:
+            continue
+        out[where[0]] = out[where[0]].replace(old, new)
+        placed += 1
+    if not parts or placed < len(parts):
+        return {}, placed
+    return {n: t for n, t in out.items() if t != files[n]}, placed
+
+
+def relocate(tree: Path, path: str, changer: str, deleter: str) -> tuple[dict[str, str], int, int]:
+    """A modify/delete conflict where the deleting side may only have MOVED the code: each hunk of `changer`'s change
+    to `path` (context and removed lines exactly as in the ancestor) applied where that exact text now stands once in
+    the files `deleter` changed. ({file: new text} when every hunk landed, else {}, hunks placed, hunks)."""
+    mb = sh(["git", "merge-base", "HEAD", f"origin/{BASE}"], cwd=tree).stdout.strip()
+    diff = sh(["git", "diff", "-U3", "--no-color", "--no-ext-diff", mb, changer, "--", path], cwd=tree).stdout
+    parts = hunks(diff)
+    moved, placed = place(parts, targets(tree, deleter, path))
+    return moved, placed, len(parts)
+
+
+def moved_to(tree: Path, path: str, ref: str) -> str:
+    """Where `ref` probably put a file it deleted, for the person: the files it added under the file's stem
+    (classes.rs -> classes/) or with the same name."""
+    mb = sh(["git", "merge-base", "HEAD", f"origin/{BASE}"], cwd=tree).stdout.strip()
+    added = sh(["git", "diff", "--name-only", "--diff-filter=A", mb, ref], cwd=tree).stdout.split()
+    stem = path.rsplit(".", 1)[0] + "/"
+    near = [a for a in added if a.startswith(stem)] or [a for a in added if Path(a).name == Path(path).name]
+    if not near:
         return ""
-    if "3" not in stages:
-        return (f"{path}: deleted on {BASE} and changed by this PR (modify/delete); the PR's change has to be "
-                f"redone where {BASE} moved that code, a person's call")
-    return f"{path}: deleted by this PR and changed on {BASE} (modify/delete); a person's call"
+    return f" ({near[0]}" + (f" and {len(near) - 1} more new files under {stem}" if len(near) > 1 else "") + ")"
+
+
+def whole_file(tree: Path, path: str, raw: str) -> tuple[str | None, list[str]]:
+    """A conflict git wrote no blocks for (seen: Studio #421 and #275, main split classes.rs into classes/ while the PR
+    changed it). None = git wrote blocks (hers to merge). Else (why, files written and staged); why '' = settled by
+    rule: both sides have the same content (only the mode differs: the side that changed it wins), or one side deleted
+    the file after moving its code and every hunk of the other side's change lands exactly once where that code now
+    is. Anything else is refused with the reason in words."""
+    if CONFLICT.search(raw):
+        return None, []
+    st = {int(ln.split()[2]): (ln.split()[0], ln.split()[1])
+          for ln in sh(["git", "ls-files", "-u", "--", path], cwd=tree).stdout.splitlines() if len(ln.split()) >= 4}
+    if 2 in st and 3 in st:
+        if st[2][1] == st[3][1]:                        # same content; the mode one side changed
+            mode = st.get(1, ("", ""))[0]
+            side = "--theirs" if st[2][0] in (mode, st[3][0]) else "--ours" if st[3][0] == mode else ""
+            if side:
+                sh(["git", "checkout", side, "--", path], cwd=tree)
+                sh(["git", "add", "--", path], cwd=tree)
+                return "", [path]
+            return f"{path}: both sides added it with the same content but a different file mode; a person's call", []
+        return (f"{path}: changed on both sides and git cannot merge it line by line (a binary file); which version "
+                "stays is a person's call"), []
+    if 1 in st and (2 in st) != (3 in st):
+        changer, deleter = ("HEAD", f"origin/{BASE}") if 2 in st else (f"origin/{BASE}", "HEAD")
+        moved, placed, total = relocate(tree, path, changer, deleter)
+        if moved:
+            for name, text in moved.items():
+                (tree / name).write_bytes(text.encode("utf-8"))
+            sh(["git", "rm", "-q", "-f", "--", path], cwd=tree)
+            sh(["git", "add", "--", *moved], cwd=tree)
+            return "", sorted(moved)
+        what = f"only {placed} of the {total} hunks of" if total else "nothing of"
+        if 2 in st:
+            return (f"{path}: deleted on {BASE} and changed by this PR (modify/delete); {BASE} moved or rewrote that "
+                    f"code{moved_to(tree, path, deleter)} and {what} the PR's change matched it exactly, so the change "
+                    "has to be redone where the code now lives, a person's call"), []
+        return (f"{path}: deleted by this PR and changed on {BASE} (modify/delete); the PR moved or rewrote that "
+                f"code{moved_to(tree, path, deleter)} and {what} {BASE}'s change matched it exactly, a person's "
+                "call"), []
+    return (f"{path}: renamed or added differently on the two sides (git keeps no common version to merge); "
+            "a person's call"), []
 
 
 LOCKISH = re.compile(r"(^|/)(pnpm-lock\.yaml|[^/]+\.lock)$")
@@ -1606,11 +1707,15 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
     for c in locks:                                         # generated files: star/next's copy, rebuilt below
         sh(["git", "checkout", "--theirs", "--", c], cwd=tree)
     tests: set[str] = set()
+    moved: list[str] = []                                   # files a whole-file rule wrote (and staged)
     for c in code:
-        why = deleted_side(tree, c)
+        why, wrote = whole_file(tree, c, raws[c])
         if why:
             sh(["git", "merge", "--abort"], cwd=tree)
             return {"pr": number, "result": "failed", "why": why}
+        if why is not None:
+            moved += [w for w in wrote if w not in moved]
+            continue
         merged, why = merge_file(tree, c, raws[c], pr.get("title", ""), mechanical_only if guarded(c) else asker)
         if merged is None or why:
             sh(["git", "merge", "--abort"], cwd=tree)
@@ -1635,7 +1740,7 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         if r.returncode:
             sh(["git", "merge", "--abort"], cwd=tree)
             return {"pr": number, "result": "failed", "why": "Cargo.lock refresh failed: " + r.stderr[-200:]}
-    sh(["git", "add", "--", *conflicted], cwd=tree)
+    sh(["git", "add", "--", *[c for c in conflicted if (tree / c).exists()]], cwd=tree)   # (a moved file is gone)
     left = sh(["git", "diff", "--cached", "--check", "--", *conflicted], cwd=tree).stdout
     if "conflict marker" in left:                         # (whitespace both sides already had is not hers to judge)
         sh(["git", "merge", "--abort"], cwd=tree)
@@ -1649,7 +1754,7 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         sh(["git", "merge", "--abort"], cwd=tree)
         return {**row, "why": "after resolving, tests fail: " + " ".join(FAILED.findall(out))[:250]}
     if (tree / "Cargo.toml").is_file() and any(c.endswith(".rs") for c in code):
-        ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+        ok, fails, crates, out = rust_fix.crate_tests(tree, code + moved)
         mine = sorted({e["file"] for e in rust_fix.errors(out)} & set(code)) if not ok else []
         for c in mine:                                 # the errors are in a file she merged: redo that merge first,
             said = "; ".join(f"line {e['line']}: {e['error']}" for e in rust_fix.errors(out) if e["file"] == c)
@@ -1659,7 +1764,7 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
                 (tree / c).write_bytes(tidy(tree, c, merged).encode("utf-8"))
         if mine:
             sh(["git", "add", "--", *mine], cwd=tree)
-            ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+            ok, fails, crates, out = rust_fix.crate_tests(tree, code + moved)
             if ok:
                 row["why"] += f"; redid {', '.join(mine)} after the compiler's errors"
         if not ok and rust_fix.errors(out):            # it does not compile (one side renamed what the other uses):
@@ -1668,11 +1773,19 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
             if not fixed and asker is ask and claude.ready():               # Claude when her own repair failed
                 fixed, how = rust_fix.repair(tree, REPO, pr.get("title", ""),
                                              f"Run cargo test -p {' -p '.join(crates)}\n{out}", ask_claude_hard)
+            if not fixed and asker is ask and claude.ready():   # then Claude with whole files, declaration bodies
+                fixed, how = rust_fix.repair(tree, REPO, pr.get("title", ""),   # and the base's diff (#239: main
+                                             f"Run cargo test -p {' -p '.join(crates)}\n{out}", ask_claude_hard,
+                                             rounds=2, wide=f"HEAD...origin/{BASE}")   # had moved a trait)
             if fixed:
                 sh(["git", "add", "-u"], cwd=tree)
-                ok, fails, crates, out = rust_fix.crate_tests(tree, code)
+                ok, fails, crates, out = rust_fix.crate_tests(tree, code + moved)
                 row["why"] += f"; fixed the merged build: {how[:200]}"
         row["tests"] += [f"cargo test -p {' -p '.join(crates)}"]
+        names = rust_fix.failed_names(out) if not ok and not rust_fix.errors(out) else []
+        if names and rust_fix.pass_alone(tree, crates, names):   # timing tests that fail only under load (#389, #235)
+            ok = True
+            row["why"] += f"; {len(names)} test(s) failed only under load and passed run alone: {', '.join(names)[:200]}"
         if not ok:
             sh(["git", "merge", "--abort"], cwd=tree)
             why = f"after resolving, cargo tests fail: {fails}"

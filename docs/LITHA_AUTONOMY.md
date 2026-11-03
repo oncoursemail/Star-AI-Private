@@ -673,6 +673,49 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   code fitted to the test's literals (the bench counts those as solved); the 400 fallback was tested only by
   reading the code path (no 4096-only node was up); a live PR.
 
+## 4r. Studio merge failures: whole-file conflicts, builds broken by the base, load-only test failures (2026-11-02, measured)
+
+- Buckets (fixes.jsonl, Studio rows of the 3 days to 2026-11-02: 96 rows, 65 failed attempts; 42 PRs, last attempt
+  failed for 19). Attempts: 16 refused by triage (CI workflow / file count), 11 bracket balance, 10 other model-answer
+  checks, 8 crate tests fail after the merge, 7 rustfmt, 4 compile errors after the merge (#428 type), 3 too big for
+  her window, 2 "0 conflict blocks" (#421 type), 2 over 8 blocks. Last attempt per PR: 6 tests fail after the merge,
+  4 triage, 3 compile errors, 2 whole-file, 2 over 8 blocks, 2 bracket balance.
+- Whole-file conflicts (`pr_fixer.whole_file`, replaces `deleted_side`): git wrote no blocks. Same content on both
+  sides -> taken (the side that changed the mode wins). Modify/delete -> each hunk of the changing side's diff
+  (ancestor lines with 3 lines of context, exactly) is applied where that text stands exactly once in the files the
+  deleting side changed, and the old path is removed; only when every hunk lands. Otherwise refused in words: where
+  the code went (`classes/base/camera.rs and 65 more new files under classes/`) and how many hunks matched. Binary
+  files and rename/rename are refused with the reason. Real cases: #421 and #275 (main split classes.rs into 67 files
+  and rewrote the table): 0 of 9 and 0 of 7 hunks had an exact place, so both stay refused, now with where to look.
+  A block-level version (main deleted lines the PR changed: 7 PRs, 9 blocks) placed 0 of 9 (main rewrote that code),
+  so it was not kept; porting the change by model would remove an existing safety refusal and was not done.
+- Build broken by the base (#428 type): after her own repair and Claude's usual repair (unchanged, 4 rounds, small
+  prompt), a last Claude round (2 rounds, `rust_fix.repair(..., wide="HEAD...origin/<base>")`) gets rustc's full error
+  blocks, every erroring file whole (a file over 500 lines: 120 lines around each error, so a big file cannot crowd out
+  a small one), the full declarations of the names in the errors and of the CamelCase types near each error line, the
+  crate features, and the base's diff of those files.
+- Tests that fail only under load (`rust_fix.pass_alone`): Studio's timing tests (1 s budget, retried 5 times) failed
+  for two unrelated PRs (#389, #235, the same test). When a merge compiles and at most 3 tests fail, the crates' other
+  tests run with --no-fail-fast and the few run alone, single-threaded; both must pass. Her merge PR still has to pass
+  CI before her merger merges it.
+- Bracket balance and rustfmt refusals: all were her local model's answers. Conflict stage only (no cargo), the 8
+  failed PRs that pass triage without Claude: local model 31 of 41 files, 1 PR whole; Claude first for code (since
+  #917, no change here) 37 of 41 files, 5 PRs whole (#174 #208 #239 #255 #397: every bracket/rustfmt PR of the log);
+  with Claude #412 and #421 pass triage too (17 of 22 files). Left: delete-vs-change blocks (#210 #401 #412 #421
+  #442) and #412's signals.rs (11 blocks for her, limit 8).
+- Replays (`resolve(..., dry=True)` on the archive repo, separate clone, no pushes, no comments; 10 full replays, $4.58
+  of Claude, cargo one build at a time):
+  | run | PRs | result |
+  |---|---|---|
+  | before, local model | 275 389 235 428 397 | 1 fixed (235); 275 whole-file, 389 delete-vs-change, 428 compile errors, 397 answer check |
+  | before, Claude | 428 | build repaired by Claude's small prompt (on top of her edits), then a WGSL shader test fails (`ndl` undefined) |
+  | after, Claude | 428 (twice), 397, 239 | 0 fixed. 239: the wide round repaired the build (main had moved a trait into another crate), then 4 of the PR's own session tests failed: refused, correctly. 428: the wide round alone failed twice (it then replaced the small round; it now runs after it). 397: merge drops main's struct fields, not repaired ($1.06) |
+  Gain measured: none in merged PRs. The wide round repaired 1 of 4 broken builds it saw; the small round 1 of 1.
+  The shipped order (small round first, the wide round only after it fails) was not replayed: budget used up.
+  The whole-file rule changed no real outcome (reasons only). Load-only test failures: not seen in these replays (235
+  passed the timing test this time), so pass_alone is covered by tests only.
+- Not done: WGSL drift after a merge (#428), delete-vs-change blocks, the 8-block limit with Claude.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
