@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Litha</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><span class="name">Litha</span></div>
+  <div class="state" id="state" role="status" aria-live="polite">Reading her state</div>
+  <div class="top-actions">
+    <span class="updated" id="updated"></span>
+    <button type="button" id="pause" class="btn" disabled>Pause</button>
+  </div>
+</header>
+<nav class="tabs" aria-label="Sections">
+  <a href="#now">Now</a><a href="#spend">Claude spend</a><a href="#autonomy">Autonomy</a><a href="#prs">Pull requests</a>
+  <a href="#fixes">Fixes</a><a href="#selftune">Self-tune</a><a href="#chat">Ask her</a><a href="#log">Log</a>
+</nav>
+<main>
+  <section id="now" class="panel"><h2>Now</h2><div class="body" id="now-body"></div></section>
+  <section id="spend" class="panel"><h2>Claude spend</h2><div class="body" id="spend-body"></div>
+    <form class="row-form" id="cap-form">
+      <label for="cap-input">Day cap ($)</label>
+      <input id="cap-input" type="number" min="0" max="100" step="0.5" inputmode="decimal">
+      <button type="submit" class="btn">Save cap</button>
+      <span class="form-note" id="cap-note" role="status"></span>
+    </form></section>
+  <section id="autonomy" class="panel"><h2>Autonomy</h2>
+    <div class="toggle-row"><div id="apply-text"></div><button type="button" id="apply" class="btn" disabled>Turn APPLY on</button></div>
+    <div class="body" id="autonomy-body"></div></section>
+  <section id="prs" class="panel wide"><h2>Pull requests <span class="hint" id="prs-hint"></span></h2>
+    <div class="chips" id="repo-chips" role="tablist" aria-label="Repositories"></div>
+    <div class="body" id="prs-body"></div></section>
+  <section id="fixes" class="panel"><h2>Fixes</h2><div class="body" id="fixes-body"></div></section>
+  <section id="selftune" class="panel"><h2>Self-tune</h2><div class="body" id="selftune-body"></div></section>
+  <section id="chat" class="panel"><h2>Ask her</h2>
+    <div class="chat-log" id="chat-log" aria-live="polite"></div>
+    <form id="chat-form" class="chat-form">
+      <label class="sr" for="chat-q">Question</label>
+      <textarea id="chat-q" rows="2" placeholder="Why is #549 held? What did you fix today?" required></textarea>
+      <div class="chat-actions">
+        <label class="check"><input type="checkbox" id="chat-smart"> Smart: ask Claude (paid, counted in her spend)</label>
+        <button type="submit" class="btn primary" id="chat-send">Ask</button>
+      </div>
+    </form></section>
+  <section id="log" class="panel wide"><h2>Log <button type="button" class="btn small" id="log-refresh">Refresh</button></h2>
+    <pre class="log" id="log-body" tabindex="0"></pre></section>
+</main>
+</body>
+</html>

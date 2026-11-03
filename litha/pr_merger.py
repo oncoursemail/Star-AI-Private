@@ -32,6 +32,7 @@ REPO = "oncoursemail/Star-AI-Project"
 BASE = "star/next"
 ALLOW_MAIN = False                                             # set per repo from repos.json (allow_main)
 LOG = Path.home() / ".star" / "pr-merger" / "decisions.jsonl"
+PAUSED = Path.home() / ".star" / "pr-merger" / "PAUSED"       # the owner's pause (her face, or by hand)
 OK_CHECKS = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 FORBIDDEN_FILES = re.compile(r"(^|/)(pnpm-lock\.yaml|pnpm-workspace\.yaml|[^/]+\.tsbuildinfo|[^/]+\.(gguf|safetensors|"
                              r"pem|key|pfx|p12)|\.env(\.[a-z]+)?)$")
@@ -687,6 +688,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--replay-hunt", type=int, help="false holds of the bug hunt on this many merged PRs")
     ap.add_argument("--others", action="store_true", help="every other repo in repos.json (review or merge mode)")
     a = ap.parse_args(argv)
+    if PAUSED.exists() and not (a.replay or a.replay_hunt):     # replays only read closed PRs: they may still run
+        print(f"pr_merger: paused by the owner ({PAUSED}); nothing reviewed or merged", flush=True)
+        return 0
     if a.others:
         return others(a.apply)
     if a.replay_hunt:

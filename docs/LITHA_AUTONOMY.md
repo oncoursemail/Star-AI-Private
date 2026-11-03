@@ -851,3 +851,54 @@ logs have expired, so that run would end "skip: the failed logs are gone". Tests
 (fake gh and model; a real git origin for the end-to-end repair -> push -> PR path, base untouched).
 Not done: issue fixes in Rust repos (triage only), Forgejo issues, review-mode repos, playtest issues end to end
 (needs `litha:found` issues to exist), a live run with APPLY.
+
+## 7. Her face: the local interface (2026-11-02, wave 7 lane face; ran on the PC with her real state)
+
+One small web app on her own PC where the owner sees and steers her, instead of watching GitHub. `litha/face/`:
+`data.py` (read-only views of her state files), `controls.py` (the owner's switches), `server.py` (stdlib
+`http.server`, no new dependency), `static/` (plain HTML/CSS/JS, no build step, no CDN). Start:
+`litha\face_run.cmd` (default python: the pr39 venv), or `python -m litha.face [--port 8770] [--lan]`. URL on the PC:
+http://127.0.0.1:8770/ (8765 is taken on this PC by another static server; the face now refuses a shared port instead
+of silently sharing it, Windows SO_EXCLUSIVEADDRUSE).
+
+Panels (every one checked in the browser with her real files, 2026-11-02 21:36-21:52 local):
+- **Now**: her 10-minute loop from `pr-merger/run.log` (last start/end, rc, running step, steps with a non-zero rc,
+  error lines of the last run) and `litha/health.json` (problems, notes). States are the log's, never guessed:
+  Running / Idle / Late (no start for 25 min) / Running too long (45 min) / Paused / Pause not honored (a run started
+  after the pause) / Off.
+- **Pull requests**: her newest decision per PR in the last 7 days from `decisions.jsonl` (tail 3.5 MB), per repo with
+  its mode from `repos.json`; a row opens to reasons, her review votes, summary and the risks she named.
+  Measured: Star-AI-Project 27 PRs (20 hold, 7 merged), RB 3, RC 2, studio 46 (marked "not watched now").
+- **Fixes**: `pr-fixer/fixes.jsonl`, counts this week + the last 12 with why and tests.
+- **Claude spend**: `litha-claude/spend.jsonl` today / all time against `cap.json` (default $30/day, $300 total), per
+  day, the last calls; a day-cap field.
+- **Autonomy**: `litha-autonomy/queue.json` + `runs.jsonl`, APPLY state and switch.
+- **Self-tune**: `litha-selftune/runs.jsonl` score per run (points/total line chart), `litha/bench-runs.jsonl` per suite
+  (last, best), prompt proposals.
+- **Ask her**: a question plus a ~600-token digest of the state above to her local model
+  (`star.asset3d.llm.chat("litha")`), or to Claude when "Smart" is ticked (`litha.claude.ask`, effort low: priced and
+  logged in her ledger, refused at her caps). Measured: local answer in 0.6-1.6 s; one Claude answer 9.2 s, $0.0062
+  (942 tokens in). Every question/answer goes to `~/.star/litha-face/chat.jsonl`.
+- **Log**: the last 150 lines of `run.log`.
+Reading everything: 0.2 s cold, ~25 ms cached (parsed results are cached by file mtime + size); nothing calls gh.
+
+Controls (each writes only her own control file and appends to `~/.star/litha-face/controls.jsonl`; none merges, pushes
+or posts): **pause** = `~/.star/pr-merger/PAUSED` (`pr_merger_run.cmd` now exits at the top while it exists, logging
+"paused by the owner"; `pr_merger.main` also returns at once for live and `--others` runs, replays still allowed);
+**APPLY** = `~/.star/litha-autonomy/APPLY` (asks for confirmation before turning on); **day cap** = `"day"` in
+`~/.star/litha-claude/cap.json` (0..100, total kept; outside that range it is refused and logged).
+NOTE: the live loop (the `litha-pr-merger` folder) runs older code that does not read PAUSED until the cut-over;
+the header then says "Pause not honored" rather than "Paused" (seen live on 2026-11-02 21:51).
+
+Security: 127.0.0.1 only by default (no token needed there; the Host header must be loopback, so a DNS-rebinding page
+cannot read it). `--lan` listens on every interface; other devices get a sign-in page and need the token in
+`~/.star/litha-face.token` (made on first run, never printed or logged: read it on the PC with
+`type %USERPROFILE%\.star\litha-face.token`); it is kept as an HttpOnly SameSite=Strict cookie. Every POST needs the
+`X-Litha-Face: 1` header and a JSON body (a page in another tab cannot press her buttons). Request lines are not
+logged. Pages hide anything that looks like a key, token, e-mail or IPv4 address. Measured in LAN mode on a spare port:
+no token 403 / redirect to sign-in, wrong token 403, right token 303 + cookie, then 200. Windows Firewall may still
+block phones until a rule allows the port (not added here).
+Tests: `tests/test_litha_face.py` (14: tail/cache, loop parser, newest decision per PR, redaction, every panel on a
+temp `~/.star`, empty state, digest, each control, access rules, token, pr_merger pause).
+Not done: a scheduled task / startup entry (the lead's), a firewall rule for LAN use, live GitHub state (the face shows
+her log, not GitHub), editing repos.json or prompts from the page.

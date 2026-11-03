@@ -5,6 +5,9 @@ rem only when every release check has a receipt for the exact head (litha.pr_pro
 rem Other repos (repos.json): she resolves up to 2 conflicting PRs each, then reviews and merges what is green.
 rem Scheduled task "Litha PR merger", every 10 min. Off switch: %USERPROFILE%\.star\pr-merger\OFF
 if exist "%USERPROFILE%\.star\pr-merger\OFF" exit /b 0
+rem Paused by the owner (her face, python -m litha.face): the whole run waits until the PAUSED file is gone.
+if exist "%USERPROFILE%\.star\pr-merger\PAUSED" echo %date% %time% paused by the owner >> "%USERPROFILE%\.star\pr-merger\run.log"
+if exist "%USERPROFILE%\.star\pr-merger\PAUSED" exit /b 0
 if not exist "%USERPROFILE%\.star\pr-merger" mkdir "%USERPROFILE%\.star\pr-merger"
 cd /d "%~dp0.."
 echo %date% %time% start >> "%USERPROFILE%\.star\pr-merger\run.log"
