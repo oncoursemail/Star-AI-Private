@@ -691,3 +691,42 @@ Since the same day: code conflicts go to Claude first (2 tries, then 1 local try
 she takes PRs with up to 12 conflicted files (5 without); and right before every merge Claude reads the whole diff
 once per head commit (`~/.star/litha-claude/reviews.json`) and can stop the merge with a high-severity risk.
 Tests never pay: `claude.ready()` is off under pytest.
+
+## 6. She picks work herself: the autonomy queue (2026-11-02, wave 5; dry run measured, live not yet)
+`litha/autonomy.py` runs as the last step but one of `litha/pr_merger_run.cmd` (after both fixers and mergers). Each
+run builds a queue in the repos of `repos.json` with mode `merge` (STAR's home repo and Studio):
+- **ci-repair** (score 100): the head commit of the base branch (`star/next`, Studio `main`) has a failed or timed-out
+  check and nothing still running.
+- **issue** (score 40, +20 when the issue text names a failing test `tests/...py[::name]`, +5 for `litha:found`):
+  open issues labelled **`litha:ready`** (the owner or a lead hands her the issue; the plain `ready` label marks big
+  epics, so it is not hers) or **`litha:found`** (her playtests). Create the labels once per repo:
+  `gh label create litha:ready --repo <repo>` (and `litha:found`).
+- **retry** (score 30 minus a point per day): her own `failed`/`error` rows in `~/.star/pr-fixer/fixes.jsonl` (last 7
+  days) whose PR is still open at the same head (so pr_fixer would never look again) and whose base moved since the
+  attempt (an `error` qualifies once without a move); at most 2 retries per PR, never twice on one base commit.
+Not queued: what an open PR from a `litha/fix-<n>`, `litha/merge-<n>` or `litha/auto-*` branch covers (auto PRs carry
+`<!-- litha-task: <key> -->`), and keys already attempted (`state.json` "done").
+
+Actions (ranked, highest first): ci-repair, and an issue naming a failing test in the home repo, get a fresh worktree
+at the base commit on branch `litha/auto-<n>-<yyyymmdd>`, the same repair as pr_fixer (pytest repair, ruff, pyright,
+React; `rust_fix.repair` when the log ran cargo), her model first then Claude (`ask_claude_hard`) once, the same checks;
+only when they pass: commit (`star commit` in the home repo), push her branch (`HEAD:refs/heads/litha/auto-...`, never a
+base, never force) and open a PR into the base. The merge stays with pr_merger's gates. Other issues get a plan comment
+from her local model (triage only). Retries call `pr_fixer.mark(key, "retry:<base sha>")`, so pr_fixer takes the PR
+on its next run. Limits: 1 new PR per run, 3 per day, 2 issue comments and 3 retries per run.
+
+Switches (folder `~/.star/litha-autonomy/`): **dry run is the default** (queue + what she would do; read-only gh
+calls, no model, no git, no state change). **Go live: create the file `APPLY`** (or run with `--apply`); delete it to
+go back. `OFF` stops the step. `--local` does the top PR task's repair and the plans locally without pushing or
+commenting; `--dry` forces a dry run. Files: `queue.json` (the last queue, with skipped items and notes),
+`state.json` (branch counter, PRs opened, keys attempted, retries), `runs.jsonl` (one line per run).
+
+Measured 2026-11-03 00:16Z, dry run against the real repos (8 gh reads, 25 s): `star/next` head fc314f37 green, no
+`litha:ready`/`litha:found` issues anywhere (the labels do not exist yet), 1 task: retry #832 (failed 2.0 days ago,
+`star/next` moved since); skipped: #833 (an open litha/ PR covers it). Studio: GitHub says `Metallic-Club/studio` is
+**empty** (no `main`, `isEmpty: true`, pushed 00:06Z), so nothing was queued there. Detection checked on a real
+failing head: `ci_task` on star/next 21a95bd4 (2026-10-29) gives a ci-repair task for "Offline Python checks"; its job
+logs have expired, so that run would end "skip: the failed logs are gone". Tests: `tests/test_litha_autonomy.py`
+(fake gh and model; a real git origin for the end-to-end repair -> push -> PR path, base untouched).
+Not done: issue fixes in Rust repos (triage only), Forgejo issues, review-mode repos, playtest issues end to end
+(needs `litha:found` issues to exist), a live run with APPLY.
