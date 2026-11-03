@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
-import re
 
 GOLD, GREEN, AMBER, RED = 0xE8BF76, 0x3BA55C, 0xF0B232, 0xED4245
 LIMITS = {"title": 256, "description": 4096, "fields": 25, "field_name": 256, "field_value": 1024,
@@ -50,11 +49,13 @@ def total_chars(card: dict) -> int:
 
 
 def card(title: str, *, description: str = "", color: int = GOLD, fields=(), source: str = "",
-         now: datetime | None = None, image: str = "") -> dict:
+         now: datetime | None = None, image: str = "", author: str = "") -> dict:
     now = now or datetime.now(timezone.utc)
     out = {"title": title, "description": description, "color": color, "fields": list(fields),
            "timestamp": now.astimezone(timezone.utc).isoformat(),
            "footer": {"text": "Star" + (f" · {source}" if source else "")}}
+    if author:
+        out["author"] = {"name": author}
     if image:
         out["image"] = {"url": image}
     return fit(out)
@@ -75,43 +76,56 @@ def field(name: str, value: object, inline: bool = True) -> dict:
 
 # ------------------------------------------------------------------ the cards
 
-def status_color(fields: list[dict], missing: list[str]) -> int:
-    text = " ".join(f["name"] + " " + f["value"] for f in fields)
-    if "FAILED" in text or "search FAILING" in text:
-        return RED
-    text = text.lower()
-    if missing or "waiting" in text or "paused" in text:
-        return AMBER
-    return GREEN
+LEVEL_COLOR = {"good": GREEN, "info": GOLD, "warn": AMBER, "bad": RED}
 
 
-def status_card(fields: list[dict], missing: list[str], *, title: str = "What I'm up to", description: str = "",
-                source: str = "live status", now: datetime | None = None) -> dict:
-    """Live status ("what are you doing"): one inline field per brain area, missing sources named."""
-    rows = list(fields)
-    if missing:
-        rows.append(field("Can't see", "\n".join(missing), inline=False))
-    return card(title, description=description, color=status_color(fields, missing), fields=rows, source=source, now=now)
+def _issue_lines(report) -> str:
+    return "\n\n".join(f"{'❌' if i.level == 'bad' else '⚠️'} {i.text}" for i in report.issues[:6])
 
 
-def digest_card(when: str, text: str, fields: list[dict], missing: list[str], *, now: datetime | None = None) -> dict:
-    """The morning/evening note: her words on top, the numbers underneath."""
-    title = "Morning note" if when == "morning" else "Evening note"
-    return status_card(fields, missing, title=title, description=text, source="night school, conductor, Studio Lab, "
-                       "GitHub", now=now)
+def status_card(report, *, source: str = "live status", now: datetime | None = None) -> dict:
+    """Live status ("what are you doing"): a one-line verdict as the title, what needs a look (or one warm line)
+    underneath, then a few short fields. The color is the worst real problem's, green when nothing needs him."""
+    return card(report.headline, description=_issue_lines(report) or report.note, color=LEVEL_COLOR[report.level],
+                fields=report.fields, source=source, now=now, author="Star · how I'm doing")
 
 
-_RED_WORDS = re.compile(r"\bDOWN\b|\bFAILED\b|\bfailing\b", re.I)
-_GREEN_WORDS = re.compile(r"back up|\bactive\b|\bpassed\b|published|ready", re.I)
+def digest_card(when: str, text: str, report, *, now: datetime | None = None) -> dict:
+    """The morning/evening note: the verdict as the title, her words, what needs a look (when her words did not
+    already say it), then the numbers."""
+    fields = list(report.fields)
+    if report.issues and not all(issue.text in text for issue in report.issues[:6]):
+        fields.insert(0, {"name": "Worth a look", "value": _issue_lines(report), "inline": False})
+    return card(report.headline, description=text, color=LEVEL_COLOR[report.level], fields=fields,
+                source="live status", now=now, author="Star · " + ("morning note" if when == "morning" else
+                                                                       "evening note"))
 
 
-def alert_card(events: list[str], *, now: datetime | None = None) -> dict:
-    """Immediate DM: red when something is down or failed, green for good news, amber otherwise."""
-    text = " ".join(events)
-    color = RED if _RED_WORDS.search(text) else GREEN if _GREEN_WORDS.search(text) and "restarted" not in text else AMBER
-    title = "Something's down" if color == RED else "Good news" if color == GREEN else "Heads up"
-    description = events[0] if len(events) == 1 else "\n".join(f"• {e}" for e in events[:20])
-    return card(title, description=description, color=color, source="live status", now=now)
+# A title per kind of change and level: "Good news" only when everything in the DM is good news.
+_ALERT_TITLES = {("down", "bad"): "❌ Something stopped", ("up", "good"): "✅ Back up and running",
+                 ("restart", "warn"): "🔄 Something restarted", ("gate", "good"): "✅ I learned something new",
+                 ("gate", "info"): "🧪 A lesson test finished", ("lab", "good"): "✅ Studio tests passed",
+                 ("lab", "info"): "🎮 Studio tests finished", ("lab", "warn"): "⚠️ Studio tests went badly",
+                 ("watchdog", "info"): "🔄 Knowledge search restarted", ("watchdog", "bad"): "❌ Knowledge search is down",
+                 ("release", "good"): "✅ New release"}
+_ONE_TITLES = {"bad": "❌ Something needs you", "warn": "⚠️ Heads up", "good": "✅ Good news", "info": "📝 An update"}
+_MANY_TITLES = {"bad": "❌ Something needs you", "warn": "⚠️ A few things to know", "good": "✅ Good news",
+                "info": "📝 A few updates"}
+_RANK = {"good": 0, "info": 1, "warn": 2, "bad": 3}
+_BULLET = {"bad": "❌", "warn": "⚠️", "good": "✅"}
+
+
+def alert_card(events: list[tuple[str, str, str]], *, now: datetime | None = None) -> dict:
+    """Immediate DM from (event id, plain text, level) changes. The color and title follow the worst level, so
+    "Good news" appears only when every change in it is good news."""
+    level = max((e[2] for e in events), key=lambda lvl: _RANK.get(lvl, 1), default="info")
+    if len(events) == 1:
+        title = _ALERT_TITLES.get((events[0][0].split(":")[0], level), _ONE_TITLES.get(level, "📝 An update"))
+        description = events[0][1]
+    else:
+        title = _MANY_TITLES.get(level, "📝 A few updates")
+        description = "\n".join(f"{_BULLET.get(e[2], '•')} {e[1]}" for e in events[:20])
+    return card(title, description=description, color=LEVEL_COLOR.get(level, GOLD), source="live status", now=now)
 
 
 def _numbers(value, prefix: str = "") -> list[tuple[str, str]]:

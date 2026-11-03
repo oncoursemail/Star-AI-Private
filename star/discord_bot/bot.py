@@ -383,10 +383,9 @@ def create_bot(config: BotConfig, *, service: DiscordService | None = None, draw
         extra = {"file": drawing_file(picture)} if picture is not None and hasattr(picture, "png") else {}
         await owner_user[0].send(content=text[:1990], allowed_mentions=discord.AllowedMentions.none(), **extra)
 
-    def status_card(description: str = ""):
+    def status_card():
         from .embeds import status_card as build
-        fields, missing = service.awareness.status_fields()
-        return build(fields, missing, description=description)
+        return build(service.awareness.status_report())
 
     async def research_job(question: str) -> str:
         """A research job off the chat lock: web search + the quick model on a background slot."""

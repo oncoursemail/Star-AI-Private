@@ -57,6 +57,10 @@ _STATES = {"brain idle, working": "practising (the brain was free)",
            "HOLD file present, paused": "paused (HOLD)", "brain not reachable, waiting": "waiting (brain unreachable)"}
 
 
+_GATE_WORDS = {"inconclusive": "the test couldn't tell if it helps, not in use yet",
+               "promote": "it helped, now in use", "reject": "it didn't help, set aside"}
+
+
 def _plain_state(status: str) -> str:
     """Night school's report status in plain words (unknown statuses pass through)."""
     return _STATES.get(status, status or "state unknown")
@@ -146,22 +150,26 @@ class Awareness:
         return source.data
 
     def _today(self, snap: Snapshot, ns: dict) -> dict:
-        """Practice counts for the owner's current local day and the last hour, from the hourly UTC buckets."""
+        """Practice counts for the owner's current local day, the last hour and the whole of yesterday (None when
+        the gate's window, `hours_from`, does not reach back to the start of yesterday), from hourly UTC buckets."""
         now = datetime.fromtimestamp(snap.taken, timezone.utc)
-        today = self.local(now, snap).date()
+        local_now = self.local(now, snap)
+        today = local_now.date()
         last_hour = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H")
-        total, hour = {}, {}
+        total, hour, before = {}, {}, {}
         for key, counts in (ns.get("hours") or {}).items():
             moment = _when(key + ":00:00Z")
             if moment is None:
                 continue
-            if self.local(moment, snap).date() == today:
-                for name, value in counts.items():
-                    total[name] = total.get(name, 0) + int(value)
-            if key >= last_hour:
-                for name, value in counts.items():
-                    hour[name] = hour.get(name, 0) + int(value)
-        return {"today": total, "last_hour": hour}
+            day = self.local(moment, snap).date()
+            for bucket, wanted in ((total, day == today), (hour, key >= last_hour),
+                                   (before, day == today - timedelta(days=1))):
+                if wanted:
+                    for name, value in counts.items():
+                        bucket[name] = bucket.get(name, 0) + int(value)
+        start = local_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        covered = _when(ns.get("hours_from", ""))
+        return {"today": total, "last_hour": hour, "yesterday": before if covered and covered <= start else None}
 
     @staticmethod
     def _practice_line(counts: dict, *, full: bool = False) -> str:
@@ -216,11 +224,12 @@ class Awareness:
                 if ns.get("gates"):
                     gate = ns["gates"][-1]
                     verdict = gate["event"].replace("lesson ", "").replace("gate ", "").lower()
-                    parts.append(f"last lesson gate {gate['lesson']} {verdict} ({gate['ts'][5:10]})")
+                    parts.append(f"last lesson test {gate['lesson']} ({gate['ts'][5:10]}): "
+                                 f"{_GATE_WORDS.get(verdict, verdict)}")
             conductor = facts.get("conductor")
             if conductor:
-                parts.append(f"conductor night {conductor.get('night')}: {conductor.get('accepted')} of "
-                             f"{conductor.get('created')} new practice tasks accepted"
+                parts.append(f"homework writer, night of {conductor.get('night')}: wrote {conductor.get('created')} "
+                             f"new practice tasks, kept {conductor.get('accepted')} that passed the checks"
                              + (" (switched off)" if conductor.get("off") else ""))
             watchdog = facts.get("knowledge_watchdog")
             if watchdog:
@@ -267,67 +276,24 @@ class Awareness:
             lines.append("- not visible right now: " + "; ".join(missing))
         return "\n".join(lines)[:1600]
 
-    def status_fields(self, snap: Snapshot | None = None) -> tuple[list[dict], list[str]]:
-        """The same live facts as `summary`, as card fields (embeds.status_card) plus the missing sources."""
-        from .embeds import field
+    def status_report(self, snap: Snapshot | None = None):
+        """The live status card's content (status_view.Report): verdict, problems explained, a few short fields."""
+        from . import status_view
         snap = snap or self.snapshot()
         now = datetime.fromtimestamp(snap.taken, timezone.utc)
-        fields, missing = [], []
+        brains = []
         for name in sorted(snap.brains):
             facts = self._fresh(snap, name)
             if facts is None:
-                missing.append(f"brain {name}: " + (snap.brains[name].error or "no fresh answer"))
+                source = snap.brains[name]
+                why = f"last answer {_ago(snap.taken - source.at)} old" if source.at else (
+                    "it didn't answer" if source.error else "no answer yet")
+                brains.append(status_view.BrainInput(name, None, why_missing=why))
                 continue
-            ns = facts.get("night_school")
-            if ns:
-                counts = self._today(snap, ns)["today"]
-                state = "paused (HOLD)" if ns.get("paused") else _plain_state((ns.get("report") or {}).get("status", ""))
-                tries = sum(counts.get(k, 0) for k in ("first", "lesson", "validation"))
-                passed = sum(counts.get(k + "_pass", 0) for k in ("first", "lesson", "validation"))
-                value = f"{state}\n**{tries}** tries \u00b7 **{passed}** passed today"
-                if counts.get("error"):
-                    value += f"\n{counts['error']} couldn't run"
-                fields.append(field(f"Brain {name} \u00b7 night school", value))
-            lessons = []
-            if ns and ns.get("gates"):
-                gate = ns["gates"][-1]
-                verdict = gate["event"].replace("lesson ", "").replace("gate ", "").lower()
-                lessons.append(f"gate {gate['lesson']}: {verdict} ({gate['ts'][5:10]})")
-            conductor = facts.get("conductor")
-            if conductor:
-                lessons.append(f"{conductor.get('accepted')}/{conductor.get('created')} new tasks accepted "
-                               f"({conductor.get('night')})")
-            if lessons:
-                fields.append(field(f"Brain {name} \u00b7 lessons", "\n".join(lessons)))
-            watchdog = facts.get("knowledge_watchdog")
-            if watchdog:
-                restarts = [r for r in watchdog.get("restarts", [])
-                            if (_when(r.get("at")) or now) > now - timedelta(hours=24)]
-                fields.append(field("Knowledge search", ("ok" if watchdog.get("ok") else "search FAILING") +
-                                    (f"\nwatchdog restart {restarts[-1]['at'][11:16]} UTC" if restarts else "")))
-            lab = facts.get("studio_lab")
-            if lab:
-                fields.append(field("Studio Lab", ("running now\n" if lab.get("running") else "") +
-                                    f"last run: **{lab.get('specs_ran')}/{lab.get('specs')}** specs ran \u00b7 "
-                                    f"**{lab.get('passed')}** passed"))
-            failed, _recent = self._restarted(facts, now)
-            if failed:
-                fields.append(field(f"Brain {name} \u00b7 FAILED", ", ".join(failed)))
-        pc = snap.pc
-        if pc and snap.pc_age is not None and snap.pc_age <= PC_STALE_SECONDS:
-            value = f"**{len(pc.get('claims') or [])}** items claimed (6 h)"
-            if "merged_today" in pc and "open_prs" in pc:
-                prs = pc.get("open_prs") or []
-                failing = sum(1 for p in prs if p.get("checks") == "failing")
-                value += (f"\n**{len(pc.get('merged_today') or [])}** PRs merged today\n**{len(prs)}** open "
-                          f"\u00b7 {failing} failing checks")
-            fields.append(field("Work", value))
-        else:
-            missing.append("PC feed (board, PRs)")
-        if snap.jobs:
-            fields.append(field("Jobs you started", "\n".join(f"{j.get('label')}: {j.get('state')}"
-                                                               for j in snap.jobs[-3:]), inline=False))
-        return fields, missing
+            counts = self._today(snap, facts["night_school"]) if facts.get("night_school") else {}
+            brains.append(status_view.BrainInput(name, facts, counts.get("today") or {}, counts.get("yesterday")))
+        return status_view.build(brains, pc=snap.pc, pc_age=snap.pc_age, pc_stale=PC_STALE_SECONDS, jobs=snap.jobs,
+                                 clock=status_view.Clock(now, self.owner_tz(snap)))
 
     def detail(self, section: str, snap: Snapshot | None = None) -> str:
         """The star_lookup tool: one section in detail, from the same sources. Unknown section -> overview."""
@@ -392,7 +358,7 @@ class Awareness:
                 for key, value in list((ns.get("hours") or {}).items())[-8:]:
                     out.append(f"  {key}:00 UTC {value}")
             elif section == "gates" and facts.get("night_school"):
-                out.append(f"brain {name} lesson gate results (last 36 h):")
+                out.append(f"brain {name} lesson gate results (last 2 days):")
                 out += [f"- {g['ts']} {g['lesson']} {g['event']}: {g['text']}" for g in facts["night_school"].get("gates", [])]
             elif section == "conductor" and facts.get("conductor"):
                 out.append(f"brain {name} conductor: {facts['conductor']}")
@@ -404,8 +370,15 @@ class Awareness:
 
     # ------------------------------------------------------------------ changes worth a DM
 
-    def events(self, old: Snapshot, new: Snapshot) -> list[tuple[str, str]]:
-        """(event id, one-line text) for important changes between two snapshots. Ids are stable for dedupe."""
+    def events(self, old: Snapshot, new: Snapshot) -> list[tuple[str, str, str]]:
+        """(event id, plain text, level) for important changes between two snapshots. Ids are stable for dedupe;
+        the level (status_view: good / info / warn / bad) picks the alert's color and title."""
+        from .status_view import BAD, GOOD, INFO, WARN, Clock, lesson_sentence, studio, unit_name
+        clock = Clock(datetime.fromtimestamp(new.taken, timezone.utc), self.owner_tz(new))
+
+        def at(stamp: str) -> str:
+            moment = _when(stamp)
+            return clock.time(moment) if moment else "just now"
         out = []
         for name in sorted(new.brains):
             before, after = self._fresh(old, name), self._fresh(new, name)
@@ -419,40 +392,48 @@ class Awareness:
                 unit = row.get("unit", "")
                 if not unit.endswith(".service") or unit[:-8] in timers or row.get("sub") in _BORING_SUB:
                     continue
+                what = unit_name(unit).capitalize()
                 was = prev.get(unit)
                 if was is None or was.get("active") != "active":
                     if was is not None and row.get("active") == "active":
-                        out.append((f"up:{name}:{unit}:{row.get('since')}", f"{unit[:-8]} on brain {name} is back up."))
+                        out.append((f"up:{name}:{unit}:{row.get('since')}",
+                                    f"{what} on brain {name} is running again.", GOOD))
                     continue
                 if row.get("active") != "active":
                     out.append((f"down:{name}:{unit}:{was.get('since')}",
-                                f"{unit[:-8]} on brain {name} is DOWN ({row.get('active')}/{row.get('sub')})."))
+                                f"{what} on brain {name} stopped ({row.get('active')}). I'll tell you when it's "
+                                "back.", BAD))
                 elif row.get("since") and row.get("since") != was.get("since"):
                     if maintenance:     # someone holds the quiet lock: a deliberate restart, kept for the next note
                         out.append((f"maint:{name}:{unit}:{row.get('since')}",
-                                    f"{unit[:-8]} on brain {name} restarted at {row['since'][11:16]} UTC during a timing run."))
+                                    f"{what} on brain {name} restarted at {at(row['since'])} during a speed test.",
+                                    INFO))
                     else:
                         out.append((f"restart:{name}:{unit}:{row.get('since')}",
-                                    f"{unit[:-8]} on brain {name} restarted at {row['since'][11:16]} UTC."))
+                                    f"{what} on brain {name} restarted at {at(row['since'])}. It's running again; "
+                                    "nothing for you to do.", WARN))
             seen = {(g["ts"], g["lesson"]) for g in ((before.get("night_school") or {}).get("gates") or [])}
             for gate in ((after.get("night_school") or {}).get("gates") or []):
                 if (gate["ts"], gate["lesson"]) not in seen:
-                    out.append((f"gate:{name}:{gate['ts']}:{gate['lesson']}",
-                                f"Lesson gate on brain {name}: {gate['lesson']} {gate['event'].replace('lesson ', '')}."))
+                    level, text = lesson_sentence(gate["event"], gate["lesson"], gate.get("text", ""))
+                    out.append((f"gate:{name}:{gate['ts']}:{gate['lesson']}", f"Brain {name}: {text}", level))
             old_lab, new_lab = before.get("studio_lab") or {}, after.get("studio_lab") or {}
             if new_lab.get("run") and new_lab.get("run") != old_lab.get("run"):
-                out.append((f"lab:{name}:{new_lab['run']}",
-                            f"Studio Lab run finished: {new_lab.get('specs_ran')} of {new_lab.get('specs')} specs ran, "
-                            f"{new_lab.get('passed')} passed."))
+                level, _short, text = studio(new_lab, clock)
+                out.append((f"lab:{name}:{new_lab['run']}", text, level))
             old_dog = {r.get("at") for r in ((before.get("knowledge_watchdog") or {}).get("restarts") or [])}
             for row in ((after.get("knowledge_watchdog") or {}).get("restarts") or []):
                 if row.get("at") not in old_dog:
+                    done = row.get("done")
                     out.append((f"watchdog:{name}:{row.get('at')}",
-                                f"My knowledge search hung and its watchdog restarted it at {str(row.get('at'))[11:16]} UTC"
-                                + ("." if row.get("done") else ", but the restart FAILED.")))
+                                f"My knowledge search froze, so its watchdog restarted it at {at(str(row.get('at')))}"
+                                + (". It should be answering again." if done else
+                                   ", but the restart FAILED: I can't search my library until it's fixed."),
+                                INFO if done else BAD))
         if old.pc and new.pc:
             known = {r.get("tag") for r in old.pc.get("releases", [])}
             for rel in new.pc.get("releases", []):
                 if rel.get("tag") and rel.get("tag") not in known:
-                    out.append((f"release:{rel['tag']}", f"Release {rel['tag']} is {'ready as a draft' if rel.get('draft') else 'published'}."))
+                    out.append((f"release:{rel['tag']}", f"Release {rel['tag']} is "
+                                f"{'ready as a draft' if rel.get('draft') else 'published'}.", GOOD))
         return out

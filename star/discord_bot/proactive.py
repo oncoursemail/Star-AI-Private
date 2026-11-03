@@ -141,7 +141,9 @@ DIGEST_SYSTEM_TAIL = """
 Now write your {when} note to him on Discord, in your own voice: what you did, learned and fixed since your last
 note, what failed or worries you, and what's next. 3 to 6 short sentences, under 900 characters, no headings, no
 greeting line on its own. Use ONLY the facts given; every number you write must appear in them. If a source is
-missing, say you couldn't see it.
+missing, say you couldn't see it. He is not technical: say what things mean in plain words (practice questions
+answered right, a lesson you tested and whether you use it now), never internal names or jargon such as conductor,
+gate, finetune, pipeline, spec, quality-ab or PR numbers.
 """
 
 
@@ -150,6 +152,14 @@ def template_digest(when: str, facts: str) -> str:
     lines = [line[2:] for line in facts.splitlines() if line.startswith("- ")]
     opener = "Morning! Here's where I am:" if when == "morning" else "Evening update from me:"
     return (opener + "\n" + "\n".join(f"- {line[:300]}" for line in lines[:8]))[:1900]
+
+
+def plain_digest(when: str, report) -> str:
+    """The fallback note in plain words, from the status report (status_view.Report): what needs a look, or one
+    warm line when nothing does. The card's fields under it carry the numbers."""
+    opener = "Morning! Here's how I'm doing:" if when == "morning" else "Evening update from me:"
+    lines = [issue.text for issue in report.issues[:6]] or [report.note]
+    return (opener + "\n" + "\n".join(f"- {line}" for line in lines))[:1900]
 
 
 class Proactive:
@@ -195,39 +205,39 @@ class Proactive:
         result["digest"] = await self._digest(snap, now)
         return result
 
-    async def _events(self, events: list[tuple[str, str]], now: datetime) -> int:
+    async def _events(self, events: list[tuple[str, str, str]], now: datetime) -> int:
         fresh = []
-        for event_id, text in events:
+        for event_id, text, level in events:
             similar = ":".join(event_id.split(":")[:3])
             if self.ledger.known(event_id):
                 continue
             if event_id.startswith("maint:") or self.ledger.similar_since(similar, now - timedelta(minutes=SAME_UNIT_MINUTES)):
                 self.ledger.record(event_id, "event", "held", now, similar=similar, text=text)
                 continue
-            fresh.append((event_id, similar, text))
+            fresh.append((event_id, similar, text, level))
         if not fresh:
             return 0
         busy = (self.quiet(now) is not None
                 or self.ledger.sent_since("event", now - timedelta(hours=1)) >= self.config.per_hour
                 or self.ledger.sent_since("event", now - timedelta(days=1)) >= DAY_LIMIT)
         if busy:
-            for event_id, similar, text in fresh:
+            for event_id, similar, text, _level in fresh:
                 self.ledger.record(event_id, "event", "held", now, similar=similar, text=text)
             return 0
-        for event_id, similar, text in fresh:
+        for event_id, similar, text, _level in fresh:
             self.ledger.record(event_id, "event", "pending", now, similar=similar, text=text, dm=fresh[0][0])
         if len(fresh) == 1:
             body = "Heads up: " + fresh[0][2]
         else:
-            body = "Heads up, a few things just happened:\n" + "\n".join(f"- {t}" for _, _, t in fresh[:8])
+            body = "Heads up, a few things just happened:\n" + "\n".join(f"- {t}" for _, _, t, _ in fresh[:8])
         from .embeds import alert_card
         try:
-            await self.send(body[:1900], None, alert_card([t for _, _, t in fresh[:20]], now=now))
+            await self.send(body[:1900], None, alert_card([(i, t, lvl) for i, _, t, lvl in fresh[:20]], now=now))
         except BaseException:
-            for event_id, _, _ in fresh:
+            for event_id, *_ in fresh:
                 self.ledger.mark(event_id, "unknown")
             raise
-        for event_id, _, _ in fresh:
+        for event_id, *_ in fresh:
             self.ledger.mark(event_id, "sent")
         return len(fresh)
 
@@ -246,7 +256,7 @@ class Proactive:
         facts = self.awareness.summary(snap)
         gates = self.awareness.detail("gates", snap)
         held = self.ledger.held_since(since)
-        extra = ["- lesson gate results in the last 36 h: " + " | ".join(
+        extra = ["- lesson test results in the last 2 days: " + " | ".join(
             line.strip("- ") for line in gates.splitlines() if line.startswith("- ")) if "- " in gates else ""]
         if held:
             extra.append(f"- {len(held)} event(s) I held back since my last note: " + " | ".join(held[:6]))
@@ -264,14 +274,15 @@ class Proactive:
             self.ledger.record(digest_id, "digest", "held", now)
             return "held"
         facts = self.digest_facts(snap, now)
-        text = await self.compose(when, facts)
+        report_for = getattr(self.awareness, "status_report", None)
+        report = report_for(snap) if report_for is not None else None
+        text = await self.compose(when, facts, fallback=plain_digest(when, report) if report is not None else None)
         if not self.ledger.record(digest_id, "digest", "pending", now):
             return ""
         card = None
-        fields_for = getattr(self.awareness, "status_fields", None)
-        if fields_for is not None:
+        if report is not None:
             from .embeds import digest_card
-            card = digest_card(when, text, *fields_for(snap), now=now)
+            card = digest_card(when, text, report, now=now)
         try:
             await self.send(text, None, card)
         except BaseException:
@@ -280,8 +291,9 @@ class Proactive:
         self.ledger.mark(digest_id, "sent")
         return when
 
-    async def compose(self, when: str, facts: str) -> str:
-        """Her own words when the draft is clean and invents no number; otherwise the template."""
+    async def compose(self, when: str, facts: str, fallback: str | None = None) -> str:
+        """Her own words when the draft is clean and invents no number; otherwise `fallback` (plain sentences from
+        the status report) or the template."""
         if self.writer is not None:
             from ..persona import CORE, check_reply
             system = CORE + DIGEST_SYSTEM_TAIL.format(when=when)
@@ -295,4 +307,4 @@ class Proactive:
                 if draft and len(draft) <= 1900 and not problems:
                     return draft
                 _LOG.info("Digest draft %d rejected: %s", attempt + 1, "; ".join(problems)[:300])
-        return template_digest(when, facts)
+        return fallback or template_digest(when, facts)
