@@ -708,6 +708,49 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
 - Not done: the live checkout is not on `star/next` yet, so no real self-update has happened; the bench check
   needs `schtasks` and PowerShell (when either fails it skips the update, never the run).
 
+## 4p. Self-tuning loop: prompt changes only when a replay proves them (2026-11-02, issue #873)
+
+- `litha/self_tune.py`. She changes her merge prompt (`pr_fixer.MERGE_PROMPT`) or the `ANSWER` rule only when a replay
+  of her real conflicts scores higher. Data lives in `~/.star/litha-selftune/`, never in git (it holds repo text).
+- `build` freezes the replay set into `cases.json`. Each case is one conflicted file. It comes from one of three places:
+  every conflicting two-parent merge in Studio's history, re-merged with `git merge-tree` in diff3 style inside
+  scratch clones in that folder; her failed attempts in `fixes.jsonl` (her branch at that time against main as of
+  then); and the must-refuse cases. The committed file is the known-good answer when a person made the merge or it
+  reached main. Her unmerged merges prove nothing. The two must-refuse cases are Studio #486 (her merge of #442,
+  `metallic_physics/src/lib.rs`: it compiled but broke main's raycast test) and STAR #853 (her merge of #549,
+  `SettingsPage.tsx`, with a doubled `data:BootData`).
+- `score` runs `pr_fixer.merge_file` on every case with the override, fully offline. Git is replaced by the case's
+  frozen base copy, so no command runs, nothing is pushed, and Claude is never asked. Outcomes: exact (= committed, per
+  block, ignoring whitespace), compiles (no known-good answer; the checks pass), refused-ok (a must-refuse case
+  refused), wrong, refused, resolved-must-refuse. Score = exact + compiles + refused-ok. Her answers are cached by
+  (case, replicate, prompt hash), so scoring the same prompt again is free.
+- `propose` sends the 5 worst failures from the tune split to Claude (effort high) and asks for one edit. The edit is
+  kept only if the new score is higher than the old score plus noise and no case flips from good to bad. Every case
+  whose status changed is replayed 3 times under both prompts and the majority counts; noise is how many first runs
+  the majority overturned. A kept edit is written to `proposals/<date>-<hash>.patch` with a `.json` report, not into
+  the code. Budget: $5 in total for this loop, counted from `spend.jsonl` rows whose `what` starts with `selftune`;
+  it stops when the next call could pass that.
+- Nightly (written down, no task created): after 00:00 CT and only when `rust_fix.away()`, run `build` once a week to
+  pick up new merges, then `score`, which only asks her about cases that are new or changed, then
+  `propose --rounds 1` (at most about $0.5 per round). A patch that is kept goes out as her own litha/ PR to
+  star/next; CI and her merger decide.
+- Measured on 2026-11-02. Replay set: 375 cases from 141 merges and attempts. 274 are history cases with a known-good
+  answer (166 tune, 108 hold), 10 are her unmerged history merges, 89 are failed attempts, and 2 are must-refuse
+  cases. By file type: 262 .rs, 88 .md, 12 .toml, 7 .wgsl, then a few others.
+  - Baseline with her local model and the current prompt: **175/375** (hold-out 73). Exact 96, compiles 79, wrong
+    126, refused 72. Both must-refuse cases were resolved, not refused: her checks pass on #486 and #853 today.
+    The run took 193 model calls and 801 s. Rescoring the same prompt from the cache took 0 calls and 267 s
+    (rustfmt), with the same 175.
+  - "Wrong" is an upper bound: a committed merge often also edits next to the block, and that counts as a mismatch.
+  - First proposal (Claude, $0.029): it added a line about putting dependency lines under the right TOML header and
+    about entries both sides added appearing once. Result 175 -> 177 (hold-out 73 -> 73), noise 1. Two good cases
+    broke under the majority of 3 replays, so it was rejected and no patch was written.
+  - Second proposal ($0.041; the prompt now lists the edits already rejected): only the TOML placement part. Result
+    175 -> 173, with 3 good cases broken: rejected. Total Claude spend for this loop: $0.07 of $5.
+  - Both rounds showed Claude the same 5 failures (two Cargo.toml files, a .gitignore, a lib.rs and must-refuse #853).
+    Neither prompt edit beat the noise. Ideas for later: rotate which failures are shown, and add a code check for
+    repeated TOML keys and table placement rather than prompt text.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
