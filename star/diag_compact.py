@@ -134,12 +134,16 @@ def _cargo(lines: list[str]) -> list[Failure]:
     return out
 
 
-def parse(kind: str, text: str, exit_code: int) -> Diagnostics:
-    """Structured failures of one allowlisted tool run. Unknown kinds are refused, not guessed."""
+def _check(kind: str, exit_code: int) -> None:
     if kind not in KINDS:
         raise ValueError(f"not an allowlisted diagnostic kind: {kind!r}")
-    if not isinstance(exit_code, int):
+    if not isinstance(exit_code, int) or isinstance(exit_code, bool):
         raise ValueError("exit code must be an int")
+
+
+def parse(kind: str, text: str, exit_code: int) -> Diagnostics:
+    """Structured failures of one allowlisted tool run. Unknown kinds are refused, not guessed."""
+    _check(kind, exit_code)
     clean = _ANSI.sub("", text)
     lines = clean.splitlines()
     summary = ""
@@ -164,6 +168,7 @@ def compact(kind: str, text: str, exit_code: int, *, enabled: bool = False,
     """Off by default: returns the text unchanged. On: a bounded preview that keeps every failure line, the summary,
     the exit code and the SHA-256/length of the original. Short output and failures that do not fit are never
     silently dropped (a cut is marked and `failures_total` says how many there were)."""
+    _check(kind, exit_code)
     if not enabled or len(text) < MIN_CHARS:
         return {"text": text, "compacted": False}
     d = parse(kind, text, exit_code)
