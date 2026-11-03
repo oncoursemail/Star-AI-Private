@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "product": "Litha AI",
+  "framework": "React 19 / TypeScript / Vite / Qt WebEngine",
+  "purpose": "A bounded, source-owned index for designers and coding agents. Not executable configuration.",
+  "trust": "Documentation; never authorizes a tool or file write.",
+  "semantics": {
+    "tokens": "frontend/src/tokens.css",
+    "motion": "frontend/src/MotionPolicy.tsx",
+    "run_events": "frontend/src/activity.ts"
+  },
+  "components": [
+    {
+      "id": "chat.composer",
+      "status": "implemented",
+      "source": "frontend/src/Composer.tsx",
+      "tests": [
+        "frontend/src/composer.test.tsx"
+      ],
+      "purpose": "Multimodal chat input with modes, files, tools, and stop.",
+      "must_preserve": [
+        "IME-safe Enter",
+        "screen consent",
+        "tool availability",
+        "keyboard menus",
+        "model status"
+      ],
+      "tokens": [
+        "--star-surface-1",
+        "--star-stroke-control",
+        "--star-gold"
+      ]
+    },
+    {
+      "id": "chat.run-aura",
+      "status": "implemented",
+      "source": "frontend/src/RunAura.tsx",
+      "tests": [
+        "frontend/src/run-aura.test.tsx"
+      ],
+      "purpose": "Visual-only projection of host ActivityRun; no fake progress.",
+      "must_preserve": [
+        "pointer-events none",
+        "no live-region duplication",
+        "reduced motion",
+        "terminal idle"
+      ],
+      "tokens": [
+        "--star-gold",
+        "--star-gold-soft",
+        "--star-r-md"
+      ]
+    },
+    {
+      "id": "chat.activity-timeline",
+      "status": "implemented",
+      "source": "frontend/src/ActivityTimeline.tsx",
+      "tests": [],
+      "purpose": "Human-readable run and agent/tool activity from progress events.",
+      "must_preserve": [
+        "real backend events",
+        "distinct error/cancel/blocked",
+        "timer not announced every second"
+      ],
+      "tokens": [
+        "--star-text",
+        "--star-muted"
+      ]
+    },
+    {
+      "id": "chat.message-row",
+      "status": "implemented",
+      "source": "frontend/src/ChatRow.tsx",
+      "tests": [],
+      "purpose": "Assistant and user conversation presentation.",
+      "must_preserve": [
+        "message roles",
+        "copy/retry/edit semantics"
+      ],
+      "tokens": [
+        "--star-text",
+        "--star-body"
+      ]
+    },
+    {
+      "id": "desktop.screen-consent",
+      "status": "implemented",
+      "source": "frontend/src/ScreenConsent.tsx",
+      "tests": [],
+      "purpose": "Owner approval for screenshot capture.",
+      "must_preserve": [
+        "explicit approval",
+        "cancel",
+        "no default capture"
+      ],
+      "tokens": [
+        "--star-surface-2",
+        "--star-stroke-focus"
+      ]
+    },
+    {
+      "id": "desktop.settings",
+      "status": "implemented",
+      "source": "frontend/src/SettingsPage.tsx",
+      "tests": [],
+      "purpose": "Local provider/tool/application configuration.",
+      "must_preserve": [
+        "capability gating",
+        "saved preferences",
+        "focus"
+      ],
+      "tokens": [
+        "--star-text",
+        "--star-muted"
+      ]
+    },
+    {
+      "id": "desktop.voice",
+      "status": "implemented",
+      "source": "frontend/src/VoiceCall.tsx",
+      "tests": [],
+      "purpose": "Voice call controls and feedback.",
+      "must_preserve": [
+        "honest connection state",
+        "privacy"
+      ],
+      "tokens": [
+        "--star-gold"
+      ]
+    },
+    {
+      "id": "desktop.models",
+      "status": "implemented",
+      "source": "frontend/src/ModelFleetPanel.tsx",
+      "tests": [],
+      "purpose": "Model team configuration/status.",
+      "must_preserve": [
+        "actual model probe results",
+        "no invented benchmark numbers"
+      ],
+      "tokens": [
+        "--star-text",
+        "--star-success"
+      ]
+    },
+    {
+      "id": "desktop.brain-overview",
+      "status": "implemented",
+      "source": "frontend/src/BrainOverview.tsx",
+      "tests": [
+        "frontend/src/BrainOverview.test.tsx"
+      ],
+      "purpose": "Machine and AI-brain overview.",
+      "must_preserve": [
+        "real observations",
+        "unknown instead of fake values"
+      ],
+      "tokens": [
+        "--star-text",
+        "--star-info"
+      ]
+    },
+    {
+      "id": "tools.game-lab",
+      "status": "implemented",
+      "source": "frontend/src/GameLabPanel.tsx",
+      "tests": [],
+      "purpose": "Roblox game lab entry panel.",
+      "must_preserve": [
+        "authorization through host",
+        "clear tool availability"
+      ],
+      "tokens": [
+        "--star-text",
+        "--star-gold"
+      ]
+    },
+    {
+      "id": "tools.blender",
+      "status": "implemented",
+      "source": "frontend/src/BlenderPanel.tsx",
+      "tests": [],
+      "purpose": "Blender integration entry panel.",
+      "must_preserve": [
+        "reported readiness",
+        "no unsupported execute claims"
+      ],
+      "tokens": [
+        "--star-text",
+        "--star-muted"
+      ]
+    },
+    {
+      "id": "tools.media",
+      "status": "implemented",
+      "source": "frontend/src/MediaPanel.tsx",
+      "tests": [],
+      "purpose": "Visual/media generation and references.",
+      "must_preserve": [
+        "source identity",
+        "generation result truth"
+      ],
+      "tokens": [
+        "--star-surface-1",
+        "--star-text"
+      ]
+    },
+    {
+      "id": "agent.tool-receipt",
+      "status": "planned",
+      "purpose": "Typed host-proven tool result with execution evidence and redacted safe metadata.",
+      "requires": [
+        "toolCallId",
+        "host terminal event",
+        "privacy gate"
+      ]
+    },
+    {
+      "id": "agent.source-trail",
+      "status": "planned",
+      "purpose": "Real search queries/opened sources and citation provenance.",
+      "requires": [
+        "source fetch records",
+        "sanitized URLs",
+        "source identity"
+      ]
+    },
+    {
+      "id": "agent.conductor-inspector",
+      "status": "planned",
+      "purpose": "Nested agent task tree and dependencies without fictional progress.",
+      "requires": [
+        "stable agent ids",
+        "parent relationships",
+        "host lifecycle events"
+      ]
+    },
+    {
+      "id": "agent.run-replay",
+      "status": "planned",
+      "purpose": "Resume visible state after host-owned append-only events and snapshot replay.",
+      "requires": [
+        "authenticated run-scoped event journal",
+        "monotonic seq",
+        "gap handling"
+      ]
+    },
+    {
+      "id": "design.command-palette",
+      "status": "planned",
+      "purpose": "Keyboard-first navigation and context-specific actions; no permission bypass.",
+      "requires": [
+        "accessible focus strategy",
+        "stable command ids",
+        "host action gating"
+      ]
+    },
+    {
+      "id": "design.accessible-primitives",
+      "status": "planned",
+      "purpose": "Reusable complex select, menu, grid, and combobox behaviors.",
+      "requires": [
+        "React Aria review",
+        "Qt keyboard regression tests"
+      ]
+    }
+  ]
+}
