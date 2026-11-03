@@ -111,6 +111,10 @@ def test_a_proposal_that_breaks_one_good_case_is_rejected(tmp_path):
     v = reps[-1]["verdict"]
     assert reps[-1]["result"] == "rejected" and v["flips"] == ["other"] and v["new"] > v["old"]
     assert "patch" not in reps[-1] and not list((tmp_path / "prop").glob("*.patch"))
+    asked = []
+    st.propose(cases, model, lambda p: asked.append(p) or "no edit", cache=st.Cache(None), out=tmp_path / "prop",
+               ledger=tmp_path / "spend.jsonl", log=None)
+    assert "already tried and rejected" in asked[0] and "RULE" in asked[0]           # the next round tries another
 
 
 def test_no_claude_call_once_the_lane_budget_is_spent(tmp_path):

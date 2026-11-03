@@ -414,7 +414,7 @@ Rule: ANSWER = {answer} (a merge longer than this many tokens is refused without
 Replay score now: {points}/{total} cases solved ({outcomes}).
 Her 5 worst failures on real cases:
 {failures}
-Propose ONE small edit that should fix the most of these without hurting other merges: either replace one exact
+{tried}Propose ONE small edit that should fix the most of these without hurting other merges: either replace one exact
 substring of MERGE_PROMPT (keep it short, keep every {{placeholder}}, keep the JSON answer format) or change ANSWER.
 Answer only JSON: {{"target": "MERGE_PROMPT", "old": "<exact substring>", "new": "<replacement>", "why": "<one line>"}}
 or {{"target": "ANSWER", "new": <int>, "why": "<one line>"}}"""
@@ -497,6 +497,20 @@ def compare(old: dict, new: dict, overrides: dict, cases_: list[dict], model, ca
     return {"old": po, "new": pn, "noise": noise, "flips": flips, "gains": gains, "keep": keep, "rechecked": changed}
 
 
+def tried(out: Path) -> str:
+    """The edits already scored and rejected (so a later round proposes something else)."""
+    rows = []
+    for p in sorted(out.glob("*.json")) if out.exists() else []:
+        with contextlib.suppress(OSError, ValueError, KeyError):
+            r = json.loads(p.read_text(encoding="utf-8"))
+            if r.get("result") == "rejected":
+                v = r["verdict"]
+                rows.append(f"- {r['answer'][r['answer'].find('{'):][:500]} -> {v['old']} -> {v['new']} "
+                            f"(noise {v['noise']}, {len(v['flips'])} good cases broken)")
+    return ("Edits already tried and rejected (propose a different one):\n" + "\n".join(rows[-5:]) + "\n") if rows \
+        else ""
+
+
 def propose(cases_: list[dict] | None = None, model=None, asker=None, rounds: int = 1, budget: float = CAP,
             cache: Cache | None = None, out: Path = PROPOSALS, ledger: Path | None = None,
             log: Path | None = RUNS) -> list[dict]:
@@ -518,7 +532,7 @@ def propose(cases_: list[dict] | None = None, model=None, asker=None, rounds: in
             break
         text = asker(ASK.format(prompt=pf.MERGE_PROMPT, answer=pf.ANSWER, points=old["points"], total=old["total"],
                                 outcomes=json.dumps(old["outcomes"]),
-                                failures="\n".join(show_failure(f) for f in fails)))
+                                failures="\n".join(show_failure(f) for f in fails), tried=tried(out)))
         report = {"ts": int(time.time()), "failures": [f["case"]["id"] for f in fails],
                   "spent": round(lane_spent(ledger) - before, 4), "answer": text[:3000]}
         try:

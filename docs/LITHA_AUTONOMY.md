@@ -699,7 +699,22 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   pick up new merges, then `score`, which only asks her about cases that are new or changed, then
   `propose --rounds 1` (at most about $0.5 per round). A patch that is kept goes out as her own litha/ PR to
   star/next; CI and her merger decide.
-- Measured: see the resume note `docs/agents/litha-w5-selftune.md` for the baseline and the first proposal.
+- Measured on 2026-11-02. Replay set: 375 cases from 141 merges and attempts. 274 are history cases with a known-good
+  answer (166 tune, 108 hold), 10 are her unmerged history merges, 89 are failed attempts, and 2 are must-refuse
+  cases. By file type: 262 .rs, 88 .md, 12 .toml, 7 .wgsl, then a few others.
+  - Baseline with her local model and the current prompt: **175/375** (hold-out 73). Exact 96, compiles 79, wrong
+    126, refused 72. Both must-refuse cases were resolved, not refused: her checks pass on #486 and #853 today.
+    The run took 193 model calls and 801 s. Rescoring the same prompt from the cache took 0 calls and 267 s
+    (rustfmt), with the same 175.
+  - "Wrong" is an upper bound: a committed merge often also edits next to the block, and that counts as a mismatch.
+  - First proposal (Claude, $0.029): it added a line about putting dependency lines under the right TOML header and
+    about entries both sides added appearing once. Result 175 -> 177 (hold-out 73 -> 73), noise 1. Two good cases
+    broke under the majority of 3 replays, so it was rejected and no patch was written.
+  - Second proposal ($0.041; the prompt now lists the edits already rejected): only the TOML placement part. Result
+    175 -> 173, with 3 good cases broken: rejected. Total Claude spend for this loop: $0.07 of $5.
+  - Both rounds showed Claude the same 5 failures (two Cargo.toml files, a .gitignore, a lib.rs and must-refuse #853).
+    Neither prompt edit beat the noise. Ideas for later: rotate which failures are shown, and add a code check for
+    repeated TOML keys and table placement rather than prompt text.
 
 ## 5. Rules that stay (do not remove)
 
