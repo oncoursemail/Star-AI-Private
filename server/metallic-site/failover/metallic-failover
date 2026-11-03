@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# metallic.club on two hosts, switched automatically. Runs every 15 s (metallic-failover.timer) on both copies.
+#
+# Both copies run Caddy, the site and metallic-live all the time; only the Cloudflare tunnel connector is switched.
+# Both connectors use the same tunnel, so while both are up Cloudflare sends visitors to either, and when one goes away
+# the other takes everything with no gap. The switch is make-before-break: a copy steps out only after the other one
+# reports that it is healthy and connected.
+#
+#   primary:  serves while it is healthy; steps out only while the standby is healthy and serving.
+#   standby:  serves while the primary is not (healthy and serving).
+#
+# Healthy = this copy reaches the internet, Caddy answers, and metallic-live wrote revivals.json with numbers in the last
+# 5 minutes. Two failed checks in a row make a copy unhealthy, three good ones healthy again (no flapping).
+# Each copy publishes its state at http://<host>:8089/health.json on the LAN (metallic-health.service), where the other
+# copy reads it. Settings: /etc/metallic-failover.conf (ROLE=primary|standby, PEER=http://<other host>:8089).
+set -uo pipefail
+
+. /etc/metallic-failover.conf
+STATE=/var/lib/metallic-failover
+OUT=/run/metallic-health
+LIVE=/srv/metallic/dist/live/revivals.json
+mkdir -p "$STATE" "$OUT"
+now=$(date +%s)
+
+# ---- this copy ----
+why=""
+curl -fsS -m 5 -o /dev/null https://www.cloudflare.com/cdn-cgi/trace || curl -fsS -m 5 -o /dev/null https://discord.com/api/v10/gateway || why="no internet"
+[ -z "$why" ] && { curl -fsS -m 3 -o /dev/null http://127.0.0.1:8088/ || why="caddy down"; }
+if [ -z "$why" ]; then
+  age=$(( now - $(stat -c %Y "$LIVE" 2>/dev/null || echo 0) ))
+  nums=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["totals"]["withNumbers"])' "$LIVE" 2>/dev/null || echo 0)
+  [ "$age" -le 300 ] && [ "$nums" -gt 0 ] || why="live data stale (${age}s, ${nums} with numbers)"
+fi
+bad=$(cat "$STATE/bad" 2>/dev/null || echo 0); good=$(cat "$STATE/good" 2>/dev/null || echo 3)
+if [ -n "$why" ]; then bad=$((bad + 1)); good=0; else good=$((good + 1)); bad=0; fi
+echo "$bad" > "$STATE/bad"; echo "$good" > "$STATE/good"
+ok=$(cat "$STATE/ok" 2>/dev/null || echo true)
+[ "$bad" -ge 2 ] && ok=false
+[ "$good" -ge 3 ] && ok=true
+echo "$ok" > "$STATE/ok"
+
+ready() { curl -fsS -m 2 http://127.0.0.1:20241/ready 2>/dev/null | grep -q '"readyConnections":[1-9]'; }
+serving=false; ready && serving=true
+
+# ---- the other copy ----
+peer=$(curl -fsS -m 3 "$PEER/health.json" 2>/dev/null || echo '{}')
+peer_up=$(python3 -c '
+import json,sys,time
+try: p=json.loads(sys.argv[1])
+except Exception: p={}
+print("true" if p.get("ok") and p.get("serving") and time.time()-p.get("at",0) < 60 else "false")' "$peer")
+
+if [ "$ROLE" = primary ]; then
+  want=true; [ "$ok" = false ] && [ "$peer_up" = true ] && want=false
+else
+  want=true; [ "$peer_up" = true ] && want=false
+fi
+
+if [ "$want" = true ] && ! systemctl is-active --quiet cloudflared; then
+  systemctl start cloudflared && logger -t metallic-failover "$ROLE: started serving (healthy=$ok${why:+, $why}, peer serving healthy=$peer_up)"
+elif [ "$want" = false ] && systemctl is-active --quiet cloudflared; then
+  systemctl stop cloudflared && logger -t metallic-failover "$ROLE: stepped out (healthy=$ok${why:+, $why}, peer serving healthy=$peer_up)"
+fi
+serving=false; ready && serving=true
+
+printf '{"role":"%s","ok":%s,"serving":%s,"at":%s,"why":"%s"}\n' "$ROLE" "$ok" "$serving" "$now" "$why" > "$OUT/health.json.new"
+mv "$OUT/health.json.new" "$OUT/health.json"

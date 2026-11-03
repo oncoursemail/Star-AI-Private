@@ -1,0 +1,13 @@
+[Unit]
+Description=metallic.club: this copy's failover state for the other copy (LAN only, port 8089)
+After=network-online.target
+
+[Service]
+ExecStartPre=+/bin/mkdir -p /run/metallic-health
+ExecStart=/usr/bin/python3 -m http.server 8089 --bind 0.0.0.0 --directory /run/metallic-health
+User=nobody
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

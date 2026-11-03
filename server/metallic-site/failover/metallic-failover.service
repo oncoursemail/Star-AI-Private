@@ -1,0 +1,7 @@
+[Unit]
+Description=metallic.club: switch the tunnel between the two copies (see metallic-failover)
+After=network-online.target caddy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/metallic-failover

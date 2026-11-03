@@ -127,3 +127,27 @@ It sets no cookies, has no forms or accounts, loads no scripts or fonts from oth
 no images except the revivals' own Discord artwork. Live numbers are shown as published: "in game" only where a revival
 publishes its player count, and Discord's online count is always labelled "online in Discord", never players. "In
 Metallic right now" counts open launchers, not people in a revival.
+
+## 5. Two copies, switched automatically (failover)
+
+metallic.club runs as two identical copies on two machines: the primary (`metallic` container on the first host) and a
+standby (`metallic` container on server 2). Each has Caddy, the site, `/releases/`, metallic-live and a connector of the
+same Cloudflare tunnel (same credentials file). Cloudflare sends visitors to whichever connectors are up, so when one copy
+drops out the other carries everything with no error page.
+
+`server/metallic-site/failover/` (install with `bash install.sh primary|standby http://<other host>:8089` inside each
+container) adds a check every 15 s that switches only the tunnel connector:
+
+- healthy = reaches the internet, Caddy answers, `live/revivals.json` has numbers and is under 5 minutes old (2 failed
+  checks make a copy unhealthy, 3 good ones healthy again);
+- the primary serves while healthy, and steps out only while the standby is healthy and connected;
+- the standby serves while the primary is not healthy and connected;
+- a copy steps out only after the other is connected (make-before-break), so there is never a moment with no connector.
+
+Each copy publishes its state at `http://<host>:8089/health.json` (LXD proxy device `health` on the host -> the
+container's `metallic-health.service`); the other copy reads it. Without that link each copy keeps its own connector up
+(both serve), which still covers a copy that goes away entirely but not one that stays connected with bad data.
+Logs: `journalctl -t metallic-failover`.
+
+Publishing and deploying go to BOTH copies: upload release files and switch `latest.json` / `quest.json` on each, and run
+`deploy.sh` in each container. Each copy's metallic-live counts the downloads and "people in Metallic" it serves itself.
