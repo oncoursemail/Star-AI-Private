@@ -1,10 +1,11 @@
-"""Owner-only Windows game input port with per-action subprocess hold guardian.
+"""Owner-only Windows game input port with two-process key-up recovery.
 
 This port supplies the three callbacks required by GameActuationRehearsal:
 send_action, request_all_up, all_keys_up. A separate, short-lived worker owns
-each key-down and guarantees a timed key-up *while that worker remains alive*.
-Emergency stop never waits on the worker/OBS lock. A worker crash, stuck OS
-input, process loss, or anti-cheat rejection is NOT certified safe by Python.
+each key-down and performs a timed key-up while alive. An independent
+watchdog supervises the worker and attempts recovery key-up after failure.
+Emergency stop never waits on the worker/OBS lock. A joint crash, stuck OS
+input, OS scheduling stall or anti-cheat rejection is NOT certified safe by Python.
 
 OFF until both this port and the OBS-guarded rehearsal are owner enabled.
 Use only on owner-authorized, automation-permitting games. Never expose these
@@ -35,7 +36,7 @@ class WindowsGameInputPort:
     Key observation uses Win32 GetAsyncKeyState. This is a useful independent
     OS-state check but NOT hardware proof that a game processed a key event,
     or that releases will succeed after an arbitrary worker crash. The user
-    still needs a separately supervised emergency stop and a dedicated PC.
+    still needs a separately supervised owner emergency stop and a dedicated PC.
     """
 
     def __init__(
@@ -117,9 +118,9 @@ class WindowsGameInputPort:
     def send_action(self, action_id: str, hold_ms: int, cancelled: Event) -> bool:
         """Host worker callback for GameActuationRehearsal.
 
-        Spawn overhead means this initial safe pilot is not tuned for twitch
-        games. Never forcibly kill an uncertain worker that may hold a key;
-        report failure and let its independent deadline release the key.
+        Two interpreter startups are not optimized for twitch games. The
+        watchdog is the process tracked by this port; its child owns key-down.
+        Failed or uncertain action execution permanently disables this port.
         """
         if (type(action_id) is not str or type(hold_ms) is not int
                 or not 1 <= hold_ms <= 180 or not isinstance(cancelled, Event)):
@@ -129,13 +130,15 @@ class WindowsGameInputPort:
             return False
         if not self._guard.acquire(blocking=False):
             return False
+        spawned = False
+        verified = False
         try:
             if (not self._enabled or self._stop.is_set() or cancelled.is_set()
                     or not self.focus_ok() or not self.all_keys_up()):
                 return False
             command = [
-                sys.executable, "-m", "star.windows_game_input_worker",
-                "--worker", "--action", self._actions[action_id],
+                sys.executable, "-m", "star.windows_game_input_watchdog",
+                "--watchdog", "--action", self._actions[action_id],
                 "--hwnd", str(self._hwnd), "--pid", str(self._pid),
                 "--hold-ms", str(hold_ms),
             ]
@@ -147,6 +150,7 @@ class WindowsGameInputPort:
             except (OSError, ValueError):
                 return False
             self._proc = proc
+            spawned = True
             if self._stop.is_set() or cancelled.is_set():
                 self.request_all_up()
             deadline = time.monotonic() + self._timeout
@@ -163,14 +167,18 @@ class WindowsGameInputPort:
                 output, _ = proc.communicate(timeout=0.2)
             except (OSError, subprocess.TimeoutExpired):
                 return False
-            return (
+            verified = (
                 proc.returncode == 0 and output == b"RELEASED"
                 and not cancelled.is_set() and not self._stop.is_set()
                 and self.focus_ok() and self.all_keys_up()
             )
+            return verified
         finally:
-            # Hold the subprocess reference until a future probe can observe
-            # that it exited. No reenable after an uncertain stop.
+            # An uncertain worker/OS receipt is terminal, even if the next
+            # OS key-state sample happens to look neutral.
+            if spawned and not verified:
+                self._stop.set()
+                self._enabled = False
             self._guard.release()
 
 
