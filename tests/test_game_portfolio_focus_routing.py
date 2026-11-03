@@ -61,7 +61,9 @@ class Rig:
         self.serial += 1
         trial = GameTrial(
             f"trial_{self.serial}", game, "v1", "finish", "intro",
-            action, run, split, outcome, DIGEST, when,
+            action, run, split, outcome, hashlib.sha256(
+                f"portfolio-focus-event-{self.serial}".encode()
+            ).hexdigest(), when,
         )
         key = PRACTICE if split == "practice" else VALIDATION
         receipt = hmac.new(key, trial.canonical_bytes(), hashlib.sha256).hexdigest()
