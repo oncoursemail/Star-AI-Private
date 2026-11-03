@@ -673,6 +673,41 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   code fitted to the test's literals (the bench counts those as solved); the 400 fallback was tested only by
   reading the code path (no 4096-only node was up); a live PR.
 
+## 4o. Deploy: she updates herself, fewer gh calls, one rerun per head (2026-11-02, measured)
+- `litha/self_update.py`, step 1 of `pr_merger_run.cmd`: the live checkout fast-forwards to `origin/star/next` only
+  when all hold: it is on `star/next` (or detached at an ancestor of it), the new head descends from HEAD, no
+  uncommitted changes, `~/.star/pr-merger/OFF` absent, the bug bench not running (its task "Litha bug bench" not
+  Running and no `litha.bug_bench` process: it runs from the same checkout), the head did not fail before
+  (`~/.star/pr-merger/update-bad.json`), and every check on that head passed (`pr_merger.check_gates`). Then every
+  `litha/*.py` must compile and every module the run script starts must import in a fresh Python (1.3 s); else
+  `git reset --keep` back, the head is remembered as bad, and run.log says why. `--dry` says what it would do.
+- **Until PR #917 merges the live checkout is on `star/litha-claude-20261102`, so it logs "not on star/next,
+  skipped" and changes nothing** (checked read-only on the real live checkout). To turn it on afterwards:
+  `git -C worktrees/litha-pr-merger checkout --detach origin/star/next` (detached, because `star/next` may be checked
+  out elsewhere).
+- cmd.exe reads a running .cmd by byte offset. Measured: a script that rewrites itself on its last line runs
+  fragments of the new file ("'NEW-6' is not recognized") unless that line ends with `& exit /b`. So step 1 never
+  applies an update that changes `pr_merger_run.cmd`: it writes `update-pending.json`, and the script's last line
+  `self_update --last ... & exit /b` applies it. Test: the real script runs under cmd.exe with stub modules and
+  rewrites itself; no fragment runs (the same test without `& exit /b` fails).
+- `pr_merger.decide`: gates cheapest first, `list_gates` (list data, no call), `check_gates` (one call),
+  `diff_gates` (the diff, the slow call); a blocking gate skips every later call. A head gated against the same
+  base commit (`baseRefOid`, now in the list fields) within 6 h is not fetched again when its diff gates blocked,
+  or when there is no hunt and her review of that head is cached (`~/.star/pr-merger/diff_gates.json`). Same action
+  as the full `gate_failures` list over 300 combinations (list x checks x diff x review x hunt, cold and warm
+  cache); only the reasons stop at the first blocking gate. Each run prints `gh calls: N {...}`.
+- Measured (dry run, real repos, read-only gh, review stubbed, 2026-11-02 18:2x; 22 open non-draft PRs today, the
+  wave-4 run had 47): per merger loop (main + `--others`), excluding the 8 list calls both make:
+  old 44 calls (22 diffs + 22 check reads, 54 s of gh) -> new 7 on a cold cache (8 s) -> 4 warm (3 s); same action
+  on all 22. Wave 4 measured 94 -> 11 -> 6 on its 47.
+- `pr_fixer`: at most one CI rerun per head commit, ever (`~/.star/pr-fixer/reran.json`, kept 30 days; a broken
+  file counts as empty); expired logs on a head that had its rerun are a "skip" (marked tried). `_rerun` reads the
+  newest run of each check only, so a failure superseded by a pass is not rerun (the #700 loop).
+- run.log: before each step a line `<date> <time> step <name> (previous rc=N)`; `self_check` still reads the
+  `start` / `end rc=N` lines.
+- Not done: the live checkout is not on `star/next` yet, so no real self-update has happened; the bench check
+  needs `schtasks` and PowerShell (when either fails it skips the update, never the run).
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another

@@ -8,13 +8,26 @@ if exist "%USERPROFILE%\.star\pr-merger\OFF" exit /b 0
 if not exist "%USERPROFILE%\.star\pr-merger" mkdir "%USERPROFILE%\.star\pr-merger"
 cd /d "%~dp0.."
 echo %date% %time% start >> "%USERPROFILE%\.star\pr-merger\run.log"
-rem litha.self_check first (well under 1 s when healthy): stale locks and broken JSON state repaired, rest reported.
+rem litha.self_update first: this checkout fast-forwards to a green star/next, rolled back if she cannot start
+rem (a change to this script itself waits for the last line). Each step logs the time and the previous step's rc.
+"%~1" -m litha.self_update >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+echo %date% %time% step self_check (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
+rem litha.self_check next (well under 1 s when healthy): stale locks and broken JSON state repaired, rest reported.
 "%~1" -m litha.self_check --quiet >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+echo %date% %time% step pr_fixer (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.pr_fixer --python "%~1" >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+echo %date% %time% step pr_merger (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.pr_merger --apply >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+echo %date% %time% step pr_promote (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.pr_promote --apply >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+echo %date% %time% step pr_fixer --others (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.pr_fixer --others 2 --python "%~1" >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+echo %date% %time% step pr_merger --others (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.pr_merger --apply --others >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 rem The owner's own Git server gets main and star/next too (fast-forward only): step 1 of leaving GitHub.
+echo %date% %time% step forge_sync (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.forge_sync >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 echo %date% %time% end rc=%errorlevel% >> "%USERPROFILE%\.star\pr-merger\run.log"
+rem Keep this the last line: cmd.exe reads it whole before it runs, so an update that changes this script lands
+rem here and `& exit /b` ends the run before cmd.exe reads the changed file at its old byte offset.
+"%~1" -m litha.self_update --last >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1 & exit /b

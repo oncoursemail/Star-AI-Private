@@ -137,9 +137,10 @@ def test_real_tree_map_lists_entry_points_flags_and_gates(fake_home):
     assert fixer["limits"]["ROUNDS"] >= 1 and "NO_TOUCH" in fixer["patterns"]
     assert "~/.star/pr-fixer/tried.json" in fixer["state"]
     assert any("tests, CI and locks" in r for r in fixer["refusals"]["apply_edits"])
-    assert any("draft" in r for r in m["modules"]["pr_merger"]["refusals"]["gate_failures"])
+    assert any("draft" in r for r in m["modules"]["pr_merger"]["refusals"]["list_gates"])
     steps = {s["script"]: s["steps"] for s in m["schedule"]}
-    assert steps["pr_merger_run.cmd"][0].startswith("litha.self_check")
+    assert steps["pr_merger_run.cmd"][0].startswith("litha.self_update")
+    assert steps["pr_merger_run.cmd"][1].startswith("litha.self_check")
     assert "litha.pr_fixer" in steps["pr_merger_run.cmd"]
 
 

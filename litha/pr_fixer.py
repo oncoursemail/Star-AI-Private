@@ -1011,22 +1011,52 @@ def fix_lock(tree: Path, python: str) -> tuple[bool, str]:
         " ".join(re.findall(r"(?m)^E\s+(.*)$", first)[:2])[:300]
 
 
+RERAN = STATE.with_name("reran.json")      # {"owner/repo@sha": unix time}: heads that had their one CI rerun
+
+
+def reran(sha: str) -> bool:
+    """This head already had its one CI rerun (any run, any worker)."""
+    try:
+        return f"{REPO}@{sha}" in json.loads(RERAN.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def _note_rerun(sha: str) -> None:
+    with TRIED, file_lock(RERAN.with_name("reran.lock")):
+        try:
+            done = json.loads(RERAN.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            done = {}
+        now = time.time()
+        done = {k: t for k, t in done.items() if isinstance(t, (int, float)) and now - t < 30 * 86400}
+        done[f"{REPO}@{sha}"] = round(now)
+        write_atomic(RERAN, json.dumps(done))
+
+
 def rerun_failed(sha: str, number: int | None = None) -> int:
     """Run the failed jobs of this commit again; returns how many workflow runs were restarted. When GitHub refuses
     every rerun ("cannot be retried", seen on a 4-day-old run), closing and reopening the PR starts a fresh CI run.
-    There is one CI runner: RERUNS caps the reruns of a whole run, across workers (RerunSpent when it is used up)."""
+    There is one CI runner: RERUNS caps the reruns of a whole run, across workers (RerunSpent when it is used up).
+    At most one rerun per head commit, ever (RERAN): #700 was rerun again every run because a "rerun" result is not
+    marked tried. A head that had its rerun returns 0 (nothing restarted)."""
+    if reran(sha):
+        return 0
     if not RERUNS.take():
         raise RerunSpent(f"#{number}: this run's CI rerun is already used")
     try:
-        return _rerun(sha, number)
+        n = _rerun(sha, number)
     except BaseException:
         RERUNS.give()
         raise
+    if n:
+        _note_rerun(sha)
+    return n
 
 
 def _rerun(sha: str, number: int | None) -> int:
-    checks = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs"))["check_runs"]
-    runs = {m.group(1) for c in checks if c.get("conclusion") == "failure"
+    checks = latest_runs(json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"))["check_runs"])
+    runs = {m.group(1) for c in checks if c.get("conclusion") == "failure"   # the newest run of each check only
             for m in [re.search(r"/runs/(\d+)/", c.get("details_url") or "")] if m}
     done = 0
     for run in runs:
@@ -1718,6 +1748,8 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
     sha, number = pr["headRefOid"], pr["number"]
     log = "" if found else failed_logs(sha)
     fails = failures(log)
+    if not found and not log.strip() and reran(sha):   # its one rerun is used: done until a new push
+        return {"pr": number, "result": "skip", "why": "failed logs expired; this head already had its one CI rerun"}
     if not found and not log.strip():     # logs expire on GitHub: run the failed jobs again, look next time
         n = rerun_failed(sha, number)                     # nothing restarted: not a rerun, or it loops every run
         return {"pr": number, "result": "rerun" if n else "skip",

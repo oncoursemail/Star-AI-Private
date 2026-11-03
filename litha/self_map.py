@@ -243,7 +243,8 @@ def build(root: Path = ROOT, home: Path | None = None, use_cache: bool = True) -
 
 # the steps whose gates the summary lists (module, function), in pipeline order
 STEPS = [("pr_fixer", "apply_edits"), ("pr_fixer", "fix"), ("pr_fixer", "resolve_text"), ("pr_fixer", "resolve"),
-         ("rust_fix", "repair"), ("pr_merger", "gate_failures"), ("pr_merger", "confirmed"), ("bug_proof", "prove"),
+         ("rust_fix", "repair"), ("pr_merger", "list_gates"), ("pr_merger", "check_gates"),
+         ("pr_merger", "diff_gates"), ("pr_merger", "confirmed"), ("bug_proof", "prove"),
          ("pr_promote", "missing")]
 
 
