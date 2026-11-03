@@ -1011,27 +1011,32 @@ def fix_lock(tree: Path, python: str) -> tuple[bool, str]:
         " ".join(re.findall(r"(?m)^E\s+(.*)$", first)[:2])[:300]
 
 
-RERAN = STATE.with_name("reran.json")      # {"owner/repo@sha": unix time}: heads that had their one CI rerun
+RERAN: Path | None = None                  # {"owner/repo@sha": unix time}: heads that had their one CI rerun
+
+
+def _reran_file() -> Path:
+    """Next to tried.json, also when a test points STATE at a temp folder (a module-level path hit the live file)."""
+    return RERAN or STATE.with_name("reran.json")
 
 
 def reran(sha: str) -> bool:
     """This head already had its one CI rerun (any run, any worker)."""
     try:
-        return f"{REPO}@{sha}" in json.loads(RERAN.read_text(encoding="utf-8"))
+        return f"{REPO}@{sha}" in json.loads(_reran_file().read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         return False
 
 
 def _note_rerun(sha: str) -> None:
-    with TRIED, file_lock(RERAN.with_name("reran.lock")):
+    with TRIED, file_lock(_reran_file().with_name("reran.lock")):
         try:
-            done = json.loads(RERAN.read_text(encoding="utf-8"))
+            done = json.loads(_reran_file().read_text(encoding="utf-8"))
         except (OSError, ValueError):
             done = {}
         now = time.time()
         done = {k: t for k, t in done.items() if isinstance(t, (int, float)) and now - t < 30 * 86400}
         done[f"{REPO}@{sha}"] = round(now)
-        write_atomic(RERAN, json.dumps(done))
+        write_atomic(_reran_file(), json.dumps(done))
 
 
 def rerun_failed(sha: str, number: int | None = None) -> int:
