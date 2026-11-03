@@ -1,0 +1,85 @@
+/* Litha's original run aura. BoardUI Composer Loader was design research, not a
+ * runtime dependency or a copied component. Real progress comes from activity.ts.
+ * The effect is inert, occupies no layout space, and never blocks the composer.
+ */
+.litha-run-aura {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.litha-run-aura-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: var(--star-r-md);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 240ms var(--star-ease);
+}
+
+.litha-run-aura[data-phase]:not([data-phase='idle']) .litha-run-aura-fx {
+  opacity: 1;
+}
+
+.litha-run-aura-fx svg {
+  display: block;
+  overflow: visible;
+}
+
+.litha-run-aura-glow,
+.litha-run-aura-trace {
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  animation: litha-run-orbit 5s linear infinite;
+}
+
+.litha-run-aura-glow { opacity: 0.45; }
+.litha-run-aura-trace { opacity: 0.83; }
+
+.litha-run-aura[data-phase='researching'] :is(.litha-run-aura-glow, .litha-run-aura-trace) {
+  animation-duration: 4.1s;
+}
+
+.litha-run-aura[data-phase='verifying'] :is(.litha-run-aura-glow, .litha-run-aura-trace) {
+  animation-duration: 6.5s;
+}
+
+.litha-run-aura[data-phase='stopping'] :is(.litha-run-aura-glow, .litha-run-aura-trace) {
+  animation-play-state: paused;
+  opacity: 0.25;
+}
+
+@keyframes litha-run-orbit {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -100; }
+}
+
+/* Both OS accessibility and the in-app motion policy must work in Qt WebEngine. */
+@media (prefers-reduced-motion: reduce) {
+  .litha-run-aura :is(.litha-run-aura-glow, .litha-run-aura-trace) {
+    animation: none !important;
+    stroke-dasharray: 100 0;
+    stroke-dashoffset: 0;
+    opacity: 0.24;
+  }
+  .litha-run-aura-fx { transition: none !important; }
+}
+
+.shell[data-reduced-motion='true'] .litha-run-aura :is(.litha-run-aura-glow, .litha-run-aura-trace),
+html[data-star-reduced-motion='true'] .litha-run-aura :is(.litha-run-aura-glow, .litha-run-aura-trace) {
+  animation: none !important;
+  stroke-dasharray: 100 0;
+  stroke-dashoffset: 0;
+  opacity: 0.24;
+}
+
+.shell[data-reduced-motion='true'] .litha-run-aura-fx,
+html[data-star-reduced-motion='true'] .litha-run-aura-fx {
+  transition: none !important;
+}
+
+@media (forced-colors: active) {
+  .litha-run-aura-fx { display: none; }
+}

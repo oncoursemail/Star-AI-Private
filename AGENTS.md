@@ -22,6 +22,8 @@ STAR is an experimental **local-first** AI-development application. This is not 
 
 ## Architecture boundaries
 
+- Litha interface changes: follow [Litha agent-interface rules](docs/design/LITHA_AGENT_UI_RULES.md) and the [BoardUI/agent-UX research](docs/research/LITHA_BOARDUI_AGENT_INTERFACE_20261102.md). Keep real host activity as the only source of progress, preserve current composer capabilities, and never treat timed animations as tool/test evidence.
+
 - `star/agent.py`: model/tool-calling loop, tool outcomes and context.
 - `star/policy.py`: executable scope enforcement (not just prompts).
 - `star/studio.py`: official Roblox Studio local MCP transport.

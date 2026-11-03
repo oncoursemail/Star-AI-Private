@@ -39,6 +39,7 @@ import {EmptyState} from './states'
 import './polish.css'
 import './start-canvas.css'
 import {ActivityTimeline,RunStatus} from './ActivityTimeline'
+import {RunAura,runAuraPhase} from './RunAura'
 import {applyProgress,isRich,settleRun,startRun,type ActivityRun,type ProgressPayload} from './activity'
 import {classifyFailure,connectionTarget,describeConnection,type LastOutcome} from './connection'
 import {instant,pageFade} from './motion'
@@ -829,6 +830,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
              {showJump&&messages.length>0&&<button className="chat-jump" type="button" onClick={jumpToLatest}><ChevronDown size={15} aria-hidden="true"/> Latest</button>}
              {(!inactive||!!fixture)&&!failedLast&&(connection.tone==='offline'||connection.tone==='attention')&&<div className={'dock-banner is-'+connection.tone} role="status"><CircleAlert size={15} aria-hidden="true"/><span><strong>{connection.state}.</strong> {connection.note}</span><button type="button" onClick={()=>nav('brain')}>Model &amp; connection</button></div>}
              {mentionsStudio&&!studioReady&&<div className="dock-hint"><button type="button" className="starter" onClick={()=>nav('tools')}><Workflow size={14} aria-hidden="true"/> Studio: {data.settings.studio_target==='host_launcher'?'practice host':'this PC'} · {data.studio?.state==='connected'&&data.studio.selected_valid?'selected':data.studio?.state==='connected'?'choose a place':data.studio?.state==='unavailable'?'unavailable':'connect & check MCP'}</button></div>}
+             <RunAura phase={runAuraPhase(viewingAnswer ? run : null, stopping)}>
              <Composer inputRef={composerRef} value={prompt} onChange={setPrompt} onSend={()=>void send()} onStop={stop} busy={busy} stopping={stopping}
                files={files} onRemoveFile={index=>setFiles(list=>list.filter((_,at)=>at!==index))} onAttach={()=>void attach()} onTranscribe={()=>void transcribe()}
                mode={chatMode} onMode={value=>{setChatMode(value);if(value!=='agent')setGithubSource(false)}}
@@ -837,6 +839,7 @@ export function Desktop({initial=null,preview=false}:{initial?:BootData|null;pre
                research={research} onResearch={setResearch} web={web} githubSource={githubSource} onGithubSource={setGithubSource}
                connection={connection} onOpenConnection={()=>nav('brain')}
                onLookAtScreen={()=>{consentConfirmed.current=false;setScreenAsk(true)}} previews={previews}/>
+             </RunAura>
              {empty?(classicHome?<div className="starters" aria-label="Starting points">{starters.map(item=><button key={item.label} type="button" className="starter" onClick={()=>fillComposer(item.prompt)}><item.icon size={15} aria-hidden="true"/><span>{item.label}</span></button>)}</div>:null)
                :<p className="dock-hint">{teamMode?`Team: four read-only stages on ${serverMode?'your STAR Server':'this PC'}, ${teamSlots===1?'one':'at most two'} at a time.${research?' Web search sends your objective and queries to your configured search provider.':''}`:'Review generated changes and tests before using them in your project.'}</p>}
            </div>
