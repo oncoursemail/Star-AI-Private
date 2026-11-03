@@ -94,8 +94,12 @@ class StreamEpisode:
         # Track all accepted IDs for the whole session, including evicted/aged
         # moments. Without this, replaying old signed trials could inflate stats.
         self._seen: set[str] = set()
+        # One signed capture is one practice observation, regardless of how
+        # many fresh trial IDs/run IDs the signer attached to the same bytes.
+        # Preserve this fence after moment eviction for the full session.
+        self._observations_seen: set[str] = set()
         self._counts = {"accepted": 0, "rejected": 0, "expired": 0,
-                        "evicted": 0, "packets": 0}
+                        "evicted": 0, "packets": 0, "duplicate_observations": 0}
 
     @property
     def game_scope(self) -> str:
@@ -115,6 +119,7 @@ class StreamEpisode:
                 raise RuntimeError("disable before beginning another episode")
             self._moments.clear()
             self._seen.clear()
+            self._observations_seen.clear()
             self._started = self._clock = now
             self._enabled = True
 
@@ -124,6 +129,7 @@ class StreamEpisode:
             self._started = self._clock = None
             self._moments.clear()
             self._seen.clear()
+            self._observations_seen.clear()
 
     def _advance(self, now: int) -> None:
         now = _timestamp(now)
@@ -160,7 +166,14 @@ class StreamEpisode:
             if not self._bank.verify_practice_trial(trial, now_unix_s=now):
                 self._counts["rejected"] += 1
                 return False
+            if trial.evidence_sha256 in self._observations_seen:
+                # A second HMAC-valid trial is not a second observed attempt.
+                # Reject even if the older moment was expired or evicted.
+                self._counts["rejected"] += 1
+                self._counts["duplicate_observations"] += 1
+                return False
             self._seen.add(digest)
+            self._observations_seen.add(trial.evidence_sha256)
             self._moments.append(_Moment(digest, trial.action_id, trial.outcome,
                                          trial.observed_unix_s))
             self._moments.sort(key=lambda m: (m.observed_unix_s, m.digest))

@@ -170,6 +170,26 @@ class VerifiedReactionTests(unittest.TestCase):
         self.assertEqual(self._send(recovered).status, "already_reacted")
         self.assertEqual(self.bridge.metrics()["offered"], 1)
 
+    def test_replayed_capture_cannot_invent_three_failures_and_a_comeback(self):
+        first = trial(1, outcome="failure")
+        replay1 = replace(trial(2, outcome="failure"),
+                          evidence_sha256=first.evidence_sha256)
+        replay2 = replace(trial(3, outcome="failure"),
+                          evidence_sha256=first.evidence_sha256)
+        for event in (first, replay1, replay2):
+            self._ingest(event)
+        self.assertEqual(self._send(first).status, "deliberate_silence")
+        for duplicate in (replay1, replay2):
+            self.assertEqual(self._send(duplicate).status, "unverified")
+        success = trial(18)
+        self._ingest(success)
+        self.assertTrue(self._send(success).reaction_queued)
+        plan = self.stage.prepare(now=518)
+        self.assertIsNotNone(plan)
+        self.assertIn("one action succeeded", plan.context_record)
+        self.assertNotIn("three recent attempts", plan.context_record)
+        self.assertEqual(self.bridge.metrics()["verified"], 2)
+
     def test_old_signed_failures_cannot_invent_a_fresh_comeback(self):
         first = trial(1)
         self._ingest(first)
