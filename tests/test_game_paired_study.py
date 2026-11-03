@@ -44,14 +44,14 @@ class PairedStudyTests(unittest.TestCase):
         )
 
     def ingest(self, slot, *, outcome="failure", timestamp=NOW,
-               split="practice", scene=None, action=None, run=None):
+               split="practice", scene=None, action=None, run=None, capture=None):
         self.num += 1
         trial = GameTrial(
             f"cx_test_trial_{self.num}", "obby", "v1", "reach_goal",
             scene if scene is not None else slot.situation_id,
             action if action is not None else slot.action_id,
             run if run is not None else slot.expected_run_id,
-            split, outcome, hashlib.sha256(
+            split, outcome, capture if capture is not None else hashlib.sha256(
                 f"independent-observation-{self.num}".encode("ascii")
             ).hexdigest(), timestamp,
         )
@@ -168,6 +168,45 @@ class PairedStudyTests(unittest.TestCase):
             slot.ticket, genuine, now_unix_s=NOW,
             initial_state_sha256=STATE, reset_verified=True))
         self.assertEqual(self.study.metrics()["signed"], 1)
+
+    def test_signed_capture_replay_between_arms_aborts_entire_study(self):
+        self.enable()
+        first = self.next()
+        original = self.ingest(first)
+        self.assertTrue(self.study.accept_signed_trial(
+            first.ticket, original, now_unix_s=NOW,
+            initial_state_sha256=STATE, reset_verified=True,
+        ))
+        second = self.next()
+        replayed = self.ingest(second, capture=original.evidence_sha256)
+        self.assertFalse(self.study.accept_signed_trial(
+            second.ticket, replayed, now_unix_s=NOW,
+            initial_state_sha256=STATE, reset_verified=True,
+        ))
+        self.assertTrue(self.study.metrics()["contaminated"])
+        self.assertIsNone(self.next())
+        report = self.study.owner_report(now_unix_s=NOW, owner_approved=True)
+        self.assertEqual(report.status, "contaminated")
+        self.assertIsNone(report.exact_one_sided_p)
+
+    def test_signed_capture_replay_in_later_seed_aborts_study(self):
+        self.enable()
+        first = self.next()
+        original = self.ingest(first)
+        self.assertTrue(self.study.accept_signed_trial(
+            first.ticket, original, now_unix_s=NOW,
+            initial_state_sha256=STATE, reset_verified=True,
+        ))
+        second = self.next()
+        self.assertTrue(self.record(slot=second))
+        third = self.next()
+        self.assertNotEqual(third.situation_id, first.situation_id)
+        replayed = self.ingest(third, capture=original.evidence_sha256)
+        self.assertFalse(self.study.accept_signed_trial(
+            third.ticket, replayed, now_unix_s=NOW,
+            initial_state_sha256=STATE, reset_verified=True,
+        ))
+        self.assertTrue(self.study.metrics()["contaminated"])
 
     def test_preexisting_practice_data_invalidates_study(self):
         slot = PairedReservation("fixture", "scene_0", "left", "run_old", NOW + 90)
