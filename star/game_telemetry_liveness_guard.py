@@ -115,6 +115,11 @@ class GameTelemetryLivenessGuard:
         return now
 
     @property
+    def game_scope(self) -> str:
+        """Pinned source game identity, not an authorization to control it."""
+        return self._bridge.game_scope
+
+    @property
     def silence_limit_s(self) -> float:
         """Configured receiver deadline, for trusted host tick scheduling."""
         return self._silence_s

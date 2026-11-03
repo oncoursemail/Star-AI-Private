@@ -153,6 +153,11 @@ class AuthenticatedGameTelemetryBridge:
         self._events = 0
 
     @property
+    def game_scope(self) -> str:
+        """Read-only identity of the trusted state witness."""
+        return self._observer.game_scope
+
+    @property
     def active(self) -> bool:
         with self._lock:
             return self._enabled and not self._revoked
