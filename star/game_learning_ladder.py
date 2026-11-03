@@ -9,7 +9,8 @@ reads media, talks on stream, or authorizes device access.
 Prerequisites form a directed acyclic skill ladder. A situation unlocks only
 after enough practice success to cross a conservative Wilson lower bound.
 Failing repeatedly produces a design/debug recommendation, not an infinite
-retry loop. A recent signed failure or expired practice window cannot be
+retry loop. Mastery also needs a signed run of distinct-second successes, so
+one lucky retry cannot instantly erase a freshly demonstrated failure. A recent signed failure or expired practice window cannot be
 covered up by older wins when unlocking harder objectives. The actual action host must still obtain independent permission.
 """
 from __future__ import annotations
@@ -84,7 +85,8 @@ class GameLearningLadder:
                  situations: Sequence[PracticeSituation], min_trials: int = 12,
                  max_trials: int = 36, mastery_lower_bound: float = 0.55,
                  no_success_review_trials: int = 12,
-                 max_evidence_age_s: int = 7 * 24 * 3600) -> None:
+                 max_evidence_age_s: int = 7 * 24 * 3600,
+                 min_consecutive_success_seconds: int = 3) -> None:
         if not isinstance(bank, GameplaySkillBank):
             raise TypeError("bank must be an existing GameplaySkillBank")
         self.game_id = _id(game_id, "game_id")
@@ -116,7 +118,11 @@ class GameLearningLadder:
         if (type(max_evidence_age_s) is not int
                 or not 60 <= max_evidence_age_s <= 30 * 24 * 3600):
             raise ValueError("recent practice window must be 60 seconds..30 days")
+        if (type(min_consecutive_success_seconds) is not int
+                or not 1 <= min_consecutive_success_seconds <= 10):
+            raise ValueError("success recovery must require 1..10 distinct seconds")
         self._max_evidence_age_s = max_evidence_age_s
+        self._success_streak = min_consecutive_success_seconds
         self._bank = bank
         self._situations = tuple(sorted(situations, key=lambda s: (s.difficulty, s.situation_id)))
         self._min_trials = min_trials
@@ -184,6 +190,10 @@ class GameLearningLadder:
                 if latest_success is not None and type(latest_success) is not bool:
                     raise ValueError("invalid signed latest outcome")
                 n, successes = evidence.trials, evidence.successes
+                streak = evidence.consecutive_success_seconds
+                if (streak is not None and
+                        (type(streak) is not int or streak < 0 or streak > successes)):
+                    raise ValueError("invalid signed success recovery streak")
                 if (type(n) is not int or type(successes) is not int
                         or n < 0 or not 0 <= successes <= n
                         or type(evidence.most_recent_unix_s) is not int
@@ -191,7 +201,8 @@ class GameLearningLadder:
                     raise ValueError("invalid signed practice aggregate")
                 lower = wilson_lower(successes, n) if n else 0.0
                 mastered = (n >= self._min_trials and lower >= self._threshold
-                            and latest_success is True)
+                            and latest_success is True
+                            and streak is not None and streak >= self._success_streak)
                 stalled = (not mastered and (n >= self._max_trials or
                            (n >= self._no_success_review and successes == 0)))
                 summaries[situation.situation_id] = (n, successes, lower, mastered, stalled)

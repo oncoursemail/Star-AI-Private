@@ -109,6 +109,10 @@ class PracticeEvidence:
     # PRACTICE-only newest outcome. Optional for older callers constructing
     # the four-field aggregate, and never includes held-out validation.
     most_recent_success: bool | None = None
+    # Number of consecutive, distinctly timestamped PRACTICE success buckets.
+    # A failure tied in the same second wins the bucket. None means the
+    # evidence producer did not supply a verified streak (legacy callers).
+    consecutive_success_seconds: int | None = None
 
 
 class GameplaySkillBank:
@@ -297,6 +301,10 @@ class GameplaySkillBank:
         if type(max_age_s) is not int or not 1 <= max_age_s <= _PRACTICE_MAX_AGE_S:
             raise ValueError("practice lookback must be 1..90 days")
         aggregates: dict[str, list[int]] = {}
+        # A fresh success following a failure should not instantly restore
+        # mastery. Count consecutive SUCCESS *time buckets*, not repeated
+        # same-second captures whose causal order cannot be verified.
+        by_action_second: dict[str, dict[int, bool]] = {}
         for trial in self._verified_unique_scope_trials(scope):
             # Withheld validation is checked for integrity but NEVER used in
             # action selection. Otherwise the curriculum leaks its test set.
@@ -306,6 +314,9 @@ class GameplaySkillBank:
             if not 0 <= age <= max_age_s:
                 continue
             entry = aggregates.setdefault(trial.action_id, [0, 0, 0, 0])
+            seconds = by_action_second.setdefault(trial.action_id, {})
+            at = trial.observed_unix_s
+            seconds[at] = seconds.get(at, True) and trial.outcome == "success"
             entry[0] += 1
             entry[1] += int(trial.outcome == "success")
             # A recent failure must not be hidden by a strong historical
@@ -316,9 +327,17 @@ class GameplaySkillBank:
                 entry[3] = int(trial.outcome == "success")
             elif trial.observed_unix_s == entry[2] and trial.outcome == "failure":
                 entry[3] = 0
+        def success_streak(action: str) -> int:
+            streak = 0
+            for timestamp in sorted(by_action_second[action], reverse=True):
+                if not by_action_second[action][timestamp]:
+                    break
+                streak += 1
+            return streak
+
         return tuple(
             PracticeEvidence(action, totals[0], totals[1], totals[2],
-                             bool(totals[3]))
+                             bool(totals[3]), success_streak(action))
             for action, totals in sorted(aggregates.items())
         )
 

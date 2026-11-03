@@ -16,7 +16,7 @@ import math
 from pathlib import Path
 import random
 import re
-from typing import Iterable
+from typing import Iterable, cast
 
 _ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,63}\Z")
 _SHA = re.compile(r"[a-f0-9]{64}\Z")
@@ -27,7 +27,7 @@ def _number(item: object, name: str, high: float) -> float:
     if type(item) not in (float, int):
         raise ValueError(f"{name}: expected finite host metric")
     try:
-        value = float(item)
+        value = float(cast(float | int, item))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{name}: numeric overflow") from exc
     if not math.isfinite(value) or not 0 <= value <= high:

@@ -15,8 +15,14 @@ class PracticeBankFixture(GameplaySkillBank):
         assert max_age_s == 7 * 24 * 3600
         return self.rows.get(situation, ())
 
-    def add(self, situation, action, trials, successes, *, latest=True):
-        self.rows[situation] = (PracticeEvidence(action, trials, successes, 100, latest),)
+    def add(self, situation, action, trials, successes, *, latest=True, streak=None):
+        if streak is None and latest is True:
+            streak = min(successes, 3)
+        elif streak is None and latest is False:
+            streak = 0
+        self.rows[situation] = (
+            PracticeEvidence(action, trials, successes, 100, latest, streak),
+        )
 
 
 class TestPracticeLadder(unittest.TestCase):
@@ -64,6 +70,42 @@ class TestPracticeLadder(unittest.TestCase):
         self.assertEqual(decision.status, "practice_candidate")
         self.assertEqual(decision.situation_id, "intro")
         self.assertFalse(decision.authorized_to_play)
+
+    def test_single_lucky_retry_cannot_instantly_unlock_harder_scene(self):
+        self.ladder.enable(owner_approved=True)
+        self.bank.add("intro", "jump", 20, 20, streak=3)
+        self.assertEqual(self.advise().situation_id, "moving")
+        self.bank.add("intro", "jump", 21, 20, latest=False, streak=0)
+        self.assertEqual(self.advise().situation_id, "intro")
+        for recovery in (1, 2):
+            self.bank.add("intro", "jump", 21 + recovery, 20 + recovery,
+                          latest=True, streak=recovery)
+            self.assertEqual(self.advise().situation_id, "intro")
+        self.bank.add("intro", "jump", 24, 23, latest=True, streak=3)
+        self.assertEqual(self.advise().situation_id, "moving")
+
+    def test_unsigned_or_impossible_streak_never_certifies_mastery(self):
+        self.ladder.enable(owner_approved=True)
+        self.bank.add("intro", "jump", 20, 20, latest=True, streak=2)
+        self.assertEqual(self.advise().situation_id, "intro")
+        self.bank.rows["intro"] = (PracticeEvidence("jump", 20, 20, 100, True),)
+        self.assertEqual(self.advise().situation_id, "intro")
+        for bad in (True, -1, 21, "three"):
+            self.bank.rows["intro"] = (
+                PracticeEvidence("jump", 20, 20, 100, True, bad),
+            )
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.advise()
+
+    def test_success_streak_threshold_is_bounded(self):
+        for invalid in (True, 0, -1, 11):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                GameLearningLadder(
+                    self.bank, game_id="obby", game_version="v1",
+                    objective_id="finish",
+                    situations=[PracticeSituation("intro", "jump", 1)],
+                    min_consecutive_success_seconds=invalid,
+                )
 
     def test_missing_recent_outcome_cannot_certify_mastery(self):
         self.ladder.enable(owner_approved=True)
@@ -153,6 +195,15 @@ def test_real_signed_bank_ignores_old_wins_and_never_promotes_latest_failure():
         assert advice.practice_lower_bound > .55
         assert advice.status == "practice_candidate"
         assert advice.authorized_to_play is False
+
+        # A single lucky action cannot erase the newest failure, even
+        # when historical wins keep Wilson's score above the threshold.
+        for i in range(41, 43):
+            sign(i, observed=now + (i - 40), outcome="success")
+            advice = ladder.recommend(now_unix_s=now + (i - 40), telemetry=tele)
+            assert advice.situation_id == "intro"
+        sign(43, observed=now + 3, outcome="success")
+        assert ladder.recommend(now_unix_s=now + 3, telemetry=tele).situation_id == "moving"
     finally:
         ladder.disable()
         bank.close()
