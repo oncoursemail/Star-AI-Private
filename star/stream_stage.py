@@ -35,6 +35,7 @@ from .stream_motion import (
 )
 from .stream_persona import event_message
 from .stream_turntaking import TurnAdvice
+from .stream_preplay_fence import PreplayAdvice, PreplayWitness, assess_preplay
 
 MODES = frozenset({"normal", "cat", "puppy"})
 
@@ -97,6 +98,7 @@ class StagePlan:
     expression: str | None
     expression_strength: float
     natural_gaze: bool = False
+    game_scope: str = ""
 
     def user_message(self) -> dict[str, str]:
         """Untrusted event record at USER priority, never a new system prompt."""
@@ -136,6 +138,8 @@ class StarStage:
         self._plan: StagePlan | None = None
         self._intent: SpeechIntent | None = None
         self._phase = "idle"
+        self._require_preplay_witness = False
+        self._playout_clearance: tuple[StagePlan, float] | None = None
         # These are local host-reported playback-start timings, NOT OBS proof.
         # Only the 64 most recent samples are retained; never store chat/audio.
         self._prepared_at: float | None = None
@@ -150,12 +154,16 @@ class StarStage:
             "prepared": 0, "queued": 0, "audible": 0,
             "abandoned": 0, "interrupted": 0, "motion_requests": 0,
             "journal_recall_skipped": 0, "off_game_context": 0,
+            "preplay_checked": 0, "preplay_blocked": 0,
             "off_game_memory": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
                mode: str = "normal", reduced_motion: bool = False,
-               natural_gaze: bool = False) -> None:
+               natural_gaze: bool = False,
+               require_preplay_witness: bool = False) -> None:
+        if type(require_preplay_witness) is not bool:
+            raise ValueError("require_preplay_witness must be boolean")
         if owner_approved is not True:
             raise PermissionError("stage needs explicit authorized host approval")
         self._validate_look(mode, reduced_motion, natural_gaze)
@@ -167,6 +175,8 @@ class StarStage:
             self._quiet_frame = None
             self._mode, self._reduced_motion = mode, reduced_motion
             self._natural_gaze = natural_gaze
+            self._require_preplay_witness = require_preplay_witness
+            self._playout_clearance = None
             self._enabled = True
 
     @staticmethod
@@ -195,6 +205,8 @@ class StarStage:
             self._drop(interrupted=True)
             self._director.disable()
             self._enabled = False
+            self._require_preplay_witness = False
+            self._playout_clearance = None
             self._quiet_frame = None
             self._quiet.reset()
             return neutral_frame()
@@ -463,7 +475,7 @@ class StarStage:
                 deadline_at=intent.deadline_at, context_record=prompt,
                 expression=None if expression is None else expression[0],
                 expression_strength=0.0 if expression is None else expression[1],
-                natural_gaze=self._natural_gaze,
+                natural_gaze=self._natural_gaze, game_scope=intent.game_scope,
             )
             self._quiet_frame = None
             self._plan, self._intent, self._phase = plan, intent, "prepared"
@@ -488,9 +500,46 @@ class StarStage:
                 self._drop(interrupted=False, now=current)
                 return False
             self._queued_at = current
+            self._playout_clearance = None
             self._phase = "queued"
             self._counts["queued"] += 1
             return True
+
+    def preplay_clearance(
+        self, plan: StagePlan, *, witness: PreplayWitness,
+        now: float | None = None,
+    ) -> PreplayAdvice:
+        """Recheck fresh voice/game/OBS facts immediately before PCM output.
+
+        Call this on the host's playback thread *after* TTS has queued audio,
+        before the first PCM write. In strict mode, acknowledge_audible must
+        follow promptly. This is not permission to stream, or evidence that
+        physical audio was actually emitted. Independent host key/voice/OBS
+        controls and active PCM cancellation remain mandatory.
+        """
+        current = _time(self._clock() if now is None else now)
+        with self._lock:
+            if not self._matches(plan, "queued"):
+                return PreplayAdvice(False, "queued_turn_missing")
+            self._playout_clearance = None
+            self._counts["preplay_checked"] += 1
+            if (current > plan.deadline_at or
+                    self._queued_at is None or current < self._queued_at):
+                self._counts["preplay_blocked"] += 1
+                self._drop(interrupted=False, now=current)
+                return PreplayAdvice(False, "prepared_turn_expired")
+            advice = assess_preplay(
+                kind=plan.kind, evidence=plan.evidence,
+                game_scope=plan.game_scope, witness=witness, now_s=current,
+            )
+            if advice.eligible:
+                self._playout_clearance = (plan, current)
+            else:
+                self._counts["preplay_blocked"] += 1
+                if advice.reason in {"owner_barge_in_yield",
+                                     "game_scene_changed_or_unpinned"}:
+                    self._drop(interrupted=True, now=current)
+            return advice
 
     def acknowledge_audible(self, plan: StagePlan, *,
                             now: float | None = None) -> bool:
@@ -502,6 +551,13 @@ class StarStage:
         current = _time(self._clock() if now is None else now)
         with self._lock:
             if not self._matches(plan, "queued"):
+                return False
+            if (self._require_preplay_witness and (
+                    self._playout_clearance is None
+                    or self._playout_clearance[0] is not plan
+                    or not 0 <= current - self._playout_clearance[1] <= 0.1)):
+                self._counts["preplay_blocked"] += 1
+                self._drop(interrupted=False, now=current)
                 return False
             if (current > plan.deadline_at or self._intent is None
                     or self._prepared_at is None or self._queued_at is None
@@ -515,6 +571,7 @@ class StarStage:
                 (current - self._queued_at) * 1000.0,
             )
             self._audible_at = current
+            self._playout_clearance = None
             # Playback has *started*, but the entire utterance has NOT yet
             # been heard. Do not commit the director's spoken outcome until
             # finish(played_to_end=True) acknowledges completion.
@@ -604,6 +661,7 @@ class StarStage:
             self._counts["interrupted"] += 1
         self._intent, self._plan, self._phase = None, None, "idle"
         self._prepared_at = self._queued_at = self._audible_at = None
+        self._playout_clearance = None
 
     def finish(self, plan: StagePlan, *,
                now: float | None = None,
@@ -669,6 +727,7 @@ class StarStage:
             return {**self._counts, "enabled": self._enabled,
                     "phase": self._phase, "mode": self._mode,
                     "natural_gaze": self._natural_gaze,
+                    "require_preplay_witness": self._require_preplay_witness,
                     "director": self._director.metrics(),
                     "host_playback_latency": {
                         "samples": len(self._prepare_to_host_playback_ms),
