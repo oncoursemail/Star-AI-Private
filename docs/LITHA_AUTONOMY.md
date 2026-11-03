@@ -673,6 +673,34 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   code fitted to the test's literals (the bench counts those as solved); the 400 fallback was tested only by
   reading the code path (no 4096-only node was up); a live PR.
 
+## 4p. Self-tuning loop: prompt changes only when a replay proves them (2026-11-02, issue #873)
+
+- `litha/self_tune.py`. She changes her merge prompt (`pr_fixer.MERGE_PROMPT`) or the `ANSWER` rule only when a replay
+  of her real conflicts scores higher. Data lives in `~/.star/litha-selftune/`, never in git (it holds repo text).
+- `build` freezes the replay set into `cases.json`. Each case is one conflicted file. It comes from one of three places:
+  every conflicting two-parent merge in Studio's history, re-merged with `git merge-tree` in diff3 style inside
+  scratch clones in that folder; her failed attempts in `fixes.jsonl` (her branch at that time against main as of
+  then); and the must-refuse cases. The committed file is the known-good answer when a person made the merge or it
+  reached main. Her unmerged merges prove nothing. The two must-refuse cases are Studio #486 (her merge of #442,
+  `metallic_physics/src/lib.rs`: it compiled but broke main's raycast test) and STAR #853 (her merge of #549,
+  `SettingsPage.tsx`, with a doubled `data:BootData`).
+- `score` runs `pr_fixer.merge_file` on every case with the override, fully offline. Git is replaced by the case's
+  frozen base copy, so no command runs, nothing is pushed, and Claude is never asked. Outcomes: exact (= committed, per
+  block, ignoring whitespace), compiles (no known-good answer; the checks pass), refused-ok (a must-refuse case
+  refused), wrong, refused, resolved-must-refuse. Score = exact + compiles + refused-ok. Her answers are cached by
+  (case, replicate, prompt hash), so scoring the same prompt again is free.
+- `propose` sends the 5 worst failures from the tune split to Claude (effort high) and asks for one edit. The edit is
+  kept only if the new score is higher than the old score plus noise and no case flips from good to bad. Every case
+  whose status changed is replayed 3 times under both prompts and the majority counts; noise is how many first runs
+  the majority overturned. A kept edit is written to `proposals/<date>-<hash>.patch` with a `.json` report, not into
+  the code. Budget: $5 in total for this loop, counted from `spend.jsonl` rows whose `what` starts with `selftune`;
+  it stops when the next call could pass that.
+- Nightly (written down, no task created): after 00:00 CT and only when `rust_fix.away()`, run `build` once a week to
+  pick up new merges, then `score`, which only asks her about cases that are new or changed, then
+  `propose --rounds 1` (at most about $0.5 per round). A patch that is kept goes out as her own litha/ PR to
+  star/next; CI and her merger decide.
+- Measured: see the resume note `docs/agents/litha-w5-selftune.md` for the baseline and the first proposal.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
