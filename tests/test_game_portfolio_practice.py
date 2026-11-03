@@ -57,7 +57,9 @@ class Rig:
         self.serial += 1
         trial = GameTrial(
             f"portfolio_trial_{self.serial}", game, version, objective,
-            situation, action, run, split, outcome, SHA, at,
+            situation, action, run, split, outcome, hashlib.sha256(
+                f"portfolio-independent-event-{self.serial}".encode()
+            ).hexdigest(), at,
         )
         key = PRACTICE if split == "practice" else VALIDATION
         sig = hmac.new(key, trial.canonical_bytes(), hashlib.sha256).hexdigest()
