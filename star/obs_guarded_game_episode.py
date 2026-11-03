@@ -74,9 +74,16 @@ class ObsGuardedGameEpisode:
         self._stop_requested = Event()
         self._cleanup_lock = Lock()
         self._cleanup_requested = False
+        self._game_scope: GameScope | None = None
         self._ever_started = False
         self._active = False
         self._revoked = False
+
+    @property
+    def game_scope(self) -> str | None:
+        """Immutable, owner-approved OBS game scope once started."""
+        scope = self._game_scope
+        return scope.game_id if scope is not None else None
 
     @property
     def active(self) -> bool:
@@ -169,6 +176,7 @@ class ObsGuardedGameEpisode:
             if self._ever_started:
                 raise ObsGuardedGameError("game episode is single-use")
             self._ever_started = True
+            self._game_scope = scope
             def connect_and_start() -> None:
                 self._witness.connect(password=password, owner_approved=True)
                 self._loop.start(scope, action_ids, owner_approved=True)

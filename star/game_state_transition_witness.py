@@ -123,6 +123,11 @@ class VerifiedGameStateObserver:
         self._sequence = 0
 
     @property
+    def game_scope(self) -> str:
+        """Immutable approved game identity for host-side composition."""
+        return self._scope
+
+    @property
     def active(self) -> bool:
         with self._lock:
             return self._enabled and not self._revoked

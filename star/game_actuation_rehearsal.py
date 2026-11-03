@@ -85,6 +85,11 @@ class GameActuationRehearsal:
         self._ever_enabled = False
 
     @property
+    def game_scope(self) -> str | None:
+        """Host-pinned game identity from the OBS-guarded episode."""
+        return self._episode.game_scope
+
+    @property
     def stopped(self) -> bool:
         return self._cancelled.is_set()
 
