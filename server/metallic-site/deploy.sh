@@ -87,6 +87,8 @@ if grep -q '<TUNNEL-ID>' /etc/cloudflared/config.yml; then
   cloudflared tunnel route dns metallic www.metallic.club
   sudo bash server/metallic-site/deploy.sh <dist>   # again: installs and starts the tunnel service
 EOF
+elif [ -f /etc/metallic-failover.conf ]; then
+  echo "tunnel left to metallic-failover (two copies; a restart here would drop this copy's connector)"
 elif ! systemctl is-enabled --quiet cloudflared 2>/dev/null; then
   cloudflared service install
   systemctl enable --now cloudflared
