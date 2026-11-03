@@ -205,13 +205,15 @@ def render(lessons: list[dict], room_tokens: float) -> str:
 # ---------------------------------------------------------------- prompts
 
 
-_STORE_CACHE: dict[str, tuple[float, Store]] = {}
+_STORE_CACHE: dict[str, tuple[tuple[int, int], Store]] = {}
 
 
 def _live_store() -> Store:
-    """The store file, reloaded only when it changed (the fixer asks for lessons once per prompt)."""
+    """The store file, reloaded only when it changed (the fixer asks for lessons once per prompt). The size is part
+    of the key: two writes inside one mtime tick kept the old store (CI: test_live_outcomes_settle_...)."""
     try:
-        mtime = STORE.stat().st_mtime
+        st = STORE.stat()
+        mtime = (st.st_mtime_ns, st.st_size)
     except OSError:
         return Store(None, [])
     got = _STORE_CACHE.get(str(STORE))
