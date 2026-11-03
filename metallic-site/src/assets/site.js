@@ -45,23 +45,31 @@ M.date = (sec, withYear) => {
   return d.toLocaleDateString("en-GB", withYear ? { day: "numeric", month: "long", year: "numeric" } : { day: "numeric", month: "short" });
 };
 
-// newest build, from the Tauri updater manifest
+// newest build, from the Tauri updater manifest (Linux: "linux-x86_64" is the AppImage, "linux-x86_64-deb" the .deb)
 M.release = M.json("/releases/latest.json").then((m) => {
-  const win = m && m.platforms && m.platforms["windows-x86_64"];
-  if (!m || typeof m.version !== "string" || !win) return null;
-  const url = typeof win.url === "string" && (win.url.startsWith("/") || M.href(win.url)) ? win.url : null;
-  return url ? { version: m.version, notes: typeof m.notes === "string" ? m.notes : "", date: m.pub_date || null, url } : null;
+  const p = (m && m.platforms) || {};
+  const ok = (e) => (e && typeof e.url === "string" && (e.url.startsWith("/") || M.href(e.url)) ? e.url : null);
+  const url = ok(p["windows-x86_64"]);
+  if (!m || typeof m.version !== "string" || !url) return null;
+  const appimage = ok(p["linux-x86_64"]);
+  const linux = appimage ? { appimage, deb: ok(p["linux-x86_64-deb"]) } : null;
+  return { version: m.version, notes: typeof m.notes === "string" ? m.notes : "", date: m.pub_date || null, url, linux };
 });
+// a Linux visitor (not Android) gets the Linux build on the Download buttons, when there is one
+M.onLinux = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
 // installer downloads from the site (self-updates not included), counted by metallic-live
 M.downloads = M.json("/live/downloads.json").then((d) => (d && typeof d.downloads === "number" ? d.downloads : null));
 M.release.then(async (r) => {
   if (!r) return;
+  const linux = M.onLinux && r.linux;
   document.querySelectorAll("[data-dl]").forEach((a) => {
-    if (!a.classList.contains("small")) a.href = r.url;
+    if (!a.classList.contains("small")) a.href = linux ? r.linux.appimage : r.url;
+    if (linux && /Windows/.test(a.textContent)) a.textContent = a.textContent.replace("Windows", "Linux");
   });
   const n = await M.downloads;
   const count = n == null ? "" : " · " + M.num(n) + (n === 1 ? " download" : " downloads");
-  document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + r.version + " · Windows 10 and 11, 64-bit" + count; });
+  const what = linux ? " · Linux AppImage, 64-bit" : " · Windows 10 and 11, 64-bit";
+  document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + r.version + what + count; });
 });
 
 // people in Metallic now (launchers that sent their anonymous beat in the last 5 minutes) and the Metallic Discord's

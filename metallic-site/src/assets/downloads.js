@@ -1,5 +1,6 @@
 /* Downloads: the newest build from /releases/latest.json (the Tauri updater manifest:
-   {"version","notes","pub_date","platforms":{"windows-x86_64":{"signature","url"}}}). */
+   {"version","notes","pub_date","platforms":{"windows-x86_64":{"signature","url"},"linux-x86_64":{..AppImage},
+   "linux-x86_64-deb":{..deb}}}). */
 "use strict";
 (async () => {
   const M = window.Metallic;
@@ -14,7 +15,14 @@
   }
   $("[data-wait]").hidden = true;
   const v = $("[data-version]");
-  v.replaceChildren("Early Access ", M.el("b", null, r.version), " for Windows");
+  v.replaceChildren("Early Access ", M.el("b", null, r.version), r.linux ? " for Windows and Linux" : " for Windows");
+  // Linux: the AppImage (any distro) and the .deb, when this release has them
+  if (r.linux) {
+    $("[data-linux]").hidden = false;
+    $("[data-dl-appimage]").href = r.linux.appimage;
+    const deb = $("[data-dl-deb]");
+    if (r.linux.deb) deb.href = r.linux.deb; else deb.hidden = true;
+  }
   $('[data-f="version"]').textContent = r.version;
   const d = r.date ? new Date(r.date) : null;
   $('[data-f="date"]').textContent = d && !isNaN(d) ? M.date(d.getTime() / 1000, true) : "Not stated";

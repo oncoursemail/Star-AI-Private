@@ -24,7 +24,7 @@ SRC = HERE / "src"
 FRONT = re.compile(r"<!--\s*(\w+):\s*(.*?)\s*-->")
 NAV = ("home", "downloads", "news")
 LIVE_FILES = ("revivals.json", "news.json", "projects.json", "metallic.json")
-RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip")
+RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip", ".appimage", ".deb")  # compared lower-case
 
 
 def esc(text: str) -> str:

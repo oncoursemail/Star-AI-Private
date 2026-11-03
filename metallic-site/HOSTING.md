@@ -111,6 +111,9 @@ Metallic Early Access updates itself with Tauri's updater, which reads `/release
    points at a file that is not there yet.
 3. The downloads page and the home page's button read the same `latest.json`: version, date, notes, and the size when
    the installer is on this site.
+4. Linux (when a Linux build is published): add `"linux-x86_64"` (the `.AppImage`, which the Linux updater replaces in
+   place) and `"linux-x86_64-deb"` (the `.deb`) to `platforms`, each with its own `.sig`. Linux visitors then get the
+   AppImage on the Download buttons and the downloads page lists both. Copy them before `latest.json`, as above.
 
 ## 5. What the site never does
 
