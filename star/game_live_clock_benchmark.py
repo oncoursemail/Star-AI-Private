@@ -15,7 +15,7 @@ import math
 import random
 import re
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, cast
 
 _ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,63}\Z")
 _SHA = re.compile(r"[a-f0-9]{64}\Z")
@@ -32,7 +32,7 @@ def _ms(value: object, name: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite host-clock millisecond value")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{name} must be finite") from exc
     if not math.isfinite(result) or not 0 <= result <= _MAX_CLOCK:
@@ -44,7 +44,7 @@ def _ratio(value: object, name: str, upper: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be finite")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError(f"{name} must be finite") from exc
     if not math.isfinite(result) or not 0 <= result <= upper:
