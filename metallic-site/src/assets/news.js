@@ -57,12 +57,13 @@
 
   const ids = [...new Set(items.map((n) => n.revival).filter(Boolean))];
   if (ids.length > 1) {
-    const chip = (id, label) => {
+    const chip = (id, label, n) => {
       const b = M.el("button", "chip");
       b.type = "button";
       b.setAttribute("aria-pressed", String(id === only));
       if (id) b.append(badge(id, 20));
       b.append(label);
+      if (n != null) b.append(M.el("span", "chip-n", String(n)));
       b.addEventListener("click", () => {
         only = id;
         filter.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c === b)));
@@ -71,7 +72,7 @@
       return b;
     };
     const count = (id) => items.filter((n) => n.revival === id).length;
-    filter.replaceChildren(chip(null, "Every revival"), ...ids.map((id) => chip(id, name(id) + " " + count(id))));
+    filter.replaceChildren(chip(null, "Every revival"), ...ids.map((id) => chip(id, name(id), count(id))));
     filter.hidden = false;
   }
   render();

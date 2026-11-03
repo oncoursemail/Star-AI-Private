@@ -5,11 +5,10 @@
 (async () => {
   const M = window.Metallic;
   const $ = (s) => document.querySelector(s);
-  M.json("/releases/quest.json").then((q) => {
-    const url = q && typeof q.version === "string" && typeof q.url === "string" && (q.url.startsWith("/") || M.href(q.url)) ? q.url : null;
-    if (!url) return;
+  M.quest().then((q) => {
+    if (!q) return;
     const a = $("[data-quest-dl]");
-    a.href = url;
+    a.href = q.url;
     a.removeAttribute("aria-disabled");
     a.textContent = "Download for Quest (APK)";
     $("[data-quest-note]").textContent = "Early Access " + q.version + " · Android app for Meta Quest 2, 3, 3S and Pro, installed by sideloading.";
@@ -29,13 +28,14 @@
   if (r.linux) {
     $("[data-linux]").hidden = false;
     $("[data-dl-appimage]").href = r.linux.appimage;
-    const deb = $("[data-dl-deb]");
-    if (r.linux.deb) deb.href = r.linux.deb; else deb.hidden = true;
+    if (r.linux.deb) $("[data-dl-deb]").href = r.linux.deb; else $("[data-deb]").hidden = true;
   }
   $('[data-f="version"]').textContent = r.version;
   const d = r.date ? new Date(r.date) : null;
   $('[data-f="date"]').textContent = d && !isNaN(d) ? M.date(d.getTime() / 1000, true) : "Not stated";
-  const file = decodeURIComponent(r.url.split("?")[0].split("/").pop() || "");
+  // File and Size describe the desktop build this visitor's button gives: the AppImage on Linux, else the Windows installer
+  const main = M.onLinux && r.linux ? r.linux.appimage : r.url;
+  const file = decodeURIComponent(main.split("?")[0].split("/").pop() || "");
   if (file) $('[data-f="file"]').textContent = file;
 
   M.downloads.then((n) => { if (n != null) $('[data-f="downloads"]').textContent = M.num(n); });
@@ -44,7 +44,7 @@
   const size = $('[data-f="size"]');
   size.textContent = "Not stated";
   try {
-    const u = new URL(r.url, location.href);
+    const u = new URL(main, location.href);
     if (u.origin === location.origin) {
       const h = await fetch(u.href, { method: "HEAD", cache: "no-store" });
       const n = Number(h.headers.get("Content-Length"));

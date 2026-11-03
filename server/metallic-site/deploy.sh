@@ -43,6 +43,8 @@ id metallic >/dev/null 2>&1 || useradd --system --home-dir /var/lib/metallic --c
 mkdir -p "$ROOT/live" "$ROOT/releases" /opt/metallic
 chown root:root "$ROOT" && chmod 755 "$ROOT"
 chown metallic:metallic "$ROOT/live" && chmod 755 "$ROOT/live"
+# no Quest APK yet: an empty manifest, so the downloads page reads "not published" instead of getting a 404
+[ -e "$ROOT/releases/quest.json" ] || { echo '{}' > "$ROOT/releases/quest.json" && chmod 644 "$ROOT/releases/quest.json"; }
 
 step "5/7 site files -> $ROOT (live/ and releases/ are kept)"
 rsync -a --delete --exclude /live/ --exclude /releases/ --exclude /revivals/ "$DIST/" "$ROOT/"

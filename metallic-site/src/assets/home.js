@@ -1,4 +1,4 @@
-/* Home: the launcher window in the hero, live totals, the revival cards (newest first), news and projects.
+/* Home: the launcher window in the hero, live totals, the revival cards (most online first), news and projects.
    Truthfulness: "in game" only from a revival's own `players` field; Discord `online` is always "online in Discord". */
 "use strict";
 (() => {
@@ -12,10 +12,10 @@
   const art = (r) => r.discord && (M.cdn(r.discord.banner) || M.cdn(r.discord.splash));
   const link = (r) => M.href(r.website) || M.href(r.invite);
 
-  // "2016-2020", "2018 · 2023 · 2025", "Early 2021" -> the newest year of Rec Room a revival brings back (0 when unknown)
-  const newest = (r) => Math.max(0, ...(String(r.era || "").match(/\d{4}/g) || []).map(Number).filter((y) => y >= 2015 && y <= 2030));
+  // most online first, as in the launcher: people in game (only revivals that publish it), then members online in the
+  // revival's Discord; a revival without either number goes last. Ties by name.
   const sortRevivals = (list) => list.slice().sort((a, b) =>
-    newest(b) - newest(a) || (players(b) ?? -1) - (players(a) ?? -1) || (online(b) ?? -1) - (online(a) ?? -1) || name(a).localeCompare(name(b)));
+    (players(b) ?? -1) - (players(a) ?? -1) || (online(b) ?? -1) - (online(a) ?? -1) || name(a).localeCompare(name(b)));
 
   // ---- icons: the Discord server icon, else a logo kept on this site, else a monogram ----
   const LOCAL_ICONS = { uranium: "/assets/icons/uranium.png" };
@@ -44,8 +44,7 @@
     set("inGame", list.some((r) => players(r) !== null) ? t.inGame : null);
     box.hidden = false;
   };
-  const fillWindow = (list) => {
-    const busy = list.slice().sort((a, b) => (online(b) ?? -1) - (online(a) ?? -1));
+  const fillWindow = (busy) => {  // already most online first, like the board
     const lead = busy.find(art);
     if (lead) {
       const img = $("[data-win-art]");
@@ -103,7 +102,8 @@
     return "Metallic project";
   };
   const renderProjects = (list) => {
-    if (!Array.isArray(list)) return;
+    if (!Array.isArray(list)) return;  // file missing: the section keeps its empty state
+    $("[data-projects]").closest("section").hidden = !list.some((p) => p && p.name);  // none listed: no empty section
     const rows = list.filter((p) => p && p.name).map((p) => {
       const li = M.el("li", "project");
       const href = M.href(p.url);

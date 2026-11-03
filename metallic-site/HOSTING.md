@@ -22,9 +22,11 @@ python metallic-site/build.py --out dist --site-url https://metallic.club [--rel
 ```
 
 - `dist/` is the whole site. No server code, no database, no framework.
-- `--releases <folder>` copies `latest.json` and the installer files (`.exe`, `.msi`, `.sig`, `.zip`) from that folder
+- `--releases <folder>` copies `latest.json`, `quest.json` and the installer files (`.exe`, `.msi`, `.sig`, `.zip`, `.AppImage`,
+  `.deb`, `.apk`) from that folder
   into `dist/releases/`. Leave it out when releases are copied to the host separately.
-- `--sample-live <folder>` copies sample `revivals.json`, `news.json` and `projects.json` into `dist/live/`. For local
+- `--sample-live <folder>` copies sample `revivals.json`, `news.json`, `projects.json`, `metallic.json` and
+  `downloads.json` into `dist/live/`. For local
   previews only; never use it for the real site (the timer writes the real files).
 - Without any JSON the pages still look complete: the board, projects and news show an empty state, the download button
   falls back to the downloads page, and the downloads page says no build is published yet.
@@ -114,6 +116,10 @@ Metallic Early Access updates itself with Tauri's updater, which reads `/release
 4. Linux (when a Linux build is published): add `"linux-x86_64"` (the `.AppImage`, which the Linux updater replaces in
    place) and `"linux-x86_64-deb"` (the `.deb`) to `platforms`, each with its own `.sig`. Linux visitors then get the
    AppImage on the Download buttons and the downloads page lists both. Copy them before `latest.json`, as above.
+5. Meta Quest: copy the versioned `.apk` first, then replace `/releases/quest.json` with
+   `{"version": "0.2.8", "url": "/releases/Metallic_0.2.8_quest.apk"}`. Until then `deploy.sh` leaves an empty `{}` there
+   (the page reads it as "not published", without a 404). A Quest headset's browser gets the APK on the Download
+   buttons; its user agent says Linux, so it is never offered the AppImage.
 
 ## 5. What the site never does
 

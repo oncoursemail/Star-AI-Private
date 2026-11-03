@@ -6,13 +6,18 @@ const M = (window.Metallic = {});
 const CDN = "https://cdn.discordapp.com/";
 M.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+// a missing, broken or slow file (no answer in 10 s) gives null, so every block keeps its empty state
 M.json = async (url) => {
+  const ctl = "AbortController" in window ? new AbortController() : null;
+  const timer = ctl && setTimeout(() => ctl.abort(), 10000);
   try {
-    const r = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" } });
+    const r = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" }, signal: ctl ? ctl.signal : undefined });
     if (!r.ok) return null;
     return await r.json();
   } catch (e) {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 };
 M.num = (n) => (typeof n === "number" && isFinite(n) ? Math.round(n).toLocaleString("en-US") : null);
@@ -55,21 +60,33 @@ M.release = M.json("/releases/latest.json").then((m) => {
   const linux = appimage ? { appimage, deb: ok(p["linux-x86_64-deb"]) } : null;
   return { version: m.version, notes: typeof m.notes === "string" ? m.notes : "", date: m.pub_date || null, url, linux };
 });
-// a Linux visitor (not Android) gets the Linux build on the Download buttons, when there is one
-M.onLinux = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+// the Meta Quest app, from /releases/quest.json ({"version","url"}); null until an APK is published. Asked for only
+// where it is used (the downloads page, a Quest headset's browser), once.
+let questReq = null;
+M.quest = () => questReq || (questReq = M.json("/releases/quest.json").then((q) =>
+  (q && typeof q.version === "string" && typeof q.url === "string" && (q.url.startsWith("/") || M.href(q.url)) ? { version: q.version, url: q.url } : null)));
+// which build the Download buttons offer: a Quest headset's browser (its user agent says Linux, not Android) gets the
+// Quest app once published, a Linux visitor (not Android) the AppImage, everyone else the Windows installer
+const UA = navigator.userAgent;
+M.onQuest = /OculusBrowser|Quest/.test(UA);
+M.onLinux = /Linux/.test(UA) && !/Android/.test(UA) && !M.onQuest;
 // installer downloads from the site (self-updates not included), counted by metallic-live
 M.downloads = M.json("/live/downloads.json").then((d) => (d && typeof d.downloads === "number" ? d.downloads : null));
 M.release.then(async (r) => {
   if (!r) return;
-  const linux = M.onLinux && r.linux;
+  // "for Windows" in the copy becomes "for Windows and Linux" once the release has a Linux build
+  if (r.linux) document.querySelectorAll("[data-os]").forEach((e) => { e.textContent = "Windows and Linux"; });
+  const quest = M.onQuest ? await M.quest() : null;
+  const linux = !quest && M.onLinux && r.linux;
+  const os = quest ? "Quest" : linux ? "Linux" : "Windows";
   document.querySelectorAll("[data-dl]").forEach((a) => {
-    if (!a.classList.contains("small")) a.href = linux ? r.linux.appimage : r.url;
-    if (linux && /Windows/.test(a.textContent)) a.textContent = a.textContent.replace("Windows", "Linux");
+    if (!a.classList.contains("small")) a.href = quest ? quest.url : linux ? r.linux.appimage : r.url;
+    if (os !== "Windows" && /Windows/.test(a.textContent)) a.textContent = a.textContent.replace("Windows", os);
   });
   const n = await M.downloads;
-  const count = n == null ? "" : " · " + M.num(n) + (n === 1 ? " download" : " downloads");
-  const what = linux ? " · Linux AppImage, 64-bit" : " · Windows 10 and 11, 64-bit";
-  document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + r.version + what + count; });
+  const count = quest || n == null ? "" : " · " + M.num(n) + (n === 1 ? " download" : " downloads");
+  const what = quest ? " · Meta Quest app (APK), sideloaded" : linux ? " · Linux AppImage, 64-bit" : " · Windows 10 and 11, 64-bit";
+  document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + (quest ? quest.version : r.version) + what + count; });
 });
 
 // people in Metallic now (launchers that sent their anonymous beat in the last 5 minutes) and the Metallic Discord's

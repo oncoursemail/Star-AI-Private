@@ -231,6 +231,27 @@ def test_counts_are_labelled_truthfully():
     assert "it is not a player count" in page
 
 
+def test_revivals_are_ordered_most_online_first_like_the_launcher():
+    home = (SITE / "src" / "assets" / "home.js").read_text(encoding="utf-8")
+    # in game first (only revivals that publish it), then online in Discord, unknown last, ties by name
+    assert ("(players(b) ?? -1) - (players(a) ?? -1) || (online(b) ?? -1) - (online(a) ?? -1) || name(a).localeCompare(name(b))"
+            in home)
+    assert "newest(" not in home and "era year" not in home
+    page = (SITE / "src" / "index.html").read_text(encoding="utf-8")
+    assert "most online first" in page and "newest first" not in page
+
+
+def test_pages_carry_open_graph_tags_and_the_404_is_not_indexed(built):
+    out, res, _, _ = built
+    for rel in res["pages"]:
+        text = (out / rel).read_text(encoding="utf-8")
+        for prop in ("og:title", "og:description", "og:url", "og:image", "og:type"):
+            assert f'<meta property="{prop}" content="' in text, (rel, prop)
+        assert 'content="https://metallic.example/assets/art/scenes/night-city.jpg"' in text, rel
+        assert ('<meta name="robots" content="noindex">' in text) == (rel == "404.html"), rel
+    assert (out / "assets/art/scenes/night-city.jpg").is_file()
+
+
 def test_linux_builds_are_offered_to_linux_visitors_when_published():
     site = (SITE / "src" / "assets" / "site.js").read_text(encoding="utf-8")
     dl = (SITE / "src" / "assets" / "downloads.js").read_text(encoding="utf-8")
@@ -261,8 +282,10 @@ def test_quest_apk_and_its_manifest_are_copied_and_shown(tmp_path):
     out = tmp_path / "dist"
     mod.build(out, SITE_URL, rel)
     assert sorted(p.name for p in (out / "releases").iterdir()) == ["Metallic_0.2.8_quest.apk", "quest.json"]
-    dl = js(out, "downloads.js")
-    assert '"/releases/quest.json"' in dl and "data-quest-dl" in dl
+    dl, site = js(out, "downloads.js"), js(out, "site.js")
+    assert '"/releases/quest.json"' in site and "M.quest" in dl and "data-quest-dl" in dl
+    # a Quest headset's browser says "Linux" in its user agent: it must never be offered the Linux AppImage
+    assert "M.onQuest = /OculusBrowser|Quest/.test(UA);" in site and "!M.onQuest" in site
     page = (out / "downloads" / "index.html").read_text(encoding="utf-8")
     assert 'id="quest"' in page and "data-quest-dl" in page and "SideQuest" in page
 
@@ -272,12 +295,12 @@ def test_sample_live_data_is_copied_only_when_asked(built, tmp_path):
     assert not (out / "live").exists()
     sample = tmp_path / "sample"
     sample.mkdir()
-    for name in ("revivals.json", "news.json", "projects.json", "metallic.json", ".revivals-history.json",
+    for name in ("revivals.json", "news.json", "projects.json", "metallic.json", "downloads.json", ".revivals-history.json",
                  ".metallic-history.json", "other.json"):
         (sample / name).write_text("{}")
     dest = tmp_path / "with"
     mod.build(dest, SITE_URL, None, sample)
-    assert sorted(p.name for p in (dest / "live").iterdir()) == ["metallic.json", "news.json", "projects.json", "revivals.json"]
+    assert sorted(p.name for p in (dest / "live").iterdir()) == ["downloads.json", "metallic.json", "news.json", "projects.json", "revivals.json"]
 
 
 def test_cli_build_works(tmp_path, capsys):
@@ -319,7 +342,8 @@ def test_server_files_match_the_hosting_plan():
     caddy = (SERVER / "Caddyfile").read_text(encoding="utf-8")
     assert ":8088" in caddy and "bind 127.0.0.1" in caddy and "root * /srv/metallic/dist" in caddy
     assert "img-src 'self' data: https://cdn.discordapp.com;" in caddy and "connect-src 'self'" in caddy
-    assert '@fresh path /live/* /releases/latest.json\n\theader @fresh Cache-Control "no-store"' in caddy
+    assert '@fresh path /live/* /releases/latest.json /releases/quest.json\n\theader @fresh Cache-Control "no-store"' in caddy
+    assert "/releases/*.deb /releases/*.apk\n" in caddy  # the Quest APK is versioned in its name too: cached for good
     assert 'header @installers Cache-Control "public, max-age=31536000, immutable"' in caddy
     # download count: only installer requests are logged, without addresses or headers, readable by metallic-live
     assert "@unlogged {\n\t\tnot path /releases/*.exe /releases/*.AppImage /releases/*.deb\n" in caddy and "log_skip @unlogged" in caddy
