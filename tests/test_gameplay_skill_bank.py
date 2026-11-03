@@ -33,13 +33,15 @@ class GameplaySkillBankTests(unittest.TestCase):
 
     def add(self, split="practice", outcome="success", *, action="jump",
             game="obby", version="v1", objective="cross", situation="bridge",
-            at=NOW) -> GameTrial:
+            at=NOW, digest=None) -> GameTrial:
         self.count += 1
         trial = GameTrial(
             trial_id=f"trial{self.count}", game_id=game, game_version=version,
             objective_id=objective, situation_id=situation, action_id=action,
             run_id=f"run{self.count}", split=split, outcome=outcome,
-            evidence_sha256=DIGEST, observed_unix_s=at)
+            evidence_sha256=(digest if digest is not None else
+                hashlib.sha256(f"independent-game-event-{self.count}".encode()).hexdigest()),
+            observed_unix_s=at)
         self.bank.ingest(trial, receipt(trial), now_unix_s=NOW)
         return trial
 
@@ -327,6 +329,42 @@ class GameplaySkillBankTests(unittest.TestCase):
         for s, n in ((-1, 5), (6, 5), (1, 0), (True, 4)):
             with self.assertRaises(ValueError):
                 wilson_lower(s, n)
+
+
+    def test_replayed_capture_is_not_many_independent_skill_trials(self):
+        # Valid signatures and distinct run IDs do NOT make one observation independent.
+        for _ in range(5):
+            self.add(digest=DIGEST)
+        self.assertEqual(self.advice().status, "no_evidence")
+        p = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW)
+        self.assertEqual((p[0].trials, p[0].successes), (1, 1))
+
+    def test_fresh_replay_does_not_revive_stale_capture(self):
+        self.add(at=NOW - 8 * 86400, digest=DIGEST)
+        self.add(at=NOW, digest=DIGEST)
+        summary = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge",
+            now_unix_s=NOW, max_age_s=7 * 86400)
+        self.assertEqual(summary, ())
+
+    def test_conflicting_signed_outcomes_for_one_capture_fail_closed(self):
+        self.add(outcome="success", digest=DIGEST)
+        self.add(outcome="failure", digest=DIGEST)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.bank.practice_evidence(
+                "obby", "v1", "cross", "bridge", now_unix_s=NOW)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.advice()
+
+    def test_replayed_validation_capture_cannot_qualify_skill(self):
+        for _ in range(5):
+            self.add()
+        for _ in range(8):
+            self.add("validation", digest=DIGEST)
+        info = self.advice()
+        self.assertNotEqual(info.status, "ready_for_host_review")
+        self.assertLess(info.validation_trials, 8)
 
 
 if __name__ == "__main__":
