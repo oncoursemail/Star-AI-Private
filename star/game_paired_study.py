@@ -151,6 +151,9 @@ class PairedGameStudy:
             scene: {} for scene in protocol.scenario_ids
         }
         self._dropped: set[str] = set()
+        # A new signed trial/run ID cannot turn the same observation into
+        # an independent randomized attempt across arms or scenes.
+        self._seen_capture_digests: set[str] = set()
         self._stats = dict(issued=0, signed=0, rejected=0, expired=0, deferred=0)
 
     def _thread(self) -> None:
@@ -303,6 +306,15 @@ class PairedGameStudy:
             if not self._bank.verify_practice_trial(trial, now_unix_s=now):
                 self._stats["rejected"] += 1
                 return False
+            if trial.evidence_sha256 in self._seen_capture_digests:
+                # A valid signer can accidentally reuse a screenshot/evidence
+                # bundle under another run or seed. The entire preregistered
+                # study is now contaminated, not merely this single pair.
+                self._contaminated = True
+                self._stats["rejected"] += 1
+                self._pending = None
+                return False
+            self._seen_capture_digests.add(trial.evidence_sha256)
             self._recorded[pending.situation_id][pending.action_id] = (
                 trial.outcome, initial_state_sha256)
             self._pending = None

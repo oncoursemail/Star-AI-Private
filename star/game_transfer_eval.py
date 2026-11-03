@@ -112,6 +112,9 @@ def evaluate_transfer(
     can prove that the host's scorer is truthful or the holdouts remained secret.
 
     Baseline and candidate use different run IDs but the same hidden case.
+    Captures must be unique across the complete sealed roster, not just
+    uniquely signed per run: reusing one observed result under different
+    games/seeds/actions cannot imply generalization.
     Paired significance, game-balanced sample diversity and improvements on
     at least 60% of games are required for *manual* hardware-pilot eligibility.
     This prevents one over-sampled or unusually easy game from driving the
@@ -140,6 +143,10 @@ def evaluate_transfer(
     slots: dict[HoldoutCase, dict[str, GameTrial]] = {case: {} for case in cases}
     seen_trials: set[str] = set()
     seen_runs: set[str] = set()
+    # A second signed trial/run ID is not evidence of a second observation.
+    # Require unique source capture digests ACROSS all games, cases and both
+    # variants. Valid HMACs attest the scorer, not the independence of frames.
+    seen_capture_digests: set[str] = set()
     for signed in signed_trials:
         if not isinstance(signed, SignedHoldoutTrial) or not isinstance(signed.trial, GameTrial):
             raise TypeError("expected host-signed GameTrial")
@@ -160,10 +167,13 @@ def evaluate_transfer(
             raise PermissionError("independent validation signature mismatch")
         if trial.trial_id in seen_trials or trial.run_id in seen_runs:
             raise ValueError("reused trial/run identity across validation cases")
+        if trial.evidence_sha256 in seen_capture_digests:
+            raise ValueError("reused game capture across independent holdout trials")
         if trial.action_id in slots[case]:
             raise ValueError("duplicate variant in the same holdout case")
         seen_trials.add(trial.trial_id)
         seen_runs.add(trial.run_id)
+        seen_capture_digests.add(trial.evidence_sha256)
         slots[case][trial.action_id] = trial
 
     completed = [slot for slot in slots.values() if len(slot) == 2]

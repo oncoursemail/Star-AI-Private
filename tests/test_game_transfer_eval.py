@@ -99,6 +99,38 @@ class TransferTests(unittest.TestCase):
             )
             check(roster, [signed_duplicate, *signed[1:]])
 
+    def test_reused_capture_across_different_games_is_not_generalization(self):
+        roster, signed = records()
+        # Both receipts are individually valid, with different IDs, runs,
+        # game scopes, and outcomes. The underlying observation is identical.
+        target = replace(signed[-1].trial,
+                         evidence_sha256=signed[0].trial.evidence_sha256)
+        signed[-1] = SignedHoldoutTrial(
+            target, hmac.new(KEY, target.canonical_bytes(), hashlib.sha256).hexdigest()
+        )
+        with self.assertRaisesRegex(ValueError, "reused game capture"):
+            check(roster, signed)
+
+    def test_reused_capture_between_baseline_and_candidate_is_rejected(self):
+        roster, signed = records()
+        target = replace(signed[1].trial,
+                         evidence_sha256=signed[0].trial.evidence_sha256)
+        signed[1] = SignedHoldoutTrial(
+            target, hmac.new(KEY, target.canonical_bytes(), hashlib.sha256).hexdigest()
+        )
+        with self.assertRaisesRegex(ValueError, "reused game capture"):
+            check(roster, signed)
+
+    def test_reused_capture_fails_even_when_roster_is_incomplete(self):
+        roster, signed = records()
+        target = replace(signed[1].trial,
+                         evidence_sha256=signed[0].trial.evidence_sha256)
+        signed[1] = SignedHoldoutTrial(
+            target, hmac.new(KEY, target.canonical_bytes(), hashlib.sha256).hexdigest()
+        )
+        with self.assertRaisesRegex(ValueError, "reused game capture"):
+            check(roster, signed[:-1])
+
     def test_cross_day_matching_rejected_even_with_valid_signature(self):
         roster, signed = records()
         altered = replace(signed[0].trial, observed_unix_s=NOW - 90000)
