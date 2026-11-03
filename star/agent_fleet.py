@@ -164,7 +164,7 @@ def _run_acp(task: FleetTask, wt: Path, timeout: float, cancel: threading.Event)
                          approve=task.approve)
     stop = threading.Event()
 
-    def watch() -> None:   # a fleet cancel reaches the agent at its next message (the adapter polls between lines)
+    def watch() -> None:   # a fleet cancel reaches the agent within ~0.1 s (the adapter polls, even on a silent agent)
         while not stop.wait(0.1):
             if cancel.is_set():
                 adapter.cancel()

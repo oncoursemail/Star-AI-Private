@@ -2,10 +2,12 @@
 import asyncio
 import sys
 import textwrap
+import time
 
 import pytest
 
 from star.acp_adapter import AcpAdapter
+from star.agent_session import UNMEASURED, AgentSessionAdapter, UsageReport
 
 FAKE = textwrap.dedent('''
     import json, sys
@@ -76,5 +78,75 @@ def test_auth_required_timeout_and_missing(agent):
     assert run(agent("auth", enabled=True).run_turn("hi")).state == "auth_required"
     assert run(agent("hang", enabled=True, timeout=1.5).run_turn("hi")).state == "timeout"
     missing = AcpAdapter(["no-such-agent-binary-xyz"], enabled=True)
-    assert missing.probe()["installed"] is False
+    assert missing.probe().installed is False
     assert run(missing.run_turn("hi")).state == "unavailable"
+
+
+def test_adapter_meets_typed_contract_and_probe_guesses_nothing(agent):
+    a = agent()
+    assert isinstance(a, AgentSessionAdapter)
+    p = a.probe()
+    assert p.installed is True and p.enabled is False and p.state == "idle"
+    assert p.auth == "unknown" and p.usage is UNMEASURED and p.usage.tier == "unknown"
+
+
+def test_usage_comes_only_from_the_owner_authorized_probe(agent):
+    measured = UsageReport(source="provider_api", models=("m1",), tier="free", billing="zero_spend",
+                           measured_at=1_800_000_000.0, endpoint="models.list")
+    assert agent(usage_probe=lambda: measured).probe().usage is measured
+
+    def broken():
+        raise OSError("offline")
+    p = agent(usage_probe=broken).probe()
+    assert p.usage is UNMEASURED and "OSError" in p.error
+    p = agent(usage_probe=lambda: dict(tier="free")).probe()   # not a measured report: ignored
+    assert p.usage is UNMEASURED and p.error
+
+
+def test_start_stream_stop_keeps_one_session(agent):
+    async def go():
+        a = agent(enabled=True)
+        with pytest.raises(RuntimeError):
+            async for _ in a.stream("too early"):
+                pass
+        assert await a.start() == "ready" and a.auth == "ok"
+        first = [e async for e in a.stream("one")]
+        assert [e.kind for e in first] == ["text", "tool_call", "permission", "text", "end"]
+        assert first[1].data["source"] == "agent_reported"
+        assert first[2].data == {"tool": "write f", "granted": False}
+        assert first[-1].data["state"] == "ok" and a.state == "ready"
+        second = [e async for e in a.stream("two")]      # same process, second prompt
+        assert second[-1].data["state"] == "ok" and a.last_turn.text == "hello chose r"
+        await a.stop()
+        assert a.state == "stopped" and a._proc is None
+    run(go())
+
+
+def test_cancel_reaches_a_silent_agent(agent):
+    async def go():
+        a = agent("hang", enabled=True, timeout=30)
+        assert await a.start() == "ready"
+        asyncio.get_running_loop().call_later(0.3, a.cancel)
+        t0 = time.monotonic()
+        events = [e async for e in a.stream("hi")]
+        assert events[-1].data["state"] == "cancelled" and time.monotonic() - t0 < 10
+        assert a.state == "ready"     # the session survives a cancelled turn
+        await a.stop()
+    run(go())
+
+
+def test_auth_and_approval_states_are_explicit(agent):
+    async def go():
+        a = agent("auth", enabled=True)
+        assert await a.start() == "auth_required"
+        assert a.auth == "auth_required" and a.probe().state == "auth_required" and a._proc is None
+        assert await agent().request_tool_approval(dict()) is False                  # no callback
+        assert await agent(approve=lambda p: "yes").request_tool_approval(dict()) is False   # not True
+
+        def boom(p):
+            raise ValueError
+        assert await agent(approve=boom).request_tool_approval(dict()) is False
+        assert await agent(approve=lambda p: True).request_tool_approval(dict()) is True
+    run(go())
+    with pytest.raises(PermissionError):
+        run(agent().start())
