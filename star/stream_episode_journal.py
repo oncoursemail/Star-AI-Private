@@ -19,6 +19,9 @@ _KINDS = frozenset({
     "checkpoint", "win", "loss", "close_call", "puzzle_solved",
     "mechanic_discovered", "practice_improved",
 })
+# A bounded session-wide replay fence survives journal FIFO eviction/expiry.
+# Reject new receipts at saturation instead of silently forgetting old IDs.
+_MAX_SESSION_MOMENT_IDS = 4096
 _CAPTIONS = {
     "checkpoint": "reached a checkpoint",
     "win": "won a round",
@@ -101,9 +104,12 @@ class StreamEpisodeJournal:
         self._lock = RLock()
         self._enabled = False
         self._moments: deque[GameMoment] = deque(maxlen=capacity)
-        self._moment_ids: set[tuple[str, str]] = set()
+        # Memory cards expire quickly; source identities must not. Otherwise a
+        # reissued game event ID can be relabeled as a new win after eviction.
+        self._seen_ids: set[tuple[str, str]] = set()
         self._last_now: float | None = None
-        self._counts = {"recorded": 0, "rejected": 0, "duplicates": 0, "expired": 0}
+        self._counts = {"recorded": 0, "rejected": 0, "duplicates": 0,
+                        "expired": 0, "identity_capacity_rejected": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
@@ -112,7 +118,7 @@ class StreamEpisodeJournal:
             if self._enabled:
                 raise RuntimeError("journal already enabled")
             self._moments.clear()
-            self._moment_ids.clear()
+            self._seen_ids.clear()
             self._last_now = None
             self._enabled = True
 
@@ -120,7 +126,7 @@ class StreamEpisodeJournal:
         with self._lock:
             self._enabled = False
             self._moments.clear()
-            self._moment_ids.clear()
+            self._seen_ids.clear()
             self._last_now = None
 
     def _advance(self, now_s: float) -> float:
@@ -134,7 +140,6 @@ class StreamEpisodeJournal:
                        if now - m.at_s <= self._max_age), maxlen=self._capacity)
         self._counts["expired"] += len(self._moments) - len(fresh)
         self._moments = fresh
-        self._moment_ids = {(m.game_scope, m.moment_id) for m in fresh}
         return now
 
     def record(self, moment: GameMoment, *, now_s: float,
@@ -157,17 +162,22 @@ class StreamEpisodeJournal:
             # Event identifiers are local to their trusted game scope. Two
             # games may independently emit the same observation sequence ID.
             key = (moment.game_scope, moment.moment_id)
-            if key in self._moment_ids:
+            if key in self._seen_ids:
                 self._counts["duplicates"] += 1
                 return False
             if moment.at_s > now or now - moment.at_s > min(self._max_age, self._max_lag):
                 self._counts["rejected"] += 1
                 return False
+            if len(self._seen_ids) >= _MAX_SESSION_MOMENT_IDS:
+                # Saturation is preferable to silently re-admitting a forged
+                # "new" achievement that reused a previously accepted ID.
+                self._counts["rejected"] += 1
+                self._counts["identity_capacity_rejected"] += 1
+                return False
             if len(self._moments) == self._capacity:
-                removed = self._moments.popleft()
-                self._moment_ids.discard((removed.game_scope, removed.moment_id))
+                self._moments.popleft()
             self._moments.append(moment)
-            self._moment_ids.add(key)
+            self._seen_ids.add(key)
             self._counts["recorded"] += 1
             return True
 

@@ -122,9 +122,11 @@ def test_same_local_event_id_in_independent_games_is_not_lost():
     assert not journal.record(moment("event_1", scope="game_a"), now_s=100, host_observed=True)
     assert len(journal.recall(now_s=100, game_scope="game_a")) == 1
     assert len(journal.recall(now_s=100, game_scope="game_b")) == 1
-    # Eviction and ID bookkeeping must also be game-scoped.
+    # Eviction must NOT allow reuse of the same per-game ID, while a
+    # different game may independently use that ID.
     assert journal.record(moment("event_2", scope="game_a", time=101), now_s=101, host_observed=True)
-    assert journal.record(moment("event_1", scope="game_a", time=102), now_s=102, host_observed=True)
+    assert not journal.record(moment("event_1", scope="game_a", time=102), now_s=102, host_observed=True)
+    assert journal.record(moment("event_2", scope="game_b", time=102), now_s=102, host_observed=True)
     assert journal.metrics()["retained"] == 2
 
 
@@ -180,3 +182,62 @@ def test_unattested_claim_cannot_expire_facts_or_poison_host_clock():
     assert "checkpoint" in cards[0].context
     assert journal.metrics()["retained"] == 1
     assert journal.metrics()["expired"] == 0
+
+
+def test_evicted_id_replay_cannot_invent_a_new_win():
+    journal = StreamEpisodeJournal(capacity=2)
+    journal.enable(owner_approved=True)
+    assert journal.record(moment("same", "checkpoint", 100), now_s=100, host_observed=True)
+    assert journal.record(moment("b", "loss", 101), now_s=101, host_observed=True)
+    assert journal.record(moment("c", "close_call", 102), now_s=102, host_observed=True)
+    # The first moment is no longer in the rolling deque, but a reused
+    # host event ID must not become a new on-air win with different details.
+    assert not journal.record(moment("same", "win", 103), now_s=103, host_observed=True)
+    cards = journal.recall(now_s=103, game_scope="obby_v1")
+    assert all("won a round" not in card.context for card in cards)
+    assert journal.metrics()["duplicates"] == 1
+    assert journal.metrics()["retained"] == 2
+
+
+def test_expired_moment_replay_cannot_become_fresh_stream_memory():
+    journal = StreamEpisodeJournal(capacity=3, max_age_s=60)
+    journal.enable(owner_approved=True)
+    assert journal.record(moment("same", "checkpoint", 100), now_s=100, host_observed=True)
+    assert journal.recall(now_s=161, game_scope="obby_v1") == ()
+    # A new timestamp and event kind do not make the same source ID new.
+    assert not journal.record(moment("same", "win", 162), now_s=162, host_observed=True)
+    assert journal.record(moment("fresh", "win", 162), now_s=162, host_observed=True)
+    assert journal.metrics()["duplicates"] == 1
+    assert journal.metrics()["retained"] == 1
+
+
+def test_session_receipt_capacity_fails_closed_and_resets_on_explicit_restart(monkeypatch):
+    import star.stream_episode_journal as module
+
+    # Keep the test small; production keeps up to 4,096 identities.
+    monkeypatch.setattr(module, "_MAX_SESSION_MOMENT_IDS", 2)
+    journal = StreamEpisodeJournal(capacity=1)
+    journal.enable(owner_approved=True)
+    assert journal.record(moment("a", time=100), now_s=100, host_observed=True)
+    assert journal.record(moment("b", time=101), now_s=101, host_observed=True)
+    assert not journal.record(moment("a", "win", 102), now_s=102, host_observed=True)
+    assert not journal.record(moment("c", time=102), now_s=102, host_observed=True)
+    assert journal.metrics()["duplicates"] == 1
+    assert journal.metrics()["identity_capacity_rejected"] == 1
+    assert journal.metrics()["retained"] == 1
+    journal.disable()
+    journal.enable(owner_approved=True)
+    assert journal.record(moment("a", "win", 103), now_s=103, host_observed=True)
+    assert journal.metrics()["retained"] == 1
+
+
+def test_stale_or_unattested_moment_does_not_consume_replay_capacity(monkeypatch):
+    import star.stream_episode_journal as module
+
+    monkeypatch.setattr(module, "_MAX_SESSION_MOMENT_IDS", 1)
+    journal = StreamEpisodeJournal(capacity=1, observation_lag_s=5)
+    journal.enable(owner_approved=True)
+    assert not journal.record(moment("untrusted", time=100), now_s=100, host_observed=False)
+    assert not journal.record(moment("stale", time=90), now_s=100, host_observed=True)
+    assert journal.record(moment("legitimate", time=100), now_s=100, host_observed=True)
+    assert journal.metrics()["identity_capacity_rejected"] == 0
