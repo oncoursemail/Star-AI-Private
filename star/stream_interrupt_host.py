@@ -83,6 +83,7 @@ class StreamInterruptionHost:
         avatar: AvatarPort | None = None,
         clock_ms: Callable[[], float] = lambda: time.monotonic() * 1000,
         maximum_stop_ms: float = 120,
+        maximum_voice_gap_ms: float = 250,
         owner_approved: bool = False,
     ) -> None:
         if owner_approved is not True:
@@ -106,7 +107,14 @@ class StreamInterruptionHost:
         self._flush = flush_animation
         self._avatar = avatar
         self._clock = clock_ms
+        if (type(maximum_voice_gap_ms) not in (int, float)
+                or not math.isfinite(float(maximum_voice_gap_ms))
+                or not 100 <= maximum_voice_gap_ms <= 1000):
+            raise ValueError("maximum_voice_gap_ms must be 100..1000")
         self._maximum_stop = float(maximum_stop_ms)
+        self._maximum_voice_gap = float(maximum_voice_gap_ms)
+        self._last_vad_at_ms: float | None = None
+        self._require_live_voice = False
         self._lock = RLock()
         self._enabled = False
         self._busy = False
@@ -116,22 +124,27 @@ class StreamInterruptionHost:
             "armed": 0, "held": 0, "interruptions": 0,
             "stop_failures": 0, "reset_failures": 0, "latency_faults": 0,
             "stale": 0, "stale_stops": 0, "faults": 0,
+            "voice_liveness_stops": 0,
         }
 
     def enable(self, *, owner_approved: bool = False,
-               require_verified_quiet: bool = False) -> None:
+               require_verified_quiet: bool = False,
+               require_live_voice: bool = False) -> None:
         if owner_approved is not True:
             raise PermissionError("owner must explicitly enable the VAD source")
-        if type(require_verified_quiet) is not bool:
-            raise ValueError("require_verified_quiet must be boolean")
+        if type(require_verified_quiet) is not bool or type(require_live_voice) is not bool:
+            raise ValueError("voice options must be explicit booleans")
         with self._lock:
             if self._fault or self._active is not None or self._busy:
                 raise RuntimeError("recover hardware or finish the current epoch first")
             if self._stage.metrics()["enabled"] is not True:
                 raise RuntimeError("stage must already be owner-enabled")
             self._turns.enable(
-                owner_approved=True, require_verified_quiet=require_verified_quiet
+                owner_approved=True,
+                require_verified_quiet=require_verified_quiet or require_live_voice,
             )
+            self._require_live_voice = require_live_voice
+            self._last_vad_at_ms = None
             self._enabled = True
 
     def arm(self, plan: StagePlan, *, playback_epoch: str) -> bool:
@@ -146,9 +159,14 @@ class StreamInterruptionHost:
             # Never bind speech over an active owner/guest voice, uncleared
             # echo, or stale/missing VAD. The stage may be audible already,
             # but the trusted host must have established a clear vocal floor.
+            now_ms = _clock_ms(self._clock)
             if self._turns.advise(
-                now_ms=_clock_ms(self._clock), star_speaking=False
+                now_ms=now_ms, star_speaking=False
             ).action != "speak":
+                return False
+            if (self._require_live_voice and
+                    (self._last_vad_at_ms is None or
+                     not 0 <= now_ms - self._last_vad_at_ms <= self._maximum_voice_gap)):
                 return False
             if self._avatar is not None and self._avatar.connected is not True:
                 return False
@@ -284,7 +302,9 @@ class StreamInterruptionHost:
             now = _clock_ms(self._clock)
             if frame.at_ms > now + 1e-6:
                 raise ValueError("VAD frame is ahead of the host clock")
-            self._turns.observe(frame)
+            accepted = self._turns.observe(frame)
+            if accepted:
+                self._last_vad_at_ms = frame.at_ms
             active = self._active is not None
             plan = self._active[0] if self._active is not None else None
             speaking = bool(plan is not None and self._stage.current(plan))
@@ -304,6 +324,53 @@ class StreamInterruptionHost:
                 advice.reason,
             )
 
+    @property
+    def voice_gap_limit_ms(self) -> float:
+        """Maximum monitored VAD silence in the host monotonic time base."""
+        return self._maximum_voice_gap
+
+    def tick(self) -> InterruptionResult:
+        """Host timer checks voice capture even when the VAD feed goes silent.
+
+        In opt-in strict mode, missing fresh VAD for an audible plan causes an
+        epoch-scoped physical stop/flush attempt and a latched recovery fault.
+        It never treats absent VAD as evidence that the owner is quiet. Call
+        from a separately scheduled trusted watchdog, not only on VAD events.
+        """
+        with self._lock:
+            if not self._enabled:
+                return InterruptionResult("disabled", "owner_opt_in_missing")
+            if self._fault or self._busy:
+                return InterruptionResult("fault", "manual_audio_recovery_required")
+            now = _clock_ms(self._clock)
+            if self._active is None:
+                return InterruptionResult("hold", "no_active_playback_epoch")
+            plan, epoch = self._active
+            if not self._stage.current(plan):
+                self._active = None
+                self._counts["stale"] += 1
+                return self._retire_stale_epoch(epoch)
+            if not self._require_live_voice:
+                return InterruptionResult("speak", "voice_liveness_not_required")
+            if (self._last_vad_at_ms is not None and
+                    0 <= now - self._last_vad_at_ms <= self._maximum_voice_gap):
+                return InterruptionResult("speak", "voice_capture_fresh")
+            result = self._interrupt(reason="voice_capture_liveness_lost", now_ms=now)
+            # Even successful physical stop must not silently resume speaking
+            # after losing the source which detects owner interruptions.
+            if not self._fault:
+                self._fault = True
+                self._counts["faults"] += 1
+                self._avatar_close()
+            self._counts["voice_liveness_stops"] += 1
+            return InterruptionResult(
+                "fault", "voice_capture_liveness_lost",
+                audio_stopped=result.audio_stopped,
+                avatar_reset=result.avatar_reset,
+                animation_flushed=result.animation_flushed,
+                stop_latency_ms=result.stop_latency_ms,
+            )
+
     def emergency_stop(self) -> InterruptionResult:
         """Trusted host's manual stop; chat/model have no access to this method."""
         with self._lock:
@@ -321,6 +388,8 @@ class StreamInterruptionHost:
             result = (self.emergency_stop() if self._active is not None
                       else InterruptionResult("disabled", "no_local_playback_epoch"))
             self._enabled = False
+            self._require_live_voice = False
+            self._last_vad_at_ms = None
             self._turns.disable()
             return result
 
@@ -338,13 +407,16 @@ class StreamInterruptionHost:
                 raise RuntimeError("cannot recover an active epoch")
             self._fault = False
             self._enabled = False
+            self._require_live_voice = False
+            self._last_vad_at_ms = None
             self._turns.disable()
 
     def metrics(self) -> dict[str, int | bool]:
         """No raw audio, viewer data, speaker IDs, epoch IDs or transcripts."""
         with self._lock:
             return {**self._counts, "enabled": self._enabled,
-                    "fault": self._fault, "active": self._active is not None}
+                    "fault": self._fault, "active": self._active is not None,
+                    "voice_liveness_required": self._require_live_voice}
 
 
 __all__ = ["InterruptionResult", "StreamInterruptionHost", "AvatarPort"]
