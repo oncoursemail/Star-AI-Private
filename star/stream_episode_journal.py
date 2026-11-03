@@ -4,12 +4,16 @@ Only an owner-authorized host may submit a *structured* observation from actual
 permitted gameplay. The journal does not ingest chat, transcripts, video, memory
 from the model, arbitrary text, or supposed emotions. A returned recap is a
 bounded factual *suggestion*, never a command to speak or evidence of OBS audio.
-Host attestation is not a cryptographic proof that the gameplay really happened.
+Even signed host claims cannot prove the gameplay event really happened.
 """
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import secrets
+from .stream_moment_receipts import (
+    SignedGameMoment, validate_receipt_key, verify_game_moment,
+)
 import math
 import re
 from threading import RLock
@@ -93,7 +97,8 @@ class StreamEpisodeJournal:
     """
 
     def __init__(self, *, capacity: int = 48, max_age_s: float = 3600.0,
-                 observation_lag_s: float = 30.0) -> None:
+                 observation_lag_s: float = 30.0,
+                 receipt_key: bytes | None = None) -> None:
         if type(capacity) is not int or not 1 <= capacity <= 128:
             raise ValueError("capacity must be 1..128")
         self._max_age = _time(max_age_s)
@@ -101,6 +106,12 @@ class StreamEpisodeJournal:
         if not 60 <= self._max_age <= 28800 or not 0 <= self._max_lag <= 120:
             raise ValueError("invalid expiration or observation lag")
         self._capacity = capacity
+        # Only a trusted host should hold this optional shared HMAC secret.
+        # Legacy hosts remain compatible but are NOT cryptographically attested.
+        self._receipt_key = (validate_receipt_key(receipt_key)
+                             if receipt_key is not None else None)
+        self._session_id: str | None = None
+        self._receipt_watermarks: dict[str, int] = {}
         self._lock = RLock()
         self._enabled = False
         self._moments: deque[GameMoment] = deque(maxlen=capacity)
@@ -109,7 +120,8 @@ class StreamEpisodeJournal:
         self._seen_ids: set[tuple[str, str]] = set()
         self._last_now: float | None = None
         self._counts = {"recorded": 0, "rejected": 0, "duplicates": 0,
-                        "expired": 0, "identity_capacity_rejected": 0}
+                        "expired": 0, "identity_capacity_rejected": 0,
+                        "invalid_receipts": 0, "out_of_order_receipts": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
@@ -119,6 +131,8 @@ class StreamEpisodeJournal:
                 raise RuntimeError("journal already enabled")
             self._moments.clear()
             self._seen_ids.clear()
+            self._receipt_watermarks.clear()
+            self._session_id = secrets.token_hex(16)
             self._last_now = None
             self._enabled = True
 
@@ -127,7 +141,15 @@ class StreamEpisodeJournal:
             self._enabled = False
             self._moments.clear()
             self._seen_ids.clear()
+            self._receipt_watermarks.clear()
+            self._session_id = None
             self._last_now = None
+
+    @property
+    def session_id(self) -> str | None:
+        """Unpredictable per-enabled-session identity, not a signing secret."""
+        with self._lock:
+            return self._session_id if self._enabled else None
 
     def _advance(self, now_s: float) -> float:
         now = _time(now_s)
@@ -143,11 +165,13 @@ class StreamEpisodeJournal:
         return now
 
     def record(self, moment: GameMoment, *, now_s: float,
-               host_observed: bool = False) -> bool:
+               host_observed: bool = False,
+               receipt: SignedGameMoment | None = None) -> bool:
         """Accept a recent, exact game-state observation from the trusted host.
 
-        The boolean is an API boundary, *not* authentication. Never route a
-        viewer/model supplied assertion to this method as host_observed=True.
+        The boolean alone is NOT authentication. For protected sessions, require
+        a receipt created only by an independently trusted game-state signer.
+        Even a valid MAC does not prove that the underlying event was true.
         """
         if not isinstance(moment, GameMoment) or type(host_observed) is not bool:
             raise TypeError("structured GameMoment and explicit host flag required")
@@ -157,6 +181,24 @@ class StreamEpisodeJournal:
             # Reject it before _advance() mutates timestamp/retention state.
             if not self._enabled or not host_observed:
                 self._counts["rejected"] += 1
+                return False
+            if self._receipt_key is not None:
+                if (self._session_id is None or not isinstance(receipt, SignedGameMoment)
+                        or not verify_game_moment(
+                            moment, receipt, session_id=self._session_id,
+                            key=self._receipt_key,
+                        )):
+                    self._counts["rejected"] += 1
+                    self._counts["invalid_receipts"] += 1
+                    return False
+                if receipt.sequence <= self._receipt_watermarks.get(moment.game_scope, 0):
+                    self._counts["rejected"] += 1
+                    self._counts["out_of_order_receipts"] += 1
+                    return False
+            elif receipt is not None:
+                # Do not misleadingly claim that the legacy journal verified it.
+                self._counts["rejected"] += 1
+                self._counts["invalid_receipts"] += 1
                 return False
             now = self._advance(now_s)
             # Event identifiers are local to their trusted game scope. Two
@@ -178,6 +220,8 @@ class StreamEpisodeJournal:
                 self._moments.popleft()
             self._moments.append(moment)
             self._seen_ids.add(key)
+            if receipt is not None:
+                self._receipt_watermarks[moment.game_scope] = receipt.sequence
             self._counts["recorded"] += 1
             return True
 
@@ -216,7 +260,9 @@ class StreamEpisodeJournal:
     def metrics(self) -> dict[str, int | bool]:
         """Anonymous counters only, never raw moments or session details."""
         with self._lock:
-            return {**self._counts, "enabled": self._enabled, "retained": len(self._moments)}
+            return {**self._counts, "enabled": self._enabled,
+                    "signed_receipts_required": self._receipt_key is not None,
+                    "retained": len(self._moments)}
 
 
 __all__ = ["GameMoment", "EpisodeRecall", "StreamEpisodeJournal"]
