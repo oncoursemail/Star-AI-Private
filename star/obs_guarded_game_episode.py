@@ -13,7 +13,7 @@ independent physical-edge focus check and a key-up watchdog.
 """
 from __future__ import annotations
 
-from threading import RLock
+from threading import Event, Lock, RLock
 import time
 from typing import Callable, Sequence
 
@@ -70,41 +70,72 @@ class ObsGuardedGameEpisode:
         self._cancel_inference = cancel_inference
         self._clock_ms = clock_ms
         self._lock = RLock()
+        # Emergency stop must not wait for a blocked OBS WebSocket read.
+        self._stop_requested = Event()
+        self._cleanup_lock = Lock()
+        self._cleanup_requested = False
         self._ever_started = False
         self._active = False
         self._revoked = False
 
     @property
     def active(self) -> bool:
+        if self._stop_requested.is_set():
+            return False  # Do not wait for a blocked OBS snapshot.
         with self._lock:
-            return self._active and not self._revoked
+            return self._active and not self._revoked and not self._stop_requested.is_set()
 
     @property
     def revoked(self) -> bool:
+        if self._stop_requested.is_set():
+            return True
         with self._lock:
             return self._revoked
 
+    def _request_host_cleanup(self) -> None:
+        """Request cancel/key-up once, independently of the OBS sample lock.
+
+        The callbacks themselves MUST be prompt and safe to invoke on the
+        host shutdown thread. They are requests, not proof of physical key-up.
+        """
+        with self._cleanup_lock:
+            if self._cleanup_requested:
+                return
+            self._cleanup_requested = True
+        for callback in (self._cancel_inference, self._release_keys):
+            try:
+                callback()
+            except Exception:
+                pass
+
     def _revoke(self) -> None:
         """Request a best-effort halt; NEVER claim worker or key-up completed."""
+        self._stop_requested.set()
+        if self._revoked:
+            return
         self._revoked = True
         self._active = False
-        # Each cleanup must be attempted even if another cleanup hook fails.
-        for callback in (
-            self._loop.stop, self._cancel_inference,
-            self._release_keys, self._witness.disconnect,
-        ):
+        # Request host cancellation before another potentially blocked socket.
+        self._request_host_cleanup()
+        for callback in (self._loop.stop, self._witness.disconnect):
             try:
                 callback()
             except Exception:
                 pass  # Failed cleanup is not approval to restart this episode.
 
     def _assert_active(self) -> None:
-        if not self._active or self._revoked:
+        if not self._active or self._revoked or self._stop_requested.is_set():
             raise ObsGuardedGameError("trusted game episode is not active")
 
     def _snapshot(self) -> ObsGameStreamSnapshot:
         try:
-            return self._witness.snapshot()
+            result = self._witness.snapshot()
+            if self._stop_requested.is_set():
+                raise ObsGuardedGameError("trusted game episode stopped")
+            return result
+        except ObsGuardedGameError:
+            self._revoke()
+            raise
         except Exception:
             self._revoke()
             raise ObsGuardedGameError(
@@ -114,8 +145,13 @@ class ObsGuardedGameEpisode:
     def _execute(self, fn: Callable[[], object]) -> object:
         """Fail closed on invalid host data and callbacks, without leaking it."""
         try:
-            return fn()
+            result = fn()
+            if self._stop_requested.is_set() and not self._revoked:
+                self._revoke()
+                raise ObsGuardedGameError("trusted game episode stopped")
+            return result
         except ObsGuardedGameError:
+            self._revoke()
             raise
         except Exception:
             self._revoke()
@@ -244,10 +280,21 @@ class ObsGuardedGameEpisode:
             return bool(self._execute(released))
 
     def stop(self) -> None:
-        """Owner/host-requested shutdown; no re-enable for the same witness."""
-        with self._lock:
-            if not self._revoked:
+        """Prompt emergency cancel/key-up even while a snapshot is blocked.
+
+        The in-flight operation notices this latch before returning a permit.
+        Physical input hosts still need their independent key-up watchdog;
+        a callback request is not proof of actual release.
+        """
+        self._stop_requested.set()
+        self._request_host_cleanup()
+        # Do not block on a 3-second OBS socket timeout holding this lock.
+        # The in-flight _execute() completes revocation once it unwinds.
+        if self._lock.acquire(blocking=False):
+            try:
                 self._revoke()
+            finally:
+                self._lock.release()
 
 
 __all__ = ["ObsGuardedGameEpisode", "ObsGuardedGameError"]
