@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import os
 import sys
 from threading import Event, Thread
+from typing import Any
 import time
 
 # Scan codes are from the Windows Set 1 keyboard table. No system shortcuts,
@@ -80,6 +81,10 @@ class _Input(ctypes.Structure):
 
 class WindowsKeyboard:
     """Win32 session-local adapter; only works in an interactive desktop."""
+
+    # ctypes.windll is OS-specific and dynamically typed. Declaring the
+    # runtime handle here also keeps Linux CI type checking meaningful.
+    _api: Any
 
     def __init__(self) -> None:
         if os.name != "nt":
