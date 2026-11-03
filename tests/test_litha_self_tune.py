@@ -91,6 +91,7 @@ def edit(rule="Keep BOTH sides' changes"):
 
 def test_a_proposal_is_kept_only_when_the_replay_score_rises(tmp_path):
     cases = [case(f"c{i}") for i in range(3)] + [case("same", good=None)]
+    cases[2]["split"] = "hold"                                          # a gain must show on a held-out case too
     model = answering([("RULE", "y = 3\n"), (None, "y = 1\n")])         # the new rule fixes 3 cases
     asked = []
     reps = st.propose(cases, model, lambda p: asked.append(p) or edit()(p), cache=st.Cache(None),
