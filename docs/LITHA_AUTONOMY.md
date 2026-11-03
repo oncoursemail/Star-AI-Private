@@ -994,3 +994,33 @@ her log, not GitHub), editing repos.json or prompts from the page.
   her model on the GPU node; results in the report, `nightly.jsonl` and `~/.star/litha/canaries/results.jsonl`) and in
   `self_update` after the self-check, in a fresh Python inside the checkout that was just fast-forwarded: a canary
   outside KNOWN_ESCAPES that passes rolls the update back and marks that head bad.
+- Measured (RAN on Brain One 2026-11-03 06:03-07:11 UTC, the real `litha-learn.service` started by hand with the
+  deployed code, her model on star-pc; 4040 s):
+  - Bench, K=3 over 351 cases: **score 40.36%, CI [35.23, 45.39], MDE 1.06 pp (~3.7 cases)**; K=1 on the same cases
+    1.84 pp. Before (the old set: K=1 on the 324 STAR cases, same per-case noise): **MDE 2.0 pp (~6.5 cases)**. So a real
+    3-point gain (~10.5 cases) is about 3x the MDE now, 1.5x before. The run noise sits in 8 cases (all tune split);
+    the 133 held-out cases did not move once in 3 runs (their MDE prints 0: a held-out change is seen in whole cases,
+    1 case = 0.75 pp). A/A (replicate 0 vs 1): -1.14 pp, 6 cases differ, inside the K=1 MDE. Scores per run 144, 140,
+    141 of 351. The MDE is against run-to-run noise only; a change that helps some cases and hurts others is judged by
+    the paired CI.
+  - Lesson variants, paired over all 351 cases x 3 runs: logs+distilled +0.66 pp CI [-1.23, 2.66] (McNemar 7 worse /
+    11 better, p 0.48); distilled-same-file +0.47 pp CI [-1.14, 2.18]; logs+replay -0.09 pp CI [-1.23, 1.14]. None
+    significant, all rejected (as the old rule also said); the memory stays off.
+  - Canaries, gate mode and review mode (her model): **13/21 held** in both; no escape outside KNOWN_ESCAPES.
+    Held: pr-853 (by CI: "React UI compile and tests" failed on its head), secret, private address, .env, major bump,
+    PR into main, red test check, red pyright check, pending check, merge dropping a function, merge with markers,
+    merge that is not valid Python, merge repeating the next line (her clean-up cuts it). **Pass today (known
+    escapes)**: merge-853 (the rule for "both sides added at an empty ancestor" keeps both copies of
+    `companions?:ReactNode` without asking her model: still a TS2300 duplicate, so #853's merge still gets through her
+    merge checks), pr-853 with a green CI (no gate of hers runs tsc), merge-486 and pr-486 (compiles, every check green),
+    a PR that drops a still-called function, a PR that deletes test assertions, a PR that turns CI's test step into
+    `echo` (her model named the last three in review mode, but as low or unproven claims, which do not block), a merge
+    that calls an undefined name (the file check only compiles Python).
+  - Nightly wiring: proven by that one run (log `~/litha-learn/logs/nightly.log`, report
+    `~/.star/litha-selftune/nightly/2026-11-03.json`); the timer (01:30 Chicago) runs the same code from now on.
+    First review-mode run hit `gh` missing on Brain One through `pr_merger.head_file` (3 known escapes errored);
+    fixed (`canaries.no_gh`), redeployed, rerun clean.
+  - Not done / not verified: the self_update canary gate has not met a real update yet (tests only); the fixer lane's
+    `build_fn` (star/litha-w7-fixer) is not in this branch, so the canaries pass `build_fn=None` when it exists (a build
+    needs the PR's real head); merge-result testing (research T19) is not built; Metallic-RB cases need a refreeze on
+    the PC when RB gets new merges (`trusted_bench freeze-extra`, then `learn_nightly sync`).
