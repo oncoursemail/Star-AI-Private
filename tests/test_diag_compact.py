@@ -108,3 +108,12 @@ def test_near_limit_payload_is_cut_with_a_marker_not_silently():
     same = "FAILED t.py::a - boom\n" * 20_000       # identical lines are kept once; the count says how many
     out = dc.compact("pytest", same, 1, enabled=True)
     assert out["text"].count("FAILED t.py::a - boom") == 1 and out["failures_total"] == 20_000
+
+
+@pytest.mark.parametrize("enabled,text", [(False, "x"), (True, "x"), (False, "x" * 20_000), (True, "x" * 20_000)])
+def test_compact_refuses_non_allowlisted_kinds_even_when_off_or_short(enabled, text):
+    for kind in ("bash", "cat", "", "PYTEST", "git"):
+        with pytest.raises(ValueError):
+            dc.compact(kind, text, 0, enabled=enabled)
+    with pytest.raises(ValueError):
+        dc.compact("pytest", text, True, enabled=enabled)
