@@ -11,8 +11,16 @@ export function runAuraPhase(run: ActivityRun | null | undefined, stopping = fal
   if (stopping) return 'stopping'
   // Only the latest active, backend-reported step determines the accent.
   // We must not show verification simply because a generic tool is running.
-  const current = [...run.steps].reverse().find(step => step.state === 'running')
-  if (current?.kind === 'tool' && current.detail === 'star_luau_check') return 'verifying'
+  let current: ActivityRun['steps'][number] | undefined
+  for (let index = run.steps.length - 1; index >= 0; index--) {
+    if (run.steps[index].state === 'running') {
+      current = run.steps[index]
+      break
+    }
+  }
+  // The backend can emit either the dedicated luau_check progress type or a
+  // tool lifecycle event with the checker name; both are real evidence.
+  if (current?.kind === 'tool' && (current.id === 'luau-check' || current.detail === 'star_luau_check')) return 'verifying'
   if (current?.kind === 'search') return 'researching'
   return 'working'
 }
