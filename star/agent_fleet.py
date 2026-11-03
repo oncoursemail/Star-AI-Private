@@ -7,6 +7,9 @@ Slice 2: a task may hand its worktree to an ACP agent (``acp_prompt``; the agent
 worktree and may only write when the host's ``approve`` says yes), receipts can be appended to a JSON-lines file,
 ``fleet_worktrees()`` lists leftover fleet worktrees after a crash (never deletes them) and ``probe_agents()`` says
 which agent CLIs are installed (auth and quota stay "unknown": nothing is launched or guessed).
+
+``connect_repo()`` connects the one local project a run works on: a git checkout (not a protected one), its top level,
+the commit every worktree branches from and the GitHub "owner/name" of its remote when it has one.
 """
 from __future__ import annotations
 
@@ -99,6 +102,39 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
 def is_protected(path: Path) -> bool:
     low = str(path.resolve()).lower()
     return any(m in low for m in PROTECTED_MARKERS)
+
+
+_GITHUB = re.compile(r"github\.com[:/]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+
+
+@dataclass
+class FleetRepo:
+    root: str = ""     # top level of the connected local checkout
+    base: str = ""     # commit every task worktree branches from (pinned once per run)
+    github: str = ""   # "owner/name" of the GitHub remote, "" when the repo has none (local only)
+    reason: str = ""   # non-empty = not connected, and why
+
+
+def connect_repo(path: str | Path, base_ref: str = "HEAD", remote: str = "origin") -> FleetRepo:
+    """Connect one local repository: its top level, the commit tasks start from and its GitHub name.
+    Only "owner/name" is kept from the remote URL, never the URL itself (it may carry credentials)."""
+    path = Path(path)
+    if is_protected(path):
+        return FleetRepo(reason="refused: protected project")
+    if not path.is_dir():
+        return FleetRepo(reason="not connected: folder not found")
+    top = _git(path, "rev-parse", "--show-toplevel")
+    if top.returncode:
+        return FleetRepo(reason="not connected: not a git repository")
+    root = Path(top.stdout.strip())
+    if is_protected(root):
+        return FleetRepo(reason="refused: protected project")
+    base = _git(root, "rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}")
+    if base.returncode:
+        return FleetRepo(str(root), reason=f"not connected: no commit for {base_ref!r}")
+    url = _git(root, "remote", "get-url", remote).stdout.strip()
+    m = _GITHUB.search(url)
+    return FleetRepo(str(root), base.stdout.strip(), f"{m.group(1)}/{m.group(2)}" if m else "")
 
 
 def _run(cmd: list[str], cwd: Path, timeout: float, cancel: threading.Event) -> tuple[int | None, str]:
@@ -227,29 +263,33 @@ class FleetResult:
     slots: int
     reason: str
     receipts: list[Receipt] = field(default_factory=list)
+    repo: FleetRepo | None = None
 
 
 def run_fleet(repo: str | Path, tasks: list[FleetTask], *, base_ref: str = "HEAD", worktrees: str | Path | None = None,
               enabled: bool | None = None, resources: dict | None = None, cancel: threading.Event | None = None,
               timeout: float = 1800, receipts_file: str | Path | None = None, **plan_kw) -> FleetResult:
     """Run every enabled task in its own worktree, at most as many at once as live resources allow.
-    With ``receipts_file`` every receipt (plus the measured resources and slot count) is appended as one JSON line."""
+    With ``receipts_file`` every receipt (plus the measured resources and slot count) is appended as one JSON line.
+    The repo is connected first (``connect_repo``): ``base_ref`` is pinned to one commit so every task starts from the
+    same source even if the main checkout moves during the run."""
     if not fleet_enabled(enabled):
         return FleetResult(0, "disabled: set STAR_AGENT_FLEET=1 to opt in")
-    repo = Path(repo)
-    if is_protected(repo):
-        return FleetResult(0, "refused: protected project")
+    conn = connect_repo(repo, base_ref)
+    if conn.reason:
+        return FleetResult(0, conn.reason, repo=conn)
+    root = Path(conn.root)
     res = resources or sample_resources()
     n, reason = plan_slots(res, **plan_kw)
     if n == 0:
-        return FleetResult(0, reason)
-    wts = Path(worktrees) if worktrees else repo.parent / (repo.name + "-fleet")
+        return FleetResult(0, reason, repo=conn)
+    wts = Path(worktrees) if worktrees else root.parent / (root.name + "-fleet")
     wts.mkdir(parents=True, exist_ok=True)
     cancel = cancel or threading.Event()
     with ThreadPoolExecutor(max_workers=n) as pool:
-        recs = list(pool.map(lambda t: run_task(repo, base_ref, t, wts, cancel, timeout), tasks))
+        recs = list(pool.map(lambda t: run_task(root, conn.base, t, wts, cancel, timeout), tasks))
     if receipts_file:
         with open(receipts_file, "a", encoding="utf-8") as fh:
             for rec in recs:
                 fh.write(json.dumps({**asdict(rec), "resources": res, "slots": n, "at": time.time()}) + "\n")
-    return FleetResult(n, reason, recs)
+    return FleetResult(n, reason, recs, conn)

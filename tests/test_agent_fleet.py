@@ -167,3 +167,42 @@ def test_probe_agents_reports_missing_cli_honestly(monkeypatch):
     rows = fl.probe_agents()
     assert {r["agent"] for r in rows} == {"opencode", "codex", "claude"}
     assert all(r["installed"] is False and r["auth"] == "unknown" for r in rows)
+
+
+# --- connect one local (GitHub) repository; every worktree starts from one pinned commit ---
+
+def head(repo):
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+
+@pytest.mark.parametrize("url", ["https://github.com/acme/widgets.git", "git@github.com:acme/widgets.git",
+                                 "https://x-access-token:not-a-real-token@github.com/acme/widgets"])
+def test_connect_repo_reports_root_commit_and_github_name_only(repo, url):
+    git(repo, "remote", "add", "origin", url)
+    (repo / "sub").mkdir()
+    c = fl.connect_repo(repo / "sub")
+    assert c.reason == "" and fl.Path(c.root).samefile(repo)
+    assert c.base == head(repo) and c.github == "acme/widgets"
+    assert "not-a-real-token" not in repr(c)          # the URL (it may hold credentials) is never kept
+
+
+def test_connect_repo_local_only_and_refusals(repo, tmp_path, monkeypatch):
+    assert fl.connect_repo(repo).github == ""                      # no remote: still a local project
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert "not a git repository" in fl.connect_repo(plain).reason
+    assert "not found" in fl.connect_repo(tmp_path / "missing").reason
+    assert "no commit" in fl.connect_repo(repo, "no-such-ref").reason
+    r = fl.run_fleet(plain, [fl.FleetTask("t", writer("x"), PASS)], enabled=True, resources=RES)
+    assert r.slots == 0 and r.receipts == [] and "not a git repository" in r.reason
+
+
+def test_worktrees_start_from_pinned_commit(repo, tmp_path):
+    base = head(repo)
+    tasks = [fl.FleetTask(f"p{i}", writer(f"{i}\n"), PASS) for i in range(2)]
+    r = fl.run_fleet(repo / ".", tasks, enabled=True, resources=RES, worktrees=tmp_path / "w")
+    assert r.repo is not None and r.repo.base == base
+    for t in ("p0", "p1"):
+        assert head(tmp_path / "w" / t) == base     # nothing committed: each worktree sits on the pinned commit
+    assert sorted(b for _, b in fl.fleet_worktrees(repo)) == ["star/fleet-p0", "star/fleet-p1"]
