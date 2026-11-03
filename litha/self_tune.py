@@ -6,13 +6,15 @@ conflicts scores higher with the change.
              reached the base branch), her own failed attempts from ~/.star/pr-fixer/fixes.jsonl (her branch at that
              time against the base as of then; no known answer) and the must-refuse cases (Studio #486 = her merge of
              #442, which compiled but broke main's raycast test; STAR #853, her merge of #549 that doubled lines).
-             Saved as ~/.star/litha-selftune/cases.json (repo text: never in git).
+             Saved as ~/.star/litha-selftune/cases.json (repo text: never in git). Repos in EXCLUDED (Studio, off
+             limits since 2026-11-02) are never built nor scored; STAR's own history merges are in since 4s.
 2. score()   pr_fixer.merge_file on every case with MERGE_PROMPT (or a rule) overridden; fully offline: no git command
              runs (the base copy the checks need is frozen in the case), nothing is pushed, Claude is never asked. Her
              model's answers are cached by (case, replicate, prompt hash), so a rescore of the same prompt is free.
 3. propose() the 5 worst failures go to Claude (effort high) for ONE small edit; the edit is kept only if it scores
-             higher than the old prompt by more than the measured noise and no case flips good -> bad (every changed
-             case is replayed 3 times, majority counts). A kept edit is written as a patch + report under
+             higher than the old prompt by more than the measured noise, no case flips good -> bad (every changed
+             case is replayed 3 times, majority counts), the held-out split scores higher and no must-refuse case
+             that was refused gets resolved (section 4s). A kept edit is written as a patch + report under
              ~/.star/litha-selftune/proposals/, never into the code; the lead ships it as a normal PR.
 
     python -m litha.self_tune build    [--max-merges N]          freeze the replay set
@@ -347,7 +349,8 @@ def run_case(case: dict, overrides: dict, ask, lessons=None) -> dict:
     """One case; with lessons (an experience.Store) her prompts get the relevant ones, never one made from this case."""
     from litha import experience
     with replay(case, overrides) as tree, \
-            (experience.forced(lessons, ("resolve",), case["id"]) if lessons is not None else contextlib.nullcontext()):
+            (experience.forced(lessons, ("resolve",), case["id"], case.get("at")) if lessons is not None
+             else contextlib.nullcontext()):
         asker = pf.mechanical_only if pf.guarded(case["path"]) else ask
         try:
             merged, why = pf.merge_file(tree, case["path"], case["raw"], case["title"], asker)

@@ -1,4 +1,4 @@
-"""Litha's nightly self-improvement on Brain One (docs/LITHA_AUTONOMY.md section 4r).
+"""Litha's nightly self-improvement on Brain One (docs/LITHA_AUTONOMY.md section 4s).
 
 Every night (systemd timer litha-learn.timer on Brain One, 01:30) `run`:
  1. fetches the scratch clones and rebuilds the replay set when it is older than --rebuild-days (Studio excluded:
@@ -18,7 +18,7 @@ Her model on Brain One: the GPU node is called directly (~/.star/litha-node-url 
 ~/.star/mesh_token); the mesh router is not reachable from there. Same request as pr_fixer.ask.
 
     python -m litha.learn_nightly run    [--rebuild-days 7] [--propose] [--no-fetch]
-    python -m litha.learn_nightly sync   (on the PC) logs + answer cache + lessons -> Brain One; verdict <- back
+    python -m litha.learn_nightly sync   (on the PC) logs + lessons -> Brain One; verdict + nightly log <- back
     python -m litha.learn_nightly deploy (on the PC) this checkout's committed litha/ -> Brain One ~/litha-learn/code
 """
 from __future__ import annotations
@@ -92,8 +92,14 @@ def stale(path: Path, days: float) -> bool:
     return not path.exists() or time.time() - path.stat().st_mtime > days * 86400
 
 
-def lessons_for(cases_: list[dict], base: dict, store_path: Path | None = X.STORE) -> X.Store:
-    """Her lessons from the logs + the tune split's replay failures (in memory; hold-out cases never give one)."""
+VARIANTS = {"logs+distilled": {"fixes", "decisions", "distilled"},     # Claude's one-line rules (distill, on the PC)
+            "logs+replay": {"fixes", "decisions", "replay"}}           # mechanical "what the accepted merge did"
+
+
+def lessons_for(cases_: list[dict], base: dict, store_path: Path | None = X.STORE,
+                sources: set | None = None) -> X.Store:
+    """Her lessons from the logs, Claude's distilled ones and the tune split's replay failures (re-made from tonight's
+    baseline), limited to `sources`; hold-out cases never give one."""
     logged = X.Store(store_path) if store_path else X.Store(None, [])
     replayed = X.lessons_from_replay(cases_, base)
     store = X.Store(None, [x for x in logged.lessons.values() if x["source"] != "replay"])
@@ -101,7 +107,30 @@ def lessons_for(cases_: list[dict], base: dict, store_path: Path | None = X.STOR
     if store_path:                      # kept in her store too (sync brings them to the PC; ids are stable)
         logged.add(replayed)
         logged.save()
+    if sources is not None:
+        store = X.Store(None, [x for x in store.lessons.values() if x["source"] in sources])
     return store
+
+
+def stamp(cases_: list[dict], clones=None) -> int:
+    """Each case's commit time as "at" (from its scratch clone), so a replayed case only sees lessons learnt before
+    it; returns how many were stamped."""
+    n = 0
+    for repo, _, clone, _ in clones or st.REPOS:
+        todo = [c for c in cases_ if c["repo"] == repo and "at" not in c]
+        shas = sorted({c.get("commit") or c["theirs"] for c in todo})
+        if not shas or not Path(clone).exists():
+            continue
+        times = {}
+        for k in range(0, len(shas), 200):
+            r = st.git(Path(clone), "log", "--no-walk", "--format=%H %ct", *shas[k:k + 200])
+            times.update(ln.split() for ln in r.stdout.splitlines() if len(ln.split()) == 2)
+        for c in todo:
+            t = times.get(c.get("commit") or c["theirs"])
+            if t:
+                c["at"] = int(t)
+                n += 1
+    return n
 
 
 def candidates(folder: Path = CANDIDATES) -> list[tuple[Path, dict, str]]:
@@ -136,17 +165,30 @@ def run(model=None, cases_: list[dict] | None = None, cache: st.Cache | None = N
     model = model or (node_model() if NODE_URL.exists() else None)
     report: dict = {"ts": int(t0), "day": dt.date.today().isoformat(), "cases": len(cases_),
                     "hold_cases": sum(c.get("split") == "hold" for c in cases_)}
+    report["stamped"] = stamp(cases_)
     base = st.score({}, cases_, model, 0, cache, log=log)
     report["baseline"] = brief(base)
-    store = lessons_for(cases_, base, store_path)
-    report["lessons"] = {"total": len(store.active()), "resolve": len(store.active("resolve"))}
-    with_mem = st.score({}, cases_, model, 0, cache, log=log, lessons=store)
-    verdict = st.compare(base, with_mem, {}, cases_, model, cache, None, store)
-    report["experience"] = {**brief(with_mem), "verdict": verdict}
-    lanes = ["resolve"] if verdict["keep"] else []
+    lessons_for(cases_, base, store_path)                  # tonight's replay lessons into her store
+    report["variants"], best = {}, None
+    for name, sources in VARIANTS.items():
+        store = lessons_for(cases_, base, None if store_path is None else store_path, sources)
+        if not any(x["source"] not in ("fixes", "decisions") for x in store.active("resolve")):
+            continue                                       # nothing of this variant's own kind yet
+        with_mem = st.score({}, cases_, model, 0, cache, log=log, lessons=store)
+        verdict = st.compare(base, with_mem, {}, cases_, model, cache, None, store)
+        report["variants"][name] = {**brief(with_mem), "lessons": len(store.active("resolve")), "verdict": verdict}
+        if verdict["keep"] and (best is None or verdict["hold_new"] > report["variants"][best]["verdict"]["hold_new"]):
+            best = name
+    shown = report["variants"].get(best) or next(iter(report["variants"].values()), None)
+    verdict = shown["verdict"] if shown else {"keep": False, "hold_old": base["hold"], "hold_new": base["hold"],
+                                              "hold_total": base["hold_total"], "old": base["points"],
+                                              "new": base["points"], "noise": 0, "flips": []}
+    report["experience"] = {**(shown or {}), "verdict": verdict, "variant": best}
+    lanes = ["resolve"] if best else []
     sw = switch or X.SWITCH
     sw.parent.mkdir(parents=True, exist_ok=True)
-    sw.write_text(json.dumps({"lanes": lanes, "ts": int(time.time()), "why": (
+    sw.write_text(json.dumps({"lanes": lanes, "sources": sorted(VARIANTS[best]) if best else [],
+                              "variant": best, "ts": int(time.time()), "why": (
         f"held-out {verdict['hold_old']} -> {verdict['hold_new']} of {verdict['hold_total']}, total "
         f"{verdict['old']} -> {verdict['new']} (noise {verdict['noise']}, {len(verdict['flips'])} broken)")}),
         encoding="utf-8")
@@ -187,8 +229,8 @@ def _ssh(*args: str, data: bytes | None = None, timeout: float = 900) -> subproc
 
 
 def sync() -> int:
-    """PC -> Brain One: her logs, the answer cache, her lessons (with gh fates folded in); Brain One -> PC: the
-    verdict (on.json), the newest report and the replay lessons."""
+    """PC -> Brain One: her logs and her lessons (Brain One's lessons merged in first, gh fates folded in); Brain One
+    -> PC: the verdict (on.json) and the nightly log. The answer cache is Brain One's own (never overwritten)."""
     star = Path.home() / ".star"
     store = X.Store()
     r = _ssh("cat .star/litha/experience/lessons.jsonl")
@@ -199,7 +241,7 @@ def sync() -> int:
     store.save()
     print("lessons:", json.dumps(got))
     for local, remote in ((X.FIXES, ".star/pr-fixer/fixes.jsonl"), (X.DECISIONS, ".star/pr-merger/decisions.jsonl"),
-                          (st.CACHE, ".star/litha-selftune/answers.jsonl"), (X.STORE, ".star/litha/experience/lessons.jsonl")):
+                          (X.STORE, ".star/litha/experience/lessons.jsonl")):   # her answer cache stays on Brain One
         if local.exists():
             r = _ssh(f"mkdir -p {Path(remote).parent.as_posix()} && cat > {remote}.new && mv {remote}.new {remote}",
                      data=local.read_bytes())
@@ -211,6 +253,57 @@ def sync() -> int:
             local.parent.mkdir(parents=True, exist_ok=True)
             local.write_bytes(r.stdout)
             print(f"<- {remote}")
+    return 0
+
+
+DISTILL_CAP = 2.0                    # dollars per distill run (claude spend rows with `what` "learn: distill")
+
+
+def spent(what: str = "learn: distill", ledger: Path | None = None) -> float:
+    from litha import claude
+    total = 0.0
+    for ln in ((ledger or claude.LEDGER).read_text(encoding="utf-8").splitlines()
+               if (ledger or claude.LEDGER).exists() else []):
+        try:
+            row = json.loads(ln)
+            total += row["usd"] if row.get("what") == what else 0.0
+        except (ValueError, KeyError):
+            continue
+    return total
+
+
+def distill(budget: float = DISTILL_CAP, asker=None) -> int:
+    """(PC: Claude's key is here) Brain One's replay set + answer cache -> tonight's tune-split failures (from the
+    cache only: no model call) -> Claude's one-line lessons -> her store, here and on Brain One."""
+    from litha import claude
+    d = HOME / "brain"
+    d.mkdir(parents=True, exist_ok=True)
+    for name in ("cases.json", "answers.jsonl"):
+        r = _ssh(f"cat .star/litha-selftune/{name}", timeout=1800)
+        if r.returncode:
+            print(f"cannot read {name} on Brain One: {r.stderr.decode()[-200:]}")
+            return 1
+        (d / name).write_bytes(r.stdout)
+    cases_ = st.cases(d / "cases.json")
+    stamp(cases_)
+    res = st.score({}, cases_, st.cached_only, 0, st.Cache(d / "answers.jsonl"), log=None)
+    start = spent()
+
+    def ask(prompt: str) -> str:
+        if spent() - start + 0.3 > budget:
+            return ""
+        return claude.ask(prompt, "medium", what="learn: distill")
+    got = X.distill(cases_, res, asker or ask)
+    store = X.Store()
+    r = _ssh("cat .star/litha/experience/lessons.jsonl")
+    if r.returncode == 0:
+        store.add([json.loads(ln) for ln in r.stdout.decode("utf-8").splitlines() if ln.strip()])
+    new = store.add(got)
+    store.save()
+    r = _ssh("mkdir -p .star/litha/experience && cat > .star/litha/experience/lessons.jsonl.new && "
+             "mv .star/litha/experience/lessons.jsonl.new .star/litha/experience/lessons.jsonl", data=X.STORE.read_bytes())
+    print(f"distilled {len(got)} lessons ({new} new) from {res['outcomes']}; spent ${spent() - start:.4f}; "
+          f"pushed: {r.returncode == 0}")
     return 0
 
 
@@ -235,7 +328,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--rebuild-days", type=float, default=7)
     r.add_argument("--propose", action="store_true", help="also one Claude proposal (needs a key; lane budget)")
     r.add_argument("--no-fetch", action="store_true")
-    sub.add_parser("sync", help="(PC) logs/cache/lessons to Brain One, the verdict back")
+    sub.add_parser("sync", help="(PC) logs/lessons to Brain One, the verdict back")
+    di = sub.add_parser("distill", help="(PC) Claude's lessons from Brain One's tune-split failures")
+    di.add_argument("--budget", type=float, default=DISTILL_CAP)
     d = sub.add_parser("deploy", help="(PC) the committed litha/ to Brain One")
     d.add_argument("--ref", default="HEAD")
     a = ap.parse_args(argv)
@@ -243,6 +338,8 @@ def main(argv: list[str] | None = None) -> int:
         return sync()
     if a.cmd == "deploy":
         return deploy(a.ref)
+    if a.cmd == "distill":
+        return distill(a.budget)
     print(f"[{dt.datetime.now():%Y-%m-%d %H:%M}] litha nightly start", flush=True)
     for problem in ([] if a.no_fetch else fetch()):
         print(problem, flush=True)
@@ -250,7 +347,11 @@ def main(argv: list[str] | None = None) -> int:
         got = st.build()
         print(f"rebuilt the replay set: {len(got)} cases", flush=True)
     rep = run(propose=a.propose)
-    print(json.dumps({k: rep[k] for k in ("cases", "baseline", "lessons", "on", "seconds")}), flush=True)
+    print(json.dumps({k: rep[k] for k in ("cases", "stamped", "baseline", "on", "seconds")}), flush=True)
+    for name, v in rep["variants"].items():
+        w = v["verdict"]
+        print(f"variant {name} ({v['lessons']} lessons): held-out {w['hold_old']} -> {w['hold_new']}, total "
+              f"{w['old']} -> {w['new']}, noise {w['noise']}, broken {len(w['flips'])}, kept {w['keep']}", flush=True)
     e = rep["experience"]["verdict"]
     print(f"experience memory: held-out {e['hold_old']} -> {e['hold_new']} of {e['hold_total']}, total {e['old']} -> "
           f"{e['new']} (noise {e['noise']}, broken {len(e['flips'])}): {'ON' if e['keep'] else 'off'}", flush=True)

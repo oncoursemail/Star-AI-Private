@@ -282,3 +282,55 @@ def test_node_model_retries_a_busy_node_and_gives_up_on_a_bad_request(monkeypatc
         raise urllib.error.HTTPError("u", 400, "too long", {}, None)
     with pytest.raises(ValueError):
         N.node_model("http://node/v1", "tok", opener=bad)("p")
+
+
+def test_a_replayed_case_never_sees_a_lesson_learnt_after_it_and_the_switch_limits_sources():
+    later = lesson("keep the tax_rate argument of compute_widget_total", RAW, ts=2000)
+    store = X.Store(None, [later])
+    assert store.retrieve("resolve", "o/r", ["shop/cart.py"], RAW, before=1000) == []
+    assert store.retrieve("resolve", "o/r", ["shop/cart.py"], RAW, before=3000) == [later]
+    assert store.retrieve("resolve", "o/r", ["shop/cart.py"], RAW, sources={"distilled"}) == []
+    X.Store(X.STORE, [later]).save()
+    X.SWITCH.write_text(json.dumps({"lanes": ["resolve"], "sources": ["distilled"]}))
+    task = {"lane": "resolve", "repo": "o/r", "paths": ["shop/cart.py"], "text": RAW}
+    assert X.note(task, 500) == ""                                   # a "test" lesson: not a measured source
+    X.SWITCH.write_text(json.dumps({"lanes": ["resolve"], "sources": ["test"]}))
+    assert "tax_rate" in X.note(task, 500)
+
+
+def test_distill_asks_claude_about_tune_failures_only_and_keeps_answered_cases():
+    cases = [case("t1"), case("t2"), case("h1", split="hold"), case("t3")]
+    for c, at in zip(cases, (10, 20, 30, 40)):
+        c["at"] = at
+    result = {"cases": {"t1": {"outcome": "wrong", "blocks": [{"mine": "widget_total = 1\n"}]},
+                        "t2": {"outcome": "refused", "why": "too big"}, "h1": {"outcome": "wrong"},
+                        "t3": {"outcome": "exact"}}}
+    asked = []
+
+    def claude(prompt):
+        asked.append(prompt)
+        return json.dumps({"lessons": [{"case": "t1", "lesson": "cart totals: the base side's tax_rate call wins"},
+                                       {"case": "h1", "lesson": "never: not shown"}, {"case": "t2", "lesson": ""}]})
+    got = X.distill(cases, result, claude)
+    assert len(asked) == 1 and "case t1" in asked[0] and "case t2" in asked[0] and "h1" not in asked[0]
+    assert "Her answer:\nwidget_total = 1" in asked[0] and "refused: too big" in asked[0]
+    assert [(x["case"], x["source"], x["ts"]) for x in got] == [("t1", "distilled", 10)]
+    assert X.distill(cases, result, lambda p: "not json") == []
+
+
+def test_stamp_reads_commit_times_from_the_clone(tmp_path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    env = {"GIT_AUTHOR_NAME": "p", "GIT_AUTHOR_EMAIL": "p@x", "GIT_COMMITTER_NAME": "p", "GIT_COMMITTER_EMAIL": "p@x",
+           "GIT_COMMITTER_DATE": "2026-01-02T03:04:05Z", "GIT_AUTHOR_DATE": "2026-01-02T03:04:05Z"}
+    import os
+    run = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True,  # noqa: E731
+                                    env={**os.environ, **env}, check=True).stdout
+    run("init", "-q")
+    (repo / "f").write_text("x")
+    run("add", ".")
+    run("commit", "-qm", "c")
+    sha = run("rev-parse", "HEAD").strip()
+    cases = [dict(case("a"), commit=sha), case("b", repo="other/r")]
+    assert N.stamp(cases, [("o/r", "main", repo, True)]) == 1
+    assert cases[0]["at"] == 1767323045 and "at" not in cases[1]

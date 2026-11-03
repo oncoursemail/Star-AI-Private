@@ -1,5 +1,5 @@
 """Litha's experience memory: every finished outcome of her work becomes a short lesson, and the few lessons that fit a
-new task go into her prompt (docs/LITHA_AUTONOMY.md section 4r).
+new task go into her prompt (docs/LITHA_AUTONOMY.md section 4s).
 
 A lesson is one JSON line in ~/.star/litha/experience/lessons.jsonl:
   {"id", "ts", "lane", "repo", "kind", "sig", "text", "good", "evidence", "source", "case", "wins", "losses", "retired"}
@@ -141,15 +141,18 @@ class Store:
         return self._idf
 
     def retrieve(self, lane: str, repo: str = "", paths: list[str] | tuple = (), text: str = "", k: int = 3,
-                 hide: str = "") -> list[dict]:
+                 hide: str = "", before: float | None = None, sources=None) -> list[dict]:
         """The k most relevant active lessons of this lane for a task (repo + files + error / conflict text); a
-        lesson made from the task itself (case == hide) is never shown."""
+        lesson made from the task itself (case == hide) or learnt after `before` (a replayed past task must not see
+        what was learnt later) is never shown."""
         want = set(signature(text, *paths, limit=60))
         kinds = {kind_of(p) for p in paths}
         idf = self.idf()
         scored = []
         for x in self.active(lane):
-            if hide and x.get("case") == hide:
+            if sources is not None and x["source"] not in sources:
+                continue
+            if (hide and x.get("case") == hide) or (before is not None and x["ts"] > before):
                 continue
             shared = want.intersection(x["sig"])
             s = sum(idf.get(t, 1.0) for t in shared)
@@ -214,6 +217,15 @@ def _live_store() -> Store:
     return got[1]
 
 
+def switch_sources() -> set | None:
+    """The lesson sources the nightly gate measured (on.json "sources"); None = all."""
+    try:
+        got = json.loads(SWITCH.read_text(encoding="utf-8")).get("sources")
+        return set(got) if got else None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def enabled(lane: str) -> bool:
     if _FORCED is not None:
         return lane in _FORCED["lanes"]
@@ -227,11 +239,11 @@ def enabled(lane: str) -> bool:
 
 
 @contextlib.contextmanager
-def forced(store: Store, lanes=LANES, hide: str = ""):
+def forced(store: Store, lanes=LANES, hide: str = "", before: float | None = None):
     """Replay only: these lanes get lessons from this store, whatever on.json says, never the lessons made from case
-    `hide`; nothing is recorded."""
+    `hide` nor any learnt after `before` (the replayed case's own time); nothing is recorded."""
     global _FORCED
-    old, _FORCED = _FORCED, {"store": store, "lanes": set(lanes), "hide": hide}
+    old, _FORCED = _FORCED, {"store": store, "lanes": set(lanes), "hide": hide, "before": before}
     try:
         yield
     finally:
@@ -246,7 +258,9 @@ def note(task: dict | None, room_tokens: float, who: str = "local") -> str:
     try:
         store = _FORCED["store"] if _FORCED is not None else _live_store()
         found = store.retrieve(task["lane"], task.get("repo", ""), task.get("paths") or (), task.get("text", ""),
-                               hide=(_FORCED or {}).get("hide") or task.get("hide", ""))
+                               hide=(_FORCED or {}).get("hide") or task.get("hide", ""),
+                               before=(_FORCED or {}).get("before"),
+                               sources=None if _FORCED is not None else switch_sources())
         text = render(found, min(room_tokens, ROOM[who]))
     except Exception:  # noqa: BLE001 - lessons are a help, never a reason to fail a task
         return ""
@@ -395,7 +409,57 @@ def lessons_from_replay(cases: list[dict], result: dict) -> list[dict]:
             about = f" ({'; '.join(names)})" if names else ""
             her = "she refused it" if r["outcome"] == "refused" else "her merge differed"
             out.append(make("resolve", c["repo"], c["path"], block, f"{c['path']}{about}: the accepted merge {shape}; "
-                            f"{her}", True, [c["id"]], "replay", f"replay|{cid}|{k}", case=cid))
+                            f"{her}", True, [c["id"]], "replay", f"replay|{cid}|{k}", case=cid, ts=c.get("at")))
+    return out
+
+
+DISTILL = """You teach Litha, a local 12B model that resolves git merge conflicts (diff3 blocks: PR side, ancestor,
+base side). Below are conflicts from a repository's history that she got wrong or refused, each with her answer (if
+any) and the resolution a person committed. For EACH case write one lesson she can apply to FUTURE conflicts of the
+same kind in this repository: a concrete rule (what to keep, drop, order or combine, and how to recognise the
+situation), naming the file or code area when that is what makes it recognisable. Do not restate the specific code;
+do not write generic advice such as "keep both sides" unless the case shows a specific way to do it. At most 200
+characters each. Skip a case (no lesson) when the committed resolution is not explainable from the block alone.
+{cases}
+Answer only JSON: {{"lessons": [{{"case": "<case id>", "lesson": "<the rule>"}}]}}"""
+
+
+def _shown_case(c: dict, r: dict) -> str:
+    from litha import pr_fixer as pf
+    from litha import self_tune as st
+    segs, blocks = pf.CONFLICT.split(c["raw"]), pf.CONFLICT.findall(c["raw"])
+    i, j = st._anchor(c["good"], segs[0], segs[1])
+    mine = ((r.get("blocks") or [{}])[0].get("mine") or "") if r["outcome"] == "wrong" else ""
+    head = f"### case {c['id']} ({c['path']}): she " + ("answered wrongly" if mine else "refused: " + r.get("why", "")[:150])
+    good = (c["good"][i:j] if i is not None else "(not found)")[:900]
+    return "\n".join([head, "Conflict block:", blocks[0][:1400]] + (["Her answer:", mine[:700]] if mine else [])
+                     + ["Committed resolution:", good, ""])
+
+
+def distill(cases: list[dict], result: dict, asker, batch: int = 8, limit: int = 160) -> list[dict]:
+    """Claude's one-line lessons from the TUNE split's failures with a known committed resolution (source
+    "distilled"; their time is the case's, so a replayed earlier case never sees them)."""
+    from litha import pr_fixer as pf
+    from litha import self_tune as st
+    by = {c["id"]: c for c in cases}
+    todo = [(by[cid], r) for cid, r in result.get("cases", {}).items()
+            if cid in by and by[cid].get("split") == "tune" and by[cid]["kind"] == "merge" and by[cid].get("good")
+            and r["outcome"] not in st.GOOD and r["outcome"] != "error"][:limit]
+    out = []
+    for k in range(0, len(todo), batch):
+        part = todo[k:k + batch]
+        text = asker(DISTILL.format(cases="\n".join(_shown_case(c, r) for c, r in part)))
+        try:
+            rows = json.loads(text[text.find("{"):text.rfind("}") + 1])["lessons"]
+        except (ValueError, KeyError, TypeError):
+            continue
+        for row in rows if isinstance(rows, list) else []:
+            c = by.get(str(row.get("case", ""))) if isinstance(row, dict) else None
+            if c is None or c not in [p[0] for p in part] or not str(row.get("lesson", "")).strip():
+                continue
+            out.append(make("resolve", c["repo"], c["path"], "\n".join(pf.CONFLICT.findall(c["raw"])),
+                            str(row["lesson"]), True, [c["id"]],
+                            "distilled", f"distill|{c['id']}", case=c["id"], ts=c.get("at")))
     return out
 
 

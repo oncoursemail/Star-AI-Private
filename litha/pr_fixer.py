@@ -1524,7 +1524,7 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
             return None, f"{path}: conflict {i}'s merge is longer than her {ANSWER}-token answer"
         for who in tries:
             try:
-                task = {"repo": REPO, "paths": [path], "text": m.group(0)}      # her experience memory (4r)
+                task = {"repo": REPO, "paths": [path], "text": m.group(0)}      # her experience memory (4s)
                 if who is ask_claude:                  # Claude: all the code around it, no fitting to her 4K window
                     from litha import experience
                     prompt = MERGE_PROMPT.format(repo=REPO, base=BASE, title=title, path=path, i=i, n=len(blocks),
