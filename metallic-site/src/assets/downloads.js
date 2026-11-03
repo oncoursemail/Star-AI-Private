@@ -1,10 +1,19 @@
 /* Downloads: the newest build from /releases/latest.json (the Tauri updater manifest:
    {"version","notes","pub_date","platforms":{"windows-x86_64":{"signature","url"},"linux-x86_64":{..AppImage},
-   "linux-x86_64-deb":{..deb}}}). */
+   "linux-x86_64-deb":{..deb}}}), and the Meta Quest APK from /releases/quest.json ({"version","url"}). */
 "use strict";
 (async () => {
   const M = window.Metallic;
   const $ = (s) => document.querySelector(s);
+  M.json("/releases/quest.json").then((q) => {
+    const url = q && typeof q.version === "string" && typeof q.url === "string" && (q.url.startsWith("/") || M.href(q.url)) ? q.url : null;
+    if (!url) return;
+    const a = $("[data-quest-dl]");
+    a.href = url;
+    a.removeAttribute("aria-disabled");
+    a.textContent = "Download for Quest (APK)";
+    $("[data-quest-note]").textContent = "Early Access " + q.version + " · Android app for Meta Quest 2, 3, 3S and Pro, installed by sideloading.";
+  });
   const r = await M.release;
   const btn = $("[data-dl-main]");
   if (!r) {
