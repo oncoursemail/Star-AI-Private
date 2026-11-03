@@ -794,6 +794,61 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
   passed the timing test this time), so pass_alone is covered by tests only.
 - Not done: WGSL drift after a merge (#428), delete-vs-change blocks, the 8-block limit with Claude.
 
+## 4s. Experience memory and nightly self-improvement on Brain One (2026-11-02 night, wave 7 lane learn, measured)
+
+- `litha/experience.py`: every finished outcome becomes a short lesson (one JSON line in
+  `~/.star/litha/experience/lessons.jsonl`): lane (resolve, fix-python, fix-rust, merge-review), repo, file kind,
+  path, signature (informative identifiers and error codes), the lesson text (at most 240 characters), worked or
+  failed, evidence links, source, wins/losses, retired.
+  - Sources: `fixes.jsonl` (fixed / failed repairs and conflict merges; with gh, whether her fix PR merged or was
+    closed), `decisions.jsonl` (her review holds settled by what a person did later: merged anyway = overturned,
+    closed = upheld; her merges that a later "Revert" PR undid), the replay's tune-split failures (mechanical:
+    what the accepted merge did per block) and Claude-distilled one-line rules from those same tune failures
+    (`learn_nightly distill`, PC). The hold-out split never becomes a lesson. Studio rows are left out
+    (`self_tune.EXCLUDED`).
+  - Retrieval: idf-weighted overlap of signature tokens plus same repo / same file kind; local, no new dependency,
+    a few ms. In a replay a case never sees a lesson made from itself nor one learnt after its own commit time.
+  - Prompts: `self_map.fitted(..., task=...)` adds the lessons that fit what is left of her 4096-token window (at
+    most 220 tokens; Claude's merge prompt gets up to 600). Wired into the conflict merge (her model and Claude),
+    the Python fixer and the merge review. With the lane off the prompt is byte-for-byte what it was.
+  - Switch: off unless `on.json` (written by the nightly gate) lists the lane, or `LITHA_EXPERIENCE=1` (0 forces off).
+    `on.json` also names the measured variant's sources and whether lessons are limited to the task's own file.
+  - Live: `pr_fixer.log_row` (real log only) adds the row's lesson and settles the lessons that were in that thread's
+    prompts (win if fixed, loss otherwise); review prompts record their lessons per PR in `uses.jsonl`, settled by the
+    PR's fate at the next `sync`. A lesson with 3+ losses and fewer than half as many wins is retired.
+- `litha/learn_nightly.py` on Brain One (user `litha`, `~/litha-learn/code`, deployed with
+  `python -m litha.learn_nightly deploy` from a checkout: `git archive` of HEAD's `litha/` plus `star/asset3d/llm.py`):
+  systemd `litha-learn.timer` 01:30 America/Chicago (Persistent) runs `litha-learn.service` (oneshot, nice 10,
+  6 h limit), log `~/litha-learn/logs/nightly.log`, reports `~/.star/litha-selftune/nightly/<date>.json` and
+  `nightly.jsonl`. Each night: fetch the STAR scratch clone, rebuild the replay set when older than 7 days, stamp
+  commit times, score the baseline (answers cached), then each lesson variant (Claude-distilled; distilled limited
+  to the same file; mechanical replay) and every candidate prompt/rule change in `candidates/*.json`. A change is
+  kept only when `self_tune.compare` says so: changed cases replayed 3 times, total up by more than the noise, no
+  good case broken, the HELD-OUT split higher, no refused must-refuse case resolved. Her model is called straight on
+  the GPU node (`~/.star/litha-node-url`, `~/.star/mesh_token`, both 600): the mesh router is not reachable from
+  Brain One. No Claude key there, so `--propose` is not in the timer.
+  - PC side (not scheduled; the lead's cut-over): `python -m litha.learn_nightly sync` pushes `fixes.jsonl`,
+    `decisions.jsonl` and her lessons (gh fates folded in) and pulls `on.json` + `nightly.jsonl`;
+    `python -m litha.learn_nightly distill [--budget 2]` pulls Brain One's replay set and answer cache, rescoring
+    from the cache only (0 model calls), and asks Claude for one lesson per tune failure.
+- Replay set without Studio: STAR's own history merges are in now (`self_tune.REPOS`, history on). Built on Brain
+  One: 324 cases (319 history with a known committed answer, 4 without, 1 must-refuse #853), 199 tune / 124 hold-out
+  / 1 must-refuse; by file: 239 .py, 32 .ts, 18 .tsx, 16 .md, then others.
+- Measured (RAN on Brain One, her local model on star-pc, same cases, same model, same prompt):
+  - Baseline: 129/324 (hold-out 52/124) on the first run, 222 calls, 566 s; a second fresh run 133/324 (hold-out
+    52). Must-refuse #853 is still resolved, not refused (as in 4p).
+  - Lessons backfilled from her logs: 8 (7 fix-python, 1 resolve). 0 from review holds: outside Studio only 23
+    "Litha:" claims exist, all on PRs still open. Mechanical replay lessons: 185. Claude-distilled: 102, cost
+    $0.8371 (Opus, 15 calls, 4 min).
+  - Mechanical replay lessons: held-out 52 -> 51, total 131 -> 128 after the 3x majority (noise 2, 3 good cases
+    broken): rejected. Second night: 52 -> 52, rejected.
+  - Claude-distilled lessons: held-out 52 -> 54 of 124, total 132 -> 134 (noise 3, 6 good cases broken): rejected,
+    the gain is inside the noise. Run 2 took 1189 s (two variants, about 620 s and 230 calls each).
+  - Distilled, only lessons about the same file: held-out 52 -> 54, total 132 -> 134 (noise 2, 4 good cases broken):
+    rejected. That night (three variants, mostly cached) took 278 s.
+  - So: no measured gain yet; `on.json` stays off and her live prompts are unchanged. The machinery runs every night
+    and switches the memory on by itself the first night a variant wins on held-out cases.
+
 ## 5. Rules that stay (do not remove)
 
 Never merge into `main` except through `pr_promote` with all receipts. Never force-push, never push to another
