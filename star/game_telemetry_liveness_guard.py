@@ -114,6 +114,11 @@ class GameTelemetryLivenessGuard:
         self._last_check_at = now
         return now
 
+    @property
+    def silence_limit_s(self) -> float:
+        """Configured receiver deadline, for trusted host tick scheduling."""
+        return self._silence_s
+
     def arm(self, *, owner_approved: bool = False) -> None:
         """Arm once after enabling the independent witness and source bridge."""
         if owner_approved is not True:
