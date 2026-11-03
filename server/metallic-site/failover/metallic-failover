@@ -12,7 +12,8 @@
 # Healthy = this copy reaches the internet, Caddy answers, and metallic-live wrote revivals.json with numbers in the last
 # 5 minutes. Two failed checks in a row make a copy unhealthy, three good ones healthy again (no flapping).
 # Each copy publishes its state at http://<host>:8089/health.json on the LAN (metallic-health.service), where the other
-# copy reads it. Settings: /etc/metallic-failover.conf (ROLE=primary|standby, PEER=http://<other host>:8089).
+# copy reads it. Settings: /etc/metallic-failover.conf (ROLE=primary|standby, PEER=http://<other host>:8089, and
+# optionally PEER_SSH=<user>@<other host>: used while the port is blocked; see install.sh for the key).
 set -uo pipefail
 
 . /etc/metallic-failover.conf
@@ -31,6 +32,7 @@ if [ -z "$why" ]; then
   nums=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["totals"]["withNumbers"])' "$LIVE" 2>/dev/null || echo 0)
   [ "$age" -le 300 ] && [ "$nums" -gt 0 ] || why="live data stale (${age}s, ${nums} with numbers)"
 fi
+[ -e /run/metallic-failover-drill ] && why="drill (rm /run/metallic-failover-drill to end it)" # a failover test
 bad=$(cat "$STATE/bad" 2>/dev/null || echo 0); good=$(cat "$STATE/good" 2>/dev/null || echo 3)
 if [ -n "$why" ]; then bad=$((bad + 1)); good=0; else good=$((good + 1)); bad=0; fi
 echo "$bad" > "$STATE/bad"; echo "$good" > "$STATE/good"
@@ -43,7 +45,13 @@ ready() { curl -fsS -m 2 http://127.0.0.1:20241/ready 2>/dev/null | grep -q '"re
 serving=false; ready && serving=true
 
 # ---- the other copy ----
-peer=$(curl -fsS -m 3 "$PEER/health.json" 2>/dev/null || echo '{}')
+# over LAN port 8089, else (while a firewall blocks it) over SSH with a key that can only print the peer's health.json
+peer=$(curl -fsS -m 3 "$PEER/health.json" 2>/dev/null) || peer=""
+if [ -z "$peer" ] && [ -n "${PEER_SSH:-}" ]; then
+  peer=$(ssh -i /root/.ssh/metallic-health -o UserKnownHostsFile=/root/.ssh/known_hosts.metallic-health -o BatchMode=yes \
+    -o ConnectTimeout=3 -T "$PEER_SSH" 2>/dev/null) || peer=""
+fi
+[ -n "$peer" ] || peer='{}'
 peer_up=$(python3 -c '
 import json,sys,time
 try: p=json.loads(sys.argv[1])

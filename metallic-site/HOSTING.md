@@ -145,9 +145,12 @@ container) adds a check every 15 s that switches only the tunnel connector:
 - a copy steps out only after the other is connected (make-before-break), so there is never a moment with no connector.
 
 Each copy publishes its state at `http://<host>:8089/health.json` (LXD proxy device `health` on the host -> the
-container's `metallic-health.service`); the other copy reads it. Without that link each copy keeps its own connector up
-(both serve), which still covers a copy that goes away entirely but not one that stays connected with bad data.
-Logs: `journalctl -t metallic-failover`.
+container's `metallic-health.service`); the other copy reads it. While a host firewall blocks port 8089, each copy reads
+the other over SSH instead (`PEER_SSH`), with a key that the other host's `authorized_keys` limits to printing that one
+file (`restrict,from=...,command=...`; see `install.sh`). Without either link each copy keeps its own connector up (both
+serve), which still covers a copy that goes away entirely but not one that stays connected with bad data.
+Logs: `journalctl -t metallic-failover`. Drill: `touch /run/metallic-failover-drill` in the primary makes it report
+itself unhealthy (the standby takes over within about 40 s); `rm` it to switch back.
 
 Publishing and deploying go to BOTH copies: upload release files and switch `latest.json` / `quest.json` on each, and run
 `deploy.sh` in each container. Each copy's metallic-live counts the downloads and "people in Metallic" it serves itself.
