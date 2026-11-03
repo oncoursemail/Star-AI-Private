@@ -91,8 +91,8 @@ def open_prs(number: int | None = None) -> list[dict]:
 def head_checks(sha: str) -> list[dict]:
     """Check runs on the exact head commit: [{name, status, conclusion}]."""
     data = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"))
-    return [{"name": c["name"], "status": c["status"], "conclusion": (c.get("conclusion") or "").upper()}
-            for c in latest_runs(data.get("check_runs", []))]
+    return [{"name": c["name"], "status": c["status"], "conclusion": (c.get("conclusion") or "").upper(),
+             "started_at": c.get("started_at") or ""} for c in latest_runs(data.get("check_runs", []))]
 
 
 def latest_runs(runs: list[dict]) -> list[dict]:
@@ -498,17 +498,20 @@ def hunt_pr(pr: dict, files: dict, rev: dict) -> None:
 
 
 def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_fn=prove_high_risks,
-           hunt_fn=hunt_pr, memo: Path | None = None) -> dict:
+           hunt_fn=hunt_pr, memo: Path | None = None, build_fn=None) -> dict:
     """The hard gates cheapest first, each a sure hold on its own: the list data (no call), the head's check runs
     (one call), then the diff (one call, the slow one). Once a gate blocks, nothing fetched later can turn the hold
     into a merge, so it is not fetched. The diff of a head gated against the same base within DIFF_TTL is not
     fetched again when nothing after the gates needs it: its diff gates blocked, or (no hunt) her review of that
-    head is cached. Same action as gate_failures over everything; only the reasons stop at the first gate that blocks."""
+    head is cached. Same action as gate_failures over everything; only the reasons stop at the first gate that blocks.
+    build_fn(pr, files, checks) last, only for a PR that would merge: the head merged with today's base must build
+    and pass the tests the diff touches (litha.build_check, section 4s), else it holds with the failing test named."""
     row = {"pr": pr["number"], "head": pr["headRefOid"], "title": pr.get("title", "")}
     gates = list_gates(pr)
     if gates:
         return {**row, "action": "hold", "reasons": gates, "review": None, "files": None, "skipped": "checks, diff"}
-    gates = check_gates(checks_fn(pr["headRefOid"]))
+    checks = checks_fn(pr["headRefOid"])
+    gates = check_gates(checks)
     if gates:
         return {**row, "action": "hold", "reasons": gates, "review": None, "files": None, "skipped": "diff"}
     seen = known_diff(pr, memo) if diff_fn is None else None
@@ -533,6 +536,13 @@ def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_f
     action = "merge" if not gates and rev and rev["verdict"] == "merge" else "hold"
     reasons = gates or [f"Litha: {r['file']}:{r['line']} {r['why']}" for r in (rev or {}).get("risks", [])
                         if r["severity"] == "high"]
+    if action == "merge" and build_fn:
+        names = list(files) or gh("pr", "diff", str(pr["number"]), "--repo", REPO, "--name-only", timeout=300).split()
+        built = build_fn(pr, names, checks)
+        row["build"] = {k: built[k] for k in ("ok", "skipped", "ran", "failed", "seconds", "cached")
+                        if built.get(k) not in (None, "", [])}
+        if not built.get("ok"):
+            action, reasons = "hold", [f"build check: {built.get('failed') or 'failed'}"]
     return {**row, "action": action, "reasons": reasons, "review": rev, "files": n_files}
 
 
@@ -563,6 +573,12 @@ def confirm(pr: dict) -> tuple[bool, str]:
     if v["verdict"] == "hold" and v["high"]:
         return False, "Claude: " + "; ".join(v["high"])[:600]
     return True, ""
+
+
+def build(pr: dict, files: list[str], checks: list[dict]) -> dict:
+    """The build/test check (litha.build_check) in the clone litha.pr_fixer works in (CLONE/WORK)."""
+    from litha import build_check
+    return build_check.check(pr, files, sys.executable, checks)
 
 
 def vetoed(row: dict, pr: dict) -> bool:
@@ -643,13 +659,21 @@ def replay_hunt(n: int) -> dict:
 
 def others(apply: bool) -> int:
     """The owner's other repos: same gates and review. No local clone there, so no test proofs and no bug hunt: an
-    unproven high-risk claim keeps holding. mode review = log ready/hold only, never merge."""
+    unproven high-risk claim keeps holding. mode review = log ready/hold only, never merge. A repo with a local
+    clone (repos.json "clone") gets the build/test check too."""
     global REPO, BASE, ALLOW_MAIN
+    from litha import pr_fixer
     home = (REPO, BASE, ALLOW_MAIN)
+    tree_home = (pr_fixer.CLONE, pr_fixer.WORK)
     try:
         for entry in json.loads(REPOS.read_text(encoding="utf-8"))["repos"][1:]:
             REPO, BASE, ALLOW_MAIN = entry["repo"], entry.get("base", "main"), bool(entry.get("allow_main"))
             can_merge = apply and entry.get("mode") == "merge"
+            clone = Path(entry["clone"]).expanduser() if entry.get("clone") else None
+            pr_fixer.CLONE, pr_fixer.WORK = tree_home
+            if clone:
+                pr_fixer.CLONE = clone
+                pr_fixer.WORK = Path(entry.get("worktrees") or clone.parent / f"{clone.name}-worktrees").expanduser()
             try:
                 prs = open_prs()
             except RuntimeError as e:
@@ -660,7 +684,7 @@ def others(apply: bool) -> int:
                 if pr.get("isDraft"):
                     continue
                 try:
-                    row = decide(pr, prove_fn=None, hunt_fn=None)
+                    row = decide(pr, prove_fn=None, hunt_fn=None, build_fn=build if clone else None)
                 except Exception as e:  # noqa: BLE001 - one bad PR must not stop the queue
                     row = {"pr": pr["number"], "action": "hold", "reasons": [f"error: {str(e)[:200]}"]}
                 if row["action"] == "merge" and can_merge and not vetoed(row, pr):
@@ -679,6 +703,7 @@ def others(apply: bool) -> int:
     finally:
         print(f"gh calls: {sum(GH_CALLS.values())} {dict(GH_CALLS)}", flush=True)
         REPO, BASE, ALLOW_MAIN = home
+        pr_fixer.CLONE, pr_fixer.WORK = tree_home
     return 0
 
 
@@ -704,7 +729,7 @@ def main(argv: list[str] | None = None) -> int:
     merged = 0
     for pr in open_prs(a.pr):
         try:
-            row = decide(pr)
+            row = decide(pr, build_fn=build)
         except Exception as e:  # noqa: BLE001 - one bad PR must not stop the queue
             row = {"pr": pr["number"], "action": "hold", "reasons": [f"error: {str(e)[:200]}"]}
         if row["action"] == "merge" and a.apply and not vetoed(row, pr):
