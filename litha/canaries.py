@@ -211,8 +211,9 @@ def _real_checks(sha: str) -> list[dict]:
         return GREEN[:2]
 
 
-def corpus(path: Path = CORPUS) -> list[dict]:
+def corpus(path: Path | None = None) -> list[dict]:
     real = []
+    path = path or CORPUS
     with contextlib.suppress(OSError, ValueError, KeyError):
         real = json.loads(path.read_text(encoding="utf-8"))["canaries"]
     return real + synthetic()
@@ -234,10 +235,15 @@ def offline_prove(pr: dict, rev: dict, ask=None) -> None:
     rev["verdict"] = "hold" if any(r["severity"] == "high" for r in rev["risks"]) else "merge"
 
 
+def no_gh(*args, **kw) -> str:
+    """pr_merger.gh during a canary: no call at all (a made-up PR has nothing on GitHub; head_file reads it as None)."""
+    raise RuntimeError("canary: no gh call")
+
+
 def run_pr(c: dict, ask=always_merge) -> dict:
-    saved = pm.BASE
+    saved, saved_gh = pm.BASE, pm.gh
     try:
-        pm.BASE = c.get("base", saved)
+        pm.BASE, pm.gh = c.get("base", saved), no_gh
         with tempfile.TemporaryDirectory() as d:
             kw = {"ask": ask, "checks_fn": lambda sha: [dict(x) for x in c["checks"]], "diff_fn": lambda pr: c["diff"],
                   "prove_fn": offline_prove, "hunt_fn": None, "memo": Path(d) / "memo.json"}
@@ -245,7 +251,7 @@ def run_pr(c: dict, ask=always_merge) -> dict:
                 kw["build_fn"] = None                       # a build needs the PR's real head (see section 8)
             row = pm.decide(dict(c["pr"]), **kw)
     finally:
-        pm.BASE = saved
+        pm.BASE, pm.gh = saved, saved_gh
     held = row["action"] != "merge"
     return {"held": held, "reason": "; ".join(row["reasons"][:3]) if held else
             (row.get("review") or {}).get("summary", "")[:200] or "every gate passed"}
@@ -302,15 +308,16 @@ def doubled(raw: str, merged: str) -> list[str]:
     ours, theirs = side(0), side(2)
     out = []
     for ln in dict.fromkeys(x.strip() for x in merged.splitlines()):
-        if len(ln) >= 6 and re.search(r"\w", ln) and merged.count(ln) > max(ours.count(ln), theirs.count(ln)):
+        if len(ln) >= 6 and re.search(r"\w", ln):
             n = sum(x.strip() == ln for x in merged.splitlines())
-            if n > max(sum(x.strip() == ln for x in s.splitlines()) for s in (ours, theirs)):
+            if n >= 2 and n > max(sum(x.strip() == ln for x in s.splitlines()) for s in (ours, theirs)):
                 out.append(ln)
     return out
 
 
-def run(ask=always_merge, items: list[dict] | None = None, log: Path | None = RESULTS, mode: str = "gate") -> dict:
-    """Every canary; {"rows": [...], "held", "total", "escapes" (not known), "known", "now_held" (known but held)}."""
+def run(ask=always_merge, items: list[dict] | None = None, log: Path | None | bool = True, mode: str = "gate") -> dict:
+    """Every canary; {"rows": [...], "held", "total", "escapes" (not known), "known", "now_held" (known but held)}.
+    log: True = RESULTS, a path, or None/False for no log."""
     rows = []
     saved = os.environ.get("LITHA_EXPERIENCE")
     os.environ["LITHA_EXPERIENCE"] = "0"          # no lessons shown and no use recorded for a made-up PR
@@ -330,7 +337,8 @@ def run(ask=always_merge, items: list[dict] | None = None, log: Path | None = RE
     out = {"ts": int(time.time()), "mode": mode, "total": len(rows), "held": len(rows) - len(passed),
            "escapes": [i for i in passed if i not in KNOWN_ESCAPES], "known": [i for i in passed if i in KNOWN_ESCAPES],
            "now_held": [r["id"] for r in rows if r["held"] and r["id"] in KNOWN_ESCAPES], "rows": rows}
-    if log:
+    log = RESULTS if log is True else log
+    if isinstance(log, Path):
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a", encoding="utf-8") as f:
             f.write(json.dumps(out, ensure_ascii=False) + "\n")

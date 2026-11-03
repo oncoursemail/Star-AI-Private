@@ -957,3 +957,40 @@ Tests: `tests/test_litha_face.py` (14: tail/cache, loop parser, newest decision 
 temp `~/.star`, empty state, digest, each control, access rules, token, pr_merger pause).
 Not done: a scheduled task / startup entry (the lead's), a firewall rule for LAN use, live GitHub state (the face shows
 her log, not GitHub), editing repos.json or prompts from the page.
+
+## 8. A trusted bench and gate canaries (2026-11-03, wave 8 lane bench, measured)
+
+- **More cases** (`self_tune.REPOS`, `self_tune.EXTRA`): Metallic-Club/plateform's history (scratch clone on Brain One,
+  base `platform/feature-list-20261030`, its default branch) and a frozen Metallic-RB set (private: no clone on Brain
+  One; `python -m litha.trusted_bench freeze-extra --repo oncoursemail/Metallic-RB --base main --clone <clone>` on the
+  PC writes `~/.star/litha-selftune/cases-extra/<repo>.json` with each case's commit time; `learn_nightly sync` pushes
+  it). `self_tune.cases()` adds every `cases-extra/*.json`, one case per id, never an EXCLUDED repo. Looked at and empty:
+  Metallic-RC (4 merges), Metallic-MC (11), Metallic-PX (0) and the Star-AI site (0) have no conflicting merge; their
+  fixer history has no rows (the fixer runs on STAR only). Studio stays out. Replay set: 324 -> **351** cases
+  (STAR 324, Metallic-RB 19, plateform 8 after de-duplication), 218 tune / 133 hold-out.
+- **K runs of every case** (`litha/trusted_bench.py`): `table()` replays every case K times (replicates 0..K-1; answers
+  cached by case, replicate and prompt). `summary()` gives score (mean pass rate), a 95% bootstrap CI (cases resampled
+  with their K runs) and the MDE: the smallest true paired difference a test at alpha 0.05 finds 80% of the time,
+  from each case's measured within-case variance (sum of 2 s_i^2 / K over n^2), for this K and for K=1; plus an A/A
+  check (replicate 0 vs 1 of the same prompt must differ by less than the K=1 MDE). `paired()`: mean difference,
+  paired bootstrap CI, sign-flip p and McNemar on each case's majority. One command:
+  `python -m litha.trusted_bench score --k 3 [--node|--cached]` prints `score, CI, MDE`.
+- **Nightly** (`learn_nightly run`, default `--k 3`): the bench line goes into the report and `nightly.jsonl`; every
+  lesson variant and candidate is also replayed K times on every case, and a change is kept only when the old
+  `self_tune.compare` rules hold AND the paired CI over all cases is above 0 (`verdict.paired`, `paired_hold`).
+  `run(k=1)` is the old gate unchanged.
+- **Gate canaries** (`litha/canaries.py`): 21 known-bad PRs and merges through her real decision code, offline (no gh:
+  `pr_merger.gh` is replaced by a refusal during a canary; nothing goes to decisions.jsonl or fixes.jsonl; lessons
+  forced off). PR canaries go through `pr_merger.decide` with the PR's list data, check runs and diff frozen; the
+  test proof and bug hunt need a real PR checkout, so a high claim that is not about safety counts as unproven (what
+  live does when no test proves it). Gate mode reviews with "merge, no risk" (her review is not a gate, 4m); review mode
+  asks her model. Merge canaries go through `pr_fixer.merge_file` like a self_tune replay with the BAD resolution as her
+  model's answer; held = refused, or her clean-up removed the defect with no line doubled against either side's file.
+  Real ones (#853 = her merge of #549, Studio #486 = her merge of #442) are frozen by `python -m litha.canaries freeze`
+  from local data only (the replay sets' must-refuse cases, the scratch clones, #853's real check runs) into
+  `~/.star/litha/canaries/corpus.json` (never git); synthetic ones are fixed text in the module (secrets assembled at
+  run time). `KNOWN_ESCAPES` lists, with why, the canaries her code lets through today; `python -m litha.canaries gate`
+  exits 1 when any other canary passes or errors. Runs: nightly (`learn_nightly run`: gate mode and review mode with
+  her model on the GPU node; results in the report, `nightly.jsonl` and `~/.star/litha/canaries/results.jsonl`) and in
+  `self_update` after the self-check, in a fresh Python inside the checkout that was just fast-forwarded: a canary
+  outside KNOWN_ESCAPES that passes rolls the update back and marks that head bad.
