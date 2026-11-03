@@ -35,7 +35,7 @@ class TransferTests(unittest.TestCase):
         self.bank.close()
 
     def add(self, *, target=False, split="practice", outcome="success",
-            at=NOW, action="jump", game=None, situation=None):
+            at=NOW, action="jump", game=None, situation=None, digest=None):
         self.sequence += 1
         trial = GameTrial(
             trial_id=f"trial{self.sequence}",
@@ -47,7 +47,8 @@ class TransferTests(unittest.TestCase):
             run_id=f"run{self.sequence}",
             split=split,
             outcome=outcome,
-            evidence_sha256=HASH,
+            evidence_sha256=(digest if digest is not None else
+                hashlib.sha256(f"reviewed-game-event-{self.sequence}".encode()).hexdigest()),
             observed_unix_s=at,
         )
         key = PRACTICE if split == "practice" else VALIDATION
@@ -248,6 +249,31 @@ class TransferTests(unittest.TestCase):
         )
         with self.assertRaises(sqlite3.IntegrityError):
             self.report()
+
+
+    def test_duplicate_signed_holdout_capture_does_not_fake_generalization(self):
+        self.practice()
+        assert self.register()
+        for _ in range(25):
+            self.add(target=True, split="validation", at=NOW + 20, digest=HASH)
+        outcome = self.report()
+        self.assertEqual(outcome.status, "insufficient_independent_holdout")
+        self.assertEqual(outcome.holdout_trials, 1)
+        self.assertFalse(outcome.authorized_to_play)
+
+
+    def test_reused_training_capture_disqualifies_otherwise_good_holdout(self):
+        source = self.add()
+        for _ in range(14):
+            self.add()
+        assert self.register()
+        for _ in range(24):
+            self.add(target=True, split="validation", at=NOW + 20)
+        self.add(target=True, split="validation", at=NOW + 20,
+                 digest=source.evidence_sha256)
+        outcome = self.report()
+        self.assertEqual(outcome.status, "holdout_contaminated_by_reused_capture")
+        self.assertFalse(outcome.authorized_to_play)
 
 
 if __name__ == "__main__":

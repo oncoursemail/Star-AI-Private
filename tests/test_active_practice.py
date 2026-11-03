@@ -39,7 +39,9 @@ class ActivePracticeTests(unittest.TestCase):
         trial = GameTrial(
             f"trial{self.seq}", game, version, objective, situation, action,
             f"run{self.seq}" if run_id is None else run_id,
-            split, outcome, HASH, timestamp)
+            split, outcome, hashlib.sha256(
+                f"active-practice-review-{self.seq}".encode()
+            ).hexdigest(), timestamp)
         signer = PRACTICE if split == "practice" else HOLDOUT
         receipt = hmac.new(signer, trial.canonical_bytes(), hashlib.sha256).hexdigest()
         self.bank.ingest(trial, receipt, now_unix_s=ingest_at)

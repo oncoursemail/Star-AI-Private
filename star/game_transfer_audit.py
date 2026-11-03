@@ -256,6 +256,31 @@ class GameTransferAuditor:
             if now - plan.registered_unix_s > 30 * 86400:
                 return TransferReview("evaluation_window_expired", source_n,
                                       round(source_rate, 4), 0, None, None, None)
+            # An independent holdout must not recycle *source observations*.
+            # Different signed run IDs, split keys and game labels alone do
+            # not establish new evidence. This OWNER-only comparison never
+            # exposes either digest to the model or a stream.
+            source_captures = {
+                trial.evidence_sha256
+                for trial in self._bank._verified_unique_scope_trials((
+                    plan.source_game, plan.source_version,
+                    plan.source_objective, plan.source_situation))
+                if trial.split == "practice"
+                and trial.observed_unix_s <= plan.registered_unix_s
+            }
+            target_captures = {
+                trial.evidence_sha256
+                for trial in self._bank._verified_unique_scope_trials((
+                    plan.target_game, plan.target_version,
+                    plan.target_objective, plan.target_situation))
+                if trial.split == "validation"
+                and plan.registered_unix_s < trial.observed_unix_s <= now
+            }
+            if not source_captures.isdisjoint(target_captures):
+                return TransferReview(
+                    "holdout_contaminated_by_reused_capture", source_n,
+                    round(source_rate, 4), 0, None, None, None)
+
             successful, attempts = self._bank._signed_audit_counts(
                 plan.target_game, plan.target_version, plan.target_objective,
                 plan.target_situation, plan.target_action, split="validation",
