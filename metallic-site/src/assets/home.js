@@ -140,6 +140,8 @@
     const [data, projects, news] = await Promise.all([M.json("/live/revivals.json"), M.json("/live/projects.json"), M.json("/live/news.json")]);
     if (data && Array.isArray(data.revivals)) {
       revivals = sortRevivals(data.revivals.filter((r) => r && r.id));
+      M.revivals = revivals; // the Revival wall in the hero (wall.js) shows these logos, most online up front
+      dispatchEvent(new CustomEvent("metallic:revivals", { detail: revivals }));
       byId = Object.fromEntries(revivals.map((r) => [r.id, r]));
       renderBoard();
       stats(data, revivals);

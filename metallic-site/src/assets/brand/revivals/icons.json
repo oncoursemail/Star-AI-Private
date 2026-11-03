@@ -1,0 +1,155 @@
+{
+ "note": "Revival icons shipped with Metallic so the Revival wall wallpaper has logos offline and before the live list loads (snapshot of each revival's public Discord icon).",
+ "revivals": [
+  {
+   "id": "meownet",
+   "name": "meow.net",
+   "hue": 309,
+   "file": "meownet.webp"
+  },
+  {
+   "id": "recflare",
+   "name": "RecFlare",
+   "hue": 70,
+   "file": "recflare.webp"
+  },
+  {
+   "id": "nodenet",
+   "name": "NodeNet",
+   "hue": 291,
+   "file": "nodenet.webp"
+  },
+  {
+   "id": "epicquest",
+   "name": "EpicQuest!",
+   "hue": 253,
+   "file": "epicquest.webp"
+  },
+  {
+   "id": "vanilla",
+   "name": "Vanilla",
+   "hue": 43,
+   "file": "vanilla.webp"
+  },
+  {
+   "id": "recvard",
+   "name": "RecVard",
+   "hue": 269,
+   "file": "recvard.webp"
+  },
+  {
+   "id": "uranium",
+   "name": "Uranium",
+   "hue": 55,
+   "file": "uranium.png"
+  },
+  {
+   "id": "radium",
+   "name": "Radium",
+   "hue": 132,
+   "file": "radium.webp"
+  },
+  {
+   "id": "stella",
+   "name": "Stella",
+   "hue": 45,
+   "file": "stella.webp"
+  },
+  {
+   "id": "phoenix",
+   "name": "Phoenix Studios RR",
+   "hue": 335,
+   "file": "phoenix.webp"
+  },
+  {
+   "id": "recplace",
+   "name": "RecPlace",
+   "hue": 95,
+   "file": "recplace.webp"
+  },
+  {
+   "id": "studio87",
+   "name": "Studio 87",
+   "hue": 29,
+   "file": "studio87.webp"
+  },
+  {
+   "id": "rebornrec",
+   "name": "RebornRec",
+   "hue": 36,
+   "file": "rebornrec.webp"
+  },
+  {
+   "id": "remix",
+   "name": "Remix",
+   "hue": 249,
+   "file": "remix.webp"
+  },
+  {
+   "id": "spookdux",
+   "name": "Redux",
+   "hue": 193,
+   "file": "spookdux.webp"
+  },
+  {
+   "id": "campus",
+   "name": "Campus",
+   "hue": 199,
+   "file": "campus.webp"
+  },
+  {
+   "id": "enum",
+   "name": "Enum",
+   "hue": 17,
+   "file": "enum.webp"
+  },
+  {
+   "id": "kittyrec",
+   "name": "KittyRec Community",
+   "hue": 277,
+   "file": "kittyrec.webp"
+  },
+  {
+   "id": "yanvar",
+   "name": "Yanvar",
+   "hue": 297,
+   "file": "yanvar.webp"
+  },
+  {
+   "id": "recquiem",
+   "name": "Recquiem",
+   "hue": 333,
+   "file": "recquiem.webp"
+  },
+  {
+   "id": "lithium",
+   "name": "Lithium 🎃",
+   "hue": 336,
+   "file": "lithium.webp"
+  },
+  {
+   "id": "reczone",
+   "name": "RECZONE",
+   "hue": 284,
+   "file": "reczone.webp"
+  },
+  {
+   "id": "rebound",
+   "name": "Rebound",
+   "hue": 67,
+   "file": "rebound.webp"
+  },
+  {
+   "id": "n3xi0m",
+   "name": "N3XI0M",
+   "hue": 123,
+   "file": "n3xi0m.webp"
+  },
+  {
+   "id": "solarlab",
+   "name": "Solar Lab Baby",
+   "hue": 148,
+   "file": "solarlab.webp"
+  }
+ ]
+}
