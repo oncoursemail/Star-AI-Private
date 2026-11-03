@@ -197,8 +197,8 @@ def test_summary_has_specific_numbers_and_names_missing_sources(tmp_path):
     assert "at 10:30 owner-local" in text                        # UTC-5 from the PC feed
     assert "today 4 tries, 2 passed, 1 could not run" in text  # owner-local day = all of today's UTC buckets here
     assert "1 of 1 lesson retries fixed the task" in aware.detail("night_school")
-    assert "last lesson gate L109 inconclusive (10-20)" in text
-    assert "conductor night 20261019: 30 of 186 new practice tasks accepted" in text
+    assert "last lesson test L109 (10-20): the test couldn't tell if it helps, not in use yet" in text
+    assert "homework writer, night of 20261019: wrote 186 new practice tasks, kept 30 that passed the checks" in text
     assert "watchdog restarted it at 13:44 UTC" in text
     assert "1 PRs merged today; 2 open, 1 with failing checks" in text and "(finetune-20261020)" in text
     assert "not visible right now" in text and "brain 2 (could not reach brain 2" in text
@@ -243,15 +243,20 @@ def test_events_for_down_restart_gate_lab_watchdog_and_release(tmp_path):
     old = Snapshot({"1": Source(before, NOW.timestamp())}, dict(FEED), 1, taken=NOW.timestamp())
     new_feed = dict(FEED, releases=[{"tag": "v2.0.0", "draft": True}] + FEED["releases"])
     new = Snapshot({"1": Source(after, NOW.timestamp())}, new_feed, 1, taken=NOW.timestamp())
-    texts = dict(aware.events(old, new))
+    got = aware.events(old, new)
+    texts, levels = {i: t for i, t, _ in got}, {i.split(":")[0]: lvl for i, _, lvl in got}
     joined = " | ".join(texts.values())
-    assert "star-brain on brain 1 restarted at 15:29 UTC" in joined
-    assert "star-night-school on brain 1 is DOWN (failed/running)" in joined
-    assert "L200 active" in joined and "12 passed" in joined
+    assert "My main brain on brain 1 restarted at 10:29 am. It's running again" in joined   # owner-local (UTC-5)
+    assert "Practice on brain 1 stopped (failed)." in joined
+    assert "A new lesson (L200) passed its test, so I use it from now on. “t”" in joined
+    assert "Roblox Studio tests (today 10:30 am): 12 of 16 passed." in joined
     assert "restart FAILED" in joined and "v2.0.0 is ready as a draft" in joined
+    assert levels == {"restart": "warn", "down": "bad", "gate": "good", "lab": "info", "watchdog": "bad",
+                      "release": "good"}
     assert aware.events(new, new) == []                                            # nothing changed, nothing to say
     after["night_school"]["report"]["status"] = "quiet lock held, waiting"           # a timing run: maintenance
-    maint = dict(aware.events(old, Snapshot({"1": Source(after, NOW.timestamp())}, new_feed, 1, taken=NOW.timestamp())))
+    maint = {i: t for i, t, _ in aware.events(old, Snapshot({"1": Source(after, NOW.timestamp())}, new_feed, 1,
+                                                            taken=NOW.timestamp()))}
     assert any(k.startswith("maint:1:star-brain") for k in maint) and not any(k.startswith("restart:") for k in maint)
 
 
@@ -354,12 +359,12 @@ class ScriptedAwareness:
 
 
 def test_events_are_merged_deduplicated_rate_limited_and_held_when_quiet(tmp_path):
-    batch = [("maint:1:star-brain.service:z", "restarted during a timing run"),
-             ("restart:1:star-brain.service:a", "star-brain on brain 1 restarted at 15:11 UTC."),
-             ("gate:1:t:L109", "Lesson gate on brain 1: L109 gate INCONCLUSIVE.")]
-    aware = ScriptedAwareness([batch, batch, [("restart:1:star-brain.service:b", "again")],
-                               [("down:2:x.service:c", "x DOWN")], [("down:2:y.service:d", "y DOWN")],
-                               [("down:2:z.service:e", "z DOWN")]])
+    batch = [("maint:1:star-brain.service:z", "restarted during a timing run", "info"),
+             ("restart:1:star-brain.service:a", "star-brain on brain 1 restarted at 15:11 UTC.", "warn"),
+             ("gate:1:t:L109", "Lesson gate on brain 1: L109 gate INCONCLUSIVE.", "info")]
+    aware = ScriptedAwareness([batch, batch, [("restart:1:star-brain.service:b", "again", "warn")],
+                               [("down:2:x.service:c", "x DOWN", "bad")], [("down:2:y.service:d", "y DOWN", "bad")],
+                               [("down:2:z.service:e", "z DOWN", "bad")]])
     bot, sent, moment = make_proactive(tmp_path, aware, per_hour=2, now=NOW.replace(hour=17))
 
     async def run():
@@ -372,8 +377,9 @@ def test_events_are_merged_deduplicated_rate_limited_and_held_when_quiet(tmp_pat
         assert len(sent.texts) == 1
         await bot.tick()
         assert sent.texts[-1] == "Heads up: x DOWN"
-        assert sent.cards[-1]["color"] == embeds.RED and sent.cards[-1]["title"] == "Something's down"
-        assert sent.cards[0]["color"] == embeds.AMBER and "restarted" in sent.cards[0]["description"]
+        assert sent.cards[-1]["color"] == embeds.RED and sent.cards[-1]["title"] == "❌ Something stopped"
+        assert sent.cards[0]["color"] == embeds.AMBER and sent.cards[0]["title"] == "⚠️ A few things to know"
+        assert "⚠️ star-brain on brain 1 restarted" in sent.cards[0]["description"]
         await bot.tick()                                    # third DM in the hour: over the limit, held
         assert len(sent.texts) == 2
         bot.set_quiet(2)
@@ -757,18 +763,17 @@ def test_status_digest_alert_pr_drawing_and_confirm_cards(tmp_path):
     aware = Awareness({"1": FakeGate(brain_facts(tmp_path)), "2": FakeGate(error="could not reach brain 2")},
                       pc_feed=lambda: (5.0, FEED), clock=clock_at(NOW))
     asyncio.run(aware.refresh())
-    fields, missing = aware.status_fields()
-    names = [f["name"] for f in fields]
-    assert names[:2] == ["Brain 1 \u00b7 night school", "Brain 1 \u00b7 lessons"] and "Work" in names
-    assert "**4** tries \u00b7 **2** passed today" in fields[0]["value"]
-    assert missing == ["brain 2: could not reach brain 2"]
-    status = embeds.status_card(fields, missing, now=NOW)
-    assert status["color"] == embeds.AMBER and status["fields"][-1]["name"] == "Can't see"
-    digest = embeds.digest_card("evening", "Busy day.", fields, [], now=NOW)
-    assert digest["title"] == "Evening note" and digest["description"] == "Busy day." and digest["color"] == embeds.GREEN
-    failed = embeds.status_card(fields + [embeds.field("Brain 2 \u00b7 FAILED", "star-ns-brain")], [], now=NOW)
-    assert failed["color"] == embeds.RED
-    assert embeds.alert_card(["Lesson gate on brain 1: L200 active."], now=NOW)["color"] == embeds.GREEN
+    report = aware.status_report()
+    names = [f["name"] for f in report.fields]
+    assert names == ["Brain 1 \u00b7 practice today", "📚 What I'm learning", "🖥️ Systems", "💻 Your PC"]
+    assert report.fields[0]["value"] == "**2** of 4 right (50%)"
+    status = embeds.status_card(report, now=NOW)
+    assert status["color"] == embeds.AMBER and status["title"] == "⚠️ I can't reach brain 2"
+    assert status["description"].startswith("⚠️ Brain 2 didn't answer my status check (it didn't answer)")
+    digest = embeds.digest_card("evening", "Busy day.", report, now=NOW)
+    assert digest["author"] == {"name": "Star · evening note"} and digest["description"] == "Busy day."
+    assert digest["fields"][0]["name"] == "Worth a look" and digest["color"] == embeds.AMBER
+    assert embeds.alert_card([("gate:1:t:L200", "A new lesson passed.", "good")], now=NOW)["color"] == embeds.GREEN
     prs = embeds.pr_card(12.0, FEED["open_prs"], FEED["merged_today"], now=NOW)
     assert [f["value"] for f in prs["fields"][:3]] == ["2", "1", "1"] and prs["color"] == embeds.RED
     one = embeds.pr_card(12.0, FEED["open_prs"], FEED["merged_today"], number=530, now=NOW)
@@ -780,8 +785,12 @@ def test_status_digest_alert_pr_drawing_and_confirm_cards(tmp_path):
 
 def test_cards_become_real_discord_embeds():
     discord = pytest.importorskip("discord")
-    built = discord.Embed.from_dict(embeds.status_card([embeds.field("Brain 1 \u00b7 night school", "x")], [], now=NOW))
-    assert built.title == "What I'm up to" and built.colour.value == embeds.GREEN and len(built) <= 6000
+    from star.discord_bot.status_view import Report
+    built = discord.Embed.from_dict(embeds.status_card(Report(headline="✅ All good", note="Nothing needs you.",
+                                                              fields=[embeds.field("Brain 1 · practice today", "x")]),
+                                                       now=NOW))
+    assert built.title == "✅ All good" and built.colour.value == embeds.GREEN and len(built) <= 6000
+    assert built.author.name == "Star · how I'm doing"
     assert built.fields[0].inline is True and built.footer.text.startswith("Star")
 
 

@@ -37,7 +37,7 @@ LEGACY = {
 }
 RESTARTABLE = ("star-brain", "star-knowledge", "star-search-gateway", "star-night-school", "star-ns-brain",
                "star-discord", "searxng")
-HOURS = 36                      # hourly practice buckets kept in `facts` (enough for "today" in any zone)
+HOURS = 50                      # hourly practice buckets kept in `facts` (today and all of yesterday, any zone)
 TAIL_BYTES = 4_000_000
 MAX_IDEA = 2000
 
@@ -176,6 +176,7 @@ def night_school(root: Path, now: datetime) -> dict | None:
         gates.append({"ts": row["ts"], "event": event[:60], "lesson": str(lesson.get("id", ""))[:12],
                       "text": " ".join(str(lesson.get("text", "")).split())[:160]})
     out["hours"] = {key: dict(value) for key, value in sorted(hours.items())}
+    out["hours_from"] = _stamp(since)           # the buckets cover this moment onwards (the bot's "yesterday" check)
     out["gates"] = gates[-12:]
     return out
 
