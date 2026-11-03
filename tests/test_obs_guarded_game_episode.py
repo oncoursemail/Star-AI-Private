@@ -204,3 +204,96 @@ def test_invalid_owner_credentials_does_not_leave_half_enabled():
     with pytest.raises(ObsGuardedGameError):
         episode.start(scope, ("jump",), password="", owner_approved=True)
     assert episode.revoked and state["keyups"] == 1
+
+def test_host_stop_during_blocked_obs_sample_requests_immediate_keyup():
+    """A blocked WebSocket cannot delay the trusted host's emergency key-up."""
+    from threading import Event, Thread
+
+    episode, loop, source, socket, process, state, clock, telemetry, frame, lease = prepared()
+    clock.value = 1200
+    entered, resume, stop_returned = Event(), Event(), Event()
+    original_snapshot = source.snapshot
+    failures = []
+    permits = []
+
+    def slow_snapshot():
+        entered.set()
+        if not resume.wait(3):
+            raise TimeoutError("simulated OBS request timeout")
+        return original_snapshot()
+
+    source.snapshot = slow_snapshot
+
+    def inference_thread():
+        try:
+            permits.append(episode.finish(
+                lease, frame, hint(), telemetry=telemetry, host_verified=True,
+            ))
+        except Exception as exc:
+            failures.append(exc)
+
+    worker = Thread(target=inference_thread, daemon=True)
+    worker.start()
+    assert entered.wait(2), "OBS sample must actually block before stop"
+    stopper = Thread(target=lambda: (episode.stop(), stop_returned.set()), daemon=True)
+    stopper.start()
+    try:
+        assert stop_returned.wait(0.4), "host stop must not wait for OBS socket"
+        assert state["keyups"] == 1 and state["cancel"] == 1
+        assert not episode.active
+    finally:
+        resume.set()
+        worker.join(3)
+        stopper.join(3)
+    assert not worker.is_alive() and not stopper.is_alive()
+    assert not permits, "in-flight permit must not survive an emergency stop"
+    assert len(failures) == 1 and isinstance(failures[0], ObsGuardedGameError)
+    episode.stop()
+    assert state["keyups"] == 1 and state["cancel"] == 1
+
+
+def test_host_stop_while_final_claim_waits_for_obs_rejects_stale_claim():
+    """No positive advisory claim may emerge after shutdown mid-fence."""
+    from threading import Event, Thread
+
+    episode, loop, source, socket, process, state, clock, telemetry, frame, lease = prepared()
+    clock.value = 1200
+    permit = episode.finish(lease, frame, hint(), telemetry=telemetry,
+                            host_verified=True)
+    assert permit.offered
+    clock.value = 1205
+    entered, resume, shutdown = Event(), Event(), Event()
+    original = source.snapshot
+    results = []
+
+    def blocked_snapshot():
+        entered.set()
+        if not resume.wait(3):
+            raise TimeoutError("OBS simulated timeout")
+        return original()
+
+    source.snapshot = blocked_snapshot
+
+    def pending_claim():
+        try:
+            results.append(episode.claim(permit))
+        except Exception as exc:
+            results.append(exc)
+
+    worker = Thread(target=pending_claim, daemon=True)
+    worker.start()
+    assert entered.wait(2)
+    stopper = Thread(target=lambda: (episode.stop(), shutdown.set()), daemon=True)
+    stopper.start()
+    try:
+        assert shutdown.wait(0.4)
+        assert episode.revoked
+        assert state["keyups"] == 1 and state["cancel"] == 1
+    finally:
+        resume.set()
+        worker.join(3)
+        stopper.join(3)
+    assert len(results) == 1 and results[0] is not True
+    assert not worker.is_alive() and not stopper.is_alive()
+    episode.stop()
+    assert state["keyups"] == 1 and state["cancel"] == 1
