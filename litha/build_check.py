@@ -72,7 +72,7 @@ def _front(tree: Path, vitest: list[str], timeout: float) -> tuple[bool, str, st
     from litha import pr_fixer
     npm = shutil.which("npm")
     why = pr_fixer.frontend_deps(tree) if npm else "npm is not installed"
-    if why:                                            # CI's own tsc on this head still counts; not a failure
+    if why or not npm:                                            # CI's own tsc on this head still counts; not a failure
         return True, f"tsc not run here: {why[:200]}", ""
     env = dict(os.environ, CI="1", NO_COLOR="1", FORCE_COLOR="0")
     try:
