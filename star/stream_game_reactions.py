@@ -112,8 +112,12 @@ class VerifiedGameReactionHost:
         self._failures_announced: set[str] = set()
         # Keep consecutive failures within a one-minute gameplay window.
         self._failure_streaks: dict[str, tuple[int, float]] = {}
+        # Arrival order is not game event order. A per-action event-time
+        # watermark guards live commentary while the session retains the
+        # verified historical facts in its aggregate memory.
+        self._latest_observed_s: dict[str, int] = {}
         self._counts = dict(verified=0, offered=0, rejected=0, quiet=0,
-                            private=0, stale=0, stage_busy=0)
+                            private=0, stale=0, stage_busy=0, out_of_order=0)
 
     def enable(self, *, owner_approved: bool = False,
                broadcast_approved: bool = False) -> None:
@@ -129,6 +133,7 @@ class VerifiedGameReactionHost:
             self._comebacks_announced.clear()
             self._failures_announced.clear()
             self._failure_streaks.clear()
+            self._latest_observed_s.clear()
             self._last_clock = None
             self._last_offered = float("-inf")
             self._counts = dict.fromkeys(self._counts, 0)
@@ -172,6 +177,14 @@ class VerifiedGameReactionHost:
                 self._counts["stale"] += 1
                 return ReactionDecision("stale", True, False)
             action = trial.action_id
+            latest = self._latest_observed_s.get(action)
+            if latest is not None and trial.observed_unix_s <= latest:
+                # Second-resolution timestamps cannot establish which of
+                # two same-second actions happened last. Delayed signed facts
+                # remain in session history, but must not rewrite live streaks.
+                self._counts["out_of_order"] += 1
+                return ReactionDecision("out_of_order", True, False)
+            self._latest_observed_s[action] = trial.observed_unix_s
             kind: str
             recovered = False
             if trial.outcome == "success":
@@ -260,6 +273,7 @@ class VerifiedGameReactionHost:
             self._comebacks_announced.clear()
             self._failures_announced.clear()
             self._failure_streaks.clear()
+            self._latest_observed_s.clear()
             self._last_clock = None
             self._last_offered = float("-inf")
             self._episode.disable()
