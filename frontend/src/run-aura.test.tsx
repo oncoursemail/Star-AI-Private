@@ -29,6 +29,14 @@ describe('Litha run aura: truth and lifecycle', () => {
     expect(runAuraPhase(checked)).toBe('working')
   })
 
+  it('recognizes the dedicated Luau-check progress type, not only generic tool events', () => {
+    const start = startRun('request-dedicated-check', 'chat', 1000)
+    const checking = applyProgress(start, {activity: {type: 'luau_check', state: 'running'}}, 1010)
+    expect(runAuraPhase(checking)).toBe('verifying')
+    const checked = applyProgress(checking, {activity: {type: 'luau_check', state: 'done', result: 'passed'}}, 1030)
+    expect(runAuraPhase(checked)).toBe('working')
+  })
+
   it('does not call normal tools verification', () => {
     const start = startRun('request-3', 'chat', 1000)
     const tool = applyProgress(start, {activity: {type: 'tool', tool: 'workspace_search', state: 'running'}}, 1020)
