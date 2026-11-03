@@ -24,6 +24,14 @@ Tests: `tests/test_agent_fleet.py` (8, offline, real git + python subprocesses).
 - `probe_agents()`: installed-or-not for `opencode`, `codex`, `claude` CLIs; auth/quota stay "unknown" (nothing launched).
 - Tests: 4 more in `tests/test_agent_fleet.py` (12 total; fake ACP agent = simulation, no real CLI).
 
+## Slice 3: connect one local project
+- `connect_repo(path, base_ref)`: refuses protected paths, missing folders and non-git folders; returns the checkout's
+  top level, the commit `base_ref` points to, and the GitHub `owner/name` of the `origin` remote ("" = local only;
+  only owner/name is kept, never the URL, which may carry credentials).
+- `run_fleet()` connects first and refuses honestly when that fails; every task worktree branches from the one pinned
+  commit (`FleetResult.repo.base`), so all agents start from the same source even if the main checkout moves.
+- Tests: 5 more in `tests/test_agent_fleet.py` (17 total, offline).
+
 ## Left of #406
 - Capability tests against a real installed OpenCode/Codex/Claude CLI on authorized hardware (only simulation so far).
 - Per-agent enable UI + "Run all enabled agents" button; pause/resume.
