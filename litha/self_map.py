@@ -243,7 +243,8 @@ def build(root: Path = ROOT, home: Path | None = None, use_cache: bool = True) -
 
 # the steps whose gates the summary lists (module, function), in pipeline order
 STEPS = [("pr_fixer", "apply_edits"), ("pr_fixer", "fix"), ("pr_fixer", "resolve_text"), ("pr_fixer", "resolve"),
-         ("rust_fix", "repair"), ("pr_merger", "gate_failures"), ("pr_merger", "confirmed"), ("bug_proof", "prove"),
+         ("rust_fix", "repair"), ("pr_merger", "list_gates"), ("pr_merger", "check_gates"),
+         ("pr_merger", "diff_gates"), ("pr_merger", "confirmed"), ("bug_proof", "prove"),
          ("pr_promote", "missing")]
 
 
@@ -321,11 +322,18 @@ def note(lane: str, room_tokens: float, home: Path | None = None) -> str:
     return text if text and tokens(text) <= room_tokens else ""
 
 
-def fitted(lane: str, build, answer_tokens: float, window: int = WINDOW, home: Path | None = None) -> str:
+def fitted(lane: str, build, answer_tokens: float, window: int = WINDOW, home: Path | None = None,
+           task: dict | None = None) -> str:
     """build(note) -> prompt. The prompt with her note for this lane when it is on and fits the window with the
-    answer; otherwise exactly build("") (the prompt as it was)."""
+    answer, then the lessons of her experience memory that fit what is left (task = {"repo", "paths", "text"}: only
+    when the lane's lessons are on and something relevant is known); otherwise exactly build("") (the prompt as it
+    was)."""
     base = build("")
     extra = note(lane, window - answer_tokens - tokens(base), home)
+    if task is not None:
+        from litha import experience
+        room = window - answer_tokens - tokens(build(extra) if extra else base)
+        extra += experience.note({**task, "lane": lane}, room)
     return build(extra) if extra else base
 
 

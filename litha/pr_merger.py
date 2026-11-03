@@ -14,6 +14,7 @@ Decisions go to ~/.star/pr-merger/decisions.jsonl. Never merges into main; never
 from __future__ import annotations
 
 import argparse
+import collections
 import contextlib
 import hashlib
 import json
@@ -31,6 +32,7 @@ REPO = "oncoursemail/Star-AI-Project"
 BASE = "star/next"
 ALLOW_MAIN = False                                             # set per repo from repos.json (allow_main)
 LOG = Path.home() / ".star" / "pr-merger" / "decisions.jsonl"
+PAUSED = Path.home() / ".star" / "pr-merger" / "PAUSED"       # the owner's pause (her face, or by hand)
 OK_CHECKS = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 FORBIDDEN_FILES = re.compile(r"(^|/)(pnpm-lock\.yaml|pnpm-workspace\.yaml|[^/]+\.tsbuildinfo|[^/]+\.(gguf|safetensors|"
                              r"pem|key|pfx|p12)|\.env(\.[a-z]+)?)$")
@@ -57,11 +59,13 @@ Answer only JSON: {"verdict": "merge" or "hold", "summary": "<one sentence>", "r
 TRANSIENT = re.compile(r"TLS handshake timeout|i/o timeout|connection (reset|refused)|timed out|unexpected EOF|"
                        r"HTTP 50[234]|no such host", re.I)
 READS = {("pr", "view"), ("pr", "list"), ("pr", "diff"), ("pr", "checks"), ("run", "list"), ("run", "view")}
+GH_CALLS: collections.Counter = collections.Counter()      # this process's gh calls by kind, printed per run
 
 
 def gh(*args: str, timeout: float = 120, tries: int = 3, wait: float = 5) -> str:
     """A network blip (TLS timeout, 502) on a read is retried, so it does not hold a PR for a run. Writes never are."""
     for attempt in range(tries if tuple(args[:2]) in READS else 1):
+        GH_CALLS["api" if args[0] == "api" else " ".join(args[:2])] += 1
         if attempt:
             time.sleep(wait * attempt)
         out = subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -73,7 +77,7 @@ def gh(*args: str, timeout: float = 120, tries: int = 3, wait: float = 5) -> str
     return out.stdout
 
 
-FIELDS = "number,title,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,author,body"
+FIELDS = "number,title,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,mergeable,mergeStateStatus,author,body"
 
 
 def open_prs(number: int | None = None) -> list[dict]:
@@ -87,17 +91,18 @@ def open_prs(number: int | None = None) -> list[dict]:
 def head_checks(sha: str) -> list[dict]:
     """Check runs on the exact head commit: [{name, status, conclusion}]."""
     data = json.loads(gh("api", f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"))
-    return [{"name": c["name"], "status": c["status"], "conclusion": (c.get("conclusion") or "").upper()}
-            for c in latest_runs(data.get("check_runs", []))]
+    return [{"name": c["name"], "status": c["status"], "conclusion": (c.get("conclusion") or "").upper(),
+             "started_at": c.get("started_at") or ""} for c in latest_runs(data.get("check_runs", []))]
 
 
 def latest_runs(runs: list[dict]) -> list[dict]:
     """The newest run of each check name: a check that failed on Oct 27 and passed three times since is passing
     (seen on #700: the old failure kept her rerunning it every 10 minutes)."""
-    latest: dict[str, dict] = {}
+    latest: dict[str | None, dict] = {}
     for c in runs:
-        if c["name"] not in latest or (c.get("started_at") or "") >= (latest[c["name"]].get("started_at") or ""):
-            latest[c["name"]] = c
+        name = c.get("name")
+        if name not in latest or (c.get("started_at") or "") >= (latest[name].get("started_at") or ""):
+            latest[name] = c
     return list(latest.values())
 
 
@@ -146,6 +151,11 @@ def major_bumps(files: dict) -> list[str]:
 
 def gate_failures(pr: dict, checks: list[dict], files: dict[str, dict]) -> list[str]:
     """Why this PR may not be merged, from facts only ([] = all hard gates pass)."""
+    return list_gates(pr) + check_gates(checks) + diff_gates(files)
+
+
+def list_gates(pr: dict) -> list[str]:
+    """The hard gates `gh pr list` already answers (base, draft, GitHub's merge state): no gh call."""
     why = []
     if BASE != "*" and pr.get("baseRefName") != BASE:
         why.append(f"base is {pr.get('baseRefName')}, only {BASE} is allowed")
@@ -153,6 +163,12 @@ def gate_failures(pr: dict, checks: list[dict], files: dict[str, dict]) -> list[
         why.append("draft")
     if pr.get("mergeable") != "MERGEABLE" or pr.get("mergeStateStatus") != "CLEAN":
         why.append(f"GitHub says {pr.get('mergeable')}/{pr.get('mergeStateStatus')}")
+    return why
+
+
+def check_gates(checks: list[dict]) -> list[str]:
+    """The hard gates on the newest check runs of the exact head commit."""
+    why = []
     if not checks:
         why.append("no checks ran on the head commit")
     for c in checks:
@@ -162,6 +178,12 @@ def gate_failures(pr: dict, checks: list[dict], files: dict[str, dict]) -> list[
             why.append(f"check {c['name']} {c['conclusion'].lower()}")
     if checks and not any(c["conclusion"] == "SUCCESS" for c in checks):
         why.append("no check succeeded (all skipped)")
+    return why
+
+
+def diff_gates(files: dict[str, dict]) -> list[str]:
+    """The hard gates on the diff: forbidden files, secrets or private addresses, major dependency bumps."""
+    why = []
     for path, f in files.items():
         if FORBIDDEN_FILES.search(path):
             why.append(f"forbidden file {path}")
@@ -179,7 +201,9 @@ def review_prompts(pr: dict, files: dict[str, dict]) -> tuple[list[str], list[st
     """(one prompt per part, files not reviewed). Each prompt fits her 4096-token window with the answer (estimated;
     on 62 real PRs the real count of every prompt fit), most important hunks first (review_pack)."""
     head = self_map.fitted("merge-review", lambda note: f"{RUBRIC}{note}\n\nTitle: {pr.get('title', '')}\n"
-                           f"Description: {(pr.get('body') or '')[:1200]}\n", review_pack.ANSWER + 200)
+                           f"Description: {(pr.get('body') or '')[:1200]}\n", review_pack.ANSWER + 200,
+                           task={"repo": REPO, "paths": list(files)[:20], "key": f"{REPO}#{pr.get('number')}",
+                                 "text": pr.get("title", "") + "\n" + "\n".join(list(files)[:20])})
     parts, left = review_pack.pack(files, review_pack.budget_for(head, files))
     return [f"{head}{review_pack.others_note(p, files, left)}\n{p}" for p in parts], left
 
@@ -334,15 +358,10 @@ def cached_review(pr: dict, files: dict[str, dict], ask=ask_litha, path: Path | 
     if ask is not ask_litha:
         return review(pr, files, ask)
     path = path or REVIEWS
-    key = f"{REPO}#{pr['number']}@{pr['headRefOid']}:" + hashlib.sha1(
-        f"{RUBRIC}{CONFIRM}{review_pack.MAX_PARTS}{self_map.WINDOW}".encode()).hexdigest()[:8]
-    now = time.time()
-    try:
-        cache = {k: v for k, v in json.loads(path.read_text(encoding="utf-8")).items() if now - v["ts"] < REVIEW_TTL}
-    except (OSError, ValueError, AttributeError, KeyError, TypeError):
-        cache = {}
-    if key in cache:
-        return {**cache[key]["review"], "cached": round(now - cache[key]["ts"])}
+    seen = known_review(pr, path)
+    if seen is not None:
+        return seen
+    key, now, cache = _review_key(pr), time.time(), _fresh(path, REVIEW_TTL)
     rev = review(pr, files, ask)
     if not rev["not_json"]:                             # a part that failed is asked again next run
         cache[key] = {"ts": round(now), "review": rev}
@@ -351,6 +370,59 @@ def cached_review(pr: dict, files: dict[str, dict], ask=ask_litha, path: Path | 
         tmp.write_text(json.dumps(cache), encoding="utf-8")
         os.replace(tmp, path)
     return json.loads(json.dumps(rev))                  # prove_high_risks edits its copy, not the cached one
+
+
+def _review_key(pr: dict) -> str:
+    return f"{REPO}#{pr['number']}@{pr['headRefOid']}:" + hashlib.sha1(
+        f"{RUBRIC}{CONFIRM}{review_pack.MAX_PARTS}{self_map.WINDOW}".encode()).hexdigest()[:8]
+
+
+def _fresh(path: Path, ttl: float) -> dict:
+    """A {key: {"ts": ..., ...}} cache file without its entries older than ttl ({} when missing or broken)."""
+    now = time.time()
+    try:
+        return {k: v for k, v in json.loads(path.read_text(encoding="utf-8")).items() if now - v["ts"] < ttl}
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return {}
+
+
+def known_review(pr: dict, path: Path | None = None) -> dict | None:
+    """A copy of her cached review of this head (None when there is none within REVIEW_TTL)."""
+    hit = _fresh(path or REVIEWS, REVIEW_TTL).get(_review_key(pr))
+    if hit is None:
+        return None
+    return {**json.loads(json.dumps(hit["review"])), "cached": round(time.time() - hit["ts"])}
+
+
+DIFF_GATES = LOG.with_name("diff_gates.json")
+DIFF_TTL = 6 * 3600
+GATES_VERSION = hashlib.sha1(f"{FORBIDDEN_FILES.pattern}{SECRET.pattern}{DOC_IP.pattern}{REQ.pattern}".encode()
+                             ).hexdigest()[:8]
+
+
+def _diff_key(pr: dict) -> str:
+    """The diff is a function of the head and the base it is compared with: same key, same diff."""
+    return f"{REPO}#{pr['number']}@{pr['headRefOid']}^{pr.get('baseRefOid')}:{GATES_VERSION}"
+
+
+def known_diff(pr: dict, path: Path | None = None) -> dict | None:
+    """{"gates", "files"} of this exact head against this exact base, gated within DIFF_TTL; else None."""
+    return _fresh(path or DIFF_GATES, DIFF_TTL).get(_diff_key(pr)) if pr.get("baseRefOid") else None
+
+
+def remember_diff(pr: dict, files: dict[str, dict], gates: list[str], path: Path | None = None) -> None:
+    if not pr.get("baseRefOid"):                        # without the base commit "the same diff" cannot be known
+        return
+    path = path or DIFF_GATES
+    memo = _fresh(path, DIFF_TTL)
+    memo[_diff_key(pr)] = {"ts": round(time.time()), "gates": gates, "files": len(files)}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(memo), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        pass                                            # a memo that cannot be written only costs a gh call later
 
 
 SAFETY = re.compile(r"secret|token|password|credential|injection|rm -rf|delet|data loss|leak|privilege|sandbox escape",
@@ -426,12 +498,37 @@ def hunt_pr(pr: dict, files: dict, rev: dict) -> None:
 
 
 def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_fn=prove_high_risks,
-           hunt_fn=hunt_pr) -> dict:
-    diff = diff_fn(pr) if diff_fn else gh("pr", "diff", str(pr["number"]), "--repo", REPO, timeout=300)
-    files = parse_diff(diff)
+           hunt_fn=hunt_pr, memo: Path | None = None, build_fn=None) -> dict:
+    """The hard gates cheapest first, each a sure hold on its own: the list data (no call), the head's check runs
+    (one call), then the diff (one call, the slow one). Once a gate blocks, nothing fetched later can turn the hold
+    into a merge, so it is not fetched. The diff of a head gated against the same base within DIFF_TTL is not
+    fetched again when nothing after the gates needs it: its diff gates blocked, or (no hunt) her review of that
+    head is cached. Same action as gate_failures over everything; only the reasons stop at the first gate that blocks.
+    build_fn(pr, files, checks) last, only for a PR that would merge: the head merged with today's base must build
+    and pass the tests the diff touches (litha.build_check, section 4s), else it holds with the failing test named."""
+    row = {"pr": pr["number"], "head": pr["headRefOid"], "title": pr.get("title", "")}
+    gates = list_gates(pr)
+    if gates:
+        return {**row, "action": "hold", "reasons": gates, "review": None, "files": None, "skipped": "checks, diff"}
     checks = checks_fn(pr["headRefOid"])
-    gates = gate_failures(pr, checks, files)
-    rev = cached_review(pr, files, ask) if not gates else None   # no model time on a PR the gates already block
+    gates = check_gates(checks)
+    if gates:
+        return {**row, "action": "hold", "reasons": gates, "review": None, "files": None, "skipped": "diff"}
+    seen = known_diff(pr, memo) if diff_fn is None else None
+    rev = None
+    if seen is not None and not seen["gates"] and ask is ask_litha and hunt_fn is None:
+        rev = known_review(pr)
+    if seen is not None and (seen["gates"] or rev is not None):
+        files, gates, n_files = {}, list(seen["gates"]), seen["files"]
+        row["skipped"] = "diff (same head and base gated within 6 h)"
+    else:
+        diff = diff_fn(pr) if diff_fn else gh("pr", "diff", str(pr["number"]), "--repo", REPO, timeout=300)
+        files = parse_diff(diff)
+        gates, n_files = diff_gates(files), len(files)
+        if diff_fn is None:
+            remember_diff(pr, files, gates, memo)
+    if not gates and rev is None:
+        rev = cached_review(pr, files, ask)                     # no model time on a PR the gates already block
     if rev and rev["verdict"] == "hold" and prove_fn:
         prove_fn(pr, rev, ask)                                   # a high claim must be shown by a failing test
     if rev and rev["verdict"] == "merge" and not gates and hunt_fn:
@@ -439,8 +536,14 @@ def decide(pr: dict, ask=ask_litha, checks_fn=head_checks, diff_fn=None, prove_f
     action = "merge" if not gates and rev and rev["verdict"] == "merge" else "hold"
     reasons = gates or [f"Litha: {r['file']}:{r['line']} {r['why']}" for r in (rev or {}).get("risks", [])
                         if r["severity"] == "high"]
-    return {"pr": pr["number"], "head": pr["headRefOid"], "title": pr.get("title", ""), "action": action,
-            "reasons": reasons, "review": rev, "files": len(files)}
+    if action == "merge" and build_fn:
+        names = list(files) or gh("pr", "diff", str(pr["number"]), "--repo", REPO, "--name-only", timeout=300).split()
+        built = build_fn(pr, names, checks)
+        row["build"] = {k: built[k] for k in ("ok", "skipped", "ran", "failed", "seconds", "cached")
+                        if built.get(k) not in (None, "", [])}
+        if not built.get("ok"):
+            action, reasons = "hold", [f"build check: {built.get('failed') or 'failed'}"]
+    return {**row, "action": action, "reasons": reasons, "review": rev, "files": n_files}
 
 
 def confirm(pr: dict) -> tuple[bool, str]:
@@ -470,6 +573,12 @@ def confirm(pr: dict) -> tuple[bool, str]:
     if v["verdict"] == "hold" and v["high"]:
         return False, "Claude: " + "; ".join(v["high"])[:600]
     return True, ""
+
+
+def build(pr: dict, files: list[str], checks: list[dict]) -> dict:
+    """The build/test check (litha.build_check) in the clone litha.pr_fixer works in (CLONE/WORK)."""
+    from litha import build_check
+    return build_check.check(pr, files, sys.executable, checks)
 
 
 def vetoed(row: dict, pr: dict) -> bool:
@@ -550,13 +659,21 @@ def replay_hunt(n: int) -> dict:
 
 def others(apply: bool) -> int:
     """The owner's other repos: same gates and review. No local clone there, so no test proofs and no bug hunt: an
-    unproven high-risk claim keeps holding. mode review = log ready/hold only, never merge."""
+    unproven high-risk claim keeps holding. mode review = log ready/hold only, never merge. A repo with a local
+    clone (repos.json "clone") gets the build/test check too."""
     global REPO, BASE, ALLOW_MAIN
+    from litha import pr_fixer
     home = (REPO, BASE, ALLOW_MAIN)
+    tree_home = (pr_fixer.CLONE, pr_fixer.WORK)
     try:
         for entry in json.loads(REPOS.read_text(encoding="utf-8"))["repos"][1:]:
             REPO, BASE, ALLOW_MAIN = entry["repo"], entry.get("base", "main"), bool(entry.get("allow_main"))
             can_merge = apply and entry.get("mode") == "merge"
+            clone = Path(entry["clone"]).expanduser() if entry.get("clone") else None
+            pr_fixer.CLONE, pr_fixer.WORK = tree_home
+            if clone:
+                pr_fixer.CLONE = clone
+                pr_fixer.WORK = Path(entry.get("worktrees") or clone.parent / f"{clone.name}-worktrees").expanduser()
             try:
                 prs = open_prs()
             except RuntimeError as e:
@@ -567,7 +684,7 @@ def others(apply: bool) -> int:
                 if pr.get("isDraft"):
                     continue
                 try:
-                    row = decide(pr, prove_fn=None, hunt_fn=None)
+                    row = decide(pr, prove_fn=None, hunt_fn=None, build_fn=build if clone else None)
                 except Exception as e:  # noqa: BLE001 - one bad PR must not stop the queue
                     row = {"pr": pr["number"], "action": "hold", "reasons": [f"error: {str(e)[:200]}"]}
                 if row["action"] == "merge" and can_merge and not vetoed(row, pr):
@@ -584,7 +701,9 @@ def others(apply: bool) -> int:
                       f"{'; '.join(row['reasons'][:2]) or (row.get('review') or {}).get('summary', '')[:140]}", flush=True)
             print(f"{REPO}: merged {merged}" if can_merge else f"{REPO}: review only", flush=True)
     finally:
+        print(f"gh calls: {sum(GH_CALLS.values())} {dict(GH_CALLS)}", flush=True)
         REPO, BASE, ALLOW_MAIN = home
+        pr_fixer.CLONE, pr_fixer.WORK = tree_home
     return 0
 
 
@@ -596,6 +715,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--replay-hunt", type=int, help="false holds of the bug hunt on this many merged PRs")
     ap.add_argument("--others", action="store_true", help="every other repo in repos.json (review or merge mode)")
     a = ap.parse_args(argv)
+    if PAUSED.exists() and not (a.replay or a.replay_hunt):     # replays only read closed PRs: they may still run
+        print(f"pr_merger: paused by the owner ({PAUSED}); nothing reviewed or merged", flush=True)
+        return 0
     if a.others:
         return others(a.apply)
     if a.replay_hunt:
@@ -607,7 +729,7 @@ def main(argv: list[str] | None = None) -> int:
     merged = 0
     for pr in open_prs(a.pr):
         try:
-            row = decide(pr)
+            row = decide(pr, build_fn=build)
         except Exception as e:  # noqa: BLE001 - one bad PR must not stop the queue
             row = {"pr": pr["number"], "action": "hold", "reasons": [f"error: {str(e)[:200]}"]}
         if row["action"] == "merge" and a.apply and not vetoed(row, pr):
@@ -621,6 +743,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"#{row['pr']} {row['action'].upper()}{' (merged)' if row.get('merged') else ''}: "
               f"{'; '.join(row['reasons'][:3]) or (row.get('review') or {}).get('summary', '')[:160]}", flush=True)
     print(f"merged {merged}" if a.apply else "dry run (use --apply to merge)")
+    print(f"gh calls: {sum(GH_CALLS.values())} {dict(GH_CALLS)}", flush=True)
     return 0
 
 
