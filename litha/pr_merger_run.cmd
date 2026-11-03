@@ -24,6 +24,9 @@ echo %date% %time% step pr_fixer --others (previous rc=%errorlevel%) >> "%USERPR
 "%~1" -m litha.pr_fixer --others 2 --python "%~1" >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 echo %date% %time% step pr_merger --others (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.pr_merger --apply --others >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
+rem She picks her own work (litha.autonomy): dry run (queue only) until %USERPROFILE%\.star\litha-autonomy\APPLY
+rem exists; OFF in that folder stops it. Queue: %USERPROFILE%\.star\litha-autonomy\queue.json
+"%~1" -m litha.autonomy --python "%~1" >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
 rem The owner's own Git server gets main and star/next too (fast-forward only): step 1 of leaving GitHub.
 echo %date% %time% step forge_sync (previous rc=%errorlevel%) >> "%USERPROFILE%\.star\pr-merger\run.log"
 "%~1" -m litha.forge_sync >> "%USERPROFILE%\.star\pr-merger\run.log" 2>&1
