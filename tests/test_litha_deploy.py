@@ -161,7 +161,7 @@ def test_a_head_gets_one_ci_rerun_ever_of_its_newest_failed_run(monkeypatch, tmp
     F.RERUNS.set(None)
     assert F.rerun_failed("abc", 700) == 1
     assert [a for a in asked if a[0] == "run"] == [("run", "rerun", "2", "--failed", "--repo", F.REPO)]  # newest only
-    assert list(json.loads(F.RERAN.read_text(encoding="utf-8"))) == [f"{F.REPO}@abc"]
+    assert list(json.loads((tmp_path / "reran.json").read_text(encoding="utf-8"))) == [f"{F.REPO}@abc"]
     asked.clear()
     assert F.rerun_failed("abc", 700) == 0 and asked == []                # a later run: no gh call, no rerun
     assert F.reran("abc") and not F.reran("def")
@@ -172,7 +172,7 @@ def test_a_head_gets_one_ci_rerun_ever_of_its_newest_failed_run(monkeypatch, tmp
 
 def test_expired_logs_on_a_head_that_had_its_rerun_are_a_skip(monkeypatch, tmp_path):
     monkeypatch.setattr(F, "RERAN", tmp_path / "reran.json")
-    F.RERAN.write_text(json.dumps({f"{F.REPO}@abc": 1}), encoding="utf-8")
+    (tmp_path / "reran.json").write_text(json.dumps({f"{F.REPO}@abc": 1}), encoding="utf-8")
     monkeypatch.setattr(F, "failed_logs", lambda sha: "")
     monkeypatch.setattr(F, "rerun_failed", lambda *a: pytest.fail("this head already had its one rerun"))
     row = F.fix({"headRefOid": "abc", "number": 700, "headRefName": "x"}, "python")
@@ -181,7 +181,7 @@ def test_expired_logs_on_a_head_that_had_its_rerun_are_a_skip(monkeypatch, tmp_p
 
 def test_a_broken_reran_file_counts_as_empty_and_is_rewritten(monkeypatch, tmp_path):
     monkeypatch.setattr(F, "RERAN", tmp_path / "reran.json")
-    F.RERAN.write_text("{not json", encoding="utf-8")
+    (tmp_path / "reran.json").write_text("{not json", encoding="utf-8")
     assert not F.reran("abc")
     F._note_rerun("abc")
     assert F.reran("abc")
@@ -293,6 +293,23 @@ def test_a_failed_self_check_rolls_back_and_that_head_is_not_tried_again(live):
     assert git(live_dir, "rev-parse", "HEAD") == old and (live_dir / "litha" / "a.py").read_text() == "X = 1\n"
     assert new in json.loads((home / U.BAD).read_text(encoding="utf-8"))
     assert "failed its self-check before" in run(live_dir, home)
+
+
+def test_a_canary_that_gets_through_the_new_code_rolls_the_update_back(live):
+    origin, live_dir, home = live
+    old = git(live_dir, "rev-parse", "HEAD")
+    new = push(origin, "litha/a.py", "X = 2\n")
+    seen = []
+    line = run(live_dir, home, canary_fn=lambda root, py: seen.append(root) or "canary gate failed: PASSED pr-x")
+    assert "canary gate failed" in line and f"rolled back to {old[:9]}" in line and seen == [live_dir]
+    assert git(live_dir, "rev-parse", "HEAD") == old and new in json.loads((home / U.BAD).read_text(encoding="utf-8"))
+    assert "failed its self-check before" in run(live_dir, home, canary_fn=lambda root, py: "")
+
+
+def test_main_runs_the_canary_gate(monkeypatch):
+    got = {}
+    monkeypatch.setattr(U, "update", lambda **kw: got.update(kw) or "")
+    assert U.main([]) == 0 and got["canary_fn"] is U.canary_gate
 
 
 def test_the_self_check_imports_every_module_the_run_script_starts(tmp_path):

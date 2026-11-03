@@ -53,7 +53,11 @@ TUNABLE = ("MERGE_PROMPT", "ANSWER")
 SKIP = re.compile(r"(^|/)(pnpm-lock\.yaml|[^/]+\.lock)$|^\.github/")   # taken from the base / a person's call
 # (repo, base branch, scratch clone, replay its history merges)
 REPOS = [("Metallic-Club/studio", "main", HOME / "studio.git", True),
-         ("oncoursemail/Star-AI-Project", "star/next", HOME / "star.git", True)]
+         ("oncoursemail/Star-AI-Project", "star/next", HOME / "star.git", True),
+         ("Metallic-Club/plateform", "platform/feature-list-20261030", HOME / "plateform.git", True)]   # section 8
+# Frozen history cases of repos the bench machine cannot clone (private: Metallic-RB), one JSON per repo, made by
+# `python -m litha.trusted_bench freeze-extra` where a clone exists; cases() adds them (section 8).
+EXTRA = HOME / "cases-extra"
 # Repos whose cases are left out of every build and score (they stay in an old cases.json, marked, never replayed).
 EXCLUDED = {"Metallic-Club/studio": "off limits (owner 2026-11-02: Matt is rebuilding it)"}
 MUST_REFUSE = [
@@ -215,11 +219,15 @@ def build(repos=None, max_merges: int = 0, log: Path = FIXES, out: Path = CASES)
     return cases_
 
 
-def cases(path: Path = CASES) -> list[dict]:
-    """The frozen replay set (built on first use), without the cases of EXCLUDED repos."""
-    if not path.exists():
-        return build(out=path)
-    return [c for c in json.loads(path.read_text(encoding="utf-8"))["cases"] if c["repo"] not in EXCLUDED]
+def cases(path: Path = CASES, extra: Path | None = None) -> list[dict]:
+    """The frozen replay set (built on first use) plus the frozen extra sets next to it (cases-extra/*.json), without
+    the cases of EXCLUDED repos; a case id counts once."""
+    got = build(out=path) if not path.exists() else json.loads(path.read_text(encoding="utf-8"))["cases"]
+    folder = extra or path.with_name(EXTRA.name)
+    for p in sorted(folder.glob("*.json")) if folder.is_dir() else []:
+        with contextlib.suppress(OSError, ValueError, KeyError):
+            got = got + json.loads(p.read_text(encoding="utf-8"))["cases"]
+    return list({c["id"]: c for c in got if c["repo"] not in EXCLUDED}.values())
 
 
 # ---------------------------------------------------------------- scoring

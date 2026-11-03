@@ -34,8 +34,10 @@ import time
 import urllib.error
 import urllib.request
 
+from litha import canaries as C
 from litha import experience as X
 from litha import self_tune as st
+from litha import trusted_bench as tb
 
 HOME = st.HOME
 CANDIDATES = HOME / "candidates"
@@ -47,14 +49,16 @@ BRAIN = os.environ.get("LITHA_BRAIN_SSH", "litha-brainone")     # an ssh alias i
 REMOTE_CODE = "litha-learn/code"
 
 
-def node_model(url: str | None = None, token: str | None = None, wait_s: float = 1800, opener=urllib.request.urlopen):
-    """Her model straight from a GPU node: pr_fixer.ask's request (1500 tokens, 0.2, JSON), retried while busy."""
+def node_model(url: str | None = None, token: str | None = None, wait_s: float = 1800, opener=urllib.request.urlopen,
+               max_tokens: int = 1500, temperature: float = 0.2):
+    """Her model straight from a GPU node: pr_fixer.ask's request (1500 tokens, 0.2, JSON; the merge review uses 700,
+    0.1), retried while busy."""
     url = (url or NODE_URL.read_text(encoding="utf-8").split()[0]).rstrip("/")
     token = token or TOKEN.read_text(encoding="utf-8").split()[0]
 
     def ask(prompt: str) -> str:
-        body = {"model": "litha-fast", "messages": [{"role": "user", "content": prompt}], "max_tokens": 1500,
-                "temperature": 0.2, "response_format": {"type": "json_object"},
+        body = {"model": "litha-fast", "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
+                "temperature": temperature, "response_format": {"type": "json_object"},
                 "chat_template_kwargs": {"enable_thinking": False}}
         end, last = time.time() + wait_s, ""
         while True:
@@ -160,8 +164,12 @@ def brief(r: dict) -> dict:
 
 def run(model=None, cases_: list[dict] | None = None, cache: st.Cache | None = None, propose: bool = False,
         store_path: Path | None = X.STORE, switch: Path | None = None, reports: Path = REPORTS,
-        cand_dir: Path = CANDIDATES, log: Path | None = st.RUNS, nightly: Path | None = NIGHTLY) -> dict:
-    """One night: baseline, with experience memory, every candidate; verdicts written. Returns the report."""
+        cand_dir: Path = CANDIDATES, log: Path | None = st.RUNS, nightly: Path | None = NIGHTLY, k: int = 1,
+        canaries: bool = False, review_ask=None) -> dict:
+    """One night: baseline, with experience memory, every candidate; verdicts written. Returns the report.
+    k > 1 (section 8): every case is replayed k times for the baseline and for each change, the report gets the
+    bench line (score, CI, MDE) and a change is kept only when the paired CI over all cases is also above 0.
+    canaries: the gate canaries (hard gates; with review_ask also her review) run and are reported."""
     t0 = time.time()
     cases_ = cases_ if cases_ is not None else st.cases()
     cache = cache or st.Cache()
@@ -171,6 +179,17 @@ def run(model=None, cases_: list[dict] | None = None, cache: st.Cache | None = N
     report["stamped"] = stamp(cases_)
     base = st.score({}, cases_, model, 0, cache, log=log)
     report["baseline"] = brief(base)
+    splits = {c["id"]: c.get("split", "tune") for c in cases_}
+    base_tab = (tb.table({}, cases_, model, k, cache, log=log) if k > 1 else
+                {cid: [r["outcome"] in st.GOOD] for cid, r in base["cases"].items()})
+    report["bench"] = tb.summary(base_tab, splits)
+
+    def paired_gate(verdict: dict, overrides: dict, lessons=None) -> None:
+        if k > 1:
+            new_tab = tb.table(overrides, cases_, model, k, cache, lessons=lessons, log=log)
+            verdict["paired"] = tb.paired(base_tab, new_tab)
+            verdict["paired_hold"] = tb.paired(base_tab, new_tab, ids=[c for c in base_tab if splits[c] == "hold"])
+            verdict["keep"] = bool(verdict["keep"] and verdict["paired"]["significant"])
     lessons_for(cases_, base, store_path)                  # tonight's replay lessons into her store
     report["variants"], best = {}, None
     for name, (sources, same_path) in VARIANTS.items():
@@ -179,6 +198,7 @@ def run(model=None, cases_: list[dict] | None = None, cache: st.Cache | None = N
             continue                                       # nothing of this variant's own kind yet
         with_mem = st.score({}, cases_, model, 0, cache, log=log, lessons=store)
         verdict = st.compare(base, with_mem, {}, cases_, model, cache, None, store)
+        paired_gate(verdict, {}, store)
         report["variants"][name] = {**brief(with_mem), "lessons": len(store.active("resolve")), "verdict": verdict}
         if verdict["keep"] and (best is None or verdict["hold_new"] > report["variants"][best]["verdict"]["hold_new"]):
             best = name
@@ -201,6 +221,7 @@ def run(model=None, cases_: list[dict] | None = None, cache: st.Cache | None = N
     for p, over, why in candidates(cand_dir):
         new = st.score(over, cases_, model, 0, cache, log=log)
         v = st.compare(base, new, over, cases_, model, cache)
+        paired_gate(v, over)
         row = {"file": p.name, "why": why, "verdict": v, "result": "kept" if v["keep"] else "rejected"}
         if v["keep"]:
             st.PROPOSALS.mkdir(parents=True, exist_ok=True)
@@ -214,12 +235,23 @@ def run(model=None, cases_: list[dict] | None = None, cache: st.Cache | None = N
     if propose:
         report["propose"] = [{k: v for k, v in r.items() if k != "answer"}
                              for r in st.propose(cases_, model, cache=cache, log=log)]
+    if canaries:
+        report["canaries"] = {}
+        for mode, ask in (("gate", C.always_merge), ("review", review_ask)):
+            if ask is not None:
+                got = C.run(ask, mode=mode)
+                report["canaries"][mode] = {**{k_: got[k_] for k_ in ("total", "held", "escapes", "known", "now_held")},
+                                            "rows": [{k_: r.get(k_) for k_ in ("id", "held", "reason")}
+                                                     for r in got["rows"]]}
     report["seconds"] = round(time.time() - t0)
     reports.mkdir(parents=True, exist_ok=True)
     (reports / f"{report['day']}.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     if nightly:
         with nightly.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({k: report[k] for k in ("ts", "day", "cases", "baseline", "on", "seconds")} |
+            f.write(json.dumps({k_: report[k_] for k_ in ("ts", "day", "cases", "baseline", "on", "seconds")} |
+                               {"bench": report["bench"],
+                                "canaries": {m: {k_: v for k_, v in c.items() if k_ != "rows"}
+                                             for m, c in report.get("canaries", {}).items()}} |
                                {"experience": {k: v for k, v in report["experience"].items() if k != "verdict"} |
                                 {"keep": verdict["keep"], "hold_old": verdict["hold_old"],
                                  "hold_new": verdict["hold_new"]},
@@ -245,7 +277,10 @@ def sync() -> int:
     store.save()
     print("lessons:", json.dumps(got))
     for local, remote in ((X.FIXES, ".star/pr-fixer/fixes.jsonl"), (X.DECISIONS, ".star/pr-merger/decisions.jsonl"),
-                          (X.STORE, ".star/litha/experience/lessons.jsonl")):   # her answer cache stays on Brain One
+                          (X.STORE, ".star/litha/experience/lessons.jsonl"),    # her answer cache stays on Brain One
+                          (C.CORPUS, ".star/litha/canaries/corpus.json"),        # section 8
+                          *[(p, f".star/litha-selftune/cases-extra/{p.name}")
+                            for p in sorted(st.EXTRA.glob("*.json")) if st.EXTRA.is_dir()]):
         if local.exists():
             r = _ssh(f"mkdir -p {Path(remote).parent.as_posix()} && cat > {remote}.new && mv {remote}.new {remote}",
                      data=local.read_bytes())
@@ -332,6 +367,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--rebuild-days", type=float, default=7)
     r.add_argument("--propose", action="store_true", help="also one Claude proposal (needs a key; lane budget)")
     r.add_argument("--no-fetch", action="store_true")
+    r.add_argument("--k", type=int, default=tb.K, help="runs per case (section 8; 1 = the old single run)")
+    r.add_argument("--no-canaries", action="store_true")
     sub.add_parser("sync", help="(PC) logs/lessons to Brain One, the verdict back")
     di = sub.add_parser("distill", help="(PC) Claude's lessons from Brain One's tune-split failures")
     di.add_argument("--budget", type=float, default=DISTILL_CAP)
@@ -350,8 +387,10 @@ def main(argv: list[str] | None = None) -> int:
     if stale(st.CASES, a.rebuild_days):
         got = st.build()
         print(f"rebuilt the replay set: {len(got)} cases", flush=True)
-    rep = run(propose=a.propose)
+    review = node_model(max_tokens=700, temperature=0.1) if NODE_URL.exists() else None
+    rep = run(propose=a.propose, k=a.k, canaries=not a.no_canaries, review_ask=review)
     print(json.dumps({k: rep[k] for k in ("cases", "stamped", "baseline", "on", "seconds")}), flush=True)
+    print("bench: " + tb.line(rep["bench"]), flush=True)
     for name, v in rep["variants"].items():
         w = v["verdict"]
         print(f"variant {name} ({v['lessons']} lessons): held-out {w['hold_old']} -> {w['hold_new']}, total "
@@ -361,6 +400,9 @@ def main(argv: list[str] | None = None) -> int:
           f"{e['new']} (noise {e['noise']}, broken {len(e['flips'])}): {'ON' if e['keep'] else 'off'}", flush=True)
     for c in rep["candidates"]:
         print(f"candidate {c['file']}: {c['result']}", flush=True)
+    for mode, c in rep.get("canaries", {}).items():
+        print(f"canaries ({mode}): {c['held']}/{c['total']} held; escapes {c['escapes'] or 'none'}; known escapes "
+              f"{c['known']}", flush=True)
     return 0
 
 

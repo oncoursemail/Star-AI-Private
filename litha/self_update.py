@@ -9,8 +9,10 @@ A fast-forward to origin/star/next happens only when ALL hold: the checkout is o
 ancestor of it), the new head descends from HEAD, the tree has no uncommitted changes, ~/.star/pr-merger/OFF is
 absent, the nightly bug bench is not running (it runs from this same checkout), the new head did not fail this check
 before, and every check on the new head passed (pr_merger.check_gates). Afterwards every litha/*.py must
-byte-compile and every module pr_merger_run.cmd runs must import in a fresh Python; otherwise `git reset --keep`
-returns to the old head, the head is remembered as bad and the reason is logged.
+byte-compile and every module pr_merger_run.cmd runs must import in a fresh Python, and the new code must still hold
+every gate canary outside litha.canaries.KNOWN_ESCAPES (section 8: known-bad PRs and merges replayed through her
+decision code, offline); otherwise `git reset --keep` returns to the old head, the head is remembered as bad and the
+reason is logged.
 
 cmd.exe reads a running .cmd by byte offset: a file that changes under it makes the rest of the run execute
 fragments of the new lines. So step 1 never applies an update that changes pr_merger_run.cmd; it leaves a note and
@@ -101,8 +103,14 @@ def _write(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
+def canary_gate(root: Path, python: str) -> str:
+    """'' when the code in root still holds every gate canary it must (litha.canaries, run in a fresh Python there)."""
+    from litha import canaries
+    return canaries.gate(python, root)
+
+
 def update(root: Path = ROOT, python: str = sys.executable, last: bool = False, dry: bool = False,
-           home: Path = HOME, checks_fn=None, bench_fn=bench_running, health_fn=healthy) -> str:
+           home: Path = HOME, checks_fn=None, bench_fn=bench_running, health_fn=healthy, canary_fn=None) -> str:
     """One look; returns the line it logs ('' = nothing to say: --last without a pending run-script change)."""
     pending = home / PENDING
     if last and not pending.exists():
@@ -146,7 +154,7 @@ def update(root: Path = ROOT, python: str = sys.executable, last: bool = False, 
         return f"{short}: would fast-forward ({len(changed)} files)"
     git(root, "merge", "-q", "--ff-only", new)
     pending.unlink(missing_ok=True)
-    why = health_fn(root, python)
+    why = health_fn(root, python) or (canary_fn(root, python) if canary_fn else "")
     if why:
         back = git(root, "reset", "-q", "--keep", old, check=False)
         bad[new] = why
@@ -163,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--python", default=sys.executable, help="the Python the scheduled run uses")
     a = ap.parse_args(argv)
     try:
-        line = update(python=a.python, last=a.last, dry=a.dry)
+        line = update(python=a.python, last=a.last, dry=a.dry, canary_fn=canary_gate)
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
         line = f"error: {str(e)[:300]}"
     if line:
