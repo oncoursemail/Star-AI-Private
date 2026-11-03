@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import time
+from typing import Any
 
 ROOT = Path.home() / ".star"
 REPOS_JSON = Path(__file__).resolve().parent.parent / "repos.json"
@@ -35,7 +36,7 @@ def _stamp(path: Path):
         return None
 
 
-def cached(path: Path, parse, *extra):
+def cached(path: Path, parse, *extra) -> Any:
     """parse(path) once per change of the file (mtime + size); None stamp = missing file, parsed too (cheap)."""
     key = (str(path), parse.__name__, _stamp(path), *extra)
     if key not in _cache:

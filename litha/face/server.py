@@ -131,7 +131,7 @@ class Server(ThreadingHTTPServer):
 
     def server_bind(self):
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            self.socket.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE"), 1)
         super().server_bind()
 
 

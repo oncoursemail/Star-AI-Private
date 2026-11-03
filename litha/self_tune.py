@@ -176,9 +176,12 @@ def must_refuse(repo: str, base: str, clone: Path) -> list[dict]:
         if r != repo:
             continue
         parents = git(clone, "rev-parse", f"{commit}^1", f"{commit}^2").stdout.split()
-        raws = remerge(clone, *parents, base) if len(parents) == 2 else {}
+        if len(parents) != 2:
+            continue
+        ours, theirs = parents
+        raws = remerge(clone, ours, theirs, base)
         if path in raws:
-            c = _case(repo, base, clone, "refuse", *parents, path, raws[path],
+            c = _case(repo, base, clone, "refuse", ours, theirs, path, raws[path],
                       git(clone, "log", "-1", "--format=%s", commit).stdout.strip(), commit=commit, reason=why)
             c.update(kind="must_refuse", bad=show(clone, commit, path))
             out.append(c)
