@@ -185,6 +185,28 @@ class PortTests(unittest.TestCase):
             self.assertTrue(port.send_action("jump", 12, Event()))
             self.assertEqual(p2.call_args.args[0][-1], "12")
 
+    def test_exact_guarded_episode_accepts_native_port_callbacks(self):
+        # End-to-end through the real ActionPermit claim/release state machine,
+        # while mocking *only* the OS worker and Win32 API (no real keys).
+        from test_game_actuation_rehearsal import ready
+        guard, permit, _, episode, _ = ready()
+        port = self.make_port()
+        port.enable(owner_approved=True)
+        guard._send_action = port.send_action
+        guard._request_all_up = port.request_all_up
+        guard._all_keys_up = port.all_keys_up
+        guard._focus = port.focus_ok
+        guard.enable(owner_approved=True)
+        with patch("star.windows_game_input_port.subprocess.Popen",
+                   return_value=FakeProcess()):
+            result = guard.run(permit)
+        self.assertEqual(result.status, "released_verified")
+        self.assertTrue(result.keys_up_verified)
+        self.assertFalse(episode.revoked)
+        self.assertFalse(port._stop.is_set())
+        guard.stop()
+        self.assertTrue(episode.revoked)
+
     def test_fake_worker_rejection_is_not_success(self):
         port = self.make_port()
         port.enable(owner_approved=True)
