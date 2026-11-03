@@ -334,3 +334,13 @@ def test_stamp_reads_commit_times_from_the_clone(tmp_path):
     cases = [dict(case("a"), commit=sha), case("b", repo="other/r")]
     assert N.stamp(cases, [("o/r", "main", repo, True)]) == 1
     assert cases[0]["at"] == 1767323045 and "at" not in cases[1]
+
+
+def test_same_file_variant_only_shows_lessons_about_the_tasks_own_file():
+    other = lesson("keep the tax_rate argument of compute_widget_total", RAW, path="shop/other.py")
+    store = X.Store(None, [other])
+    assert store.retrieve("resolve", "o/r", ["shop/cart.py"], RAW) == [other]
+    store.same_path = True
+    assert store.retrieve("resolve", "o/r", ["shop/cart.py"], RAW) == []
+    assert store.retrieve("resolve", "o/r", ["shop/other.py"], RAW) == [other]
+    assert N.lessons_for([], {"cases": {}}, None, {"test"}, True).same_path is True

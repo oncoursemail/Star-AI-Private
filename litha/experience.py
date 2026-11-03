@@ -107,6 +107,7 @@ class Store:
                     x = json.loads(ln)
                     self.lessons[x["id"]] = x
         self._idf: dict[str, float] | None = None
+        self.same_path = False           # True: only lessons about one of the task's own files
 
     def add(self, lessons: list[dict]) -> int:
         """New lessons in (an id already known keeps its counts); returns how many were new."""
@@ -141,7 +142,8 @@ class Store:
         return self._idf
 
     def retrieve(self, lane: str, repo: str = "", paths: list[str] | tuple = (), text: str = "", k: int = 3,
-                 hide: str = "", before: float | None = None, sources=None) -> list[dict]:
+                 hide: str = "", before: float | None = None, sources=None,
+                 same_path: bool | None = None) -> list[dict]:
         """The k most relevant active lessons of this lane for a task (repo + files + error / conflict text); a
         lesson made from the task itself (case == hide) or learnt after `before` (a replayed past task must not see
         what was learnt later) is never shown."""
@@ -151,6 +153,8 @@ class Store:
         scored = []
         for x in self.active(lane):
             if sources is not None and x["source"] not in sources:
+                continue
+            if (self.same_path if same_path is None else same_path) and x.get("path") not in paths:
                 continue
             if (hide and x.get("case") == hide) or (before is not None and x["ts"] > before):
                 continue
@@ -226,6 +230,14 @@ def switch_sources() -> set | None:
         return None
 
 
+def switch_same_path() -> bool:
+    """Whether the measured variant only used lessons about the task's own files (on.json "same_path")."""
+    try:
+        return bool(json.loads(SWITCH.read_text(encoding="utf-8")).get("same_path"))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def enabled(lane: str) -> bool:
     if _FORCED is not None:
         return lane in _FORCED["lanes"]
@@ -260,7 +272,8 @@ def note(task: dict | None, room_tokens: float, who: str = "local") -> str:
         found = store.retrieve(task["lane"], task.get("repo", ""), task.get("paths") or (), task.get("text", ""),
                                hide=(_FORCED or {}).get("hide") or task.get("hide", ""),
                                before=(_FORCED or {}).get("before"),
-                               sources=None if _FORCED is not None else switch_sources())
+                               sources=None if _FORCED is not None else switch_sources(),
+                               same_path=None if _FORCED is not None else switch_same_path())
         text = render(found, min(room_tokens, ROOM[who]))
     except Exception:  # noqa: BLE001 - lessons are a help, never a reason to fail a task
         return ""

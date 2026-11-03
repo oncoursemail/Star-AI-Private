@@ -92,12 +92,14 @@ def stale(path: Path, days: float) -> bool:
     return not path.exists() or time.time() - path.stat().st_mtime > days * 86400
 
 
-VARIANTS = {"logs+distilled": {"fixes", "decisions", "distilled"},     # Claude's one-line rules (distill, on the PC)
-            "logs+replay": {"fixes", "decisions", "replay"}}           # mechanical "what the accepted merge did"
+# name -> (lesson sources, only lessons about the task's own file)
+VARIANTS = {"logs+distilled": ({"fixes", "decisions", "distilled"}, False),   # Claude's one-line rules (distill, PC)
+            "distilled-same-file": ({"fixes", "decisions", "distilled"}, True),
+            "logs+replay": ({"fixes", "decisions", "replay"}, False)}         # mechanical "what the accepted merge did"
 
 
 def lessons_for(cases_: list[dict], base: dict, store_path: Path | None = X.STORE,
-                sources: set | None = None) -> X.Store:
+                sources: set | None = None, same_path: bool = False) -> X.Store:
     """Her lessons from the logs, Claude's distilled ones and the tune split's replay failures (re-made from tonight's
     baseline), limited to `sources`; hold-out cases never give one."""
     logged = X.Store(store_path) if store_path else X.Store(None, [])
@@ -109,6 +111,7 @@ def lessons_for(cases_: list[dict], base: dict, store_path: Path | None = X.STOR
         logged.save()
     if sources is not None:
         store = X.Store(None, [x for x in store.lessons.values() if x["source"] in sources])
+    store.same_path = same_path
     return store
 
 
@@ -170,8 +173,8 @@ def run(model=None, cases_: list[dict] | None = None, cache: st.Cache | None = N
     report["baseline"] = brief(base)
     lessons_for(cases_, base, store_path)                  # tonight's replay lessons into her store
     report["variants"], best = {}, None
-    for name, sources in VARIANTS.items():
-        store = lessons_for(cases_, base, None if store_path is None else store_path, sources)
+    for name, (sources, same_path) in VARIANTS.items():
+        store = lessons_for(cases_, base, store_path, sources, same_path)
         if not any(x["source"] not in ("fixes", "decisions") for x in store.active("resolve")):
             continue                                       # nothing of this variant's own kind yet
         with_mem = st.score({}, cases_, model, 0, cache, log=log, lessons=store)
@@ -187,7 +190,8 @@ def run(model=None, cases_: list[dict] | None = None, cache: st.Cache | None = N
     lanes = ["resolve"] if best else []
     sw = switch or X.SWITCH
     sw.parent.mkdir(parents=True, exist_ok=True)
-    sw.write_text(json.dumps({"lanes": lanes, "sources": sorted(VARIANTS[best]) if best else [],
+    sw.write_text(json.dumps({"lanes": lanes, "sources": sorted(VARIANTS[best][0]) if best else [],
+                              "same_path": bool(best and VARIANTS[best][1]),
                               "variant": best, "ts": int(time.time()), "why": (
         f"held-out {verdict['hold_old']} -> {verdict['hold_new']} of {verdict['hold_total']}, total "
         f"{verdict['old']} -> {verdict['new']} (noise {verdict['noise']}, {len(verdict['flips'])} broken)")}),
