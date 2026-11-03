@@ -679,3 +679,15 @@ Never merge into `main` except through `pr_promote` with all receipts. Never for
 author's branch, never edit tests to make them pass, never print or commit keys or private addresses, one CI rerun per
 run, and every decision logged. If a rule blocks real progress, measure it, then change it in code with a test and a
 line in this file saying why.
+
+## 4d. Claude as her paid second opinion (2026-11-01)
+When her local model gives no usable merge for a conflict (3 tries, or the conflict is bigger than her 4K window), or
+her Rust/Python repair fails, she asks Claude (`litha/claude.py`, model `claude-opus-5-5`; effort medium for merges,
+high for repairs) with the same prompt, and the same checks apply to its answer. Every call is priced from its usage
+and logged in `~/.star/litha-claude/spend.jsonl`; she stops at $150 total or $20 a day (override in
+`~/.star/litha-claude/cap.json`). Key: `~/.star/anthropic.key`, put there by the owner. No key = no calls.
+Off switch: set `LITHA_CLAUDE=off`.
+Since the same day: code conflicts go to Claude first (2 tries, then 1 local try; docs stay local-first); with Claude
+she takes PRs with up to 12 conflicted files (5 without); and right before every merge Claude reads the whole diff
+once per head commit (`~/.star/litha-claude/reviews.json`) and can stop the merge with a high-severity risk.
+Tests never pay: `claude.ready()` is off under pytest.

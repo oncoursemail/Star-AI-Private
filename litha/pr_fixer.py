@@ -33,7 +33,7 @@ import threading
 import time
 import tomllib
 
-from litha import context_pack, fresh_py, merge3, rust_fix, self_map
+from litha import claude, context_pack, fresh_py, merge3, rust_fix, self_map
 from litha.pr_merger import BASE, REPO, gh, head_checks, latest_runs, open_prs
 
 ROOT = Path(__file__).resolve().parents[1]                  # the worktree this runs from
@@ -376,6 +376,16 @@ def _proposed(tried: list[dict]) -> str:
     shown = "\n".join(f"- {t['why'][:120]}: {json.dumps(t['edits'], ensure_ascii=False)[:500]}" for t in tried)
     return ("\nThese fixes were already proposed for this same code; give a DIFFERENT fix (another line or another "
             "change), not one of these:\n" + shown + "\n") if tried else ""
+
+
+def ask_claude(prompt: str, effort: str = "medium") -> str:
+    """The same prompt to Claude; its JSON object only (it may wrap it in a code fence)."""
+    text = claude.ask(prompt, effort, what=f"{REPO}: {prompt[:60]}")
+    return text[text.find("{"):text.rfind("}") + 1] if "{" in text else text
+
+
+def ask_claude_hard(prompt: str) -> str:
+    return ask_claude(prompt, "high")
 
 
 def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str], python: str,
@@ -1466,15 +1476,26 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
         if need > WINDOW:                              # less of the code around it, then give up (do not burn tries)
             shown = before[-300:].split("\n", 1)[-1], after[:300].rsplit("\n", 1)[0]
             need -= (len(before) + len(after) - len(shown[0]) - len(shown[1])) / 3.5
-        if need > WINDOW:
+        paid = asker is ask and claude.ready()
+        local = [] if need > WINDOW or (len(ours) + len(theirs) - len(base)) / 3.5 > ANSWER else [asker] * 3
+        if paid and not path.endswith((".md", ".txt", ".rst")):
+            tries = [ask_claude] * 2 + local[:1]       # code: her local model rarely gets it right, Claude goes first
+        else:
+            tries = local + [ask_claude] * 2 * paid    # docs: Claude only after her own model failed
+        if not tries and need > WINDOW:
             return None, f"{path}: conflict {i} is too big for her {WINDOW}-token window (~{need:.0f} tokens)"
-        if (len(ours) + len(theirs) - len(base)) / 3.5 > ANSWER:
+        if not tries:
             return None, f"{path}: conflict {i}'s merge is longer than her {ANSWER}-token answer"
-        for _ in range(3):
+        for who in tries:
             try:
-                ans = json.loads(asker(self_map.fitted("resolve", lambda note: MERGE_PROMPT.format(
-                    repo=REPO, base=BASE, title=title, path=path, i=i, n=len(blocks), feedback=feedback + note,
-                    context=shown[0] + m.group(0) + shown[1]), (len(ours) + len(theirs)) / 3.5)))
+                if who is ask_claude:                  # Claude: all the code around it, no fitting to her 4K window
+                    prompt = MERGE_PROMPT.format(repo=REPO, base=BASE, title=title, path=path, i=i, n=len(blocks),
+                                                 feedback=feedback, context=before + m.group(0) + after)
+                else:
+                    prompt = self_map.fitted("resolve", lambda note: MERGE_PROMPT.format(
+                        repo=REPO, base=BASE, title=title, path=path, i=i, n=len(blocks), feedback=feedback + note,
+                        context=shown[0] + m.group(0) + shown[1]), (len(ours) + len(theirs)) / 3.5)
+                ans = json.loads(who(prompt))
                 new = rebalanced(path, m.group(0), echoed(str(ans["resolved"]), m.group(0), before, after, path),
                                  before, after)
             except (ValueError, TypeError, KeyError):
@@ -1550,8 +1571,9 @@ def triage(code: list[str], raws: dict[str, str]) -> str:
     held = [c for c in hers if guarded(c) or LOCKISH.search(c)]
     if held:
         return f"conflicts she does not resolve alone: {held[:8]} need a judgement (tests and locks merge only mechanically)"
-    if len(hers) > 5:
-        return f"conflicts she does not resolve alone: {len(hers)} files need her model (1-5 handled): {hers[:8]}"
+    most = 12 if claude.ready() else 5               # with Claude she takes bigger merges
+    if len(hers) > most:
+        return f"conflicts she does not resolve alone: {len(hers)} files need her model (1-{most} handled): {hers[:8]}"
     return ""
 
 
@@ -1643,6 +1665,9 @@ def resolve(pr: dict, python: str, dry: bool = False, asker=ask) -> dict:
         if not ok and rust_fix.errors(out):            # it does not compile (one side renamed what the other uses):
             fixed, how = rust_fix.repair(tree, REPO, pr.get("title", ""),   # her repair, then the tests again
                                          f"Run cargo test -p {' -p '.join(crates)}\n{out}", asker)
+            if not fixed and asker is ask and claude.ready():               # Claude when her own repair failed
+                fixed, how = rust_fix.repair(tree, REPO, pr.get("title", ""),
+                                             f"Run cargo test -p {' -p '.join(crates)}\n{out}", ask_claude_hard)
             if fixed:
                 sh(["git", "add", "-u"], cwd=tree)
                 ok, fails, crates, out = rust_fix.crate_tests(tree, code)
@@ -1760,6 +1785,8 @@ def fix(pr: dict, python: str, dry: bool = False, asker=ask, found: dict | None 
         if not ok and why.startswith(FLAKY):
             return {"pr": number, "result": "flaky-rerun", "tests": tests,
                     "why": f"{why}; reran {rerun_failed(sha, number)} failed run(s) once"}
+        if not ok and asker is ask and claude.ready():
+            ok, why, round_no = repair(tree, pr.get("title", ""), fails, out, tests, python, ask_claude_hard, diff)
     if not ok:
         return {"pr": number, "result": "failed", "rounds": ROUNDS, "tests": tests, "why": why}
     changed = [ln[3:] for ln in sh(["git", "status", "--porcelain"], cwd=tree).stdout.splitlines()]
@@ -1803,6 +1830,9 @@ def fix_rust(pr: dict, log: str, dry: bool = False, asker=ask) -> dict:
         return {"pr": number, "result": "skip", "why": "fetch failed: " + got.stderr[-200:]}
     sh(["git", "-C", str(CLONE), "worktree", "add", "-q", str(tree), local])
     ok, why = rust_fix.repair(tree, REPO, pr.get("title", ""), log, asker)
+    if not ok and asker is ask and claude.ready():
+        ok, why = rust_fix.repair(tree, REPO, pr.get("title", ""), log, ask_claude_hard)
+        why += " (with Claude)" if ok else ""
     row = {"pr": number, "result": "fixed" if ok else "failed", "kind": "rust", "why": why}
     if not ok or dry:
         return row
