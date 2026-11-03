@@ -854,7 +854,7 @@ and a second machine replaying the suite (file hashes ignore CRLF, so it should)
 - Measured, the build check:
   - Must-refuse merges as she committed them (`run()` on her merge commit, offline scratch clones): #853 (1b242fd0)
     refused, `tsc: frontend/src/SettingsPage.tsx(25): TS2300 Duplicate identifier 'appearance'` (+ 'data'), 3.4 s;
-    #857@0dcf8231 refused, `TS2300 Duplicate identifier 'companions'`, 3.3 s; #486: measured after midnight, see the next line of this section when filled (cargo).
+    #857@0dcf8231 refused, `TS2300 Duplicate identifier 'companions'`, 3.3 s; #486 (da11b38a, Studio scratch clone, offline) refused, `cargo test -p metallic_physics: raycast_normal_is_unit_even_from_inside_a_part: called Option::unwrap() on a None value`, 117 s (after 00:00, one cargo, shared target dir). All three are refused for a named build/test reason, not by luck.
   - Time per decision (merger, head merged with today's star/next, cold / cached): #857 (165 files, 9 test files +
     tsc + 5 vitest files) 49 s / 0 s; #899 (6 files) 240 s / 0 s; #905 (26 files) 331 s / 0 s; #903@b2f3 (29 files)
     360-386 s / 0 s. All under the 900 s box. The Litha-heavy PRs are slow because test_litha_pr_fixer.py and
