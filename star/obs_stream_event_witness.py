@@ -21,6 +21,8 @@ import json
 import math
 import secrets
 from typing import Callable
+from dataclasses import dataclass
+from threading import Lock
 
 
 class ObsEventWitnessError(RuntimeError):
@@ -266,4 +268,137 @@ class ObsStreamContinuityWitness:
         return True
 
 
-__all__ = ["ObsStreamContinuityWitness", "ObsEventWitnessError"]
+__all__ = [
+    "ObsStreamContinuityWitness", "ObsEventWitnessError",
+    "ObsGameStreamEpochSource", "ObsGameStreamSnapshot",
+]
+
+# Gameplay uses a distinct read-only witness: unlike a stream-health
+# benchmark, a game needs BOTH offline and on-air snapshots, and a count of
+# every intermediate transition even when the final boolean is unchanged.
+@dataclass(frozen=True)
+class ObsGameStreamSnapshot:
+    """A host-only fence result, never suitable as model-provided evidence."""
+
+    epoch: int
+    stream_live: bool
+
+
+class ObsGameStreamEpochSource(ObsStreamContinuityWitness):
+    """Single-use authenticated OBS v5 stream-event counter for game leases.
+
+    Call snapshot() at offer, finish AND immediately before host key dispatch.
+    A stopped/starting stream is not an authorization to broadcast or play.
+    The host must stop the game loop and release keys on *any* witness error.
+    This source cannot be reconnected: losing even one event makes its epoch
+    untrustworthy for the remainder of the game episode.
+    """
+
+    def __init__(
+        self, *,
+        socket_factory: Callable[..., object] = _open_local_ws,
+        process_identity: Callable[[], tuple[int, float]] = _local_process_identity,
+    ) -> None:
+        super().__init__(
+            socket_factory=socket_factory, process_identity=process_identity,
+        )
+        self._snapshot_lock = Lock()
+        self._ever_connected = False
+        self._epoch = 0
+        self._last_live: bool | None = None
+
+    def connect(self, *, password: str, owner_approved: bool = False) -> None:
+        if owner_approved is not True:
+            raise PermissionError("owner must enable local OBS stream observation")
+        with self._snapshot_lock:
+            if self._ever_connected:
+                raise ObsEventWitnessError(
+                    "a lost OBS event session cannot be resumed"
+                )
+            self._ever_connected = True
+            super().connect(password=password, owner_approved=True)
+
+    def snapshot(self) -> ObsGameStreamSnapshot:
+        """Drain all prior events on ONE ordered socket; fail closed on gaps."""
+        if not self._snapshot_lock.acquire(blocking=False):
+            # Another concurrent reader would make the event ordering ambiguous.
+            self.disconnect()
+            raise ObsEventWitnessError("concurrent OBS witness sampling")
+        try:
+            expected = self._process
+            if expected is None:
+                raise ValueError("OBS session not connected")
+            self._check_identity(expected)
+            assert self._ws is not None
+            previous_epoch = self._epoch
+            last_event_live: bool | None = None
+            token = secrets.token_hex(12)
+            _send(self._ws, 6, {
+                "requestType": "GetStreamStatus", "requestId": token,
+            })
+            for _ in range(256):
+                message = _message(self._ws)
+                code, data = message["op"], message["d"]
+                if code == 5:
+                    kind = data.get("eventType")
+                    if kind == "ExitStarted":
+                        raise ValueError("OBS shutting down")
+                    if kind == "StreamStateChanged":
+                        event = data.get("eventData")
+                        intent = data.get("eventIntent")
+                        if (
+                            type(intent) is not int or not (intent & 64)
+                            or type(event) is not dict
+                            or type(event.get("outputActive")) is not bool
+                            or type(event.get("outputState")) is not str
+                            or not event["outputState"]
+                        ):
+                            raise ValueError("malformed OBS stream event")
+                        if self._epoch == 2**63 - 1:
+                            raise ValueError("OBS transition epoch exhausted")
+                        self._epoch += 1
+                        last_event_live = event["outputActive"]
+                    elif type(kind) is not str:
+                        raise ValueError("malformed OBS event name")
+                    # Never store unrelated payloads (record paths, sources).
+                    continue
+                if code != 7 or (
+                    data.get("requestType") != "GetStreamStatus"
+                    or data.get("requestId") != token
+                    or type(data.get("requestStatus")) is not dict
+                    or data["requestStatus"].get("result") is not True
+                    or type(data.get("responseData")) is not dict
+                ):
+                    raise ValueError("unverifiable OBS response")
+                response = data["responseData"]
+                live = response.get("outputActive")
+                reconnecting = response.get("outputReconnecting")
+                if type(live) is not bool or reconnecting is not False:
+                    raise ValueError("unsafe OBS output status")
+                self._check_identity(expected)
+                if last_event_live is not None and last_event_live != live:
+                    raise ValueError("OBS event/status disagreement")
+                if self._last_live is not None and (
+                    live != self._last_live and self._epoch == previous_epoch
+                ):
+                    # A status transition without an event means the stream
+                    # of subscribed notifications is incomplete.
+                    raise ValueError("OBS status changed without event")
+                self._last_live = live
+                return ObsGameStreamSnapshot(
+                    epoch=self._epoch, stream_live=live,
+                )
+            raise ValueError("OBS event flood")
+        except Exception:
+            self.disconnect()
+            raise ObsEventWitnessError(
+                "OBS stream-event continuity is unverifiable"
+            ) from None
+        finally:
+            self._snapshot_lock.release()
+
+
+__all__ = [
+    "ObsStreamContinuityWitness", "ObsEventWitnessError",
+    "ObsGameStreamEpochSource", "ObsGameStreamSnapshot",
+]
