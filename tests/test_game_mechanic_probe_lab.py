@@ -48,7 +48,9 @@ class GameMechanicProbeTests(unittest.TestCase):
         trial = GameTrial(
             f"mechanic_trial_{self.sequence}", game, version, "finish", situation,
             action, run_id or f"mechanic_run_{self.sequence}", split,
-            outcome, EVIDENCE, timestamp)
+            outcome, hashlib.sha256(
+                f"mechanic-independent-event-{self.sequence}".encode()
+            ).hexdigest(), timestamp)
         key = PRACTICE if split == "practice" else VALIDATION
         signature = hmac.new(key, trial.canonical_bytes(), hashlib.sha256).hexdigest()
         self.bank.ingest(trial, signature, now_unix_s=ingest_at)
