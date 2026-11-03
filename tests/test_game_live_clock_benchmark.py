@@ -21,7 +21,9 @@ def trial(pair: int, variant: str, *, progress: float = .25,
         initial_state_sha256="a" * 64, observed_at_ms=start,
         inference_started_ms=start + 5, inference_finished_ms=start + 50,
         input_ack_ms=None if response is None else start + response,
-        scene_deadline_ms=start + 200, world_advanced_ms=50, progress_before=.10,
+        scene_deadline_ms=start + 200, world_advanced_ms=50,
+        world_advanced_to_input_ack_ms=None if response is None else float(response),
+        progress_before=.10,
         progress_after=progress, objective_success=success,
         game_p99_frame_ms=frame, obs_dropped_pct=dropped,
         independently_scored=scored,
@@ -59,7 +61,8 @@ def test_fast_but_wrong_agent_does_not_win_benchmark():
 
 def test_late_input_never_counts_as_timely_success():
     runs = cohort()
-    runs[1] = replace(runs[1], input_ack_ms=runs[1].observed_at_ms + 205)
+    runs[1] = replace(runs[1], input_ack_ms=runs[1].observed_at_ms + 205,
+                      world_advanced_to_input_ack_ms=205)
     report = assess_live_clock(runs)
     assert report.candidate_timely_successes == 23
     assert report.candidate_missed_or_late_inputs == 1
@@ -76,7 +79,8 @@ def test_paused_game_world_cannot_claim_live_clock_improvement():
 
 def test_different_game_clock_speed_cannot_masquerade_as_live_clock():
     runs = cohort()
-    runs[1] = replace(runs[1], world_advanced_ms=500)
+    runs[1] = replace(runs[1], world_advanced_ms=500,
+                      world_advanced_to_input_ack_ms=500)
     report = assess_live_clock(runs)
     assert report.non_live_pairs == 1
     assert report.verdict == "inconclusive"
@@ -95,7 +99,7 @@ def test_mismatched_deadline_and_starting_progress_do_not_form_valid_pair():
 
 def test_no_input_receipt_cannot_claim_real_time_action():
     runs = cohort()
-    runs[1] = replace(runs[1], input_ack_ms=None)
+    runs[1] = replace(runs[1], input_ack_ms=None, world_advanced_to_input_ack_ms=None)
     report = assess_live_clock(runs)
     assert report.candidate_missed_or_late_inputs == 1
     assert report.candidate_timely_successes == 23
@@ -166,6 +170,8 @@ def test_duplicate_and_mixed_game_version_rejected():
     ("progress_after", -0.1), ("obs_dropped_pct", 101),
     ("game_p99_frame_ms", float("nan")), ("world_advanced_ms", float("inf")),
     ("objective_success", 1),
+    ("world_advanced_to_input_ack_ms", -1),
+    ("world_advanced_to_input_ack_ms", float("nan")),
     ("independently_scored", "yes"), ("episode_id", "bad space"),
     ("initial_state_sha256", "not-a-sha"), ("variant", "preferred"),
 ])
@@ -229,3 +235,43 @@ def test_cli_rejects_extra_sensitive_or_missing_fields(tmp_path):
     file.write_text(json.dumps(good) + "\n")
     with pytest.raises(ValueError, match="bounded"):
         read_jsonl(file)
+
+def test_game_paused_after_inference_before_input_ack_cannot_qualify():
+    # A fast model's world advances while it reasons, but freezes during the
+    # host-to-key dispatch window: aggregate inference-only checks miss this.
+    runs = cohort()
+    c = runs[1]
+    assert c.inference_finished_ms < c.input_ack_ms
+    runs[1] = replace(c, world_advanced_to_input_ack_ms=c.world_advanced_ms)
+    report = assess_live_clock(runs)
+    assert report.non_live_pairs == 1
+    assert report.verdict == "inconclusive"
+    assert not report.authorized_to_act
+
+
+def test_cumulative_world_clock_must_be_monotonic_and_present_when_ack_exists():
+    t = trial(0, "baseline")
+    with pytest.raises(ValueError, match="world.*clock"):
+        replace(t, world_advanced_to_input_ack_ms=40)
+    with pytest.raises(ValueError, match="world.*clock"):
+        replace(t, world_advanced_to_input_ack_ms=None)
+    with pytest.raises(ValueError, match="world.*clock"):
+        replace(t, input_ack_ms=None)  # no ack must also clear its witness
+
+
+def test_world_moves_during_inference_but_not_host_dispatch_across_cohort():
+    runs = cohort()
+    runs = [replace(t, world_advanced_to_input_ack_ms=t.world_advanced_ms)
+            if t.variant == "candidate" else t for t in runs]
+    result = assess_live_clock(runs)
+    assert result.non_live_pairs == 24
+    assert result.verdict == "inconclusive"
+
+
+def test_post_inference_world_clock_speedup_is_not_live_gameplay():
+    runs = cohort()
+    c = runs[1]
+    runs[1] = replace(c, world_advanced_to_input_ack_ms=1000)
+    report = assess_live_clock(runs)
+    assert report.verdict == "inconclusive"
+    assert report.non_live_pairs == 1

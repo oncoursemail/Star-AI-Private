@@ -1,7 +1,7 @@
 """Independent, offline evaluation of real-time game *outcomes*, not token speed.
 
 Paired baseline/candidate episodes must use a trusted host clock while the
-game actually advances. Score is read from game state by an independent host,
+game actually advances through inference AND input acknowledgment. Score is read from game state by an independent host,
 not inferred from model text or screenshots. This module neither runs a game
 nor certifies the host, controls keys, authorizes streaming, or promotes AI.
 No personal, screen, speech, game-state or viewer contents are stored.
@@ -94,7 +94,8 @@ class LiveClockTrial:
     inference_finished_ms: float
     input_ack_ms: float | None
     scene_deadline_ms: float
-    world_advanced_ms: float              # host-observed game clock during inference
+    world_advanced_ms: float              # host-observed world clock through inference
+    world_advanced_to_input_ack_ms: float | None  # world clock through OS input ack
     progress_before: float
     progress_after: float
     objective_success: bool
@@ -127,6 +128,18 @@ class LiveClockTrial:
             if self.input_ack_ms < self.inference_finished_ms:
                 raise ValueError("cannot confirm input before inference ends")
         _ms(self.world_advanced_ms, "world_advanced_ms")
+        # The host must sample the *independent game-world* clock again at
+        # input acknowledgment. Otherwise a game paused during dispatch can
+        # falsely qualify as a continuously advancing real-time trial.
+        if self.input_ack_ms is None:
+            if self.world_advanced_to_input_ack_ms is not None:
+                raise ValueError("world clock at input ack requires actual input ack")
+        else:
+            if self.world_advanced_to_input_ack_ms is None:
+                raise ValueError("world clock at input ack is required")
+            _ms(self.world_advanced_to_input_ack_ms, "world_advanced_to_input_ack_ms")
+            if self.world_advanced_to_input_ack_ms < self.world_advanced_ms:
+                raise ValueError("world clock cannot run backwards after inference")
         _ratio(self.progress_before, "progress_before", 1.0)
         _ratio(self.progress_after, "progress_after", 1.0)
         _ratio(self.game_p99_frame_ms, "game_p99_frame_ms", 10_000.0)
@@ -146,9 +159,32 @@ class LiveClockTrial:
         evidence the host truthfully measured the game; only a host can
         prove the world clock was sampled from real game state.
         """
-        elapsed = self.inference_finished_ms - self.observed_at_ms
-        return (elapsed > 0 and
-                0.60 * elapsed <= self.world_advanced_ms <= 1.50 * elapsed + 2)
+        inference_elapsed = self.inference_finished_ms - self.observed_at_ms
+        inference_live = (
+            inference_elapsed > 0
+            and 0.60 * inference_elapsed <= self.world_advanced_ms
+            <= 1.50 * inference_elapsed + 2
+        )
+        if not inference_live:
+            return False
+        if self.input_ack_ms is None:
+            # A missing input is a failed attempt, not grounds to discard the
+            # entire paired trial. Never count it as successful gameplay.
+            return True
+        # A continuous game must also advance while the host dispatches the
+        # action. Checking only inference makes freeze-after-inference
+        # experiments appear like better gameplay.
+        assert self.world_advanced_to_input_ack_ms is not None
+        until_ack = self.input_ack_ms - self.observed_at_ms
+        cumulative = self.world_advanced_to_input_ack_ms
+        if not 0.60 * until_ack <= cumulative <= 1.50 * until_ack + 2:
+            return False
+        dispatch_elapsed = self.input_ack_ms - self.inference_finished_ms
+        dispatch_advanced = cumulative - self.world_advanced_ms
+        return (
+            0.60 * dispatch_elapsed <= dispatch_advanced
+            <= 1.50 * dispatch_elapsed + 2
+        )
 
     @property
     def timely_input(self) -> bool:
