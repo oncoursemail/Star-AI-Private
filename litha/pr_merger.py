@@ -201,7 +201,9 @@ def review_prompts(pr: dict, files: dict[str, dict]) -> tuple[list[str], list[st
     """(one prompt per part, files not reviewed). Each prompt fits her 4096-token window with the answer (estimated;
     on 62 real PRs the real count of every prompt fit), most important hunks first (review_pack)."""
     head = self_map.fitted("merge-review", lambda note: f"{RUBRIC}{note}\n\nTitle: {pr.get('title', '')}\n"
-                           f"Description: {(pr.get('body') or '')[:1200]}\n", review_pack.ANSWER + 200)
+                           f"Description: {(pr.get('body') or '')[:1200]}\n", review_pack.ANSWER + 200,
+                           task={"repo": REPO, "paths": list(files)[:20], "key": f"{REPO}#{pr.get('number')}",
+                                 "text": pr.get("title", "") + "\n" + "\n".join(list(files)[:20])})
     parts, left = review_pack.pack(files, review_pack.budget_for(head, files))
     return [f"{head}{review_pack.others_note(p, files, left)}\n{p}" for p in parts], left
 

@@ -424,7 +424,8 @@ def repair(tree: Path, title: str, fails: list[dict], out: str, tests: list[str]
             prompt = self_map.fitted("fix-python", lambda note: context_pack.fixer_prompt(  # + her weak spot, if it fits
                 tree, title=title, fails=fails, out=out, diff=source_diff(diff), lessons=lessons + note,
                 feedback=feedback, proposed=_proposed(tried), window=window, reached=reached, wide=wide), 700,
-                window)
+                window, task={"repo": REPO, "paths": [f["test"].split("::")[0] for f in fails],
+                              "text": "\n".join(f["test"] + "\n" + f["section"][-1500:] for f in fails)})
             try:
                 answer = json.loads(asker(prompt))
             except (ValueError, TypeError) as e:
@@ -1523,13 +1524,18 @@ def resolve_text(path: str, text: str, title: str, asker=ask, hint: str = "",
             return None, f"{path}: conflict {i}'s merge is longer than her {ANSWER}-token answer"
         for who in tries:
             try:
+                task = {"repo": REPO, "paths": [path], "text": m.group(0)}      # her experience memory (4s)
                 if who is ask_claude:                  # Claude: all the code around it, no fitting to her 4K window
+                    from litha import experience
                     prompt = MERGE_PROMPT.format(repo=REPO, base=BASE, title=title, path=path, i=i, n=len(blocks),
-                                                 feedback=feedback, context=before + m.group(0) + after)
+                                                 feedback=feedback + experience.note({**task, "lane": "resolve"},
+                                                                                     experience.ROOM["claude"],
+                                                                                     "claude"),
+                                                 context=before + m.group(0) + after)
                 else:
                     prompt = self_map.fitted("resolve", lambda note: MERGE_PROMPT.format(
                         repo=REPO, base=BASE, title=title, path=path, i=i, n=len(blocks), feedback=feedback + note,
-                        context=shown[0] + m.group(0) + shown[1]), (len(ours) + len(theirs)) / 3.5)
+                        context=shown[0] + m.group(0) + shown[1]), (len(ours) + len(theirs)) / 3.5, task=task)
                 ans = json.loads(who(prompt))
                 new = rebalanced(path, m.group(0), echoed(str(ans["resolved"]), m.group(0), before, after, path),
                                  before, after)
@@ -2060,6 +2066,12 @@ def log_row(t: float, row: dict) -> None:
             after_fix(row)
     except Exception:  # noqa: BLE001 - learning never costs a fix run
         pass
+    if LOG == Path.home() / ".star" / "pr-fixer" / "fixes.jsonl":    # the real log only (tests point LOG elsewhere)
+        try:                              # her experience memory: the row's lesson + settle the lessons she was shown
+            from litha import experience
+            experience.record_fix({**row, "repo": row.get("repo") or REPO, "ts": round(t)})
+        except Exception:  # noqa: BLE001 - learning never costs a fix run
+            pass
 
 
 def pool(items: list, work, n: int, limit: int) -> list[dict]:

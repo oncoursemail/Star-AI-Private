@@ -6,13 +6,15 @@ conflicts scores higher with the change.
              reached the base branch), her own failed attempts from ~/.star/pr-fixer/fixes.jsonl (her branch at that
              time against the base as of then; no known answer) and the must-refuse cases (Studio #486 = her merge of
              #442, which compiled but broke main's raycast test; STAR #853, her merge of #549 that doubled lines).
-             Saved as ~/.star/litha-selftune/cases.json (repo text: never in git).
+             Saved as ~/.star/litha-selftune/cases.json (repo text: never in git). Repos in EXCLUDED (Studio, off
+             limits since 2026-11-02) are never built nor scored; STAR's own history merges are in since 4s.
 2. score()   pr_fixer.merge_file on every case with MERGE_PROMPT (or a rule) overridden; fully offline: no git command
              runs (the base copy the checks need is frozen in the case), nothing is pushed, Claude is never asked. Her
              model's answers are cached by (case, replicate, prompt hash), so a rescore of the same prompt is free.
 3. propose() the 5 worst failures go to Claude (effort high) for ONE small edit; the edit is kept only if it scores
-             higher than the old prompt by more than the measured noise and no case flips good -> bad (every changed
-             case is replayed 3 times, majority counts). A kept edit is written as a patch + report under
+             higher than the old prompt by more than the measured noise, no case flips good -> bad (every changed
+             case is replayed 3 times, majority counts), the held-out split scores higher and no must-refuse case
+             that was refused gets resolved (section 4s). A kept edit is written as a patch + report under
              ~/.star/litha-selftune/proposals/, never into the code; the lead ships it as a normal PR.
 
     python -m litha.self_tune build    [--max-merges N]          freeze the replay set
@@ -51,7 +53,9 @@ TUNABLE = ("MERGE_PROMPT", "ANSWER")
 SKIP = re.compile(r"(^|/)(pnpm-lock\.yaml|[^/]+\.lock)$|^\.github/")   # taken from the base / a person's call
 # (repo, base branch, scratch clone, replay its history merges)
 REPOS = [("Metallic-Club/studio", "main", HOME / "studio.git", True),
-         ("oncoursemail/Star-AI-Project", "star/next", HOME / "star.git", False)]
+         ("oncoursemail/Star-AI-Project", "star/next", HOME / "star.git", True)]
+# Repos whose cases are left out of every build and score (they stay in an old cases.json, marked, never replayed).
+EXCLUDED = {"Metallic-Club/studio": "off limits (owner 2026-11-02: Matt is rebuilding it)"}
 MUST_REFUSE = [
     ("Metallic-Club/studio", "da11b38a6aa68491d74311523a5e3bbf1e1972d6", "crates/metallic_physics/src/lib.rs",
      "#486, her merge of #442: compiled, but #442 skips a part the ray starts inside and main hits it at distance 0; "
@@ -192,6 +196,9 @@ def build(repos=None, max_merges: int = 0, log: Path = FIXES, out: Path = CASES)
     """Freeze the replay set (deduplicated by file text: one conflict met twice counts once, known-good kept)."""
     found = []
     for repo, base, clone, hist in repos or REPOS:
+        if repo in EXCLUDED:
+            print(f"self_tune: {repo} excluded: {EXCLUDED[repo]}", flush=True)
+            continue
         if not Path(clone).exists():
             print(f"self_tune: no scratch clone for {repo} at {clone}; skipped", flush=True)
             continue
@@ -209,10 +216,10 @@ def build(repos=None, max_merges: int = 0, log: Path = FIXES, out: Path = CASES)
 
 
 def cases(path: Path = CASES) -> list[dict]:
-    """The frozen replay set (built on first use)."""
+    """The frozen replay set (built on first use), without the cases of EXCLUDED repos."""
     if not path.exists():
         return build(out=path)
-    return json.loads(path.read_text(encoding="utf-8"))["cases"]
+    return [c for c in json.loads(path.read_text(encoding="utf-8"))["cases"] if c["repo"] not in EXCLUDED]
 
 
 # ---------------------------------------------------------------- scoring
@@ -336,8 +343,17 @@ def judge(case: dict, merged: str | None, why: str) -> dict:
             "blocks": [b for b in blocks if b["match"] is False][:3]}
 
 
-def run_case(case: dict, overrides: dict, ask) -> dict:
-    with replay(case, overrides) as tree:
+def cached_only(prompt: str) -> str:
+    """A model that never answers: a score with it reads the cache only (an uncached case comes out as "error")."""
+    raise RuntimeError("not in the answer cache")
+
+
+def run_case(case: dict, overrides: dict, ask, lessons=None) -> dict:
+    """One case; with lessons (an experience.Store) her prompts get the relevant ones, never one made from this case."""
+    from litha import experience
+    with replay(case, overrides) as tree, \
+            (experience.forced(lessons, ("resolve",), case["id"], case.get("at")) if lessons is not None
+             else contextlib.nullcontext()):
         asker = pf.mechanical_only if pf.guarded(case["path"]) else ask
         try:
             merged, why = pf.merge_file(tree, case["path"], case["raw"], case["title"], asker)
@@ -347,8 +363,9 @@ def run_case(case: dict, overrides: dict, ask) -> dict:
 
 
 def score(overrides: dict | None = None, cases_: list[dict] | None = None, model=None, rep: int = 0,
-          cache: Cache | None = None, only: set[str] | None = None, log: Path | None = RUNS) -> dict:
-    """Every case replayed with the override; {"points", "total", "outcomes", "cases": {id: result}, ...}."""
+          cache: Cache | None = None, only: set[str] | None = None, log: Path | None = RUNS, lessons=None) -> dict:
+    """Every case replayed with the override (and, with lessons, her experience memory in the prompts);
+    {"points", "total", "hold", "refuse_ok", "outcomes", "cases": {id: result}, ...}."""
     overrides = dict(overrides or {})
     todo = [c for c in (cases_ if cases_ is not None else cases()) if only is None or c["id"] in only]
     cache = cache or Cache()
@@ -356,12 +373,15 @@ def score(overrides: dict | None = None, cases_: list[dict] | None = None, model
     stats = {"calls": 0, "cached": 0, "model_s": 0.0}
     t, results = time.time(), {}
     for c in todo:
-        results[c["id"]] = r = run_case(c, overrides, cache.asker(model, c["id"], rep, stats))
+        results[c["id"]] = r = run_case(c, overrides, cache.asker(model, c["id"], rep, stats), lessons)
         r["split"] = c.get("split", "tune")
+        r["refuse"] = c["kind"] == "must_refuse"
     counts = collections.Counter(r["outcome"] for r in results.values())
-    out = {"prompt": prompt_hash(overrides), "rep": rep, "total": len(results),
+    out = {"prompt": prompt_hash(overrides), "rep": rep, "total": len(results), "lessons": lessons is not None,
            "points": sum(r["outcome"] in GOOD for r in results.values()),
            "hold": sum(r["outcome"] in GOOD for r in results.values() if r["split"] == "hold"),
+           "hold_total": sum(r["split"] == "hold" for r in results.values()),
+           "refuse_ok": all(r["outcome"] == "refused-ok" for r in results.values() if r["refuse"]),
            "outcomes": dict(counts), "calls": stats["calls"], "cached": stats["cached"],
            "model_s": round(stats["model_s"]), "seconds": round(time.time() - t), "cases": results}
     if log:
@@ -472,32 +492,41 @@ def patch(overrides: dict, source: Path | None = None) -> str:
                                         "a/litha/pr_fixer.py", "b/litha/pr_fixer.py"))
 
 
-def majority(cid: str, overrides: dict, cases_: list[dict], model, cache: Cache, first: str) -> tuple[str, bool]:
+def majority(cid: str, overrides: dict, cases_: list[dict], model, cache: Cache, first: str,
+             lessons=None) -> tuple[str, bool]:
     """(outcome, whether rep 0 was a fluke): 3 replicates of one case, the outcome most of them give."""
-    got = [first] + [score(overrides, cases_, model, rep, cache, {cid}, None)["cases"][cid]["outcome"]
+    got = [first] + [score(overrides, cases_, model, rep, cache, {cid}, None, lessons)["cases"][cid]["outcome"]
                      for rep in (1, 2)]
     good = sum(o in GOOD for o in got) >= 2
     pick = next(o for o in got if (o in GOOD) == good)
     return pick, (first in GOOD) != good
 
 
-def compare(old: dict, new: dict, overrides: dict, cases_: list[dict], model, cache: Cache) -> dict:
-    """Old vs new prompt: every case whose good/bad status changed is replayed 3 times under both; noise = how many of
-    those first answers the majority overturned."""
+def compare(old: dict, new: dict, overrides: dict, cases_: list[dict], model, cache: Cache,
+            lessons_old=None, lessons_new=None, old_overrides: dict | None = None) -> dict:
+    """Old vs new (prompt, rule or experience memory): every case whose good/bad status changed is replayed 3 times
+    under both; noise = how many of those first answers the majority overturned. Kept only when the total rises by
+    more than the noise, no good case breaks, the HELD-OUT cases score higher and every must-refuse case that was
+    refused still is."""
     changed = [cid for cid in old["cases"] if (old["cases"][cid]["outcome"] in GOOD)
                != (new["cases"].get(cid, {}).get("outcome") in GOOD)]
     o = {cid: r["outcome"] for cid, r in old["cases"].items()}
     n = {cid: r["outcome"] for cid, r in new["cases"].items()}
     noise = 0
     for cid in changed:
-        o[cid], f1 = majority(cid, {}, cases_, model, cache, o[cid])
-        n[cid], f2 = majority(cid, overrides, cases_, model, cache, n[cid])
+        o[cid], f1 = majority(cid, old_overrides or {}, cases_, model, cache, o[cid], lessons_old)
+        n[cid], f2 = majority(cid, overrides, cases_, model, cache, n[cid], lessons_new)
         noise += f1 or f2
     flips = sorted(cid for cid in changed if o[cid] in GOOD and n[cid] not in GOOD)
     gains = sorted(cid for cid in changed if o[cid] not in GOOD and n[cid] in GOOD)
     po, pn = sum(v in GOOD for v in o.values()), sum(v in GOOD for v in n.values())
-    keep = pn > po + noise and not flips
-    return {"old": po, "new": pn, "noise": noise, "flips": flips, "gains": gains, "keep": keep, "rechecked": changed}
+    hold = [cid for cid, r in old["cases"].items() if r.get("split") == "hold"]
+    ho, hn = sum(o[c] in GOOD for c in hold), sum(n.get(c) in GOOD for c in hold)
+    lost_refusals = sorted(cid for cid, r in old["cases"].items()
+                           if r.get("refuse") and o[cid] == "refused-ok" and n.get(cid) != "refused-ok")
+    keep = pn > po + noise and not flips and hn > ho and not lost_refusals
+    return {"old": po, "new": pn, "noise": noise, "flips": flips, "gains": gains, "hold_old": ho, "hold_new": hn,
+            "hold_total": len(hold), "lost_refusals": lost_refusals, "keep": keep, "rechecked": changed}
 
 
 def tried(out: Path) -> str:
