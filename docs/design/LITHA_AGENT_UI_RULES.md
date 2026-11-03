@@ -46,6 +46,7 @@ Applies to new Litha user-interface work in `frontend/src`. These rules compleme
 
 ## Navigation
 
+- Machine-readable component index: [Litha UI component catalog](LITHA_UI_COMPONENT_CATALOG.json), with implemented versus planned states and source/test links. Reuse the implemented entries; don't claim planned ones have code.
 - Deep design analysis: [BoardUI and agent-interface research](../research/LITHA_BOARDUI_AGENT_INTERFACE_20261102.md).
 - Existing run event reducer: `frontend/src/activity.ts`.
 - Existing run activity UI: `frontend/src/ActivityTimeline.tsx`.
