@@ -1,58 +1,95 @@
-/* Downloads: the newest build from /releases/latest.json (the Tauri updater manifest:
-   {"version","notes","pub_date","platforms":{"windows-x86_64":{"signature","url"},"linux-x86_64":{..AppImage},
-   "linux-x86_64-deb":{..deb}}}), and the Meta Quest APK from /releases/quest.json ({"version","url"}). */
+/* Downloads: one box with a tile per device (Windows, Linux, Meta Quest) and the chosen device's panel. The visitor's
+   own device is picked and marked "This device"; #windows, #linux or #quest in the address picks one too.
+   Builds come from /releases/latest.json (the Tauri updater manifest: {"version","notes","pub_date","platforms":
+   {"windows-x86_64":{"signature","url"},"linux-x86_64":{..AppImage},"linux-x86_64-deb":{..deb}}}) and the Quest APK
+   from /releases/quest.json ({"version","url"}). Until a build is published its button stays disabled. */
 "use strict";
 (async () => {
   const M = window.Metallic;
   const $ = (s) => document.querySelector(s);
-  M.quest().then((q) => {
-    if (!q) return;
-    const a = $("[data-quest-dl]");
-    a.href = q.url;
-    a.removeAttribute("aria-disabled");
-    a.textContent = "Download for Quest (APK)";
-    $("[data-quest-note]").textContent = "Early Access " + q.version + " · Android app for Meta Quest 2, 3, 3S and Pro, installed by sideloading.";
+  const $$ = (s) => document.querySelectorAll(s);
+  const UA = navigator.userAgent;
+  // phones and tablets first: an iPhone's browser also says "Mac OS X", and an iPad's says "Macintosh"
+  const onPhone = /Android|iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && "ontouchend" in document);
+  const onMac = /Macintosh|Mac OS X/.test(UA) && !onPhone && !M.onQuest;
+  const device = M.onQuest ? "quest" : M.onLinux ? "linux" : onMac || onPhone ? null : "windows";
+
+  // ---- picking a device ----
+  const pick = (id, fromUser) => {
+    $$("[data-plat]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.plat === id)));
+    $$("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== id; });
+    if (fromUser) history.replaceState(null, "", "#" + id);
+  };
+  $$("[data-plat]").forEach((b) => b.addEventListener("click", () => pick(b.dataset.plat, true)));
+  // arrow keys move between the tiles
+  $(".plats").addEventListener("keydown", (e) => {
+    const tiles = [...$$("[data-plat]")], i = tiles.indexOf(document.activeElement);
+    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+    if (i < 0 || !step) return;
+    e.preventDefault();
+    const next = tiles[(i + step + tiles.length) % tiles.length];
+    next.focus();
+    pick(next.dataset.plat, true);
   });
-  const r = await M.release;
-  const btn = $("[data-dl-main]");
-  if (!r) {
-    btn.setAttribute("aria-disabled", "true");
-    btn.removeAttribute("href");
-    btn.textContent = "Not published yet";
-    return;
-  }
-  $("[data-wait]").hidden = true;
-  const v = $("[data-version]");
-  v.replaceChildren("Early Access ", M.el("b", null, r.version), r.linux ? " for Windows and Linux" : " for Windows");
-  // Linux: the AppImage (any distro) and the .deb, when this release has them
-  if (r.linux) {
-    $("[data-linux]").hidden = false;
-    $("[data-dl-appimage]").href = r.linux.appimage;
-    if (r.linux.deb) $("[data-dl-deb]").href = r.linux.deb; else $("[data-deb]").hidden = true;
-  }
-  $('[data-f="version"]').textContent = r.version;
-  const d = r.date ? new Date(r.date) : null;
-  $('[data-f="date"]').textContent = d && !isNaN(d) ? M.date(d.getTime() / 1000, true) : "Not stated";
-  // File and Size describe the desktop build this visitor's button gives: the AppImage on Linux, else the Windows installer
-  const main = M.onLinux && r.linux ? r.linux.appimage : r.url;
-  const file = decodeURIComponent(main.split("?")[0].split("/").pop() || "");
-  if (file) $('[data-f="file"]').textContent = file;
+  if (device) $(`[data-plat="${device}"] .here`).hidden = false;
+  const fromHash = ["windows", "linux", "quest"].find((id) => location.hash === "#" + id);
+  pick(fromHash || device || "windows");
+  const note = $("[data-pick-note]");
+  if (onMac) note.textContent = "Metallic does not run on macOS yet. Download it for a Windows or Linux PC, or a Meta Quest headset.";
+  else if (onPhone) note.textContent = "Metallic runs on a Windows or Linux PC and on Meta Quest. Open this page there, or pick a device below.";
+  else if (device === "quest") note.textContent = "You are on a Meta Quest, so the Quest app is picked for you.";
+  else if (device === "linux") note.textContent = "You are on Linux, so the Linux build is picked for you.";
+  else note.textContent = "You are on Windows, so the Windows installer is picked for you.";
 
-  M.downloads.then((n) => { if (n != null) $('[data-f="downloads"]').textContent = M.num(n); });
-
-  // size: only asked for when the installer is on this site (connect-src 'self')
-  const size = $('[data-f="size"]');
-  size.textContent = "Not stated";
-  try {
-    const u = new URL(main, location.href);
-    if (u.origin === location.origin) {
+  // ---- a button that downloads a file (its file name shows on hover) ----
+  const fileName = (url) => decodeURIComponent(url.split("?")[0].split("/").pop() || "");
+  const arm = (a, url, label) => {
+    a.href = url;
+    a.removeAttribute("aria-disabled");
+    a.hidden = false;
+    a.querySelector("span").textContent = label;
+    a.title = fileName(url);
+  };
+  // size: only asked for when the file is on this site (connect-src 'self')
+  const sizeOf = async (url, el) => {
+    try {
+      const u = new URL(url, location.href);
+      if (u.origin !== location.origin) return;
       const h = await fetch(u.href, { method: "HEAD", cache: "no-store" });
       const n = Number(h.headers.get("Content-Length"));
-      if (h.ok && n > 0) size.textContent = (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
-    }
-  } catch (e) { /* stays "Not stated" */ }
+      if (h.ok && n > 0) el.textContent = (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
+    } catch (e) { /* stays "Not stated" */ }
+  };
+
+  M.downloads.then((n) => { if (n != null) $('[data-f="downloads"]').textContent = M.num(n); else $(".dl-count").hidden = true; });
+
+  M.quest().then((q) => {
+    if (!q) return;
+    arm($("[data-quest-dl]"), q.url, "Download for Quest");
+    $("[data-plat-sub='quest']").textContent = "Quest app";
+    $("[data-quest-v]").textContent = q.version;
+    sizeOf(q.url, $('[data-size="quest"]'));
+  });
+
+  const r = await M.release;
+  if (!r) return;
+  $$('[data-v="version"]').forEach((e) => { e.textContent = r.version; });
+  const d = r.date ? new Date(r.date) : null;
+  $$('[data-v="date"]').forEach((e) => { e.textContent = d && !isNaN(d) ? M.date(d.getTime() / 1000, true) : "Not stated"; });
+
+  arm($('[data-get="windows"]'), r.url, "Download for Windows");
+  sizeOf(r.url, $('[data-size="windows"]'));
+
+  // Linux: the AppImage (any distribution) and the .deb, when this release has them
+  if (r.linux) {
+    arm($('[data-get="linux"]'), r.linux.appimage, "Download AppImage");
+    if (r.linux.deb) arm($('[data-get="deb"]'), r.linux.deb, ".deb package");
+    $("[data-plat-sub='linux']").textContent = r.linux.deb ? "AppImage or .deb" : "AppImage";
+    sizeOf(r.linux.appimage, $('[data-size="linux"]'));
+  }
 
   // notes: plain text; blank lines split paragraphs, "- " or "* " lines become a list
+  $("[data-notes-h]").textContent = "What is new in " + r.version;
   const box = $("[data-notes]"), out = [];
   const blocks = (r.notes || "").replace(/\r/g, "").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
   blocks.forEach((b) => {

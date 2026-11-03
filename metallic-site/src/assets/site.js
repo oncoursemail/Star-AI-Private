@@ -122,7 +122,7 @@ if (document.querySelector("[data-presence], [data-discord-online]")) {
 M.reveal = (root) => {
   if (M.reduced || !("IntersectionObserver" in window)) return;
   const parts = (root || document).querySelectorAll(".sec-head, .card, .empty, .fine, .steps li, .news-card, .project, .cta-band, " +
-    ".facts > div, .notes-body > *, .req-item, .scene, .np-row, .np-month, .np-lead, .np-filter, .discord-band");
+    ".notes-body > *, .np-row, .np-month, .np-lead, .np-filter, .discord-band");
   const io = new IntersectionObserver((entries) => {
     entries.forEach((en) => {
       if (!en.isIntersecting) return;

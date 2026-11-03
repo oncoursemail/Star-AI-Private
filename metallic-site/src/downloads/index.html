@@ -1,51 +1,116 @@
 <!-- title: Download Metallic for Windows, Linux and Meta Quest -->
-<!-- description: Download the newest Metallic Early Access build for Windows 10 and 11, Linux (AppImage or .deb) and Meta Quest. Version, release date, notes and system requirements. -->
+<!-- description: Download the newest Metallic Early Access build for Windows 10 and 11, Linux (AppImage or .deb) and Meta Quest. The build for your device is picked for you. -->
 <!-- page: downloads -->
 <!-- scripts: downloads.js -->
-<section class="page-head dl" aria-labelledby="dl-h">
-  <div class="wrap dl-in">
-    <div class="dl-main">
-      <p class="eyebrow"><span class="live-dot"></span>Early Access</p>
-      <h1 id="dl-h">Download Metallic</h1>
-      <p class="lede" data-version>Early Access for Windows</p>
-      <p class="hero-cta"><a class="btn big" href="#notes" data-dl data-dl-main>Download for Windows</a></p>
-      <p class="cta-note" data-dl-note>Windows 10 and 11, 64-bit</p>
-      <p class="cta-note" data-linux hidden>Linux (64-bit, Ubuntu 22.04, Debian 12 or newer): <a href="#notes" data-dl-appimage>AppImage</a><span data-deb> or <a href="#notes" data-dl-deb>.deb package</a></span>.
-        Revivals are Windows programs, so on Linux they run through Wine or Steam's Proton (experimental).</p>
-      <p class="presence" data-presence hidden><span class="presence-dot" aria-hidden="true"></span><span><b data-presence-n>0</b> <span data-presence-label>people in Metallic right now</span></span><span class="presence-peak" data-presence-peak></span></p>
-      <p class="dl-wait" data-wait>The first Early Access build is not published yet. This page shows it the moment it is, and the button above starts the download.</p>
-    </div>
-    <dl class="facts">
-      <div><dt>Version</dt><dd data-f="version">Not published yet</dd></div>
-      <div><dt>Released</dt><dd data-f="date">Not published yet</dd></div>
-      <div><dt>File</dt><dd data-f="file">Windows installer (.exe)</dd></div>
-      <div><dt>Size</dt><dd data-f="size">Shown once published</dd></div>
-      <div class="wide stat"><dt>Downloads</dt><dd data-f="downloads">Not counted yet</dd></div>
-      <div class="wide"><dt>Updates</dt><dd>Install once. New builds are signed; the launcher checks the signature, then updates itself.</dd></div>
-    </dl>
-  </div>
-</section>
+<svg class="sprite" aria-hidden="true" focusable="false" width="0" height="0">
+  <symbol id="i-win" viewBox="0 0 24 24"><path fill="currentColor" d="M3 3h8.4v8.4H3zM12.6 3H21v8.4h-8.4zM3 12.6h8.4V21H3zM12.6 12.6H21V21h-8.4z"/></symbol>
+  <symbol id="i-tux" viewBox="0 0 24 24">
+    <ellipse cx="12" cy="13.2" rx="6.4" ry="8.4" fill="#15151b"/>
+    <ellipse cx="12" cy="15.4" rx="4" ry="5.6" fill="#fff"/>
+    <circle cx="10.2" cy="8.6" r="1.35" fill="#fff"/><circle cx="13.8" cy="8.6" r="1.35" fill="#fff"/>
+    <circle cx="10.5" cy="8.85" r=".65" fill="#15151b"/><circle cx="13.5" cy="8.85" r=".65" fill="#15151b"/>
+    <path fill="#f4b223" d="M10.4 10.6q1.6-.9 3.2 0-.5 1.5-1.6 1.6-1.1-.1-1.6-1.6z"/>
+    <ellipse cx="8.6" cy="21.1" rx="2.7" ry="1.25" fill="#f4b223"/><ellipse cx="15.4" cy="21.1" rx="2.7" ry="1.25" fill="#f4b223"/>
+  </symbol>
+  <symbol id="i-quest" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M5.2 6.5h13.6A3.2 3.2 0 0 1 22 9.7v4.6a3.2 3.2 0 0 1-3.2 3.2h-3.1a1.6 1.6 0 0 1-1.4-.8l-.9-1.5a1.6 1.6 0 0 0-2.8 0l-.9 1.5a1.6 1.6 0 0 1-1.4.8H5.2A3.2 3.2 0 0 1 2 14.3V9.7a3.2 3.2 0 0 1 3.2-3.2z"/>
+    <circle cx="6.2" cy="9.6" r=".9" fill="#1b1b23"/><circle cx="17.8" cy="9.6" r=".9" fill="#1b1b23"/>
+  </symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
+  <symbol id="i-tick" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+</svg>
 
-<section class="sec" id="quest" aria-labelledby="quest-h">
-  <div class="wrap two-col">
-    <div class="sec-head">
-      <div>
-        <p class="kicker">Meta Quest</p>
-        <h2 id="quest-h">Metallic on your Quest.</h2>
-      </div>
-    </div>
-    <div>
-      <p class="lede">The same revival list, live numbers and news, as a window in your headset. Get on Quest opens each revival's Meta store page, or the place its Quest build is shared.</p>
-      <p class="hero-cta"><a class="btn" data-quest-dl aria-disabled="true">Quest app not published yet</a></p>
-      <p class="cta-note" data-quest-note>Android app (APK) for Meta Quest 2, 3, 3S and Pro, installed by sideloading.</p>
-    </div>
-  </div>
+<section class="page-head dl" aria-labelledby="dl-h">
   <div class="wrap">
-    <ol class="steps">
-      <li><span class="step-n">1</span><h3>Turn on developer mode</h3><p>In the Meta Horizon app on your phone: Devices, your headset, Headset settings, Developer mode. Meta asks you to create a free developer organization first.</p></li>
-      <li><span class="step-n">2</span><h3>Connect SideQuest</h3><p>Install SideQuest on your computer, plug the headset in by USB and allow USB debugging in the headset.</p></li>
-      <li><span class="step-n">3</span><h3>Install the APK</h3><p>Drag the Metallic APK onto SideQuest. In the headset, open it from Library, Unknown sources. Install a newer APK the same way to update.</p></li>
-    </ol>
+    <div class="dl-top">
+      <h1 id="dl-h">Download Metallic</h1>
+      <p class="lede" data-pick-note>Every Rec Room revival in one launcher, for Windows, Linux and Meta Quest.</p>
+    </div>
+
+    <div class="dl-box">
+      <div class="plats" role="group" aria-label="Choose your device">
+        <button class="plat" type="button" data-plat="windows" aria-pressed="true" aria-controls="windows">
+          <span class="ic win"><svg><use href="#i-win"/></svg></span>
+          <span class="plat-t"><b>Windows</b><span>10 and 11</span></span>
+          <span class="here" hidden>This device</span>
+        </button>
+        <button class="plat" type="button" data-plat="linux" aria-pressed="false" aria-controls="linux">
+          <span class="ic tux"><svg><use href="#i-tux"/></svg></span>
+          <span class="plat-t"><b>Linux</b><span data-plat-sub="linux">Coming soon</span></span>
+          <span class="here" hidden>This device</span>
+        </button>
+        <button class="plat" type="button" data-plat="quest" aria-pressed="false" aria-controls="quest">
+          <span class="ic quest"><svg><use href="#i-quest"/></svg></span>
+          <span class="plat-t"><b>Meta Quest</b><span data-plat-sub="quest">Coming soon</span></span>
+          <span class="here" hidden>This device</span>
+        </button>
+      </div>
+
+      <article class="pane" id="windows" data-pane="windows" aria-labelledby="p-win">
+        <header class="pane-head">
+          <span class="ic win big"><svg><use href="#i-win"/></svg></span>
+          <div><h2 id="p-win">Metallic for Windows</h2><p>Windows 10 and 11, 64-bit</p></div>
+        </header>
+        <p class="pane-cta"><a class="btn big" data-get="windows" aria-disabled="true"><svg class="i"><use href="#i-down"/></svg><span>Not published yet</span></a></p>
+        <dl class="spec">
+          <div><dt>Version</dt><dd data-v="version">Not published yet</dd></div>
+          <div><dt>Released</dt><dd data-v="date">Not published yet</dd></div>
+          <div><dt>Size</dt><dd data-size="windows">Not stated</dd></div>
+          <div><dt>File</dt><dd data-file="windows">Installer (.exe)</dd></div>
+        </dl>
+        <ul class="ticks">
+          <li><svg class="i"><use href="#i-tick"/></svg>Run the installer. No account or sign-in.</li>
+          <li><svg class="i"><use href="#i-tick"/></svg>Updates install themselves, each one signed and checked first.</li>
+          <li><svg class="i"><use href="#i-tick"/></svg>Adds Microsoft's WebView2 runtime if Windows is missing it.</li>
+        </ul>
+      </article>
+
+      <article class="pane" id="linux" data-pane="linux" aria-labelledby="p-linux">
+        <header class="pane-head">
+          <span class="ic tux big"><svg><use href="#i-tux"/></svg></span>
+          <div><h2 id="p-linux">Metallic for Linux</h2><p>64-bit. Ubuntu 22.04, Debian 12 or newer</p></div>
+        </header>
+        <p class="pane-cta">
+          <a class="btn big" data-get="linux" aria-disabled="true"><svg class="i"><use href="#i-down"/></svg><span>Linux build not published yet</span></a>
+          <a class="btn big ghost" data-get="deb" hidden><svg class="i"><use href="#i-down"/></svg><span>.deb package</span></a>
+        </p>
+        <dl class="spec">
+          <div><dt>Version</dt><dd data-v="version">Not published yet</dd></div>
+          <div><dt>Released</dt><dd data-v="date">Not published yet</dd></div>
+          <div><dt>Size</dt><dd data-size="linux">Not stated</dd></div>
+          <div><dt>File</dt><dd data-file="linux">AppImage or .deb</dd></div>
+        </dl>
+        <ul class="ticks">
+          <li><svg class="i"><use href="#i-tick"/></svg>The AppImage runs on any 64-bit distribution and updates itself.</li>
+          <li><svg class="i"><use href="#i-tick"/></svg>The .deb installs for everyone on the computer; updates ask for your password.</li>
+          <li><svg class="i"><use href="#i-tick"/></svg>Revivals are Windows games, so they run through Steam's Proton or Wine. Experimental.</li>
+        </ul>
+      </article>
+
+      <article class="pane" id="quest" data-pane="quest" aria-labelledby="p-quest">
+        <header class="pane-head">
+          <span class="ic quest big"><svg><use href="#i-quest"/></svg></span>
+          <div><h2 id="p-quest">Metallic for Meta Quest</h2><p>Quest 2, 3, 3S and Pro</p></div>
+        </header>
+        <p class="pane-cta"><a class="btn big" data-quest-dl aria-disabled="true"><svg class="i"><use href="#i-down"/></svg><span>Quest app not published yet</span></a></p>
+        <dl class="spec">
+          <div><dt>Version</dt><dd data-quest-v>Not published yet</dd></div>
+          <div><dt>Size</dt><dd data-size="quest">Not stated</dd></div>
+          <div><dt>File</dt><dd>Android app (.apk)</dd></div>
+          <div><dt>Install with</dt><dd>SideQuest</dd></div>
+        </dl>
+        <ol class="qsteps">
+          <li><b>Turn on developer mode.</b> In the Meta Horizon app on your phone: Devices, your headset, Headset settings, Developer mode.</li>
+          <li><b>Connect SideQuest.</b> Install SideQuest on your computer, plug in the headset and allow USB debugging in it.</li>
+          <li><b>Install the APK.</b> Drag it onto SideQuest, then open Metallic in the headset from Library, Unknown sources.</li>
+        </ol>
+      </article>
+    </div>
+
+    <div class="dl-foot">
+      <p class="dl-count"><b data-f="downloads">0</b> downloads from this site</p>
+      <p class="presence" data-presence hidden><span class="presence-dot" aria-hidden="true"></span><span><b data-presence-n>0</b> <span data-presence-label>people in Metallic right now</span></span><span class="presence-peak" data-presence-peak></span></p>
+    </div>
   </div>
 </section>
 
@@ -53,49 +118,12 @@
   <div class="wrap two-col">
     <div class="sec-head">
       <div>
-        <p class="kicker">Release notes</p>
-        <h2 id="notes-h">What is in this build.</h2>
+        <h2 id="notes-h" data-notes-h>What is in this build</h2>
+        <p class="sec-meta">The same on every device.</p>
       </div>
     </div>
     <div class="notes-body" data-notes>
       <p>Release notes appear here with the first published build.</p>
-    </div>
-  </div>
-</section>
-
-<section class="sec" aria-labelledby="req-h">
-  <div class="wrap">
-    <div class="sec-head">
-      <div>
-        <p class="kicker">Requirements</p>
-        <h2 id="req-h">What you need.</h2>
-      </div>
-    </div>
-    <div class="req-grid">
-      <div class="req-item"><h3>Windows 10 or 11</h3><p>64-bit (x86-64). Metallic uses the WebView2 runtime that ships with Windows; the installer adds it if it is missing.</p></div>
-      <div class="req-item"><h3>Or Linux</h3><p>64-bit, Ubuntu 22.04, Debian 12 or newer, once a Linux build is published. Revivals are Windows programs, so they run through Wine or Proton (experimental).</p></div>
-      <div class="req-item"><h3>Or a Meta Quest</h3><p>Quest 2, 3, 3S or Pro with developer mode on, for the Quest app. On Quest, Metallic opens revivals' Quest builds; installing PC revivals needs a computer.</p></div>
-      <div class="req-item half"><h3>An internet connection</h3><p>For the live counts and the news, and to install and update revivals.</p></div>
-      <div class="req-item half"><h3>A headset, for VR</h3><p>Optional. Revivals that support VR start in your headset when you pick VR under the Play button.</p></div>
-    </div>
-  </div>
-</section>
-
-<section class="sec" aria-labelledby="scenes-h">
-  <div class="wrap">
-    <div class="sec-head">
-      <div>
-        <p class="kicker">Backgrounds</p>
-        <h2 id="scenes-h">Five scenes, drawn live.</h2>
-      </div>
-      <p class="sec-meta">Generated in code, not painted. Two follow your clock from day to night; the Hollow appears around Halloween.</p>
-    </div>
-    <div class="scene-grid">
-      <figure class="scene big"><img src="/assets/art/scenes/night-city.jpg" alt="Night metal city: dark towers with lit windows under a full moon" width="640" height="360" loading="lazy"><figcaption>Night metal city</figcaption></figure>
-      <figure class="scene"><img src="/assets/art/scenes/river-valley.jpg" alt="Valley lake: hills around a lake at sunset" width="640" height="360" loading="lazy"><figcaption>Valley lake</figcaption></figure>
-      <figure class="scene"><img src="/assets/art/scenes/crystal-cave.jpg" alt="Crystal cave: glowing crystals in a dark cave" width="640" height="360" loading="lazy"><figcaption>Crystal cave</figcaption></figure>
-      <figure class="scene"><img src="/assets/art/scenes/violet-nebula.jpg" alt="Violet nebula: stars and a violet cloud of gas" width="640" height="360" loading="lazy"><figcaption>Violet nebula</figcaption></figure>
-      <figure class="scene"><img src="/assets/art/scenes/halloween-hollow.jpg" alt="Hollow: a moonlit Halloween forest" width="640" height="360" loading="lazy"><figcaption>Hollow, in season</figcaption></figure>
     </div>
   </div>
 </section>

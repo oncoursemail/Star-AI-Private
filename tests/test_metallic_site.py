@@ -257,12 +257,24 @@ def test_linux_builds_are_offered_to_linux_visitors_when_published():
     dl = (SITE / "src" / "assets" / "downloads.js").read_text(encoding="utf-8")
     page = (SITE / "src" / "downloads" / "index.html").read_text(encoding="utf-8")
     assert '"linux-x86_64"' in site and '"linux-x86_64-deb"' in site and "M.onLinux" in site and "!/Android/" in site
-    assert "data-linux hidden" in page and "data-dl-appimage" in page and "data-dl-deb" in page  # hidden until published
-    assert "r.linux" in dl and '$("[data-linux]").hidden = false' in dl
+    # disabled until published
+    assert 'data-get="linux" aria-disabled="true"' in page and 'data-get="deb" hidden' in page
+    assert "if (r.linux)" in dl and """arm($('[data-get="linux"]'), r.linux.appimage""" in dl and """arm($('[data-get="deb"]'), r.linux.deb""" in dl
     caddy = (SERVER / "Caddyfile").read_text(encoding="utf-8")
     assert "/releases/*.AppImage /releases/*.deb" in caddy and "\t\tnot path /releases/*.exe /releases/*.AppImage /releases/*.deb\n" in caddy
     build = (SITE / "build.py").read_text(encoding="utf-8")
     assert '".appimage", ".deb"' in build
+
+
+def test_downloads_page_picks_the_visitors_device():
+    dl = (SITE / "src" / "assets" / "downloads.js").read_text(encoding="utf-8")
+    page = (SITE / "src" / "downloads" / "index.html").read_text(encoding="utf-8")
+    for plat in ("windows", "linux", "quest"):
+        assert f'data-plat="{plat}"' in page and f'id="{plat}" data-pane="{plat}"' in page, plat
+    # a Quest's browser says Linux and an iPhone's says Mac OS X: Quest and phones are told apart first
+    assert 'const device = M.onQuest ? "quest" : M.onLinux ? "linux" : onMac || onPhone ? null : "windows";' in dl
+    assert dl.index("const onPhone") < dl.index("const onMac") and "!onPhone" in dl
+    assert '["windows", "linux", "quest"].find((id) => location.hash === "#" + id)' in dl  # a link can pick one
 
 
 def test_release_folder_copies_only_the_manifest_and_installers(built):
