@@ -113,6 +113,37 @@ class GameplaySkillBankTests(unittest.TestCase):
         )
         self.assertIs(evidence[0].most_recent_success, False)
 
+    def test_signed_success_streak_requires_distinct_seconds_and_restarts_on_failure(self):
+        for _ in range(6):
+            self.add(outcome="success", at=NOW - 5)
+        evidence = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0]
+        self.assertEqual(evidence.consecutive_success_seconds, 1)
+        self.add(outcome="failure", at=NOW - 4)
+        self.add(outcome="success", at=NOW - 3)
+        self.add(outcome="success", at=NOW - 2)
+        evidence = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0]
+        self.assertEqual(evidence.consecutive_success_seconds, 2)
+        self.add(outcome="success", at=NOW - 1)
+        self.assertEqual(self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0].consecutive_success_seconds, 3)
+        # A failure at the same second removes the ambiguous newest bucket.
+        self.add(outcome="failure", at=NOW - 1)
+        evidence = self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0]
+        self.assertIs(evidence.most_recent_success, False)
+        self.assertEqual(evidence.consecutive_success_seconds, 0)
+        # Independent validation is intentionally excluded from the streak.
+        self.add(split="validation", outcome="success", at=NOW)
+        self.assertEqual(self.bank.practice_evidence(
+            "obby", "v1", "cross", "bridge", now_unix_s=NOW,
+        )[0].consecutive_success_seconds, 0)
+
     def test_validation_failure_never_changes_practice_last_outcome(self):
         self.add(split="practice", outcome="success", at=NOW - 60)
         self.add(split="validation", outcome="failure", at=NOW)
