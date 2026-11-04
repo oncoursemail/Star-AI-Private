@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import re
+from typing import cast
 
 from .stream_turntaking import TurnAdvice
 
@@ -25,7 +26,7 @@ def _clock(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("host time must be finite monotonic seconds")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError("host time must be finite monotonic seconds") from exc
     if not math.isfinite(result):

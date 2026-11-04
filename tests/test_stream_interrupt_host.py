@@ -473,5 +473,66 @@ class Rig(unittest.TestCase):
         self.assertFalse(self.host.metrics()["voice_liveness_required"])
 
 
+    def test_clock_failure_during_emergency_stop_still_releases_pcm(self):
+        self.arm()
+        self.now = float("nan")
+        result = self.host.emergency_stop()
+        self.assertEqual(result.status, "fault")
+        self.assertTrue(result.audio_stopped)
+        self.assertTrue(result.animation_flushed)
+        self.assertIsNone(result.stop_latency_ms)
+        self.assertEqual(self.stop_calls, ["test-epoch-A"])
+        self.assertEqual(self.flush_calls, ["test-epoch-A"])
+        self.assertFalse(self.stage.metrics()["enabled"])
+        self.assertFalse(self.host.metrics()["active"])
+        self.assertTrue(self.host.metrics()["fault"])
+        self.assertTrue(self.avatar.closed)
+        self.assertEqual(self.host.emergency_stop().status, "disabled")
+
+    def test_tick_with_broken_clock_fails_closed_without_waiting_for_vad(self):
+        self._arm_verified_live_vad()
+        self.now = float("inf")
+        result = self.host.tick()
+        self.assertEqual(result.status, "fault")
+        self.assertTrue(result.audio_stopped)
+        self.assertEqual(self.stop_calls, ["strict-epoch"])
+        self.assertEqual(self.flush_calls, ["strict-epoch"])
+        self.assertFalse(self.stage.metrics()["enabled"])
+        self.assertFalse(self.host.arm(self.plan, playback_epoch="again"))
+
+    def test_clock_failure_and_physical_stop_failure_never_imply_success(self):
+        self.arm()
+        self.now = float("nan")
+        self.stop_ok = False
+        self.flush_raises = True
+        result = self.host.emergency_stop()
+        self.assertEqual(result.status, "fault")
+        self.assertFalse(result.audio_stopped)
+        self.assertFalse(result.animation_flushed)
+        self.assertFalse(result.avatar_reset)
+        self.assertIsNone(result.stop_latency_ms)
+        self.assertEqual(self.host.metrics()["stop_failures"], 1)
+        self.assertEqual(self.host.metrics()["reset_failures"], 1)
+        self.assertTrue(self.host.metrics()["fault"])
+        self.assertFalse(self.stage.metrics()["enabled"])
+
+    def test_clock_failure_stops_old_audio_without_revoking_new_stage(self):
+        self.arm()
+        self.assertTrue(self.stage.finish(self.plan, now=100, played_to_end=True))
+        self.assertTrue(self.stage.offer(StreamSignal(
+            "evt-new", "game_danger", 100, "Obstacle", evidence="observed"
+        ), now=100))
+        replacement = self.stage.prepare(now=100)
+        assert replacement is not None
+        self.assertTrue(self.stage.queue_audio(replacement, now=100))
+        self.assertTrue(self.stage.acknowledge_audible(replacement, now=100))
+        self.now = float("nan")
+        result = self.host.emergency_stop()
+        self.assertEqual(result.status, "fault")
+        self.assertEqual(self.stop_calls, ["test-epoch-A"])
+        self.assertTrue(self.stage.current(replacement))
+        self.assertEqual(self.avatar.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -181,6 +181,52 @@ class StreamInterruptionHost:
             except Exception:
                 pass
 
+    def _stop_without_clock(self) -> InterruptionResult:
+        """Last-resort local stop if the host monotonic clock is unavailable.
+
+        A bad clock must NEVER prevent an epoch-specific physical stop. The
+        fallback does not report a latency SLA, never sends neutral animation
+        to a possibly newer speaker, and latches manual hardware recovery.
+        Stop/flush are private trusted-host capabilities, not model tools.
+        Caller owns _lock.
+        """
+        assert self._active is not None
+        plan, epoch = self._active
+        self._active = None
+        self._busy = True
+        self._fault = True
+        self._counts["faults"] += 1
+        try:
+            # Stage.disable() does not consult the failed clock. It invalidates
+            # this entire Stage instance, so old PCM/motion cannot rearm.
+            # Avoid invalidating a newer plan which may have superseded ours.
+            try:
+                if self._stage.current(plan):
+                    self._stage.disable()
+            except Exception:
+                # Stop physical playback regardless of Stage adapter failure.
+                pass
+            try:
+                stopped = self._stop_epoch(epoch) is True
+            except Exception:
+                stopped = False
+            try:
+                flushed = self._flush(epoch) is True
+            except Exception:
+                flushed = False
+            if not stopped:
+                self._counts["stop_failures"] += 1
+            if not flushed:
+                self._counts["reset_failures"] += 1
+            self._avatar_close()
+            return InterruptionResult(
+                "fault", "host_clock_lost_physical_stop_unconfirmed",
+                audio_stopped=stopped, animation_flushed=flushed,
+                stop_latency_ms=None,
+            )
+        finally:
+            self._busy = False
+
     def _retire_stale_epoch(self, epoch: str) -> InterruptionResult:
         """Stop orphaned playback without ever resetting a replacement turn.
 
@@ -342,7 +388,15 @@ class StreamInterruptionHost:
                 return InterruptionResult("disabled", "owner_opt_in_missing")
             if self._fault or self._busy:
                 return InterruptionResult("fault", "manual_audio_recovery_required")
-            now = _clock_ms(self._clock)
+            try:
+                now = _clock_ms(self._clock)
+            except ValueError:
+                if self._active is not None:
+                    return self._stop_without_clock()
+                self._fault = True
+                self._counts["faults"] += 1
+                self._avatar_close()
+                return InterruptionResult("fault", "host_clock_unavailable")
             if self._active is None:
                 return InterruptionResult("hold", "no_active_playback_epoch")
             plan, epoch = self._active
@@ -378,9 +432,11 @@ class StreamInterruptionHost:
                 return InterruptionResult("disabled", "no_local_playback_epoch")
             if self._fault or self._busy:
                 return InterruptionResult("fault", "manual_audio_recovery_required")
-            return self._interrupt(
-                reason="operator_requested_stop", now_ms=_clock_ms(self._clock)
-            )
+            try:
+                now_ms = _clock_ms(self._clock)
+            except ValueError:
+                return self._stop_without_clock()
+            return self._interrupt(reason="operator_requested_stop", now_ms=now_ms)
 
     def disable(self) -> InterruptionResult:
         """Revoke VAD control; attempt an epoch-scoped stop before returning."""

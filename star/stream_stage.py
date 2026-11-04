@@ -200,9 +200,28 @@ class StarStage:
             self._quiet_frame = None
 
     def disable(self) -> MotionFrame:
-        """Invalidate the stage; the host must silence playback/reset its rig."""
+        """Revoke every speech token even when a broken host clock prevents bookkeeping.
+
+        A safety shutdown must never require a functioning inference/audio
+        clock. When the director cannot timestamp an interrupted utterance,
+        discard it without claiming successful speech, then disable the stage.
+        The trusted host must still physically stop/flush PCM separately.
+        """
         with self._lock:
-            self._drop(interrupted=True)
+            try:
+                self._drop(interrupted=True)
+            except Exception:
+                # The clock/directed completion path failed. Never leave the
+                # previously audible StagePlan valid or mark it fully spoken.
+                if self._plan is not None:
+                    self._counts["interrupted"] += 1
+                if self._intent is not None:
+                    self._counts["abandoned"] += 1
+                self._intent = None
+                self._plan = None
+                self._phase = "idle"
+                self._prepared_at = self._queued_at = self._audible_at = None
+                self._playout_clearance = None
             self._director.disable()
             self._enabled = False
             self._require_preplay_witness = False

@@ -111,7 +111,13 @@ class StreamVoiceLivenessSupervisor:
                     self._callback_failed = True
 
     def _check(self) -> InterruptionResult:
-        result = self._host.tick()
+        try:
+            result = self._host.tick()
+        except Exception:
+            # A failed sensor or clock callback must not leave PCM armed until
+            # the next watchdog interval. The trusted host performs the stop.
+            self._trip()
+            raise RuntimeError("live voice supervision failed closed") from None
         with self._lock:
             self._checks += 1
         if result.status in {"fault", "disabled"}:
@@ -141,7 +147,13 @@ class StreamVoiceLivenessSupervisor:
     def observe(self, frame: VoiceFrame) -> InterruptionResult:
         """Proxy VAD input, refusing unprotected ingestion after watchdog loss."""
         self._require_running()
-        result = self._host.observe(frame)
+        try:
+            result = self._host.observe(frame)
+        except Exception:
+            # Invalid/replayed VAD is not evidence of quiet. Revoke the old
+            # audible epoch rather than continuing with a poisoned feed.
+            self._trip()
+            raise RuntimeError("live voice observations failed closed") from None
         if result.status in {"fault", "disabled"}:
             self._trip()
         self._require_running()
