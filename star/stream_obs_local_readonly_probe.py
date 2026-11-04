@@ -1,7 +1,9 @@
 """Opt-in localhost OBS WebSocket v5 OBS *observation* for STAR's private VTuber lab.
 
 Bridges the existing verified-triplet parser to a real authenticated local OBS
-connection. ONLY GetStats, GetStreamStatus and GetRecordStatus are sent. It
+connection. ONLY GetStats, GetStreamStatus and GetRecordStatus are sent. A
+separate opt-in can verify that an already started PRIVATE recording is active
+and unpaused while broadcasting is off, at discrete sampling instants. It
 never starts/stops recording, changes scenes, broadcasts, captures private
 media, or grants permission to perform another action.
 
@@ -91,7 +93,7 @@ class LocalObsProbeReport:
 def observe_local_obs(
     *, owner_approved: bool = False, password: str | None = None,
     port: int = 4455, samples: int = 3, timeout_s: float = 2.0,
-    interval_s: float = 0.5,
+    interval_s: float = 0.5, verify_private_recording: bool = False,
     connect: Callable[[int, float], _WebSocket] = _local_connection,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
@@ -106,6 +108,8 @@ def observe_local_obs(
     """
     if owner_approved is not True:
         raise PermissionError("explicit local OBS observation required")
+    if type(verify_private_recording) is not bool:
+        raise ValueError("private recording observation requires a host boolean")
     if (type(port) is not int or not 1024 <= port <= 65535
             or type(samples) is not int or not 2 <= samples <= 9
             or type(timeout_s) not in (int, float) or not 0.25 <= timeout_s <= 5
@@ -116,7 +120,9 @@ def observe_local_obs(
         return LocalObsProbeReport("unavailable", "local_obs_password_required", 0)
 
     socket = connect(port, float(timeout_s))
-    gate = ObsReadOnlyEvidenceGate(owner_approved=True)
+    gate = ObsReadOnlyEvidenceGate(
+        owner_approved=True, require_private_recording=verify_private_recording,
+    )
     try:
         hello = _packet(socket.recv(), 0)
         if type(hello.get("rpcVersion")) is not int or hello["rpcVersion"] < 1:
@@ -164,6 +170,7 @@ def observe_local_obs(
         cast(float | None, report["render_skipped_fraction"]),
         cast(float | None, report["output_skipped_fraction"]),
         bool(report["nonbroadcast_verified_only_at_sample_times"]),
+        bool(report["private_recording_verified_only_at_sample_times"]),
     )
 
 
@@ -174,6 +181,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=500)
     parser.add_argument("--port", type=int, default=4455)
+    parser.add_argument(
+        "--verify-private-recording", action="store_true",
+        help="read-only check that private OBS recording is active and unpaused; never starts one",
+    )
     args = parser.parse_args(argv)
     if not args.observe:
         print(LocalObsProbeReport("unavailable", "explicit_observe_flag_required", 0).to_json())
@@ -182,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         report = observe_local_obs(
             owner_approved=True, password=os.getenv("STAR_OBS_WEBSOCKET_PASSWORD"),
             samples=args.samples, interval_s=args.interval_ms / 1000, port=args.port,
+            verify_private_recording=args.verify_private_recording,
         )
     except PermissionError:
         report = LocalObsProbeReport("deferred", "obs_authentication_or_output_state_rejected", 0)
