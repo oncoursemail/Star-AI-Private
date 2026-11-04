@@ -331,6 +331,13 @@ class TestObsReadOnlyEvidence(unittest.TestCase):
 
 
 class PrivateRecordingWitnessTests(unittest.TestCase):
+    def gate(self, **kwargs):
+        return ObsReadOnlyEvidenceGate(owner_approved=True, **kwargs)
+
+    def accept(self, gate, *, samples, ids):
+        return gate.accept(witnesses=samples, expected_request_ids=ids,
+                           host_verified=True)
+
     def _triplet(self, index: int, *, recording: bool, paused: object = False,
                  streaming: bool = False):
         start = float(index * 1000)
@@ -388,6 +395,54 @@ class PrivateRecordingWitnessTests(unittest.TestCase):
                                 host_verified=True)
                 self.assertEqual(gate.report()["sample_count"], 0)
 
+
+    def test_private_progress_requires_explicit_private_mode(self):
+        with self.assertRaises(ValueError):
+            self.gate(require_recording_progress=True)
+        with self.assertRaises(ValueError):
+            self.gate(require_private_recording=True, require_recording_progress=1)
+
+    def test_private_progress_rejects_missing_malformed_and_stale_counters(self):
+        gate = self.gate(require_private_recording=True, require_recording_progress=True)
+        s1, i1 = triplet(recording_active=True)
+        override_body(s1, "GetRecordStatus", outputPaused=False,
+                      outputDuration=1000, outputBytes=4096)
+        self.accept(gate, samples=s1, ids=i1)
+        for corrupt in (
+            {"outputDuration": 1000, "outputBytes": 5000},
+            {"outputDuration": 800, "outputBytes": 5000},
+            {"outputDuration": 1300, "outputBytes": 4000},
+            {"outputDuration": 1300, "outputBytes": True},
+            {"outputDuration": "1300", "outputBytes": 5000},
+            {"outputDuration": 1300.5, "outputBytes": 5000},
+            {"outputDuration": 9000, "outputBytes": 5000},
+        ):
+            sample, ids = triplet(sequence=2, at=2000, render=(4, 200), recording_active=True)
+            override_body(sample, "GetRecordStatus", outputPaused=False, **corrupt)
+            with self.subTest(corrupt=corrupt), self.assertRaises(ValueError):
+                self.accept(gate, samples=sample, ids=ids)
+            self.assertEqual(gate.report()["sample_count"], 1)
+        fresh, ids = triplet(sequence=2, at=2000, render=(4, 200), recording_active=True)
+        override_body(fresh, "GetRecordStatus", outputPaused=False,
+                      outputDuration=1300, outputBytes=5000)
+        self.accept(gate, samples=fresh, ids=ids)
+        self.assertTrue(gate.report()["recording_progress_verified_only_at_sample_times"])
+
+    def test_private_progress_no_media_bytes_requires_deferred_report(self):
+        gate = self.gate(require_private_recording=True, require_recording_progress=True)
+        for seq, at, duration, total in ((1, 1000, 100, 100), (2, 2000, 400, 200)):
+            samples, ids = triplet(sequence=seq, at=at, render=(0, total),
+                                   recording_active=True)
+            override_body(samples, "GetRecordStatus", outputPaused=False,
+                          outputDuration=duration, outputBytes=0)
+            self.accept(gate, samples=samples, ids=ids)
+        self.assertFalse(gate.report()["recording_progress_verified_only_at_sample_times"])
+        samples, ids = triplet(sequence=3, at=3000, render=(0, 300), recording_active=True)
+        override_body(samples, "GetRecordStatus", outputPaused=False,
+                      outputDuration=700, outputBytes=4096)
+        self.accept(gate, samples=samples, ids=ids)
+        self.assertTrue(gate.report()["recording_progress_verified_only_at_sample_times"])
+        self.assertNotIn("4096", json.dumps(gate.report()))
 
 if __name__ == "__main__":
     unittest.main()

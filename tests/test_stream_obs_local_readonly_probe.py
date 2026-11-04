@@ -14,10 +14,14 @@ from star.stream_obs_local_readonly_probe import (
 class FakeObs:
     def __init__(self, *, stream_active=False, record_active=False,
                  authenticated=True, mismatch=False, wrong_op=False, rpc=1,
-                 record_paused=False):
+                 record_paused=False, recording_bytes=True,
+                 recording_duration=True):
         self.stream_active = stream_active
         self.record_active = record_active
         self.record_paused = record_paused
+        self.recording_bytes = recording_bytes
+        self.recording_duration = recording_duration
+        self.record_reads = 0
         self.authenticated = authenticated
         self.mismatch = mismatch
         self.wrong_op = wrong_op
@@ -45,7 +49,10 @@ class FakeObs:
             elif kind == "GetStreamStatus":
                 body = {"outputActive": self.stream_active}
             elif kind == "GetRecordStatus":
-                body = {"outputActive": self.record_active, "outputPaused": self.record_paused}
+                self.record_reads += 1
+                body = {"outputActive": self.record_active, "outputPaused": self.record_paused,
+                        "outputDuration": (self.record_reads * 300 if self.recording_duration else 0),
+                        "outputBytes": (self.record_reads * 2048 if self.recording_bytes else 0)}
             else:
                 raise AssertionError("unapproved OBS request")
             reply = {"op": 7, "d": {
@@ -256,6 +263,63 @@ class TestLocalObsProbe(unittest.TestCase):
             self.assertEqual(main(["--observe"]), 1)
         self.assertIn("local_obs_password_required", out.getvalue())
 
+
+    def test_strict_recording_progress_observed_without_recording_controls(self):
+        self.sock = FakeObs(record_active=True)
+        result = self.observe(samples=3, verify_private_recording=True,
+                              verify_recording_progress=True)
+        self.assertEqual(result.status, "candidate")
+        self.assertTrue(result.recording_verified)
+        self.assertTrue(result.recording_progress_verified)
+        self.assertNotIn("outputBytes", result.to_json())
+        self.assertFalse(result.authorizes_recording)
+        self.assertEqual({p["d"]["requestType"] for p in self.sock.requests[1:]},
+                         {"GetStats", "GetRecordStatus", "GetStreamStatus"})
+
+    def test_strict_recording_progress_deferred_when_bytes_stall(self):
+        self.sock = FakeObs(record_active=True, recording_bytes=False)
+        result = self.observe(verify_private_recording=True,
+                              verify_recording_progress=True)
+        self.assertEqual(result.status, "deferred")
+        self.assertEqual(result.reason, "recording_output_bytes_not_advancing")
+        self.assertFalse(result.recording_progress_verified)
+        self.assertTrue(self.sock.closed)
+
+    def test_strict_recording_progress_rejects_stalled_duration(self):
+        self.sock = FakeObs(record_active=True, recording_duration=False)
+        with self.assertRaises(ValueError):
+            self.observe(verify_private_recording=True, verify_recording_progress=True)
+        self.assertTrue(self.sock.closed)
+
+    def test_strict_recording_progress_rejects_active_stream(self):
+        self.sock = FakeObs(record_active=True, stream_active=True)
+        with self.assertRaises(PermissionError):
+            self.observe(verify_private_recording=True, verify_recording_progress=True)
+        self.assertTrue(self.sock.closed)
+
+    def test_strict_progress_requires_explicit_private_recording_before_connect(self):
+        calls = []
+        for options in ({"verify_recording_progress": True},
+                        {"verify_private_recording": True, "verify_recording_progress": 1}):
+            with self.assertRaises(ValueError):
+                observe_local_obs(owner_approved=True, password="secret",
+                                  connect=lambda *a: calls.append(a), **options)
+        self.assertEqual(calls, [])
+
+    def test_cli_strict_progress_wired_as_read_only(self):
+        from unittest.mock import patch
+        from io import StringIO
+        out = StringIO()
+        with patch("sys.stdout", out), patch(
+            "star.stream_obs_local_readonly_probe.observe_local_obs",
+            return_value=LocalObsProbeReport("candidate", "read_only", 3,
+                                              recording_verified=True,
+                                              recording_progress_verified=True),
+        ) as probe:
+            self.assertEqual(main(["--observe", "--verify-private-recording",
+                                   "--verify-recording-progress"]), 0)
+            self.assertTrue(probe.call_args.kwargs["verify_recording_progress"])
+        self.assertIn('"recording_progress_verified":true', out.getvalue())
 
 if __name__ == "__main__":
     unittest.main()
