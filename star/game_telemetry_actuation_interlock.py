@@ -22,6 +22,9 @@ import re
 from threading import Event, Lock
 
 from .game_action_gate import ActionPermit
+from .game_action_outcome_feedback import (
+    ActionFeedback, GameActionOutcomeFeedback,
+)
 from .game_actuation_rehearsal import ActuationResult, GameActuationRehearsal
 from .game_state_transition_witness import AttestedGameMoment
 from .game_telemetry_liveness_guard import (
@@ -62,6 +65,7 @@ class TelemetryActuationInterlock:
         actuation: GameActuationRehearsal,
         expected_game_scope: str,
         tick_interval_s: float = 0.02,
+        outcome_feedback: GameActionOutcomeFeedback | None = None,
     ) -> None:
         if not isinstance(guard, GameTelemetryLivenessGuard):
             raise TypeError("trusted signed-telemetry guard required")
@@ -72,6 +76,12 @@ class TelemetryActuationInterlock:
         if (guard.game_scope != expected_game_scope
                 or actuation.game_scope != expected_game_scope):
             raise ValueError("telemetry and OBS episode must target the same approved game")
+        if outcome_feedback is not None and (
+            not isinstance(outcome_feedback, GameActionOutcomeFeedback)
+            or outcome_feedback.game_scope != expected_game_scope
+        ):
+            raise ValueError("outcome feedback must match approved game scope")
+        self._outcomes = outcome_feedback
         self._scope = expected_game_scope
         self._actuation = actuation
         self._stopped = Event()
@@ -86,6 +96,8 @@ class TelemetryActuationInterlock:
     def _telemetry_lost(self) -> None:
         """Tick-thread callback: latch cancellation before requesting key-up."""
         self._stopped.set()
+        if self._outcomes is not None:
+            self._outcomes.revoke()
         self._actuation.stop()
 
     def start(self, *, owner_approved: bool = False) -> None:
@@ -122,6 +134,8 @@ class TelemetryActuationInterlock:
                 raise GameTelemetryLivenessLost("signed game scope mismatch")
             if self._stopped.is_set():
                 raise GameTelemetryLivenessLost("telemetry-actuation interlock stopped")
+            if moment is not None and self._outcomes is not None:
+                self._outcomes.observe(moment)
             if moment is not None:
                 with self._lock:
                     self._moments += 1
@@ -148,6 +162,14 @@ class TelemetryActuationInterlock:
             self.stop()
             return ActuationResult("telemetry_unavailable")
 
+        if self._outcomes is not None:
+            try:
+                if not self._outcomes.ready():
+                    return ActuationResult("previous_outcome_pending")
+            except Exception:
+                self.stop()
+                return ActuationResult("outcome_feedback_unavailable")
+
         try:
             result = self._actuation.run(permit)
         except Exception:
@@ -165,11 +187,33 @@ class TelemetryActuationInterlock:
         except Exception:
             self.stop()
             return ActuationResult("telemetry_lost_during_action", claimed=result.claimed)
+        if self._outcomes is not None:
+            try:
+                # Begin only AFTER a genuine release receipt and the final
+                # telemetry postflight. Never infer that input changed game.
+                self._outcomes.begin(permit, result, host_confirmed=True)
+            except Exception:
+                self.stop()
+                return ActuationResult("outcome_feedback_unavailable", claimed=result.claimed)
         return result
+
+    def outcome_feedback(self) -> ActionFeedback | None:
+        """Host-only post-action evidence, never a skill or victory receipt."""
+        if self._outcomes is None:
+            return None
+        if self._stopped.is_set():
+            return ActionFeedback("revoked")
+        try:
+            return self._outcomes.snapshot()
+        except Exception:
+            self.stop()
+            return ActionFeedback("revoked")
 
     def stop(self) -> None:
         """Permanent fail-closed shutdown; no automatic source reconnection."""
         self._stopped.set()
+        if self._outcomes is not None:
+            self._outcomes.revoke()
         try:
             self._actuation.stop()
         finally:

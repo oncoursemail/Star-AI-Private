@@ -13,6 +13,7 @@ import pytest
 
 from star.authoritative_game_telemetry_source import AuthoritativeGameTelemetrySource
 from star.game_state_transition_witness import GameStateSample, VerifiedGameStateObserver
+from star.game_action_outcome_feedback import GameActionOutcomeFeedback
 from star.game_telemetry_liveness_guard import GameTelemetryLivenessGuard, GameTelemetryLivenessLost
 from star.game_telemetry_source_bridge import AuthenticatedGameTelemetryBridge
 from star.game_telemetry_actuation_interlock import TelemetryActuationInterlock
@@ -26,7 +27,7 @@ _KEY_SOURCE = b"source_test_key_0000000000000000"
 _KEY_MOMENT = b"moment_test_key_0000000000000000"
 
 
-def prepared_interlock(*, armed: bool = True):
+def prepared_interlock(*, armed: bool = True, outcome_enabled: bool = False):
     adapter, permit, port, episode, _ = ready()
     clock = Clock()
     engine = Engine(clock)
@@ -52,9 +53,13 @@ def prepared_interlock(*, armed: bool = True):
     guard = GameTelemetryLivenessGuard(bridge, clock=clock, max_silence_s=0.15)
     if armed:
         guard.arm(owner_approved=True)
+    outcomes = GameActionOutcomeFeedback(
+        game_scope=_GAME, session_id=session, receipt_key=_KEY_MOMENT,
+        clock=clock, window_s=0.5,
+    ) if outcome_enabled else None
     interlock = TelemetryActuationInterlock(
         guard=guard, actuation=adapter, expected_game_scope=_GAME,
-        tick_interval_s=0.01,
+        tick_interval_s=0.01, outcome_feedback=outcomes,
     )
     return interlock, adapter, permit, port, episode, clock, engine, journal, bridge, source
 
@@ -242,5 +247,86 @@ def test_wrong_components_rejected():
     with pytest.raises(TypeError):
         TelemetryActuationInterlock(
             guard=lock._supervisor._guard, actuation=object(), expected_game_scope=_GAME,
+        )
+    lock.stop()
+
+
+def test_verified_action_feedback_only_after_actual_post_release_engine_progress():
+    lock, _, permit, port, _, _, engine, _, _, source = prepared_interlock(
+        outcome_enabled=True,
+    )
+    assert lock.outcome_feedback().status == "idle"
+    lock.start(owner_approved=True)
+    try:
+        lock.accept(source.poll())  # Signed baseline, no outcome yet.
+        released = lock.run(permit)
+        assert released.status == "released_verified" and released.keys_up_verified
+        assert lock.outcome_feedback().status == "awaiting_evidence"
+        # No second input while the first has unverified follow-up evidence.
+        assert lock.run(permit).status == "previous_outcome_pending"
+        assert port["pressed"] == 1
+        engine.checkpoint = 1
+        assert lock.accept(source.poll()) is None  # One frame is insufficient.
+        assert lock.outcome_feedback().status == "awaiting_evidence"
+        receipt = lock.accept(source.poll())
+        assert receipt is not None and receipt.moment.kind == "checkpoint"
+        observed = lock.outcome_feedback()
+        assert observed.status == "observed_progress_after_action"
+        assert observed.observed_progress and observed.ticket == permit.ticket
+        assert not observed.authorizes_skill_credit
+        assert not observed.authorizes_broadcast_claim
+    finally:
+        lock.stop()
+    assert lock.outcome_feedback().status == "revoked"
+
+
+def test_verified_action_feedback_records_loss_without_claiming_play_skill():
+    lock, _, permit, _, _, clock, engine, _, _, source = prepared_interlock(
+        outcome_enabled=True,
+    )
+    lock.start(owner_approved=True)
+    try:
+        lock.accept(source.poll())
+        assert lock.run(permit).status == "released_verified"
+        def terminal_sample():
+            clock.advance()
+            engine.frame += 1
+            return GameStateSample(engine.frame, 1, "lost", engine.checkpoint)
+        # The owned test engine now authoritatively reports a lost round.
+        source._reader = terminal_sample
+        lock.accept(source.poll())
+        receipt = lock.accept(source.poll())
+        assert receipt is not None and receipt.moment.kind == "loss"
+        outcome = lock.outcome_feedback()
+        assert outcome.status == "observed_loss_after_action"
+        assert not outcome.observed_progress and not outcome.authorizes_skill_credit
+    finally:
+        lock.stop()
+
+
+def test_corrupted_signed_packet_clears_pending_action_feedback():
+    lock, _, permit, port, _, _, _, _, _, source = prepared_interlock(
+        outcome_enabled=True,
+    )
+    lock.start(owner_approved=True)
+    lock.accept(source.poll())
+    assert lock.run(permit).status == "released_verified"
+    assert lock.outcome_feedback().status == "awaiting_evidence"
+    with pytest.raises(GameTelemetryLivenessLost):
+        lock.accept(b"viewer-generated progress")
+    assert lock.outcome_feedback().status == "revoked"
+    assert not port["held"] and lock.status().revoked
+
+
+def test_cross_game_feedback_cannot_attach_to_input_interlock():
+    lock, adapter, _, _, _, clock, _, journal, _, _ = prepared_interlock()
+    bad = GameActionOutcomeFeedback(
+        game_scope="other_game", session_id=journal.session_id,
+        receipt_key=_KEY_MOMENT, clock=clock,
+    )
+    with pytest.raises(ValueError):
+        TelemetryActuationInterlock(
+            guard=lock._supervisor._guard, actuation=adapter,
+            expected_game_scope=_GAME, outcome_feedback=bad,
         )
     lock.stop()
