@@ -330,5 +330,64 @@ class TestObsReadOnlyEvidence(unittest.TestCase):
         self.assertEqual(gate.report()["sample_count"], 0)
 
 
+class PrivateRecordingWitnessTests(unittest.TestCase):
+    def _triplet(self, index: int, *, recording: bool, paused: object = False,
+                 streaming: bool = False):
+        start = float(index * 1000)
+        ids = {kind: f"private{index}{j}" for j, kind in
+               enumerate(("GetStats", "GetStreamStatus", "GetRecordStatus"))}
+        bodies = {
+            "GetStats": {
+                "renderSkippedFrames": 0, "renderTotalFrames": index * 60,
+                "outputSkippedFrames": 0, "outputTotalFrames": index * 60,
+            },
+            "GetStreamStatus": {"outputActive": streaming},
+            "GetRecordStatus": {"outputActive": recording, "outputPaused": paused},
+        }
+        return (
+            {kind: ObsReadOnlyWitness(start + j, {
+                "op": 7, "d": {
+                    "requestType": kind, "requestId": ids[kind],
+                    "requestStatus": {"result": True, "code": 100},
+                    "responseData": bodies[kind],
+                }
+            }) for j, kind in enumerate(ids)}, ids
+        )
+
+    def test_recording_opt_in_requires_two_fresh_active_unpaused_samples(self):
+        gate = ObsReadOnlyEvidenceGate(
+            owner_approved=True, require_private_recording=True,
+        )
+        for i in (1, 2):
+            witnesses, ids = self._triplet(i, recording=True)
+            gate.accept(witnesses=witnesses, expected_request_ids=ids, host_verified=True)
+        report = gate.report()
+        self.assertEqual(report["sample_count"], 2)
+        self.assertTrue(report["private_recording_verified_only_at_sample_times"])
+        self.assertTrue(report["nonbroadcast_verified_only_at_sample_times"])
+
+    def test_private_recording_off_by_default_and_strict_mode(self):
+        with self.assertRaises(ValueError):
+            ObsReadOnlyEvidenceGate(owner_approved=True, require_private_recording=1)
+        inactive = ObsReadOnlyEvidenceGate(owner_approved=True)
+        witnesses, ids = self._triplet(1, recording=True)
+        with self.assertRaises(PermissionError):
+            inactive.accept(witnesses=witnesses, expected_request_ids=ids,
+                            host_verified=True)
+        self.assertEqual(inactive.report()["sample_count"], 0)
+
+    def test_private_recording_not_paused_absent_or_broadcast(self):
+        for paused, streaming in ((True, False), (None, False), (False, True)):
+            gate = ObsReadOnlyEvidenceGate(owner_approved=True,
+                                           require_private_recording=True)
+            witnesses, ids = self._triplet(1, recording=True, paused=paused,
+                                          streaming=streaming)
+            with self.subTest(paused=paused, streaming=streaming):
+                with self.assertRaises(PermissionError):
+                    gate.accept(witnesses=witnesses, expected_request_ids=ids,
+                                host_verified=True)
+                self.assertEqual(gate.report()["sample_count"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
