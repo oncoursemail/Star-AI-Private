@@ -381,7 +381,8 @@ def test_no_identifying_data_in_aggregate_metrics():
     train(gate)
     assert set(gate.metrics()) == {"measured", "timeouts", "replays", "reactive", "skipped",
                                    "offline_teacher", "enabled", "timing_samples",
-                                   "reactive_p95_ms"}
+                                   "reactive_p95_ms", "input_ack_samples",
+                                   "input_ack_p95_ms", "strict_input_ack_profile"}
 
 
 def test_timed_out_inference_is_counted_as_slow_not_silently_discarded():

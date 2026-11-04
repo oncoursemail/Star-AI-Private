@@ -193,6 +193,27 @@ class RealtimeGameLoop:
                 stream_live=stream_live,
             )
 
+    def record_input_ack_latency(
+        self, *, sample_id: int, duration_ms: float, sample_host_ms: float,
+        host_measured: bool = False, completed: bool = True,
+        stream_live: bool = False,
+    ) -> bool:
+        """Offer trusted OS-input acknowledgement timing to the router.
+
+        Called by a separately authorized host AFTER checking an actual OS
+        input acknowledgement (or reporting its timeout). This method does
+        not issue key input or validate whether the game reacted to a key.
+        """
+        with self._lock:
+            if self._scope is None:
+                return False
+            return self._router.record_input_ack_latency(
+                game_scope=self._scope_key, sample_id=sample_id,
+                duration_ms=duration_ms, sample_host_ms=sample_host_ms,
+                host_measured=host_measured, completed=completed,
+                stream_live=stream_live,
+            )
+
     def _skip(self, reason: str) -> GameThinkLease:
         self._counts["skipped"] += 1
         return GameThinkLease("skip", reason)
