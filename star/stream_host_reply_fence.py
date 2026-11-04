@@ -91,6 +91,22 @@ class HostWorkerReplyFence:
             self._pending.clear()
             # Do not reuse one-shot admission IDs after a disable/enable cycle.
 
+    def cancel(self, permit: HostReplyPermit) -> bool:
+        """Host-only cancellation; a copied or replayed receipt cannot evict another."""
+        if not isinstance(permit, HostReplyPermit):
+            raise TypeError("opaque host output permit required")
+        with self._lock:
+            entry = self._pending.get(permit.serial)
+            if entry is None or entry[0] is not permit:
+                return False
+            del self._pending[permit.serial]
+            return True
+
+    def clear_pending(self) -> None:
+        """Host-only: flush queued eligibility on a local session shutdown."""
+        with self._lock:
+            self._pending.clear()
+
     def _advance(self, now_ms: float) -> float:
         now = _clock(now_ms)
         if now < self._now:
