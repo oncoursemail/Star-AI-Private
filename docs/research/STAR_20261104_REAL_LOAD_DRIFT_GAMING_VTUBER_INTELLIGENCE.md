@@ -1,5 +1,5 @@
 # STAR AI: Measured Gameplay-Load Drift, Faster Intelligence & Natural VTuber Research
-**Research and implementation record — November 4, 2026 (US Central)**
+**Research and implementation record — November 4, 2026 (UTC) / November 3 (US Central)**
 
 ## Outcome and evidence boundary
 
