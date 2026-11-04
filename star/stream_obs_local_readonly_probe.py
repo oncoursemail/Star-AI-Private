@@ -125,7 +125,8 @@ def observe_local_obs(
     )
     try:
         hello = _packet(socket.recv(), 0)
-        if type(hello.get("rpcVersion")) is not int or hello["rpcVersion"] < 1:
+        rpc_version = hello.get("rpcVersion")
+        if type(rpc_version) is not int or rpc_version < 1:
             raise ValueError("unsupported OBS RPC version")
         auth = hello.get("authentication")
         if type(auth) is not dict:
@@ -164,9 +165,12 @@ def observe_local_obs(
         socket.close()
 
     report = gate.report()
+    sample_count = report["sample_count"]
+    if type(sample_count) is not int:
+        raise ValueError("OBS parser returned invalid sample count")
     return LocalObsProbeReport(
         "candidate", "authenticated_readonly_observations_only",
-        int(report["sample_count"]),
+        sample_count,
         cast(float | None, report["render_skipped_fraction"]),
         cast(float | None, report["output_skipped_fraction"]),
         bool(report["nonbroadcast_verified_only_at_sample_times"]),
