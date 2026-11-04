@@ -13,8 +13,9 @@ From the authorized `Main` Windows desktop (read-only):
 - OBS Studio executable installed and FFmpeg / ffprobe available in PATH.
 - **No** matching OBS, Roblox, VTube Studio, or llama-server processes running at the snapshot. No conclusion about availability of VRAM once a game, renderer, model and voice generator are loaded.
 - Python 3.15, `psutil` and `pytest` are available. The command uses only current stdlib plus repository's existing psutil reader.
+- **Actual newly built CLI executed on Main**, 5 consecutive read-only samples spanning **5,384 ms**: `status=deferred`, **minimum free GPU memory 871 MiB**, peak GPU compute 26%, local inference model process recognized, OBS and avatar process absent, no pinned game process. It asserted `authorizes_broadcast=false` and **all four physical proof flags false**. This is distinct from the earlier one-off 7,624 MiB free observation; the machine's headroom changed while the session was being inspected. The tool did not start, stop, or reconfigure applications.
 
-This snapshot directly explains the blockers. It is not a streaming FPS/audio/network benchmark. Never label this measured readiness as "game mastered", "faster LLM", or "stream passed".
+These snapshots directly explain the blockers. It is not a streaming FPS/audio/network benchmark. Never label this measured readiness as "game mastered", "faster LLM", or "stream passed".
 
 ## New operational command
 
