@@ -104,3 +104,21 @@ def test_redaction_of_keys_in_errors():
     out = fac.redact(text)
     assert "gsk_" not in out and "AIza" not in out and "sk-or-v1-abcdef" not in out
     assert out.count("[redacted]") == 3
+
+
+def test_model_terms_are_per_model_not_per_provider():
+    assert fac.model_terms("openrouter", "meta-llama/llama-3.3-70b-instruct:free")["free"] == "free_tier"
+    assert fac.model_terms("openrouter", "meta-llama/llama-3.3-70b-instruct")["free"] == "paid"
+    assert fac.model_terms("gemini", "gemini-2.5-flash")["free"] == "free_tier"
+    assert fac.model_terms("gemini", "some-unlisted-model")["free"] == "unknown"
+    t = fac.model_terms("groq", "any")
+    assert t["free"] == fac.CATALOG["groq"].free and t["source"].startswith("https://")
+
+
+def test_route_blocks_a_non_free_model_without_spend_opt_in():
+    q = fac.QuotaBook()
+    kw = dict(opted_in={"openrouter"}, quotas=q, keys={"openrouter": True})
+    d = fac.route(model="vendor/model", **kw)
+    assert d.provider == "local" and "spend" in d.reason
+    assert fac.route(model="vendor/model:free", **kw).provider == "openrouter"
+    assert fac.route(model="vendor/model", allow_spend={"openrouter"}, **kw).spend == "may_bill"
