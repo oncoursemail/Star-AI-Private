@@ -83,6 +83,7 @@ class LocalObsProbeReport:
     output_skipped_fraction: float | None = None
     nonbroadcast_verified_only_at_sample_times: bool = False
     recording_verified: bool = False
+    recording_progress_verified: bool = False
     authorizes_broadcast: bool = False
     authorizes_recording: bool = False
 
@@ -94,6 +95,7 @@ def observe_local_obs(
     *, owner_approved: bool = False, password: str | None = None,
     port: int = 4455, samples: int = 3, timeout_s: float = 2.0,
     interval_s: float = 0.5, verify_private_recording: bool = False,
+    verify_recording_progress: bool = False,
     connect: Callable[[int, float], _WebSocket] = _local_connection,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
@@ -110,6 +112,10 @@ def observe_local_obs(
         raise PermissionError("explicit local OBS observation required")
     if type(verify_private_recording) is not bool:
         raise ValueError("private recording observation requires a host boolean")
+    if type(verify_recording_progress) is not bool:
+        raise ValueError("recording progress observation requires a host boolean")
+    if verify_recording_progress and not verify_private_recording:
+        raise ValueError("recording progress requires private recording observation")
     if (type(port) is not int or not 1024 <= port <= 65535
             or type(samples) is not int or not 2 <= samples <= 9
             or type(timeout_s) not in (int, float) or not 0.25 <= timeout_s <= 5
@@ -122,6 +128,7 @@ def observe_local_obs(
     socket = connect(port, float(timeout_s))
     gate = ObsReadOnlyEvidenceGate(
         owner_approved=True, require_private_recording=verify_private_recording,
+        require_recording_progress=verify_recording_progress,
     )
     try:
         hello = _packet(socket.recv(), 0)
@@ -168,13 +175,18 @@ def observe_local_obs(
     sample_count = report["sample_count"]
     if type(sample_count) is not int:
         raise ValueError("OBS parser returned invalid sample count")
+    progress_verified = bool(report["recording_progress_verified_only_at_sample_times"])
     return LocalObsProbeReport(
-        "candidate", "authenticated_readonly_observations_only",
-        sample_count,
-        cast(float | None, report["render_skipped_fraction"]),
-        cast(float | None, report["output_skipped_fraction"]),
-        bool(report["nonbroadcast_verified_only_at_sample_times"]),
-        bool(report["private_recording_verified_only_at_sample_times"]),
+        status=("deferred" if verify_recording_progress and not progress_verified else "candidate"),
+        reason=("recording_output_bytes_not_advancing" if verify_recording_progress
+                and not progress_verified else "authenticated_readonly_observations_only"),
+        samples=sample_count,
+        render_skipped_fraction=cast(float | None, report["render_skipped_fraction"]),
+        output_skipped_fraction=cast(float | None, report["output_skipped_fraction"]),
+        nonbroadcast_verified_only_at_sample_times=bool(
+            report["nonbroadcast_verified_only_at_sample_times"]),
+        recording_verified=bool(report["private_recording_verified_only_at_sample_times"]),
+        recording_progress_verified=progress_verified,
     )
 
 
@@ -189,6 +201,10 @@ def main(argv: list[str] | None = None) -> int:
         "--verify-private-recording", action="store_true",
         help="read-only check that private OBS recording is active and unpaused; never starts one",
     )
+    parser.add_argument(
+        "--verify-recording-progress", action="store_true",
+        help="strictly check OBS private recording duration and output byte progress",
+    )
     args = parser.parse_args(argv)
     if not args.observe:
         print(LocalObsProbeReport("unavailable", "explicit_observe_flag_required", 0).to_json())
@@ -198,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
             owner_approved=True, password=os.getenv("STAR_OBS_WEBSOCKET_PASSWORD"),
             samples=args.samples, interval_s=args.interval_ms / 1000, port=args.port,
             verify_private_recording=args.verify_private_recording,
+            verify_recording_progress=args.verify_recording_progress,
         )
     except PermissionError:
         report = LocalObsProbeReport("deferred", "obs_authentication_or_output_state_rejected", 0)

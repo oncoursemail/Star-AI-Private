@@ -95,6 +95,8 @@ class ObsReadOnlyEvidenceGate:
     an inactive stream, checks timestamps/counter continuity and, by default,
     requires an inactive recording. In private-recording mode, the host
     instead verifies that OBS reports an active, unpaused local recording.
+    Optional strict progress mode rejects stalled/regressed recording duration
+    or output bytes, without ever returning the raw counters.
     The gate can also forward render-frame counters to a private recorder.
     A rejected triplet cannot advance the gate or the downstream recorder.
     """
@@ -105,11 +107,16 @@ class ObsReadOnlyEvidenceGate:
         max_inter_sample_gap_ms: float = 10000.0,
         max_samples: int = 2000,
         require_private_recording: bool = False,
+        require_recording_progress: bool = False,
     ) -> None:
         if owner_approved is not True:
             raise PermissionError("owner approval required for offline OBS observation")
         if type(require_private_recording) is not bool:
             raise ValueError("private recording mode must be an explicit host boolean")
+        if type(require_recording_progress) is not bool:
+            raise ValueError("recording progress mode must be an explicit host boolean")
+        if require_recording_progress and not require_private_recording:
+            raise ValueError("recording progress requires private recording mode")
         span = _number(max_response_span_ms, upper=5000)
         if not 25 <= span <= 5000:
             raise ValueError("response span must be 25..5000 ms")
@@ -119,6 +126,10 @@ class ObsReadOnlyEvidenceGate:
         if type(max_samples) is not int or not 2 <= max_samples <= 10000:
             raise ValueError("max_samples must be 2..10000")
         self._require_private_recording = require_private_recording
+        self._require_recording_progress = require_recording_progress
+        self._recording_last: tuple[int, int] | None = None
+        self._recording_bytes_advanced = False
+        self._recording_duration_advanced = False
         self._span = span
         self._gap = gap
         self._limit = max_samples
@@ -174,6 +185,16 @@ class ObsReadOnlyEvidenceGate:
                 raise PermissionError("private recording is not active and unpaused")
         elif recording.get("outputActive") is not False:
             raise PermissionError("record state is active or not independently verified")
+        recording_progress: tuple[int, int] | None = None
+        if self._require_recording_progress:
+            # Protocol v5 supplies an output duration in milliseconds and
+            # output bytes. Neither alone proves the final media file exists.
+            # Parse without coercing strings, rounding floats, or accepting
+            # boolean counters; do not retain raw OBS timecodes or media paths.
+            recording_progress = (
+                _count(recording.get("outputDuration")),
+                _count(recording.get("outputBytes")),
+            )
         for key in (
             "renderSkippedFrames", "renderTotalFrames",
             "outputSkippedFrames", "outputTotalFrames",
@@ -209,6 +230,18 @@ class ObsReadOnlyEvidenceGate:
             else:
                 drs = drt = dos = dot = 0
 
+            duration_advanced = bytes_advanced = False
+            if recording_progress is not None and self._recording_last is not None:
+                old_duration, old_bytes = self._recording_last
+                new_duration, new_bytes = recording_progress
+                elapsed = candidate.at_monotonic_ms - previous.at_monotonic_ms if previous else 0
+                if (new_duration <= old_duration
+                        or new_duration - old_duration > elapsed + 1000
+                        or new_bytes < old_bytes):
+                    raise ValueError("private recording stalled, restarted, or regressed")
+                duration_advanced = True
+                bytes_advanced = new_bytes > old_bytes
+
             if recorder is not None:
                 # Do not advance gate counters if downstream validation fails.
                 recorder.record(
@@ -216,6 +249,9 @@ class ObsReadOnlyEvidenceGate:
                     host_verified=True, skipped_frames=rs, total_frames=rt,
                 )
             self._last = candidate
+            self._recording_last = recording_progress
+            self._recording_duration_advanced |= duration_advanced
+            self._recording_bytes_advanced |= bytes_advanced
             self._seen_ids.update(ids)
             self._count += 1
             self._render_skipped_delta += drs
@@ -240,6 +276,11 @@ class ObsReadOnlyEvidenceGate:
                 "nonbroadcast_verified_only_at_sample_times": self._count > 0,
                 "private_recording_verified_only_at_sample_times": (
                     self._require_private_recording and self._count > 0
+                ),
+                "recording_progress_verified_only_at_sample_times": (
+                    self._require_recording_progress and self._count >= 2
+                    and self._recording_duration_advanced
+                    and self._recording_bytes_advanced
                 ),
                 "note": "read-only snapshots; not continuous capture proof, audio proof, game FPS or broadcast authorization",
             }
