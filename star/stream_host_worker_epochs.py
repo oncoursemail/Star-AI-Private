@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 import math
 import secrets
 from threading import RLock
-from typing import Mapping
+from typing import Mapping, cast
 
 from .stream_host_artifact_preflight import HostArtifactPreflight
 from .stream_host_model_catalog import HostModelRoute
@@ -32,7 +32,7 @@ def _real(value: object, name: str, maximum: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite host number")
     try:
-        converted = float(value)
+        converted = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} is not finite") from exc
     if not math.isfinite(converted) or not 0 <= converted <= maximum:
