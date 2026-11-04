@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from threading import RLock
+from typing import cast
 
 from .stream_host_worker_epochs import HostWorkerEpoch, HostWorkerEpochRegistry
 from .stream_qos import InferenceJob, QoSDecision
@@ -27,7 +28,7 @@ def _clock(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("trusted monotonic clock required")
     try:
-        now = float(value)
+        now = float(cast(int | float, value))
     except (ValueError, OverflowError) as exc:
         raise ValueError("invalid host clock") from exc
     if not math.isfinite(now) or not 0 <= now <= _MAX_CLOCK_MS:
