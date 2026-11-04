@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 import math
 import secrets
 from threading import RLock
-from typing import Mapping
+from typing import Mapping, cast
 
 from .stream_host_artifact_preflight import HostArtifactPreflight
 from .stream_host_model_catalog import HostModelRoute
@@ -32,7 +32,7 @@ def _real(value: object, name: str, maximum: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite host number")
     try:
-        converted = float(value)
+        converted = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} is not finite") from exc
     if not math.isfinite(converted) or not 0 <= converted <= maximum:
@@ -150,11 +150,15 @@ class HostWorkerEpochRegistry:
                 raise ValueError("stale or future worker observation")
             if witness.runtime_sha256 != self._routes[alias].runtime_sha256:
                 raise ValueError("observed runtime digest differs from host manifest")
+            # Fence *all* per-alias observations, not only refreshes of the
+            # current PID. Otherwise a delayed old-PID sample could resurrect
+            # an already replaced or explicitly retired worker.
+            last = self._last_seen.get(alias)
+            if last is not None and witness.observed_monotonic_ms <= last:
+                raise ValueError("replayed or reordered worker observation")
             previous = self._epochs.get(alias)
             if previous is not None and (previous._pid, previous._born_unix_s) == (
                     witness.pid, witness.process_birth_unix_s):
-                if witness.observed_monotonic_ms <= self._last_seen[alias]:
-                    raise ValueError("replayed worker observation")
                 self._last_seen[alias] = witness.observed_monotonic_ms
                 return previous
             if previous is None and len(self._epochs) >= self._max_workers:
@@ -199,8 +203,26 @@ class HostWorkerEpochRegistry:
             if self._epochs.get(epoch.alias) is not epoch:
                 return False
             del self._epochs[epoch.alias]
-            del self._last_seen[epoch.alias]
+            # Retired routes keep a tiny timestamp watermark (one per catalog
+            # alias), so queued pre-retirement process observations cannot be
+            # accepted after retirement. Never remove this on worker death.
             return True
+
+    def is_current(self, epoch: HostWorkerEpoch, *, now_ms: float) -> bool:
+        """Advisory late-output fence; host must still observe OS liveness.
+
+        Call at the FINAL speech/text/vision output boundary. A valid epoch
+        only proves this registry has not seen a newer worker; it is not
+        runtime attestation, permission to broadcast, or audio authorization.
+        """
+        if not isinstance(epoch, HostWorkerEpoch):
+            raise TypeError("current worker epoch required")
+        with self._lock:
+            now = self._time(now_ms)
+            if self._epochs.get(epoch.alias) is not epoch:
+                return False
+            seen = self._last_seen[epoch.alias]
+            return seen <= now and now - seen <= self._freshness
 
     @property
     def active_workers(self) -> int:
