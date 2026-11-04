@@ -81,7 +81,8 @@ class GameDeadlineRouter:
                  history: int = 64, dispatch_reserve_ms: float = 40.0,
                  reactive_device: str = "cpu",
                  max_latency_sample_age_ms: float = 15_000.0,
-                 strict_workload_profile: bool = False) -> None:
+                 strict_workload_profile: bool = False,
+                 strict_input_ack_profile: bool = False) -> None:
         if type(minimum_samples) is not int or not 5 <= minimum_samples <= 64:
             raise ValueError("minimum_samples must be 5..64")
         if type(history) is not int or not minimum_samples <= history <= 256:
@@ -97,6 +98,9 @@ class GameDeadlineRouter:
             raise ValueError("latency sample age must be <=60 seconds")
         if type(strict_workload_profile) is not bool:
             raise ValueError("strict_workload_profile must be boolean")
+        if type(strict_input_ack_profile) is not bool:
+            raise ValueError("strict_input_ack_profile must be boolean")
+        self._strict_input_ack_profile = strict_input_ack_profile
         self._strict_workload_profile = strict_workload_profile
         self._max_latency_age = sample_age
         self._minimum = minimum_samples
@@ -108,6 +112,11 @@ class GameDeadlineRouter:
         # Tag measured completion speed with the independently attested OBS
         # state. In strict mode, idle timings never qualify live decisions.
         self._reactive: deque[tuple[float, float, bool]] = deque(maxlen=history)
+        # Actual OS input acknowledgement latency is a separate bottleneck
+        # from model decoding. Trusted same-clock host measurements only.
+        self._input_ack: deque[tuple[float, float, bool]] = deque(maxlen=history)
+        self._last_input_ack_id = 0
+        self._last_input_ack_ms: float | None = None
         self._last_sample_id = 0
         self._last_sample_ms: float | None = None
         self._last_advice_ms: float | None = None
@@ -125,6 +134,9 @@ class GameDeadlineRouter:
             self._enabled = True
             self._scope = game_scope
             self._reactive.clear()
+            self._input_ack.clear()
+            self._last_input_ack_id = 0
+            self._last_input_ack_ms = None
             self._last_sample_id = 0
             # The next host sample must not race a reset outside this lock.
             self._last_sample_ms = None
@@ -135,6 +147,9 @@ class GameDeadlineRouter:
             self._enabled = False
             self._scope = ""
             self._reactive.clear()
+            self._input_ack.clear()
+            self._last_input_ack_id = 0
+            self._last_input_ack_ms = None
             self._last_sample_id = 0
             # The next host sample must not race a reset outside this lock.
             self._last_sample_ms = None
@@ -177,6 +192,39 @@ class GameDeadlineRouter:
             self._counts["measured"] += 1
             if not completed:
                 self._counts["timeouts"] += 1
+            return True
+
+    def record_input_ack_latency(
+        self, *, game_scope: str, sample_id: int, duration_ms: float,
+        sample_host_ms: float, host_measured: bool = False,
+        completed: bool = True, stream_live: bool = False,
+    ) -> bool:
+        """Record actual host-observed input acknowledgement, never a model estimate.
+
+        Completion should be measured at the OS-input acknowledgement edge,
+        not at model output or a request to press a key. A missing OS ack is
+        recorded as a 5s timeout rather than silently omitted. Neither this
+        timing nor its host attestation proves that the game accepted input.
+        """
+        if type(sample_id) is not int or not 1 <= sample_id < 2**63:
+            raise ValueError("invalid input ack timing sample ID")
+        duration = _milliseconds(duration_ms, "duration_ms", minimum=0.001)
+        at = _clock_ms(sample_host_ms, "sample_host_ms")
+        if any(type(flag) is not bool for flag in (
+            host_measured, completed, stream_live,
+        )):
+            raise ValueError("input ack attestation flags must be booleans")
+        with self._lock:
+            if not self._enabled or not host_measured or game_scope != self._scope:
+                return False
+            if (sample_id <= self._last_input_ack_id
+                    or (self._last_input_ack_ms is not None
+                        and at <= self._last_input_ack_ms)):
+                self._counts["replays"] += 1
+                return False
+            self._last_input_ack_id = sample_id
+            self._last_input_ack_ms = at
+            self._input_ack.append((at, duration if completed else 5000.0, stream_live))
             return True
 
     def advise(
@@ -303,6 +351,27 @@ class GameDeadlineRouter:
                         return skip("stream_critical_pressure", remaining=remaining)
                     if self._device == "gpu" and stream_advice.profile != "normal":
                         return skip("stream_gpu_headroom_unverified", remaining=remaining)
+            # Strict mode budgets verified OS acknowledgement latency too.
+            # Idle measurements cannot qualify live input timing, even when
+            # model decoding itself has a fresh non-strict profile.
+            if self._strict_input_ack_profile:
+                matching_ack = [
+                    duration for at, duration, observed_live in self._input_ack
+                    if 0 <= now - at <= self._max_latency_age
+                    and observed_live == stream_live
+                ]
+                if len(matching_ack) < self._minimum:
+                    return skip("insufficient_recent_input_ack_latency_samples",
+                                remaining=remaining)
+                ack_p95 = _p95(matching_ack)
+                if ack_p95 is None:
+                    return skip("input_ack_profile_missing", remaining=remaining)
+                # The original reserve still provides a minimum guard.
+                required_reserve = max(self._reserve, ack_p95)
+                remaining = max(0.0, max_age - age - required_reserve)
+                if remaining <= 0:
+                    return skip("input_ack_p95_exceeds_scene_slack",
+                                remaining=remaining, profiled=ack_p95)
             # At admission, budget a complete p95 inference. At completion,
             # that work has *already happened*. Charging p95 again can reject
             # a genuinely timely model response despite the host-verified
@@ -336,6 +405,9 @@ class GameDeadlineRouter:
         with self._lock:
             return {**self._counts, "enabled": self._enabled,
                     "timing_samples": len(self._reactive),
+                    "input_ack_samples": len(self._input_ack),
+                    "input_ack_p95_ms": _p95([duration for _, duration, _ in self._input_ack]),
+                    "strict_input_ack_profile": self._strict_input_ack_profile,
                     "reactive_p95_ms": _p95([duration for _, duration, _ in self._reactive])}
 
 
