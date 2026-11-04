@@ -92,9 +92,11 @@ class ObsReadOnlyEvidenceGate:
 
     This must only be fed by a trusted authenticated read-only host adapter.
     It correlates three distinct successful v5 responses per sample, requires
-    stream and record outputs inactive, checks timestamps/counter continuity,
-    and optionally records render-thread skipped-frame evidence. A rejected
-    triplet cannot advance the gate or the downstream recorder.
+    an inactive stream, checks timestamps/counter continuity and, by default,
+    requires an inactive recording. In private-recording mode, the host
+    instead verifies that OBS reports an active, unpaused local recording.
+    The gate can also forward render-frame counters to a private recorder.
+    A rejected triplet cannot advance the gate or the downstream recorder.
     """
 
     def __init__(
@@ -102,9 +104,12 @@ class ObsReadOnlyEvidenceGate:
         max_response_span_ms: float = 750.0,
         max_inter_sample_gap_ms: float = 10000.0,
         max_samples: int = 2000,
+        require_private_recording: bool = False,
     ) -> None:
         if owner_approved is not True:
             raise PermissionError("owner approval required for offline OBS observation")
+        if type(require_private_recording) is not bool:
+            raise ValueError("private recording mode must be an explicit host boolean")
         span = _number(max_response_span_ms, upper=5000)
         if not 25 <= span <= 5000:
             raise ValueError("response span must be 25..5000 ms")
@@ -113,6 +118,7 @@ class ObsReadOnlyEvidenceGate:
             raise ValueError("inter-sample gap must be 1000..60000 ms")
         if type(max_samples) is not int or not 2 <= max_samples <= 10000:
             raise ValueError("max_samples must be 2..10000")
+        self._require_private_recording = require_private_recording
         self._span = span
         self._gap = gap
         self._limit = max_samples
@@ -160,7 +166,13 @@ class ObsReadOnlyEvidenceGate:
         # paused, reconnecting, congestion, outputDuration or stream timecode.
         if stream.get("outputActive") is not False:
             raise PermissionError("stream state is active or not independently verified")
-        if recording.get("outputActive") is not False:
+        if self._require_private_recording:
+            # Host must start its own *private* OBS recording separately.
+            # A paused recording is not evidence of actual media capture.
+            if (recording.get("outputActive") is not True
+                    or recording.get("outputPaused") is not False):
+                raise PermissionError("private recording is not active and unpaused")
+        elif recording.get("outputActive") is not False:
             raise PermissionError("record state is active or not independently verified")
         for key in (
             "renderSkippedFrames", "renderTotalFrames",
@@ -226,7 +238,10 @@ class ObsReadOnlyEvidenceGate:
                     if self._output_total_delta else None
                 ),
                 "nonbroadcast_verified_only_at_sample_times": self._count > 0,
-                "note": "read-only trusted-host snapshots; not broadcast authorization or game FPS",
+                "private_recording_verified_only_at_sample_times": (
+                    self._require_private_recording and self._count > 0
+                ),
+                "note": "read-only snapshots; not continuous capture proof, audio proof, game FPS or broadcast authorization",
             }
 
 
