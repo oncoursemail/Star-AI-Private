@@ -26,6 +26,7 @@ from .stream_knowledge import KnowledgePacket
 from .stream_hardware_telemetry import LiveHostSample, RealtimeTelemetryHost
 from .memory_stall_guard import MemoryStallGuard
 from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
+from .stream_host_model_catalog import HostInferenceCatalog
 from .stream_stage import StagePlan, StarStage
 from .stream_turntaking import TurnAdvice
 
@@ -81,6 +82,8 @@ class StreamBrainGovernor:
         stage: StarStage,
         clock_ms: Callable[[], float] = lambda: time.monotonic() * 1000,
         memory_guard: MemoryStallGuard | None = None,
+        route_catalog: HostInferenceCatalog | None = None,
+        enforce_host_route_binding: bool = False,
     ) -> None:
         if not isinstance(telemetry, RealtimeTelemetryHost):
             raise TypeError("telemetry must be a RealtimeTelemetryHost")
@@ -90,6 +93,14 @@ class StreamBrainGovernor:
             raise TypeError("host clock must be callable")
         if memory_guard is not None and not isinstance(memory_guard, MemoryStallGuard):
             raise TypeError("optional memory guard must be MemoryStallGuard")
+        if route_catalog is not None and not isinstance(route_catalog, HostInferenceCatalog):
+            raise TypeError("route_catalog must be a trusted HostInferenceCatalog")
+        if type(enforce_host_route_binding) is not bool:
+            raise TypeError("enforce_host_route_binding must be an explicit boolean")
+        if enforce_host_route_binding and route_catalog is None:
+            raise ValueError("strict binding requires a host-owned model catalog")
+        self._route_catalog = route_catalog
+        self._enforce_host_route_binding = enforce_host_route_binding
         self._memory_guard = memory_guard
         self._telemetry, self._qos, self._stage = telemetry, qos, stage
         self._clock = clock_ms
@@ -190,13 +201,31 @@ class StreamBrainGovernor:
             )
 
     def admit(self, job: InferenceJob) -> BrainAdmission:
-        """Advisory one-shot reservation. Host executes only its allowed tools."""
+        """Legacy advisory reservation, denied when host binding is enforced."""
+        return self._admit(job, from_catalog=False)
+
+    def admit_registered(self, job: InferenceJob, *, route_alias: str) -> BrainAdmission:
+        """Trusted host chooses the *actual deployed worker* by catalog alias.
+
+        Calibrated p95 and RAM/VRAM budgets come from the bound manifest, never
+        model/chat-provided profile names or resource estimates. The host must
+        actually launch the recorded worker; this is not runtime attestation.
+        """
+        if self._route_catalog is None:
+            return BrainAdmission(False, "host_model_catalog_not_configured")
+        bound = self._route_catalog.bind(job, route_alias=route_alias)
+        return self._admit(bound, from_catalog=True)
+
+    def _admit(self, job: InferenceJob, *, from_catalog: bool) -> BrainAdmission:
         if not isinstance(job, InferenceJob):
             raise TypeError("expected an InferenceJob")
         with self._lock:
             if not self._enabled:
                 self._counts["deferred"] += 1
                 return BrainAdmission(False, "owner_opt_in_missing")
+            if self._enforce_host_route_binding and not from_catalog:
+                self._counts["deferred"] += 1
+                return BrainAdmission(False, "trusted_host_model_binding_required")
             now = _now(self._clock)
             sample = self._sample()
             if sample is None:
@@ -432,6 +461,10 @@ class StreamBrainGovernor:
             return {
                 **self._counts, "enabled": self._enabled,
                 "reserved_workers": len(self._leases),
+                "host_route_binding_enforced": self._enforce_host_route_binding,
+                "registered_model_routes": (
+                    self._route_catalog.route_count if self._route_catalog else 0
+                ),
                 "pending_hardware_stop": (
                     len(self._leases) if not self._enabled else 0
                 ),
