@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import hashlib
 import math
 import re
 from threading import RLock
@@ -118,6 +119,10 @@ class InferenceJob:
     ram_mib: float
     vram_mib: float
     device: str = "auto"  # cpu | gpu | auto
+    # Host-bound opaque identifier of the exact model/voice/runtime build.
+    # Never use model-generated labels or paths, usernames, secrets, or chat.
+    # Empty preserves legacy routing; protected sessions may require identity.
+    route_profile: str = ""
 
     def __post_init__(self) -> None:
         if type(self.job_id) is not str or not _ID.fullmatch(self.job_id):
@@ -126,6 +131,9 @@ class InferenceJob:
             raise ValueError("unknown inference kind")
         if self.device not in {"cpu", "gpu", "auto"}:
             raise ValueError("device must be auto, cpu or gpu")
+        if (type(self.route_profile) is not str or
+                (self.route_profile and not _ID.fullmatch(self.route_profile))):
+            raise ValueError("route_profile must be an opaque bounded host identifier")
         created = _number(self.created_ms, "created_ms", _CLOCK_CEILING)
         deadline = _number(self.deadline_ms, "deadline_ms", _CLOCK_CEILING)
         if not created < deadline <= created + 120_000:
@@ -168,7 +176,8 @@ class AdaptiveQoS:
     def __init__(self, *, minimum_headroom_mib: float = 1536,
                  lease_cap_ms: float = 10_000,
                  allow_recovery_probes: bool = False,
-                 recovery_cooldown_ms: float = 10_000) -> None:
+                 recovery_cooldown_ms: float = 10_000,
+                 require_route_profiles: bool = False) -> None:
         reserve = _number(minimum_headroom_mib, "minimum_headroom_mib", 8192)
         cap = _number(lease_cap_ms, "lease_cap_ms", 120_000)
         cooldown = _number(recovery_cooldown_ms, "recovery_cooldown_ms", 120_000)
@@ -176,6 +185,9 @@ class AdaptiveQoS:
             raise ValueError("invalid realtime headroom or lease cap")
         if type(allow_recovery_probes) is not bool or cooldown < 1000:
             raise ValueError("recovery requires explicit boolean and safe cooldown")
+        if type(require_route_profiles) is not bool:
+            raise ValueError("require_route_profiles must be an explicit boolean")
+        self.require_route_profiles = require_route_profiles
         self.minimum_headroom_mib = reserve
         self.lease_cap_ms = cap
         # Disabled by default. Only nonbroadcast, host-observed workers are
@@ -189,10 +201,12 @@ class AdaptiveQoS:
         self._inflight: dict[int, _Reservation] = {}
         self._expired: set[int] = set()
         self._ids: set[str] = set()
-        self._samples: dict[tuple[str, str, str], deque[tuple[float, float]]] = {}
-        self._consecutive_failures: dict[tuple[str, str], int] = {}
-        self._recovery_ready_ms: dict[tuple[str, str], float] = {}
-        self._probe_pending: set[tuple[str, str]] = set()
+        # Kind/device alone is unsafe: an 18M CPU voice calibration must
+        # never certify a different, slower voice/model on the same CPU.
+        self._samples: dict[tuple[str, str, str, str], deque[tuple[float, float]]] = {}
+        self._consecutive_failures: dict[tuple[str, str, str], int] = {}
+        self._recovery_ready_ms: dict[tuple[str, str, str], float] = {}
+        self._probe_pending: set[tuple[str, str, str]] = set()
         self._last_vision_ms: float | None = None
         self._gpu_voice_guarded = False
         self._gpu_recovery_since_ms: float | None = None
@@ -240,7 +254,11 @@ class AdaptiveQoS:
             if not self._inflight:
                 self._reset()
 
-    def _mark_failure(self, key: tuple[str, str], now: float) -> None:
+    @staticmethod
+    def _route_key(job: InferenceJob, device: str) -> tuple[str, str, str]:
+        return job.kind, device, job.route_profile
+
+    def _mark_failure(self, key: tuple[str, str, str], now: float) -> None:
         failures = self._consecutive_failures.get(key, 0) + 1
         self._consecutive_failures[key] = failures
         if self.allow_recovery_probes and failures >= 3:
@@ -258,7 +276,7 @@ class AdaptiveQoS:
             if now >= active.expires_ms and ticket not in self._expired:
                 self._expired.add(ticket)
                 self._counts["expired"] += 1
-                key = (active.job.kind, active.device)
+                key = self._route_key(active.job, active.device)
                 # A timed-out model is not a speed success. Quarantine its
                 # memory and slot until a trusted host confirms it stopped.
                 self._mark_failure(key, now)
@@ -326,7 +344,7 @@ class AdaptiveQoS:
                device: str) -> tuple[float | None, str] | None:
         """Check a single device; return predicted latency and admission note."""
         stream = snap.stream
-        key = (job.kind, device)
+        key = self._route_key(job, device)
         recovery = self._consecutive_failures.get(key, 0) >= 3
         if recovery:
             # Never use live viewers as the experiment for a broken route.
@@ -335,7 +353,7 @@ class AdaptiveQoS:
             if (not self.allow_recovery_probes or _protected_stream(snap) or stream.game_active
                     or now < self._recovery_ready_ms.get(key, float("inf"))
                     or key in self._probe_pending
-                    or any((p.job.kind, p.device) == key
+                    or any(self._route_key(p.job, p.device) == key
                            for p in self._inflight.values())):
                 return None
         if sum(p.device == device for p in self._inflight.values()) >= (
@@ -357,7 +375,7 @@ class AdaptiveQoS:
         if recovery:
             return None, "unmeasured_circuit_recovery_probe"
         estimate = _p95(
-            self._samples.get((job.kind, device, _regime(snap)), deque()),
+            self._samples.get((*key, _regime(snap)), deque()),
             now_ms=now,
         )
         slack = job.deadline_ms - now
@@ -390,6 +408,9 @@ class AdaptiveQoS:
                 return self._reason("job_clock_or_deadline_invalid")
             if now - job.created_ms > (1000 if _protected_stream(snap) else 30000):
                 return self._reason("job_stale")
+            if (_protected_stream(snap) and self.require_route_profiles
+                    and not job.route_profile):
+                return self._reason("trusted_model_profile_required")
             if job.job_id in self._ids:
                 return self._reason("duplicate_one_shot_job_id")
             if len(self._ids) >= 4096:
@@ -452,9 +473,9 @@ class AdaptiveQoS:
             self._serial += 1
             ticket = self._serial
             expires = min(job.deadline_ms, now + self.lease_cap_ms)
-            recovering = self._consecutive_failures.get((job.kind, device), 0) >= 3
+            recovering = self._consecutive_failures.get(self._route_key(job, device), 0) >= 3
             if recovering:
-                self._probe_pending.add((job.kind, device))
+                self._probe_pending.add(self._route_key(job, device))
             self._inflight[ticket] = _Reservation(
                 job, device, _regime(snap), now, expires,
                 recovery_probe=recovering)
@@ -475,7 +496,7 @@ class AdaptiveQoS:
             self._expired.discard(ticket)
             if pending is None:
                 return False
-            key = (pending.job.kind, pending.device)
+            key = self._route_key(pending.job, pending.device)
             if pending.recovery_probe:
                 self._probe_pending.discard(key)
             if not self._enabled:
@@ -493,10 +514,10 @@ class AdaptiveQoS:
                     # Hardware/model may have changed since earlier failures.
                     # Never reuse pre-breaker latency calibration to certify it.
                     for calibration_key in tuple(self._samples):
-                        if calibration_key[:2] == key:
+                        if calibration_key[:3] == key:
                             del self._samples[calibration_key]
                 self._samples.setdefault(
-                    (pending.job.kind, pending.device, pending.regime),
+                    (*key, pending.regime),
                     deque(maxlen=32),
                 ).append((now, elapsed))
                 self._consecutive_failures[key] = 0
@@ -518,10 +539,18 @@ class AdaptiveQoS:
                     len(self._inflight) if not self._enabled else 0
                 ),
                 "route_p95_ms": {
-                    f"{kind}:{device}:{regime}": round(value, 2)
-                    for (kind, device, regime), samples in sorted(self._samples.items())
+                    # Never expose host model paths or arbitrary profile names.
+                    # Stable truncated hash is an observability label, NOT an
+                    # identity credential or security boundary.
+                    f"{kind}:{device}:{regime}" + (
+                        f":profile-{hashlib.sha256(profile.encode()).hexdigest()[:12]}"
+                        if profile else ""
+                    ): round(value, 2)
+                    for (kind, device, profile, regime), samples in sorted(self._samples.items())
                     if (value := _p95(samples, now_ms=self._clock_ms or 0)) is not None
                 },
+                "require_route_profiles": self.require_route_profiles,
+                "profiled_routes": sum(bool(k[2]) for k in self._samples),
                 "unhealthy_routes": sum(n >= 3 for n in self._consecutive_failures.values()),
                 "recovery_probes_enabled": self.allow_recovery_probes,
                 "recovery_probes_inflight": len(self._probe_pending),
