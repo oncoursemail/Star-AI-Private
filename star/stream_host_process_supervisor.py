@@ -43,7 +43,8 @@ def _time_ms(value: object) -> float:
 
 
 class _ProcessHandle(Protocol):
-    pid: int
+    @property
+    def pid(self) -> int: ...
 
     def is_running(self) -> bool: ...
 
