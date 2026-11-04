@@ -256,6 +256,16 @@ class HostOSWorkerSupervisor:
                 return WorkerProcessAdvice(False, "worker_process_stale_or_unavailable")
             return WorkerProcessAdvice(True, "live_matching_host_executable")
 
+    def current_host_ms(self) -> float:
+        """Trusted monotonic timestamp sampled AFTER an OS worker refresh.
+
+        Final output checks must not reuse a timestamp captured before a slow
+        process probe: doing so can backdate reply expiry and cause registry
+        clock inversions. No process identity or output permission is exposed.
+        """
+        with self._lock:
+            return self._now()
+
     def retire(self, epoch: HostWorkerEpoch) -> bool:
         """Remove only the exact handle; never stop/kill a user process."""
         if not isinstance(epoch, HostWorkerEpoch):
