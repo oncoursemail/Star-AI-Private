@@ -1,6 +1,6 @@
 ---
 name: sci-statistical-confidence
-description: State how sure a comparison is: sample size, intervals, paired differences and what a small gain cannot show.
+description: State how sure a comparison is.
 ---
 # sci-statistical-confidence
 ## Scope

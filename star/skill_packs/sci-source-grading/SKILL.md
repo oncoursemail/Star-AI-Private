@@ -1,6 +1,6 @@
 ---
 name: sci-source-grading
-description: Grade each source independently for provenance, independence, directness and recency before relying on it.
+description: Grade each source before relying on it.
 ---
 # sci-source-grading
 ## Scope

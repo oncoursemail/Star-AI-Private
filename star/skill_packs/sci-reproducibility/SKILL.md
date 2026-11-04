@@ -1,6 +1,6 @@
 ---
 name: sci-reproducibility
-description: Make a result repeatable: pinned inputs, seeds, versions, exact commands and a recorded environment.
+description: Make a result repeatable with pinned inputs.
 ---
 # sci-reproducibility
 ## Scope

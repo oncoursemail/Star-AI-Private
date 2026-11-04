@@ -1,6 +1,6 @@
 ---
 name: sci-experiment-design
-description: Plan a controlled experiment before running it: question, hypothesis, arms, sealed holdout, metrics and stop rule.
+description: Plan a controlled experiment before running it.
 ---
 # sci-experiment-design
 ## Scope

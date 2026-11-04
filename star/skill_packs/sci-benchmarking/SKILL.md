@@ -1,6 +1,6 @@
 ---
 name: sci-benchmarking
-description: Benchmark fairly: unchanged baseline, held-out tasks, and accuracy, hallucination, token and latency reported together.
+description: Benchmark fairly with an unchanged baseline.
 ---
 # sci-benchmarking
 ## Scope

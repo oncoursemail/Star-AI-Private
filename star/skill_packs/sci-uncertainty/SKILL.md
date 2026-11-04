@@ -1,6 +1,6 @@
 ---
 name: sci-uncertainty
-description: Say what is known, estimated or unknown, and how sure, instead of one confident answer.
+description: Say what is known, estimated or unknown.
 ---
 # sci-uncertainty
 ## Scope

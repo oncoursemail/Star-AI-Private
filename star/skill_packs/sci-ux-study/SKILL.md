@@ -1,6 +1,6 @@
 ---
 name: sci-ux-study
-description: Plan a small usability study: tasks, participants, observed measures and honest limits, before judging a design.
+description: Plan a small usability study before judging a design.
 ---
 # sci-ux-study
 ## Scope
