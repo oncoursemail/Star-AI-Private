@@ -13,9 +13,11 @@ from star.stream_obs_local_readonly_probe import (
 
 class FakeObs:
     def __init__(self, *, stream_active=False, record_active=False,
-                 authenticated=True, mismatch=False, wrong_op=False, rpc=1):
+                 authenticated=True, mismatch=False, wrong_op=False, rpc=1,
+                 record_paused=False):
         self.stream_active = stream_active
         self.record_active = record_active
+        self.record_paused = record_paused
         self.authenticated = authenticated
         self.mismatch = mismatch
         self.wrong_op = wrong_op
@@ -43,7 +45,7 @@ class FakeObs:
             elif kind == "GetStreamStatus":
                 body = {"outputActive": self.stream_active}
             elif kind == "GetRecordStatus":
-                body = {"outputActive": self.record_active}
+                body = {"outputActive": self.record_active, "outputPaused": self.record_paused}
             else:
                 raise AssertionError("unapproved OBS request")
             reply = {"op": 7, "d": {
@@ -133,6 +135,42 @@ class TestLocalObsProbe(unittest.TestCase):
             self.observe()
         self.assertTrue(self.sock.closed)
 
+    def test_private_recording_is_verified_without_starting_or_stopping_obs(self):
+        self.sock = FakeObs(record_active=True)
+        result = self.observe(samples=3, verify_private_recording=True)
+        self.assertEqual(result.status, "candidate")
+        self.assertTrue(result.recording_verified)
+        self.assertTrue(result.nonbroadcast_verified_only_at_sample_times)
+        self.assertFalse(result.authorizes_recording)
+        self.assertFalse(result.authorizes_broadcast)
+        self.assertEqual([request["d"]["requestType"] for request in self.sock.requests[1:]],
+                         ["GetStats", "GetStreamStatus", "GetRecordStatus"] * 3)
+        self.assertTrue(self.sock.closed)
+
+    def test_private_recording_must_be_active_and_unpaused(self):
+        for recorder in (FakeObs(record_active=False),
+                         FakeObs(record_active=True, record_paused=True)):
+            self.sock = recorder
+            with self.subTest(active=recorder.record_active, paused=recorder.record_paused):
+                with self.assertRaises(PermissionError):
+                    self.observe(verify_private_recording=True)
+                self.assertTrue(recorder.closed)
+
+    def test_private_recording_never_allows_broadcast(self):
+        self.sock = FakeObs(stream_active=True, record_active=True)
+        with self.assertRaises(PermissionError):
+            self.observe(verify_private_recording=True)
+        self.assertTrue(self.sock.closed)
+
+    def test_private_recording_input_must_be_exact_bool(self):
+        calls = []
+        with self.assertRaises(ValueError):
+            observe_local_obs(
+                owner_approved=True, password="secret", verify_private_recording=1,
+                connect=lambda *args: calls.append(args),
+            )
+        self.assertEqual(calls, [])
+
     def test_block_unauthenticated_obs_even_if_local(self):
         self.sock = FakeObs(authenticated=False)
         with self.assertRaises(PermissionError):
@@ -197,6 +235,18 @@ class TestLocalObsProbe(unittest.TestCase):
         ):
             self.assertEqual(main([]), 2)
         self.assertIn("explicit_observe_flag_required", out.getvalue())
+
+    def test_cli_explicit_private_recording_flag_is_only_a_read_probe(self):
+        from unittest.mock import patch
+        from io import StringIO
+        out = StringIO()
+        with patch("sys.stdout", out), patch(
+            "star.stream_obs_local_readonly_probe.observe_local_obs",
+            return_value=LocalObsProbeReport("candidate", "read_only", 3, recording_verified=True),
+        ) as probe:
+            self.assertEqual(main(["--observe", "--verify-private-recording"]), 0)
+            self.assertIs(probe.call_args.kwargs["verify_private_recording"], True)
+        self.assertIn('"recording_verified":true', out.getvalue())
 
     def test_cli_fails_closed_without_password(self):
         from unittest.mock import patch
