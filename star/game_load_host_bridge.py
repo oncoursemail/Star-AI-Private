@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import islice
 import math
-from typing import Iterable
+from typing import Iterable, cast
 
 from .game_capture_to_action_benchmark import CaptureToActionTrial
 from .game_load_shift_guard import (
@@ -31,7 +31,7 @@ def _finite_number(value: object, name: str, maximum: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name}: host numeric evidence required")
     try:
-        result = float(value)
+        result = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name}: invalid numeric evidence") from exc
     if not math.isfinite(result) or not 0 <= result <= maximum:
