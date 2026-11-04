@@ -58,6 +58,22 @@ CATALOG: dict[str, ProviderInfo] = {
 }
 
 
+# Gemini free-tier models as the pricing page listed them when written; not verified live. Unlisted models are "unknown".
+GEMINI_FREE_MODELS = frozenset({"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"})
+
+
+def model_terms(provider: str, model: str | None) -> dict:
+    """Per-model offer terms: OpenRouter is free only for ':free' variants, Gemini only for listed models."""
+    info = CATALOG[provider]
+    free = info.free
+    if model:
+        if provider == "openrouter":
+            free = "free_tier" if model.endswith(":free") else "paid"
+        elif provider == "gemini":
+            free = "free_tier" if model in GEMINI_FREE_MODELS else "unknown"
+    return {"provider": provider, "model": model, "free": free, "privacy": info.privacy, "source": info.source}
+
+
 @dataclass(frozen=True)
 class RateInfo:
     limit_requests: int | None = None
@@ -183,7 +199,7 @@ class Decision:
 
 def route(*, opted_in: Iterable[str], quotas: QuotaBook, keys: Mapping[str, bool] | None = None,
           now: float | None = None, private: bool = False, allow_spend: Iterable[str] = (),
-          preferred: str | None = None) -> Decision:
+          preferred: str | None = None, model: str | None = None) -> Decision:
     """Which provider may serve this request. Local unless every condition holds for an opted-in provider."""
     if private:
         return Decision("local", "private work stays local", "none")
@@ -207,15 +223,16 @@ def route(*, opted_in: Iterable[str], quotas: QuotaBook, keys: Mapping[str, bool
         if not keys.get(pid):
             reasons.append(f"{pid}: no key configured")
             continue
-        if info.free != "free_tier" and pid not in spend_ok:
-            reasons.append(f"{pid}: would spend ({info.free}), not allowed")
+        free = model_terms(pid, model)["free"]
+        if free != "free_tier" and pid not in spend_ok:
+            reasons.append(f"{pid}: would spend ({free}), not allowed")
             continue
         ok, why = quotas.available(pid, now)
         if not ok:
             reasons.append(f"{pid}: {why}")
             continue
         return Decision(pid, "opted in, key configured, quota ok",
-                        "free_tier" if info.free == "free_tier" else "may_bill")
+                        "free_tier" if free == "free_tier" else "may_bill")
     return Decision("local", "; ".join(reasons) or "no cloud provider opted in", "none")
 
 
