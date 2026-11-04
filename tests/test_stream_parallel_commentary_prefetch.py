@@ -6,7 +6,7 @@ from dataclasses import replace
 import math
 import unittest
 
-from star.stream_director import StreamSignal
+from star.stream_director import StreamSignal, signal_origin_sha256
 from star.stream_parallel_commentary_prefetch import (
     PrefetchTicket, StreamParallelCommentaryPrefetch,
 )
@@ -117,6 +117,81 @@ class PrefetchTests(unittest.TestCase):
             host_moderated=True))
         plan = self.choose()
         self.assertIsNone(self.take(ticket, plan, model_epoch=12))
+
+    def test_origin_hash_covers_entire_source_event_and_is_stable(self):
+        source = self.next
+        original = signal_origin_sha256(source)
+        self.assertEqual(original, signal_origin_sha256(replace(source)))
+        variants = [
+            replace(source, signal_id="different"),
+            replace(source, kind="game_success"),
+            replace(source, timestamp=100.11),
+            replace(source, detail="Red gate is locked"),
+            replace(source, speaker_id="other"),
+            replace(source, evidence="reported"),
+            replace(source, game_scope="game.level2"),
+        ]
+        self.assertEqual(len({signal_origin_sha256(v) for v in variants}), 7)
+        self.assertTrue(all(signal_origin_sha256(v) != original for v in variants))
+        self.assertEqual(len(original), 64)
+        with self.assertRaises(TypeError):
+            signal_origin_sha256("not-a-signal")
+
+    def test_stage_plan_hash_is_exact_accepted_event(self):
+        plan = self.choose()
+        self.assertEqual(plan.source_sha256, signal_origin_sha256(self.next))
+        self.assertNotIn(self.next.detail, plan.source_sha256)
+
+    def test_same_id_different_observation_cannot_reuse_a_draft(self):
+        # A host may reserve an event before/without successfully offering it.
+        # Signal ID, kind, evidence and game scope alone are NOT enough.
+        changed = replace(self.next, detail="The red gate never opened")
+        ticket = self.reserve(changed)
+        self.assertIsNotNone(ticket)
+        self.assertTrue(self.prefetch.complete(
+            ticket, text="It stayed shut!", now_s=100.5,
+            model_epoch=11, host_moderated=True))
+        plan = self.choose()
+        self.assertIsNotNone(plan)
+        self.assertIsNone(self.take(ticket, plan))
+        self.assertEqual(self.prefetch.metrics()["consumed"], 0)
+        self.assertEqual(self.prefetch.metrics()["pending"], 0)
+
+    def test_different_viewer_with_same_id_and_words_is_rejected(self):
+        viewer = StreamSignal(
+            "viewer-next", "viewer_question", 100.1,
+            "How do I get past this?", speaker_id="viewer-a")
+        self.assertTrue(self.stage.offer(viewer, now=100.2, moderated=True))
+        other_viewer = replace(viewer, speaker_id="viewer-b")
+        ticket = self.reserve(other_viewer)
+        self.assertIsNotNone(ticket)
+        self.assertTrue(self.prefetch.complete(
+            ticket, text="Try jumping!", now_s=100.5,
+            model_epoch=11, host_moderated=True))
+        plan = self.choose()
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.signal_id, "viewer-next")
+        self.assertIsNone(self.take(ticket, plan))
+
+    def test_backward_callback_timestamp_discards_draft(self):
+        ticket = self.reserve()
+        self.assertIsNotNone(ticket)
+        self.assertFalse(self.prefetch.complete(
+            ticket, text="Old clock", now_s=100.1,
+            model_epoch=11, host_moderated=True))
+        self.assertEqual(self.prefetch.metrics()["pending"], 0)
+        self.assertEqual(self.prefetch.metrics()["stale"], 1)
+
+    def test_backward_consume_timestamp_discards_draft(self):
+        ticket = self.reserve()
+        self.assertIsNotNone(ticket)
+        self.assertTrue(self.prefetch.complete(
+            ticket, text="Timed reaction", now_s=100.7,
+            model_epoch=11, host_moderated=True))
+        plan = self.choose()
+        self.assertIsNone(self.take(ticket, plan, now_s=100.6))
+        self.assertEqual(self.prefetch.metrics()["pending"], 0)
+        self.assertEqual(self.prefetch.metrics()["stale"], 1)
 
     def test_expiry_never_uses_old_game_commentary(self):
         ticket = self.reserve()

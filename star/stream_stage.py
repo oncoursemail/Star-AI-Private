@@ -99,6 +99,7 @@ class StagePlan:
     expression_strength: float
     natural_gaze: bool = False
     game_scope: str = ""
+    source_sha256: str = ""  # original event fingerprint; not a permission token
 
     def user_message(self) -> dict[str, str]:
         """Untrusted event record at USER priority, never a new system prompt."""
@@ -495,6 +496,7 @@ class StarStage:
                 expression=None if expression is None else expression[0],
                 expression_strength=0.0 if expression is None else expression[1],
                 natural_gaze=self._natural_gaze, game_scope=intent.game_scope,
+                source_sha256=intent.source_sha256,
             )
             self._quiet_frame = None
             self._plan, self._intent, self._phase = plan, intent, "prepared"

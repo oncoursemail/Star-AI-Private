@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import hmac
 from threading import RLock
 from typing import cast
 
-from .stream_director import StreamSignal
+from .stream_director import StreamSignal, signal_origin_sha256
 from .stream_stage import StagePlan, StarStage
 
 _ALLOWED = frozenset({"game_success", "game_observation", "viewer_question"})
@@ -68,6 +69,8 @@ class _Entry:
     scene_epoch: int
     model_epoch: int
     expires_at: float
+    source_sha256: str
+    last_seen_at: float
     text: str | None = None
 
 
@@ -169,6 +172,8 @@ class StreamParallelCommentaryPrefetch:
                 scene_epoch=scene, model_epoch=model,
                 expires_at=min(signal.timestamp + self._max_age,
                                now + self._max_age),
+                source_sha256=signal_origin_sha256(signal),
+                last_seen_at=now,
             )
             self._counts["reserved"] += 1
             return ticket
@@ -188,6 +193,11 @@ class StreamParallelCommentaryPrefetch:
         with self._lock:
             self._expire(now)
             entry = self._pending.get(ticket.serial)
+            # Clock rollback is unsafe even if it would extend a TTL.
+            if entry is not None and entry.ticket is ticket and now < entry.last_seen_at:
+                self._pending.pop(ticket.serial)
+                self._counts["stale"] += 1
+                return False
             if (not self._enabled or host_moderated is not True
                     or entry is None or entry.ticket is not ticket
                     or ticket.session_epoch != self._session_epoch
@@ -195,6 +205,7 @@ class StreamParallelCommentaryPrefetch:
                 self._counts["rejected"] += 1
                 return False
             entry.text = text
+            entry.last_seen_at = now
             self._counts["prepared"] += 1
             return True
 
@@ -224,6 +235,10 @@ class StreamParallelCommentaryPrefetch:
             if entry is None or entry.ticket is not ticket:
                 self._counts["rejected"] += 1
                 return None
+            if now < entry.last_seen_at:
+                self._pending.pop(ticket.serial)
+                self._counts["stale"] += 1
+                return None
             if (not self._enabled or host_verified is not True
                     or spare_compute is not True
                     or ticket.session_epoch != self._session_epoch
@@ -233,7 +248,10 @@ class StreamParallelCommentaryPrefetch:
                     or plan.signal_id != entry.signal.signal_id
                     or plan.kind != entry.signal.kind
                     or plan.evidence != entry.signal.evidence
-                    or plan.game_scope != entry.signal.game_scope):
+                    or plan.game_scope != entry.signal.game_scope
+                    or not hmac.compare_digest(
+                        plan.source_sha256, entry.source_sha256
+                    )):
                 # Mismatch is terminal: never recycle a stale draft into another turn.
                 self._pending.pop(ticket.serial)
                 self._counts["rejected"] += 1
