@@ -62,10 +62,20 @@ def _regime(snapshot: QoSSnapshot) -> str:
     explicitly mark its stream-equivalent load through the trusted host.
     """
     stream = snapshot.stream
-    streaming_load = stream.live or snapshot.private_stream_rehearsal
+    streaming_load = _protected_stream(snapshot)
     if stream.game_active:
         return "game_stream" if streaming_load else "game_only"
     return "stream_only" if streaming_load else "idle"
+
+
+def _protected_stream(snapshot: QoSSnapshot) -> bool:
+    """Treat a host-attested private stream-equivalent recording as high-load.
+
+    This protects game, voice and OBS resources during calibration; it never
+    confers live-broadcast permissions. Unlike a real stream, unmeasured vision
+    may be probed offline under strict headroom and one-Hz limits.
+    """
+    return snapshot.stream.live or snapshot.private_stream_rehearsal
 
 
 @dataclass(frozen=True)
@@ -263,7 +273,7 @@ class AdaptiveQoS:
         must never release it. This is not a GPU performance measurement.
         """
         stream = snap.stream
-        if not (stream.live and stream.game_active):
+        if not (_protected_stream(snap) and stream.game_active):
             self._gpu_voice_guarded = False
             self._gpu_recovery_since_ms = None
             self._gpu_last_healthy_ms = None
@@ -302,7 +312,7 @@ class AdaptiveQoS:
             now = self._advance(now_ms)
             if not self._enabled or snap.sampled_ms > now + 20 or (
                     now - snap.sampled_ms > (
-                        250 if snap.stream.live else 2_000
+                        250 if _protected_stream(snap) else 2_000
                     )):
                 return False
             self._observe_game_fps(snap, now)
@@ -322,7 +332,7 @@ class AdaptiveQoS:
             # Never use live viewers as the experiment for a broken route.
             # Require a quiet offline window, cooldown and exclusive half-open
             # probe. An unknown/expired worker blocks recovery until host stop.
-            if (not self.allow_recovery_probes or stream.live or stream.game_active
+            if (not self.allow_recovery_probes or _protected_stream(snap) or stream.game_active
                     or now < self._recovery_ready_ms.get(key, float("inf"))
                     or key in self._probe_pending
                     or any((p.job.kind, p.device) == key
@@ -339,8 +349,8 @@ class AdaptiveQoS:
         else:
             reserved = sum(p.job.vram_mib for p in self._inflight.values()
                            if p.device == "gpu")
-            floor = (self.minimum_headroom_mib if stream.live and stream.game_active
-                     else 1024 if stream.live else 512)
+            floor = (self.minimum_headroom_mib if _protected_stream(snap) and stream.game_active
+                     else 1024 if _protected_stream(snap) else 512)
             if stream.free_vram_mib - reserved < job.vram_mib + floor:
                 return None
         # Old pre-failure p95 cannot certify the repaired route.
@@ -360,7 +370,7 @@ class AdaptiveQoS:
         # while live. Speech is the only essential exploratory admission.
         if stream.live and job.kind != "speech":
             return None
-        if stream.live and slack < 250:
+        if _protected_stream(snap) and slack < 250:
             return None
         return None, "unmeasured_host_must_verify"
 
@@ -373,30 +383,36 @@ class AdaptiveQoS:
             if not self._enabled:
                 return self._reason("owner_opt_in_missing")
             if snap.sampled_ms > now + 20 or now - snap.sampled_ms > (
-                    250 if snap.stream.live else 2_000):
+                    250 if _protected_stream(snap) else 2_000):
                 return self._reason("host_telemetry_stale_or_future_dated")
             self._observe_game_fps(snap, now)
             if job.created_ms > now + 20 or now > job.deadline_ms:
                 return self._reason("job_clock_or_deadline_invalid")
-            if now - job.created_ms > (1000 if snap.stream.live else 30000):
+            if now - job.created_ms > (1000 if _protected_stream(snap) else 30000):
                 return self._reason("job_stale")
             if job.job_id in self._ids:
                 return self._reason("duplicate_one_shot_job_id")
             if len(self._ids) >= 4096:
                 return self._reason("bounded_session_limit_reached")
             stream = snap.stream
-            if stream.live and job.kind in _BACKGROUND:
-                return self._reason("protect_live_stream_from_background_work")
+            if _protected_stream(snap) and job.kind in _BACKGROUND:
+                return self._reason(
+                    "protect_live_stream_from_background_work" if stream.live
+                    else "protect_private_rehearsal_from_background_work"
+                )
             under_pressure = ((stream.game_active and (
                                   stream.game_fps < 50
-                                  or (stream.live and self._gpu_voice_guarded)))
+                                  or (_protected_stream(snap) and self._gpu_voice_guarded)))
                               or stream.speech_backlog_ms > 250)
-            if under_pressure and (stream.live or stream.game_active) and job.kind != "speech":
+            if under_pressure and (_protected_stream(snap) or stream.game_active) and job.kind != "speech":
                 return self._reason("game_or_voice_backpressure")
-            if (stream.live and job.kind == "vision" and
+            if (_protected_stream(snap) and job.kind == "vision" and
                     self._last_vision_ms is not None and
                     now - self._last_vision_ms < 1000):
-                return self._reason("live_vision_at_most_one_hz")
+                return self._reason(
+                    "live_vision_at_most_one_hz" if stream.live
+                    else "private_vision_at_most_one_hz"
+                )
 
             devices = ([job.device] if job.device != "auto" else
                        (["gpu"] if job.kind in _GPU_ONLY else
@@ -407,7 +423,7 @@ class AdaptiveQoS:
             # Prefer a deadline-safe CPU speech worker or deliberate silence.
             # This is a host-sampled protection rule, not an actual FPS fix.
             low_game_fps = (
-                stream.live and stream.game_active
+                _protected_stream(snap) and stream.game_active
                 and self._gpu_voice_guarded and job.kind == "speech"
             )
             if low_game_fps:
@@ -424,7 +440,7 @@ class AdaptiveQoS:
                 )
             # Prefer measured routes over unknown ones; during gameplay give a
             # deadline-compliant CPU speech route priority over the gaming GPU.
-            if job.kind == "speech" and stream.live and stream.game_active:
+            if job.kind == "speech" and _protected_stream(snap) and stream.game_active:
                 viable.sort(key=lambda row: (row[1][0] is None,
                                               row[0] != "cpu",
                                               row[1][0] or 0))
@@ -443,7 +459,7 @@ class AdaptiveQoS:
                 job, device, _regime(snap), now, expires,
                 recovery_probe=recovering)
             self._ids.add(job.job_id)
-            if stream.live and job.kind == "vision":
+            if _protected_stream(snap) and job.kind == "vision":
                 self._last_vision_ms = now
             self._counts["admitted"] += 1
             return QoSDecision(True, label, device, ticket, p95, expires)
