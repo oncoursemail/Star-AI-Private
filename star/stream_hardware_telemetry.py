@@ -125,6 +125,7 @@ class RealtimeTelemetryHost:
         self._enabled = False
         self._live = False
         self._game_active = False
+        self._private_stream_rehearsal = False
         self._generation = 0
         self._polling = False
         self._hardware: HardwareSnapshot | None = None
@@ -136,15 +137,20 @@ class RealtimeTelemetryHost:
                         "audio_samples": 0, "snapshots_rejected": 0}
 
     def set_context(self, *, live: bool, game_active: bool,
-                    owner_approved: bool = False) -> None:
+                    owner_approved: bool = False,
+                    private_stream_rehearsal: bool = False) -> None:
         if owner_approved is not True:
             raise PermissionError("authorized host must enable telemetry")
-        if type(live) is not bool or type(game_active) is not bool:
+        if (type(live) is not bool or type(game_active) is not bool
+                or type(private_stream_rehearsal) is not bool):
             raise ValueError("stream and game state must be explicit booleans")
+        if live and private_stream_rehearsal:
+            raise ValueError("private rehearsal and live mode are exclusive")
         with self._lock:
             self._generation += 1
             self._enabled = True
             self._live, self._game_active = live, game_active
+            self._private_stream_rehearsal = private_stream_rehearsal
             # No old scene/audio/resource measurement may be reused after
             # a broadcast transition, game switch, or focus change.
             self._hardware = None
@@ -157,6 +163,7 @@ class RealtimeTelemetryHost:
         with self._lock:
             self._generation += 1
             self._enabled = False
+            self._private_stream_rehearsal = False
             self._hardware = None
             self._last_cpu = None
             self._frame_intervals.clear()
@@ -333,7 +340,8 @@ class RealtimeTelemetryHost:
                     and (not self._live or now - hardware.sampled_ms <= 250)):
                 qos = QoSSnapshot(
                     hardware.sampled_ms, telemetry, hardware.free_ram_mib,
-                    hardware.cpu_busy_percent, self._cpu_slots, self._gpu_slots
+                    hardware.cpu_busy_percent, self._cpu_slots, self._gpu_slots,
+                    private_stream_rehearsal=self._private_stream_rehearsal,
                 )
             return LiveHostSample(
                 telemetry, qos, intervals, now - hardware.sampled_ms,
@@ -346,6 +354,7 @@ class RealtimeTelemetryHost:
             return dict(
                 enabled=self._enabled, live=self._live,
                 game_active=self._game_active,
+                private_stream_rehearsal=self._private_stream_rehearsal,
                 hardware_ready=self._hardware is not None,
                 frame_intervals=len(self._frame_intervals),
                 audio_ready=self._audio is not None,

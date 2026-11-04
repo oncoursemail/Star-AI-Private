@@ -55,8 +55,17 @@ def _p95(samples: deque[tuple[float, float]], *, now_ms: float) -> float | None:
 
 
 def _regime(snapshot: QoSSnapshot) -> str:
-    """Never borrow idle latency measurements for an active game."""
-    return "game_active" if snapshot.stream.game_active else "idle"
+    """Calibrate against the actual game *and* streaming workload.
+
+    An unloaded game benchmark cannot certify latency while OBS and an avatar
+    render alongside it. A private, instrumented nonbroadcast rehearsal can
+    explicitly mark its stream-equivalent load through the trusted host.
+    """
+    stream = snapshot.stream
+    streaming_load = stream.live or snapshot.private_stream_rehearsal
+    if stream.game_active:
+        return "game_stream" if streaming_load else "game_only"
+    return "stream_only" if streaming_load else "idle"
 
 
 @dataclass(frozen=True)
@@ -68,6 +77,10 @@ class QoSSnapshot:
     cpu_busy_percent: float
     cpu_slots: int = 2
     gpu_slots: int = 1
+    # Trusted host attests that the PRIVATE session runs recording, avatar,
+    # and other real stream-time loads. Never set from AI-generated claims.
+    # This is a calibration label, not permission to stream or start OBS.
+    private_stream_rehearsal: bool = False
 
     def __post_init__(self) -> None:
         _number(self.sampled_ms, "sampled_ms", _CLOCK_CEILING)
@@ -79,6 +92,10 @@ class QoSSnapshot:
             value = getattr(self, name)
             if type(value) is not int or not 0 <= value <= 16:
                 raise ValueError(f"{name} must be an integer in 0..16")
+        if type(self.private_stream_rehearsal) is not bool:
+            raise ValueError("private_stream_rehearsal must be a trusted host bool")
+        if self.private_stream_rehearsal and self.stream.live:
+            raise ValueError("live sessions cannot also be private rehearsals")
 
 
 @dataclass(frozen=True)
