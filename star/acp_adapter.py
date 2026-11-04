@@ -121,7 +121,9 @@ class AcpAdapter:
             return await self._down("error", str(exc))
         if "error" in reply:
             failed = self._fail(reply["error"])
-            return await self._down(failed.state, failed.error)
+            from typing import cast
+
+            return await self._down(cast("SessionState", failed.state), failed.error)
         self._sid = str((reply.get("result") or {}).get("sessionId", ""))
         self.auth, self.state = "ok", "ready"
         return "ready"
@@ -252,7 +254,8 @@ class AcpAdapter:
                 yield msg
                 return
             method_in = msg.get("method")
-            params_in = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+            raw_params = msg.get("params")
+            params_in = raw_params if isinstance(raw_params, dict) else {}
             if method_in == "session/update":
                 event = self._update(params_in.get("update"))
                 if event is not None:

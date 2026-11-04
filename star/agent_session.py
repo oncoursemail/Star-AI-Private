@@ -46,7 +46,7 @@ class UsageReport:
             if self.models or self.tier != "unknown" or self.billing != "unknown" \
                     or self.quota_remaining is not None or self.measured_at is not None or self.endpoint:
                 raise ValueError("Unmeasured usage cannot claim models, tier, billing or quota")
-        elif (not self.endpoint or type(self.measured_at) not in (int, float)
+        elif (not self.endpoint or self.measured_at is None or type(self.measured_at) not in (int, float)
               or not math.isfinite(self.measured_at) or self.measured_at <= 0):
             raise ValueError("A provider API measurement needs its endpoint and time")
 
@@ -82,14 +82,18 @@ class AgentSessionAdapter(Protocol):
 
     def probe(self) -> SessionProbe:
         """Installed/auth/usage status; must not launch the agent or guess sign-in, quota or billing."""
+        ...
 
     async def start(self) -> SessionState:
         """Launch and open one session; returns "ready" or the failure state. Refuses unless enabled."""
+        ...
 
     def stream(self, prompt: str) -> AsyncIterator[SessionEvent]:
         """Send one prompt; yield text/tool_call/permission events, then exactly one ``end`` event."""
+        ...
 
     async def request_tool_approval(self, request: Mapping[str, Any]) -> bool:
+        ...
         """Ask the host whether one tool call may run; anything but an explicit yes is a no."""
 
     def cancel(self) -> None:
