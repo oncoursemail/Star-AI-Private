@@ -11,6 +11,7 @@ from threading import RLock
 
 from .stream_load_governor import StreamLoadAdvice
 import hashlib
+import json
 import math
 import re
 
@@ -90,6 +91,23 @@ class StreamSignal:
             raise ValueError("game_scope must be a host-stable game identifier")
 
 
+def signal_origin_sha256(signal: StreamSignal) -> str:
+    """Hash the exact trusted source event, not merely its reusable signal ID.
+
+    This is an identity fingerprint, not an authentication signature. Viewer
+    strings do not enter log/metric output; the trusted host must still prove
+    the event came from the real game/chat adapter.
+    """
+    if not isinstance(signal, StreamSignal):
+        raise TypeError("source must be a StreamSignal")
+    payload = json.dumps(
+        [signal.signal_id, signal.kind, signal.timestamp, signal.detail,
+         signal.speaker_id, signal.evidence, signal.game_scope],
+        ensure_ascii=True, separators=(",", ":"),
+    ).encode("ascii")
+    return hashlib.sha256(b"star.stream-source.v1\x00" + payload).hexdigest()
+
+
 @dataclass(frozen=True)
 class SpeechIntent:
     signal_id: str
@@ -107,6 +125,7 @@ class SpeechIntent:
     event_serial: int = 0
     # Trusted host-bound game context; empty means legacy/ungrounded event.
     game_scope: str = ""
+    source_sha256: str = ""  # exact source-event binding for queued drafts
 
 
 class StreamDirector:
@@ -422,6 +441,7 @@ class StreamDirector:
                 session_epoch=self._session_epoch,
                 event_serial=self._event_serials[event.signal_id],
                 game_scope=event.game_scope,
+                source_sha256=signal_origin_sha256(event),
             )
             # A later proposal supersedes an earlier plan for this event. This
             # is an identity check inside the process, not proof of OBS audio.
