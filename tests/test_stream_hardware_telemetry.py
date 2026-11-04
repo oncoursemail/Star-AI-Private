@@ -36,14 +36,15 @@ class Sensors:
         self.cpu = (self.cpu[0] + busy, self.cpu[1] + total)
 
 
-def host(sensors, *, live=True, game=True):
+def host(sensors, *, live=True, game=True, private=False):
     h = RealtimeTelemetryHost(
         gpu_probe=sensors.gpu_probe,
         memory_probe=sensors.ram_probe,
         cpu_probe=sensors.cpu_probe,
         clock_ms=lambda: sensors.now,
     )
-    h.set_context(live=live, game_active=game, owner_approved=True)
+    h.set_context(live=live, game_active=game, owner_approved=True,
+                  private_stream_rehearsal=private)
     return h
 
 
@@ -53,9 +54,9 @@ def frames(h, s, count=22, duration=16):
         assert h.presented_frame(s.now)
 
 
-def ready(*, live=True, game=True, count=22, duration=16):
+def ready(*, live=True, game=True, count=22, duration=16, private=False):
     s = Sensors()
-    h = host(s, live=live, game=game)
+    h = host(s, live=live, game=game, private=private)
     assert h.refresh_hardware()  # CPU load not known until second poll
     s.cpu_tick()
     s.advance(100)
@@ -372,3 +373,37 @@ def test_invalid_speaker_sample_revokes_same_session_stale_backlog():
     assert not h.sample_speaker(NonNumericSpeaker())
     assert not h.status()["audio_ready"]
     assert h.snapshot() is None
+
+
+def test_nonbroadcast_recording_profile_reaches_qos_then_clears_on_transition():
+    h, s = ready(live=False, game=True, private=True)
+    observed = h.snapshot()
+    assert observed is not None and observed.qos is not None
+    assert not observed.telemetry.live
+    assert observed.qos.private_stream_rehearsal is True
+    assert h.status()["private_stream_rehearsal"] is True
+    # Transitions invalidate ALL old game/frame/hardware/voice evidence.
+    h.set_context(live=False, game_active=True, owner_approved=True,
+                  private_stream_rehearsal=False)
+    assert h.status()["private_stream_rehearsal"] is False
+    assert h.snapshot() is None
+    assert h.status()["frame_intervals"] == 0
+    h.disable()
+    assert h.status()["private_stream_rehearsal"] is False
+
+
+def test_rehearsal_label_is_not_authorized_by_bad_flags_or_missing_owner():
+    s = Sensors()
+    h = RealtimeTelemetryHost(gpu_probe=s.gpu_probe, memory_probe=s.ram_probe,
+                              cpu_probe=s.cpu_probe, clock_ms=lambda: s.now)
+    with pytest.raises(PermissionError):
+        h.set_context(live=False, game_active=True,
+                      private_stream_rehearsal=True)
+    for invalid in (None, 1, "true", 0.0):
+        with pytest.raises(ValueError):
+            h.set_context(live=False, game_active=True, owner_approved=True,
+                          private_stream_rehearsal=invalid)
+    with pytest.raises(ValueError):
+        h.set_context(live=True, game_active=True, owner_approved=True,
+                      private_stream_rehearsal=True)
+    assert s.calls == 0 and not h.status()["enabled"]

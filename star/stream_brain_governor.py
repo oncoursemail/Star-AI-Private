@@ -109,12 +109,16 @@ class StreamBrainGovernor:
         self, *, owner_approved: bool = False,
         live: bool, game_active: bool,
         mode: str = "normal", reduced_motion: bool = False,
+        private_stream_rehearsal: bool = False,
     ) -> None:
         """Opt into one measured local session, never an actual broadcast."""
         if owner_approved is not True:
             raise PermissionError("authenticated owner must enable the stream brain")
-        if type(live) is not bool or type(game_active) is not bool:
+        if (type(live) is not bool or type(game_active) is not bool
+                or type(private_stream_rehearsal) is not bool):
             raise ValueError("session flags must be booleans")
+        if live and private_stream_rehearsal:
+            raise ValueError("private rehearsal must not be marked live")
         with self._lock:
             if self._enabled or self._leases or self._speech_binding is not None:
                 raise RuntimeError("stop the previous session, audio and workers first")
@@ -127,7 +131,8 @@ class StreamBrainGovernor:
             try:
                 self._qos.enable(owner_approved=True)
                 self._telemetry.set_context(
-                    live=live, game_active=game_active, owner_approved=True
+                    live=live, game_active=game_active, owner_approved=True,
+                    private_stream_rehearsal=private_stream_rehearsal,
                 )
             except Exception:
                 self._qos.disable()

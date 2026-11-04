@@ -10,10 +10,10 @@ def stream(*, live=False, game=False, vram=6000, fps=60, backlog=0):
 
 
 def snap(at, *, live=False, game=False, vram=6000, fps=60, backlog=0,
-         ram=16000, cpu=20, cpu_slots=2, gpu_slots=1):
+         ram=16000, cpu=20, cpu_slots=2, gpu_slots=1, private=False):
     return QoSSnapshot(
         at, stream(live=live, game=game, vram=vram, fps=fps, backlog=backlog),
-        ram, cpu, cpu_slots, gpu_slots,
+        ram, cpu, cpu_slots, gpu_slots, private_stream_rehearsal=private,
     )
 
 
@@ -28,14 +28,15 @@ def ready():
     return q
 
 
-def train_route(q, *, kind, device, start=1000, duration=200, steps=5, game=False):
+def train_route(q, *, kind, device, start=1000, duration=200, steps=5,
+                game=False, live=False, private=False):
     """Realistic synthetic host acknowledgements; NOT a hardware measurement."""
     for index in range(steps):
         at = start + index * 3000
         attempt = q.admit(
             job(f"cal-{kind}-{device}-{index}", at,
                 kind=kind, device=device, ttl=duration + 600),
-            snap(at, game=game), now_ms=at,
+            snap(at, game=game, live=live, private=private), now_ms=at,
         )
         assert attempt.admitted, attempt.reason
         assert attempt.device == device
@@ -102,7 +103,8 @@ def test_live_vision_rejects_uncalibrated_route_but_accepts_real_sample_history(
     assert not denied.admitted
     # Calibration must be captured while a game is active; idle samples
     # cannot certify live-game latency safety.
-    train_route(q, kind="vision", device="gpu", start=1000, game=True)
+    train_route(q, kind="vision", device="gpu", start=1000,
+                game=True, private=True)
     metrics = snap(17000, live=True, game=True)
     result = q.admit(
         job("image-live", 17000, kind="vision"), metrics, now_ms=17000
@@ -127,9 +129,9 @@ def test_live_vision_rejects_uncalibrated_route_but_accepts_real_sample_history(
 def test_live_game_prefers_calibrated_cpu_voice_even_with_faster_gpu():
     q = ready()
     train_route(q, kind="speech", device="cpu", start=1000,
-                duration=320, game=True)
+                duration=320, game=True, private=True)
     train_route(q, kind="speech", device="gpu", start=17000,
-                duration=100, game=True)
+                duration=100, game=True, private=True)
     attempt = q.admit(
         job("live-voice", 34000, kind="speech", ttl=1100),
         snap(34000, live=True, game=True), now_ms=34000,
@@ -227,8 +229,10 @@ def test_low_fps_rule_does_not_mistake_idle_low_fps_for_active_game():
 
 def test_measured_p95_rejects_deadline_that_cannot_be_met():
     q = ready()
-    train_route(q, kind="speech", device="cpu", start=1000, duration=1500)
-    train_route(q, kind="speech", device="gpu", start=17000, duration=1200)
+    train_route(q, kind="speech", device="cpu", start=1000,
+                duration=1500, live=True)
+    train_route(q, kind="speech", device="gpu", start=17000,
+                duration=1200, live=True)
     result = q.admit(
         job("too-short", 35000, ttl=600),
         snap(35000, live=True), now_ms=35000,
@@ -393,7 +397,7 @@ def test_idle_calibration_cannot_certify_an_active_game():
     assert not denied.admitted
     assert denied.reason == "no_calibrated_deadline_safe_route_or_headroom"
     assert "vision:gpu:idle" in q.status()["route_p95_ms"]
-    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+    assert "vision:gpu:game_only" not in q.status()["route_p95_ms"]
 
 
 def test_game_load_profile_does_not_trust_unloaded_model_latency():
@@ -413,14 +417,14 @@ def test_calibration_expires_in_two_minutes_and_status_clears_old_p95():
     q = ready()
     train_route(q, kind="vision", device="gpu", game=True)
     before = q.status()["route_p95_ms"]
-    assert before["vision:gpu:game_active"] == 200
+    assert before["vision:gpu:game_only"] == 200
     at = 200000
     denied = q.admit(
         job("expired-calibration", at, kind="vision", device="gpu"),
         snap(at, live=True, game=True), now_ms=at,
     )
     assert not denied.admitted
-    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+    assert "vision:gpu:game_only" not in q.status()["route_p95_ms"]
 
 
 def test_bad_results_do_not_calibrate_active_game_profile():
@@ -433,7 +437,7 @@ def test_bad_results_do_not_calibrate_active_game_profile():
         if not attempt.admitted:
             break
         assert q.finish(attempt.ticket, now_ms=at + 100, succeeded=False)
-    assert "vision:gpu:game_active" not in q.status()["route_p95_ms"]
+    assert "vision:gpu:game_only" not in q.status()["route_p95_ms"]
 
 
 
