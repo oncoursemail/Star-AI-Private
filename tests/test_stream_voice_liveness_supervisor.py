@@ -120,5 +120,36 @@ class TestLiveVoiceSupervisor(unittest.TestCase):
         self.assertEqual(self.stops, ["pcm-epoch"])
 
 
+    def test_invalid_replayed_voice_frame_immediately_revokes_pcm(self) -> None:
+        self._arm()
+        with self.assertRaisesRegex(RuntimeError, "failed closed"):
+            self.supervisor.observe(VoiceFrame(100360.0, 30, 0, 0, True))
+        self.assertEqual(self.stops, ["pcm-epoch"])
+        self.assertEqual(self.flushes, ["pcm-epoch"])
+        self.assertTrue(self.notified.is_set())
+        self.assertTrue(self.supervisor.metrics().revoked)
+        self.assertFalse(self.supervisor.metrics().running)
+
+    def test_clock_failure_during_health_check_attempts_real_audio_stop(self) -> None:
+        self._arm()
+        self.now_ms = float("nan")
+        with self.assertRaises(RuntimeError):
+            self.supervisor.health()
+        self.assertEqual(self.stops, ["pcm-epoch"])
+        self.assertEqual(self.flushes, ["pcm-epoch"])
+        self.assertFalse(self.stage.metrics()["enabled"])
+        self.assertTrue(self.notified.is_set())
+        self.assertFalse(self.supervisor.metrics().running)
+
+    def test_watchdog_probe_exception_fails_closed_synchronously(self) -> None:
+        self._arm()
+        self.host.tick = lambda: (_ for _ in ()).throw(OSError("probe died"))
+        with self.assertRaisesRegex(RuntimeError, "failed closed"):
+            self.supervisor.health()
+        self.assertEqual(self.stops, ["pcm-epoch"])
+        self.assertTrue(self.notified.is_set())
+        self.assertTrue(self.supervisor.metrics().revoked)
+
+
 if __name__ == "__main__":
     unittest.main()
