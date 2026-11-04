@@ -6,6 +6,7 @@ worker after preflight. Never hash multi-GiB weights for each inference request.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager, ExitStack
 from dataclasses import dataclass
 import hashlib
 import json
@@ -23,6 +24,20 @@ _MAX_BUNDLE_FILES = 128
 _MAX_TOTAL_BYTES = 64 * 1024**3
 _MAX_PATH = 240
 _COMPONENT = re.compile(r"[A-Za-z0-9_. -]{1,100}\Z")
+_HAS_OPENAT_NOFOLLOW = (hasattr(os, "O_NOFOLLOW")
+                        and hasattr(os, "O_DIRECTORY")
+                        and os.open in os.supports_dir_fd
+                        and os.stat in os.supports_dir_fd
+                        and os.stat in os.supports_follow_symlinks)
+
+
+
+
+def _is_link_or_reparse(info: os.stat_result) -> bool:
+    """Reject symlinks AND Windows junctions/other reparse entries."""
+    return (stat.S_ISLNK(info.st_mode)
+            or bool(getattr(info, "st_file_attributes", 0)
+                    & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)))
 
 
 def _relative(name: str) -> tuple[str, ...]:
@@ -73,39 +88,106 @@ class HostArtifactPreflight:
 
 class _Reader:
     def __init__(self, root: Path, max_total_bytes: int) -> None:
-        # Reject symlink root; owner should additionally protect root ACLs.
-        if root.is_symlink() or not root.is_dir():
+        # Windows junctions/reparse roots can redirect without is_symlink().
+        # Protect the owner-controlled root by its ACL as well.
+        try:
+            root_info = root.lstat()
+        except OSError:
+            raise ValueError("trusted artifact root missing") from None
+        if _is_link_or_reparse(root_info) or not stat.S_ISDIR(root_info.st_mode):
             raise ValueError("trusted artifact root must be a real directory")
         self.root = root.resolve(strict=True)
         self.max_total_bytes = max_total_bytes
         self.checked_bytes = 0
         self.checked_files = 0
 
-    def digest(self, relative_name: str) -> tuple[int, str]:
-        parts = _relative(relative_name)
+    @contextmanager
+    def _opened_artifact(self, parts: tuple[str, ...]):
+        """Yield (file descriptor, path-identity callback) during verification.
+
+        POSIX: anchor EACH component to an open parent directory descriptor.
+        This prevents a directory swapped to a symlink between lstat and open
+        from redirecting the hash outside the intended artifact root.
+        Windows: Python lacks dir_fd/openat, so reject junctions/reparse points
+        and compare metadata; the trusted root still needs exclusive ACLs.
+        """
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        anchored = _HAS_OPENAT_NOFOLLOW
+        if anchored:
+            with ExitStack() as opened:
+                parent_fd = os.open(
+                    self.root, flags | os.O_DIRECTORY | os.O_NOFOLLOW)
+                opened.callback(os.close, parent_fd)
+                for part in parts[:-1]:
+                    checked = os.stat(
+                        part, dir_fd=parent_fd, follow_symlinks=False)
+                    if _is_link_or_reparse(checked):
+                        raise ValueError("artifact path cannot include links")
+                    if not stat.S_ISDIR(checked.st_mode):
+                        raise ValueError("artifact parent is not a directory")
+                    child_fd = os.open(
+                        part, flags | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=parent_fd)
+                    opened.callback(os.close, child_fd)
+                    actual = os.fstat(child_fd)
+                    if ((actual.st_dev, actual.st_ino)
+                            != (checked.st_dev, checked.st_ino)
+                            or not stat.S_ISDIR(actual.st_mode)):
+                        raise ValueError("artifact parent changed while opening")
+                    parent_fd = child_fd
+                name = parts[-1]
+                checked = os.stat(
+                    name, dir_fd=parent_fd, follow_symlinks=False)
+                if _is_link_or_reparse(checked):
+                    raise ValueError("artifact path cannot include links")
+                if not stat.S_ISREG(checked.st_mode):
+                    raise ValueError("artifact must be a regular file")
+                fd = os.open(name, flags | os.O_NOFOLLOW, dir_fd=parent_fd)
+                opened.callback(os.close, fd)
+                actual = os.fstat(fd)
+                if ((actual.st_dev, actual.st_ino)
+                        != (checked.st_dev, checked.st_ino)
+                        or not stat.S_ISREG(actual.st_mode)):
+                    raise ValueError("artifact changed while opening")
+                yield fd, lambda: os.stat(
+                    name, dir_fd=parent_fd, follow_symlinks=False)
+            return
+
+        # Windows/other non-openat platforms: best-effort path check.
+        # Never advertise this as a race-free file-identity guarantee.
         path = self.root
-        for i, part in enumerate(parts):
+        for index, part in enumerate(parts):
             path = path / part
-            info = path.lstat()  # a symlink, including any parent, is never valid
-            if stat.S_ISLNK(info.st_mode):
+            info = path.lstat()
+            if _is_link_or_reparse(info):
                 raise ValueError("artifact path cannot include links")
-            if i < len(parts) - 1 and not stat.S_ISDIR(info.st_mode):
+            if index < len(parts) - 1 and not stat.S_ISDIR(info.st_mode):
                 raise ValueError("artifact parent is not a directory")
+        if not stat.S_ISREG(path.lstat().st_mode):
+            raise ValueError("artifact must be a regular file")
         resolved = path.resolve(strict=True)
         if not resolved.is_relative_to(self.root):
             raise ValueError("artifact escapes trusted root")
-        if not stat.S_ISREG(path.lstat().st_mode):
-            raise ValueError("artifact must be a regular file")
-        # Fail before reading unexpectedly huge or empty files.
-        size = path.stat().st_size
-        if size <= 0 or size > self.max_total_bytes - self.checked_bytes:
-            raise ValueError("artifact violates preflight byte budget")
-        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(path, flags)
+        fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0))
         try:
+            observed = os.fstat(fd)
+            checked = path.lstat()
+            if (_is_link_or_reparse(checked)
+                    or (observed.st_dev, observed.st_ino)
+                    != (checked.st_dev, checked.st_ino)):
+                raise ValueError("artifact changed while opening")
+            yield fd, path.lstat
+        finally:
+            os.close(fd)
+
+    def digest(self, relative_name: str) -> tuple[int, str]:
+        parts = _relative(relative_name)
+        with self._opened_artifact(parts) as (fd, inspect_entry):
             before = os.fstat(fd)
-            if not stat.S_ISREG(before.st_mode) or before.st_size != size:
-                raise ValueError("artifact changed before hashing")
+            size = before.st_size
+            if (not stat.S_ISREG(before.st_mode) or size <= 0
+                    or size > self.max_total_bytes - self.checked_bytes):
+                raise ValueError("artifact violates preflight byte budget")
             hasher = hashlib.sha256()
             counted = 0
             with os.fdopen(fd, "rb", closefd=False) as file:
@@ -118,20 +200,20 @@ class _Reader:
                         raise ValueError("artifact grew while hashing")
                     hasher.update(block)
             after = os.fstat(fd)
-            disk = path.lstat()
-            if (counted != size or before.st_size != after.st_size
+            disk = inspect_entry()
+            if (_is_link_or_reparse(disk)
+                    or counted != size or before.st_size != after.st_size
                     or before.st_mtime_ns != after.st_mtime_ns
                     or before.st_ctime_ns != after.st_ctime_ns
                     or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
                     or (before.st_dev, before.st_ino) != (disk.st_dev, disk.st_ino)
-                    or after.st_size != disk.st_size or after.st_mtime_ns != disk.st_mtime_ns
-                    or stat.S_ISLNK(disk.st_mode)):
+                    or after.st_size != disk.st_size
+                    or after.st_mtime_ns != disk.st_mtime_ns
+                    or after.st_ctime_ns != disk.st_ctime_ns):
                 raise ValueError("artifact changed during verification")
             self.checked_bytes += size
             self.checked_files += 1
             return size, hasher.hexdigest()
-        finally:
-            os.close(fd)
 
     def model_digest(self, names: tuple[str, ...]) -> str:
         parts = [(name, *self.digest(name)) for name in names]

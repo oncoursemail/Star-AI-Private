@@ -254,3 +254,77 @@ def test_limit_rejects_many_shards_and_oversize_manifest(tmp_path, capsys):
     config.write_bytes(b"x" * (256*1024 + 1))
     assert main(["--root", str(tmp_path), "--manifest", str(config)]) == 2
     assert json.loads(capsys.readouterr().out)["status"] == "failed"
+
+
+def test_reparse_point_flag_is_rejected_even_without_symlink_mode():
+    """Windows directory junctions can look like ordinary directories."""
+    from types import SimpleNamespace
+    import stat
+    from star.stream_host_artifact_preflight import _is_link_or_reparse
+
+    attrs = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    assert _is_link_or_reparse(SimpleNamespace(
+        st_mode=stat.S_IFDIR, st_file_attributes=attrs))
+    assert not _is_link_or_reparse(SimpleNamespace(
+        st_mode=stat.S_IFDIR, st_file_attributes=0))
+    assert _is_link_or_reparse(SimpleNamespace(
+        st_mode=stat.S_IFLNK, st_file_attributes=0))
+
+
+def test_parent_symlink_swap_between_stat_and_open_cannot_redirect(tmp_path, monkeypatch):
+    """A deterministic injected rename exposes unsafe lstat-then-open code."""
+    import os
+
+    if not (hasattr(os, "O_NOFOLLOW")
+            and os.open in os.supports_dir_fd
+            and os.stat in os.supports_dir_fd):
+        pytest.skip("requires POSIX descriptor-anchored paths")
+    route, paths = fixture(tmp_path)
+    outside = tmp_path / "foreign"
+    outside.mkdir()
+    # Identical bytes demonstrate that matching SHA256 alone would not detect
+    # a redirected path: preflight must reject the symlink hop itself.
+    (outside / "weights.gguf").write_bytes(b"actual weights 123")
+    original_open = os.open
+    injected = False
+
+    def swapped_open(path, flags, *args, **kwargs):
+        nonlocal injected
+        if path == "models" and kwargs.get("dir_fd") is not None and not injected:
+            injected = True
+            (tmp_path / "models").rename(tmp_path / "old-models")
+            (tmp_path / "models").symlink_to(outside, target_is_directory=True)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", swapped_open)
+    with pytest.raises(ValueError):
+        verify(tmp_path, route, paths)
+    assert injected
+
+
+def test_artifact_no_follow_open_path_and_checks_file_identity(tmp_path, monkeypatch):
+    """Final component substitution cannot make the hasher follow a link."""
+    import os
+
+    if not (hasattr(os, "O_NOFOLLOW")
+            and os.open in os.supports_dir_fd
+            and os.stat in os.supports_dir_fd):
+        pytest.skip("requires POSIX descriptor-anchored paths")
+    route, paths = fixture(tmp_path)
+    original_open = os.open
+    injected = False
+    foreign = tmp_path / "foreign"
+    foreign.write_bytes(b"actual weights 123")
+
+    def swapped_open(path, flags, *args, **kwargs):
+        nonlocal injected
+        if path == "weights.gguf" and kwargs.get("dir_fd") is not None and not injected:
+            injected = True
+            (tmp_path / "models" / "weights.gguf").unlink()
+            (tmp_path / "models" / "weights.gguf").symlink_to(foreign)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", swapped_open)
+    with pytest.raises(ValueError):
+        verify(tmp_path, route, paths)
+    assert injected
