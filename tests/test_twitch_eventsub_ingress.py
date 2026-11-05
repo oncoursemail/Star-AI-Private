@@ -266,7 +266,12 @@ def test_account_pseudonyms_are_stable_per_session_and_rotate_after_disable():
     assert first is not None and second is not None
     assert first.speaker_id == second.speaker_id
     assert first.signal_id != second.signal_id
-    assert "789" not in first.speaker_id
+    # A SHA-256 pseudonym may contain "789" by chance. Verify its form,
+    # length, and distinction from the complete original viewer ID instead.
+    assert first.speaker_id.startswith("twv_")
+    assert len(first.speaker_id) == len("twv_") + 32
+    assert all(ch in "0123456789abcdef" for ch in first.speaker_id[4:])
+    assert first.speaker_id != "789"
     gate.disable()
     gate.enable(owner_approved=True, broadcaster_user_id="123", websocket_session_id="session123")
     new = offer(gate)
