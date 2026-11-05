@@ -12,6 +12,7 @@ from star.stream_quality_route_selector import (
 
 SUITE = "1" * 64
 OTHER = "2" * 64
+COHORT = "c" * 64
 NOW = 1_800_000_000
 
 
@@ -34,7 +35,8 @@ def trial(c, alias, *, p95=250.0, correct=30, n=30,
           peak=3900.0, at=NOW - 100, **kwargs):
     return VerifiedRouteTrialSummary(
         alias, c.profile_for(alias), "commentary", "game_recording",
-        SUITE, n, correct, p95, peak, at, True, **kwargs,
+        SUITE, n, correct, p95, peak, at, True,
+        eval_cohort_sha256=COHORT, **kwargs,
     )
 
 
@@ -48,6 +50,7 @@ def paired(c, candidate, *, baseline="baseline"):
         baseline, candidate, c.profile_for(baseline), c.profile_for(candidate),
         "commentary", "game_recording", SUITE,
         (True,) * 30, (True,) * 30, (False,) * 30, NOW - 100, True,
+        eval_cohort_sha256=COHORT,
     )
 
 

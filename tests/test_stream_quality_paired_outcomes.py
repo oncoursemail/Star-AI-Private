@@ -11,6 +11,7 @@ from star.stream_quality_route_selector import (
 )
 
 SUITE = "3" * 64
+COHORT = "c" * 64
 NOW = 1_800_000_000
 
 
@@ -27,6 +28,7 @@ def _aggregate(c, alias, *, correct=30, p95=410):
     return VerifiedRouteTrialSummary(
         alias, c.profile_for(alias), "commentary", "game_recording", SUITE,
         30, correct, p95, 2800, NOW - 100, True,
+        eval_cohort_sha256=COHORT,
     )
 
 
@@ -37,7 +39,7 @@ def _pair(c, *, baseline=None, candidate=None, critical=None):
     return VerifiedPairedRouteCases(
         "base", "fast", c.profile_for("base"), c.profile_for("fast"),
         "commentary", "game_recording", SUITE, baseline, candidate, critical,
-        NOW - 100, True,
+        NOW - 100, True, eval_cohort_sha256=COHORT,
     )
 
 

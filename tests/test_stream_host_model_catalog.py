@@ -209,6 +209,7 @@ def test_quality_pilot_reaches_live_qos_only_after_verified_host_admission():
         return VerifiedRouteTrialSummary(
             alias, c.profile_for(alias), "speech", "game_recording",
             suite, 30, correct, p95, 2600, 1_800_000_000, True,
+            eval_cohort_sha256="c" * 64,
         )
 
     select = QualityGatedRouteSelector(
@@ -218,7 +219,7 @@ def test_quality_pilot_reaches_live_qos_only_after_verified_host_admission():
             "baseline", "candidate", c.profile_for("baseline"),
             c.profile_for("candidate"), "speech", "game_recording",
             suite, (True,) * 30, (True,) * 30, (False,) * 30,
-            1_800_000_000, True,
+            1_800_000_000, True, eval_cohort_sha256="c" * 64,
         ),),
     )
     g, s, qos = host_with_catalog(c)
