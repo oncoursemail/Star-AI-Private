@@ -57,7 +57,10 @@ def _reaction_digest(detail: str, game_scope: str = "") -> str:
 def _clock(value: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("time must be a nonnegative finite number")
-    value = float(value)
+    try:
+        value = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError("time must be a nonnegative finite number") from exc
     if not math.isfinite(value) or value < 0:
         raise ValueError("time must be a nonnegative finite number")
     return value
@@ -419,11 +422,23 @@ class StreamDirector:
             self._expire(now)
             if viewer_speaking:
                 return None
+            # Already-issued optional plans reserve capacity until confirmed,
+            # abandoned or expired. Proposing several plans concurrently must
+            # not allow more speech than the rolling window admits. A repeat
+            # proposal for the SAME event replaces (rather than double-counts)
+            # its reservation; nonoptional viewer questions/danger bypass it.
+            pending_optional = (
+                {serial for serial, plan in self._issued_intents.items()
+                 if plan.kind in _PROACTIVE}
+                if self.proactive_limit_per_minute else set()
+            )
             eligible = []
             for event in self._events:
                 if (self.proactive_limit_per_minute
                         and event.kind in _PROACTIVE
-                        and len(self._proactive_spoken_at) >= self.proactive_limit_per_minute):
+                        and self._event_serials[event.signal_id] not in pending_optional
+                        and (len(self._proactive_spoken_at) + len(pending_optional)
+                             >= self.proactive_limit_per_minute)):
                     # Do not discard a timed-out event early: the director's
                     # normal TTL machinery drops it. Speech remains optional.
                     self._counters["proactive_budget_suppressed"] += 1
@@ -492,6 +507,13 @@ class StreamDirector:
                     or self._issued_intents.get(intent.event_serial) is not intent):
                 return False
             self._expire(now)
+            # Defensive final receipt check. In a valid session an issued plan
+            # already holds one reservation, but never overcount an unsolicited
+            # or stale callback if the window has since filled.
+            if (spoken and self.proactive_limit_per_minute
+                    and intent.kind in _PROACTIVE
+                    and len(self._proactive_spoken_at) >= self.proactive_limit_per_minute):
+                return False
             for event in self._events:
                 if (event.signal_id == intent.signal_id and event.kind == intent.kind
                         and event.detail == intent.context
@@ -533,4 +555,8 @@ class StreamDirector:
         """No private audio, chat messages, or user IDs leave this method."""
         with self._lock:
             return {**self._counters, "queued": len(self._events),
-                    "proactive_recent_60s": len(self._proactive_spoken_at)}
+                    "proactive_recent_60s": len(self._proactive_spoken_at),
+                    "proactive_pending": sum(
+                        intent.kind in _PROACTIVE
+                        for intent in self._issued_intents.values()
+                    )}
