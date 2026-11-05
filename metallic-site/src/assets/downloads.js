@@ -1,5 +1,6 @@
-/* Downloads: one box with a tile per device (Windows, Linux, Meta Quest) and the chosen device's panel. The visitor's
-   own device is picked and marked "This device"; #windows, #linux or #quest in the address picks one too.
+/* Downloads: one box with a tile per device (Windows, Linux, Mac, Meta Quest) and the chosen device's panel. The visitor's
+   own device is picked and marked "This device"; #windows, #linux, #mac or #quest in the address picks one too. The Mac
+   tile stays hidden until the release has a .dmg ("darwin-aarch64-dmg", "darwin-x86_64-dmg").
    Builds come from /releases/latest.json (the Tauri updater manifest: {"version","notes","pub_date","platforms":
    {"windows-x86_64":{"signature","url"},"linux-x86_64":{..AppImage},"linux-x86_64-deb":{..deb}}}) and the Quest APK
    from /releases/quest.json ({"version","url"}). Until a build is published its button stays disabled. */
@@ -8,10 +9,7 @@
   const M = window.Metallic;
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
-  const UA = navigator.userAgent;
-  // phones and tablets first: an iPhone's browser also says "Mac OS X", and an iPad's says "Macintosh"
-  const onPhone = /Android|iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && "ontouchend" in document);
-  const onMac = /Macintosh|Mac OS X/.test(UA) && !onPhone && !M.onQuest;
+  const { onPhone, onMac } = M;
   const device = M.onQuest ? "quest" : M.onLinux ? "linux" : onMac || onPhone ? null : "windows";
 
   // ---- picking a device ----
@@ -23,7 +21,7 @@
   $$("[data-plat]").forEach((b) => b.addEventListener("click", () => pick(b.dataset.plat, true)));
   // arrow keys move between the tiles
   $(".plats").addEventListener("keydown", (e) => {
-    const tiles = [...$$("[data-plat]")], i = tiles.indexOf(document.activeElement);
+    const tiles = [...$$("[data-plat]")].filter((t) => !t.hidden), i = tiles.indexOf(document.activeElement);
     const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
     if (i < 0 || !step) return;
     e.preventDefault();
@@ -86,6 +84,19 @@
     if (r.linux.deb) arm($('[data-get="deb"]'), r.linux.deb, ".deb package");
     $("[data-plat-sub='linux']").textContent = r.linux.deb ? "AppImage or .deb" : "AppImage";
     sizeOf(r.linux.appimage, $('[data-size="linux"]'));
+  }
+
+  // Mac: a .dmg per chip, and only now does the tile exist
+  if (r.mac) {
+    $('[data-plat="mac"]').hidden = false;
+    if (r.mac.arm) arm($('[data-get="mac-arm"]'), r.mac.arm, "Download for Apple silicon");
+    if (r.mac.intel) arm($('[data-get="mac-intel"]'), r.mac.intel, "Download for Intel");
+    sizeOf(r.mac.arm || r.mac.intel, $('[data-size="mac"]'));
+    if (onMac) {
+      $('[data-plat="mac"] .here').hidden = false;
+      note.textContent = "You are on a Mac, so the Mac build is picked for you.";
+    } else if (onPhone) note.textContent = "Metallic runs on a Windows, Linux or Mac computer and on Meta Quest. Open this page there, or pick a device below.";
+    if (location.hash === "#mac" || (onMac && !fromHash)) pick("mac");
   }
 
   // notes: plain text; blank lines split paragraphs, "- " or "* " lines become a list
