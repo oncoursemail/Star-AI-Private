@@ -12,8 +12,10 @@ Run (on the recording machine, once OBS has stopped):
 from __future__ import annotations
 
 import argparse
+import hashlib
 from dataclasses import asdict, dataclass
 import json
+import re
 from pathlib import Path
 import stat
 from typing import Sequence
@@ -37,6 +39,9 @@ class PrivateRehearsalEvidence:
     decoded_video_frames: int
     audio_stream_count: int
     selected_audio_track: int
+    # A private file may be compared with an independently recorded digest;
+    # this proves byte equality only, never OBS provenance or speech identity.
+    media_sha256_precommit_matched: bool = False
     av_verdict: str | None = None
     estimated_mouth_lag_ms: int | None = None
     voiced_mouth_coverage: float | None = None
@@ -76,6 +81,22 @@ def _admit(path: str | Path, *, root: Path) -> tuple[Path, tuple[int, ...]]:
     return full, (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
+def _content_sha256(path: Path) -> str:
+    """Hash only an admitted local recording; never persist or print its bytes.
+
+    This is deliberately performed OFFLINE after recording, not on a game,
+    streaming, inference or TTS critical path.
+    """
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as stream:
+            while block := stream.read(1024 * 1024):
+                digest.update(block)
+    except OSError as exc:
+        raise PrivateRehearsalAuditError("local recording integrity read failed") from exc
+    return digest.hexdigest()
+
+
 def _unchanged(path: Path, fingerprint: tuple[int, ...]) -> bool:
     try:
         info = path.lstat()
@@ -92,6 +113,7 @@ def audit_private_rehearsal(
     host_confirms_recording_stopped: bool = False,
     host_confirms_broadcast_inactive: bool = False,
     selected_audio_track: int = 0,
+    expected_media_sha256: str | None = None,
     closed_still: str | Path | None = None,
     open_still: str | Path | None = None,
     mouth_roi: MouthROI | None = None,
@@ -108,6 +130,14 @@ def audit_private_rehearsal(
             or host_confirms_recording_stopped is not True
             or host_confirms_broadcast_inactive is not True):
         raise PermissionError("private stopped-recording consent is required")
+    # The commitment MUST be obtained from a separately trusted witness,
+    # before the user evaluates the clip. Caller-supplied after-the-fact
+    # hashes are valid bytes but not independent capture evidence.
+    if expected_media_sha256 is not None and (
+        type(expected_media_sha256) is not str
+        or re.fullmatch(r"[a-fA-F0-9]{64}", expected_media_sha256) is None
+    ):
+        raise PrivateRehearsalAuditError("invalid recording precommit digest")
     if not isinstance(allowed_root, (str, Path)) or len(str(allowed_root)) > 4096:
         raise PrivateRehearsalAuditError("invalid allowed local recording directory")
     requested_mouth = any(item is not None for item in (closed_still, open_still, mouth_roi))
@@ -138,6 +168,11 @@ def audit_private_rehearsal(
     except (OSError, RuntimeError) as exc:
         raise PrivateRehearsalAuditError("invalid local allowed recording directory") from exc
     movie, before = _admit(recording, root=root)
+    # Check BEFORE and AFTER the decoder; stat-only evidence cannot bind the
+    # selected bytes to an independently witnessed recording precommit.
+    expected = expected_media_sha256.lower() if expected_media_sha256 else None
+    if expected is not None and _content_sha256(movie) != expected:
+        raise PrivateRehearsalAuditError("recording does not match trusted precommit")
     cfile: Path | None = None
     ofile: Path | None = None
     cbefore: tuple[int, ...] | None = None
@@ -170,6 +205,8 @@ def audit_private_rehearsal(
         }[av.report.verdict]
     else:
         status = "decodable_only"
+    if expected is not None and _content_sha256(movie) != expected:
+        raise PrivateRehearsalAuditError("recording changed or precommit mismatch")
     if (not _unchanged(movie, before)
             or (cfile is not None and cbefore is not None and not _unchanged(cfile, cbefore))
             or (ofile is not None and obefore is not None and not _unchanged(ofile, obefore))):
@@ -179,6 +216,7 @@ def audit_private_rehearsal(
         decoded_video_frames=result.video_frames,
         audio_stream_count=result.audio_streams,
         selected_audio_track=selected_audio_track,
+        media_sha256_precommit_matched=expected is not None,
         av_verdict=av.report.verdict if av is not None else None,
         estimated_mouth_lag_ms=av.report.estimated_mouth_lag_ms if av is not None else None,
         voiced_mouth_coverage=av.report.voiced_mouth_coverage if av is not None else None,
@@ -198,6 +236,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--recording-stopped", action="store_true")
     parser.add_argument("--broadcast-inactive", action="store_true")
     parser.add_argument("--audio-track", type=int, default=0)
+    parser.add_argument("--expected-media-sha256", help=(
+        "Optional SHA-256 of the selected stopped recording from an independently "
+        "trusted prior capture witness; only the boolean match is reported"
+    ))
     parser.add_argument("--closed-still")
     parser.add_argument("--open-still")
     parser.add_argument("--mouth-roi", nargs=4, type=int, metavar=("X", "Y", "W", "H"))
@@ -212,6 +254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             host_confirms_recording_stopped=options.recording_stopped,
             host_confirms_broadcast_inactive=options.broadcast_inactive,
             selected_audio_track=options.audio_track,
+            expected_media_sha256=options.expected_media_sha256,
             closed_still=options.closed_still,
             open_still=options.open_still,
             mouth_roi=mouth,
