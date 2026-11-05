@@ -250,7 +250,7 @@ class QualityGatedRouteSelector:
             raise ValueError("seal and private host verification key must be provided together")
         self._require_signed_evidence = require_signed_evidence or evidence_seal is not None
         self._seal_verified = False
-        if evidence_seal is not None:
+        if evidence_seal is not None and evidence_verification_key is not None:
             from .stream_route_evidence_seal import verify_route_evaluation
             self._seal_verified = verify_route_evaluation(
                 host_key=evidence_verification_key,
