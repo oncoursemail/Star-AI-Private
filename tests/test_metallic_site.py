@@ -247,9 +247,10 @@ def test_pages_carry_open_graph_tags_and_the_404_is_not_indexed(built):
         text = (out / rel).read_text(encoding="utf-8")
         for prop in ("og:title", "og:description", "og:url", "og:image", "og:type"):
             assert f'<meta property="{prop}" content="' in text, (rel, prop)
-        assert 'content="https://metallic.example/assets/art/scenes/night-city.jpg"' in text, rel
+        assert 'content="https://metallic.example/assets/art/scenes/violet-nebula.jpg"' in text, rel
         assert ('<meta name="robots" content="noindex">' in text) == (rel == "404.html"), rel
-    assert (out / "assets/art/scenes/night-city.jpg").is_file()
+    assert (out / "assets/art/scenes/violet-nebula.jpg").is_file()
+    assert not (out / "assets/art/scenes/night-city.jpg").exists(), "the old hero picture stays off the site (owner, 11-04)"
 
 
 def test_linux_builds_are_offered_to_linux_visitors_when_published():

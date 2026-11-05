@@ -79,7 +79,7 @@ domain. The credentials JSON stays on the server and is never committed.
   The only outside host is Discord's image CDN, for the revivals' server icons and banners. Every request the pages make
   for data is same-origin (`connect-src 'self'`).
 - `Cache-Control: no-store` on `/live/*` and `/releases/latest.json`; `public, max-age=31536000, immutable` on the
-  installers (their names carry the version); one hour on `/assets/*`.
+  installers (their names carry the version); one hour on `/assets/*`; `no-cache` on the pages, so a browser checks for a new page on every visit.
 - Hidden files (for example metallic-live's `.revivals-history.json`) are not served. Errors show `/404.html`.
 - Range requests work for the installers, so interrupted downloads resume.
 - Only two access logs are kept, both read by metallic-live and neither with an address or a header:
