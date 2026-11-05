@@ -190,3 +190,85 @@ def test_catalog_binding_is_opt_in_and_wrong_types_rejected():
     assert legacy.admit_registered(job(), route_alias="missing").reason == (
         "host_model_catalog_not_configured"
     )
+
+def test_quality_pilot_reaches_live_qos_only_after_verified_host_admission():
+    """Only exact host-catalog, approved quality evidence may choose a worker."""
+    from star.stream_quality_route_selector import (
+        QualityGatedRouteSelector,
+        VerifiedRouteTrialSummary,
+    )
+
+    c = HostInferenceCatalog((
+        route("baseline", ram=300),
+        route("candidate", ram=210, model=SHA_C),
+    ))
+    suite = "1" * 64
+
+    def evidence(alias, p95, *, correct=30):
+        return VerifiedRouteTrialSummary(
+            alias, c.profile_for(alias), "speech", "game_recording",
+            suite, 30, correct, p95, 2600, 1_800_000_000, True,
+        )
+
+    select = QualityGatedRouteSelector(
+        catalog=c, summaries=(evidence("baseline", 400),
+                              evidence("candidate", 160))
+    )
+    g, s, qos = host_with_catalog(c)
+    common = dict(selector=select, baseline_alias="baseline",
+                  workload="game_recording", suite_sha256=suite,
+                  now_unix_s=1_800_000_001, max_p95_ms=600,
+                  max_total_gpu_mib=6656)
+    denied = g.admit_quality_pilot(job("pilot", now=s.now), **common)
+    assert not denied.admitted
+    assert denied.reason == "quality_pilot_owner_approval_missing"
+    assert qos.status()["inflight"] == 0
+    wrong_catalog = QualityGatedRouteSelector(
+        catalog=HostInferenceCatalog((
+            route("baseline", ram=300),
+            route("candidate", ram=210, model=SHA_C),
+        )),
+        summaries=(evidence("baseline", 400), evidence("candidate", 160)),
+    )
+    assert not g.admit_quality_pilot(
+        job("wrong", now=s.now), **{**common, "selector": wrong_catalog},
+        pilot_approved=True,
+    ).admitted
+    assert qos.status()["inflight"] == 0
+    success = g.admit_quality_pilot(
+        job("approved", now=s.now), **common, pilot_approved=True,
+    )
+    assert success.admitted and success.lease is not None
+    assert success.lease.device == "cpu"
+    assert qos.status()["inflight"] == 1
+    s.tick(20)
+    assert g.acknowledge_worker_stopped(
+        success.lease, worker_stopped=True, succeeded=True
+    )
+
+
+def test_quality_pilot_never_admits_a_regressed_worker():
+    from star.stream_quality_route_selector import (
+        QualityGatedRouteSelector,
+        VerifiedRouteTrialSummary,
+    )
+
+    c = HostInferenceCatalog((route("baseline"), route("weak", model=SHA_C)))
+    summary = lambda alias, p95, correct: VerifiedRouteTrialSummary(
+        alias, c.profile_for(alias), "speech", "game_recording",
+        "2" * 64, 30, correct, p95, 2700, 1_800_000_000, True
+    )
+    s = QualityGatedRouteSelector(
+        catalog=c, summaries=(summary("baseline", 900, 30),
+                              summary("weak", 80, 20))
+    )
+    governor, host, qos = host_with_catalog(c)
+    denied = governor.admit_quality_pilot(
+        job("no-route", now=host.now), selector=s, pilot_approved=True,
+        baseline_alias="baseline", workload="game_recording",
+        suite_sha256="2" * 64, now_unix_s=1_800_000_001,
+        max_p95_ms=300, max_total_gpu_mib=6656,
+    )
+    assert not denied.admitted
+    assert denied.reason == "quality_pilot_no_quality_and_resource_qualified_route"
+    assert qos.status()["inflight"] == 0

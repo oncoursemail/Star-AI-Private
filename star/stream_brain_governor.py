@@ -27,6 +27,7 @@ from .stream_hardware_telemetry import LiveHostSample, RealtimeTelemetryHost
 from .memory_stall_guard import MemoryStallGuard
 from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
 from .stream_host_model_catalog import HostInferenceCatalog
+from .stream_quality_route_selector import QualityGatedRouteSelector
 from .stream_stage import StagePlan, StarStage
 from .stream_turntaking import TurnAdvice
 
@@ -215,6 +216,43 @@ class StreamBrainGovernor:
             return BrainAdmission(False, "host_model_catalog_not_configured")
         bound = self._route_catalog.bind(job, route_alias=route_alias)
         return self._admit(bound, from_catalog=True)
+
+    def admit_quality_pilot(
+        self, job: InferenceJob, *, pilot_approved: bool = False,
+        selector: QualityGatedRouteSelector, baseline_alias: str,
+        workload: str, suite_sha256: str, now_unix_s: int,
+        max_p95_ms: float, max_total_gpu_mib: float,
+    ) -> BrainAdmission:
+        """Opt-in *admission*, never launch, through trusted quality evidence.
+
+        The local owner/host must preregister and independently score the
+        selector's held-out suite, explicitly approve each pilot, and supply
+        actual load budgets. No chat/model tools may call this host API.
+        Reuse the exact catalog so advice cannot silently rebind to a
+        different deployed model. Normal live QoS still vetoes unsafe work.
+        """
+        if not isinstance(job, InferenceJob):
+            raise TypeError("expected a validated inference job")
+        if type(pilot_approved) is not bool:
+            raise ValueError("pilot_approved must be a boolean")
+        if not pilot_approved:
+            return BrainAdmission(False, "quality_pilot_owner_approval_missing")
+        if not isinstance(selector, QualityGatedRouteSelector):
+            raise TypeError("trusted host quality route selector required")
+        with self._lock:
+            if not self._enabled:
+                return BrainAdmission(False, "owner_opt_in_missing")
+            if self._route_catalog is None or selector.catalog is not self._route_catalog:
+                return BrainAdmission(False, "quality_pilot_catalog_identity_mismatch")
+            advice = selector.advise(
+                owner_approved=True, baseline_alias=baseline_alias,
+                task_kind=job.kind, workload=workload,
+                suite_sha256=suite_sha256, now_unix_s=now_unix_s,
+                max_p95_ms=max_p95_ms, max_total_gpu_mib=max_total_gpu_mib,
+            )
+            if advice.route_alias is None:
+                return BrainAdmission(False, "quality_pilot_" + advice.reason)
+            return self.admit_registered(job, route_alias=advice.route_alias)
 
     def _admit(self, job: InferenceJob, *, from_catalog: bool) -> BrainAdmission:
         if not isinstance(job, InferenceJob):
