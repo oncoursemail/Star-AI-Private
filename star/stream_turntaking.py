@@ -154,7 +154,8 @@ class TurnTakingGate:
                 if (gap > _MAX_GAP_MS or
                         unobserved_silence_ms > _MAX_CONTINUOUS_SILENCE_MS):
                     self._owner_ms = self._guest_ms = 0.0
-                    self._owner_yield_counted = False
+                    # A capture hole cannot prove the previous owner utterance
+                    # ended. Preserve its dedupe latch until verified quiet.
                 # A capture hole is unknown audio, never verified silence.
                 # Use observed frame durations, not wall-clock gaps.
                 if unobserved_silence_ms > _QUIET_MAX_UNOBSERVED_MS:
@@ -175,9 +176,6 @@ class TurnTakingGate:
             ) > _QUIET_PROBABILITY_MAX):
                 self._last_voice_ms = frame.at_ms
             self._owner_ms = self._owner_ms + frame.duration_ms if owner else 0.0
-            if not owner:
-                # A new independently confirmed utterance is a new event.
-                self._owner_yield_counted = False
             self._guest_ms = self._guest_ms + frame.duration_ms if guest else 0.0
             quiet = (
                 frame.echo_cleared
@@ -185,6 +183,13 @@ class TurnTakingGate:
                 and frame.guest_probability <= _QUIET_PROBABILITY_MAX
             )
             self._quiet_ms = self._quiet_ms + frame.duration_ms if quiet else 0.0
+            # One ambiguous/echo-uncleared or quiet frame is not a new owner
+            # utterance. Re-arm the deduplicated barge-in only after the
+            # independent, echo-cleared quiet witness spans 350 ms of actual
+            # observed audio. This also prevents gaps in capture from silently
+            # rearming a still-talking owner.
+            if quiet and self._quiet_ms >= _QUIET_MS:
+                self._owner_yield_counted = False
             self._last = frame
             self._counts["accepted"] += 1
             return True
