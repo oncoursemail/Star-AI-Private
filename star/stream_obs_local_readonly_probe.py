@@ -7,7 +7,7 @@ and unpaused while broadcasting is off, at discrete sampling instants. It
 never starts/stops recording, changes scenes, broadcasts, captures private
 media, or grants permission to perform another action.
 
-No network attempt without owner_approved=True. No remote host, URL, redirects,
+An optional serial-realtime read-only batch reduces socket round trips,\nwith strict per-result binding and no changes to OBS.\n\nNo network attempt without owner_approved=True. No remote host, URL, redirects,
 or arbitrary request types are accepted. Password comes from the trusted host;
 do not expose it to a model or pass it on command lines. Only sanitized
 aggregate counters are returned. A WebSocket password is not an authorization
@@ -84,6 +84,7 @@ class LocalObsProbeReport:
     nonbroadcast_verified_only_at_sample_times: bool = False
     recording_verified: bool = False
     recording_progress_verified: bool = False
+    batched_observation: bool = False
     authorizes_broadcast: bool = False
     authorizes_recording: bool = False
 
@@ -95,7 +96,7 @@ def observe_local_obs(
     *, owner_approved: bool = False, password: str | None = None,
     port: int = 4455, samples: int = 3, timeout_s: float = 2.0,
     interval_s: float = 0.5, verify_private_recording: bool = False,
-    verify_recording_progress: bool = False,
+    verify_recording_progress: bool = False, batch_reads: bool = False,
     connect: Callable[[int, float], _WebSocket] = _local_connection,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
@@ -116,6 +117,8 @@ def observe_local_obs(
         raise ValueError("recording progress observation requires a host boolean")
     if verify_recording_progress and not verify_private_recording:
         raise ValueError("recording progress requires private recording observation")
+    if type(batch_reads) is not bool:
+        raise ValueError("read-only batching must be a trusted host boolean")
     if (type(port) is not int or not 1024 <= port <= 65535
             or type(samples) is not int or not 2 <= samples <= 9
             or type(timeout_s) not in (int, float) or not 0.25 <= timeout_s <= 5
@@ -157,16 +160,51 @@ def observe_local_obs(
             for kind in _READS:
                 request_id = token(12)
                 if (type(request_id) is not str or not 12 <= len(request_id) <= 40
-                        or not request_id.isascii() or not request_id.isalnum()):
-                    raise ValueError("invalid OBS request identity")
+                        or not request_id.isascii() or not request_id.isalnum()
+                        or request_id in expected.values()):
+                    raise ValueError("invalid or repeated OBS request identity")
                 expected[kind] = request_id
-                _write(socket, 6, {"requestType": kind, "requestId": request_id})
-                # Validate both op and response binding in the existing gate.
-                reply = _packet(socket.recv(), 7)
-                witnessed[kind] = ObsReadOnlyWitness(
-                    at_monotonic_ms=float(clock()) * 1000,
-                    message={"op": 7, "d": reply},
-                )
+
+            if batch_reads:
+                batch_id = token(12)
+                if (type(batch_id) is not str or not 12 <= len(batch_id) <= 40
+                        or not batch_id.isascii() or not batch_id.isalnum()
+                        or batch_id in expected.values()):
+                    raise ValueError("invalid OBS batch identity")
+                # v5 OpCode 8: SerialRealtime does not stall OBS's render thread.
+                # NEVER let a model provide this list or an arbitrary requestData.
+                _write(socket, 8, {
+                    "requestId": batch_id, "haltOnFailure": True,
+                    "executionType": 0,
+                    "requests": [
+                        {"requestType": kind, "requestId": expected[kind]}
+                        for kind in _READS
+                    ],
+                })
+                batch = _packet(socket.recv(), 9)
+                results = batch.get("results")
+                if (batch.get("requestId") != batch_id
+                        or type(results) is not list or len(results) != len(_READS)):
+                    raise ValueError("OBS batch identity or response count mismatch")
+                # One receipt time covers all serially executed responses.
+                # A partial, reordered, duplicated or failed batch cannot pass
+                # the same signed-correlator and active-stream safety gate.
+                received_at = float(clock()) * 1000
+                for kind, result in zip(_READS, results):
+                    if (type(result) is not dict or result.get("requestType") != kind
+                            or result.get("requestId") != expected[kind]):
+                        raise ValueError("OBS read-only batch result correlation failed")
+                    witnessed[kind] = ObsReadOnlyWitness(
+                        at_monotonic_ms=received_at, message={"op": 7, "d": result},
+                    )
+            else:
+                for kind in _READS:
+                    _write(socket, 6, {"requestType": kind, "requestId": expected[kind]})
+                    reply = _packet(socket.recv(), 7)
+                    witnessed[kind] = ObsReadOnlyWitness(
+                        at_monotonic_ms=float(clock()) * 1000,
+                        message={"op": 7, "d": reply},
+                    )
             gate.accept(witnesses=witnessed, expected_request_ids=expected, host_verified=True)
     finally:
         socket.close()
@@ -187,6 +225,7 @@ def observe_local_obs(
             report["nonbroadcast_verified_only_at_sample_times"]),
         recording_verified=bool(report["private_recording_verified_only_at_sample_times"]),
         recording_progress_verified=progress_verified,
+        batched_observation=batch_reads,
     )
 
 
@@ -205,6 +244,10 @@ def main(argv: list[str] | None = None) -> int:
         "--verify-recording-progress", action="store_true",
         help="strictly check OBS private recording duration and output byte progress",
     )
+    parser.add_argument(
+        "--batch-reads", action="store_true",
+        help="opt-in serial realtime batch of three read-only OBS requests per sample",
+    )
     args = parser.parse_args(argv)
     if not args.observe:
         print(LocalObsProbeReport("unavailable", "explicit_observe_flag_required", 0).to_json())
@@ -215,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
             samples=args.samples, interval_s=args.interval_ms / 1000, port=args.port,
             verify_private_recording=args.verify_private_recording,
             verify_recording_progress=args.verify_recording_progress,
+            batch_reads=args.batch_reads,
         )
     except PermissionError:
         report = LocalObsProbeReport("deferred", "obs_authentication_or_output_state_rejected", 0)
