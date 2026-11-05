@@ -623,7 +623,14 @@ class FakeConnector:
         from star import studio_remote as sr
         self.calls.append(name)
         if name == "execute_luau":
-            text = f"{sr.PIN_OK} {self.place[0]} {self.place[1]}"
+            # Return only an answer to this exact nonce-bearing identity query.
+            # A static pin receipt must NOT pass the production verifier.
+            import re
+            code = (arguments or {}).get("code", "")
+            suffix = code.removeprefix(sr.PIN_QUESTION) if code.startswith(sr.PIN_QUESTION) else ""
+            challenge = re.fullmatch(r' .. " ([0-9a-f]{32})"', suffix)
+            text = (f"{sr.PIN_OK} {self.place[0]} {self.place[1]} {challenge.group(1)}"
+                    if challenge else "invalid challenge request")
         else:
             text = "ok"
         return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)], isError=False,
