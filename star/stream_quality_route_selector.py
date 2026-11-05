@@ -14,7 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import re
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from .stream_route_evidence_seal import SealedRouteEvaluation
 
 from .stream_host_model_catalog import HostInferenceCatalog
 
@@ -184,7 +187,10 @@ class QualityGatedRouteSelector:
                  minimum_trials: int = 30,
                  minimum_quality_lower_95: float = 0.78,
                  minimum_gain_ms: float = 30.0,
-                 max_evidence_age_s: int = 7 * 86400) -> None:
+                 max_evidence_age_s: int = 7 * 86400,
+                 require_signed_evidence: bool = False,
+                 evidence_seal: SealedRouteEvaluation | None = None,
+                 evidence_verification_key: bytes | None = None) -> None:
         if not isinstance(catalog, HostInferenceCatalog):
             raise TypeError("host-owned catalog required")
         if type(summaries) is not tuple:
@@ -238,6 +244,21 @@ class QualityGatedRouteSelector:
         self._quality = quality
         self._gain = gain
         self._max_age = max_evidence_age_s
+        if type(require_signed_evidence) is not bool:
+            raise ValueError("require_signed_evidence must be a strict boolean")
+        if (evidence_seal is None) != (evidence_verification_key is None):
+            raise ValueError("seal and private host verification key must be provided together")
+        self._require_signed_evidence = require_signed_evidence or evidence_seal is not None
+        self._seal_verified = False
+        if evidence_seal is not None and evidence_verification_key is not None:
+            from .stream_route_evidence_seal import verify_route_evaluation
+            self._seal_verified = verify_route_evaluation(
+                host_key=evidence_verification_key,
+                seal=evidence_seal, summaries=summaries, paired_cases=paired_cases,
+            )
+            self._seal_issued_unix_s = evidence_seal.issued_unix_s
+        else:
+            self._seal_issued_unix_s = None
 
     @property
     def catalog(self) -> HostInferenceCatalog:
@@ -252,6 +273,8 @@ class QualityGatedRouteSelector:
             raise ValueError("owner_approved must be boolean")
         if not owner_approved:
             return QualityRouteAdvice(None, "owner_opt_in_missing")
+        if self._require_signed_evidence and not self._seal_verified:
+            return QualityRouteAdvice(None, "signed_evaluation_unverified")
         _id(baseline_alias, "baseline_alias")
         _id(task_kind, "task_kind")
         if type(workload) is not str or workload not in _WORKLOADS:
@@ -260,6 +283,10 @@ class QualityGatedRouteSelector:
             raise ValueError("invalid suite digest")
         if type(now_unix_s) is not int or not 1 <= now_unix_s <= 10**11:
             raise ValueError("trusted current Unix time required")
+        if (self._require_signed_evidence and
+                (self._seal_issued_unix_s is None or not
+                 0 <= now_unix_s - self._seal_issued_unix_s <= self._max_age)):
+            return QualityRouteAdvice(None, "signed_evaluation_stale_or_future")
         max_latency = _num(max_p95_ms, "max_p95_ms", lower=1, upper=120_000)
         max_gpu = _num(max_total_gpu_mib, "max_total_gpu_mib",
                        lower=512, upper=262_144)
