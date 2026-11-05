@@ -6,6 +6,7 @@ No event automatically causes speech or a tool call.
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from threading import RLock
 
@@ -38,6 +39,10 @@ _EVIDENCE = frozenset({"observed", "reported", "unknown"})
 # Bound stream-time dedupe and identity receipts under sustained chat floods.
 # Cache saturation rejects new viewer chatter rather than silently disabling dedupe.
 _MAX_SESSION_RECEIPTS = 4096
+# Optional proactive cadence: only completed, audible turns consume the window.
+# Real questions, owner interruptions and game danger are never rate-capped.
+_PROACTIVE = frozenset({"game_success", "game_observation", "viewer_comment", "ambient"})
+_PROACTIVE_WINDOW_S = 60.0
 
 
 def _reaction_digest(detail: str, game_scope: str = "") -> str:
@@ -139,7 +144,8 @@ class StreamDirector:
     def __init__(self, *, max_events: int = 48, gap_seconds: float = 2.2,
                  viewer_cooldown: float = 25.0,
                  success_repeat_gap_seconds: float = 18.0,
-                 max_pending_per_viewer: int = 2) -> None:
+                 max_pending_per_viewer: int = 2,
+                 proactive_limit_per_minute: int = 0) -> None:
         if type(max_events) is not int or not 1 <= max_events <= 128:
             raise ValueError("max_events must be between 1 and 128")
         self.gap_seconds = _clock(gap_seconds)
@@ -149,6 +155,12 @@ class StreamDirector:
                 or not 1 <= max_pending_per_viewer <= 16):
             raise ValueError("max_pending_per_viewer must be an integer from 1 to 16")
         self.max_pending_per_viewer = max_pending_per_viewer
+        # Disabled unless the trusted host opts into a conservative voice
+        # cadence at construction, then separately enables this director.
+        if (type(proactive_limit_per_minute) is not int
+                or not 0 <= proactive_limit_per_minute <= 12):
+            raise ValueError("proactive_limit_per_minute must be 0..12 (0=off)")
+        self.proactive_limit_per_minute = proactive_limit_per_minute
         self.max_events = max_events
         # Twitch ingestion, gameplay events, and TTS acknowledgement can arrive
         # from distinct host threads. Treat every state transition atomically.
@@ -166,6 +178,7 @@ class StreamDirector:
         self._active_game_scope: str | None = None
         self._recent: dict[str, float] = {}
         self._last_speech_at = float("-inf")
+        self._proactive_spoken_at: deque[float] = deque(maxlen=12)
         self._viewer_last_spoken: dict[str, float] = {}
         self._game_reactions: dict[str, tuple[float, str]] = {}
         self._counters = {"accepted": 0, "rejected": 0, "expired": 0,
@@ -174,7 +187,8 @@ class StreamDirector:
                           "viewer_queue_limited": 0,
                           "dedupe_capacity_rejected": 0,
                           "scene_transitions": 0, "scene_dropped": 0,
-                          "off_scope_rejected": 0}
+                          "off_scope_rejected": 0,
+                          "proactive_budget_suppressed": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
         with self._lock:
@@ -195,6 +209,7 @@ class StreamDirector:
             self._recent.clear()
             self._viewer_last_spoken.clear()
             self._game_reactions.clear()
+            self._proactive_spoken_at.clear()
             self._active_game_scope = None
             self._last_speech_at = float("-inf")
 
@@ -258,6 +273,11 @@ class StreamDirector:
         return priority
 
     def _expire(self, now: float) -> None:
+        # A single writer lock protects both narration admission and the
+        # audible-ack window; failed drafts and proposals never spend tokens.
+        while (self._proactive_spoken_at
+               and now - self._proactive_spoken_at[0] >= _PROACTIVE_WINDOW_S):
+            self._proactive_spoken_at.popleft()
         before = len(self._events)
         self._events = [event for event in self._events
                         if now - event.timestamp <= _KINDS[event.kind][1]]
@@ -401,6 +421,13 @@ class StreamDirector:
                 return None
             eligible = []
             for event in self._events:
+                if (self.proactive_limit_per_minute
+                        and event.kind in _PROACTIVE
+                        and len(self._proactive_spoken_at) >= self.proactive_limit_per_minute):
+                    # Do not discard a timed-out event early: the director's
+                    # normal TTL machinery drops it. Speech remains optional.
+                    self._counters["proactive_budget_suppressed"] += 1
+                    continue
                 # Host-provided pressure advice is a speech admission filter,
                 # never an OBS or game executor. Missing advice keeps legacy
                 # behavior; caller must explicitly wire the trusted governor.
@@ -454,6 +481,12 @@ class StreamDirector:
             now = _clock(now)
             if not isinstance(intent, SpeechIntent) or type(spoken) is not bool:
                 raise TypeError("expected SpeechIntent and explicit bool spoken")
+            if (spoken and self.proactive_limit_per_minute
+                    and intent.kind in _PROACTIVE and self._proactive_spoken_at
+                    and now < self._proactive_spoken_at[-1]):
+                # A reversed host clock must not reopen an already consumed
+                # quota. Leave the event untouched until a valid clock returns.
+                return False
             if (not self.enabled or intent.session_epoch != self._session_epoch
                     or intent.event_serial != self._event_serials.get(intent.signal_id)
                     or self._issued_intents.get(intent.event_serial) is not intent):
@@ -468,6 +501,8 @@ class StreamDirector:
                     self._issued_intents.pop(intent.event_serial, None)
                     if spoken:
                         self._last_speech_at = now
+                        if self.proactive_limit_per_minute and event.kind in _PROACTIVE:
+                            self._proactive_spoken_at.append(now)
                         if event.kind.startswith("viewer") and event.speaker_id:
                             # A very long cooldown must not allow an unbounded
                             # set of distinct viewers to accumulate across hours.
@@ -497,4 +532,5 @@ class StreamDirector:
     def metrics(self) -> dict[str, int]:
         """No private audio, chat messages, or user IDs leave this method."""
         with self._lock:
-            return {**self._counters, "queued": len(self._events)}
+            return {**self._counters, "queued": len(self._events),
+                    "proactive_recent_60s": len(self._proactive_spoken_at)}
