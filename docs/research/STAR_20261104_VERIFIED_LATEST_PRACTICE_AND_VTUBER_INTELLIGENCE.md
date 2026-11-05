@@ -1,0 +1,54 @@
+# STAR AI — signed practice evidence, intelligence throughput, and humanlike VTuber roadmap
+**Research checkpoint:** 2026-11-04 (America/Chicago)  
+**Implementation scope:** one verified practice progression bug fix; all other proposals below remain *research and acceptance plans*, not shipping functionality.
+
+## 1. Concrete failure reproduced and repaired
+The existing `recommend_practice` planner in `star/game_practice_curriculum.py` read `most_recent_success` from independently signed PRACTICE aggregates, but treated a missing value (`None`, including old adapters without the property) as *not failed*, which allowed apparently strong historical success rates to unlock harder skills. The source comment promised the opposite: missing proof must never confer mastery. This is especially misleading after a regression because a high cumulative win rate can mask a missing recent signed outcome.
+
+The implementation now requires the explicit boolean `True` to declare practice mastery. Explicit `False` remains unmastered. A high-confidence aggregate with a *missing* latest outcome produces `review_required / latest_signed_practice_outcome_missing` instead of infinitely grinding practice or advancing to a boss level. It still never reads withheld validation or authorizes play; it recommends remediation to the trusted game host. No skill is promoted to production without separate holdout proof.
+
+The new tests deliberately reproduce the old false unlock and check that unknown/latest-failed records do not permit it, do not mark practice complete, and do not schedule retention review. Test fixtures simulating verified signed aggregates now explicitly default to `True`; the legacy case explicitly passes `None`. This is a correctness/safety improvement, not an intelligence benchmark score or actual gameplay outcome.
+
+## 2. Prioritized architecture to increase Star's real capability
+A large context or many concurrent agents will not by themselves make a local 8-GB-GPU model smarter. Measure *verified useful work per wall-clock second* and *game-frame/voice continuity*, with an independently checked task-level quality floor. Split Star into four budgeted lanes:
+1. **Reaction lane:** tiny verified state, fast local policy, nonblocking output selection; never wait on a long planner to handle an imminent hazard. Actions need independent game-state and input acknowledgment.
+2. **Conversation lane:** bounded live-chat queue, VAD/turn taking, stage cancellation, speech prefetch only while evidence remains fresh. Do not queue stale comments or repeat viewer prompts as instructions.
+3. **Planning lane:** tool-use, source-grounded retrieval, multi-candidate generate-and-verify, explicit uncertainty, independent unit/Studio checks. Run deeper reasoning only when measured expected gain offsets latency.
+4. **Study lane:** offline rehearsal, curated lesson retrieval, actual signed practice outcomes, randomized fixed-size comparisons, sealed unfamiliar-level holdouts, reproducible rollback. Pause or defer under game/OBS/TTS pressure.
+
+Keep GPU headroom as a hard experimental constraint; OS VRAM readings are time-window estimates, not proof of fit. Prefer CPU speech when it improves end-to-end performance in paired trials. A model swap must clear correctness, groundedness, voice alignment, GPU, and FPS gates, not only a tokens/sec target.
+
+## 3. Research signals — checked 2026-11-04
+- **Microsoft Proact-VL (ICML 2026, published May 2026):** real-time gaming companions must optimize *when* to speak, not just *what* to say. Investigates solo commentary, co-commentary, and guidance with proactive video understanding. Translation: Star needs event salience, deliberate silence, source-supported one-clause reactions, and a measurable overtalk rate. Source: https://www.microsoft.com/en-us/research/publication/proact-vl-a-proactive-videollm-for-real-time-ai-companions/
+- **MIRA (arXiv September 2026):** streaming speech plus interruptible, short-horizon co-speech embodiment; high-level synchronization idea applies to Star's expressive avatar (not a claim we have implemented MIRA or any robot motion). Translation: generate a short cancellable mouth/gesture prefix; discard unplayed motion after interruptions. Source: https://arxiv.org/abs/2609.24547
+- **Roblox OpenGameEval (paper October 1, 2026):** 84 stateful Roblox Studio development tasks, executable scene and play-session checks. Its reported relationship between inspecting relevant objects and success supports an enforced *inspect → plan → edit → run → verify* workflow, with no self-reported passing results. Code and harness: https://github.com/Roblox/open-game-eval ; paper: https://arxiv.org/abs/2610.02563
+- **Roblox native Studio MCP (March 5, 2026), playtest agent beta (April 9), and agentic workflows (April 15):** use supported Studio inspection, editing and playtesting rather than speculative UI automation. Keep real Studio beta availability and permissions distinct from local mocked tests. Sources: https://devforum.roblox.com/t/assistant-updates-studio-built-in-mcp-server-and-playtest-automation/4474643 ; https://devforum.roblox.com/t/studio-beta-studio-assistant-mcp-playtest-agent/4566767 ; https://about.roblox.com/en-nz/newsroom/2026/04/roblox-studio-going-agentic
+- **llama.cpp SPEED-Bench:** compare reproducible prompt/decode throughput, request latency and speculative decoding draft acceptance using identical prompt sets and server settings. It measures inference characteristics, not game skill. Source: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/bench/speed-bench/README.md
+- **Kyutai Pocket TTS (October 2026 small English models):** CPU-oriented speech (18M, 7M, 2M and original ~100M parameter choices) could preserve GPU room, but quality, pronunciation, laughter, intonation, cloning consent and streaming first-audio delay require local blind evaluation. Official documentation: https://kyutai-labs.github.io/pocket-tts/
+
+## 4. Build Star's genuine game intelligence, not performative "learning"
+**Training observations:** host-attested game state + action proposal + independently verified key release + signed downstream event. Never label a key press as a win. Missing/malformed latest evidence requires review. Preserve action/game/version/situation separation and keep signed practice results away from sealed holdouts.
+
+**Practice curriculum:** host-curated game environments; make difficulty adaptive to conservative fresh outcomes, prevent easy-map overfitting, require distinct time-bucket recovery after failures, and prioritize debugging under repeated no-success. Conduct *precommitted* counterbalanced baseline/candidate evaluations on unseen levels after practice. Include navigation, camera control, timing, combat, co-op, UI menus, puzzles, and recovery from mistakes; report independent success rates by mechanic and game.
+
+**Game creation:** import a Studio project read-only; inspect objects/scripts; propose a minimal diff; run Luau checks and synthetic tests; execute an authorized Studio playtest and visual/media review; compare to preregistered acceptance criteria; only then retain a lesson. Include visual render checks, collision/path behavior, performance, audio and multiplayer synchronization.
+
+**General knowledge:** each factual answer gets retrieval source, publication/event time, claim-to-source mapping, contradiction search, confidence/abstention policy and provenance-expiration. Retrieval latency and error rate both matter. Separate "I saw this in gameplay" from "I inferred this" from "a viewer said this."
+
+## 5. Humanlike but truthful VTuber behavior
+Make Star **recognizable and entertaining**, not secretly human: continuity of preferences and experiences, context-aware humor, spontaneous but *rare* commentary, balanced viewer attention, excitement after *verified* wins, reaction to genuine mistakes, and clear notice that Star is an AI VTuber. Distinguish actual memories of completed games from invented lore. Never invent relationships, victories, or emotions as real experiences. Avoid imitating private individuals or using unconsented voices.
+
+**Speech path acceptance tests:** independently recorded first-audio p50/p95, mouth-to-audio lag p95, interruption stop latency, context-to-utterance relevance, false win claims, voice quality judged blind, viewer question freshness, overtalk frequency and time deliberately silent. Use synchronized OBS file playback plus trusted game event traces, not "TTS sent" as an audible proof. Gate private recording, avoid accidental live broadcasting, and ensure moderation/fair viewer handling. Allow avatar gestures to be cancelled on interruptions. Observed reactions should be short when gameplay is demanding.
+
+## 6. Next measured experiments and acceptance
+1. **Stop compiling more draft research without integration:** audit stacked draft PR dependencies and CI, resolve review failures, and integrate an end-to-end private Windows path. Keep feature switches disabled unless the owner opts into each needed capability.
+2. **Baseline:** on the intended gaming machine, record a private 15-minute gameplay + Star TTS + avatar + OBS session with frame time, GPU memory, speech backlog, actual decoded output, reaction timing and independent event truth. Protect private chat/voice.
+3. **AB tests:** compare current TTS and CPU Pocket TTS on the *same* short lines, and plain vs speculative llama.cpp on identical prompts and model quality checks. Repeat randomized paired windows; predeclare pass/fail thresholds; preserve machine/game/stream state across pairs.
+4. **Gameplay:** preregister 20+ unseen challenges, log verified outcomes, compare policy versions with counterbalanced order, and demand positive held-out improvement without regression. Inspect-before-edit on Roblox Studio tasks; score scene and actual playtest.
+5. **Release:** use the existing signature/evidence, rollback and privacy infrastructure; require at least one successful real recording review. Do not promote based on confidence strings, operator hearsay, synthetic pass counts or isolated tokens/sec.
+
+### What this commit proves, and what it does not
+**Proves (offline):** missing signed latest-outcome evidence no longer unlocks the practice curriculum; deterministic adversarial tests cover that regression.  
+**Does not prove:** model IQ improvement, accelerated token generation, autonomous game-winning ability, streaming FPS or natural audible conversation. Those require the host/game/OBS/voice measurements above.
+
+**Operational note:** feature work is in a stacked draft PR to minimize risk to main; merging still requires dependency reviews and CI. GitHub is the publication/review mirror, not a substitute for Star's offline-first internal experiment ledger.
