@@ -16,7 +16,9 @@ class PracticeAggregate:
     trials: int
     successes: int
     most_recent_unix_s: int = NOW - 30
-    most_recent_success: bool | None = None
+    # Fixtures default to a signed, affirmative latest outcome.
+    # Explicit None represents legacy producers missing that evidence.
+    most_recent_success: bool | None = True
 
 
 class EvidenceBank:
@@ -310,3 +312,60 @@ def test_latest_practice_outcome_must_be_strict_boolean_when_present():
             "jump", 21, 20, NOW, invalid),)})
         with pytest.raises(ValueError):
             plan(bank, target("easy"))
+
+
+@pytest.mark.parametrize("newest", [None, False])
+def test_legacy_or_failed_latest_outcome_cannot_unlock_advanced_practice(newest):
+    bank = EvidenceBank({"easy": (PracticeAggregate(
+        "jump", 20, 19, NOW, newest),)})
+    advice = plan(bank, target("easy"), target("boss", difficulty=5))
+    assert advice.status == ("review_required" if newest is None else "rehearse")
+    assert advice.target.situation_id == "easy"
+    if newest is None:
+        assert advice.reason == "latest_signed_practice_outcome_missing"
+    assert not advice.authorized_to_play
+
+
+def test_legacy_aggregate_cannot_mark_practice_complete_or_schedule_review():
+    bank = EvidenceBank({"easy": (PracticeAggregate(
+        "jump", 20, 20, NOW - 2 * 86400, None),)})
+    complete = plan(bank, target("easy"))
+    assert complete.status == "review_required" and complete.target.situation_id == "easy"
+    assert complete.reason == "latest_signed_practice_outcome_missing"
+    with_review = plan(bank, target("easy"), spaced_review_after_s=86400)
+    assert with_review.status == "review_required"
+    assert with_review.reason == "latest_signed_practice_outcome_missing"
+    assert not with_review.heldout_evaluated
+
+
+def test_all_successes_without_latest_verification_remain_unmastered():
+    bank = EvidenceBank({"easy": (PracticeAggregate(
+        "jump", 10, 10, NOW, None),)})
+    unverified = plan(bank, target("easy"), target("boss", difficulty=5))
+    assert unverified.status == "review_required" and unverified.target.situation_id == "easy"
+    bank.data["easy"] = (PracticeAggregate("jump", 10, 10, NOW, True),)
+    assert plan(bank, target("easy"), target("boss", difficulty=5)).target.situation_id == "boss"
+
+
+
+def test_truly_legacy_adapter_without_latest_outcome_field_requests_host_migration():
+    @dataclass(frozen=True)
+    class OldAggregate:
+        action_id: str
+        trials: int
+        successes: int
+        most_recent_unix_s: int
+
+    bank = EvidenceBank({"easy": (OldAggregate("jump", 20, 20, NOW),)})
+    advice = plan(bank, target("easy"), target("boss", difficulty=5))
+    assert advice.status == "review_required"
+    assert advice.reason == "latest_signed_practice_outcome_missing"
+    assert advice.target.situation_id == "easy"
+
+
+def test_unknown_latest_outcome_with_weak_evidence_stays_in_practice():
+    bank = EvidenceBank({"easy": (PracticeAggregate(
+        "jump", 6, 6, NOW, None),)})
+    advice = plan(bank, target("easy"), target("boss", difficulty=5))
+    assert advice.status == "rehearse" and advice.target.situation_id == "easy"
+    assert advice.reason == "lowest_unmastered_difficulty"

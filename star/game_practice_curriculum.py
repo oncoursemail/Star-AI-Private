@@ -162,20 +162,21 @@ def recommend_practice(
             by_action[action] = item
         scopes[situation] = by_action
 
-    pending: list[tuple[PracticeTarget, int, int, float, int, bool]] = []
+    # final flags: evidence-expired, sufficient-but-missing-latest-proof
+    pending: list[tuple[PracticeTarget, int, int, float, int, bool, bool]] = []
     due_reviews: list[tuple[PracticeTarget, int, int, float, int]] = []
     for target in targets:
         item = scopes[target.situation_id].get(target.action_id)
         attempts = item.trials if item is not None else 0
         successes = item.successes if item is not None else 0
         recent = item.most_recent_unix_s if item is not None else 0
-        # New signed ledger versions expose the most recent PRACTICE result
-        # (not validation). Older aggregate adapters may omit it; do not
-        # infer a success when the field is absent.
+        # The independently signed ledger supplies an explicit latest PRACTICE
+        # outcome. Legacy adapters may omit this field. Missing evidence must
+        # never count as affirmative skill mastery or a retention-review grant:
+        # a historical aggregate can hide a more recent failure.
         newest = getattr(item, "most_recent_success", None) if item is not None else None
         if newest is not None and type(newest) is not bool:
             raise ValueError("invalid last signed-practice outcome")
-        last_failed = newest is False
         lower = _lower_bound(successes, attempts)
         # A signed aggregate outside the requested recent practice window cannot establish that
         # a skill was retained. We cannot infer recent win rate from a single
@@ -183,9 +184,13 @@ def recommend_practice(
         # silently unlocking higher stages or reusing old successes.
         stale = item is not None and now - recent > max_evidence_age_s
         mastered = (attempts >= min_trials and lower >= minimum_lower_bound
-                    and not stale and not last_failed)
+                    and not stale and newest is True)
         if not mastered:
-            pending.append((target, attempts, successes, lower, recent, stale))
+            pending.append((
+                target, attempts, successes, lower, recent, stale,
+                attempts >= min_trials and lower >= minimum_lower_bound
+                and newest is None,
+            ))
         elif (spaced_review_after_s is not None and recent > 0
               and now - recent >= spaced_review_after_s):
             # Verified, still-recent PRACTICE evidence schedules a retention
@@ -204,12 +209,25 @@ def recommend_practice(
     # fresh event to a lifetime count is not sufficient evidence of retention.
     expired = [item for item in candidates if item[5]]
     if expired:
-        target, attempts, successes, lower, _, _ = min(
+        target, attempts, successes, lower, _, _, _ = min(
             expired, key=lambda item: (item[0].situation_id, item[0].action_id)
         )
         return PracticeAdvice("review_required", target,
                               "practice_evidence_stale_requires_fresh_assessment",
                               attempts, successes, round(lower, 4))
+    # Strong historical aggregates without a signed latest outcome are
+    # not a skill-learning problem: repeated practice with a legacy adapter
+    # cannot make that missing field appear. Ask for host-side evidence
+    # migration rather than wasting attempts or unlocking harder levels.
+    missing_latest = [item for item in candidates if item[6]]
+    if missing_latest:
+        target, attempts, successes, lower, _, _, _ = min(
+            missing_latest, key=lambda item: (item[0].situation_id, item[0].action_id)
+        )
+        return PracticeAdvice(
+            "review_required", target, "latest_signed_practice_outcome_missing",
+            attempts, successes, round(lower, 4),
+        )
     # A *due*, still-mastered easier skill needs spaced retrieval before
     # moving on to a new harder tier; an unmastered current-tier skill wins
     # ties. Pick the oldest witnessed skill to avoid favoring easy repetition.
@@ -229,13 +247,13 @@ def recommend_practice(
     # Stop infinite ineffective self-play after a bounded failure budget.
     stalled = [item for item in candidates if item[1] >= max_trials_before_review]
     if stalled:
-        target, attempts, successes, lower, _, _ = min(
+        target, attempts, successes, lower, _, _, _ = min(
             stalled, key=lambda item: (item[0].situation_id, item[0].action_id)
         )
         return PracticeAdvice("review_required", target, "practice_stalled_needs_host_review",
                               attempts, successes, round(lower, 4))
     # Cover neglected scenarios before repeatedly grinding a familiar one.
-    target, attempts, successes, lower, _, _ = min(
+    target, attempts, successes, lower, _, _, _ = min(
         candidates,
         key=lambda item: (item[1], item[3], item[4],
                           item[0].situation_id, item[0].action_id),
