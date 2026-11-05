@@ -97,6 +97,53 @@ class VerifiedRouteTrialSummary:
 
 
 @dataclass(frozen=True)
+class VerifiedPairedRouteCases:
+    """Matched per-case correctness receipts from a trusted host evaluator.
+
+    A suite digest alone cannot show *which* items failed. Both models must
+    run the exact same preregistered ordered cases and rubric. Outcomes
+    contain only binary verdicts; never prompts, viewer data or secrets.
+    Critical case flags are fixed by the evaluator *before* running models.
+    These values are host assertions, not cryptographic authentication.
+    """
+    baseline_alias: str
+    candidate_alias: str
+    baseline_profile: str
+    candidate_profile: str
+    task_kind: str
+    workload: str
+    suite_sha256: str
+    baseline_outcomes: tuple[bool, ...]
+    candidate_outcomes: tuple[bool, ...]
+    critical_cases: tuple[bool, ...]
+    measured_unix_s: int
+    host_verified: bool
+
+    def __post_init__(self) -> None:
+        for field in ("baseline_alias", "candidate_alias", "baseline_profile",
+                      "candidate_profile", "task_kind"):
+            _id(getattr(self, field), field)
+        if self.baseline_alias == self.candidate_alias:
+            raise ValueError("paired outcomes require two distinct routes")
+        if type(self.workload) is not str or self.workload not in _WORKLOADS:
+            raise ValueError("unknown matched workload")
+        if type(self.suite_sha256) is not str or not _SHA.fullmatch(self.suite_sha256):
+            raise ValueError("invalid matched suite SHA256")
+        n = len(self.baseline_outcomes) if type(self.baseline_outcomes) is tuple else 0
+        if not 1 <= n <= 2000:
+            raise ValueError("bounded immutable paired outcomes required")
+        for name in ("baseline_outcomes", "candidate_outcomes", "critical_cases"):
+            values = getattr(self, name)
+            if (type(values) is not tuple or len(values) != n
+                    or any(type(value) is not bool for value in values)):
+                raise ValueError(f"{name} must contain exact per-case booleans")
+        if type(self.measured_unix_s) is not int or not 1 <= self.measured_unix_s <= 10**11:
+            raise ValueError("paired observation time must be bounded")
+        if type(self.host_verified) is not bool:
+            raise ValueError("host_verified must be a strict boolean")
+
+
+@dataclass(frozen=True)
 class QualityRouteAdvice:
     """No authority to dispatch, play, broadcast or publish."""
     route_alias: str | None
@@ -119,6 +166,7 @@ class QualityGatedRouteSelector:
 
     def __init__(self, *, catalog: HostInferenceCatalog,
                  summaries: tuple[VerifiedRouteTrialSummary, ...],
+                 paired_cases: tuple[VerifiedPairedRouteCases, ...] = (),
                  minimum_trials: int = 30,
                  minimum_quality_lower_95: float = 0.78,
                  minimum_gain_ms: float = 30.0,
@@ -150,8 +198,28 @@ class QualityGatedRouteSelector:
             if key in entries:
                 raise ValueError("duplicate calibration cannot be cherry-picked")
             entries[key] = item
+        if type(paired_cases) is not tuple:
+            raise ValueError("paired receipts must be an immutable tuple")
+        proofs: dict[tuple[str, str, str, str, str], VerifiedPairedRouteCases] = {}
+        for proof in paired_cases:
+            if not isinstance(proof, VerifiedPairedRouteCases):
+                raise TypeError("expected a verified paired-case receipt")
+            for alias, profile in ((proof.baseline_alias, proof.baseline_profile),
+                                   (proof.candidate_alias, proof.candidate_profile)):
+                try:
+                    actual = catalog.route_for(alias)
+                except KeyError as exc:
+                    raise ValueError("paired receipt names an unknown host route") from exc
+                if actual.route_profile != profile or actual.kind != proof.task_kind:
+                    raise ValueError("paired receipt model profile or task kind mismatch")
+            key = (proof.baseline_alias, proof.candidate_alias, proof.task_kind,
+                   proof.workload, proof.suite_sha256)
+            if key in proofs:
+                raise ValueError("duplicate paired receipts cannot be cherry-picked")
+            proofs[key] = proof
         self._catalog = catalog
         self._entries = entries
+        self._pairs = proofs
         self._trials = minimum_trials
         self._quality = quality
         self._gain = gain
@@ -208,6 +276,26 @@ class QualityGatedRouteSelector:
                     or item.p95_end_to_end_ms > max_latency
                     or item.total_gpu_peak_mib > max_gpu):
                 continue
+            if item.route_alias != baseline_alias:
+                # Aggregate success counts can hide a regression on a *known*
+                # case while the fast worker compensates on a different case.
+                # Never promote on summaries alone: demand a matched receipt.
+                proof = self._pairs.get((
+                    baseline_alias, item.route_alias, task_kind, workload,
+                    suite_sha256,
+                ))
+                if (proof is None or not proof.host_verified
+                        or not 0 <= now_unix_s - proof.measured_unix_s <= self._max_age
+                        or len(proof.baseline_outcomes) != baseline.trials
+                        or sum(proof.baseline_outcomes) != baseline.verified_successes
+                        or sum(proof.candidate_outcomes) != item.verified_successes
+                        or any(b and not c for b, c in zip(
+                            proof.baseline_outcomes, proof.candidate_outcomes
+                        ))
+                        or any(critical and not passed for critical, passed in zip(
+                            proof.critical_cases, proof.candidate_outcomes
+                        ))):
+                    continue
             # The immutable manifest defines reserved resources and task kind;
             # a fast benchmark cannot override actual worker configuration.
             route = self._catalog.route_for(item.route_alias)
@@ -237,5 +325,6 @@ class QualityGatedRouteSelector:
 
 
 __all__ = [
-    "VerifiedRouteTrialSummary", "QualityRouteAdvice", "QualityGatedRouteSelector"
+    "VerifiedRouteTrialSummary", "VerifiedPairedRouteCases",
+    "QualityRouteAdvice", "QualityGatedRouteSelector"
 ]

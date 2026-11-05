@@ -195,6 +195,7 @@ def test_quality_pilot_reaches_live_qos_only_after_verified_host_admission():
     """Only exact host-catalog, approved quality evidence may choose a worker."""
     from star.stream_quality_route_selector import (
         QualityGatedRouteSelector,
+        VerifiedPairedRouteCases,
         VerifiedRouteTrialSummary,
     )
 
@@ -212,7 +213,13 @@ def test_quality_pilot_reaches_live_qos_only_after_verified_host_admission():
 
     select = QualityGatedRouteSelector(
         catalog=c, summaries=(evidence("baseline", 400),
-                              evidence("candidate", 160))
+                              evidence("candidate", 160)),
+        paired_cases=(VerifiedPairedRouteCases(
+            "baseline", "candidate", c.profile_for("baseline"),
+            c.profile_for("candidate"), "speech", "game_recording",
+            suite, (True,) * 30, (True,) * 30, (False,) * 30,
+            1_800_000_000, True,
+        ),),
     )
     g, s, qos = host_with_catalog(c)
     common = dict(selector=select, baseline_alias="baseline",
