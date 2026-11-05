@@ -211,6 +211,11 @@ a.p-name:hover { text-decoration: underline; text-decoration-color: rgba(var(--a
 /* ---- page heads (downloads, news, 404) ---- */
 .page-head { padding: clamp(56px, 8vw, 104px) 0 clamp(32px, 4vw, 48px); border-bottom: 1px solid var(--line);
   background: radial-gradient(80% 120% at 85% -20%, rgba(var(--acc-rgb), .1), rgba(var(--acc-rgb), 0) 60%); }
+.cl-list { max-width: 46em; display: grid; gap: 40px; }
+.cl-item h2 { font-size: clamp(22px, 2.4vw, 28px); margin: 0; }
+.cl-item time { display: block; margin: 4px 0 12px; color: var(--ink3); font-size: 14px; }
+.cl-item ul { margin: 0; padding-left: 20px; color: var(--ink2); line-height: 1.6; }
+.cl-item li + li { margin-top: 6px; }
 .page-head h1 { font-size: clamp(38px, 5vw, 64px); line-height: 1.04; margin: 0 0 18px; }
 .page-head .eyebrow { margin-bottom: 20px; }
 .lost { min-height: 52vh; }

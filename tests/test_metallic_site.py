@@ -13,7 +13,7 @@ REPO = Path(__file__).resolve().parents[1]
 SITE = REPO / "metallic-site"
 SERVER = REPO / "server" / "metallic-site"
 SITE_URL = "https://metallic.example"
-PAGES = ["404.html", "downloads/index.html", "index.html", "news/index.html"]
+PAGES = ["404.html", "changelog/index.html", "downloads/index.html", "index.html", "news/index.html"]
 DISCORD = "https://discord.gg/yMytc2uAmj"  # Metallic's own Discord server: the one outside link a page may carry
 
 
@@ -319,7 +319,7 @@ def test_sample_live_data_is_copied_only_when_asked(built, tmp_path):
 def test_cli_build_works(tmp_path, capsys):
     mod = load_build()
     assert mod.main(["--out", str(tmp_path / "d"), "--site-url", "https://metallic.club"]) == 0
-    assert "built 4 pages" in capsys.readouterr().out
+    assert "built 5 pages" in capsys.readouterr().out
     assert '<link rel="canonical" href="https://metallic.club/">' in (tmp_path / "d/index.html").read_text(encoding="utf-8")
 
 

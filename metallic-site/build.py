@@ -22,7 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SRC = HERE / "src"
 FRONT = re.compile(r"<!--\s*(\w+):\s*(.*?)\s*-->")
-NAV = ("home", "downloads", "news")
+NAV = ("home", "downloads", "changelog", "news")
 LIVE_FILES = ("revivals.json", "news.json", "projects.json", "metallic.json", "downloads.json")
 RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip", ".appimage", ".deb", ".apk")  # compared lower-case
 RELEASE_MANIFESTS = ("latest.json", "quest.json")  # desktop updater manifest; the Meta Quest APK {"version","url","notes"}
