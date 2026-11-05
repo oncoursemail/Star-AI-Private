@@ -369,3 +369,100 @@ def test_stale_frame_and_clock_rollback_cannot_restore_expired_paths() -> None:
         tiles=(tile(0, 0), tile(1, 0), tile(2, 0)),
     ), now_ms=1102, host_verified=True)
     assert nav.advise(now_ms=999).reason == "host_clock_reversed"
+
+def test_stalled_advice_requires_witnessed_position_change() -> None:
+    # An advice is not a key dispatch receipt. This opt-in guard only limits
+    # repetitious advice when newer, verified frames still report no movement.
+    nav = GroundedNavigationMemory(
+        max_stalled_captures=2, single_move_per_capture=True,
+    )
+    nav.start(game_id="maze", game_version="v1", episode_id="round1",
+              owner_approved=True)
+    path = (tile(0, 0), tile(1, 0), tile(2, 0))
+    for seq in (1, 2):
+        assert nav.ingest(observation(seq=seq, tiles=path),
+                          now_ms=1000 + seq * 10, host_verified=True)
+        answer = nav.advise(now_ms=1000 + seq * 10 + 1)
+        assert answer.status == "move" and answer.action_id == "right"
+    assert nav.ingest(observation(seq=3, tiles=path),
+                      now_ms=1030, host_verified=True)
+    suspended = nav.advise(now_ms=1031)
+    assert suspended.status == "await_observation"
+    assert suspended.reason == "no_witnessed_position_progress"
+    assert not suspended.authorizes_input
+    assert nav.metrics()["static_captures"] == 2
+    assert nav.metrics()["stalled_move_suppressed"] == 1
+    # A new frame of the same position does not erase a stall.
+    assert nav.ingest(observation(seq=4, tiles=path),
+                      now_ms=1040, host_verified=True)
+    assert nav.advise(now_ms=1041).reason == "no_witnessed_position_progress"
+    # Independent, newer positional evidence clears the conservative guard.
+    assert nav.ingest(observation(seq=5, player=pos(1, 0),
+                                  tiles=(tile(1, 0), tile(2, 0))),
+                      now_ms=1050, host_verified=True)
+    assert nav.metrics()["static_captures"] == 0
+    assert nav.advise(now_ms=1051).action_id == "right"
+    assert nav.ingest(observation(seq=6, player=pos(2, 0),
+                                  tiles=(tile(2, 0),)),
+                      now_ms=1060, host_verified=True)
+    assert nav.advise(now_ms=1061).status == "arrived"
+
+
+def test_stall_counter_requires_prior_move_hint_and_trusted_new_frame() -> None:
+    nav = GroundedNavigationMemory(max_stalled_captures=1)
+    nav.start(game_id="maze", game_version="v1", episode_id="round1",
+              owner_approved=True)
+    static = (tile(0, 0),)
+    assert nav.ingest(observation(tiles=static),
+                      now_ms=1010, host_verified=True)
+    assert nav.advise(now_ms=1011).status == "observe"
+    assert nav.ingest(observation(seq=2, tiles=static),
+                      now_ms=1020, host_verified=True)
+    assert nav.metrics()["static_captures"] == 0
+    assert not nav.ingest(observation(seq=3, tiles=static),
+                          now_ms=1030, host_verified=False)
+    assert nav.metrics()["static_captures"] == 0
+    assert nav.advise(now_ms=1021).status == "observe"
+
+
+def test_stall_options_default_off_strict_and_episode_reset() -> None:
+    for wrong in (0, 33, True, 2.0, float("inf"), "2"):
+        with pytest.raises(ValueError):
+            GroundedNavigationMemory(max_stalled_captures=wrong)
+    # Existing behavior remains unchanged unless the guard is enabled.
+    legacy = enabled()
+    path = (tile(0, 0), tile(1, 0), tile(2, 0))
+    for seq in range(1, 5):
+        assert legacy.ingest(observation(seq=seq, tiles=path),
+                             now_ms=1000 + seq * 10, host_verified=True)
+        assert legacy.advise(now_ms=1000 + seq * 10 + 1).status == "move"
+    nav = GroundedNavigationMemory(max_stalled_captures=1)
+    nav.start(game_id="maze", game_version="v1", episode_id="round1",
+              owner_approved=True)
+    assert nav.ingest(observation(tiles=path), now_ms=1010,
+                      host_verified=True)
+    assert nav.advise(now_ms=1011).status == "move"
+    assert nav.ingest(observation(seq=2, tiles=path), now_ms=1020,
+                      host_verified=True)
+    assert nav.advise(now_ms=1021).reason == "no_witnessed_position_progress"
+    nav.stop()
+    nav.start(game_id="maze", game_version="v1", episode_id="round2",
+              owner_approved=True)
+    assert nav.metrics()["static_captures"] == 0
+    assert nav.ingest(observation(seq=1, episode_id="round2", tiles=path),
+                      now_ms=1010, host_verified=True)
+    assert nav.advise(now_ms=1011).status == "move"
+
+
+def test_advice_clock_cannot_resurrect_expired_capture_or_rewind_ingest() -> None:
+    nav = enabled()
+    assert nav.ingest(observation(), now_ms=1010, host_verified=True)
+    assert nav.advise(now_ms=2000).reason == "observation_expired"
+    assert nav.advise(now_ms=1011).reason == "host_clock_reversed"
+    assert not nav.ingest(observation(seq=2), now_ms=1020,
+                          host_verified=True)
+    # Only a genuinely fresh capture on the same forward host timeline can
+    # restore the ability to advise.
+    assert nav.ingest(observation(seq=3, captured_ms=1990), now_ms=2000,
+                      host_verified=True)
+    assert nav.advise(now_ms=2001).status == "observe"
