@@ -182,6 +182,9 @@ class StreamDirector:
         self._recent: dict[str, float] = {}
         self._last_speech_at = float("-inf")
         self._proactive_spoken_at: deque[float] = deque(maxlen=12)
+        # The 60s spoken quota cannot survive a host clock rollback safely.
+        # Only enforce this when the optional speech cadence is enabled.
+        self._proactive_clock_highwater = float("-inf")
         self._viewer_last_spoken: dict[str, float] = {}
         self._game_reactions: dict[str, tuple[float, str]] = {}
         self._counters = {"accepted": 0, "rejected": 0, "expired": 0,
@@ -191,7 +194,8 @@ class StreamDirector:
                           "dedupe_capacity_rejected": 0,
                           "scene_transitions": 0, "scene_dropped": 0,
                           "off_scope_rejected": 0,
-                          "proactive_budget_suppressed": 0}
+                          "proactive_budget_suppressed": 0,
+                          "proactive_clock_rollback_rejected": 0}
 
     def enable(self, *, owner_approved: bool = False) -> None:
         with self._lock:
@@ -213,6 +217,7 @@ class StreamDirector:
             self._viewer_last_spoken.clear()
             self._game_reactions.clear()
             self._proactive_spoken_at.clear()
+            self._proactive_clock_highwater = float("-inf")
             self._active_game_scope = None
             self._last_speech_at = float("-inf")
 
@@ -275,6 +280,21 @@ class StreamDirector:
             priority = 48.0
         return priority
 
+    def _admit_clock(self, now: float) -> bool:
+        """Reject reversed host observation time before mutating paced state.
+
+        The host must pass one monotonic timebase for offers, proposals and
+        playback acknowledgements. A reversed value cannot safely revive an
+        expired quota or supersede a legitimate in-flight speech receipt.
+        Legacy pacing (limit=0) intentionally keeps its old time semantics.
+        """
+        if self.proactive_limit_per_minute:
+            if now < self._proactive_clock_highwater:
+                self._counters["proactive_clock_rollback_rejected"] += 1
+                return False
+            self._proactive_clock_highwater = now
+        return True
+
     def _expire(self, now: float) -> None:
         # A single writer lock protects both narration admission and the
         # audible-ack window; failed drafts and proposals never spend tokens.
@@ -328,6 +348,14 @@ class StreamDirector:
             now = _clock(now)
             if not isinstance(event, StreamSignal):
                 raise TypeError("event must be a StreamSignal")
+            # Intake before the FIRST arbitration can be batch-ordered and
+            # replayed in tests; it has not yet spent or reserved speech.
+            # Once pacing has begun, advancing time here may expire its quota,
+            # so the host must not subsequently rewind this shared clock.
+            if (self._proactive_clock_highwater != float("-inf")
+                    and not self._admit_clock(now)):
+                self._counters["rejected"] += 1
+                return False
             self._expire(now)
             ttl = _KINDS[event.kind][1]
             if not self.enabled or event.timestamp > now + 0.5 or now - event.timestamp > ttl:
@@ -419,6 +447,8 @@ class StreamDirector:
                 raise TypeError("load_advice must be an explicit StreamLoadAdvice")
             if not self.enabled:
                 return None
+            if not self._admit_clock(now):
+                return None
             self._expire(now)
             if viewer_speaking:
                 return None
@@ -505,6 +535,8 @@ class StreamDirector:
             if (not self.enabled or intent.session_epoch != self._session_epoch
                     or intent.event_serial != self._event_serials.get(intent.signal_id)
                     or self._issued_intents.get(intent.event_serial) is not intent):
+                return False
+            if not self._admit_clock(now):
                 return False
             self._expire(now)
             # Defensive final receipt check. In a valid session an issued plan
