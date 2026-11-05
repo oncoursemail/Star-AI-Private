@@ -25,7 +25,7 @@ _RISK_BLOCK = 7500
 
 
 def _clock(value: object) -> float:
-    if type(value) not in (int, float):
+    if not isinstance(value, (int, float)) or type(value) not in (int, float):
         raise ValueError("host clock must be numeric")
     try:
         number = float(value)
