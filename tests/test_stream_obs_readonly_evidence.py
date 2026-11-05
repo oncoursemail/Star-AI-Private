@@ -441,7 +441,9 @@ class PrivateRecordingWitnessTests(unittest.TestCase):
         override_body(samples, "GetRecordStatus", outputPaused=False,
                       outputDuration=700, outputBytes=4096)
         self.accept(gate, samples=samples, ids=ids)
-        self.assertTrue(gate.report()["recording_progress_verified_only_at_sample_times"])
+        # This window already included a stalled write interval. Later
+        # progress cannot retroactively certify every interval as healthy.
+        self.assertFalse(gate.report()["recording_progress_verified_only_at_sample_times"])
         self.assertNotIn("4096", json.dumps(gate.report()))
 
 if __name__ == "__main__":

@@ -129,6 +129,10 @@ class ObsReadOnlyEvidenceGate:
         self._require_recording_progress = require_recording_progress
         self._recording_last: tuple[int, int] | None = None
         self._recording_bytes_advanced = False
+        # Strict progress is an EVERY-interval claim, not an "ever advanced"
+        # claim. OBS may buffer output; conservative false negatives are
+        # acceptable because this optional mode only advises rehearsal QA.
+        self._recording_bytes_all_intervals_advanced = True
         self._recording_duration_advanced = False
         self._span = span
         self._gap = gap
@@ -252,6 +256,8 @@ class ObsReadOnlyEvidenceGate:
             self._recording_last = recording_progress
             self._recording_duration_advanced |= duration_advanced
             self._recording_bytes_advanced |= bytes_advanced
+            if recording_progress is not None and previous is not None:
+                self._recording_bytes_all_intervals_advanced &= bytes_advanced
             self._seen_ids.update(ids)
             self._count += 1
             self._render_skipped_delta += drs
@@ -281,6 +287,7 @@ class ObsReadOnlyEvidenceGate:
                     self._require_recording_progress and self._count >= 2
                     and self._recording_duration_advanced
                     and self._recording_bytes_advanced
+                    and self._recording_bytes_all_intervals_advanced
                 ),
                 "note": "read-only snapshots; not continuous capture proof, audio proof, game FPS or broadcast authorization",
             }
