@@ -20,6 +20,7 @@ import base64
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 import json
+import math
 import os
 import secrets
 import time
@@ -29,6 +30,9 @@ from .stream_obs_readonly_evidence import ObsReadOnlyEvidenceGate, ObsReadOnlyWi
 
 _READS = ("GetStats", "GetStreamStatus", "GetRecordStatus")
 _MAX_WIRE_BYTES = 64 * 1024
+# Same maximum triplet evidence span as ObsReadOnlyEvidenceGate's default.
+# A serial batch is only ONE wire reply, not proof of simultaneous reads.
+_MAX_BATCH_EVIDENCE_SPAN_MS = 750.0
 
 
 class _WebSocket(Protocol):
@@ -59,6 +63,20 @@ def _packet(raw: object, op: int) -> dict[str, object]:
     if type(data) is not dict:
         raise ValueError("invalid OBS operation body")
     return cast(dict[str, object], data)
+
+
+def _monotonic_ms(clock: Callable[[], float]) -> float:
+    """Fail closed on malformed or reversed trusted host clock readings."""
+    raw = clock()
+    if type(raw) not in (int, float):
+        raise ValueError("invalid OBS receipt clock")
+    try:
+        now = float(raw) * 1000.0
+    except (ValueError, OverflowError) as exc:
+        raise ValueError("invalid OBS receipt clock") from exc
+    if not math.isfinite(now) or not 0 <= now <= 1e13:
+        raise ValueError("invalid OBS receipt clock")
+    return now
 
 
 def _write(sock: _WebSocket, op: int, data: dict[str, object]) -> None:
@@ -173,6 +191,7 @@ def observe_local_obs(
                     raise ValueError("invalid OBS batch identity")
                 # v5 OpCode 8: SerialRealtime does not stall OBS's render thread.
                 # NEVER let a model provide this list or an arbitrary requestData.
+                batch_started_ms = _monotonic_ms(clock)
                 _write(socket, 8, {
                     "requestId": batch_id, "haltOnFailure": True,
                     "executionType": 0,
@@ -186,10 +205,15 @@ def observe_local_obs(
                 if (batch.get("requestId") != batch_id
                         or type(results) is not list or len(results) != len(_READS)):
                     raise ValueError("OBS batch identity or response count mismatch")
-                # One receipt time covers all serially executed responses.
-                # A partial, reordered, duplicated or failed batch cannot pass
-                # the same signed-correlator and active-stream safety gate.
-                received_at = float(clock()) * 1000
+                # A batch executes three reads sequentially inside OBS.
+                # The one-reply timestamp alone hides a slow batch and can
+                # combine stale render stats with a newer stream/record state.
+                # Bound the entire exchange to the same evidence span used
+                # by the unbatched triple, including the wire round trip.
+                received_at = _monotonic_ms(clock)
+                if (received_at < batch_started_ms or
+                        received_at - batch_started_ms > _MAX_BATCH_EVIDENCE_SPAN_MS):
+                    raise ValueError("OBS batch status evidence is stale")
                 for kind, result in zip(_READS, results):
                     if (type(result) is not dict or result.get("requestType") != kind
                             or result.get("requestId") != expected[kind]):
@@ -202,7 +226,7 @@ def observe_local_obs(
                     _write(socket, 6, {"requestType": kind, "requestId": expected[kind]})
                     reply = _packet(socket.recv(), 7)
                     witnessed[kind] = ObsReadOnlyWitness(
-                        at_monotonic_ms=float(clock()) * 1000,
+                        at_monotonic_ms=_monotonic_ms(clock),
                         message={"op": 7, "d": reply},
                     )
             gate.accept(witnesses=witnessed, expected_request_ids=expected, host_verified=True)

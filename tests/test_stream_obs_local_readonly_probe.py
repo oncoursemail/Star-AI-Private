@@ -15,12 +15,13 @@ class FakeObs:
     def __init__(self, *, stream_active=False, record_active=False,
                  authenticated=True, mismatch=False, wrong_op=False, rpc=1,
                  record_paused=False, recording_bytes=True,
-                 recording_duration=True):
+                 recording_duration=True, recording_byte_stall_at=None):
         self.stream_active = stream_active
         self.record_active = record_active
         self.record_paused = record_paused
         self.recording_bytes = recording_bytes
         self.recording_duration = recording_duration
+        self.recording_byte_stall_at = recording_byte_stall_at
         self.record_reads = 0
         self.authenticated = authenticated
         self.mismatch = mismatch
@@ -52,7 +53,11 @@ class FakeObs:
                 self.record_reads += 1
                 body = {"outputActive": self.record_active, "outputPaused": self.record_paused,
                         "outputDuration": (self.record_reads * 300 if self.recording_duration else 0),
-                        "outputBytes": (self.record_reads * 2048 if self.recording_bytes else 0)}
+                        "outputBytes": (
+                            min(self.record_reads, self.recording_byte_stall_at) * 2048
+                            if self.recording_byte_stall_at is not None
+                            else self.record_reads * 2048 if self.recording_bytes else 0
+                        )}
             else:
                 raise AssertionError("unapproved OBS request")
             reply = {"op": 7, "d": {
@@ -330,6 +335,17 @@ class TestLocalObsProbe(unittest.TestCase):
         self.assertFalse(result.recording_progress_verified)
         self.assertTrue(self.sock.closed)
 
+    def test_strict_progress_rejects_last_interval_byte_stall(self):
+        # First interval advances; the final sample stalls. An "ever advanced"
+        # OR incorrectly reports this as a fully progressing private recording.
+        self.sock = FakeObs(record_active=True, recording_byte_stall_at=2)
+        result = self.observe(samples=3, verify_private_recording=True,
+                              verify_recording_progress=True)
+        self.assertEqual(result.status, "deferred")
+        self.assertFalse(result.recording_progress_verified)
+        self.assertNotIn("outputBytes", result.to_json())
+        self.assertTrue(self.sock.closed)
+
     def test_strict_recording_progress_rejects_stalled_duration(self):
         self.sock = FakeObs(record_active=True, recording_duration=False)
         with self.assertRaises(ValueError):
@@ -405,6 +421,32 @@ class TestReadOnlyBatch(unittest.TestCase):
         self.assertTrue(report.recording_progress_verified)
         self.assertTrue(report.batched_observation)
         self.assertEqual(len(sock.requests), 4)
+
+    def test_batch_must_finish_within_single_status_evidence_window(self):
+        # The websocket response is one packet but serial OBS requests can
+        # take longer than the maximum per-triplet 750-ms evidence span.
+        sock = FakeBatchObs(record_active=True)
+        ticks = iter([0.05, 1.20, 1.3, 1.4])
+        ids = iter(f"opaque{i:016d}" for i in range(300))
+        with self.assertRaises(ValueError):
+            observe_local_obs(
+                owner_approved=True, password="not-logged",
+                batch_reads=True, samples=3, verify_private_recording=True,
+                connect=lambda *args: sock,
+                clock=lambda: next(ticks), sleep=lambda _: None,
+                token=lambda size: next(ids),
+            )
+        self.assertTrue(sock.closed)
+        self.assertEqual([packet["op"] for packet in sock.requests], [1, 8])
+
+    def test_batch_strict_progress_rejects_last_interval_byte_stall(self):
+        sock, report = self._sample(
+            sock=FakeBatchObs(record_active=True, recording_byte_stall_at=2),
+            verify_private_recording=True, verify_recording_progress=True,
+        )
+        self.assertEqual(report.status, "deferred")
+        self.assertFalse(report.recording_progress_verified)
+        self.assertTrue(sock.closed)
 
     def test_batch_never_approves_stream_or_paused_recording(self):
         cases = (
