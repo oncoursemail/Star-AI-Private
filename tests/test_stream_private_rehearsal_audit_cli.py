@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import subprocess
 
@@ -224,3 +225,93 @@ def test_actual_ffmpeg_private_file_cli_smoke(tmp_path, capsys):
     assert report["audio_stream_count"] == 1
     assert not report["star_speech_identity_verified"]
     assert not report["humanlike_verified"]
+
+
+def test_precommitted_media_is_verified_without_exposing_digest(tmp_path, monkeypatch):
+    """A prior, separately retained SHA-256 can bind selected clip bytes."""
+    root, clip, _, _ = _media(tmp_path)
+    _mocks(monkeypatch)
+    expected = hashlib.sha256(clip.read_bytes()).hexdigest()
+    report = audit.audit_private_rehearsal(
+        clip, **_options(root, clip), expected_media_sha256=expected.upper(),
+    )
+    assert report.media_sha256_precommit_matched is True
+    serialized = report.to_json()
+    assert expected not in serialized and expected.upper() not in serialized
+    assert str(clip) not in serialized
+    # Byte equality does NOT prove the OBS source, voice or game identity.
+    assert not report.recording_origin_verified
+    assert not report.gameplay_verified
+    assert not report.star_speech_identity_verified
+    assert not report.broadcast_authorized
+
+
+def test_no_precommit_defaults_to_unverified_even_if_media_decodes(tmp_path, monkeypatch):
+    root, clip, _, _ = _media(tmp_path)
+    _mocks(monkeypatch)
+    def never_hash(*args):
+        raise AssertionError("opt-in hashing must not slow down default audit")
+    monkeypatch.setattr(audit, "_content_sha256", never_hash)
+    result = audit.audit_private_rehearsal(clip, **_options(root, clip))
+    assert result.media_sha256_precommit_matched is False
+
+
+@pytest.mark.parametrize("candidate", [
+    "a" * 63, "z" * 64, "a" * 65, " a" * 32, "", 123,
+    "a" * 32 + "/" + "a" * 31,
+])
+def test_malformed_media_precommit_rejected_before_media_access(
+        tmp_path, monkeypatch, candidate):
+    root, clip, _, _ = _media(tmp_path)
+    calls = _mocks(monkeypatch)
+    with pytest.raises(audit.PrivateRehearsalAuditError, match="invalid.*digest"):
+        audit.audit_private_rehearsal(
+            clip, **_options(root, clip), expected_media_sha256=candidate,
+        )
+    assert not calls
+
+
+def test_wrong_media_precommit_fails_before_decoder_and_reveals_no_path(
+        tmp_path, monkeypatch):
+    root, clip, _, _ = _media(tmp_path)
+    calls = _mocks(monkeypatch)
+    with pytest.raises(audit.PrivateRehearsalAuditError) as error:
+        audit.audit_private_rehearsal(
+            clip, **_options(root, clip), expected_media_sha256="a" * 64,
+        )
+    assert not calls
+    assert str(clip) not in str(error.value)
+
+
+def test_in_place_media_tampering_detected_even_if_stats_are_reported_unchanged(
+        tmp_path, monkeypatch):
+    root, clip, _, _ = _media(tmp_path)
+    expected = hashlib.sha256(clip.read_bytes()).hexdigest()
+    def mutate_during_decode(*args, **kwargs):
+        # Same-size modification would not be caught by a size-only check.
+        clip.write_bytes(b"y" * 4096)
+        return RecordingArtifactReport(
+            "candidate_for_owner_review", 6.0, 180, 128, 72, 1, 0,
+        )
+    monkeypatch.setattr(audit, "inspect_private_obs_artifact", mutate_during_decode)
+    # Simulate restored or otherwise unreliable filesystem metadata.
+    monkeypatch.setattr(audit, "_unchanged", lambda *args: True)
+    with pytest.raises(audit.PrivateRehearsalAuditError, match="precommit"):
+        audit.audit_private_rehearsal(
+            clip, **_options(root, clip), expected_media_sha256=expected,
+        )
+
+
+def test_cli_rejects_precommit_mismatch_with_sanitized_output(
+        tmp_path, monkeypatch, capsys):
+    root, clip, _, _ = _media(tmp_path)
+    calls = _mocks(monkeypatch)
+    rc = audit.main([
+        "--recording", str(clip), "--allowed-root", str(root),
+        "--owner-approved", "--recording-stopped", "--broadcast-inactive",
+        "--expected-media-sha256", "f" * 64,
+    ])
+    result = capsys.readouterr().out
+    assert rc == 2 and not calls
+    assert json.loads(result)["status"] == "deferred"
+    assert "f" * 64 not in result and str(clip) not in result
