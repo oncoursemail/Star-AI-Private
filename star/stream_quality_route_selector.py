@@ -72,6 +72,9 @@ class VerifiedRouteTrialSummary:
     total_gpu_peak_mib: float
     measured_unix_s: int
     host_verified: bool
+    # Stable host-assigned digest of the pre-registered *evaluation execution*.
+    # Equal suite digests do not imply the same independent measured run.
+    eval_cohort_sha256: str | None = None
 
     def __post_init__(self) -> None:
         _id(self.route_alias, "route_alias")
@@ -94,6 +97,10 @@ class VerifiedRouteTrialSummary:
             raise ValueError("measured_unix_s must be a bounded Unix timestamp")
         if type(self.host_verified) is not bool:
             raise ValueError("host_verified must be a strict boolean")
+        if (self.eval_cohort_sha256 is not None and
+                (type(self.eval_cohort_sha256) is not str or
+                 _SHA.fullmatch(self.eval_cohort_sha256) is None)):
+            raise ValueError("eval_cohort_sha256 must be a lowercase SHA256")
 
 
 @dataclass(frozen=True)
@@ -118,6 +125,9 @@ class VerifiedPairedRouteCases:
     critical_cases: tuple[bool, ...]
     measured_unix_s: int
     host_verified: bool
+    # Stable host-assigned digest of the pre-registered *evaluation execution*.
+    # Equal suite digests do not imply the same independent measured run.
+    eval_cohort_sha256: str | None = None
 
     def __post_init__(self) -> None:
         for field in ("baseline_alias", "candidate_alias", "baseline_profile",
@@ -141,6 +151,10 @@ class VerifiedPairedRouteCases:
             raise ValueError("paired observation time must be bounded")
         if type(self.host_verified) is not bool:
             raise ValueError("host_verified must be a strict boolean")
+        if (self.eval_cohort_sha256 is not None and
+                (type(self.eval_cohort_sha256) is not str or
+                 _SHA.fullmatch(self.eval_cohort_sha256) is None)):
+            raise ValueError("eval_cohort_sha256 must be a lowercase SHA256")
 
 
 @dataclass(frozen=True)
@@ -280,11 +294,16 @@ class QualityGatedRouteSelector:
                 # Aggregate success counts can hide a regression on a *known*
                 # case while the fast worker compensates on a different case.
                 # Never promote on summaries alone: demand a matched receipt.
+                # Bind its *execution cohort* to both aggregate measurements;
+                # sharing only a suite digest permits cross-run evidence splicing.
                 proof = self._pairs.get((
                     baseline_alias, item.route_alias, task_kind, workload,
                     suite_sha256,
                 ))
                 if (proof is None or not proof.host_verified
+                        or baseline.eval_cohort_sha256 is None
+                        or item.eval_cohort_sha256 != baseline.eval_cohort_sha256
+                        or proof.eval_cohort_sha256 != baseline.eval_cohort_sha256
                         or not 0 <= now_unix_s - proof.measured_unix_s <= self._max_age
                         or len(proof.baseline_outcomes) != baseline.trials
                         or sum(proof.baseline_outcomes) != baseline.verified_successes
