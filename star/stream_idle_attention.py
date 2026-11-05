@@ -81,10 +81,12 @@ class QuietAttention:
 
         if gameplay_critical:
             target = -0.28
+        elif game_active:
+            # Live gameplay owns the gaze while chat is also speaking.
+            # Shift toward a viewer only when gameplay actually pauses.
+            target = -0.18
         elif viewer_speaking:
             target = 0.10
-        elif game_active:
-            target = -0.18
         else:
             target = 0.0
 

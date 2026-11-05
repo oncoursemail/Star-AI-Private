@@ -62,13 +62,23 @@ class TurnTakingTests(unittest.TestCase):
             self.assertTrue(decision.should_interrupt)
             self.assertEqual(decision.action, "yield_owner")
         self.assertEqual(self.gate.metrics()["owner_yields"], 1)
-        # A genuinely new utterance is counted only after another 120ms of
-        # verified speech, not from a stale owner probability.
+        # A single lost/quiet frame does not prove that the owner finished
+        # the utterance. Reconfirmed speech must not count a second barge-in.
         self.gate.observe(frame(220))
         for at in (250, 280, 310, 340):
             self.gate.observe(frame(at, owner=1))
         self.assertTrue(
             self.gate.advise(now_ms=340, star_speaking=True).should_interrupt
+        )
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        # Only a verified continuous quiet interval re-arms a genuinely new
+        # utterance; a resumed owner can then interrupt again.
+        for at in range(370, 730, 30):
+            self.gate.observe(frame(at))
+        for at in (730, 760, 790, 820):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(
+            self.gate.advise(now_ms=820, star_speaking=True).should_interrupt
         )
         self.assertEqual(self.gate.metrics()["owner_yields"], 2)
         self.gate.disable()
@@ -81,6 +91,43 @@ class TurnTakingTests(unittest.TestCase):
             self.gate.advise(now_ms=690, star_speaking=True).should_interrupt
         )
         self.assertEqual(self.gate.metrics()["owner_yields"], 3)
+
+    def test_brief_mixed_or_echo_dropout_cannot_double_count_one_owner_utterance(self):
+        self.gate.enable(owner_approved=True)
+        for at in (100, 130, 160, 190):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(self.gate.advise(now_ms=190, star_speaking=True).should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        for at, probabilities in (
+            (220, dict(owner=.4, guest=.4)),
+            (250, dict(owner=1, echo=False)),
+            (280, dict(guest=1)),
+        ):
+            self.gate.observe(frame(at, **probabilities))
+        for at in (310, 340, 370, 400):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(self.gate.advise(now_ms=400, star_speaking=True).should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+
+    def test_unobserved_gap_does_not_forge_verified_quiet_rearm(self):
+        self.gate.enable(owner_approved=True, require_verified_quiet=True)
+        for at in (100, 130, 160, 190):
+            self.gate.observe(frame(at, owner=1))
+        self.gate.advise(now_ms=190, star_speaking=True)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        # A large capture gap is unknown audio, NOT proof of silence.
+        self.gate.observe(frame(800))
+        for at in (830, 860, 890, 920):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(self.gate.advise(now_ms=920, star_speaking=True).should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        # 12 clean contiguous 30-ms quiet frames explicitly prove new floor.
+        for at in range(950, 1310, 30):
+            self.gate.observe(frame(at))
+        for at in (1310, 1340, 1370, 1400):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(self.gate.advise(now_ms=1400, star_speaking=True).should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 2)
 
     def test_guest_voice_holds_speech_without_owner_privilege(self):
         self.gate.enable(owner_approved=True)

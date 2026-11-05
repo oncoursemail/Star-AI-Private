@@ -32,6 +32,20 @@ class QuietAttentionTests(unittest.TestCase):
         self.assertLess(critical.gaze_x, 0)
         self.assertEqual(critical.tail_sway, 0)
 
+    def test_gameplay_focus_takes_priority_over_concurrent_viewer_speech(self):
+        # An ongoing game remains the focus of gaze even while a viewer
+        # speaks; chat eye contact should happen after gameplay pauses.
+        a = QuietAttention()
+        for now in (100.0, 100.25, 100.6, 101.2):
+            active = a.sample(now=now, game_active=True, viewer_speaking=True)
+            self.assertLess(active.gaze_x, 0)
+        after_pause = a.sample(now=103, game_active=False, viewer_speaking=True)
+        self.assertGreater(after_pause.gaze_x, 0)
+        tense = a.sample(now=103.1, game_active=True, viewer_speaking=True,
+                         gameplay_critical=True)
+        self.assertLess(tense.gaze_x, after_pause.gaze_x)
+        self.assertEqual(tense.tail_sway, 0)
+
     def test_reduced_motion_keeps_blink_only(self):
         a = QuietAttention()
         for i in range(600):
