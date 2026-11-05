@@ -148,7 +148,7 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
         sent = await self.bridge.take_step(
             self.propose, now_unix_s=self.now[0])
         self.assertTrue(sent.action_sent, sent.reason)
-        self.tick[0] = 1250
+        self.tick[0] = 2100
         self.mcp.image = AFTER
         seen = await self.bridge.observe_after(now_unix_s=self.now[0])
         self.assertEqual(seen.status, "feedback_ready", seen.reason)
@@ -272,7 +272,7 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
         # A genuinely fresh host time and NEW scene can authorize this slot.
         # The first failed proposal already consumed the previous visual frame.
         self.mcp.image = AFTER
-        self.tick[0] = 1400
+        self.tick[0] = 2100
         allowed = await self.bridge.take_step(
             self.propose, now_unix_s=NOW + 4)
         self.assertTrue(allowed.action_sent, allowed.reason)
@@ -341,7 +341,7 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
     async def test_capture_expiry_never_exposes_stale_scoring_input(self):
         sent = await self.bridge.take_step(self.propose, now_unix_s=NOW)
         self.assertTrue(sent.action_sent, sent.reason)
-        self.tick[0] = 1250
+        self.tick[0] = 2100
         self.mcp.image = AFTER
         capture = self.mcp.call_tool
 
@@ -384,7 +384,7 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result.action_sent, result.reason)
             self.assertEqual(bridge.metrics()["forecast_committed"], 1)
             self.assertEqual(lab.report("star_v1").trials, 0)
-            self.tick[0] = 1250
+            self.tick[0] = 2100
             self.mcp.image = AFTER
             observed = await bridge.observe_after(now_unix_s=NOW)
             self.assertEqual(observed.status, "feedback_ready")
@@ -406,7 +406,7 @@ class TestPortfolioStudioBridge(unittest.IsolatedAsyncioTestCase):
                 return PracticeProposal("jump", 60, 9999)
             result = await self.bridge.take_step(confident, now_unix_s=NOW)
             self.assertTrue(result.action_sent, result.reason)
-            self.tick[0] = 1250
+            self.tick[0] = 2100
             self.mcp.image = AFTER
             self.assertEqual((await self.bridge.observe_after(
                 now_unix_s=NOW)).status, "feedback_ready")
