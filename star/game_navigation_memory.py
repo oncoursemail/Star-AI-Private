@@ -117,21 +117,36 @@ class NavigationAdvice:
 class GroundedNavigationMemory:
     """Owner-enabled, fixed-session map learner. Advises only in private lab."""
 
-    def __init__(self, *, max_observation_age_ms: int = 600) -> None:
+    def __init__(
+        self, *, max_observation_age_ms: int = 600,
+        max_tile_age_ms: int | None = None,
+        single_move_per_capture: bool = False,
+    ) -> None:
         if (type(max_observation_age_ms) is not int
                 or not 100 <= max_observation_age_ms <= 3000):
             raise ValueError("max observation age must be 100..3000 ms")
+        if (max_tile_age_ms is not None
+                and (type(max_tile_age_ms) is not int
+                     or not 100 <= max_tile_age_ms <= 10_000)):
+            raise ValueError("tile age must be 100..10000 ms or None")
+        if type(single_move_per_capture) is not bool:
+            raise ValueError("single move option must be boolean")
         self._max_age = max_observation_age_ms
+        self._max_tile_age = max_tile_age_ms
+        self._single_move = single_move_per_capture
         self._lock = RLock()
         self._scope: tuple[str, str, str] | None = None
         self._tiles: dict[GridPosition, ObservedTile] = {}
+        self._tile_seen_ms: dict[GridPosition, float] = {}
+        self._last_move_sequence: int | None = None
         self._last_sequence = 0
         self._last_capture_ms = -1.0
         self._last_host_ms = -1.0
         self._observation: NavigationObservation | None = None
         self._frontier_requested_seq: int | None = None
         self._counts = {"accepted": 0, "rejected": 0, "moves": 0,
-                        "observe_requests": 0, "abstentions": 0}
+                        "observe_requests": 0, "abstentions": 0,
+                        "duplicate_move_suppressed": 0}
 
     def start(
         self, *, game_id: str, game_version: str, episode_id: str,
@@ -146,6 +161,8 @@ class GroundedNavigationMemory:
                 raise RuntimeError("explicit stop required before another episode")
             self._scope = scope
             self._tiles.clear()
+            self._tile_seen_ms.clear()
+            self._last_move_sequence = None
             self._observation = None
             self._last_sequence = 0
             self._last_capture_ms = -1
@@ -156,6 +173,8 @@ class GroundedNavigationMemory:
         with self._lock:
             self._scope = None
             self._tiles.clear()
+            self._tile_seen_ms.clear()
+            self._last_move_sequence = None
             self._observation = None
             self._frontier_requested_seq = None
 
@@ -184,6 +203,11 @@ class GroundedNavigationMemory:
                 self._counts["rejected"] += 1
                 return False
             self._tiles.update({t.position: t for t in observation.tiles})
+            # Capture time, not ingestion time, determines how long terrain
+            # remains safe to trust. A re-observed tile refreshes its lease.
+            self._tile_seen_ms.update({
+                t.position: observation.captured_ms for t in observation.tiles
+            })
             self._last_sequence = observation.sequence
             self._last_capture_ms = observation.captured_ms
             self._last_host_ms = now
@@ -203,8 +227,16 @@ class GroundedNavigationMemory:
             result.append((next_pos, action))
         return tuple(result)
 
+    def _fresh_positions(self, now_ms: float) -> set[GridPosition]:
+        if self._max_tile_age is None:
+            return set(self._tiles)
+        return {
+            position for position, captured_ms in self._tile_seen_ms.items()
+            if 0 <= now_ms - captured_ms <= self._max_tile_age
+        }
+
     def _paths(
-        self, player: GridPosition,
+        self, player: GridPosition, fresh: set[GridPosition],
     ) -> tuple[dict[GridPosition, int], dict[GridPosition, tuple[GridPosition, str]]]:
         costs = {player: 0}
         previous: dict[GridPosition, tuple[GridPosition, str]] = {}
@@ -215,7 +247,8 @@ class GroundedNavigationMemory:
                 continue
             for neighbor, direction in self._adjacent(here):
                 tile = self._tiles.get(neighbor)
-                if tile is None or not tile.walkable or tile.risk_bps >= _RISK_BLOCK:
+                if (neighbor not in fresh or tile is None
+                        or not tile.walkable or tile.risk_bps >= _RISK_BLOCK):
                     continue
                 next_cost = cost + 1000 + tile.risk_bps // 2
                 if next_cost < costs.get(neighbor, 10**18):
@@ -241,17 +274,23 @@ class GroundedNavigationMemory:
                 return abstain("observation_expired")
             here = frame.player
             goal = frame.goal
+            if self._single_move and self._last_move_sequence == frame.sequence:
+                self._counts["duplicate_move_suppressed"] += 1
+                return NavigationAdvice("await_observation",
+                                        "new_capture_required_after_move",
+                                        observed_cells=observed)
             if goal is not None and goal == here:
                 return NavigationAdvice("arrived", "witnessed_goal_position",
                                         observed_cells=observed)
-            costs, previous = self._paths(here)
+            fresh = self._fresh_positions(now)
+            costs, previous = self._paths(here, fresh)
             if goal in costs:
                 target = goal
                 reason = "verified_path_to_goal"
             else:
                 # Only known/reachable cells can become exploration frontiers.
                 frontiers = [p for p in costs if any(
-                    adj not in self._tiles for adj, _ in self._adjacent(p))]
+                    adj not in fresh for adj, _ in self._adjacent(p))]
                 if not frontiers:
                     return abstain("no_safe_observed_frontier")
                 # A stationary host capture cannot expose more tiles merely
@@ -283,10 +322,14 @@ class GroundedNavigationMemory:
                 node = previous[node][0]
             direction = previous[node][1]
             self._counts["moves"] += 1
+            if self._single_move:
+                self._last_move_sequence = frame.sequence
             return NavigationAdvice("move", reason, action_id=direction,
                                     target=target, observed_cells=observed)
 
     def metrics(self) -> dict[str, int | bool]:
         with self._lock:
             return {**self._counts, "enabled": self._scope is not None,
-                    "observed_cells": len(self._tiles)}
+                    "observed_cells": len(self._tiles),
+                    "fresh_cells_at_last_ingest": len(self._fresh_positions(self._last_host_ms))
+                    if self._scope is not None else 0}
