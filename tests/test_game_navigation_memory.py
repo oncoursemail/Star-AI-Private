@@ -256,3 +256,116 @@ def test_untrusted_map_change_never_overwrites_verified_memory() -> None:
                                      tile(2, 0, False)))
     assert not nav.ingest(fake, now_ms=1020, host_verified=False)
     assert nav.advise(now_ms=1021).action_id == "right"
+
+
+def test_opt_in_options_are_strictly_typed_and_bounded() -> None:
+    with pytest.raises(ValueError):
+        GroundedNavigationMemory(max_tile_age_ms=True)
+    with pytest.raises(ValueError):
+        GroundedNavigationMemory(max_tile_age_ms=0)
+    with pytest.raises(ValueError):
+        GroundedNavigationMemory(max_tile_age_ms=10_001)
+    with pytest.raises(ValueError):
+        GroundedNavigationMemory(max_tile_age_ms=float("inf"))
+    with pytest.raises(ValueError):
+        GroundedNavigationMemory(single_move_per_capture=1)
+    # The old behavior remains compatible for existing callers.
+    nav = enabled()
+    first = observation(tiles=(tile(0, 0), tile(1, 0), tile(2, 0)))
+    assert nav.ingest(first, now_ms=1010, host_verified=True)
+    assert nav.advise(now_ms=1011).status == "move"
+    assert nav.advise(now_ms=1011).status == "move"
+
+
+def test_expired_tile_cannot_authorize_stale_shortcut() -> None:
+    nav = GroundedNavigationMemory(max_tile_age_ms=100)
+    nav.start(game_id="maze", game_version="v1", episode_id="round1",
+              owner_approved=True)
+    first = observation(
+        tiles=(tile(0, 0), tile(1, 0), tile(2, 0)),
+        captured_ms=1000,
+    )
+    assert nav.ingest(first, now_ms=1000, host_verified=True)
+    assert nav.advise(now_ms=1001).action_id == "right"
+    # The rightward cell has not been witnessed for 121 ms. A new
+    # observation exposes a safe detour but does not refresh that cell.
+    second = observation(seq=2, captured_ms=1121, tiles=(
+        tile(0, 0), tile(0, 1), tile(1, 1), tile(2, 1), tile(2, 0),
+    ))
+    assert nav.ingest(second, now_ms=1121, host_verified=True)
+    assert nav.metrics()["observed_cells"] == 6
+    assert nav.metrics()["fresh_cells_at_last_ingest"] == 5
+    advice = nav.advise(now_ms=1122)
+    assert advice.status == "move"
+    assert advice.action_id == "down"
+    assert not advice.authorizes_input
+
+
+def test_stale_known_corridor_becomes_unknown_frontier_until_rewitnessed() -> None:
+    nav = GroundedNavigationMemory(max_tile_age_ms=100)
+    nav.start(game_id="maze", game_version="v1", episode_id="round1",
+              owner_approved=True)
+    assert nav.ingest(observation(
+        captured_ms=1000,
+        tiles=(tile(0, 0), tile(1, 0), tile(2, 0)),
+    ), now_ms=1000, host_verified=True)
+    assert nav.advise(now_ms=1001).action_id == "right"
+    second = observation(
+        seq=2, captured_ms=1150, tiles=(tile(0, 0),)
+    )
+    assert nav.ingest(second, now_ms=1150, host_verified=True)
+    hint = nav.advise(now_ms=1151)
+    assert hint.status == "observe"
+    assert hint.action_id is None
+    # A trusted fresh sighting can reenable the direct route.
+    third = observation(
+        seq=3, captured_ms=1160, tiles=(tile(0, 0), tile(1, 0), tile(2, 0))
+    )
+    assert nav.ingest(third, now_ms=1160, host_verified=True)
+    assert nav.advise(now_ms=1161).action_id == "right"
+    assert not nav.ingest(second, now_ms=1162, host_verified=True)
+
+
+def test_optional_one_move_per_frame_requires_new_witness() -> None:
+    nav = GroundedNavigationMemory(single_move_per_capture=True)
+    nav.start(game_id="maze", game_version="v1", episode_id="round1",
+              owner_approved=True)
+    first = observation(tiles=(tile(0, 0), tile(1, 0), tile(2, 0)))
+    assert nav.ingest(first, now_ms=1010, host_verified=True)
+    one = nav.advise(now_ms=1011)
+    assert one.status == "move" and one.action_id == "right"
+    again = nav.advise(now_ms=1012)
+    assert again.status == "await_observation"
+    assert again.reason == "new_capture_required_after_move"
+    assert again.action_id is None
+    assert nav.metrics()["duplicate_move_suppressed"] == 1
+    # A *new, verified* host position advances the game plan.
+    second = observation(seq=2, player=pos(1, 0),
+                         tiles=(tile(1, 0), tile(2, 0)))
+    assert nav.ingest(second, now_ms=1020, host_verified=True)
+    assert nav.advise(now_ms=1021).action_id == "right"
+    assert nav.advise(now_ms=1022).status == "await_observation"
+    nav.stop()
+    assert not nav.metrics()["enabled"]
+    nav.start(game_id="maze", game_version="v1", episode_id="round2",
+              owner_approved=True)
+    third = observation(episode_id="round2",
+                        tiles=(tile(0, 0), tile(1, 0), tile(2, 0)))
+    assert nav.ingest(third, now_ms=1010, host_verified=True)
+    assert nav.advise(now_ms=1011).status == "move"
+
+
+def test_stale_frame_and_clock_rollback_cannot_restore_expired_paths() -> None:
+    nav = GroundedNavigationMemory(max_tile_age_ms=100)
+    nav.start(game_id="maze", game_version="v1", episode_id="round1",
+              owner_approved=True)
+    assert nav.ingest(observation(
+        captured_ms=1000,
+        tiles=(tile(0, 0), tile(1, 0), tile(2, 0)),
+    ), now_ms=1000, host_verified=True)
+    assert nav.advise(now_ms=1101).status == "observe"
+    assert not nav.ingest(observation(
+        seq=2, captured_ms=950,
+        tiles=(tile(0, 0), tile(1, 0), tile(2, 0)),
+    ), now_ms=1102, host_verified=True)
+    assert nav.advise(now_ms=999).reason == "host_clock_reversed"
