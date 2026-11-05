@@ -6,6 +6,7 @@ import pytest
 from star.stream_host_model_catalog import HostInferenceCatalog, HostModelRoute
 from star.stream_quality_route_selector import (
     QualityGatedRouteSelector,
+    VerifiedPairedRouteCases,
     VerifiedRouteTrialSummary,
 )
 
@@ -42,6 +43,14 @@ def selector(*rows, c=None, **kwargs):
     return QualityGatedRouteSelector(catalog=c, summaries=tuple(rows), **kwargs)
 
 
+def paired(c, candidate, *, baseline="baseline"):
+    return VerifiedPairedRouteCases(
+        baseline, candidate, c.profile_for(baseline), c.profile_for(candidate),
+        "commentary", "game_recording", SUITE,
+        (True,) * 30, (True,) * 30, (False,) * 30, NOW - 100, True,
+    )
+
+
 def advise(s, **kwargs):
     args = dict(owner_approved=True, baseline_alias="baseline",
                 task_kind="commentary", workload="game_recording",
@@ -53,7 +62,8 @@ def advise(s, **kwargs):
 
 def test_verified_equal_quality_faster_route_recommended_not_deployed():
     c = catalog()
-    s = selector(trial(c, "baseline", p95=410), trial(c, "fast", p95=155), c=c)
+    s = selector(trial(c, "baseline", p95=410), trial(c, "fast", p95=155),
+                 c=c, paired_cases=(paired(c, "fast"),))
     a = advise(s)
     assert a.route_alias == "fast"
     assert a.reason == "faster_verified_route_for_manual_pilot"
@@ -124,7 +134,8 @@ def test_budget_and_p95_apply_to_real_measured_deployment_not_prompt_hints():
     c = catalog()
     s = selector(trial(c, "baseline", p95=410),
                  trial(c, "fast", p95=120, peak=8000),
-                 trial(c, "slower", p95=200, peak=5800), c=c)
+                 trial(c, "slower", p95=200, peak=5800), c=c,
+                 paired_cases=(paired(c, "fast"), paired(c, "slower")))
     assert advise(s).route_alias == "slower"
     assert advise(s, max_total_gpu_mib=3000).route_alias is None
     assert advise(s, max_p95_ms=180).route_alias is None
@@ -189,7 +200,8 @@ def test_same_scoped_faster_candidate_deterministic_tie_breaking():
     c = catalog()
     s = selector(trial(c, "baseline", p95=410),
                  trial(c, "fast", p95=180, peak=5000),
-                 trial(c, "slower", p95=180, peak=4500), c=c)
+                 trial(c, "slower", p95=180, peak=4500), c=c,
+                 paired_cases=(paired(c, "fast"), paired(c, "slower")))
     assert advise(s).route_alias == "slower"
 
 
