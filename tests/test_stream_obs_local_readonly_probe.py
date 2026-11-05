@@ -74,6 +74,51 @@ class FakeObs:
         self.closed = True
 
 
+class FakeBatchObs(FakeObs):
+    """OBS v5 batch fixture using the existing strictly read-only fake."""
+
+    def __init__(self, *args, tamper="", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tamper = tamper
+
+    def send(self, payload: str):
+        packet = json.loads(payload)
+        if packet["op"] != 8:
+            return super().send(payload)
+        self.requests.append(packet)
+        batch = packet["d"]
+        assert batch["haltOnFailure"] is True
+        assert batch["executionType"] == 0  # SerialRealtime, NOT graphics thread
+        assert [req["requestType"] for req in batch["requests"]] == [
+            "GetStats", "GetStreamStatus", "GetRecordStatus",
+        ]
+        results = []
+        for request in batch["requests"]:
+            super().send(json.dumps({"op": 6, "d": request}))
+            self.requests.pop()  # Internal server execution, not a socket send.
+            results.append(json.loads(self.pending.pop())["d"])
+        if self.tamper == "partial":
+            results.pop()
+        if self.tamper == "extra":
+            results.append(dict(results[-1]))
+        if self.tamper == "reordered":
+            results[0], results[1] = results[1], results[0]
+        if self.tamper == "wrong_type":
+            results[0]["requestType"] = "StartStream"
+        if self.tamper == "wrong_result_id":
+            results[1]["requestId"] = "old_request"
+        if self.tamper == "duplicate":
+            results[1] = results[0]
+        if self.tamper == "failure":
+            results[1]["requestStatus"] = {"result": False, "code": 500}
+        response = {"op": 9, "d": {"requestId": batch["requestId"], "results": results}}
+        if self.tamper == "wrong_batch_id":
+            response["d"]["requestId"] = "old_batch"
+        if self.tamper == "wrong_opcode":
+            response["op"] = 7
+        self.pending.append(json.dumps(response))
+
+
 class TestLocalObsProbe(unittest.TestCase):
     def setUp(self):
         self.sock = FakeObs()
@@ -320,6 +365,105 @@ class TestLocalObsProbe(unittest.TestCase):
                                    "--verify-recording-progress"]), 0)
             self.assertTrue(probe.call_args.kwargs["verify_recording_progress"])
         self.assertIn('"recording_progress_verified":true', out.getvalue())
+
+class TestReadOnlyBatch(unittest.TestCase):
+    def _sample(self, *, sock=None, **options):
+        socket = sock or FakeBatchObs()
+        ticks = iter(i * 0.05 for i in range(1000))
+        identities = iter(f"opaque{i:016d}" for i in range(300))
+        return socket, observe_local_obs(
+            owner_approved=True, password="not-logged",
+            batch_reads=True, samples=3,
+            connect=lambda *args: socket,
+            clock=lambda: next(ticks),
+            sleep=lambda seconds: None,
+            token=lambda size: next(identities),
+            **options,
+        )
+
+    def test_opt_in_batch_has_one_round_trip_per_sample(self):
+        sock, report = self._sample()
+        self.assertEqual(report.status, "candidate")
+        self.assertTrue(report.batched_observation)
+        self.assertEqual(report.samples, 3)
+        self.assertTrue(report.nonbroadcast_verified_only_at_sample_times)
+        self.assertEqual([packet["op"] for packet in sock.requests], [1, 8, 8, 8])
+        self.assertEqual(sock.stats_reads, 3)
+        self.assertEqual(sock.record_reads, 3)
+        self.assertTrue(sock.closed)
+        self.assertNotIn("opaque", report.to_json())
+        self.assertFalse(report.authorizes_recording)
+        self.assertFalse(report.authorizes_broadcast)
+        self.assertNotIn("not-logged", json.dumps(sock.requests))
+
+    def test_private_recording_progress_still_checked_when_batched(self):
+        sock, report = self._sample(sock=FakeBatchObs(record_active=True),
+                                    verify_private_recording=True,
+                                    verify_recording_progress=True)
+        self.assertEqual(report.status, "candidate")
+        self.assertTrue(report.recording_verified)
+        self.assertTrue(report.recording_progress_verified)
+        self.assertTrue(report.batched_observation)
+        self.assertEqual(len(sock.requests), 4)
+
+    def test_batch_never_approves_stream_or_paused_recording(self):
+        cases = (
+            (FakeBatchObs(stream_active=True), True),
+            (FakeBatchObs(record_active=True), False),
+            (FakeBatchObs(record_active=True, record_paused=True), True),
+        )
+        for obs, private_mode in cases:
+            with self.subTest(stream=obs.stream_active, record=obs.record_active,
+                              private_mode=private_mode):
+                with self.assertRaises(PermissionError):
+                    self._sample(sock=obs, verify_private_recording=private_mode)
+                self.assertTrue(obs.closed)
+
+    def test_batch_rejects_malformed_and_unsafe_responses(self):
+        for tamper in ("partial", "extra", "reordered", "wrong_type",
+                       "wrong_result_id", "duplicate", "failure",
+                       "wrong_batch_id", "wrong_opcode"):
+            sock = FakeBatchObs(tamper=tamper)
+            with self.subTest(tamper=tamper), self.assertRaises(ValueError):
+                self._sample(sock=sock)
+            self.assertTrue(sock.closed)
+            self.assertEqual(len(sock.requests), 2)
+
+    def test_bad_batch_option_is_rejected_before_connection(self):
+        connections = []
+        for opt in (1, "true", None):
+            with self.subTest(opt=opt), self.assertRaises(ValueError):
+                observe_local_obs(
+                    owner_approved=True, password="secret", batch_reads=opt,
+                    connect=lambda *args: connections.append(args),
+                )
+        self.assertFalse(connections)
+
+    def test_batch_cannot_reuse_request_identity_as_batch_identity(self):
+        socket = FakeBatchObs()
+        duplicate_ids = iter(["sameopaqueid12345"] * 100)
+        with self.assertRaises(ValueError):
+            observe_local_obs(
+                owner_approved=True, password="secret",
+                batch_reads=True, connect=lambda *args: socket,
+                token=lambda size: next(duplicate_ids),
+            )
+        self.assertTrue(socket.closed)
+        self.assertEqual([x["op"] for x in socket.requests], [1])
+
+    def test_cli_batch_is_still_opt_in_read_only(self):
+        from unittest.mock import patch
+        from io import StringIO
+        output = StringIO()
+        with patch("sys.stdout", output), patch(
+            "star.stream_obs_local_readonly_probe.observe_local_obs",
+            return_value=LocalObsProbeReport("candidate", "read_only", 3,
+                                              batched_observation=True),
+        ) as probe:
+            self.assertEqual(main(["--observe", "--batch-reads"]), 0)
+            self.assertTrue(probe.call_args.kwargs["batch_reads"])
+        self.assertIn('"batched_observation":true', output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
