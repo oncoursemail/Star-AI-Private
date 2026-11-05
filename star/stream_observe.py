@@ -297,9 +297,8 @@ class ObservationGovernor:
             return defer("vision_worker_stop_unconfirmed")
         if not advice.allowed:
             return defer("realtime_headroom_unavailable")
-        # The older stream-budget advisor permits 4 Hz *offline* vision even
-        # when the game is under pressure. Enforce a stricter safety floor for
-        # this request governor; headroom matters even without an OBS stream.
+        # Keep this secondary guard as defense-in-depth: the advisor also
+        # protects private gameplay rehearsals and offline idle sampling.
         assert telemetry is not None  # vision advice cannot be allowed otherwise
         if (telemetry.free_vram_mib < 1024
                 or (telemetry.game_active and telemetry.game_fps < 45)

@@ -381,6 +381,7 @@ def test_nonbroadcast_recording_profile_reaches_qos_then_clears_on_transition():
     assert observed is not None and observed.qos is not None
     assert not observed.telemetry.live
     assert observed.qos.private_stream_rehearsal is True
+    assert observed.telemetry.private_stream_rehearsal is True
     assert h.status()["private_stream_rehearsal"] is True
     # Transitions invalidate ALL old game/frame/hardware/voice evidence.
     h.set_context(live=False, game_active=True, owner_approved=True,

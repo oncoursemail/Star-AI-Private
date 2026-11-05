@@ -135,7 +135,9 @@ class StudioVisionQoS:
                 self._counts["duplicates"] += 1
             # Additional backoff on repeated identical screenshots: an idle
             # stream does not require 1 MB/frame * 1 fps worth of inference.
-            base_ms = 1000 if telemetry.live else 250
+            # A private game is still realtime. Match the trusted budget's
+            # advised 1-Hz gaming limit rather than assuming non-live means idle.
+            base_ms = 1000.0 / advice.sample_fps
             if self._duplicates:
                 delay = min(self._duplicate_cap,
                             base_ms * (2 ** self._duplicates))

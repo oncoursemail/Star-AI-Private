@@ -5,8 +5,10 @@ import unittest
 from star.stream_budget import StreamTelemetry, advise_workload
 
 
-def telemetry(*, live=True, game_active=True, free=3500, total=8192, fps=75, backlog=50):
-    return StreamTelemetry(live, game_active, free, total, fps, backlog)
+def telemetry(*, live=True, game_active=True, free=3500, total=8192,
+              fps=75, backlog=50, rehearsal=False):
+    return StreamTelemetry(live, game_active, free, total, fps, backlog,
+                           private_stream_rehearsal=rehearsal)
 
 
 class BudgetTests(unittest.TestCase):
@@ -42,10 +44,50 @@ class BudgetTests(unittest.TestCase):
         self.assertTrue(advise_workload("training", telemetry(live=False, game_active=False)).allowed)
         self.assertFalse(advise_workload("training", telemetry(live=False, free=900)).allowed)
 
-    def test_offline_vision_cap(self):
-        advice = advise_workload("vision", telemetry(live=False, free=500))
+    def test_private_rehearsal_protects_game_even_when_not_broadcasting(self):
+        # A private OBS rehearsal is still a latency-sensitive gaming session.
+        t = telemetry(live=False, game_active=True, rehearsal=True)
+        vision = advise_workload("vision", t)
+        self.assertTrue(vision.allowed)
+        self.assertEqual(vision.sample_fps, 1.0)
+        self.assertEqual(vision.profile, "economical")
+        for kind in ("research", "training", "render"):
+            with self.subTest(kind=kind):
+                self.assertFalse(advise_workload(kind, t).allowed)
+        for kind in ("speech", "gameplay"):
+            self.assertTrue(advise_workload(kind, t).allowed)
+
+    def test_private_rehearsal_defers_vision_when_contended(self):
+        for changes in ({"free": 500}, {"fps": 44.9}, {"backlog": 351}):
+            with self.subTest(changes=changes):
+                t = telemetry(live=False, game_active=True, rehearsal=True, **changes)
+                self.assertFalse(advise_workload("vision", t).allowed)
+
+    def test_offline_idle_vision_uses_faster_cap_only_with_headroom(self):
+        idle = telemetry(live=False, game_active=False, free=3500)
+        advice = advise_workload("vision", idle)
         self.assertTrue(advice.allowed)
         self.assertEqual(advice.sample_fps, 4.0)
+        self.assertEqual(advice.profile, "offline")
+        self.assertFalse(advise_workload(
+            "vision", telemetry(live=False, game_active=False, free=500)
+        ).allowed)
+
+    def test_normal_offline_game_still_supports_training_between_trials(self):
+        t = telemetry(live=False, game_active=True)
+        self.assertTrue(advise_workload("training", t).allowed)
+        self.assertTrue(advise_workload("research", t).allowed)
+        self.assertEqual(advise_workload("vision", t).sample_fps, 1.0)
+
+    def test_private_rehearsal_flag_must_be_trusted_explicit_boolean(self):
+        with self.assertRaises(ValueError):
+            telemetry(live=False, rehearsal=1)
+        with self.assertRaises(ValueError):
+            telemetry(live=True, rehearsal=True)
+
+    def test_oversized_integer_telemetry_is_rejected_as_invalid_input(self):
+        with self.assertRaises(ValueError):
+            telemetry(free=10 ** 1000, total=10 ** 1000)
 
     def test_invalid_telemetry(self):
         cases = [

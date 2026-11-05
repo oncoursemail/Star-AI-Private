@@ -140,19 +140,19 @@ class ObservationGovernorTests(unittest.TestCase):
                 g.enable(owner_approved=True)
                 d = g.consider(FrameCue(0, 1, "death"), metrics,
                                now_ms=0, capture_authorized=True)
-                self.assertEqual(d.reason, "insufficient_game_or_voice_headroom")
+                self.assertEqual(d.reason, "realtime_headroom_unavailable")
 
-    def test_offline_sampling_is_at_most_four_per_second(self):
+    def test_private_rehearsal_sampling_is_at_most_one_per_second(self):
         g = ObservationGovernor()
         g.enable(owner_approved=True)
         a = g.consider(FrameCue(0, 0), telemetry(live=False), now_ms=0,
                        capture_authorized=True)
         g.complete(ticket=a.ticket, now_ms=1, succeeded=True)
-        self.assertFalse(g.consider(FrameCue(200, 2**64-1), telemetry(live=False),
-                                    now_ms=200, capture_authorized=True).admitted)
-        b = g.consider(FrameCue(250, 2**64-1), telemetry(live=False),
-                       now_ms=250, capture_authorized=True)
-        self.assertEqual(b.target_fps, 4)
+        self.assertFalse(g.consider(FrameCue(250, 2**64-1), telemetry(live=False),
+                                    now_ms=250, capture_authorized=True).admitted)
+        b = g.consider(FrameCue(1000, 2**64-1), telemetry(live=False),
+                       now_ms=1000, capture_authorized=True)
+        self.assertEqual(b.target_fps, 1)
         self.assertTrue(b.admitted)
 
     def test_failed_request_does_not_advance_duplicate_baseline(self):
@@ -190,13 +190,13 @@ class ObservationGovernorTests(unittest.TestCase):
         self.assertNotEqual(a.ticket, next_.ticket)
 
     def test_latency_feedback_reduces_sampling_pressure_without_faking_fps(self):
-        # Offline nominal sampling is 4 Hz, but a vision call taking 800 ms
-        # should not cause another request 250 ms after its admission.
+        # Even a private game has a 1-Hz cap; slow 800-ms vision work
+        # should reduce that further instead of blocking gameplay.
         g = ObservationGovernor(latency_safety_factor=2.0)
         g.enable(owner_approved=True)
         first = g.consider(FrameCue(0, 1), telemetry(live=False), now_ms=0,
                            capture_authorized=True)
-        self.assertEqual(first.target_fps, 4.0)
+        self.assertEqual(first.target_fps, 1.0)
         self.assertTrue(g.complete(ticket=first.ticket, now_ms=800, succeeded=True))
         early = g.consider(FrameCue(1000, 2, "new_scene"), telemetry(live=False),
                            now_ms=1000, capture_authorized=True)

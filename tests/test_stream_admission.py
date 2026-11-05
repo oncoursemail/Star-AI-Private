@@ -5,10 +5,12 @@ from star.stream_budget import StreamTelemetry
 from star.stream_admission import StreamAdmissionGate, StreamHealthSample
 
 
-def sample(at=1000.0, *, live=True, free=2500.0, fps=60.0,
-           backlog=50.0, render=0.0, encode=0.0, verified=True):
-    return StreamHealthSample(at, StreamTelemetry(live, True, free, 8192.0,
-                                                 fps, backlog),
+def sample(at=1000.0, *, live=True, game_active=True, rehearsal=False,
+           free=2500.0, fps=60.0, backlog=50.0,
+           render=0.0, encode=0.0, verified=True):
+    return StreamHealthSample(at, StreamTelemetry(live, game_active, free, 8192.0,
+                                                 fps, backlog,
+                                                 private_stream_rehearsal=rehearsal),
                               render, encode, verified)
 
 
@@ -119,11 +121,18 @@ def test_disable_reset_but_cannot_skip_owner_approval():
     assert gate.advise("vision", now_ms=3000).allowed
 
 
-def test_offline_workloads_are_deferred_until_healthy():
+def test_offline_idle_workloads_can_run_with_headroom():
     gate = active()
-    gate.observe(sample(live=False))
+    gate.observe(sample(live=False, game_active=False))
     assert gate.advise("training", now_ms=1000).allowed
     assert gate.advise("vision", now_ms=1000).sample_fps == 4
+
+
+def test_private_game_rehearsal_is_protected_without_live_broadcast():
+    gate = active()
+    gate.observe(sample(live=False, game_active=True, rehearsal=True))
+    assert gate.advise("vision", now_ms=1000).sample_fps == 1
+    assert not gate.advise("training", now_ms=1000).allowed
 
 
 @pytest.mark.parametrize("changes", [
