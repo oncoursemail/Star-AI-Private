@@ -151,6 +151,50 @@ def redact_counted(text: str, total: Counter, **kw) -> str:
     return out
 
 
+_PUBLIC_CODE_REFERENCE = re.compile(
+    r"(?<![A-Za-z0-9_/\\])(?:code/)?star/[A-Za-z0-9_./-]{1,240}"
+)
+_PUBLIC_CODE_HEADING = re.compile(
+    r'(?m)^(?:# Code overview: star(?=$)|title: "Code overview: star(?="))'
+)
+
+
+def _public_code_paths(paths: set[str]) -> frozenset[str]:
+    """Compute trusted public namespace references once per graph build."""
+    safe_paths = {"star/code"}
+    for path in paths:
+        if (path.startswith("star/")
+                and re.fullmatch(r"star/[A-Za-z0-9_./-]{1,240}", path)
+                and not any(part in ("", ".", "..") for part in path.split("/"))):
+            safe_paths.add(path)
+            safe_paths.add(_code_name(path))
+    return frozenset(safe_paths)
+
+
+def _redact_code_map(text: str, total: Counter, public_paths: frozenset[str]) -> str:
+    """Keep exact public Graphify paths navigable while redacting private data.
+
+    On hosts whose OS account is "star", blanket username redaction corrupts
+    code-map links. Only graph-verified relative paths from the public "star/"
+    namespace and generator-owned headings are protected. Prose, home paths,
+    other user names and secrets must still be sanitized. Fixed regexes and
+    precomputed membership avoid an O(number-of-files²) redaction pass.
+    """
+    marker = "⟦PUBLIC_PACKAGE_NAMESPACE⟧"
+    while marker in text:
+        marker += "_"
+
+    def protect(match: re.Match) -> str:
+        value = match.group(0)
+        return value.replace("star", marker, 1) if value in public_paths else value
+
+    text = _PUBLIC_CODE_REFERENCE.sub(protect, text)
+    text = _PUBLIC_CODE_HEADING.sub(
+        lambda match: match.group(0).replace("star", marker, 1), text
+    )
+    return redact_counted(text, total).replace(marker, "star")
+
+
 # --------------------------------------------------------------------------------------- notes
 
 def _title(raw: str, fallback: str) -> str:
@@ -349,6 +393,7 @@ def build_code_map(out: Path, graph_file: Path, totals: Counter) -> dict:
     def link(path: str) -> str:
         return f"[[{_code_name(path)}|{path}]]"
 
+    public_refs = _public_code_paths(set(files))
     overview: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for path, entry in sorted(files.items()):
         symbols = sorted(s for s in entry["symbols"] if s[1])
@@ -373,7 +418,7 @@ def build_code_map(out: Path, graph_file: Path, totals: Counter) -> dict:
                 body.append("")
         target = out / f"{_code_name(path)}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(redact_counted("\n".join(body), totals), encoding="utf-8", newline="\n")
+        target.write_text(_redact_code_map("\n".join(body), totals, public_refs), encoding="utf-8", newline="\n")
         overview[path.rsplit("/", 1)[0]].append((path, doc))
     for folder, items in overview.items():
         lines = [_frontmatter(title=f"Code overview: {folder}", kind="code-overview", tags=["star/code"]),
@@ -382,7 +427,7 @@ def build_code_map(out: Path, graph_file: Path, totals: Counter) -> dict:
             lines.append(f"- {link(path)}" + (f" - {doc[:140]}" if doc else ""))
         target = out / "code" / folder / "_overview.md"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(redact_counted("\n".join(lines) + "\n", totals), encoding="utf-8", newline="\n")
+        target.write_text(_redact_code_map("\n".join(lines) + "\n", totals, public_refs), encoding="utf-8", newline="\n")
     return {"files": len(files), "folders": len(overview), "graph_nodes": len(nodes), "graph_edges": len(edges)}
 
 
