@@ -121,6 +121,7 @@ class GroundedNavigationMemory:
         self, *, max_observation_age_ms: int = 600,
         max_tile_age_ms: int | None = None,
         single_move_per_capture: bool = False,
+        max_stalled_captures: int | None = None,
     ) -> None:
         if (type(max_observation_age_ms) is not int
                 or not 100 <= max_observation_age_ms <= 3000):
@@ -131,14 +132,21 @@ class GroundedNavigationMemory:
             raise ValueError("tile age must be 100..10000 ms or None")
         if type(single_move_per_capture) is not bool:
             raise ValueError("single move option must be boolean")
+        if (max_stalled_captures is not None
+                and (type(max_stalled_captures) is not int
+                     or not 1 <= max_stalled_captures <= 32)):
+            raise ValueError("stalled capture threshold must be 1..32 or None")
         self._max_age = max_observation_age_ms
         self._max_tile_age = max_tile_age_ms
         self._single_move = single_move_per_capture
+        self._max_stalled_captures = max_stalled_captures
         self._lock = RLock()
         self._scope: tuple[str, str, str] | None = None
         self._tiles: dict[GridPosition, ObservedTile] = {}
         self._tile_seen_ms: dict[GridPosition, float] = {}
         self._last_move_sequence: int | None = None
+        self._last_advice_player: GridPosition | None = None
+        self._static_captures = 0
         self._last_sequence = 0
         self._last_capture_ms = -1.0
         self._last_host_ms = -1.0
@@ -146,7 +154,8 @@ class GroundedNavigationMemory:
         self._frontier_requested_seq: int | None = None
         self._counts = {"accepted": 0, "rejected": 0, "moves": 0,
                         "observe_requests": 0, "abstentions": 0,
-                        "duplicate_move_suppressed": 0}
+                        "duplicate_move_suppressed": 0,
+                        "stalled_move_suppressed": 0}
 
     def start(
         self, *, game_id: str, game_version: str, episode_id: str,
@@ -163,6 +172,8 @@ class GroundedNavigationMemory:
             self._tiles.clear()
             self._tile_seen_ms.clear()
             self._last_move_sequence = None
+            self._last_advice_player = None
+            self._static_captures = 0
             self._observation = None
             self._last_sequence = 0
             self._last_capture_ms = -1
@@ -175,6 +186,8 @@ class GroundedNavigationMemory:
             self._tiles.clear()
             self._tile_seen_ms.clear()
             self._last_move_sequence = None
+            self._last_advice_player = None
+            self._static_captures = 0
             self._observation = None
             self._frontier_requested_seq = None
 
@@ -202,6 +215,17 @@ class GroundedNavigationMemory:
                        > _MAX_CELLS):
                 self._counts["rejected"] += 1
                 return False
+            # These are successive *observations*, not acknowledgements of
+            # actual key dispatch. No skill credit or action causality follows.
+            if self._max_stalled_captures is not None:
+                if self._last_advice_player is not None:
+                    if observation.player == self._last_advice_player:
+                        self._static_captures = min(
+                            self._static_captures + 1, self._max_stalled_captures
+                        )
+                    else:
+                        self._last_advice_player = None
+                        self._static_captures = 0
             self._tiles.update({t.position: t for t in observation.tiles})
             # Capture time, not ingestion time, determines how long terrain
             # remains safe to trust. A re-observed tile refreshes its lease.
@@ -270,6 +294,9 @@ class GroundedNavigationMemory:
                 return abstain("disabled_or_unobserved")
             if now < self._last_host_ms or now < frame.captured_ms:
                 return abstain("host_clock_reversed")
+            # Observe/advice calls share one monotonic clock fence; otherwise
+            # an old timestamp could resurrect an already expired capture.
+            self._last_host_ms = now
             if now - frame.captured_ms > self._max_age:
                 return abstain("observation_expired")
             here = frame.player
@@ -281,6 +308,12 @@ class GroundedNavigationMemory:
                                         observed_cells=observed)
             if goal is not None and goal == here:
                 return NavigationAdvice("arrived", "witnessed_goal_position",
+                                        observed_cells=observed)
+            if (self._max_stalled_captures is not None
+                    and self._static_captures >= self._max_stalled_captures):
+                self._counts["stalled_move_suppressed"] += 1
+                return NavigationAdvice("await_observation",
+                                        "no_witnessed_position_progress",
                                         observed_cells=observed)
             fresh = self._fresh_positions(now)
             costs, previous = self._paths(here, fresh)
@@ -324,6 +357,8 @@ class GroundedNavigationMemory:
             self._counts["moves"] += 1
             if self._single_move:
                 self._last_move_sequence = frame.sequence
+            if self._max_stalled_captures is not None:
+                self._last_advice_player = here
             return NavigationAdvice("move", reason, action_id=direction,
                                     target=target, observed_cells=observed)
 
@@ -331,5 +366,6 @@ class GroundedNavigationMemory:
         with self._lock:
             return {**self._counts, "enabled": self._scope is not None,
                     "observed_cells": len(self._tiles),
+                    "static_captures": self._static_captures,
                     "fresh_cells_at_last_ingest": len(self._fresh_positions(self._last_host_ms))
                     if self._scope is not None else 0}
