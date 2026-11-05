@@ -127,6 +127,13 @@ class HostInferenceCatalog:
         """For offline calibration reports, not as an execution credential."""
         return self._routes[route_alias].route_profile
 
+    def route_for(self, route_alias: str) -> HostModelRoute:
+        """Immutable host manifest entry for offline quality/resource audits.
+
+        This does not prove the deployed worker's identity or authorize launch.
+        """
+        return self._routes[route_alias]
+
     @property
     def route_count(self) -> int:
         return len(self._routes)
