@@ -74,19 +74,14 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 
 /* ---- hero ---- */
 .hero { position: relative; isolation: isolate; overflow: hidden; border-bottom: 1px solid var(--line); }
-.hero-bg { position: absolute; inset: 0; z-index: -1; }
-.hero-bg img { width: 100%; height: 100%; object-fit: cover; opacity: .32; filter: saturate(.7); }
-.hero-bg::after { content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, var(--bg) 0, rgba(11, 11, 14, .82) 45%, rgba(11, 11, 14, .55) 100%), linear-gradient(180deg, rgba(11, 11, 14, 0) 55%, var(--bg) 100%); }
-/* the Revival wall (wall.js) replaces the picture once its first logos are drawn */
-.hero-bg canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 1.4s var(--out); }
-.hero-bg img { transition: opacity 1.4s var(--out); }
-.hero-bg.wall { background: radial-gradient(70% 90% at 88% 8%, rgba(98, 70, 180, .3), transparent 65%),
+.hero-bg { position: absolute; inset: 0; z-index: -1; background: radial-gradient(70% 90% at 88% 8%, rgba(98, 70, 180, .3), transparent 65%),
   radial-gradient(60% 70% at 8% 100%, rgba(44, 34, 96, .32), transparent 70%), #0e0c15; }
-.hero-bg.wall canvas { opacity: 1; }
-.hero-bg.wall img { opacity: 0; }
-.hero-bg.wall::after { background: linear-gradient(90deg, rgba(11, 11, 14, .8) 0, rgba(11, 11, 14, .42) 48%, rgba(11, 11, 14, .12) 100%),
+.hero-bg::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(11, 11, 14, .8) 0, rgba(11, 11, 14, .42) 48%, rgba(11, 11, 14, .12) 100%),
   linear-gradient(180deg, rgba(11, 11, 14, 0) 62%, var(--bg) 100%); }
+/* the Revival wall (wall.js) fades in over the gradient once its first logos are drawn */
+.hero-bg canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 1.4s var(--out); }
+.hero-bg.wall canvas { opacity: 1; }
 .hero-in { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: clamp(40px, 6vw, 88px); align-items: center;
   padding-top: clamp(56px, 9vw, 120px); padding-bottom: clamp(56px, 8vw, 104px); }
 .hero h1 { font-size: clamp(40px, 5.4vw, 72px); line-height: 1.02; margin: 22px 0 22px; font-stretch: 92%; }

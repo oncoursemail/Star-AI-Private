@@ -1,6 +1,6 @@
 /* Home hero: the launcher's Revival wall (wall/logos.js, copied from launcher/web/wallpaper): the logo of every revival
-   floating at different depths, the most online ones largest and up front. WebGL2 only; without it the still
-   picture stays. Reduced motion: one still frame. Nothing is drawn while the hero is off screen or the tab is hidden. */
+   floating at different depths, the most online ones largest and up front. WebGL2 only; without it the hero's
+   dark gradient stays. Reduced motion: one still frame. Nothing is drawn while the hero is off screen or the tab is hidden. */
 "use strict";
 (() => {
   const box = document.querySelector(".hero-bg");
