@@ -331,7 +331,8 @@ class RealtimeTelemetryHost:
             telemetry = StreamTelemetry(
                 self._live, self._game_active,
                 hardware.free_vram_mib, hardware.total_vram_mib,
-                fps, backlog
+                fps, backlog,
+                private_stream_rehearsal=self._private_stream_rehearsal,
             )
             # AdaptiveQoS's live sampling gate is <=250ms. Do not lie by
             # stamping the current time on older GPU/CPU readings.
