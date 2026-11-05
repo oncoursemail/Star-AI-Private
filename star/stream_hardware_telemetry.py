@@ -187,10 +187,13 @@ class RealtimeTelemetryHost:
             generation = self._generation
         try:
             try:
+                # Timestamp the earliest probe, not the end of potentially
+                # blocking device I/O. Otherwise an old GPU measurement can
+                # masquerade as fresh after a slow CPU/memory probe.
+                measured_ms = self._now()
                 gpu = self._gpu_probe()
                 mem = self._memory_probe()
                 cpu = _cpu_times(self._cpu_probe())
-                measured_ms = self._now()
                 if (type(gpu) is not dict or
                         type(mem) is not tuple or len(mem) != 2 or
                         any(type(v) is not int or v <= 0 for v in mem) or
@@ -334,11 +337,12 @@ class RealtimeTelemetryHost:
                 fps, backlog,
                 private_stream_rehearsal=self._private_stream_rehearsal,
             )
-            # AdaptiveQoS's live sampling gate is <=250ms. Do not lie by
-            # stamping the current time on older GPU/CPU readings.
+            # Both broadcasts and private OBS rehearsals require <=250 ms
+            # GPU/CPU freshness; neither may relabel an aged sample as fresh.
             qos = None
             if (hardware.cpu_busy_percent is not None
-                    and (not self._live or now - hardware.sampled_ms <= 250)):
+                    and (not (self._live or self._private_stream_rehearsal)
+                         or now - hardware.sampled_ms <= 250)):
                 qos = QoSSnapshot(
                     hardware.sampled_ms, telemetry, hardware.free_ram_mib,
                     hardware.cpu_busy_percent, self._cpu_slots, self._gpu_slots,

@@ -132,8 +132,11 @@ class StreamAdmissionGate:
             t.free_vram_mib < 1536
             or (t.game_active and t.game_fps < 45)
             or t.speech_backlog_ms > 350
-            or (t.live and (sample.obs_render_lag_pct > 1.0
-                            or sample.obs_encode_lag_pct > 1.0))
+            # OBS can drop rendered/encoded frames while recording privately,
+            # even when no public stream is active.
+            or ((t.live or t.private_stream_rehearsal)
+                and (sample.obs_render_lag_pct > 1.0
+                     or sample.obs_encode_lag_pct > 1.0))
         )
 
     def observe(self, sample: StreamHealthSample) -> bool:

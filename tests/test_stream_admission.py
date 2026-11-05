@@ -157,3 +157,22 @@ def test_bad_controls_rejected():
         gate.advise("unknown", now_ms=1000)
     with pytest.raises(ValueError):
         gate.advise("vision", now_ms=float("inf"))
+
+
+@pytest.mark.parametrize("lag", ["render", "encode"])
+def test_private_obs_recording_lag_trips_admission_latch(lag):
+    # Private rehearsals still encode and render video; neither needs a public broadcast.
+    gate = active()
+    kwargs = {lag: 2.5}
+    assert gate.observe(sample(live=False, game_active=True, rehearsal=True, **kwargs))
+    assert gate.metrics()["overloaded"]
+    advice = gate.advise("vision", now_ms=1050)
+    assert not advice.allowed
+    assert advice.reason == "resource_or_obs_pressure"
+    assert gate.advise("speech", now_ms=1050).allowed
+
+
+def test_idle_offline_without_obs_broadcast_keeps_original_admission():
+    gate = active()
+    assert gate.observe(sample(live=False, game_active=False, rehearsal=False, render=3.0))
+    assert gate.advise("vision", now_ms=1050).allowed
