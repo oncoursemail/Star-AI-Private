@@ -408,3 +408,31 @@ def test_rehearsal_label_is_not_authorized_by_bad_flags_or_missing_owner():
         h.set_context(live=True, game_active=True, owner_approved=True,
                       private_stream_rehearsal=True)
     assert s.calls == 0 and not h.status()["enabled"]
+
+
+def test_slow_hardware_probe_does_not_relabel_old_vram_as_fresh():
+    s = Sensors()
+    h = host(s, live=True, game=False)
+    assert h.refresh_hardware()
+    s.cpu_tick()
+    # GPU measurement is captured at 1000 ms, but a different probe stalls.
+    # Snapshot at 1700 ms must not claim the GPU was measured at 1700 ms.
+    def slow_cpu():
+        s.advance(700)
+        return s.cpu
+    h._cpu_probe = slow_cpu
+    assert h.refresh_hardware()
+    assert h.report_audio_backlog(backlog_ms=20, at_ms=s.now)
+    snapshot = h.snapshot()
+    assert snapshot is None or snapshot.qos is None
+
+
+def test_private_recording_qos_does_not_expose_aged_gpu_samples():
+    h, s = ready(live=False, game=True, private=True)
+    s.advance(300)
+    frames(h, s, count=12)
+    assert h.report_audio_backlog(backlog_ms=20, at_ms=s.now)
+    snap = h.snapshot()
+    assert snap is not None  # still useful as read-only historical diagnostics
+    assert snap.hardware_age_ms > 250
+    assert snap.qos is None  # realtime inference must get a fresh sample
