@@ -1,5 +1,5 @@
 # STAR AI — signed practice evidence, intelligence throughput, and humanlike VTuber roadmap
-**Research checkpoint:** 2026-11-04 (America/Chicago)  
+**Research checkpoint:** 2026-11-04 (America/Chicago)
 **Implementation scope:** one verified practice progression bug fix; all other proposals below remain *research and acceptance plans*, not shipping functionality.
 
 ## 1. Concrete failure reproduced and repaired
@@ -48,7 +48,7 @@ Make Star **recognizable and entertaining**, not secretly human: continuity of p
 5. **Release:** use the existing signature/evidence, rollback and privacy infrastructure; require at least one successful real recording review. Do not promote based on confidence strings, operator hearsay, synthetic pass counts or isolated tokens/sec.
 
 ### What this commit proves, and what it does not
-**Proves (offline):** missing signed latest-outcome evidence no longer unlocks the practice curriculum; deterministic adversarial tests cover that regression.  
+**Proves (offline):** missing signed latest-outcome evidence no longer unlocks the practice curriculum; deterministic adversarial tests cover that regression.
 **Does not prove:** model IQ improvement, accelerated token generation, autonomous game-winning ability, streaming FPS or natural audible conversation. Those require the host/game/OBS/voice measurements above.
 
 **Operational note:** feature work is in a stacked draft PR to minimize risk to main; merging still requires dependency reviews and CI. GitHub is the publication/review mirror, not a substitute for Star's offline-first internal experiment ledger.
