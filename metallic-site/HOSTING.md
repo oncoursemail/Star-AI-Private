@@ -153,4 +153,6 @@ Logs: `journalctl -t metallic-failover`. Drill: `touch /run/metallic-failover-dr
 itself unhealthy (the standby takes over within about 40 s); `rm` it to switch back.
 
 Publishing and deploying go to BOTH copies: upload release files and switch `latest.json` / `quest.json` on each, and run
-`deploy.sh` in each container. Each copy's metallic-live counts the downloads and "people in Metallic" it serves itself.
+`deploy.sh` in each container. Each copy's metallic-live counts the "people in Metallic" it serves itself. Downloads are
+logged per copy too, but the public number is both added: metallic-failover passes each copy's count to the other in
+`health.json`, and the other's last known count stays in `live/.downloads-peer.json`.

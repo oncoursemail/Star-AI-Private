@@ -58,6 +58,20 @@ try: p=json.loads(sys.argv[1])
 except Exception: p={}
 print("true" if p.get("ok") and p.get("serving") and time.time()-p.get("at",0) < 60 else "false")' "$peer")
 
+# ---- download counts ----
+# Each copy logs only what it served: publish ours in health.json, keep the other's last known for metallic-live to add.
+own=$(python3 -c '
+import json,os,sys
+own,peer_file,peer=sys.argv[1:]
+try:
+    d=json.loads(peer).get("downloads")
+    if isinstance(d,dict):
+        with open(peer_file+".new","w") as f: json.dump(d,f)
+        os.replace(peer_file+".new",peer_file)
+except Exception: pass
+try: print(json.dumps(json.load(open(own))))
+except Exception: print("null")' "${LIVE%/*}/.downloads-own.json" "${LIVE%/*}/.downloads-peer.json" "$peer")
+
 if [ "$ROLE" = primary ]; then
   want=true; [ "$ok" = false ] && [ "$peer_up" = true ] && want=false
 else
@@ -71,5 +85,5 @@ elif [ "$want" = false ] && systemctl is-active --quiet cloudflared; then
 fi
 serving=false; ready && serving=true
 
-printf '{"role":"%s","ok":%s,"serving":%s,"at":%s,"why":"%s"}\n' "$ROLE" "$ok" "$serving" "$now" "$why" > "$OUT/health.json.new"
+printf '{"role":"%s","ok":%s,"serving":%s,"at":%s,"why":"%s","downloads":%s}\n' "$ROLE" "$ok" "$serving" "$now" "$why" "$own" >"$OUT/health.json.new"
 mv "$OUT/health.json.new" "$OUT/health.json"
