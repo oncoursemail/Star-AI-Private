@@ -141,23 +141,33 @@ same Cloudflare tunnel (same credentials file). Cloudflare sends visitors to whi
 drops out the other carries everything with no error page.
 
 `server/metallic-site/failover/` (install with `bash install.sh primary|standby http://<other host>:8089` inside each
-container) adds a check every 15 s that switches only the tunnel connector:
+container) adds a check every 15 s, `metallic-failover`:
 
-- healthy = reaches the internet, Caddy answers, `live/revivals.json` has numbers and is under 5 minutes old (2 failed
-  checks make a copy unhealthy, 3 good ones healthy again);
-- the primary serves while healthy, and steps out only while the standby is healthy and connected;
-- the standby serves while the primary is not healthy and connected;
-- a copy steps out only after the other is connected (make-before-break), so there is never a moment with no connector.
+- **Tunnel.** Both connectors stay up all the time, so when a copy goes away nothing has to be switched: Cloudflare already
+  has the other. A copy stops its own connector only while it is unhealthy and the other is healthy and connected. Healthy =
+  reaches the internet, Caddy answers, `live/revivals.json` has numbers and is under 5 minutes old (2 failed checks make a
+  copy unhealthy, 1 when Caddy is down; 3 good ones healthy again).
+- **Data.** One copy writes and the other mirrors it, so either can answer a visitor with the same numbers and history. The
+  primary writes while it has internet (3 good checks to start), else the standby; only the writer's `metallic-live.timer`
+  runs. The writer puts its live files, the hidden history files included, in `health.json`, and the other replaces its own,
+  one atomic rename per file. This works over the LAN, so a copy that has lost the internet stays up to date and a returning
+  primary has no hole in its history. A mirror takes only newer, whole files with numbers in them. It is at most one check
+  (15 s) behind the writer.
+- **Each copy's own logs.** Installer downloads are added across copies (each passes its count in `health.json`, the other's
+  last known count stays in `live/.downloads-peer.json`). Launchers seen in the last 5 minutes go across too, into
+  `/var/log/caddy/beats.peer.log`, which metallic-live counts with its own beats logs, so nobody counts twice.
+- **Storage.** Everything is replaced in place: no versions, no copies per run. The mirror adds about 170 KB of RAM on the writer
+  (`/run`), a small `beats.peer.log`, and one script backup (`/usr/local/bin/metallic-failover.bak`, one per install).
 
 Each copy publishes its state at `http://<host>:8089/health.json` (LXD proxy device `health` on the host -> the
 container's `metallic-health.service`); the other copy reads it. While a host firewall blocks port 8089, each copy reads
 the other over SSH instead (`PEER_SSH`), with a key that the other host's `authorized_keys` limits to printing that one
-file (`restrict,from=...,command=...`; see `install.sh`). Without either link each copy keeps its own connector up (both
-serve), which still covers a copy that goes away entirely but not one that stays connected with bad data.
-Logs: `journalctl -t metallic-failover`. Drill: `touch /run/metallic-failover-drill` in the primary makes it report
-itself unhealthy (the standby takes over within about 40 s); `rm` it to switch back.
+file (`restrict,from=...,command=...`; see `install.sh`). Without either link both copies write and serve, each with its own
+numbers, until the link is back and the standby takes the primary's. `health.json` holds launcher session IDs: LAN only.
+Logs: `journalctl -t metallic-failover`, one line per change. Drill: `touch /run/metallic-failover-drill` in the primary makes
+it report itself unhealthy and hand over the writing (the standby's connector is already up); `rm` it to switch back. Never
+drill a copy while the other is down.
 
 Publishing and deploying go to BOTH copies: upload release files and switch `latest.json` / `quest.json` on each, and run
-`deploy.sh` in each container. Each copy's metallic-live counts the "people in Metallic" it serves itself. Downloads are
-logged per copy too, but the public number is both added: metallic-failover passes each copy's count to the other in
-`health.json`, and the other's last known count stays in `live/.downloads-peer.json`.
+`deploy.sh` in each container: pages and release files are not mirrored, only `live/` is. Comparing them: list `dist` with
+sizes on each copy and compare the checksums of the lists.

@@ -449,3 +449,256 @@ def test_build_refuses_a_page_without_front_matter(tmp_path, built, monkeypatch)
     monkeypatch.setattr(mod, "SRC", fake_src)
     with pytest.raises(SystemExit, match="missing 'title'"):
         mod.build(tmp_path / "x", SITE_URL)
+
+
+# ---- two copies: both connectors up, one writer, the other an exact mirror (server/metallic-site/failover/metallic-failover)
+
+def _failover():
+    import importlib.machinery
+    import importlib.util
+    path = str(Path(__file__).resolve().parent.parent / "server" / "metallic-site" / "failover" / "metallic-failover")
+    loader = importlib.machinery.SourceFileLoader("metallic_failover", path)
+    spec = importlib.util.spec_from_loader("metallic_failover", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def _live_dir(folder, stamp_ns, text="a"):
+    import os
+    fo = _failover()
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in fo.MIRRORED:
+        f = folder / name
+        f.write_text(json.dumps({"name": name, "v": text, "totals": {"withNumbers": 3}}), encoding="utf-8")
+        os.utime(f, ns=(stamp_ns, stamp_ns))
+    for name in (".downloads-own.json", ".downloads-peer.json"):
+        (folder / name).write_text('{"downloads": %d, "updates": 0}' % len(text), encoding="utf-8")
+
+
+def test_failover_a_healthy_peer_never_makes_a_copy_step_out():
+    fo = _failover()
+    now = 1000.0
+    up = {"ok": True, "serving": True, "at": now}
+    for peer in (up, {}, {"ok": False, "serving": False, "at": now}, {**up, "at": now - 61}):
+        assert fo.want_connector(True, peer, now), "a healthy copy keeps its connector, whatever the other does"
+    assert fo.want_connector(False, up, now) is False, "unhealthy with the other serving: step out"
+    assert fo.want_connector(False, {}, now), "unhealthy and alone: better than nothing"
+    assert fo.want_connector(False, {**up, "at": now - 61}, now), "the other's word is old: it may be gone"
+    assert fo.want_connector(False, {**up, "serving": False}, now), "make before break"
+
+
+def test_failover_one_copy_writes_the_primary_when_it_has_internet():
+    fo = _failover()
+    now = 1000.0
+    leading = {"leading": True, "at": now}
+    following = {"leading": False, "at": now}
+    assert fo.want_lead("primary", True, following, now) and fo.want_lead("primary", True, leading, now)
+    assert not fo.want_lead("primary", False, leading, now), "no internet: the standby writes, the primary mirrors it"
+    assert fo.want_lead("primary", False, {}, now), "alone: someone has to keep the download count going"
+    assert not fo.want_lead("standby", True, leading, now)
+    assert fo.want_lead("standby", True, following, now) and fo.want_lead("standby", True, {}, now)
+    assert fo.want_lead("standby", True, {**leading, "at": now - 61}, now), "the primary went quiet: take over at once"
+
+
+def test_failover_mirror_makes_the_copies_identical_and_keeps_each_copys_own_count(tmp_path):
+    import os
+    fo = _failover()
+    a, b, work = tmp_path / "a", tmp_path / "b", tmp_path / "work"
+    _live_dir(a, 2_000_000_000_000, "leader")
+    _live_dir(b, 1_000_000_000_000, "old")
+    before = sorted(p.name for p in b.iterdir())
+    state = fo.build_state(a, work)
+    assert fo.apply_state(b, state) is True
+    for name in fo.MIRRORED:
+        assert (b / name).read_bytes() == (a / name).read_bytes(), name
+        assert os.stat(b / name).st_mtime_ns == os.stat(a / name).st_mtime_ns, "age checks see the writer's time"
+    assert (b / ".downloads-own.json").read_text(encoding="utf-8") == '{"downloads": 3, "updates": 0}', "not double counted"
+    assert sorted(p.name for p in b.iterdir()) == before, "replaced in place: no new files, nothing left behind"
+    assert fo.apply_state(b, state) is False, "the same state again changes nothing"
+    assert not {".downloads-own.json", ".downloads-peer.json"} & set(fo.MIRRORED)
+
+
+def test_failover_mirror_refuses_old_or_damaged_data_and_files_it_does_not_know(tmp_path):
+    import base64
+    import gzip
+    fo = _failover()
+    a, b, work = tmp_path / "a", tmp_path / "b", tmp_path / "work"
+    _live_dir(a, 1_000_000_000_000, "older")
+    _live_dir(b, 2_000_000_000_000, "newer")
+    assert fo.apply_state(b, fo.build_state(a, work)) is False, "a copy never goes back in time"
+    assert "newer" in (b / "revivals.json").read_text(encoding="utf-8")
+    pack = lambda files: {"id": 3_000_000_000_000, "gz": base64.b64encode(gzip.compress(json.dumps(files).encode())).decode()}
+    good = {n: {"mtime_ns": 3_000_000_000_000, "text": json.dumps({"totals": {"withNumbers": 1}})} for n in fo.MIRRORED}
+    for bad in ({**good, "../evil.json": good["revivals.json"]}, {**good, "revivals.json": {"mtime_ns": 3, "text": "{half"}},
+                {"revivals.json": good["revivals.json"]},
+                {**good, "revivals.json": {"mtime_ns": 3, "text": json.dumps({"totals": {"withNumbers": 0}})}}):
+        assert fo.apply_state(b, pack(bad)) is False, str(list(bad))[:60]
+    for broken in ({}, None, {"id": 3_000_000_000_000}, {"id": 3_000_000_000_000, "gz": "not base64"}):
+        assert fo.apply_state(b, broken) is False
+    assert not (tmp_path / "evil.json").exists() and "newer" in (b / "revivals.json").read_text(encoding="utf-8")
+
+
+def test_failover_people_online_on_either_copy_count_once_and_the_file_never_grows(tmp_path):
+    fo = _failover()
+    logs = tmp_path / "caddy"
+    logs.mkdir()
+    a_id, b_id, gone = "a" * 32, "b" * 32, "c" * 32
+    now = 10_000.0
+    line = lambda ts, s: json.dumps({"level": "info", "ts": ts, "logger": "http.log.access.beats", "status": 200, "session": s})
+    (logs / "beats.log").write_text("\n".join([line(now - 10, a_id), line(now - 200, a_id), line(now - 301, gone), line(now - 5, "not-an-id"), "junk"]), encoding="utf-8")
+    (logs / "beats-2026-11-05T23-59-41.893-size.log").write_text(line(now - 100, b_id), encoding="utf-8")
+    assert fo.recent_sessions(logs, now) == {a_id: now - 10, b_id: now - 100}
+    fo.write_peer_beats(logs, {gone: now - 20, "x" * 32: now - 20, "bad": now}, now)
+    fo.write_peer_beats(logs, {gone: now - 20, a_id: now - 400}, now)
+    peer_log = logs / fo.PEER_BEATS
+    lines = [json.loads(x) for x in peer_log.read_text(encoding="utf-8").splitlines()]
+    assert lines == [{"ts": now - 20, "session": gone}], "replaced each time, only what is still online"
+    assert peer_log.name.startswith("beats") and peer_log.name.endswith(".log") and not peer_log.name.startswith("beats-"), \
+        "metallic-live reads it; Caddy's log rolling does not take it for one of its own"
+    assert gone not in fo.recent_sessions(logs, now), "the other copy's visitors are not sent back to it as this copy's"
+
+
+def test_failover_counts_downloads_as_metallic_live_does(tmp_path):
+    fo = _failover()
+    line = lambda method, uri, status, size, length, ua: json.dumps({"request": {"method": method, "uri": uri}, "status": status, "size": size,
+                                                                       "resp_headers": {"Content-Length": [length]}, "ua": ua})
+    log = tmp_path / "downloads.log"
+    # the same lines as count_downloads' own test in metallic-rc's live.rs: the two must agree, or a change of writer moves the number
+    log.write_text("\n".join([
+        line("GET", "/releases/Metallic_0.2.6_x64-setup.exe", 200, 9000, "9000", "Mozilla/5.0"),
+        line("GET", "/releases/Metallic_0.2.5_x64-setup.exe?x=1", 200, 8000, "8000", "Mozilla/5.0"),
+        line("GET", "/releases/Metallic_0.2.6_x64-setup.exe", 200, 9000, "9000", "tauri-plugin-updater/2.14.1"),
+        line("GET", "/releases/Metallic_0.2.6_x64-setup.exe", 200, 4000, "9000", "Mozilla/5.0"),
+        line("HEAD", "/releases/Metallic_0.2.6_x64-setup.exe", 200, 0, "9000", "Mozilla/5.0"),
+        line("GET", "/releases/Metallic_0.2.6_x64-setup.exe", 304, 0, "", "Mozilla/5.0"),
+        line("GET", "/releases/Metallic_0.2.6_x64-setup.exe.sig", 200, 400, "400", "Mozilla/5.0"),
+        line("GET", "/releases/Metallic_0.2.8_amd64.AppImage", 200, 9000, "9000", "Mozilla/5.0"),
+        line("GET", "/releases/Metallic_0.2.8_amd64.deb", 200, 900, "900", "Mozilla/5.0"),
+        line("GET", "/revivals/nodenet/NodeNetLauncherSetup.exe", 200, 900, "900", "Metallic-Launcher/0.2.11"),
+        line("GET", "/releases/Metallic_0.2.8_aarch64.dmg", 200, 9000, "9000", "Mozilla/5.0"),
+        "not json",
+    ]), encoding="utf-8")
+    assert fo.count_downloads(log) == {"downloads": 5, "updates": 1}
+    assert fo.count_downloads(tmp_path / "missing.log") is None
+
+
+def test_failover_install_keeps_one_backup_only():
+    text = (Path(__file__).resolve().parent.parent / "server" / "metallic-site" / "failover" / "install.sh").read_text(encoding="utf-8")
+    assert re.search(r"cp [^\n]*/usr/local/bin/metallic-failover /usr/local/bin/metallic-failover\.bak", text)
+    assert "$(date" not in text, "a dated copy per install would pile up"
+
+
+class _Copy:
+    """One copy of the site in a folder: the real check, with the network, systemd and the clock answered here."""
+
+    def __init__(self, base, role, clock):
+        import types
+        self.fo, self.role, self.clock, self.peer, self.internet = _failover(), role, clock, None, True
+        self.link_up, self.units, self.stops = True, {"cloudflared", "metallic-live.timer"}, []
+        root = base / role
+        for name, attr in (("state", "STATE"), ("out", "OUT"), ("work", "WORK"), ("live", "LIVE_DIR"), ("logs", "CADDY_LOGS")):
+            (root / name).mkdir(parents=True)
+            setattr(self.fo, attr, root / name)
+        self.fo.CONF = root / "conf"
+        self.fo.CONF.write_text(f"ROLE={role}\nPEER=http://other:8089\n")
+        self.fo.DRILL = root / "no-drill"
+        self.fo.time = types.SimpleNamespace(time=lambda: self.clock[0])
+        self.fo._get, self.fo._run = self._get, self._run
+        (root / "logs" / "beats.log").write_text("", encoding="utf-8")
+        (root / "logs" / "downloads.log").write_text("", encoding="utf-8")
+
+    def _get(self, url, seconds):
+        if "cloudflare.com" in url or "discord.com" in url:
+            return "ok" if self.internet else None
+        if "8088" in url:
+            return "ok"
+        if "20241" in url:
+            return '{"readyConnections":4}' if self.internet and "cloudflared" in self.units else None
+        if not self.link_up or not self.peer.link_up:
+            return None
+        health = self.peer.fo.OUT / "health.json"
+        return health.read_text(encoding="utf-8") if health.exists() else None
+
+    def _run(self, *cmd, timeout):
+        import types
+        code = 0
+        if cmd[:2] == ("systemctl", "is-active"):
+            code = 0 if cmd[-1] in self.units else 3
+        elif cmd[:2] == ("systemctl", "stop"):
+            self.units.discard(cmd[-1])
+            self.stops.append(cmd[-1])
+        elif cmd[:2] == ("systemctl", "start") and cmd[-1] != "metallic-live.service":
+            self.units.add(cmd[-1])
+        return types.SimpleNamespace(returncode=code, stdout="")
+
+    def live_run(self):
+        """metallic-live, when its timer is on: adds one sample to the history it finds and writes everything."""
+        import os
+        if "metallic-live.timer" not in self.units:
+            return
+        live = self.fo.LIVE_DIR
+        try:
+            samples = json.loads((live / ".revivals-history.json").read_text(encoding="utf-8"))["samples"]
+        except OSError:
+            samples = []
+        samples = samples + [self.clock[0]] if self.internet else samples  # no internet, no new number
+        doc = json.dumps({"samples": samples, "totals": {"withNumbers": 3}})
+        for name in self.fo.MIRRORED:
+            (live / name).write_text(doc, encoding="utf-8")
+            os.utime(live / name, ns=(int(self.clock[0] * 1e9), int(self.clock[0] * 1e9)))
+
+    def text(self, name=".revivals-history.json"):
+        return (self.fo.LIVE_DIR / name).read_text(encoding="utf-8")
+
+
+def test_failover_a_whole_outage_and_return_shows_one_history_and_no_copy_steps_out_for_a_healthy_peer(tmp_path):
+    clock = [1_800_000_000.0]
+    a, b = _Copy(tmp_path, "primary", clock), _Copy(tmp_path, "standby", clock)
+    a.peer, b.peer = b, a
+
+    def minutes(n):
+        for _ in range(n * 4):  # every 15 s; metallic-live every 2 minutes
+            clock[0] += 15
+            if int(clock[0] - 1_800_000_000) % 120 == 0:
+                a.live_run()
+                b.live_run()
+            a.fo.main()
+            b.fo.main()
+        for copy in (a, b, a):  # a mirror is at most one check behind
+            copy.fo.main()
+
+    a.live_run()
+    a.fo.main()
+    b.fo.main()
+    minutes(6)
+    assert "metallic-live.timer" not in b.units, "one writer while the primary is well"
+    assert a.text() == b.text(), "the standby mirrors everything, history included"
+    assert {"cloudflared"} <= a.units and {"cloudflared"} <= b.units and not a.stops.count("cloudflared") and not b.stops.count("cloudflared"), \
+        "both connectors stay up"
+
+    # the primary's link dies; the LAN still works, as it did on 11-05 and 11-06
+    a.internet = False
+    before = json.loads(a.text())["samples"]
+    minutes(6)
+    assert "metallic-live.timer" in b.units and "metallic-live.timer" not in a.units, "the standby writes, the primary mirrors"
+    assert "cloudflared" in b.units, "the standby never stopped"
+    assert a.text() == b.text(), "the primary keeps up over the LAN"
+    assert len(json.loads(b.text())["samples"]) >= len(before) + 2
+
+    # the link comes back: the primary is up to date already and takes the writing back
+    a.internet = True
+    minutes(6)
+    assert "metallic-live.timer" in a.units and "metallic-live.timer" not in b.units
+    assert "cloudflared" in a.units and "cloudflared" in b.units and "cloudflared" not in b.stops
+    assert a.text() == b.text()
+    samples = json.loads(a.text())["samples"]
+    assert samples == sorted(samples) and max(y - x for x, y in zip(samples, samples[1:])) <= 240, "no hole in the history"
+    assert all(a.text(n) == b.text(n) for n in a.fo.MIRRORED)
+
+    # the primary is gone altogether, LAN too: the standby has it all and goes on
+    a.link_up = False
+    last = samples[-1]
+    minutes(3)
+    assert "metallic-live.timer" in b.units and "cloudflared" in b.units
+    assert json.loads(b.text())["samples"][-1] > last

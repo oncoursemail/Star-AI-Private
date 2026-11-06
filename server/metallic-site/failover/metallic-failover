@@ -1,89 +1,345 @@
-#!/usr/bin/env bash
-# metallic.club on two hosts, switched automatically. Runs every 15 s (metallic-failover.timer) on both copies.
-#
-# Both copies run Caddy, the site and metallic-live all the time; only the Cloudflare tunnel connector is switched.
-# Both connectors use the same tunnel, so while both are up Cloudflare sends visitors to either, and when one goes away
-# the other takes everything with no gap. The switch is make-before-break: a copy steps out only after the other one
-# reports that it is healthy and connected.
-#
-#   primary:  serves while it is healthy; steps out only while the standby is healthy and serving.
-#   standby:  serves while the primary is not (healthy and serving).
-#
-# Healthy = this copy reaches the internet, Caddy answers, and metallic-live wrote revivals.json with numbers in the last
-# 5 minutes. Two failed checks in a row make a copy unhealthy, three good ones healthy again (no flapping).
-# Each copy publishes its state at http://<host>:8089/health.json on the LAN (metallic-health.service), where the other
-# copy reads it. Settings: /etc/metallic-failover.conf (ROLE=primary|standby, PEER=http://<other host>:8089, and
-# optionally PEER_SSH=<user>@<other host>: used while the port is blocked; see install.sh for the key).
-set -uo pipefail
+#!/usr/bin/env python3
+"""metallic.club on two hosts that look like one. Runs every 15 s (metallic-failover.timer) on both copies.
 
-. /etc/metallic-failover.conf
-STATE=/var/lib/metallic-failover
-OUT=/run/metallic-health
-LIVE=/srv/metallic/dist/live/revivals.json
-mkdir -p "$STATE" "$OUT"
-now=$(date +%s)
+Tunnel: both copies keep a connector of the same Cloudflare tunnel up all the time, so when one goes away Cloudflare already
+has the other and nothing has to be switched. A copy stops its connector only while it is itself unhealthy and the other is
+healthy and connected (make-before-break).
 
-# ---- this copy ----
-why=""
-curl -fsS -m 5 -o /dev/null https://www.cloudflare.com/cdn-cgi/trace || curl -fsS -m 5 -o /dev/null https://discord.com/api/v10/gateway || why="no internet"
-[ -z "$why" ] && { curl -fsS -m 3 -o /dev/null http://127.0.0.1:8088/ || why="caddy down"; }
-if [ -z "$why" ]; then
-  age=$(( now - $(stat -c %Y "$LIVE" 2>/dev/null || echo 0) ))
-  nums=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["totals"]["withNumbers"])' "$LIVE" 2>/dev/null || echo 0)
-  [ "$age" -le 300 ] && [ "$nums" -gt 0 ] || why="live data stale (${age}s, ${nums} with numbers)"
-fi
-[ -e /run/metallic-failover-drill ] && why="drill (rm /run/metallic-failover-drill to end it)" # a failover test
-bad=$(cat "$STATE/bad" 2>/dev/null || echo 0); good=$(cat "$STATE/good" 2>/dev/null || echo 3)
-if [ -n "$why" ]; then bad=$((bad + 1)); good=0; else good=$((good + 1)); bad=0; fi
-echo "$bad" > "$STATE/bad"; echo "$good" > "$STATE/good"
-ok=$(cat "$STATE/ok" 2>/dev/null || echo true)
-[ "$bad" -ge 2 ] && ok=false
-[ "$good" -ge 3 ] && ok=true
-echo "$ok" > "$STATE/ok"
+Data: one copy writes, the other mirrors it, so either can answer a visitor with the same numbers and the same history. The
+primary writes while it has internet, else the standby. Only the writer runs metallic-live (its timer is stopped on the
+other). The writer publishes its live files in health.json; the other replaces its own with them, one atomic rename per file,
+also while it has no internet, since this link is the LAN. So a copy that takes over, or comes back, is already up to date.
 
-ready() { curl -fsS -m 2 http://127.0.0.1:20241/ready 2>/dev/null | grep -q '"readyConnections":[1-9]'; }
-serving=false; ready && serving=true
+What each copy keeps of its own, because only it can see it: Caddy's logs. Installer downloads are added across copies as
+before, and the launchers seen in the last 5 minutes go to the other copy, into beats.peer.log, which metallic-live reads with
+its own beats logs. Everything here replaces a file in place: nothing is versioned and nothing piles up.
 
-# ---- the other copy ----
-# over LAN port 8089, else (while a firewall blocks it) over SSH with a key that can only print the peer's health.json
-peer=$(curl -fsS -m 3 "$PEER/health.json" 2>/dev/null) || peer=""
-if [ -z "$peer" ] && [ -n "${PEER_SSH:-}" ]; then
-  peer=$(ssh -i /root/.ssh/metallic-health -o UserKnownHostsFile=/root/.ssh/known_hosts.metallic-health -o BatchMode=yes \
-    -o ConnectTimeout=3 -T "$PEER_SSH" 2>/dev/null) || peer=""
-fi
-[ -n "$peer" ] || peer='{}'
-peer_up=$(python3 -c '
-import json,sys,time
-try: p=json.loads(sys.argv[1])
-except Exception: p={}
-print("true" if p.get("ok") and p.get("serving") and time.time()-p.get("at",0) < 60 else "false")' "$peer")
+Healthy = this copy reaches the internet, Caddy answers, and revivals.json has numbers and is under 5 minutes old. Two failed
+checks in a row make a copy unhealthy (one when Caddy is down), three good ones healthy again (no flapping).
+Each copy publishes its state at http://<host>:8089/health.json on the LAN (metallic-health.service), where the other copy
+reads it. Settings: /etc/metallic-failover.conf (ROLE=primary|standby, PEER=http://<other host>:8089, and optionally
+PEER_SSH=<user>@<other host>: used while the port is blocked; see install.sh for the key).
+"""
+import base64
+import gzip
+import json
+import os
+import re
+import subprocess
+import time
+from pathlib import Path
 
-# ---- download counts ----
-# Each copy logs only what it served: publish ours in health.json, keep the other's last known for metallic-live to add.
-own=$(python3 -c '
-import json,os,sys
-own,peer_file,peer=sys.argv[1:]
-try:
-    d=json.loads(peer).get("downloads")
-    if isinstance(d,dict):
-        with open(peer_file+".new","w") as f: json.dump(d,f)
-        os.replace(peer_file+".new",peer_file)
-except Exception: pass
-try: print(json.dumps(json.load(open(own))))
-except Exception: print("null")' "${LIVE%/*}/.downloads-own.json" "${LIVE%/*}/.downloads-peer.json" "$peer")
+CONF = Path("/etc/metallic-failover.conf")
+STATE = Path("/var/lib/metallic-failover")
+OUT = Path("/run/metallic-health")
+WORK = Path("/run/metallic-failover")
+LIVE_DIR = Path("/srv/metallic/dist/live")
+CADDY_LOGS = Path("/var/log/caddy")
+DRILL = Path("/run/metallic-failover-drill")
+OWN_COUNT, PEER_COUNT = ".downloads-own.json", ".downloads-peer.json"
+PEER_BEATS = "beats.peer.log"
+# what metallic-live writes and a visitor or the next run reads, its history included; revivals.json last, the age check reads it
+MIRRORED = (".discord-answers.json", ".metallic-history.json", ".news-cache.json", ".revivals-history.json", "downloads.json",
+            "metallic.json", "news.json", "projects.json", "versions.json", "revivals.json")
+ONLINE_WINDOW = 300.0  # as metallic-live's
+PEER_FRESH = 60
+SESSION = re.compile(r"^[0-9a-f]{32}$")
+TAIL = 256 * 1024
 
-if [ "$ROLE" = primary ]; then
-  want=true; [ "$ok" = false ] && [ "$peer_up" = true ] && want=false
-else
-  want=true; [ "$peer_up" = true ] && want=false
-fi
 
-if [ "$want" = true ] && ! systemctl is-active --quiet cloudflared; then
-  systemctl start cloudflared && logger -t metallic-failover "$ROLE: started serving (healthy=$ok${why:+, $why}, peer serving healthy=$peer_up)"
-elif [ "$want" = false ] && systemctl is-active --quiet cloudflared; then
-  systemctl stop cloudflared && logger -t metallic-failover "$ROLE: stepped out (healthy=$ok${why:+, $why}, peer serving healthy=$peer_up)"
-fi
-serving=false; ready && serving=true
+# ---- decisions
 
-printf '{"role":"%s","ok":%s,"serving":%s,"at":%s,"why":"%s","downloads":%s}\n' "$ROLE" "$ok" "$serving" "$now" "$why" "$own" >"$OUT/health.json.new"
-mv "$OUT/health.json.new" "$OUT/health.json"
+def peer_fresh(peer, now):
+    return isinstance(peer, dict) and now - (peer.get("at") or 0) < PEER_FRESH
+
+
+def want_connector(ok, peer, now):
+    """A healthy copy always keeps its connector; an unhealthy one steps out only while the other is healthy and connected."""
+    return ok or not (peer_fresh(peer, now) and peer.get("ok") and peer.get("serving"))
+
+
+def want_lead(role, internet, peer, now):
+    """Who runs metallic-live. A copy with no word from the other writes, so the worst case is two writers, never none."""
+    if role == "primary":
+        return internet or not peer_fresh(peer, now)
+    return not (peer_fresh(peer, now) and peer.get("leading"))
+
+
+# ---- live files
+
+def _owned_like_folder(path, folder):
+    if hasattr(os, "chown") and os.geteuid() == 0:
+        st = os.stat(folder)
+        os.chown(path, st.st_uid, st.st_gid)
+
+
+def _replace(path, data, mtime_ns=None):
+    """One atomic rename, with the folder's owner, so a reader never sees half a file and the next run can still replace it."""
+    tmp = path.with_name(f".{path.name.lstrip('.')}.new")
+    try:
+        tmp.write_bytes(data)
+        os.chmod(tmp, 0o644)
+        _owned_like_folder(tmp, path.parent)
+        if mtime_ns is not None:
+            os.utime(tmp, ns=(mtime_ns, mtime_ns))
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def _newest(live):
+    return max((f.stat().st_mtime_ns for f in (live / n for n in MIRRORED) if f.exists()), default=0)
+
+
+def build_state(live, work):
+    """{id, gz}: the live files, packed once per change. id is the time of the newest, so a mirror can tell what is newer."""
+    work.mkdir(parents=True, exist_ok=True)
+    cache, newest = work / "state.json", _newest(live)
+    try:
+        old = json.loads(cache.read_text(encoding="utf-8"))
+        if old["id"] == newest:
+            return old
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    files = {}
+    for name in MIRRORED:
+        f = live / name
+        if f.exists():
+            files[name] = {"mtime_ns": f.stat().st_mtime_ns, "text": f.read_bytes().decode("utf-8")}
+    state = {"id": newest, "gz": base64.b64encode(gzip.compress(json.dumps(files).encode("utf-8"))).decode("ascii")}
+    cache.write_text(json.dumps(state), encoding="utf-8")
+    return state
+
+
+def apply_state(live, state):
+    """Replaces this copy's live files with the writer's. Only newer, whole, known files with numbers in them; True if it did."""
+    try:
+        if state["id"] <= _newest(live):
+            return False
+        files = json.loads(gzip.decompress(base64.b64decode(state["gz"], validate=True)))
+        if set(files) != set(MIRRORED):
+            return False
+        for f in files.values():
+            json.loads(f["text"])
+            int(f["mtime_ns"])
+        if json.loads(files["revivals.json"]["text"])["totals"]["withNumbers"] <= 0:
+            return False
+    except (ValueError, KeyError, TypeError, OSError, EOFError):
+        return False
+    for name in MIRRORED:
+        _replace(live / name, files[name]["text"].encode("utf-8"), int(files[name]["mtime_ns"]))
+    return True
+
+
+# ---- what only this copy can see: Caddy's logs
+
+def recent_sessions(logs, now):
+    """{session: last seen} of the launchers this copy has heard from in the last 5 minutes, from its own logs only."""
+    seen = {}
+    for f in logs.glob("beats*.log"):
+        if f.name == PEER_BEATS:
+            continue
+        try:
+            with open(f, "rb") as h:
+                h.seek(max(0, f.stat().st_size - TAIL))
+                lines = h.read().decode("utf-8", "replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                e = json.loads(line)
+                ts, s = float(e["ts"]), e["session"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            if isinstance(s, str) and SESSION.match(s) and now - ONLINE_WINDOW <= ts <= now + 60:
+                seen[s] = max(ts, seen.get(s, 0))
+    return seen
+
+
+def write_peer_beats(logs, sessions, now):
+    """The other copy's launchers, for metallic-live to count with this copy's. Replaced each time, so its size stays small."""
+    lines = [json.dumps({"ts": ts, "session": s}) for s, ts in sessions.items()
+             if isinstance(s, str) and SESSION.match(s) and isinstance(ts, (int, float)) and now - ONLINE_WINDOW <= ts <= now + 60]
+    _replace(logs / PEER_BEATS, "\n".join(lines).encode("utf-8"))
+
+
+def count_downloads(log):
+    """As metallic-live does (count_downloads in metallic-rc's live.rs): finished installer GETs; None when there is no log."""
+    try:
+        text = Path(log).read_bytes().decode("utf-8", "replace")
+    except OSError:
+        return None
+    downloads = updates = 0
+    for line in text.splitlines():
+        try:
+            e = json.loads(line)
+            path = e["request"]["uri"].split("?")[0]
+            method, status, size = e["request"]["method"], e["status"], e["size"]
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue
+        try:
+            length = int(e["resp_headers"]["Content-Length"][0])
+        except (ValueError, KeyError, TypeError, IndexError):
+            length = None
+        whole = isinstance(size, int) and size > 0 and (length is None or size >= length)
+        if method != "GET" or status != 200 or not path.startswith("/releases/") or not path.endswith((".exe", ".AppImage", ".deb", ".dmg")) or not whole:
+            continue
+        if str(e.get("ua") or "").startswith("tauri-plugin-updater/"):
+            updates += 1
+        else:
+            downloads += 1
+    return {"downloads": downloads, "updates": updates}
+
+
+# ---- one check
+
+def _run(*cmd, timeout):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _get(url, seconds):
+    r = _run("curl", "-fs", "-m", str(seconds), url, timeout=seconds + 2)
+    return r.stdout if r is not None and r.returncode == 0 else None
+
+
+def _active(unit):
+    r = _run("systemctl", "is-active", "--quiet", unit, timeout=10)
+    return r is not None and r.returncode == 0
+
+
+def _say(text):
+    _run("logger", "-t", "metallic-failover", text, timeout=5)
+
+
+def _hysteresis(name, failed, default, bad_needed=2):
+    """Two failures to go down (or bad_needed), three good checks to come back."""
+    def number(suffix, fallback):
+        try:
+            return int((STATE / f"{name}{suffix}").read_text())
+        except (OSError, ValueError):
+            return fallback
+    try:
+        was = (STATE / name).read_text().strip() == "true"
+    except OSError:
+        was = default
+    bad, good = (number(".bad", 0) + 1, 0) if failed else (0, number(".good", 3 if default else 0) + 1)
+    now = False if bad >= bad_needed else True if good >= 3 else was
+    try:
+        for suffix, value in ((".bad", bad), (".good", good), ("", str(now).lower())):
+            (STATE / f"{name}{suffix}").write_text(str(value))
+    except OSError:  # a full disk must not stop the rest of the check
+        pass
+    return now
+
+
+def _read_peer(conf):
+    # over LAN port 8089, else (while a firewall blocks it) over SSH with a key that can only print the peer's health.json
+    text = _get(f"{conf['PEER']}/health.json", 3)
+    if not text and conf.get("PEER_SSH"):
+        r = _run("ssh", "-i", "/root/.ssh/metallic-health", "-o", "UserKnownHostsFile=/root/.ssh/known_hosts.metallic-health",
+                 "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", "-T", conf["PEER_SSH"], timeout=10)
+        text = r.stdout if r is not None and r.returncode == 0 else None
+    try:
+        peer = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    return peer if isinstance(peer, dict) else {}
+
+
+def _guarded(step, *args):
+    """A full disk or a bad answer from the other copy must not stop the connector check that follows."""
+    try:
+        return step(*args)
+    except (OSError, ValueError, TypeError, AttributeError) as e:
+        _say(f"{step.__name__}: {e}")
+        return None
+
+
+def main():
+    conf = dict(line.split("=", 1) for line in CONF.read_text().splitlines() if "=" in line)
+    role, now, revivals = conf["ROLE"], time.time(), LIVE_DIR / "revivals.json"
+    for folder in (STATE, OUT, WORK):
+        folder.mkdir(parents=True, exist_ok=True)
+
+    # ---- this copy
+    online = _get("https://www.cloudflare.com/cdn-cgi/trace", 5) is not None or _get("https://discord.com/api/v10/gateway", 5) is not None
+    caddy = _get("http://127.0.0.1:8088/", 3) is not None
+    why = ""
+    if not online:
+        why = "no internet"
+    elif not caddy:
+        why = "caddy down"
+    else:
+        try:
+            age, numbers = int(now - revivals.stat().st_mtime), json.loads(revivals.read_text(encoding="utf-8"))["totals"]["withNumbers"]
+        except (OSError, ValueError, KeyError, TypeError):
+            age, numbers = -1, 0
+        if not 0 <= age <= 300 or numbers <= 0:
+            why = f"live data stale ({age}s, {numbers} with numbers)"
+    drill = DRILL.exists()
+    if drill:
+        why = "drill (rm /run/metallic-failover-drill to end it)"  # a failover test
+    ok = _hysteresis("ok", bool(why), True, 1 if not caddy and online else 2)
+    # proves itself before it writes: a copy that has just started follows until then
+    internet = _hysteresis("net", not online or drill, False)
+
+    # ---- the other copy
+    peer = _read_peer(conf)
+    fresh = peer_fresh(peer, now)
+
+    # ---- who writes: a copy about to take over from the other first catches up
+    was = _active("metallic-live.timer")
+    lead = want_lead(role, internet, peer, now)
+    if fresh and peer.get("leading") and not (lead and was):
+        _guarded(apply_state, LIVE_DIR, peer.get("state"))
+    if lead and not was:
+        _run("systemctl", "start", "metallic-live.timer", timeout=20)
+        _run("systemctl", "start", "--no-block", "metallic-live.service", timeout=20)
+        _say(f"{role}: writing the live data (internet={internet}, other copy heard from={fresh})")
+    elif was and not lead:
+        _run("systemctl", "stop", "metallic-live.timer", timeout=20)
+        _say(f"{role}: mirroring the other copy's live data (internet={internet})")
+
+    # ---- what only each copy can see
+    if fresh:
+        _guarded(write_peer_beats, CADDY_LOGS, peer.get("sessions") or {}, now)
+        if isinstance(peer.get("downloads"), dict):
+            _guarded(_replace, LIVE_DIR / PEER_COUNT, json.dumps(peer["downloads"]).encode("utf-8"))
+    own_file = LIVE_DIR / OWN_COUNT
+    if not lead:  # metallic-live keeps it up to date on the writer
+        count = count_downloads(CADDY_LOGS / "downloads.log")
+        if count is not None:
+            _guarded(_replace, own_file, json.dumps(count).encode("utf-8"))
+    try:
+        own = json.loads(own_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        own = None
+
+    # ---- the connector
+    want, running = want_connector(ok, peer, now), _active("cloudflared")
+    detail = f"healthy={ok}{', ' + why if why else ''}, other copy serving healthy={bool(fresh and peer.get('ok') and peer.get('serving'))}"
+    if want and not running:
+        _run("systemctl", "start", "cloudflared", timeout=60)
+        _say(f"{role}: started serving ({detail})")
+    elif running and not want:
+        _run("systemctl", "stop", "cloudflared", timeout=60)
+        _say(f"{role}: stepped out ({detail})")
+    ready = _get("http://127.0.0.1:20241/ready", 2) or ""
+    serving = re.search(r'"readyConnections":[1-9]', ready) is not None
+
+    health = {"role": role, "ok": ok, "internet": internet, "serving": serving, "leading": lead, "at": int(now), "why": why, "downloads": own,
+              "sessions": recent_sessions(CADDY_LOGS, now)}
+    if lead:
+        health["state"] = _guarded(build_state, LIVE_DIR, WORK)
+    tmp = OUT / "health.json.new"
+    tmp.write_text(json.dumps(health), encoding="utf-8")
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, OUT / "health.json")
+
+
+if __name__ == "__main__":
+    main()

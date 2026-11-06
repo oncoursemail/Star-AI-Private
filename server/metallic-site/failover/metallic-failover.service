@@ -1,5 +1,5 @@
 [Unit]
-Description=metallic.club: switch the tunnel between the two copies (see metallic-failover)
+Description=metallic.club: keep the two copies the same and the tunnel on the healthy ones (see metallic-failover)
 After=network-online.target caddy.service
 
 [Service]

@@ -13,6 +13,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROLE="${1:?primary or standby}"; PEER="${2:?http://<other host>:8089}"; PEER_SSH="${3:-}"
 [ "$ROLE" = primary ] || [ "$ROLE" = standby ] || { echo "role must be primary or standby" >&2; exit 1; }
 printf 'ROLE=%s\nPEER=%s\nPEER_SSH=%s\n' "$ROLE" "$PEER" "$PEER_SSH" > /etc/metallic-failover.conf
+# the one copy of the script this replaces (keeps no others)
+if [ -f /usr/local/bin/metallic-failover ]; then cp -p /usr/local/bin/metallic-failover /usr/local/bin/metallic-failover.bak; fi
 install -m 755 "$HERE/metallic-failover" /usr/local/bin/metallic-failover
 install -m 644 "$HERE/metallic-failover.service" "$HERE/metallic-failover.timer" "$HERE/metallic-health.service" /etc/systemd/system/
 systemctl daemon-reload
