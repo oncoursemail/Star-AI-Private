@@ -83,6 +83,10 @@
 	@assets path /assets/*
 	header @assets Cache-Control "public, max-age=3600"
 
+	# pages: a browser checks for a new one on every visit, so nobody keeps an old page
+	@pages path / /downloads/ /changelog/ /news/ *.html
+	header @pages Cache-Control "no-cache"
+
 	file_server {
 		hide .*
 	}
