@@ -81,6 +81,7 @@ class HostMonotonicGameProbe:
         self._pending: dict[int, _PendingFrame] = {}
         self._completed: dict[int, LocalFrameTiming] = {}
         self._revoked = False
+        self._in_host_dispatch = False
         self._finalized = False
         self._replay: PrivateLatencyReplay | None = None
 
@@ -92,6 +93,11 @@ class HostMonotonicGameProbe:
         self._replay = None
 
     def _require_open(self) -> None:
+        # Host callbacks are reentrant under RLock, but must never change the
+        # active window while their side effect is in progress.
+        if self._in_host_dispatch:
+            self._clear_and_revoke()
+            raise RuntimeError("host callback attempted reentrant probe mutation")
         if self._revoked:
             raise RuntimeError("private timing window revoked")
         if self._finalized:
@@ -212,6 +218,55 @@ class HostMonotonicGameProbe:
                 self._action_deadline_violations += 1
                 self._fail("action deadline expired before host input")
             pending.pre_submit_check_ns = now
+
+    def guarded_dispatch(self, sequence: int, submit: Callable[[], object]) -> None:
+        """Invoke one approved host callback only while the frame is fresh.
+
+        Opt-in alternative to calling pre_submit_check() and action_submitted()
+        separately. The probe invokes the callback synchronously while holding
+        its state lock, samples time immediately before and after it, and
+        revokes the entire evidence window if submission fails or expires.
+
+        The callback MUST be supplied by an owner-approved host. It is NOT a
+        game controller, a trust proof, or an uninterruptible hardware gate:
+        a blocking callback can still submit stale input before returning.
+        A successful callback return is not proof of in-game movement.
+        """
+        with self._lock:
+            self._require_open()
+            if self._max_action_age_ns is None:
+                self._fail("guarded dispatch requires an action age deadline")
+            if not callable(submit):
+                self._fail("guarded dispatch requires a host callback")
+            pending = self._get(sequence)
+            if (pending.decision_ready_ns is None or pending.action_submit_ns is not None
+                    or pending.pre_submit_check_ns is not None):
+                self._fail("guarded dispatch requires one ready, unchecked decision")
+
+            now = self._sample()
+            if now - pending.capture_ns > self._max_action_age_ns:
+                self._action_deadline_violations += 1
+                self._fail("action deadline expired before guarded dispatch")
+            pending.pre_submit_check_ns = now
+
+            self._in_host_dispatch = True
+            returned = False
+            try:
+                submit()
+                returned = True
+            finally:
+                self._in_host_dispatch = False
+                if not returned:
+                    # Even if the callback had partial side effects, it must
+                    # never be silently counted as a successful submission.
+                    self._clear_and_revoke()
+
+            self._require_open()
+            submitted_ns = self._sample()
+            if submitted_ns - pending.capture_ns > self._max_action_age_ns:
+                self._action_deadline_violations += 1
+                self._fail("action deadline expired during guarded dispatch")
+            pending.action_submit_ns = submitted_ns
 
     def action_submitted(self, sequence: int) -> None:
         """Mark actual host submission (never submits input itself)."""
