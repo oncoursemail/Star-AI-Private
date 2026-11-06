@@ -102,14 +102,54 @@ def test_seal_requires_a_separate_strict_host_declaration(bad_count, bad_trust):
     assert a.report().status == "revoked"
 
 
-def test_no_action_is_explicit_not_a_missing_action_or_fast_dispatch():
-    a, p = auditor()
+def test_all_no_action_window_is_accounted_without_synthetic_game_input():
+    a, p = auditor(stamps=(
+        1_000_000_000, 1_010_000_000, 1_020_000_000,
+        2_000_000_000, 2_040_000_000, 2_050_000_000,
+        3_000_000_000, 3_090_000_000, 3_110_000_000,
+    ))
+    for frame in (1, 2, 3):
+        a.capture(frame_sequence=frame)
+        a.decision_ready()
+        a.no_action()
+    assert a.report().status == "incomplete"  # no unverifiable early success
+    a.seal_frames(expected_frames=3, host_verified=True)
+    result = a.finalize()
+    assert result.status == "decision_only_no_input"
+    assert result.attempted == result.completed == 0
+    assert result.observed_frames == result.no_action_frames == 3
+    assert result.host_frame_coverage_declared is True
+    assert result.all_frame_decision_p95_ms == 90.0
+    assert result.inference_p95_ms is None
+    assert result.native_call_p95_ms is None
+    assert result.frame_to_release_p95_ms is None
+    assert result.game_effect_attested is False
+    assert result.input_release_guaranteed is False
+    assert result.authorizes_gameplay is False
+    assert result.authorizes_broadcast is False
+    assert not p.calls  # no input solely to make test pass
+    assert a.report() == result
+
+
+def test_noop_only_requires_independent_host_count_and_verification():
+    for count, verified in [(2, True), (1, False), (True, True)]:
+        a, p = auditor(stamps=(10, 20, 30))
+        a.capture(frame_sequence=1)
+        a.decision_ready()
+        a.no_action()
+        with pytest.raises(RuntimeError, match="not independently complete"):
+            a.seal_frames(expected_frames=count, host_verified=verified)
+        assert a.report().status == "revoked"
+        assert not p.calls
+
+
+def test_noop_only_cannot_finalize_without_host_seal():
+    a, p = auditor(stamps=(10, 20, 30))
     a.capture(frame_sequence=1)
     a.decision_ready()
     a.no_action()
-    assert a.report().status == "incomplete"
-    with pytest.raises(RuntimeError, match="not independently complete"):
-        a.seal_frames(expected_frames=1, host_verified=True)
+    with pytest.raises(RuntimeError, match="sealed"):
+        a.finalize()
     assert a.report().status == "revoked"
     assert not p.calls
 
