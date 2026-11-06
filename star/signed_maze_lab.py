@@ -159,6 +159,13 @@ class MazeTrialScore:
     decision_delay_ticks: int = 0  # Synthetic inference delay per observation.
     late_actions_suppressed: int = 0
     moving_hazard_delay_hits: int = 0
+    # Nearest-rank p95/max/total of per-capture synthetic delay samples.
+    # These are NOT inference timings captured from a real model.
+    decision_delay_p95_ticks: int = 0
+    decision_delay_max_ticks: int = 0
+    decision_delay_total_ticks: int = 0
+    decision_delay_samples: int = 0  # Captures actually signed, not collided-at-start frames.
+    decision_delay_schedule_used: bool = False
 
     def __post_init__(self) -> None:
         if self.success and (self.reason != "goal_witnessed"
@@ -184,7 +191,20 @@ class MazeTrialScore:
                 or type(self.late_actions_suppressed) is not int
                 or not 0 <= self.late_actions_suppressed <= self.frames
                 or type(self.moving_hazard_delay_hits) is not int
-                or not 0 <= self.moving_hazard_delay_hits <= self.moving_hazard_hits):
+                or not 0 <= self.moving_hazard_delay_hits <= self.moving_hazard_hits
+                or type(self.decision_delay_p95_ticks) is not int
+                or type(self.decision_delay_max_ticks) is not int
+                or type(self.decision_delay_total_ticks) is not int
+                or type(self.decision_delay_samples) is not int
+                or not 0 <= self.decision_delay_samples <= self.frames
+                or type(self.decision_delay_schedule_used) is not bool
+                or not 0 <= self.decision_delay_p95_ticks <= self.decision_delay_max_ticks <= 24
+                or not self.decision_delay_max_ticks <= self.decision_delay_total_ticks
+                or self.decision_delay_total_ticks > self.decision_delay_samples * self.decision_delay_max_ticks
+                or (not self.decision_delay_schedule_used
+                    and (self.decision_delay_max_ticks != self.decision_delay_ticks
+                         or self.decision_delay_p95_ticks != self.decision_delay_ticks
+                         or self.decision_delay_total_ticks != self.decision_delay_samples * self.decision_delay_ticks))):
             raise ValueError("synthetic real-time telemetry is inconsistent")
 
 
@@ -193,6 +213,7 @@ def run_signed_maze_trial(
     max_frames: int = 256, sensor_radius: int = 1,
     predictive_risk_guard: bool = False,
     decision_delay_ticks: int = 0, action_deadline_ticks: int | None = None,
+    decision_delay_schedule: tuple[int, ...] | None = None,
 ) -> MazeTrialScore:
     """Offline engine->signed packet->bridge->advisor->engine->score loop.
 
@@ -212,6 +233,14 @@ def run_signed_maze_trial(
         raise ValueError("predictive_risk_guard must be boolean")
     if type(decision_delay_ticks) is not int or not 0 <= decision_delay_ticks <= 24:
         raise ValueError("synthetic decision delay must be 0..24 ticks")
+    if decision_delay_schedule is not None:
+        if (type(decision_delay_schedule) is not tuple
+                or not 1 <= len(decision_delay_schedule) <= 256
+                or any(type(n) is not int or not 0 <= n <= 24
+                       for n in decision_delay_schedule)):
+            raise ValueError("decision delay schedule requires 1..256 integers in 0..24")
+        if decision_delay_ticks != 0:
+            raise ValueError("decision delay schedule cannot mix with fixed delay")
     if action_deadline_ticks is not None and (
         type(action_deadline_ticks) is not int
         or not 0 <= action_deadline_ticks <= 24
@@ -227,6 +256,7 @@ def run_signed_maze_trial(
     hazard_waits = 0
     late_actions = 0
     delay_hits = 0
+    applied_delays: list[int] = []
     reason = "frame_budget_exhausted"
     frames = 0
     world_tick = 1
@@ -254,6 +284,11 @@ def run_signed_maze_trial(
                 break
             frames = seq
             last_world_tick = world_tick
+            # The timing trace is deterministic and selected by the host,
+            # never based on private future hazard positions or advisor output.
+            active_delay = (decision_delay_schedule[(seq - 1) % len(decision_delay_schedule)]
+                            if decision_delay_schedule is not None
+                            else decision_delay_ticks)
             clock[0] = float(1000 + 10 * world_tick)
             # The independent engine advances the hazard even when the model
             # is idle. Collision at tick-start is scored before a new capture.
@@ -262,6 +297,9 @@ def run_signed_maze_trial(
                 moving_hits += 1
                 reason = "moving_hazard_hit_player"
                 break
+            # Only signed/ingested captures incur a modeled reasoning delay.
+            # A collision detected before capture cannot add imaginary p95.
+            applied_delays.append(active_delay)
             observation = NavigationObservation(
                 game_id="synthetic_maze", game_version="v1",
                 episode_id=scenario.scenario_id, sequence=seq,
@@ -280,7 +318,7 @@ def run_signed_maze_trial(
             # the advisor. The independent engine advances while the character
             # remains at its previous location. It can hit the character
             # before delayed advice becomes available.
-            action_tick = world_tick + decision_delay_ticks
+            action_tick = world_tick + active_delay
             for pending_tick in range(world_tick + 1,
                                       min(action_tick, max_frames) + 1):
                 last_world_tick = pending_tick
@@ -309,7 +347,7 @@ def run_signed_maze_trial(
                 break
             if hint.status == "move":
                 if (action_deadline_ticks is not None
-                        and decision_delay_ticks > action_deadline_ticks):
+                        and active_delay > action_deadline_ticks):
                     # Discard late *symbolic* advice. The test engine never
                     # executes it, and never credits it as a movement.
                     late_actions += 1
@@ -352,6 +390,10 @@ def run_signed_maze_trial(
         optimal = scenario.shortest_path_length()
         assert optimal is not None
         success = reason == "goal_witnessed" and player == scenario.goal
+        # Nearest-rank p95, not interpolated; a single slow capture is
+        # visible in max/total even when p95 is unchanged.
+        ordered_delays = sorted(applied_delays)
+        delay_p95 = ordered_delays[(95 * len(ordered_delays) + 99) // 100 - 1]
         efficiency = (min(10000, 10000 * optimal // moves)
                       if success and moves else 0)
         return MazeTrialScore(
@@ -365,6 +407,11 @@ def run_signed_maze_trial(
             world_ticks=last_world_tick, decision_delay_ticks=decision_delay_ticks,
             late_actions_suppressed=late_actions,
             moving_hazard_delay_hits=delay_hits,
+            decision_delay_p95_ticks=delay_p95,
+            decision_delay_max_ticks=max(applied_delays),
+            decision_delay_total_ticks=sum(applied_delays),
+            decision_delay_samples=len(applied_delays),
+            decision_delay_schedule_used=decision_delay_schedule is not None,
         )
     finally:
         bridge.disable()
@@ -375,6 +422,7 @@ def run_maze_benchmark(
     max_frames: int = 256, sensor_radius: int = 1,
     predictive_risk_guard: bool = False,
     decision_delay_ticks: int = 0, action_deadline_ticks: int | None = None,
+    decision_delay_schedule: tuple[int, ...] | None = None,
 ) -> tuple[MazeTrialScore, ...]:
     """Independent per-map results; no averages that hide failed trials."""
     if owner_approved is not True:
@@ -390,6 +438,7 @@ def run_maze_benchmark(
         sensor_radius=sensor_radius, predictive_risk_guard=predictive_risk_guard,
         decision_delay_ticks=decision_delay_ticks,
         action_deadline_ticks=action_deadline_ticks,
+        decision_delay_schedule=decision_delay_schedule,
     ) for case in scenarios)
 
 
