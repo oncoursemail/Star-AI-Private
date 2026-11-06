@@ -25,7 +25,7 @@ FRONT = re.compile(r"<!--\s*(\w+):\s*(.*?)\s*-->")
 NAV = ("home", "downloads", "changelog", "news")
 LIVE_FILES = ("revivals.json", "news.json", "projects.json", "metallic.json", "downloads.json")
 RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip", ".appimage", ".deb", ".apk", ".dmg", ".app.tar.gz")  # compared lower-case
-RELEASE_MANIFESTS = ("latest.json", "quest.json")  # desktop updater manifest; the Meta Quest APK {"version","url","notes"}
+RELEASE_MANIFESTS = ("latest.json", "quest.json", "android.json")  # desktop updater manifest; the Meta Quest APK {"version","url","notes"}
 
 
 def esc(text: str) -> str:

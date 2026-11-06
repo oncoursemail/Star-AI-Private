@@ -24,7 +24,7 @@
 	}
 
 	# written every 2 minutes (metallic-live) or on each release (desktop and Quest manifests): never cached
-	@fresh path /live/* /releases/latest.json /releases/quest.json
+	@fresh path /live/* /releases/latest.json /releases/quest.json /releases/android.json
 	header @fresh Cache-Control "no-store"
 
 	# installers carry their version in the file name, so they never change

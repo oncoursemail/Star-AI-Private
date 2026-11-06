@@ -1,6 +1,7 @@
-/* Downloads: one box with a tile per device (Windows, Linux, Mac, Meta Quest) and the chosen device's panel. The visitor's
-   own device is picked and marked "This device"; #windows, #linux, #mac or #quest in the address picks one too. The Mac
-   tile stays hidden until the release has a .dmg ("darwin-aarch64-dmg", "darwin-x86_64-dmg").
+/* Downloads: one box with a tile per device (Windows, Linux, Mac, Android, Meta Quest) and the chosen device's panel. The
+   visitor's own device is picked and marked "This device"; #windows, #linux, #mac, #android or #quest in the address picks
+   one too. The Mac tile stays hidden until the release has a .dmg ("darwin-aarch64-dmg", "darwin-x86_64-dmg"), and the
+   Android tile until /releases/android.json exists ({"version","url"}).
    Builds come from /releases/latest.json (the Tauri updater manifest: {"version","notes","pub_date","platforms":
    {"windows-x86_64":{"signature","url"},"linux-x86_64":{..AppImage},"linux-x86_64-deb":{..deb}}}) and the Quest APK
    from /releases/quest.json ({"version","url"}). Until a build is published its button stays disabled. */
@@ -60,6 +61,19 @@
   };
 
   M.downloads.then((n) => { if (n != null) $('[data-f="downloads"]').textContent = M.num(n); else $(".dl-count").hidden = true; });
+
+  M.android().then((a) => {
+    if (!a) return;
+    $('[data-plat="android"]').hidden = false;
+    arm($("[data-android-dl]"), a.url, "Download for Android");
+    $("[data-android-v]").textContent = a.version;
+    sizeOf(a.url, $('[data-size="android"]'));
+    if (M.onAndroid) {
+      $('[data-plat="android"] .here').hidden = false;
+      note.textContent = "You are on Android, so the phone and tablet app is picked for you.";
+    }
+    if (location.hash === "#android" || (M.onAndroid && !fromHash)) pick("android");
+  });
 
   M.quest().then((q) => {
     if (!q) return;

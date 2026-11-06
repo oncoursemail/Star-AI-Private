@@ -68,6 +68,10 @@ M.release = M.json("/releases/latest.json").then((m) => {
 let questReq = null;
 M.quest = () => questReq || (questReq = M.json("/releases/quest.json").then((q) =>
   (q && typeof q.version === "string" && typeof q.url === "string" && (q.url.startsWith("/") || M.href(q.url)) ? { version: q.version, url: q.url } : null)));
+// the app for Android phones and tablets, from /releases/android.json ({"version","url"}); null until an APK is published
+let androidReq = null;
+M.android = () => androidReq || (androidReq = M.json("/releases/android.json").then((a) =>
+  (a && typeof a.version === "string" && typeof a.url === "string" && (a.url.startsWith("/") || M.href(a.url)) ? { version: a.version, url: a.url } : null)));
 // which build the Download buttons offer: a Quest headset's browser (its user agent says Linux, not Android) gets the
 // Quest app once published, a Linux visitor (not Android) the AppImage, everyone else the Windows installer
 const UA = navigator.userAgent;
@@ -76,6 +80,7 @@ M.onLinux = /Linux/.test(UA) && !/Android/.test(UA) && !M.onQuest;
 // phones and tablets first: an iPhone's browser also says "Mac OS X", and an iPad's says "Macintosh"
 M.onPhone = /Android|iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && "ontouchend" in document);
 M.onMac = /Macintosh|Mac OS X/.test(UA) && !M.onPhone && !M.onQuest;
+M.onAndroid = /Android/.test(UA) && !M.onQuest;
 // installer downloads from the site (self-updates not included), counted by metallic-live
 M.downloads = M.json("/live/downloads.json").then((d) => (d && typeof d.downloads === "number" ? d.downloads : null));
 M.release.then(async (r) => {
@@ -84,17 +89,18 @@ M.release.then(async (r) => {
   const oses = ["Windows", r.linux && "Linux", r.mac && "Mac"].filter(Boolean);
   if (oses.length > 1) document.querySelectorAll("[data-os]").forEach((e) => { e.textContent = oses.slice(0, -1).join(", ") + " and " + oses[oses.length - 1]; });
   const quest = M.onQuest ? await M.quest() : null;
+  const android = M.onAndroid ? await M.android() : null; // an APK and its steps, so the downloads page shows them
   const linux = !quest && M.onLinux && r.linux;
   const mac = M.onMac && r.mac; // two .dmg files, so the downloads page lets the visitor choose
-  const os = quest ? "Quest" : linux ? "Linux" : mac ? "Mac" : "Windows";
+  const os = quest ? "Quest" : android ? "Android" : linux ? "Linux" : mac ? "Mac" : "Windows";
   document.querySelectorAll("[data-dl]").forEach((a) => {
-    if (!a.classList.contains("small")) a.href = quest ? quest.url : linux ? r.linux.appimage : mac ? "/downloads/#mac" : r.url;
+    if (!a.classList.contains("small")) a.href = quest ? quest.url : android ? "/downloads/#android" : linux ? r.linux.appimage : mac ? "/downloads/#mac" : r.url;
     if (os !== "Windows" && /Windows/.test(a.textContent)) a.textContent = a.textContent.replace("Windows", os);
   });
   const n = await M.downloads;
-  const count = quest || n == null ? "" : " · " + M.num(n) + (n === 1 ? " download" : " downloads");
-  const what = quest ? " · Meta Quest app (APK), sideloaded" : linux ? " · Linux AppImage, 64-bit" : mac ? " · macOS 13 or newer, not signed by Apple" : " · Windows 10 and 11, 64-bit";
-  document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + (quest ? quest.version : r.version) + what + count; });
+  const count = quest || android || n == null ? "" : " · " + M.num(n) + (n === 1 ? " download" : " downloads");
+  const what = quest ? " · Meta Quest app (APK), sideloaded" : android ? " · Android 10 or newer, 64-bit phones and tablets" : linux ? " · Linux AppImage, 64-bit" : mac ? " · macOS 13 or newer, not signed by Apple" : " · Windows 10 and 11, 64-bit";
+  document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + (quest ? quest.version : android ? android.version : r.version) + what + count; });
 });
 
 // people in Metallic now (launchers that sent their anonymous beat in the last 5 minutes) and the Metallic Discord's

@@ -235,6 +235,7 @@ a.p-name:hover { text-decoration: underline; text-decoration-color: rgba(var(--a
 .plat[data-plat="windows"] { --pc: 64, 156, 255; }
 .plat[data-plat="linux"] { --pc: 244, 178, 35; }
 .plat[data-plat="mac"] { --pc: 205, 205, 220; }
+.plat[data-plat="android"] { --pc: 61, 220, 132; }
 .plat:hover { background: var(--hover); color: var(--ink); }
 .plat[aria-pressed="true"] { color: var(--ink); border-color: rgba(var(--pc), .45);
   background: linear-gradient(100deg, rgba(var(--pc), .16), rgba(var(--pc), .04) 70%); box-shadow: 0 0 0 1px rgba(var(--pc), .12) inset; }
@@ -252,6 +253,7 @@ a.p-name:hover { text-decoration: underline; text-decoration-color: rgba(var(--a
 .ic.tux { background: linear-gradient(160deg, #fffaf0, #e6e0d2); }
 .ic.tux svg { width: 28px; height: 28px; }
 .ic.mac { color: #fff; background: linear-gradient(145deg, #55555f, #17171c); }
+.ic.android { color: #3ddc84; background: linear-gradient(145deg, #1d3a2b, #12161a); }
 .ic.quest svg { width: 32px; height: 32px; }
 .ic.quest { background: linear-gradient(160deg, #ffffff, #e8eef8); }
 .ic.big { width: 72px; height: 72px; border-radius: 20px; position: relative; }

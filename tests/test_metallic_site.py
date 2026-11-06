@@ -267,6 +267,18 @@ def test_linux_builds_are_offered_to_linux_visitors_when_published():
     assert '".appimage", ".deb"' in build
 
 
+def test_android_app_stays_hidden_until_published_and_says_what_it_does():
+    site = (SITE / "src" / "assets" / "site.js").read_text(encoding="utf-8")
+    dl = (SITE / "src" / "assets" / "downloads.js").read_text(encoding="utf-8")
+    page = (SITE / "src" / "downloads" / "index.html").read_text(encoding="utf-8")
+    assert '"/releases/android.json"' in site and '"/downloads/#android"' in site
+    assert 'data-plat="android" aria-pressed="false" aria-controls="android" hidden' in page and 'data-pane="android" aria-labelledby="p-android" hidden' in page
+    assert """$('[data-plat="android"]').hidden = false""" in dl
+    assert "Metallic does not install revivals on a phone" in page
+    # a Quest's browser is not an Android phone
+    assert "M.onAndroid = /Android/.test(UA) && !M.onQuest;" in site
+
+
 def test_mac_builds_stay_hidden_until_published_and_warn_plainly():
     site = (SITE / "src" / "assets" / "site.js").read_text(encoding="utf-8")
     dl = (SITE / "src" / "assets" / "downloads.js").read_text(encoding="utf-8")
@@ -380,7 +392,7 @@ def test_server_files_match_the_hosting_plan():
     caddy = (SERVER / "Caddyfile").read_text(encoding="utf-8")
     assert ":8088" in caddy and "bind 127.0.0.1" in caddy and "root * /srv/metallic/dist" in caddy
     assert "img-src 'self' data: https://cdn.discordapp.com;" in caddy and "connect-src 'self'" in caddy
-    assert '@fresh path /live/* /releases/latest.json /releases/quest.json\n\theader @fresh Cache-Control "no-store"' in caddy
+    assert '@fresh path /live/* /releases/latest.json /releases/quest.json /releases/android.json\n\theader @fresh Cache-Control "no-store"' in caddy
     assert "/releases/*.deb /releases/*.apk\n" in caddy  # the Quest APK is versioned in its name too: cached for good
     assert 'header @installers Cache-Control "public, max-age=31536000, immutable"' in caddy
     # download count: only installer requests are logged, without addresses or headers, readable by metallic-live
