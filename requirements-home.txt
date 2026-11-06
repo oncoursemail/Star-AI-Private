@@ -241,10 +241,10 @@ urllib3==2.8.0 \
 # websocket-client 1.9.2: 0.1 MB, via obsws-python
 websocket-client==1.9.2 \
     --hash=sha256:e1a673830a9c7bfa47b1cd3d5e4178f4c9651d80a4eab02c9c23a1c3ec6250ce
-# websockets 17.3: 0.2 MB, via yt-dlp
-websockets==17.3 \
-    --hash=sha256:6644eecd99c4e8cdf72e646e17b391bb70b054f44becde37dcdc48cbec7e1527 \
-    --hash=sha256:dc2b495a92b3971966bf102e73589f950db3ec1ca6713265355ce7771d97b199
+# websockets 17.4: 0.2 MB, via yt-dlp
+websockets==17.4 \
+    --hash=sha256:c6bd2c9781915592b209160d0f017d4c7c82ad53075e6b0c24d2a89299e7f9e9 \
+    --hash=sha256:dde9cd67f18803949ebf96de8aba12b8ec5ee3115e34c75a2db85a3b0a6c20d5
 # winsdk 1.0.0b10: 12.0 MB, via direct
 winsdk==1.0.0b10 \
     --hash=sha256:8231ce5f16e1fc88bb7dda0adf35633b5b26101eae3b0799083ca2177f03e4e5
