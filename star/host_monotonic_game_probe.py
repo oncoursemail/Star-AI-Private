@@ -51,6 +51,7 @@ class HostMonotonicGameProbe:
         require_frame_opportunities: bool = False,
         max_queue_wait_ns: int | None = None,
         max_action_age_ns: int | None = None,
+        require_submit_confirmation: bool = False,
     ) -> None:
         if owner_approved is not True:
             raise PermissionError("private host timing requires owner approval")
@@ -66,6 +67,12 @@ class HostMonotonicGameProbe:
         if max_action_age_ns is not None:
             if type(max_action_age_ns) is not int or not 1_000_000 <= max_action_age_ns <= 10_000_000_000:
                 raise ValueError("max_action_age_ns must be 1ms..10s integer")
+        if type(require_submit_confirmation) is not bool:
+            raise TypeError("require_submit_confirmation must be bool")
+        if require_submit_confirmation and max_action_age_ns is None:
+            raise ValueError("host submission confirmation requires an action deadline")
+        self._require_submit_confirmation = require_submit_confirmation
+        self._host_submit_rejections = 0
         self._max_action_age_ns = max_action_age_ns
         self._action_deadline_violations = 0
         self._max_queue_wait_ns = max_queue_wait_ns
@@ -230,7 +237,10 @@ class HostMonotonicGameProbe:
         The callback MUST be supplied by an owner-approved host. It is NOT a
         game controller, a trust proof, or an uninterruptible hardware gate:
         a blocking callback can still submit stale input before returning.
-        A successful callback return is not proof of in-game movement.
+        A callback returning False is always rejected. When the opt-in
+        require_submit_confirmation flag is enabled, the callback MUST return
+        exactly True, meaning the host accepted the input *submission request*.
+        This is neither OS/device delivery proof nor a game-state transition.
         """
         with self._lock:
             self._require_open()
@@ -251,8 +261,9 @@ class HostMonotonicGameProbe:
 
             self._in_host_dispatch = True
             returned = False
+            confirmation: object = None
             try:
-                submit()
+                confirmation = submit()
                 returned = True
             finally:
                 self._in_host_dispatch = False
@@ -262,6 +273,11 @@ class HostMonotonicGameProbe:
                     self._clear_and_revoke()
 
             self._require_open()
+            if confirmation is False or (
+                self._require_submit_confirmation and confirmation is not True
+            ):
+                self._host_submit_rejections += 1
+                self._fail("approved host did not confirm input submission")
             submitted_ns = self._sample()
             if submitted_ns - pending.capture_ns > self._max_action_age_ns:
                 self._action_deadline_violations += 1
@@ -331,6 +347,12 @@ class HostMonotonicGameProbe:
                     "action_deadline_guard_active": True,
                     "action_deadline_violations": self._action_deadline_violations,
                     "action_freshness_attested": False,
+                })
+            if self._require_submit_confirmation:
+                result.update({
+                    "host_submit_confirmation_required": True,
+                    "host_submit_rejections": self._host_submit_rejections,
+                    "host_submission_attested": False,
                 })
             if self._coverage_required:
                 result.update({
