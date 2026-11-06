@@ -52,6 +52,7 @@ class HostMonotonicGameProbe:
         max_queue_wait_ns: int | None = None,
         max_action_age_ns: int | None = None,
         require_submit_confirmation: bool = False,
+        max_ack_wait_ns: int | None = None,
     ) -> None:
         if owner_approved is not True:
             raise PermissionError("private host timing requires owner approval")
@@ -71,6 +72,11 @@ class HostMonotonicGameProbe:
             raise TypeError("require_submit_confirmation must be bool")
         if require_submit_confirmation and max_action_age_ns is None:
             raise ValueError("host submission confirmation requires an action deadline")
+        if max_ack_wait_ns is not None:
+            if type(max_ack_wait_ns) is not int or not 1_000_000 <= max_ack_wait_ns <= 10_000_000_000:
+                raise ValueError("max_ack_wait_ns must be 1ms..10s integer")
+        self._max_ack_wait_ns = max_ack_wait_ns
+        self._ack_deadline_violations = 0
         self._require_submit_confirmation = require_submit_confirmation
         self._host_submit_rejections = 0
         self._max_action_age_ns = max_action_age_ns
@@ -285,9 +291,15 @@ class HostMonotonicGameProbe:
             pending.action_submit_ns = submitted_ns
 
     def action_submitted(self, sequence: int) -> None:
-        """Mark actual host submission (never submits input itself)."""
+        """Mark legacy host submission; forbidden under strict confirmation.
+
+        Strict-mode hosts must use guarded_dispatch(), which invokes the
+        approved callback and verifies its exact-True acceptance response.
+        """
         with self._lock:
             self._require_open()
+            if self._require_submit_confirmation:
+                self._fail("strict host confirmation requires guarded_dispatch")
             pending = self._get(sequence)
             if pending.decision_ready_ns is None or pending.action_submit_ns is not None:
                 self._fail("submission requires one prior decision-ready event")
@@ -309,6 +321,10 @@ class HostMonotonicGameProbe:
             if ready_ns is None or submitted_ns is None or sequence != self._next_ack:
                 self._fail("ACK requires host submission and in-order completion")
             now = self._sample()
+            if (self._max_ack_wait_ns is not None
+                    and now - submitted_ns > self._max_ack_wait_ns):
+                self._ack_deadline_violations += 1
+                self._fail("host acknowledgment deadline exceeded")
             # LocalFrameTiming independently validates intra-frame ordering
             # and rejects stalled/mixed-clock intervals over 30 seconds.
             try:
@@ -347,6 +363,12 @@ class HostMonotonicGameProbe:
                     "action_deadline_guard_active": True,
                     "action_deadline_violations": self._action_deadline_violations,
                     "action_freshness_attested": False,
+                })
+            if self._max_ack_wait_ns is not None:
+                result.update({
+                    "ack_deadline_guard_active": True,
+                    "ack_deadline_violations": self._ack_deadline_violations,
+                    "ack_delivery_attested": False,
                 })
             if self._require_submit_confirmation:
                 result.update({
