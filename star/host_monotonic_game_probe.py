@@ -47,11 +47,25 @@ class HostMonotonicGameProbe:
     def __init__(
         self, *, owner_approved: bool = False,
         clock: Callable[[], int] | None = None,
+        require_frame_opportunities: bool = False,
+        max_queue_wait_ns: int | None = None,
     ) -> None:
         if owner_approved is not True:
             raise PermissionError("private host timing requires owner approval")
         if clock is not None and not callable(clock):
             raise TypeError("clock must be a callable monotonic_ns source")
+        if type(require_frame_opportunities) is not bool:
+            raise TypeError("require_frame_opportunities must be bool")
+        if max_queue_wait_ns is not None:
+            if not require_frame_opportunities:
+                raise ValueError("queue deadline requires frame-opportunity coverage")
+            if type(max_queue_wait_ns) is not int or not 1_000_000 <= max_queue_wait_ns <= 10_000_000_000:
+                raise ValueError("max_queue_wait_ns must be 1ms..10s integer")
+        self._max_queue_wait_ns = max_queue_wait_ns
+        self._coverage_required = require_frame_opportunities
+        self._opportunities: dict[int, int] = {}
+        self._opportunity_total = 0
+        self._dropped_opportunities = 0
         self._clock = monotonic_ns if clock is None else clock
         self._lock = RLock()
         self._last_clock_ns: int | None = None
@@ -67,6 +81,7 @@ class HostMonotonicGameProbe:
         self._revoked = True
         self._pending.clear()
         self._completed.clear()
+        self._opportunities.clear()
         self._replay = None
 
     def _require_open(self) -> None:
@@ -92,15 +107,66 @@ class HostMonotonicGameProbe:
         self._last_clock_ns = now
         return now
 
-    def capture(self) -> int:
-        """Mark frame capture at host receipt; returns a local opaque sequence."""
+    def frame_available(self) -> int:
+        """Witness a frame *before* deciding whether to process it.
+
+        The approved host must call this for EVERY frame it offers to the
+        agent. This is host-reported coverage, not independent attestation.
+        """
+        with self._lock:
+            self._require_open()
+            if not self._coverage_required:
+                self._fail("frame-opportunity coverage was not enabled")
+            if self._opportunity_total >= _MAX_FRAMES:
+                self._fail("host frame-opportunity window exceeded 256 frames")
+            now = self._sample()
+            self._opportunity_total += 1
+            self._opportunities[self._opportunity_total] = now
+            return self._opportunity_total
+
+    def drop_frame(self, opportunity: int, *, reason: str) -> None:
+        """Explicit host-observed drop aborts the entire benchmark window.
+
+        Keeping a counter makes the failure visible without reporting raw
+        frames or permitting a success-only latency sample to be finalized.
+        """
+        with self._lock:
+            self._require_open()
+            allowed = {"capture_overrun", "inference_timeout", "host_error", "privacy_stop"}
+            if (not self._coverage_required or type(opportunity) is not int
+                    or opportunity not in self._opportunities
+                    or type(reason) is not str or reason not in allowed):
+                self._fail("invalid dropped-frame report")
+            self._dropped_opportunities += 1
+            self._fail("host observed a dropped frame; timing window revoked")
+
+    def capture(self, *, opportunity: int | None = None) -> int:
+        """Start frame processing; optionally account for time spent queued.
+
+        With frame-opportunity coverage on, frame_available must have
+        witnessed every frame, and each must be claimed in arrival order.
+        The original host-available time is used as the capture timestamp.
+        """
         with self._lock:
             self._require_open()
             if self._started >= _MAX_FRAMES:
                 self._fail("host timing window exceeded 256 frames")
-            now = self._sample()
+            if self._coverage_required:
+                if (type(opportunity) is not int or opportunity != self._started + 1
+                        or opportunity not in self._opportunities):
+                    self._fail("missing, duplicated, or out-of-order frame opportunity")
+                processing_ns = self._sample()
+                capture_ns = self._opportunities.pop(opportunity)
+                if (self._max_queue_wait_ns is not None
+                        and processing_ns - capture_ns > self._max_queue_wait_ns):
+                    self._dropped_opportunities += 1
+                    self._fail("frame queue wait exceeded configured deadline")
+            else:
+                if opportunity is not None:
+                    self._fail("unexpected frame opportunity in legacy mode")
+                capture_ns = self._sample()
             self._started += 1
-            self._pending[self._started] = _PendingFrame(now)
+            self._pending[self._started] = _PendingFrame(capture_ns)
             return self._started
 
     def _get(self, sequence: int) -> _PendingFrame:
@@ -159,7 +225,7 @@ class HostMonotonicGameProbe:
     def status(self) -> dict[str, int | bool]:
         """Counts only, including incomplete frames; no raw times or media."""
         with self._lock:
-            return {
+            result: dict[str, int | bool] = {
                 "started_frames": self._started,
                 "completed_frames": len(self._completed) if not self._finalized and not self._revoked
                                     else (self._started if self._finalized else 0),
@@ -169,12 +235,23 @@ class HostMonotonicGameProbe:
                 "independent_gameplay_proof": False,
                 "timing_attested": False,
             }
+            if self._coverage_required:
+                result.update({
+                    "frame_opportunities": self._opportunity_total,
+                    "unclaimed_opportunities": self._opportunity_total - self._started,
+                    "dropped_opportunities": self._dropped_opportunities,
+                    "host_coverage_attested": False,
+                })
+            return result
 
     def finalize(self, *, tick_ns: int = 100_000_000) -> PrivateLatencyReplay:
         """Consume complete observations; reject any missing/cancelled frame."""
         with self._lock:
             self._require_open()
-            if not self._started or self._pending or len(self._completed) != self._started:
+            if (not self._started or self._pending or len(self._completed) != self._started
+                    or (self._coverage_required and (
+                        self._opportunities or self._opportunity_total != self._started
+                    ))):
                 self._clear_and_revoke()
                 raise ValueError("incomplete window cannot produce a success-only replay")
             captures = tuple(self._completed[n] for n in range(1, self._started + 1))
