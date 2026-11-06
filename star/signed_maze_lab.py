@@ -155,6 +155,10 @@ class MazeTrialScore:
     hazard_tile_entries: int = 0
     moving_hazard_hits: int = 0
     moving_hazard_waits: int = 0
+    world_ticks: int = 0           # Engine-clock ticks, NOT model throughput.
+    decision_delay_ticks: int = 0  # Synthetic inference delay per observation.
+    late_actions_suppressed: int = 0
+    moving_hazard_delay_hits: int = 0
 
     def __post_init__(self) -> None:
         if self.success and (self.reason != "goal_witnessed"
@@ -172,12 +176,23 @@ class MazeTrialScore:
                 or type(self.risk_exposure_bps) is not int
                 or self.risk_exposure_bps != self.hazard_tile_entries * 6000):
             raise ValueError("synthetic hazard exposure must match engine events")
+        if (type(self.world_ticks) is not int
+                or not 0 <= self.world_ticks <= 512
+                or self.world_ticks < self.frames
+                or type(self.decision_delay_ticks) is not int
+                or not 0 <= self.decision_delay_ticks <= 24
+                or type(self.late_actions_suppressed) is not int
+                or not 0 <= self.late_actions_suppressed <= self.frames
+                or type(self.moving_hazard_delay_hits) is not int
+                or not 0 <= self.moving_hazard_delay_hits <= self.moving_hazard_hits):
+            raise ValueError("synthetic real-time telemetry is inconsistent")
 
 
 def run_signed_maze_trial(
     scenario: MazeScenario, *, owner_approved: bool = False,
     max_frames: int = 256, sensor_radius: int = 1,
     predictive_risk_guard: bool = False,
+    decision_delay_ticks: int = 0, action_deadline_ticks: int | None = None,
 ) -> MazeTrialScore:
     """Offline engine->signed packet->bridge->advisor->engine->score loop.
 
@@ -195,6 +210,13 @@ def run_signed_maze_trial(
         raise ValueError("sensor_radius must be 1 or 2")
     if type(predictive_risk_guard) is not bool:
         raise ValueError("predictive_risk_guard must be boolean")
+    if type(decision_delay_ticks) is not int or not 0 <= decision_delay_ticks <= 24:
+        raise ValueError("synthetic decision delay must be 0..24 ticks")
+    if action_deadline_ticks is not None and (
+        type(action_deadline_ticks) is not int
+        or not 0 <= action_deadline_ticks <= 24
+    ):
+        raise ValueError("action deadline must be 0..24 ticks or None")
     player = scenario.start
     moves = 0
     nonmove = 0
@@ -203,8 +225,12 @@ def run_signed_maze_trial(
     hazard_entries = 0
     moving_hits = 0
     hazard_waits = 0
+    late_actions = 0
+    delay_hits = 0
     reason = "frame_budget_exhausted"
     frames = 0
+    world_tick = 1
+    last_world_tick = 0
     clock = [1010.0]
     nav = GroundedNavigationMemory(
         max_observation_age_ms=250, max_tile_age_ms=250,
@@ -222,11 +248,16 @@ def run_signed_maze_trial(
     bridge.enable(owner_approved=True)
     try:
         for seq in range(1, max_frames + 1):
+            # max_frames is a WORLD-TICK budget, not a free number of model
+            # calls: slow reasoning consumes real game time between captures.
+            if world_tick > max_frames:
+                break
             frames = seq
-            clock[0] = float(1000 + 10 * seq)
+            last_world_tick = world_tick
+            clock[0] = float(1000 + 10 * world_tick)
             # The independent engine advances the hazard even when the model
             # is idle. Collision at tick-start is scored before a new capture.
-            moving_hazard = scenario.hazard_at_frame(seq)
+            moving_hazard = scenario.hazard_at_frame(world_tick)
             if moving_hazard == player:
                 moving_hits += 1
                 reason = "moving_hazard_hit_player"
@@ -245,7 +276,27 @@ def run_signed_maze_trial(
                 session_id=bridge_session, source_key=source_key,
             )
             bridge.accept(packet)
-            clock[0] += 1
+            # Simulate model/tool delay WITHOUT revealing the future patrol to
+            # the advisor. The independent engine advances while the character
+            # remains at its previous location. It can hit the character
+            # before delayed advice becomes available.
+            action_tick = world_tick + decision_delay_ticks
+            for pending_tick in range(world_tick + 1,
+                                      min(action_tick, max_frames) + 1):
+                last_world_tick = pending_tick
+                if scenario.hazard_at_frame(pending_tick) == player:
+                    moving_hits += 1
+                    delay_hits += 1
+                    reason = "moving_hazard_hit_during_decision"
+                    break
+            if delay_hits:
+                break
+            if action_tick > max_frames:
+                last_world_tick = max_frames
+                break
+            last_world_tick = action_tick
+            current_hazard = scenario.hazard_at_frame(action_tick)
+            clock[0] = float(1000 + 10 * action_tick + 1)
             hint = bridge.advise()
             if hint.authorizes_input or hint.authorizes_broadcast:
                 reason = "unexpected_authority"
@@ -257,13 +308,21 @@ def run_signed_maze_trial(
                     reason = "unwitnessed_arrival"
                 break
             if hint.status == "move":
+                if (action_deadline_ticks is not None
+                        and decision_delay_ticks > action_deadline_ticks):
+                    # Discard late *symbolic* advice. The test engine never
+                    # executes it, and never credits it as a movement.
+                    late_actions += 1
+                    nonmove += 1
+                    world_tick = action_tick + 1
+                    continue
                 if hint.action_id not in _DELTAS:
                     invalid += 1
                     reason = "unknown_symbolic_action"
                     break
                 dx, dy = _DELTAS[hint.action_id]
                 nxt = GridPosition(player.x + dx, player.y + dy)
-                if nxt == moving_hazard:
+                if nxt == current_hazard:
                     invalid += 1
                     reason = "engine_rejected_moving_hazard"
                     break
@@ -289,6 +348,7 @@ def run_signed_maze_trial(
             else:
                 reason = "advisor_abstained"
                 break
+            world_tick = action_tick + 1
         optimal = scenario.shortest_path_length()
         assert optimal is not None
         success = reason == "goal_witnessed" and player == scenario.goal
@@ -302,6 +362,9 @@ def run_signed_maze_trial(
             source_revoked=bool(bridge.metrics()["revoked"]),
             risk_exposure_bps=exposure, hazard_tile_entries=hazard_entries,
             moving_hazard_hits=moving_hits, moving_hazard_waits=hazard_waits,
+            world_ticks=last_world_tick, decision_delay_ticks=decision_delay_ticks,
+            late_actions_suppressed=late_actions,
+            moving_hazard_delay_hits=delay_hits,
         )
     finally:
         bridge.disable()
@@ -311,6 +374,7 @@ def run_maze_benchmark(
     scenarios: tuple[MazeScenario, ...], *, owner_approved: bool = False,
     max_frames: int = 256, sensor_radius: int = 1,
     predictive_risk_guard: bool = False,
+    decision_delay_ticks: int = 0, action_deadline_ticks: int | None = None,
 ) -> tuple[MazeTrialScore, ...]:
     """Independent per-map results; no averages that hide failed trials."""
     if owner_approved is not True:
@@ -324,6 +388,8 @@ def run_maze_benchmark(
     return tuple(run_signed_maze_trial(
         case, owner_approved=True, max_frames=max_frames,
         sensor_radius=sensor_radius, predictive_risk_guard=predictive_risk_guard,
+        decision_delay_ticks=decision_delay_ticks,
+        action_deadline_ticks=action_deadline_ticks,
     ) for case in scenarios)
 
 
