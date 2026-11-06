@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import re
-from threading import Event, RLock
+from threading import Event, Lock, RLock
 from time import monotonic_ns
 from typing import Callable, NoReturn
 
@@ -93,6 +93,11 @@ class NativeGameRoundtripAudit:
         self._no_action_frames = 0
         self._coverage_sealed = False
         self._lock = RLock()
+        # A separate, briefly held lock lets health polling inspect an active
+        # native call without waiting for the OS input worker. This uses a real
+        # host monotonic clock, never a model-supplied frame timestamp.
+        self._health_lock = Lock()
+        self._active_call_started_ns: int | None = None
         self._aborted = Event()
         self._revoked = False
         self._finalized = False
@@ -221,26 +226,39 @@ class NativeGameRoundtripAudit:
                     or type(hold_ms) is not int or not 1 <= hold_ms <= 180):
                 self._fail("unapproved native action request")
             self._attempted += 1
+            real_call_start_ns = monotonic_ns()
+            with self._health_lock:
+                self._active_call_started_ns = real_call_start_ns
             try:
-                # Only this already-approved port is able to generate input.
-                success = self._port.send_action(action_id, hold_ms, self._aborted)
-                finished_ns = self._sample()
-                # Native return True is a limited OS/worker receipt, not a win.
-                if (success is not True or self._aborted.is_set()
-                        or self._port.focus_ok() is not True
-                        or self._port.all_keys_up() is not True):
-                    self._fail("native game input roundtrip not confirmed")
-                if finished_ns - now > self._max_call_ns:
-                    self._fail("native game input roundtrip deadline exceeded")
-                self._decision_durations.append(ready_ns - capture_ns)
-                self._durations.append((
-                    ready_ns - capture_ns,
-                    finished_ns - now,
-                    finished_ns - capture_ns,
-                ))
-                self._pending = None
-            except Exception:
-                self._fail("native game input roundtrip failed")
+                try:
+                    # Only this already-approved port is able to generate input.
+                    success = self._port.send_action(action_id, hold_ms, self._aborted)
+                    finished_ns = self._sample()
+                    # Native return True is a limited OS/worker receipt, not a win.
+                    if (success is not True or self._aborted.is_set()
+                            or self._port.focus_ok() is not True
+                            or self._port.all_keys_up() is not True):
+                        self._fail("native game input roundtrip not confirmed")
+                    if (finished_ns - now > self._max_call_ns
+                            or monotonic_ns() - real_call_start_ns > self._max_call_ns):
+                        # A host-injected audit clock cannot hide a genuinely
+                        # over-budget native call from the monitoring lane.
+                        self._fail("native game input roundtrip deadline exceeded")
+                    self._decision_durations.append(ready_ns - capture_ns)
+                    self._durations.append((
+                        ready_ns - capture_ns,
+                        finished_ns - now,
+                        finished_ns - capture_ns,
+                    ))
+                    self._pending = None
+                except Exception:
+                    self._fail("native game input roundtrip failed")
+            finally:
+                # Drop the live lease even if the port raises or the audit
+                # revokes. Host-side cancellation/physical key-up remain the
+                # responsibility of the independent Windows input watchdog.
+                with self._health_lock:
+                    self._active_call_started_ns = None
 
     def abort(self) -> None:
         """Nonblocking cancellation signal; native port/watchdog own key-up."""
@@ -262,11 +280,25 @@ class NativeGameRoundtripAudit:
         are exposed until the callback has finished and released its keys.
         """
         if not self._lock.acquire(blocking=False):
-            # We cannot safely read counters or the cached finalized report
-            # while another thread owns the lock; fail closed without waiting.
+            # Never wait for the native callback or expose unverified counters.
             if self._aborted.is_set():
                 return NativeRoundtripReport("revoked", 0, 0, None, None, None)
-            return NativeRoundtripReport("in_flight", 0, 0, None, None, None)
+            overdue = False
+            if self._health_lock.acquire(blocking=False):
+                try:
+                    started = self._active_call_started_ns
+                    if started is not None:
+                        overdue = monotonic_ns() - started > self._max_call_ns
+                finally:
+                    self._health_lock.release()
+            # This is a monitoring warning, NOT forced input release. The
+            # separate OS watchdog must stop/release a hung input worker.
+            if self._aborted.is_set():
+                return NativeRoundtripReport("revoked", 0, 0, None, None, None)
+            return NativeRoundtripReport(
+                "host_call_overdue" if overdue else "in_flight",
+                0, 0, None, None, None,
+            )
         try:
             if self._aborted.is_set() or self._revoked:
                 return NativeRoundtripReport(
