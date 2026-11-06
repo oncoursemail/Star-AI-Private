@@ -371,3 +371,82 @@ def test_abort_status_is_nonblocking_while_native_host_is_stuck():
         work.join(timeout=2)
         observer.join(timeout=2)
     assert audit.report().status == "revoked"
+
+
+def test_overdue_native_call_is_visible_without_waiting_for_worker():
+    """A hung key worker must be visible to stream/OBS monitors immediately."""
+    from time import sleep
+
+    started, release = Event(), Event()
+    port = FakePort()
+    port.started, port.release = started, release
+    audit = NativeGameRoundtripAudit(
+        port, owner_approved=True, max_host_call_ms=100,
+        clock=ScriptClock(10, 20, 30, 40),
+    )
+    audit.capture()
+    audit.decision_ready()
+    errors: list[str] = []
+
+    def execute():
+        try:
+            audit.execute("jump", 5)
+        except RuntimeError as exc:
+            errors.append(str(exc))
+
+    worker = Thread(target=execute, daemon=True)
+    worker.start()
+    try:
+        assert started.wait(timeout=1)
+        assert audit.report().status in {"in_flight", "host_call_overdue"}
+        sleep(0.14)  # More than the approved wall-clock call budget.
+        seen = audit.report()
+        assert seen.status == "host_call_overdue"
+        assert seen.attempted == seen.completed == 0
+        assert seen.native_call_p95_ms is None
+        assert seen.authorizes_gameplay is False
+        assert seen.authorizes_broadcast is False
+        audit.abort()
+        assert audit.report().status == "revoked"
+    finally:
+        release.set()
+        worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert errors
+    assert audit.report().completed == 0
+
+
+def test_real_host_wall_clock_rejects_overdue_even_if_audit_clock_does_not_advance():
+    """No undercount if host clock is frozen or misconfigured."""
+    from time import sleep
+
+    started, release = Event(), Event()
+    port = FakePort()
+    port.started, port.release = started, release
+    audit = NativeGameRoundtripAudit(
+        port, owner_approved=True, max_host_call_ms=100,
+        clock=ScriptClock(10, 20, 30, 40),
+    )
+    audit.capture()
+    audit.decision_ready()
+    failures: list[str] = []
+
+    def execute():
+        try:
+            audit.execute("jump", 5)
+        except RuntimeError as exc:
+            failures.append(str(exc))
+
+    worker = Thread(target=execute, daemon=True)
+    worker.start()
+    try:
+        assert started.wait(timeout=1)
+        sleep(0.14)
+        assert audit.report().status == "host_call_overdue"
+    finally:
+        release.set()
+        worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert failures and "failed" in failures[0]
+    assert audit.report().status == "revoked"
+    assert audit.report().completed == 0
