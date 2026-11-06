@@ -29,6 +29,7 @@ class MazeScenario:
     """Private map truth; ! is lethal and ~ has synthetic exposure risk."""
     scenario_id: str
     rows: tuple[str, ...]
+    patrol: tuple[GridPosition, ...] = ()  # engine-owned, hidden moving hazard path
 
     def __post_init__(self) -> None:
         if type(self.scenario_id) is not str or _SCENARIO_ID.fullmatch(
@@ -48,6 +49,25 @@ class MazeScenario:
             raise ValueError("maze requires exactly one start and one goal")
         if self.shortest_path_length() is None:
             raise ValueError("private evaluation maze must have a reachable goal")
+        if type(self.patrol) is not tuple or (
+            self.patrol and not 2 <= len(self.patrol) <= 32
+        ):
+            raise ValueError("patrol requires 2..32 positions or empty tuple")
+        if any(
+            type(position) is not GridPosition
+            or not self.safe_for_engine(position)
+            or position in (self.start, self.goal)
+            for position in self.patrol
+        ):
+            raise ValueError("patrol must stay on nonterminal safe terrain")
+        if self.patrol and (
+            len(set(self.patrol)) < 2
+            or any(
+                abs(a.x - b.x) + abs(a.y - b.y) > 1
+                for a, b in zip(self.patrol, self.patrol[1:] + self.patrol[:1])
+            )
+        ):
+            raise ValueError("patrol must contain adjacent, cyclic movement")
 
     def _locate(self, marker: str) -> GridPosition:
         for y, row in enumerate(self.rows):
@@ -89,13 +109,24 @@ class MazeScenario:
                     queue.append((nxt, distance + 1))
         return None
 
-    def local_capture(self, player: GridPosition) -> tuple[ObservedTile, ...]:
+    def hazard_at_frame(self, frame: int) -> GridPosition | None:
+        """Engine truth remains independent of the advisor's observed map."""
+        if type(frame) is not int or frame < 1:
+            raise ValueError("frame must be a positive integer")
+        return self.patrol[(frame - 1) % len(self.patrol)] if self.patrol else None
+
+    def local_capture(
+        self, player: GridPosition, *, moving_hazard: GridPosition | None = None,
+    ) -> tuple[ObservedTile, ...]:
         """Bounded sensor; wall truth stays in this engine-side fixture."""
         captured: list[ObservedTile] = []
         for dx, dy in ((0, 0), (0, -1), (-1, 0), (1, 0), (0, 1)):
             at = GridPosition(player.x + dx, player.y + dy)
             terrain = self.rows[at.y][at.x] if self.walkable(at) else "#"
-            risk = 10000 if terrain == "!" else 6000 if terrain == "~" else 0
+            risk = (
+                10000 if at == moving_hazard or terrain == "!"
+                else 6000 if terrain == "~" else 0
+            )
             captured.append(ObservedTile(at, terrain != "#", risk_bps=risk))
         return tuple(captured)
 
@@ -114,11 +145,21 @@ class MazeTrialScore:
     source_revoked: bool
     risk_exposure_bps: int = 0  # Synthetic hazard exposure, NOT actual game health.
     hazard_tile_entries: int = 0
+    moving_hazard_hits: int = 0
+    moving_hazard_waits: int = 0
 
     def __post_init__(self) -> None:
         if self.success and (self.reason != "goal_witnessed"
                              or self.invalid_move_attempts):
             raise ValueError("success requires independently witnessed goal")
+        if (
+            type(self.moving_hazard_hits) is not int
+            or not 0 <= self.moving_hazard_hits <= 1
+            or type(self.moving_hazard_waits) is not int
+            or self.moving_hazard_waits < 0
+            or (self.success and self.moving_hazard_hits)
+        ):
+            raise ValueError("moving-hazard outcome must be independently witnessed")
         if (type(self.hazard_tile_entries) is not int or self.hazard_tile_entries < 0
                 or type(self.risk_exposure_bps) is not int
                 or self.risk_exposure_bps != self.hazard_tile_entries * 6000):
@@ -147,6 +188,8 @@ def run_signed_maze_trial(
     invalid = 0
     exposure = 0
     hazard_entries = 0
+    moving_hits = 0
+    hazard_waits = 0
     reason = "frame_budget_exhausted"
     frames = 0
     clock = [1010.0]
@@ -167,11 +210,20 @@ def run_signed_maze_trial(
         for seq in range(1, max_frames + 1):
             frames = seq
             clock[0] = float(1000 + 10 * seq)
+            # The independent engine advances the hazard even when the model
+            # is idle. Collision at tick-start is scored before a new capture.
+            moving_hazard = scenario.hazard_at_frame(seq)
+            if moving_hazard == player:
+                moving_hits += 1
+                reason = "moving_hazard_hit_player"
+                break
             observation = NavigationObservation(
                 game_id="synthetic_maze", game_version="v1",
                 episode_id=scenario.scenario_id, sequence=seq,
                 captured_ms=clock[0], player=player,
-                goal=scenario.goal, tiles=scenario.local_capture(player),
+                goal=scenario.goal, tiles=scenario.local_capture(
+                    player, moving_hazard=moving_hazard,
+                ),
             )
             packet = sign_navigation_packet(
                 observation, source_id="private_maze_lab",
@@ -196,6 +248,10 @@ def run_signed_maze_trial(
                     break
                 dx, dy = _DELTAS[hint.action_id]
                 nxt = GridPosition(player.x + dx, player.y + dy)
+                if nxt == moving_hazard:
+                    invalid += 1
+                    reason = "engine_rejected_moving_hazard"
+                    break
                 if not scenario.safe_for_engine(nxt):
                     invalid += 1
                     reason = ("engine_rejected_lethal_tile"
@@ -209,6 +265,12 @@ def run_signed_maze_trial(
                     exposure += 6000
             elif hint.status in {"observe", "await_observation"}:
                 nonmove += 1
+            elif (scenario.patrol and hint.status == "abstain"
+                  and hint.reason == "no_safe_observed_frontier"):
+                # Waiting is permitted only in a moving-hazard rehearsal.
+                # A new independently signed capture is mandatory next tick.
+                nonmove += 1
+                hazard_waits += 1
             else:
                 reason = "advisor_abstained"
                 break
@@ -224,6 +286,7 @@ def run_signed_maze_trial(
             optimal_moves=optimal, efficiency_bps=efficiency,
             source_revoked=bool(bridge.metrics()["revoked"]),
             risk_exposure_bps=exposure, hazard_tile_entries=hazard_entries,
+            moving_hazard_hits=moving_hits, moving_hazard_waits=hazard_waits,
         )
     finally:
         bridge.disable()
