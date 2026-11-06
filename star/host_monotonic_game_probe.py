@@ -13,7 +13,7 @@ in-flight event details never leave memory through report APIs.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from threading import RLock
+from threading import Event, RLock
 from time import monotonic_ns
 from typing import Callable, NoReturn
 
@@ -88,6 +88,9 @@ class HostMonotonicGameProbe:
         self._dropped_opportunities = 0
         self._clock = monotonic_ns if clock is None else clock
         self._lock = RLock()
+        # A native host callback can block while holding _lock. This fence is
+        # deliberately set without acquiring _lock on emergency abort.
+        self._abort_signal = Event()
         self._last_clock_ns: int | None = None
         self._started = 0
         self._next_ack = 1
@@ -99,6 +102,7 @@ class HostMonotonicGameProbe:
         self._replay: PrivateLatencyReplay | None = None
 
     def _clear_and_revoke(self) -> None:
+        self._abort_signal.set()
         self._revoked = True
         self._pending.clear()
         self._completed.clear()
@@ -106,6 +110,11 @@ class HostMonotonicGameProbe:
         self._replay = None
 
     def _require_open(self) -> None:
+        # Emergency abort must be effective even when another thread could not
+        # acquire _lock while a native submission callback was blocked.
+        if self._abort_signal.is_set():
+            self._clear_and_revoke()
+            raise RuntimeError("private timing window revoked")
         # Host callbacks are reentrant under RLock, but must never change the
         # active window while their side effect is in progress.
         if self._in_host_dispatch:
@@ -341,9 +350,20 @@ class HostMonotonicGameProbe:
             self._next_ack += 1
 
     def abort(self) -> None:
-        """Lost ACK, cancelled frame, game failure, or user stop: revoke window."""
-        with self._lock:
-            self._clear_and_revoke()
+        """Immediately latch cancellation; never wait for a blocked host callback.
+
+        Only the evidence window is cancelled. An already-running native input
+        callback can still have side effects, so a separate native host must
+        enforce cancellation, all-keys-up and maximum key-hold deadlines.
+        If dispatch owns the state lock, the in-flight method purges the
+        window when it returns; no later operation can finalize that window.
+        """
+        self._abort_signal.set()
+        if self._lock.acquire(blocking=False):
+            try:
+                self._clear_and_revoke()
+            finally:
+                self._lock.release()
 
     def status(self) -> dict[str, int | bool]:
         """Counts only, including incomplete frames; no raw times or media."""
@@ -407,6 +427,11 @@ class HostMonotonicGameProbe:
                 # Destroy retained raw monotonic timestamps on finalization.
                 self._completed.clear()
                 self._pending.clear()
+            # An abort may be posted by another thread while replay assembly
+            # owns the state lock; discard the result rather than publish it.
+            if self._abort_signal.is_set():
+                self._clear_and_revoke()
+                raise RuntimeError("private timing window revoked")
             self._finalized = True
             self._replay = replay
             return replay
