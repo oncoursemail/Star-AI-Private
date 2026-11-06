@@ -237,3 +237,69 @@ def test_obs_drop_boundary_is_strict_without_rounding_before_comparison():
     # 7/300 exceeds the same acceptance budget.
     data["obs_after"] = ObsCounters(11000, 19, 800, 8, 790)
     assert "obs_frame_drops_exceeded" in score_private_vtuber_rehearsal(**data).missing
+
+
+# These synthetic tests probe collisions between independently passing lanes.
+# They do NOT establish artifact origin or prove a real VTuber rehearsal.
+@pytest.mark.parametrize("change,reason", [
+    ({"duration_s": 12.0}, "recording_obs_duration_mismatch"),
+    ({"video_frames": 220}, "recording_obs_frame_count_mismatch"),
+    ({"video_frames": 500}, "recording_obs_frame_count_mismatch"),
+    ({"duration_s": float("nan")}, "private_recording_metadata_inconsistent"),
+    ({"video_frames": True}, "private_recording_metadata_inconsistent"),
+    ({"audio_streams": 0}, "private_recording_metadata_inconsistent"),
+    ({"selected_audio_track": 1}, "private_recording_metadata_inconsistent"),
+    ({"video_width": -1}, "private_recording_metadata_inconsistent"),
+])
+def test_valid_individual_recording_report_can_conflict_with_other_lanes(change, reason):
+    data = _reports()
+    data["recording"] = replace(data["recording"], **change)
+    result = score_private_vtuber_rehearsal(**data)
+    assert result.status == "deferred"
+    assert reason in result.missing
+    assert not result.authorizes_broadcast
+
+
+@pytest.mark.parametrize("change,reason", [
+    ({"duration_ms": 12000}, "recording_av_duration_mismatch"),
+    ({"duration_ms": float("nan")}, "recording_av_sample_timeline_missing"),
+    ({"sample_count": 200}, "recording_av_alignment_statistics_invalid"),
+    ({"best_alignment_f1": float("nan")}, "recording_av_alignment_statistics_invalid"),
+    ({"estimated_mouth_lag_ms": 300}, "recording_av_alignment_statistics_invalid"),
+    ({"verified_humanlike": True}, "recording_av_alignment_statistics_invalid"),
+    ({"automated_deployment_allowed": True}, "recording_av_alignment_statistics_invalid"),
+])
+def test_valid_looking_av_verdict_is_not_enough_without_consistent_statistics(change, reason):
+    data = _reports()
+    data["av"] = replace(data["av"], report=replace(data["av"].report, **change))
+    result = score_private_vtuber_rehearsal(**data)
+    assert result.status == "deferred"
+    assert reason in result.missing
+
+
+def test_audio_frames_from_different_clip_must_not_pass_same_session_claim():
+    data = _reports()
+    data["av"] = replace(data["av"], observed_frames=210)
+    result = score_private_vtuber_rehearsal(**data)
+    assert result.status == "deferred"
+    assert "recording_av_frame_rate_mismatch" in result.missing
+
+
+def test_frame_rate_crosschecks_do_not_confuse_mixed_obs_and_clip_counts():
+    data = _reports()
+    data["obs_after"] = ObsCounters(11000, 14, 800, 8, 950)
+    result = score_private_vtuber_rehearsal(**data)
+    assert result.status == "deferred"
+    assert "recording_obs_frame_count_mismatch" in result.missing
+
+
+def test_small_recording_stop_offset_within_tolerance_remains_review_candidate():
+    data = _reports()
+    data["recording"] = replace(data["recording"], duration_s=10.3, video_frames=302)
+    data["av"] = replace(data["av"], report=replace(data["av"].report, duration_ms=10290))
+    # 30 Hz resampling: 309 samples for 10.29 seconds.
+    data["av"] = replace(data["av"], observed_frames=309,
+                         report=replace(data["av"].report, sample_count=309))
+    result = score_private_vtuber_rehearsal(**data)
+    assert result.status == "candidate_for_owner_review"
+    assert result.missing == ()

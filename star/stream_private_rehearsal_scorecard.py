@@ -17,6 +17,7 @@ import math
 
 from .game_state_transition_witness import AttestedGameMoment
 from .native_game_roundtrip_audit import NativeRoundtripReport
+from .stream_private_rehearsal_alignment import check_rehearsal_crosslane_coherence
 from .stream_av_recording_host import RecordingAVResult
 from .stream_moment_receipts import verify_game_moment
 from .stream_obs_readonly_evidence import ObsCounters
@@ -210,6 +211,17 @@ def score_private_vtuber_rehearsal(
     )
     if obs_gap is not None:
         missing.append(obs_gap)
+    # A valid score in each lane is not enough: their claimed time windows
+    # and frame counts must also describe the same contiguous OBS recording.
+    if (obs_gap is None and type(obs_before) is ObsCounters
+            and type(obs_after) is ObsCounters
+            and type(recording) is RecordingArtifactReport
+            and type(av) is RecordingAVResult):
+        missing.extend(check_rehearsal_crosslane_coherence(
+            recording=recording, av=av,
+            obs_duration_s=(obs_after.at_monotonic_ms - obs_before.at_monotonic_ms) / 1000,
+            obs_output_frames=output,
+        ))
 
     return RehearsalScorecard(
         status="deferred" if missing else "candidate_for_owner_review",
