@@ -103,6 +103,9 @@ class NativeGameRoundtripAudit:
         self._finalized = False
         self._last_ns: int | None = None
         self._pending: tuple[int, int | None] | None = None
+        # Independent real host age: an injected or stalled audit clock must
+        # never authorize input from an expired game frame.
+        self._real_frame_started_ns: int | None = None
         self._attempted = 0
         self._durations: list[tuple[int, int, int]] = []
         self._decision_durations: list[int] = []
@@ -112,6 +115,7 @@ class NativeGameRoundtripAudit:
         self._revoked = True
         self._aborted.set()
         self._pending = None
+        self._real_frame_started_ns = None
         self._durations.clear()
         self._decision_durations.clear()
         raise RuntimeError(reason)
@@ -132,6 +136,27 @@ class NativeGameRoundtripAudit:
             self._fail("invalid or regressed host monotonic clock")
         self._last_ns = now
         return now
+
+    def _real_tick(self) -> int:
+        """Read the independent monotonic source; never trust invalid timing."""
+        try:
+            now = monotonic_ns()
+        except Exception:
+            self._fail("real host monotonic clock unavailable")
+        if type(now) is not int or not 0 <= now <= _MAX_NS:
+            self._fail("real host monotonic clock invalid")
+        return now
+
+    def _real_frame_fresh(self) -> None:
+        """Reject stale frames even when the audit clock is injected or frozen.
+
+        This is an additional host deadline, not a benchmark timing sample.
+        """
+        began = self._real_frame_started_ns
+        now = self._real_tick()
+        if (began is None or now < began
+                or now - began > self._max_decision_ns):
+            self._fail("real host game frame decision deadline exceeded")
 
     def capture(self, *, frame_sequence: int | None = None) -> None:
         """Declare each observed input frame BEFORE AI reasoning.
@@ -156,6 +181,9 @@ class NativeGameRoundtripAudit:
                 self._fail("frame sequence requires explicit coverage opt-in")
             if self._pending is not None or self._attempted + self._no_action_frames >= 256:
                 self._fail("unclaimed frame or excessive roundtrip window")
+            # Begin real age *before* reading the measurement clock, which
+            # may itself stall; otherwise that stall would be invisible.
+            self._real_frame_started_ns = self._real_tick()
             self._pending = (self._sample(), None)
 
     def decision_ready(self) -> None:
@@ -167,6 +195,7 @@ class NativeGameRoundtripAudit:
             now = self._sample()
             if now - capture_ns > self._max_decision_ns:
                 self._fail("reasoning exceeded game decision deadline")
+            self._real_frame_fresh()
             self._pending = (capture_ns, now)
 
     def no_action(self) -> None:
@@ -184,9 +213,11 @@ class NativeGameRoundtripAudit:
             capture_ns, ready_ns = self._pending
             if self._sample() - capture_ns > self._max_decision_ns:
                 self._fail("no-action frame exceeded decision deadline")
+            self._real_frame_fresh()
             self._decision_durations.append(ready_ns - capture_ns)
             self._no_action_frames += 1
             self._pending = None
+            self._real_frame_started_ns = None
 
     def seal_frames(self, *, expected_frames: int, host_verified: bool = False) -> None:
         """Close a verified host-declared frame window before finalization.
@@ -222,11 +253,12 @@ class NativeGameRoundtripAudit:
             now = self._sample()
             if now - capture_ns > self._max_decision_ns:
                 self._fail("action deadline expired before native host call")
+            self._real_frame_fresh()
             if (type(action_id) is not str or _ACTION.fullmatch(action_id) is None
                     or type(hold_ms) is not int or not 1 <= hold_ms <= 180):
                 self._fail("unapproved native action request")
             self._attempted += 1
-            real_call_start_ns = monotonic_ns()
+            real_call_start_ns = self._real_tick()
             with self._health_lock:
                 self._active_call_started_ns = real_call_start_ns
             try:
@@ -240,7 +272,8 @@ class NativeGameRoundtripAudit:
                             or self._port.all_keys_up() is not True):
                         self._fail("native game input roundtrip not confirmed")
                     if (finished_ns - now > self._max_call_ns
-                            or monotonic_ns() - real_call_start_ns > self._max_call_ns):
+                            or not 0 <= self._real_tick() - real_call_start_ns
+                            <= self._max_call_ns):
                         # A host-injected audit clock cannot hide a genuinely
                         # over-budget native call from the monitoring lane.
                         self._fail("native game input roundtrip deadline exceeded")
@@ -251,6 +284,7 @@ class NativeGameRoundtripAudit:
                         finished_ns - capture_ns,
                     ))
                     self._pending = None
+                    self._real_frame_started_ns = None
                 except Exception:
                     self._fail("native game input roundtrip failed")
             finally:
@@ -268,6 +302,7 @@ class NativeGameRoundtripAudit:
                 self._revoked = True
                 self._durations.clear()
                 self._pending = None
+                self._real_frame_started_ns = None
             finally:
                 self._lock.release()
 
