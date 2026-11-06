@@ -450,3 +450,107 @@ def test_real_host_wall_clock_rejects_overdue_even_if_audit_clock_does_not_advan
     assert failures and "failed" in failures[0]
     assert audit.report().status == "revoked"
     assert audit.report().completed == 0
+
+
+def test_real_host_age_rejects_stale_decision_even_with_frozen_audit_clock():
+    """A broken benchmark clock cannot dispatch a 351ms-old game decision."""
+    from unittest.mock import patch
+
+    port = FakePort()
+    audit = NativeGameRoundtripAudit(
+        port, owner_approved=True, clock=ScriptClock(100, 101, 102),
+    )
+    with patch(
+        "star.native_game_roundtrip_audit.monotonic_ns",
+        side_effect=[1_000_000_000, 1_050_000_000, 1_351_000_001],
+    ):
+        audit.capture()
+        audit.decision_ready()
+        with pytest.raises(RuntimeError, match="real host game frame decision deadline"):
+            audit.execute("jump", 5)
+    assert not port.calls
+    assert audit.report().status == "revoked"
+    assert audit.report().completed == 0
+
+
+def test_real_host_age_rejects_slow_reasoning_before_it_becomes_ready():
+    from unittest.mock import patch
+
+    port = FakePort()
+    audit = NativeGameRoundtripAudit(
+        port, owner_approved=True, clock=ScriptClock(100, 101),
+    )
+    with patch(
+        "star.native_game_roundtrip_audit.monotonic_ns",
+        side_effect=[1_000_000_000, 1_350_000_001],
+    ):
+        audit.capture()
+        with pytest.raises(RuntimeError, match="real host game frame decision deadline"):
+            audit.decision_ready()
+    assert audit.report().status == "revoked"
+    assert not port.calls
+
+
+def test_real_host_age_rejects_stale_noop_before_sealing_frame_coverage():
+    from unittest.mock import patch
+
+    port = FakePort()
+    audit = NativeGameRoundtripAudit(
+        port, owner_approved=True, require_frame_coverage=True,
+        clock=ScriptClock(100, 101, 102),
+    )
+    with patch(
+        "star.native_game_roundtrip_audit.monotonic_ns",
+        side_effect=[1_000_000_000, 1_001_000_000, 1_351_000_001],
+    ):
+        audit.capture(frame_sequence=1)
+        audit.decision_ready()
+        with pytest.raises(RuntimeError, match="real host game frame decision deadline"):
+            audit.no_action()
+    report = audit.report()
+    assert report.status == "revoked"
+    assert report.observed_frames == 0  # fail closed: no coverage proof
+
+
+def test_independent_real_clock_unavailable_revokes_before_native_io():
+    from unittest.mock import patch
+
+    for invalid in ("bad", -1, 1 << 64):
+        port = FakePort()
+        audit = NativeGameRoundtripAudit(port, owner_approved=True)
+        with patch("star.native_game_roundtrip_audit.monotonic_ns", return_value=invalid):
+            with pytest.raises(RuntimeError, match="real host monotonic clock invalid"):
+                audit.capture()
+        assert audit.report().status == "revoked"
+        assert not port.calls
+    port = FakePort()
+    audit = NativeGameRoundtripAudit(port, owner_approved=True)
+    with patch("star.native_game_roundtrip_audit.monotonic_ns", side_effect=OSError):
+        with pytest.raises(RuntimeError, match="real host monotonic clock unavailable"):
+            audit.capture()
+    assert audit.report().status == "revoked"
+    assert not port.calls
+
+
+def test_real_host_fresh_success_still_records_only_roundtrip_not_game_effect():
+    from unittest.mock import patch
+
+    port = FakePort()
+    audit = NativeGameRoundtripAudit(
+        port, owner_approved=True,
+        clock=ScriptClock(100, 101, 102, 103),
+    )
+    with patch(
+        "star.native_game_roundtrip_audit.monotonic_ns",
+        side_effect=[1_000_000_000, 1_001_000_000, 1_002_000_000,
+                     1_003_000_000, 1_004_000_000],
+    ):
+        audit.capture()
+        audit.decision_ready()
+        audit.execute("jump", 5)
+    result = audit.finalize()
+    assert result.status == "host_roundtrip_only"
+    assert result.completed == 1
+    assert port.calls == [("jump", 5)]
+    assert not result.game_effect_attested
+    assert not result.authorizes_broadcast
