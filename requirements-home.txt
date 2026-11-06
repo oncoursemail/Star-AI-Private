@@ -149,7 +149,7 @@ nvidia-curand-cu12==10.3.10.19 ; extra != "star:allow" \
 # nvidia-nvjitlink-cu12 12.9.86: 35.6 MB, via nvidia-cufft-cu12
 nvidia-nvjitlink-cu12==12.9.86 \
     --hash=sha256:cc6fcec260ca843c10e34c936921a1c426b351753587fdd638e8cff7b16bb9db
-# obsws-python 1.8.1: 0.0 MB, via direct, released 6 days ago (an exact pin, or nothing older fits)
+# obsws-python 1.8.1: 0.0 MB, via direct, released 7 days ago (an exact pin, or nothing older fits)
 obsws-python==1.8.1 \
     --hash=sha256:dbdba02b8641ac3f30bff16107c1bba11c6e5b6884ae85698038f0d593baaf6c
 # onnxruntime-gpu 1.26.0: 226.5 MB, via direct
