@@ -207,10 +207,11 @@ class NativeGameRoundtripAudit:
         """
         with self._lock:
             self._open()
-            if (not self._require_frame_coverage
-                    or self._pending is None or self._pending[1] is None):
+            if not self._require_frame_coverage or self._pending is None:
                 self._fail("no-action frame requires an observed ready decision")
             capture_ns, ready_ns = self._pending
+            if ready_ns is None:
+                self._fail("no-action frame requires an observed ready decision")
             if self._sample() - capture_ns > self._max_decision_ns:
                 self._fail("no-action frame exceeded decision deadline")
             self._real_frame_fresh()
@@ -246,9 +247,11 @@ class NativeGameRoundtripAudit:
         """
         with self._lock:
             self._open()
-            if self._pending is None or self._pending[1] is None:
+            if self._pending is None:
                 self._fail("native action requires ready decision")
             capture_ns, ready_ns = self._pending
+            if ready_ns is None:
+                self._fail("native action requires ready decision")
             now = self._sample()
             if now - capture_ns > self._max_decision_ns:
                 self._fail("action deadline expired before native host call")
