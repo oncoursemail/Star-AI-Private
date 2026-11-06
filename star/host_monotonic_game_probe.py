@@ -30,6 +30,7 @@ class _PendingFrame:
     capture_ns: int
     decision_ready_ns: int | None = None
     action_submit_ns: int | None = None
+    pre_submit_check_ns: int | None = None
 
 
 class HostMonotonicGameProbe:
@@ -49,6 +50,7 @@ class HostMonotonicGameProbe:
         clock: Callable[[], int] | None = None,
         require_frame_opportunities: bool = False,
         max_queue_wait_ns: int | None = None,
+        max_action_age_ns: int | None = None,
     ) -> None:
         if owner_approved is not True:
             raise PermissionError("private host timing requires owner approval")
@@ -61,6 +63,11 @@ class HostMonotonicGameProbe:
                 raise ValueError("queue deadline requires frame-opportunity coverage")
             if type(max_queue_wait_ns) is not int or not 1_000_000 <= max_queue_wait_ns <= 10_000_000_000:
                 raise ValueError("max_queue_wait_ns must be 1ms..10s integer")
+        if max_action_age_ns is not None:
+            if type(max_action_age_ns) is not int or not 1_000_000 <= max_action_age_ns <= 10_000_000_000:
+                raise ValueError("max_action_age_ns must be 1ms..10s integer")
+        self._max_action_age_ns = max_action_age_ns
+        self._action_deadline_violations = 0
         self._max_queue_wait_ns = max_queue_wait_ns
         self._coverage_required = require_frame_opportunities
         self._opportunities: dict[int, int] = {}
@@ -183,6 +190,29 @@ class HostMonotonicGameProbe:
                 self._fail("duplicate decision-ready event")
             pending.decision_ready_ns = self._sample()
 
+    def pre_submit_check(self, sequence: int) -> None:
+        """Check frame age immediately BEFORE the approved host issues input.
+
+        This is a local deadline gate, NOT an input authorization, signed
+        observation, or guarantee about actions the host later performs.
+        Integrators must call it on the actual submission path and must not
+        send input if it raises. A second check at action_submitted detects
+        time spent between this gate and the host acknowledgment of submission.
+        """
+        with self._lock:
+            self._require_open()
+            if self._max_action_age_ns is None:
+                self._fail("action freshness deadline was not enabled")
+            pending = self._get(sequence)
+            if (pending.decision_ready_ns is None or pending.action_submit_ns is not None
+                    or pending.pre_submit_check_ns is not None):
+                self._fail("pre-submit check requires one ready, unsubmitted decision")
+            now = self._sample()
+            if now - pending.capture_ns > self._max_action_age_ns:
+                self._action_deadline_violations += 1
+                self._fail("action deadline expired before host input")
+            pending.pre_submit_check_ns = now
+
     def action_submitted(self, sequence: int) -> None:
         """Mark actual host submission (never submits input itself)."""
         with self._lock:
@@ -190,7 +220,13 @@ class HostMonotonicGameProbe:
             pending = self._get(sequence)
             if pending.decision_ready_ns is None or pending.action_submit_ns is not None:
                 self._fail("submission requires one prior decision-ready event")
-            pending.action_submit_ns = self._sample()
+            if self._max_action_age_ns is not None and pending.pre_submit_check_ns is None:
+                self._fail("action submission requires a pre-submit deadline check")
+            now = self._sample()
+            if self._max_action_age_ns is not None and now - pending.capture_ns > self._max_action_age_ns:
+                self._action_deadline_violations += 1
+                self._fail("action deadline expired during host submission")
+            pending.action_submit_ns = now
 
     def action_ack(self, sequence: int) -> None:
         """Mark observed host ACK (not proof of movement or game success)."""
@@ -235,6 +271,12 @@ class HostMonotonicGameProbe:
                 "independent_gameplay_proof": False,
                 "timing_attested": False,
             }
+            if self._max_action_age_ns is not None:
+                result.update({
+                    "action_deadline_guard_active": True,
+                    "action_deadline_violations": self._action_deadline_violations,
+                    "action_freshness_attested": False,
+                })
             if self._coverage_required:
                 result.update({
                     "frame_opportunities": self._opportunity_total,
