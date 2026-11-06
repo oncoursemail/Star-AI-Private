@@ -26,7 +26,7 @@ _DELTAS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 
 @dataclass(frozen=True)
 class MazeScenario:
-    """Private game truth: the advisor only receives local cross-shaped views."""
+    """Private map truth; ! is lethal and ~ has synthetic exposure risk."""
     scenario_id: str
     rows: tuple[str, ...]
 
@@ -40,10 +40,10 @@ class MazeScenario:
             raise ValueError("maze requires 2..12 string rows")
         width = len(self.rows[0])
         if not 2 <= width <= 12 or any(
-            len(row) != width or any(ch not in ".#SG" for ch in row)
+            len(row) != width or any(ch not in ".#SG!~" for ch in row)
             for row in self.rows
         ):
-            raise ValueError("maze must be rectangular with # . S G only")
+            raise ValueError("maze must be rectangular with # . S G ! ~ only")
         if "".join(self.rows).count("S") != 1 or "".join(self.rows).count("G") != 1:
             raise ValueError("maze requires exactly one start and one goal")
         if self.shortest_path_length() is None:
@@ -69,8 +69,12 @@ class MazeScenario:
                 and 0 <= pos.x < len(self.rows[0])
                 and self.rows[pos.y][pos.x] != "#")
 
+    def safe_for_engine(self, pos: GridPosition) -> bool:
+        """Lethal tiles are physically traversable, but disallowed to the engine."""
+        return self.walkable(pos) and self.rows[pos.y][pos.x] != "!"
+
     def shortest_path_length(self) -> int | None:
-        """Independent BFS using engine truth; never supplied to the advisor."""
+        """Independent BFS over engine-safe terrain; kept hidden from advisor."""
         start, goal = self.start, self.goal
         queue = deque([(start, 0)])
         seen = {start}
@@ -80,18 +84,20 @@ class MazeScenario:
                 return distance
             for dx, dy in _DELTAS.values():
                 nxt = GridPosition(pos.x + dx, pos.y + dy)
-                if nxt not in seen and self.walkable(nxt):
+                if nxt not in seen and self.safe_for_engine(nxt):
                     seen.add(nxt)
                     queue.append((nxt, distance + 1))
         return None
 
     def local_capture(self, player: GridPosition) -> tuple[ObservedTile, ...]:
         """Bounded sensor; wall truth stays in this engine-side fixture."""
-        return tuple(
-            ObservedTile(GridPosition(player.x + dx, player.y + dy),
-                         self.walkable(GridPosition(player.x + dx, player.y + dy)))
-            for dx, dy in ((0, 0), (0, -1), (-1, 0), (1, 0), (0, 1))
-        )
+        captured: list[ObservedTile] = []
+        for dx, dy in ((0, 0), (0, -1), (-1, 0), (1, 0), (0, 1)):
+            at = GridPosition(player.x + dx, player.y + dy)
+            terrain = self.rows[at.y][at.x] if self.walkable(at) else "#"
+            risk = 10000 if terrain == "!" else 6000 if terrain == "~" else 0
+            captured.append(ObservedTile(at, terrain != "#", risk_bps=risk))
+        return tuple(captured)
 
 
 @dataclass(frozen=True)
@@ -106,11 +112,17 @@ class MazeTrialScore:
     optimal_moves: int
     efficiency_bps: int
     source_revoked: bool
+    risk_exposure_bps: int = 0  # Synthetic hazard exposure, NOT actual game health.
+    hazard_tile_entries: int = 0
 
     def __post_init__(self) -> None:
         if self.success and (self.reason != "goal_witnessed"
                              or self.invalid_move_attempts):
             raise ValueError("success requires independently witnessed goal")
+        if (type(self.hazard_tile_entries) is not int or self.hazard_tile_entries < 0
+                or type(self.risk_exposure_bps) is not int
+                or self.risk_exposure_bps != self.hazard_tile_entries * 6000):
+            raise ValueError("synthetic hazard exposure must match engine events")
 
 
 def run_signed_maze_trial(
@@ -133,6 +145,8 @@ def run_signed_maze_trial(
     moves = 0
     nonmove = 0
     invalid = 0
+    exposure = 0
+    hazard_entries = 0
     reason = "frame_budget_exhausted"
     frames = 0
     clock = [1010.0]
@@ -182,12 +196,17 @@ def run_signed_maze_trial(
                     break
                 dx, dy = _DELTAS[hint.action_id]
                 nxt = GridPosition(player.x + dx, player.y + dy)
-                if not scenario.walkable(nxt):
+                if not scenario.safe_for_engine(nxt):
                     invalid += 1
-                    reason = "engine_rejected_illegal_move"
+                    reason = ("engine_rejected_lethal_tile"
+                              if scenario.walkable(nxt)
+                              else "engine_rejected_illegal_move")
                     break
                 player = nxt  # ONLY the synthetic test engine changes state.
                 moves += 1
+                if scenario.rows[player.y][player.x] == "~":
+                    hazard_entries += 1
+                    exposure += 6000
             elif hint.status in {"observe", "await_observation"}:
                 nonmove += 1
             else:
@@ -204,6 +223,7 @@ def run_signed_maze_trial(
             nonmove_hints=nonmove, invalid_move_attempts=invalid,
             optimal_moves=optimal, efficiency_bps=efficiency,
             source_revoked=bool(bridge.metrics()["revoked"]),
+            risk_exposure_bps=exposure, hazard_tile_entries=hazard_entries,
         )
     finally:
         bridge.disable()
