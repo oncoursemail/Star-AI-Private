@@ -122,6 +122,7 @@ class GroundedNavigationMemory:
         max_tile_age_ms: int | None = None,
         single_move_per_capture: bool = False,
         max_stalled_captures: int | None = None,
+        predictive_risk_guard: bool = False,
     ) -> None:
         if (type(max_observation_age_ms) is not int
                 or not 100 <= max_observation_age_ms <= 3000):
@@ -136,6 +137,9 @@ class GroundedNavigationMemory:
                 and (type(max_stalled_captures) is not int
                      or not 1 <= max_stalled_captures <= 32)):
             raise ValueError("stalled capture threshold must be 1..32 or None")
+        if type(predictive_risk_guard) is not bool:
+            raise ValueError("predictive risk guard must be boolean")
+        self._predictive_risk_guard = predictive_risk_guard
         self._max_age = max_observation_age_ms
         self._max_tile_age = max_tile_age_ms
         self._single_move = single_move_per_capture
@@ -261,6 +265,7 @@ class GroundedNavigationMemory:
 
     def _paths(
         self, player: GridPosition, fresh: set[GridPosition],
+        guarded: set[GridPosition],
     ) -> tuple[dict[GridPosition, int], dict[GridPosition, tuple[GridPosition, str]]]:
         costs = {player: 0}
         previous: dict[GridPosition, tuple[GridPosition, str]] = {}
@@ -271,7 +276,7 @@ class GroundedNavigationMemory:
                 continue
             for neighbor, direction in self._adjacent(here):
                 tile = self._tiles.get(neighbor)
-                if (neighbor not in fresh or tile is None
+                if (neighbor not in fresh or neighbor in guarded or tile is None
                         or not tile.walkable or tile.risk_bps >= _RISK_BLOCK):
                     continue
                 next_cost = cost + 1000 + tile.risk_bps // 2
@@ -316,7 +321,18 @@ class GroundedNavigationMemory:
                                         "no_witnessed_position_progress",
                                         observed_cells=observed)
             fresh = self._fresh_positions(now)
-            costs, previous = self._paths(here, fresh)
+            # Optional, conservative one-tick occupancy envelope for signed
+            # high-risk cells in the CURRENT capture only. The private maze
+            # fixture bounds the moving hazard to <= 1 grid step per tick.
+            # Without a host-provided dynamics bound this is only a heuristic,
+            # not proof that a real enemy cannot move faster or teleport.
+            guarded: set[GridPosition] = set()
+            if self._predictive_risk_guard:
+                for tile in frame.tiles:
+                    if (tile.position in fresh and tile.walkable
+                            and tile.risk_bps >= _RISK_BLOCK):
+                        guarded.update(pos for pos, _ in self._adjacent(tile.position))
+            costs, previous = self._paths(here, fresh, guarded)
             if goal in costs:
                 target = goal
                 reason = "verified_path_to_goal"

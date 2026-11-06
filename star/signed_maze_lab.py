@@ -117,10 +117,18 @@ class MazeScenario:
 
     def local_capture(
         self, player: GridPosition, *, moving_hazard: GridPosition | None = None,
+        sensor_radius: int = 1,
     ) -> tuple[ObservedTile, ...]:
         """Bounded sensor; wall truth stays in this engine-side fixture."""
+        if type(sensor_radius) is not int or sensor_radius not in (1, 2):
+            raise ValueError("private sensor radius must be 1 or 2")
         captured: list[ObservedTile] = []
-        for dx, dy in ((0, 0), (0, -1), (-1, 0), (1, 0), (0, 1)):
+        offsets = [(0, 0), (0, -1), (-1, 0), (1, 0), (0, 1)]
+        if sensor_radius == 2:
+            offsets.extend((dx, dy) for dy in range(-2, 3)
+                           for dx in range(-2, 3)
+                           if abs(dx) + abs(dy) == 2)
+        for dx, dy in offsets:
             at = GridPosition(player.x + dx, player.y + dy)
             terrain = self.rows[at.y][at.x] if self.walkable(at) else "#"
             risk = (
@@ -168,7 +176,8 @@ class MazeTrialScore:
 
 def run_signed_maze_trial(
     scenario: MazeScenario, *, owner_approved: bool = False,
-    max_frames: int = 256,
+    max_frames: int = 256, sensor_radius: int = 1,
+    predictive_risk_guard: bool = False,
 ) -> MazeTrialScore:
     """Offline engine->signed packet->bridge->advisor->engine->score loop.
 
@@ -182,6 +191,10 @@ def run_signed_maze_trial(
         raise TypeError("scenario must be a validated MazeScenario")
     if type(max_frames) is not int or not 1 <= max_frames <= 512:
         raise ValueError("max_frames must be 1..512")
+    if type(sensor_radius) is not int or sensor_radius not in (1, 2):
+        raise ValueError("sensor_radius must be 1 or 2")
+    if type(predictive_risk_guard) is not bool:
+        raise ValueError("predictive_risk_guard must be boolean")
     player = scenario.start
     moves = 0
     nonmove = 0
@@ -196,6 +209,7 @@ def run_signed_maze_trial(
     nav = GroundedNavigationMemory(
         max_observation_age_ms=250, max_tile_age_ms=250,
         single_move_per_capture=True, max_stalled_captures=3,
+        predictive_risk_guard=predictive_risk_guard,
     )
     source_key = secrets.token_bytes(32)
     bridge_session = secrets.token_hex(16)
@@ -223,6 +237,7 @@ def run_signed_maze_trial(
                 captured_ms=clock[0], player=player,
                 goal=scenario.goal, tiles=scenario.local_capture(
                     player, moving_hazard=moving_hazard,
+                    sensor_radius=sensor_radius,
                 ),
             )
             packet = sign_navigation_packet(
@@ -294,7 +309,8 @@ def run_signed_maze_trial(
 
 def run_maze_benchmark(
     scenarios: tuple[MazeScenario, ...], *, owner_approved: bool = False,
-    max_frames: int = 256,
+    max_frames: int = 256, sensor_radius: int = 1,
+    predictive_risk_guard: bool = False,
 ) -> tuple[MazeTrialScore, ...]:
     """Independent per-map results; no averages that hide failed trials."""
     if owner_approved is not True:
@@ -307,6 +323,7 @@ def run_maze_benchmark(
         raise ValueError("scenario ids must be unique")
     return tuple(run_signed_maze_trial(
         case, owner_approved=True, max_frames=max_frames,
+        sensor_radius=sensor_radius, predictive_risk_guard=predictive_risk_guard,
     ) for case in scenarios)
 
 
