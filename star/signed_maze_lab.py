@@ -1,0 +1,232 @@
+"""Deterministic PRIVATE maze rehearsal with authenticated navigation frames.
+
+An intentionally small, offline reference environment that owns the full map
+and checks outcomes independently of the advisor. No game, Windows input,
+network traffic, OBS, AI inference, or skill promotion is connected. Test
+fixtures use a fresh ephemeral signing key per trial. Signed frames alone
+are not proof that a production game reader is trustworthy.
+"""
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass
+import re
+import secrets
+
+from .game_navigation_memory import (
+    GridPosition, GroundedNavigationMemory, NavigationObservation, ObservedTile,
+)
+from .game_navigation_source_bridge import (
+    AuthenticatedNavigationBridge, sign_navigation_packet,
+)
+
+_SCENARIO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
+_DELTAS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+
+
+@dataclass(frozen=True)
+class MazeScenario:
+    """Private game truth: the advisor only receives local cross-shaped views."""
+    scenario_id: str
+    rows: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if type(self.scenario_id) is not str or _SCENARIO_ID.fullmatch(
+            self.scenario_id
+        ) is None:
+            raise ValueError("scenario_id must be a bounded opaque identifier")
+        if (type(self.rows) is not tuple or not 2 <= len(self.rows) <= 12
+                or any(type(row) is not str for row in self.rows)):
+            raise ValueError("maze requires 2..12 string rows")
+        width = len(self.rows[0])
+        if not 2 <= width <= 12 or any(
+            len(row) != width or any(ch not in ".#SG" for ch in row)
+            for row in self.rows
+        ):
+            raise ValueError("maze must be rectangular with # . S G only")
+        if "".join(self.rows).count("S") != 1 or "".join(self.rows).count("G") != 1:
+            raise ValueError("maze requires exactly one start and one goal")
+        if self.shortest_path_length() is None:
+            raise ValueError("private evaluation maze must have a reachable goal")
+
+    def _locate(self, marker: str) -> GridPosition:
+        for y, row in enumerate(self.rows):
+            x = row.find(marker)
+            if x >= 0:
+                return GridPosition(x, y)
+        raise ValueError("missing maze marker")
+
+    @property
+    def start(self) -> GridPosition:
+        return self._locate("S")
+
+    @property
+    def goal(self) -> GridPosition:
+        return self._locate("G")
+
+    def walkable(self, pos: GridPosition) -> bool:
+        return (0 <= pos.y < len(self.rows)
+                and 0 <= pos.x < len(self.rows[0])
+                and self.rows[pos.y][pos.x] != "#")
+
+    def shortest_path_length(self) -> int | None:
+        """Independent BFS using engine truth; never supplied to the advisor."""
+        start, goal = self.start, self.goal
+        queue = deque([(start, 0)])
+        seen = {start}
+        while queue:
+            pos, distance = queue.popleft()
+            if pos == goal:
+                return distance
+            for dx, dy in _DELTAS.values():
+                nxt = GridPosition(pos.x + dx, pos.y + dy)
+                if nxt not in seen and self.walkable(nxt):
+                    seen.add(nxt)
+                    queue.append((nxt, distance + 1))
+        return None
+
+    def local_capture(self, player: GridPosition) -> tuple[ObservedTile, ...]:
+        """Bounded sensor; wall truth stays in this engine-side fixture."""
+        return tuple(
+            ObservedTile(GridPosition(player.x + dx, player.y + dy),
+                         self.walkable(GridPosition(player.x + dx, player.y + dy)))
+            for dx, dy in ((0, 0), (0, -1), (-1, 0), (1, 0), (0, 1))
+        )
+
+
+@dataclass(frozen=True)
+class MazeTrialScore:
+    scenario_id: str
+    success: bool
+    reason: str
+    frames: int
+    moves: int
+    nonmove_hints: int
+    invalid_move_attempts: int
+    optimal_moves: int
+    efficiency_bps: int
+    source_revoked: bool
+
+    def __post_init__(self) -> None:
+        if self.success and (self.reason != "goal_witnessed"
+                             or self.invalid_move_attempts):
+            raise ValueError("success requires independently witnessed goal")
+
+
+def run_signed_maze_trial(
+    scenario: MazeScenario, *, owner_approved: bool = False,
+    max_frames: int = 256,
+) -> MazeTrialScore:
+    """Offline engine->signed packet->bridge->advisor->engine->score loop.
+
+    This IS a real closed loop only for the in-process synthetic maze. The
+    advisor cannot view the hidden full map, score itself, press a key, or
+    report a win; the test engine alone changes position and checks the goal.
+    """
+    if owner_approved is not True:
+        raise PermissionError("private maze rehearsal requires owner approval")
+    if type(scenario) is not MazeScenario:
+        raise TypeError("scenario must be a validated MazeScenario")
+    if type(max_frames) is not int or not 1 <= max_frames <= 512:
+        raise ValueError("max_frames must be 1..512")
+    player = scenario.start
+    moves = 0
+    nonmove = 0
+    invalid = 0
+    reason = "frame_budget_exhausted"
+    frames = 0
+    clock = [1010.0]
+    nav = GroundedNavigationMemory(
+        max_observation_age_ms=250, max_tile_age_ms=250,
+        single_move_per_capture=True, max_stalled_captures=3,
+    )
+    source_key = secrets.token_bytes(32)
+    bridge_session = secrets.token_hex(16)
+    bridge = AuthenticatedNavigationBridge(
+        navigator=nav, source_id="private_maze_lab",
+        session_id=bridge_session, source_key=source_key,
+        game_id="synthetic_maze", game_version="v1",
+        episode_id=scenario.scenario_id, clock_ms=lambda: clock[0],
+    )
+    bridge.enable(owner_approved=True)
+    try:
+        for seq in range(1, max_frames + 1):
+            frames = seq
+            clock[0] = float(1000 + 10 * seq)
+            observation = NavigationObservation(
+                game_id="synthetic_maze", game_version="v1",
+                episode_id=scenario.scenario_id, sequence=seq,
+                captured_ms=clock[0], player=player,
+                goal=scenario.goal, tiles=scenario.local_capture(player),
+            )
+            packet = sign_navigation_packet(
+                observation, source_id="private_maze_lab",
+                session_id=bridge_session, source_key=source_key,
+            )
+            bridge.accept(packet)
+            clock[0] += 1
+            hint = bridge.advise()
+            if hint.authorizes_input or hint.authorizes_broadcast:
+                reason = "unexpected_authority"
+                break
+            if hint.status == "arrived":
+                if player == scenario.goal:
+                    reason = "goal_witnessed"
+                else:
+                    reason = "unwitnessed_arrival"
+                break
+            if hint.status == "move":
+                if hint.action_id not in _DELTAS:
+                    invalid += 1
+                    reason = "unknown_symbolic_action"
+                    break
+                dx, dy = _DELTAS[hint.action_id]
+                nxt = GridPosition(player.x + dx, player.y + dy)
+                if not scenario.walkable(nxt):
+                    invalid += 1
+                    reason = "engine_rejected_illegal_move"
+                    break
+                player = nxt  # ONLY the synthetic test engine changes state.
+                moves += 1
+            elif hint.status in {"observe", "await_observation"}:
+                nonmove += 1
+            else:
+                reason = "advisor_abstained"
+                break
+        optimal = scenario.shortest_path_length()
+        assert optimal is not None
+        success = reason == "goal_witnessed" and player == scenario.goal
+        efficiency = (min(10000, 10000 * optimal // moves)
+                      if success and moves else 0)
+        return MazeTrialScore(
+            scenario_id=scenario.scenario_id, success=success,
+            reason=reason, frames=frames, moves=moves,
+            nonmove_hints=nonmove, invalid_move_attempts=invalid,
+            optimal_moves=optimal, efficiency_bps=efficiency,
+            source_revoked=bool(bridge.metrics()["revoked"]),
+        )
+    finally:
+        bridge.disable()
+
+
+def run_maze_benchmark(
+    scenarios: tuple[MazeScenario, ...], *, owner_approved: bool = False,
+    max_frames: int = 256,
+) -> tuple[MazeTrialScore, ...]:
+    """Independent per-map results; no averages that hide failed trials."""
+    if owner_approved is not True:
+        raise PermissionError("owner approval required for private benchmark")
+    if type(scenarios) is not tuple or not 1 <= len(scenarios) <= 32:
+        raise ValueError("benchmark requires 1..32 scenarios")
+    if any(type(case) is not MazeScenario for case in scenarios):
+        raise TypeError("all cases must be validated MazeScenario objects")
+    if len({case.scenario_id for case in scenarios}) != len(scenarios):
+        raise ValueError("scenario ids must be unique")
+    return tuple(run_signed_maze_trial(
+        case, owner_approved=True, max_frames=max_frames,
+    ) for case in scenarios)
+
+
+__all__ = [
+    "MazeScenario", "MazeTrialScore", "run_signed_maze_trial", "run_maze_benchmark",
+]
