@@ -92,6 +92,8 @@ def test_two_native_host_roundtrips_are_not_claimed_as_submit_timestamps():
     assert set(result.__dataclass_fields__) == {
         "status", "attempted", "completed", "inference_p95_ms",
         "native_call_p95_ms", "frame_to_release_p95_ms",
+        "observed_frames", "no_action_frames", "host_frame_coverage_declared",
+        "all_frame_decision_p95_ms",
         "game_effect_attested", "input_release_guaranteed",
         "authorizes_gameplay", "authorizes_broadcast",
     }

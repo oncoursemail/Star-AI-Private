@@ -35,6 +35,12 @@ class NativeRoundtripReport:
     inference_p95_ms: float | None
     native_call_p95_ms: float | None
     frame_to_release_p95_ms: float | None
+    # Optional explicit native-host frame accounting. A host-supplied total is
+    # not proof that the host actually observed every real game frame.
+    observed_frames: int = 0
+    no_action_frames: int = 0
+    host_frame_coverage_declared: bool = False
+    all_frame_decision_p95_ms: float | None = None
     # A passing latency audit does not grant any real-world permission.
     game_effect_attested: bool = False
     input_release_guaranteed: bool = False
@@ -61,6 +67,7 @@ class NativeGameRoundtripAudit:
     def __init__(
         self, port: WindowsGameInputPort, *, owner_approved: bool = False,
         max_decision_age_ms: int = 350, max_host_call_ms: int = 2500,
+        require_frame_coverage: bool = False,
         clock: Callable[[], int] = monotonic_ns,
     ) -> None:
         if owner_approved is not True:
@@ -73,12 +80,18 @@ class NativeGameRoundtripAudit:
         ):
             if type(value) is not int or not minimum <= value <= maximum:
                 raise ValueError(f"{label} outside permitted range")
+        if type(require_frame_coverage) is not bool:
+            raise ValueError("require_frame_coverage must be boolean")
         if not callable(clock):
             raise TypeError("monotonic clock callable required")
         self._port = port
         self._clock = clock
         self._max_decision_ns = max_decision_age_ms * 1_000_000
         self._max_call_ns = max_host_call_ms * 1_000_000
+        self._require_frame_coverage = require_frame_coverage
+        self._last_frame_sequence = 0
+        self._no_action_frames = 0
+        self._coverage_sealed = False
         self._lock = RLock()
         self._aborted = Event()
         self._revoked = False
@@ -87,6 +100,7 @@ class NativeGameRoundtripAudit:
         self._pending: tuple[int, int | None] | None = None
         self._attempted = 0
         self._durations: list[tuple[int, int, int]] = []
+        self._decision_durations: list[int] = []
         self._final_report: NativeRoundtripReport | None = None
 
     def _fail(self, reason: str) -> NoReturn:
@@ -94,6 +108,7 @@ class NativeGameRoundtripAudit:
         self._aborted.set()
         self._pending = None
         self._durations.clear()
+        self._decision_durations.clear()
         raise RuntimeError(reason)
 
     def _open(self) -> None:
@@ -113,11 +128,28 @@ class NativeGameRoundtripAudit:
         self._last_ns = now
         return now
 
-    def capture(self) -> None:
-        """Host reports frame availability BEFORE invoking the AI decision."""
+    def capture(self, *, frame_sequence: int | None = None) -> None:
+        """Declare each observed input frame BEFORE AI reasoning.
+
+        In opt-in frame-coverage mode, the private host reports consecutive
+        1-based frame sequence numbers, including frames intentionally not
+        acted on. A hole, replay or late frame invalidates ALL measurements.
+        This detects omissions *reported* to this adapter, not unseen frames
+        concealed by a broken or dishonest source.
+        """
         with self._lock:
             self._open()
-            if self._pending is not None or self._attempted >= 256:
+            if self._coverage_sealed:
+                self._fail("native frame coverage already sealed")
+            if self._require_frame_coverage:
+                if (type(frame_sequence) is not int
+                        or frame_sequence != self._last_frame_sequence + 1
+                        or frame_sequence > 256):
+                    self._fail("missing, replayed or invalid native game frame")
+                self._last_frame_sequence = frame_sequence
+            elif frame_sequence is not None:
+                self._fail("frame sequence requires explicit coverage opt-in")
+            if self._pending is not None or self._attempted + self._no_action_frames >= 256:
                 self._fail("unclaimed frame or excessive roundtrip window")
             self._pending = (self._sample(), None)
 
@@ -131,6 +163,44 @@ class NativeGameRoundtripAudit:
             if now - capture_ns > self._max_decision_ns:
                 self._fail("reasoning exceeded game decision deadline")
             self._pending = (capture_ns, now)
+
+    def no_action(self) -> None:
+        """Account for an observed frame whose completed decision is to wait.
+
+        This is NOT an input acknowledgment, gaming success or timing sample.
+        It prevents an authorized agent's explicit no-op from being mistaken
+        for a lost frame or being cherry-picked as a fast completed action.
+        """
+        with self._lock:
+            self._open()
+            if (not self._require_frame_coverage
+                    or self._pending is None or self._pending[1] is None):
+                self._fail("no-action frame requires an observed ready decision")
+            capture_ns, ready_ns = self._pending
+            if self._sample() - capture_ns > self._max_decision_ns:
+                self._fail("no-action frame exceeded decision deadline")
+            self._decision_durations.append(ready_ns - capture_ns)
+            self._no_action_frames += 1
+            self._pending = None
+
+    def seal_frames(self, *, expected_frames: int, host_verified: bool = False) -> None:
+        """Close a verified host-declared frame window before finalization.
+
+        The frame count must come from an independently trusted frame source,
+        never from the model or this class's observed_frames. host_verified is
+        an assertion made by the embedding host, NOT a cryptographic receipt.
+        A host that omits frames from both paths cannot be detected here.
+        """
+        with self._lock:
+            self._open()
+            if (not self._require_frame_coverage or self._coverage_sealed
+                    or host_verified is not True or type(expected_frames) is not int
+                    or not 1 <= expected_frames <= 256 or self._pending is not None
+                    or expected_frames != self._last_frame_sequence
+                    or expected_frames != self._attempted + self._no_action_frames
+                    or not self._durations):
+                self._fail("native game frame coverage not independently complete")
+            self._coverage_sealed = True
 
     def execute(self, action_id: str, hold_ms: int) -> None:
         """Invoke ONE native host call, then measure its actual return.
@@ -162,6 +232,7 @@ class NativeGameRoundtripAudit:
                     self._fail("native game input roundtrip not confirmed")
                 if finished_ns - now > self._max_call_ns:
                     self._fail("native game input roundtrip deadline exceeded")
+                self._decision_durations.append(ready_ns - capture_ns)
                 self._durations.append((
                     ready_ns - capture_ns,
                     finished_ns - now,
@@ -189,7 +260,8 @@ class NativeGameRoundtripAudit:
                 return NativeRoundtripReport("revoked", self._attempted, 0, None, None, None)
             if self._final_report is not None:
                 return self._final_report
-            if self._pending is not None or not self._durations:
+            if (self._pending is not None or not self._durations
+                    or (self._require_frame_coverage and not self._coverage_sealed)):
                 return NativeRoundtripReport(
                     "incomplete", self._attempted, 0, None, None, None,
                 )
@@ -197,17 +269,27 @@ class NativeGameRoundtripAudit:
             return NativeRoundtripReport(
                 "host_roundtrip_only", self._attempted, len(self._durations),
                 _p95_ns(list(inference)), _p95_ns(list(call)), _p95_ns(list(total)),
+                observed_frames=self._last_frame_sequence,
+                no_action_frames=self._no_action_frames,
+                host_frame_coverage_declared=self._coverage_sealed,
+                all_frame_decision_p95_ms=(
+                    _p95_ns(self._decision_durations)
+                    if self._require_frame_coverage else None
+                ),
             )
 
     def finalize(self) -> NativeRoundtripReport:
         with self._lock:
             self._open()
+            if self._require_frame_coverage and not self._coverage_sealed:
+                self._fail("native frame coverage must be sealed before finalization")
             result = self.report()
             if result.status != "host_roundtrip_only":
                 self._fail("incomplete native game roundtrip cannot finalize")
             self._finalized = True
             self._final_report = result
             self._durations.clear()
+            self._decision_durations.clear()
             return result
 
 
