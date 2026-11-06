@@ -24,7 +24,7 @@ SRC = HERE / "src"
 FRONT = re.compile(r"<!--\s*(\w+):\s*(.*?)\s*-->")
 NAV = ("home", "downloads", "changelog", "news")
 LIVE_FILES = ("revivals.json", "news.json", "projects.json", "metallic.json", "downloads.json")
-RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip", ".appimage", ".deb", ".apk")  # compared lower-case
+RELEASE_SUFFIXES = (".exe", ".msi", ".sig", ".zip", ".appimage", ".deb", ".apk", ".dmg", ".app.tar.gz")  # compared lower-case
 RELEASE_MANIFESTS = ("latest.json", "quest.json")  # desktop updater manifest; the Meta Quest APK {"version","url","notes"}
 
 
@@ -69,7 +69,7 @@ def copy_releases(src: Path, dest: Path) -> None:
     """latest.json, quest.json and the installers and APKs. Nothing else (no keys, no old channel files)."""
     dest.mkdir(parents=True, exist_ok=True)
     for p in sorted(src.iterdir()):
-        if p.is_file() and (p.name in RELEASE_MANIFESTS or p.suffix.lower() in RELEASE_SUFFIXES):
+        if p.is_file() and (p.name in RELEASE_MANIFESTS or p.name.lower().endswith(RELEASE_SUFFIXES)):
             shutil.copy2(p, dest / p.name)
 
 

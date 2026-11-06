@@ -234,6 +234,7 @@ a.p-name:hover { text-decoration: underline; text-decoration-color: rgba(var(--a
   transition: background .2s var(--out), border-color .2s var(--out), color .2s; }
 .plat[data-plat="windows"] { --pc: 64, 156, 255; }
 .plat[data-plat="linux"] { --pc: 244, 178, 35; }
+.plat[data-plat="mac"] { --pc: 205, 205, 220; }
 .plat:hover { background: var(--hover); color: var(--ink); }
 .plat[aria-pressed="true"] { color: var(--ink); border-color: rgba(var(--pc), .45);
   background: linear-gradient(100deg, rgba(var(--pc), .16), rgba(var(--pc), .04) 70%); box-shadow: 0 0 0 1px rgba(var(--pc), .12) inset; }
@@ -250,6 +251,7 @@ a.p-name:hover { text-decoration: underline; text-decoration-color: rgba(var(--a
 .ic.win { color: #fff; background: linear-gradient(145deg, #4cc2ff, #0f6cd6); }
 .ic.tux { background: linear-gradient(160deg, #fffaf0, #e6e0d2); }
 .ic.tux svg { width: 28px; height: 28px; }
+.ic.mac { color: #fff; background: linear-gradient(145deg, #55555f, #17171c); }
 .ic.quest svg { width: 32px; height: 32px; }
 .ic.quest { background: linear-gradient(160deg, #ffffff, #e8eef8); }
 .ic.big { width: 72px; height: 72px; border-radius: 20px; position: relative; }
@@ -341,7 +343,7 @@ main > section:last-child { padding-bottom: 0; }
   .steps { grid-template-columns: minmax(0, 1fr); }
   .dl-box { grid-template-columns: minmax(0, 1fr); }
   .plats { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
-  .plat { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 8px; padding: 12px 8px; min-width: 104px; }
+  .plat { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; gap: 8px; padding: 12px 4px; min-width: 78px; }
   .plat-t { align-items: center; }
   .here { position: static; order: -1; }
   .spec { grid-template-columns: repeat(2, minmax(0, 1fr)); }

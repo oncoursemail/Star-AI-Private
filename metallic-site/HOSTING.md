@@ -23,7 +23,7 @@ python metallic-site/build.py --out dist --site-url https://metallic.club [--rel
 
 - `dist/` is the whole site. No server code, no database, no framework.
 - `--releases <folder>` copies `latest.json`, `quest.json` and the installer files (`.exe`, `.msi`, `.sig`, `.zip`, `.AppImage`,
-  `.deb`, `.apk`) from that folder
+  `.deb`, `.apk`, `.dmg`, `.app.tar.gz`) from that folder
   into `dist/releases/`. Leave it out when releases are copied to the host separately.
 - `--sample-live <folder>` copies sample `revivals.json`, `news.json`, `projects.json`, `metallic.json` and
   `downloads.json` into `dist/live/`. For local
@@ -116,7 +116,12 @@ Metallic Early Access updates itself with Tauri's updater, which reads `/release
 4. Linux (when a Linux build is published): add `"linux-x86_64"` (the `.AppImage`, which the Linux updater replaces in
    place) and `"linux-x86_64-deb"` (the `.deb`) to `platforms`, each with its own `.sig`. Linux visitors then get the
    AppImage on the Download buttons and the downloads page lists both. Copy them before `latest.json`, as above.
-5. Meta Quest: copy the versioned `.apk` first, then replace `/releases/quest.json` with
+5. macOS (when a Mac build is published): add `"darwin-aarch64"` and `"darwin-x86_64"` (the `.app.tar.gz` the updater
+   uses) and `"darwin-aarch64-dmg"` and `"darwin-x86_64-dmg"` (the `.dmg` people download) to `platforms`, each with its own
+   `.sig`. Put the version in all four file names, because `/releases/` files are cached for good. The Mac tile on the
+   downloads page appears only once a `-dmg` entry exists; Mac visitors' Download buttons then go to `/downloads/#mac`.
+   Change the page's title and description to name Mac in the same deploy.
+6. Meta Quest: copy the versioned `.apk` first, then replace `/releases/quest.json` with
    `{"version": "0.2.8", "url": "/releases/Metallic_0.2.8_quest.apk"}`. Until then `deploy.sh` leaves an empty `{}` there
    (the page reads it as "not published", without a 404). A Quest headset's browser gets the APK on the Download
    buttons; its user agent says Linux, so it is never offered the AppImage.

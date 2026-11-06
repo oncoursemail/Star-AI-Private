@@ -50,7 +50,8 @@ M.date = (sec, withYear) => {
   return d.toLocaleDateString("en-GB", withYear ? { day: "numeric", month: "long", year: "numeric" } : { day: "numeric", month: "short" });
 };
 
-// newest build, from the Tauri updater manifest (Linux: "linux-x86_64" is the AppImage, "linux-x86_64-deb" the .deb)
+// newest build, from the Tauri updater manifest (Linux: "linux-x86_64" is the AppImage, "linux-x86_64-deb" the .deb;
+// macOS: "darwin-*" is the updater's .app.tar.gz, "darwin-*-dmg" the .dmg people download)
 M.release = M.json("/releases/latest.json").then((m) => {
   const p = (m && m.platforms) || {};
   const ok = (e) => (e && typeof e.url === "string" && (e.url.startsWith("/") || M.href(e.url)) ? e.url : null);
@@ -58,7 +59,9 @@ M.release = M.json("/releases/latest.json").then((m) => {
   if (!m || typeof m.version !== "string" || !url) return null;
   const appimage = ok(p["linux-x86_64"]);
   const linux = appimage ? { appimage, deb: ok(p["linux-x86_64-deb"]) } : null;
-  return { version: m.version, notes: typeof m.notes === "string" ? m.notes : "", date: m.pub_date || null, url, linux };
+  const arm = ok(p["darwin-aarch64-dmg"]), intel = ok(p["darwin-x86_64-dmg"]);
+  const mac = arm || intel ? { arm, intel } : null;
+  return { version: m.version, notes: typeof m.notes === "string" ? m.notes : "", date: m.pub_date || null, url, linux, mac };
 });
 // the Meta Quest app, from /releases/quest.json ({"version","url"}); null until an APK is published. Asked for only
 // where it is used (the downloads page, a Quest headset's browser), once.
@@ -70,22 +73,27 @@ M.quest = () => questReq || (questReq = M.json("/releases/quest.json").then((q) 
 const UA = navigator.userAgent;
 M.onQuest = /OculusBrowser|Quest/.test(UA);
 M.onLinux = /Linux/.test(UA) && !/Android/.test(UA) && !M.onQuest;
+// phones and tablets first: an iPhone's browser also says "Mac OS X", and an iPad's says "Macintosh"
+M.onPhone = /Android|iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && "ontouchend" in document);
+M.onMac = /Macintosh|Mac OS X/.test(UA) && !M.onPhone && !M.onQuest;
 // installer downloads from the site (self-updates not included), counted by metallic-live
 M.downloads = M.json("/live/downloads.json").then((d) => (d && typeof d.downloads === "number" ? d.downloads : null));
 M.release.then(async (r) => {
   if (!r) return;
-  // "for Windows" in the copy becomes "for Windows and Linux" once the release has a Linux build
-  if (r.linux) document.querySelectorAll("[data-os]").forEach((e) => { e.textContent = "Windows and Linux"; });
+  // "for Windows" in the copy names every system the release has a build for
+  const oses = ["Windows", r.linux && "Linux", r.mac && "Mac"].filter(Boolean);
+  if (oses.length > 1) document.querySelectorAll("[data-os]").forEach((e) => { e.textContent = oses.slice(0, -1).join(", ") + " and " + oses[oses.length - 1]; });
   const quest = M.onQuest ? await M.quest() : null;
   const linux = !quest && M.onLinux && r.linux;
-  const os = quest ? "Quest" : linux ? "Linux" : "Windows";
+  const mac = M.onMac && r.mac; // two .dmg files, so the downloads page lets the visitor choose
+  const os = quest ? "Quest" : linux ? "Linux" : mac ? "Mac" : "Windows";
   document.querySelectorAll("[data-dl]").forEach((a) => {
-    if (!a.classList.contains("small")) a.href = quest ? quest.url : linux ? r.linux.appimage : r.url;
+    if (!a.classList.contains("small")) a.href = quest ? quest.url : linux ? r.linux.appimage : mac ? "/downloads/#mac" : r.url;
     if (os !== "Windows" && /Windows/.test(a.textContent)) a.textContent = a.textContent.replace("Windows", os);
   });
   const n = await M.downloads;
   const count = quest || n == null ? "" : " · " + M.num(n) + (n === 1 ? " download" : " downloads");
-  const what = quest ? " · Meta Quest app (APK), sideloaded" : linux ? " · Linux AppImage, 64-bit" : " · Windows 10 and 11, 64-bit";
+  const what = quest ? " · Meta Quest app (APK), sideloaded" : linux ? " · Linux AppImage, 64-bit" : mac ? " · macOS 13 or newer, not signed by Apple" : " · Windows 10 and 11, 64-bit";
   document.querySelectorAll("[data-dl-note]").forEach((e) => { e.textContent = "Early Access " + (quest ? quest.version : r.version) + what + count; });
 });
 

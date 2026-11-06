@@ -262,9 +262,33 @@ def test_linux_builds_are_offered_to_linux_visitors_when_published():
     assert 'data-get="linux" aria-disabled="true"' in page and 'data-get="deb" hidden' in page
     assert "if (r.linux)" in dl and """arm($('[data-get="linux"]'), r.linux.appimage""" in dl and """arm($('[data-get="deb"]'), r.linux.deb""" in dl
     caddy = (SERVER / "Caddyfile").read_text(encoding="utf-8")
-    assert "/releases/*.AppImage /releases/*.deb" in caddy and "\t\tnot path /releases/*.exe /releases/*.AppImage /releases/*.deb\n" in caddy
+    assert "/releases/*.AppImage /releases/*.deb" in caddy and "\t\tnot path /releases/*.exe /releases/*.dmg /releases/*.AppImage /releases/*.deb\n" in caddy
     build = (SITE / "build.py").read_text(encoding="utf-8")
     assert '".appimage", ".deb"' in build
+
+
+def test_mac_builds_stay_hidden_until_published_and_warn_plainly():
+    site = (SITE / "src" / "assets" / "site.js").read_text(encoding="utf-8")
+    dl = (SITE / "src" / "assets" / "downloads.js").read_text(encoding="utf-8")
+    page = (SITE / "src" / "downloads" / "index.html").read_text(encoding="utf-8")
+    assert '"darwin-aarch64-dmg"' in site and '"darwin-x86_64-dmg"' in site and '"/downloads/#mac"' in site
+    # no release with a .dmg: no tile, no panel, no dead button
+    assert 'data-plat="mac" aria-pressed="false" aria-controls="mac" hidden' in page and 'data-pane="mac" aria-labelledby="p-mac" hidden' in page
+    assert 'data-get="mac-arm" hidden' in page and 'data-get="mac-intel" hidden' in page
+    assert "if (r.mac) {" in dl and """$('[data-plat="mac"]').hidden = false""" in dl
+    assert "Metallic does not run on macOS yet" in dl  # still what a Mac visitor reads until then
+    assert "Open Anyway" in page and "none has been seen running on a Mac yet" in page and "no VR" in page
+    caddy = (SERVER / "Caddyfile").read_text(encoding="utf-8")
+    assert "/releases/*.tar.gz /releases/*.dmg" in caddy
+
+
+def test_mac_files_are_copied_with_a_release(tmp_path):
+    src, dest = tmp_path / "src", tmp_path / "dest"
+    src.mkdir()
+    for name in ("latest.json", "Metallic_1_aarch64.dmg", "Metallic_1_aarch64.app.tar.gz", "Metallic_1_aarch64.app.tar.gz.sig", "other.tar.gz", "key.pem"):
+        (src / name).write_text("x", encoding="utf-8")
+    load_build().copy_releases(src, dest)
+    assert sorted(p.name for p in dest.iterdir()) == ["Metallic_1_aarch64.app.tar.gz", "Metallic_1_aarch64.app.tar.gz.sig", "Metallic_1_aarch64.dmg", "latest.json"]
 
 
 def test_downloads_page_picks_the_visitors_device():
@@ -274,7 +298,8 @@ def test_downloads_page_picks_the_visitors_device():
         assert f'data-plat="{plat}"' in page and f'id="{plat}" data-pane="{plat}"' in page, plat
     # a Quest's browser says Linux and an iPhone's says Mac OS X: Quest and phones are told apart first
     assert 'const device = M.onQuest ? "quest" : M.onLinux ? "linux" : onMac || onPhone ? null : "windows";' in dl
-    assert dl.index("const onPhone") < dl.index("const onMac") and "!onPhone" in dl
+    site = (SITE / "src" / "assets" / "site.js").read_text(encoding="utf-8")
+    assert site.index("M.onPhone =") < site.index("M.onMac =") and "!M.onPhone" in site
     assert '["windows", "linux", "quest"].find((id) => location.hash === "#" + id)' in dl  # a link can pick one
 
 
@@ -359,7 +384,7 @@ def test_server_files_match_the_hosting_plan():
     assert "/releases/*.deb /releases/*.apk\n" in caddy  # the Quest APK is versioned in its name too: cached for good
     assert 'header @installers Cache-Control "public, max-age=31536000, immutable"' in caddy
     # download count: only installer requests are logged, without addresses or headers, readable by metallic-live
-    assert "@unlogged {\n\t\tnot path /releases/*.exe /releases/*.AppImage /releases/*.deb\n" in caddy and "log_skip @unlogged" in caddy
+    assert "@unlogged {\n\t\tnot path /releases/*.exe /releases/*.dmg /releases/*.AppImage /releases/*.deb\n" in caddy and "log_skip @unlogged" in caddy
     assert "output file /var/log/caddy/downloads.log" in caddy and "mode 0644" in caddy
     assert "request>headers delete" in caddy and "request>remote_ip delete" in caddy and "request>client_ip delete" in caddy
     assert "log_append ua {http.request.header.User-Agent}" in caddy

@@ -28,11 +28,11 @@
 	header @fresh Cache-Control "no-store"
 
 	# installers carry their version in the file name, so they never change
-	@installers path /releases/*.exe /releases/*.msi /releases/*.sig /releases/*.zip /releases/*.AppImage /releases/*.deb /releases/*.apk
+	@installers path /releases/*.exe /releases/*.msi /releases/*.sig /releases/*.zip /releases/*.tar.gz /releases/*.dmg /releases/*.AppImage /releases/*.deb /releases/*.apk
 	header @installers Cache-Control "public, max-age=31536000, immutable"
 
 	# Two logs for metallic-live, nothing else is logged. No addresses or headers in either.
-	# downloads.log: installer requests (Windows, AppImage, .deb), with the user agent only (to keep the launcher's self-updates apart).
+	# downloads.log: installer requests (Windows, AppImage, .deb, .dmg), with the user agent only (to keep the launcher's self-updates apart).
 	# beats.log: people in Metallic now. A running launcher asks for /live/metallic.json every 2 minutes with a random
 	# ID it made at start (X-Metallic-Session: kept in memory only, new every start); only that ID and the time are kept.
 	# metallic-live counts the IDs seen in the last 5 minutes. Visitors' own requests for that file are not logged.
@@ -41,7 +41,7 @@
 		header X-Metallic-Session *
 	}
 	@unlogged {
-		not path /releases/*.exe /releases/*.AppImage /releases/*.deb
+		not path /releases/*.exe /releases/*.dmg /releases/*.AppImage /releases/*.deb
 		not {
 			path /live/metallic.json
 			header X-Metallic-Session *
