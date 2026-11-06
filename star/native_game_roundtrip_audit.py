@@ -254,10 +254,24 @@ class NativeGameRoundtripAudit:
                 self._lock.release()
 
     def report(self) -> NativeRoundtripReport:
-        """Do not report partial successes while a frame or abort is pending."""
-        with self._lock:
+        """Snapshot without blocking a health monitor behind a hung input worker.
+
+        A worker may be waiting for its OS watchdog. Never make a monitoring
+        thread wait for the same lock as that worker: with the lock busy, only
+        a conservative in-flight status is available. No timing or successes
+        are exposed until the callback has finished and released its keys.
+        """
+        if not self._lock.acquire(blocking=False):
+            # We cannot safely read counters or the cached finalized report
+            # while another thread owns the lock; fail closed without waiting.
+            if self._aborted.is_set():
+                return NativeRoundtripReport("revoked", 0, 0, None, None, None)
+            return NativeRoundtripReport("in_flight", 0, 0, None, None, None)
+        try:
             if self._aborted.is_set() or self._revoked:
-                return NativeRoundtripReport("revoked", self._attempted, 0, None, None, None)
+                return NativeRoundtripReport(
+                    "revoked", self._attempted, 0, None, None, None,
+                )
             if self._final_report is not None:
                 return self._final_report
             if (self._pending is not None or not self._durations
@@ -277,9 +291,14 @@ class NativeGameRoundtripAudit:
                     if self._require_frame_coverage else None
                 ),
             )
+        finally:
+            self._lock.release()
 
     def finalize(self) -> NativeRoundtripReport:
-        with self._lock:
+        """Seal only an idle host; never block the monitor on a native call."""
+        if not self._lock.acquire(blocking=False):
+            raise RuntimeError("native game roundtrip still in flight")
+        try:
             self._open()
             if self._require_frame_coverage and not self._coverage_sealed:
                 self._fail("native frame coverage must be sealed before finalization")
@@ -291,6 +310,7 @@ class NativeGameRoundtripAudit:
             self._durations.clear()
             self._decision_durations.clear()
             return result
-
+        finally:
+            self._lock.release()
 
 __all__ = ["NativeRoundtripReport", "NativeGameRoundtripAudit"]

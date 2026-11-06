@@ -276,3 +276,98 @@ def test_no_host_claims_without_real_game_and_obs_measurements():
     assert not snapshot.game_effect_attested
     assert not snapshot.input_release_guaranteed
     assert "game" not in snapshot.status or snapshot.status == "host_roundtrip_only"
+
+
+def test_status_and_finalize_do_not_block_while_native_host_is_stuck():
+    """A rendering/OBS health loop must remain responsive to a hung host."""
+    started, release = Event(), Event()
+    port = FakePort()
+    port.started, port.release = started, release
+    audit = NativeGameRoundtripAudit(
+        port, owner_approved=True, clock=ScriptClock(10, 20, 30, 40),
+    )
+    audit.capture()
+    audit.decision_ready()
+    failures: list[str] = []
+
+    def execute():
+        try:
+            audit.execute("jump", 10)
+        except RuntimeError as exc:
+            failures.append(str(exc))
+
+    work = Thread(target=execute, daemon=True)
+    work.start()
+    assert started.wait(timeout=1)
+    checked = Event()
+    seen = []
+
+    def check():
+        try:
+            seen.append(audit.report())
+            try:
+                audit.finalize()
+            except RuntimeError as exc:
+                failures.append(str(exc))
+        finally:
+            checked.set()
+
+    monitor = Thread(target=check, daemon=True)
+    monitor.start()
+    try:
+        assert checked.wait(timeout=0.3), "status/finalize blocked on host callback"
+        assert work.is_alive(), "host is intentionally held until cleanup"
+        assert len(seen) == 1
+        assert seen[0].status == "in_flight"
+        assert seen[0].completed == seen[0].attempted == 0
+        assert seen[0].native_call_p95_ms is None
+        assert "in flight" in failures[-1]
+    finally:
+        release.set()
+        work.join(timeout=2)
+        monitor.join(timeout=2)
+    assert not work.is_alive()
+    assert not monitor.is_alive()
+    assert not failures[0].startswith("native game input roundtrip failed")
+    assert audit.finalize().status == "host_roundtrip_only"
+
+
+def test_abort_status_is_nonblocking_while_native_host_is_stuck():
+    started, release = Event(), Event()
+    port = FakePort()
+    port.started, port.release = started, release
+    audit = NativeGameRoundtripAudit(
+        port, owner_approved=True, clock=ScriptClock(10, 20, 30, 40),
+    )
+    audit.capture()
+    audit.decision_ready()
+
+    def run():
+        try:
+            audit.execute("jump", 30)
+        except RuntimeError:
+            pass
+
+    work = Thread(target=run, daemon=True)
+    work.start()
+    assert started.wait(timeout=1)
+    audit.abort()
+    finished = Event()
+    seen = []
+
+    def monitor():
+        seen.append(audit.report())
+        finished.set()
+
+    observer = Thread(target=monitor, daemon=True)
+    observer.start()
+    try:
+        assert finished.wait(timeout=0.3)
+        assert seen[0].status == "revoked"
+        assert seen[0].completed == 0
+        assert work.is_alive()
+    finally:
+        release.set()
+        work.join(timeout=2)
+        observer.join(timeout=2)
+    assert audit.report().status == "revoked"
