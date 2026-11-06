@@ -233,8 +233,7 @@ class NativeGameRoundtripAudit:
                     or host_verified is not True or type(expected_frames) is not int
                     or not 1 <= expected_frames <= 256 or self._pending is not None
                     or expected_frames != self._last_frame_sequence
-                    or expected_frames != self._attempted + self._no_action_frames
-                    or not self._durations):
+                    or expected_frames != self._attempted + self._no_action_frames):
                 self._fail("native game frame coverage not independently complete")
             self._coverage_sealed = True
 
@@ -341,10 +340,27 @@ class NativeGameRoundtripAudit:
                 )
             if self._final_report is not None:
                 return self._final_report
-            if (self._pending is not None or not self._durations
-                    or (self._require_frame_coverage and not self._coverage_sealed)):
+            if (self._pending is not None
+                    or (self._require_frame_coverage and not self._coverage_sealed)
+                    or (not self._durations and not (
+                        self._require_frame_coverage and self._coverage_sealed
+                        and self._no_action_frames == self._last_frame_sequence
+                        and self._no_action_frames > 0
+                    ))):
                 return NativeRoundtripReport(
                     "incomplete", self._attempted, 0, None, None, None,
+                )
+            if not self._durations:
+                # Silence is an intentional policy decision in a game: never
+                # force an artificial input merely to establish frame coverage.
+                # Distinct status + absent OS timings prohibit treating the
+                # verified no-op window as successful input or a game win.
+                return NativeRoundtripReport(
+                    "decision_only_no_input", 0, 0, None, None, None,
+                    observed_frames=self._last_frame_sequence,
+                    no_action_frames=self._no_action_frames,
+                    host_frame_coverage_declared=True,
+                    all_frame_decision_p95_ms=_p95_ns(self._decision_durations),
                 )
             inference, call, total = zip(*self._durations, strict=True)
             return NativeRoundtripReport(
@@ -370,7 +386,7 @@ class NativeGameRoundtripAudit:
             if self._require_frame_coverage and not self._coverage_sealed:
                 self._fail("native frame coverage must be sealed before finalization")
             result = self.report()
-            if result.status != "host_roundtrip_only":
+            if result.status not in {"host_roundtrip_only", "decision_only_no_input"}:
                 self._fail("incomplete native game roundtrip cannot finalize")
             self._finalized = True
             self._final_report = result
