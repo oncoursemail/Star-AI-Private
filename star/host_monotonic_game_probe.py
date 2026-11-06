@@ -31,6 +31,7 @@ class _PendingFrame:
     decision_ready_ns: int | None = None
     action_submit_ns: int | None = None
     pre_submit_check_ns: int | None = None
+    neutralization_request_ns: int | None = None
 
 
 class HostMonotonicGameProbe:
@@ -53,6 +54,8 @@ class HostMonotonicGameProbe:
         max_action_age_ns: int | None = None,
         require_submit_confirmation: bool = False,
         max_ack_wait_ns: int | None = None,
+        require_input_neutralization: bool = False,
+        max_input_hold_ns: int | None = None,
     ) -> None:
         if owner_approved is not True:
             raise PermissionError("private host timing requires owner approval")
@@ -75,6 +78,21 @@ class HostMonotonicGameProbe:
         if max_ack_wait_ns is not None:
             if type(max_ack_wait_ns) is not int or not 1_000_000 <= max_ack_wait_ns <= 10_000_000_000:
                 raise ValueError("max_ack_wait_ns must be 1ms..10s integer")
+        if type(require_input_neutralization) is not bool:
+            raise TypeError("require_input_neutralization must be bool")
+        if require_input_neutralization and not require_submit_confirmation:
+            raise ValueError("input neutralization requires strict submission confirmation")
+        if require_input_neutralization != (max_input_hold_ns is not None):
+            raise ValueError("input neutralization requires max_input_hold_ns")
+        if max_input_hold_ns is not None and (
+            type(max_input_hold_ns) is not int
+            or not 1_000_000 <= max_input_hold_ns <= 10_000_000_000
+        ):
+            raise ValueError("max_input_hold_ns must be 1ms..10s integer")
+        self._require_input_neutralization = require_input_neutralization
+        self._max_input_hold_ns = max_input_hold_ns
+        self._input_hold_violations = 0
+        self._host_neutralize_rejections = 0
         self._max_ack_wait_ns = max_ack_wait_ns
         self._ack_deadline_violations = 0
         self._require_submit_confirmation = require_submit_confirmation
@@ -299,6 +317,51 @@ class HostMonotonicGameProbe:
                 self._fail("action deadline expired during guarded dispatch")
             pending.action_submit_ns = submitted_ns
 
+    def guarded_neutralize(self, sequence: int, release: Callable[[], object]) -> None:
+        """Request host input neutralization before accepting a completed action.
+
+        The owner-approved host supplies a callback that requests *all relevant
+        key/button releases*. Exactly True means only the host accepted that
+        request; it is NOT evidence of physical key-up, game-state change, or
+        OS delivery. A separate native watchdog must enforce actual key-up on
+        deadline, cancellation and process failure. An overdue release is still
+        attempted (rather than abandoned), then the timing window is revoked.
+
+        Both native callbacks use the same guarded dispatch lock, but the
+        independent abort signal can be latched without acquiring that lock.
+        """
+        with self._lock:
+            self._require_open()
+            if not self._require_input_neutralization:
+                self._fail("input neutralization was not enabled")
+            if not callable(release):
+                self._fail("neutralization requires an approved host callback")
+            pending = self._get(sequence)
+            if (pending.action_submit_ns is None
+                    or pending.neutralization_request_ns is not None):
+                self._fail("neutralization requires one submitted, unneutralized action")
+            self._in_host_dispatch = True
+            returned = False
+            confirmation: object = None
+            try:
+                confirmation = release()
+                returned = True
+            finally:
+                self._in_host_dispatch = False
+                if not returned:
+                    self._clear_and_revoke()
+
+            self._require_open()
+            if confirmation is not True:
+                self._host_neutralize_rejections += 1
+                self._fail("approved host did not confirm neutralization request")
+            now = self._sample()
+            assert self._max_input_hold_ns is not None
+            if now - pending.action_submit_ns > self._max_input_hold_ns:
+                self._input_hold_violations += 1
+                self._fail("host input neutralization exceeded hold deadline")
+            pending.neutralization_request_ns = now
+
     def action_submitted(self, sequence: int) -> None:
         """Mark legacy host submission; forbidden under strict confirmation.
 
@@ -329,6 +392,9 @@ class HostMonotonicGameProbe:
             submitted_ns = pending.action_submit_ns
             if ready_ns is None or submitted_ns is None or sequence != self._next_ack:
                 self._fail("ACK requires host submission and in-order completion")
+            if (self._require_input_neutralization
+                    and pending.neutralization_request_ns is None):
+                self._fail("host input neutralization required before acknowledgment")
             now = self._sample()
             if (self._max_ack_wait_ns is not None
                     and now - submitted_ns > self._max_ack_wait_ns):
@@ -389,6 +455,13 @@ class HostMonotonicGameProbe:
                     "ack_deadline_guard_active": True,
                     "ack_deadline_violations": self._ack_deadline_violations,
                     "ack_delivery_attested": False,
+                })
+            if self._require_input_neutralization:
+                result.update({
+                    "input_neutralization_required": True,
+                    "input_hold_violations": self._input_hold_violations,
+                    "host_neutralize_rejections": self._host_neutralize_rejections,
+                    "physical_input_release_attested": False,
                 })
             if self._require_submit_confirmation:
                 result.update({
