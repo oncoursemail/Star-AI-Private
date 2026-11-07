@@ -345,3 +345,19 @@ def test_bool_is_not_a_valid_precommit_or_host_assertion(tmp_path):
         run(path, root, digest, host_confirms_native_capture_stopped=1)
     with pytest.raises(PrivateVoiceAuditError):
         run(path, root, True)
+
+
+def test_path_handle_windows_ctime_drift_does_not_lose_same_handle_tamper_guard():
+    from types import SimpleNamespace
+
+    import star.process_loopback_private_audit_cli as module
+
+    before = SimpleNamespace(st_dev=1, st_ino=2, st_size=500, st_mtime_ns=123, st_ctime_ns=999)
+    after = SimpleNamespace(st_dev=1, st_ino=2, st_size=500, st_mtime_ns=123, st_ctime_ns=1000)
+    # Path stat vs handle fstat can disagree on st_ctime_ns on Windows.
+    # Identity fields still match; never reject identical bytes just because
+    # those different OS APIs report different ctime semantics.
+    assert module._fingerprint(before) == module._fingerprint(after)
+    # A metadata edit during the same opened file's read remains detectable
+    # using two descriptor-only fstat values.
+    assert module._handle_fingerprint(before) != module._handle_fingerprint(after)
