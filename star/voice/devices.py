@@ -150,6 +150,35 @@ class SoundSpeaker:
         with self._lock:
             self._buffer.clear()
 
+    # Opt-in native control for a *dedicated* SoundSpeaker managed by the
+    # trusted epoch host. Ordinary calls continue to use application-only
+    # stop() above; no PortAudio operations run on the realtime callback.
+    def native_output_state(self) -> str:
+        """PortAudio stream state, never a physical-audibility attestation."""
+        if bool(self._stream.active) and not bool(self._stream.stopped):
+            return "running"
+        if bool(self._stream.stopped) and not bool(self._stream.active):
+            return "stopped"
+        return "unknown"
+
+    def abort_pending_output(self) -> bool:
+        """Discard application PCM and request a strict non-draining abort.
+
+        Unlike stop(), this calls PortAudio abort(ignore_errors=False).
+        Device output latency and Windows/OBS loopback silence are *not*
+        independently observed here.
+        """
+        self.stop()
+        self._stream.abort(ignore_errors=False)
+        return self.native_output_state() == "stopped"
+
+    def restart_after_abort(self) -> bool:
+        """Restart only a stopped, empty native stream; requires host gate."""
+        if self.native_output_state() != "stopped" or self.pending_seconds() != 0:
+            return False
+        self._stream.start()
+        return self.native_output_state() == "running"
+
     def reset(self) -> None:
         with self._lock:
             self._played = 0
