@@ -53,13 +53,24 @@ class PrivateVoiceAudit:
 
 
 def _fingerprint(metadata: os.stat_result) -> tuple[int, ...]:
+    """Path/handle-compatible identity across Windows and POSIX.
+
+    On Windows, path lstat() ctime may describe creation whereas descriptor
+    fstat() ctime can describe metadata-change time. Comparing these would
+    sporadically reject unchanged files. Keep the descriptor's ctime in a
+    separate same-handle before/after check (below), never cross APIs.
+    """
     return (
         metadata.st_dev,
         metadata.st_ino,
         metadata.st_size,
         metadata.st_mtime_ns,
-        metadata.st_ctime_ns,
     )
+
+
+def _handle_fingerprint(metadata: os.stat_result) -> tuple[int, ...]:
+    # fstat -> fstat: same OS API, so ctime remains a useful tamper signal.
+    return _fingerprint(metadata) + (metadata.st_ctime_ns,)
 
 
 def _admit(path: str | Path, *, root: str | Path) -> tuple[Path, tuple[int, ...]]:
@@ -131,9 +142,10 @@ def audit_private_voice_activity(
             descriptor_stat = os.fstat(handle)
             if not stat.S_ISREG(descriptor_stat.st_mode) or _fingerprint(descriptor_stat) != before:
                 raise PrivateVoiceAuditError("file_changed_during_open")
+            same_handle_before = _handle_fingerprint(descriptor_stat)
             with os.fdopen(handle, "rb", closefd=False) as stream:
                 payload = stream.read(_MAX_FILE + 1)
-            if _fingerprint(os.fstat(handle)) != before or _fingerprint(selected.lstat()) != before:
+            if _handle_fingerprint(os.fstat(handle)) != same_handle_before or _fingerprint(selected.lstat()) != before:
                 raise PrivateVoiceAuditError("file_changed_during_read")
         finally:
             os.close(handle)
