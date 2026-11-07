@@ -77,6 +77,11 @@ class SpeechIntent:
     instruction: str
     interrupt_current: bool
     untrusted_context: bool
+    # A previous session's response cannot consume an identically named event.
+    # This is a replay guard, not an authorization or secret-bearing token.
+    session_epoch: int = 0
+    # Monotonic per-offer sequence rejects replacement events within a session.
+    event_serial: int = 0
 
 
 class StreamDirector:
@@ -95,6 +100,9 @@ class StreamDirector:
         self.viewer_cooldown = _clock(viewer_cooldown)
         self.max_events = max_events
         self.enabled = False
+        self._session_epoch = 0
+        self._next_serial = 0
+        self._event_serials: dict[str, int] = {}
         self._events: list[StreamSignal] = []
         self._recent: dict[str, float] = {}
         self._last_speech_at = float("-inf")
@@ -105,19 +113,45 @@ class StreamDirector:
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
             raise PermissionError("live-stream director requires owner approval")
+        if not self.enabled:
+            self._session_epoch += 1
         self.enabled = True
 
     def disable(self) -> None:
+        if self.enabled:
+            self._session_epoch += 1
         self.enabled = False
         self._events.clear()
+        self._event_serials.clear()
         self._recent.clear()
         self._viewer_last_spoken.clear()
         self._last_speech_at = float("-inf")
+
+    @staticmethod
+    def _priority(event: StreamSignal, now: float) -> float:
+        """Age legitimate questions without overriding owner or danger calls.
+
+        A live chat question can wait behind exciting game events, but should
+        not starve indefinitely. Ordinary viewer chatter never gains urgency.
+        Game "success" inferred from chat/reporting is less important than an
+        independently observed success, and must not monopolize conversation.
+        """
+        priority = float(_KINDS[event.kind][0])
+        if event.kind == "viewer_question":
+            waited = max(0.0, now - event.timestamp)
+            priority += min(20.0, max(0.0, waited - 10.0) * 1.5)
+        elif event.kind == "game_success" and event.evidence != "observed":
+            priority = 48.0
+        return priority
 
     def _expire(self, now: float) -> None:
         before = len(self._events)
         self._events = [event for event in self._events
                         if now - event.timestamp <= _KINDS[event.kind][1]]
+        active_ids = {event.signal_id for event in self._events}
+        self._event_serials = {
+            key: seq for key, seq in self._event_serials.items() if key in active_ids
+        }
         self._counters["expired"] += before - len(self._events)
         self._recent = {key: at for key, at in self._recent.items() if now - at < 40.0}
         self._viewer_last_spoken = {
@@ -149,13 +183,16 @@ class StreamDirector:
             self._counters["rejected"] += 1
             return False
         if len(self._events) >= self.max_events:
-            lowest = min(self._events, key=lambda item: (_KINDS[item.kind][0], item.timestamp))
-            if _KINDS[lowest.kind][0] >= _KINDS[event.kind][0]:
+            lowest = min(self._events, key=lambda item: (self._priority(item, now), item.timestamp))
+            if self._priority(lowest, now) >= self._priority(event, now):
                 self._counters["rejected"] += 1
                 return False
             self._events.remove(lowest)
+            self._event_serials.pop(lowest.signal_id, None)
             self._counters["evicted"] += 1
         self._events.append(event)
+        self._next_serial += 1
+        self._event_serials[event.signal_id] = self._next_serial
         if suppress_repeats:
             self._recent[digest] = now
         self._counters["accepted"] += 1
@@ -186,7 +223,7 @@ class StreamDirector:
             eligible.append(event)
         if not eligible:
             return None
-        event = min(eligible, key=lambda item: (-_KINDS[item.kind][0], item.timestamp, item.signal_id))
+        event = min(eligible, key=lambda item: (-self._priority(item, now), item.timestamp, item.signal_id))
         return SpeechIntent(
             signal_id=event.signal_id, kind=event.kind, context=event.detail,
             evidence=event.evidence,
@@ -194,6 +231,8 @@ class StreamDirector:
             instruction=_GUIDANCE[event.kind],
             interrupt_current=voice_speaking and event.kind == "owner_interrupt",
             untrusted_context=event.kind.startswith("viewer"),
+            session_epoch=self._session_epoch,
+            event_serial=self._event_serials[event.signal_id],
         )
 
     def complete(self, intent: SpeechIntent, *, now: float, spoken: bool) -> bool:
@@ -201,7 +240,8 @@ class StreamDirector:
         now = _clock(now)
         if not isinstance(intent, SpeechIntent) or type(spoken) is not bool:
             raise TypeError("expected SpeechIntent and explicit bool spoken")
-        if not self.enabled:
+        if (not self.enabled or intent.session_epoch != self._session_epoch
+                or intent.event_serial != self._event_serials.get(intent.signal_id)):
             return False
         self._expire(now)
         for event in self._events:
@@ -209,6 +249,7 @@ class StreamDirector:
                     and event.detail == intent.context
                     and event.timestamp + _KINDS[event.kind][1] == intent.deadline_at):
                 self._events.remove(event)
+                self._event_serials.pop(event.signal_id, None)
                 if spoken:
                     self._last_speech_at = now
                     if event.kind.startswith("viewer") and event.speaker_id:
