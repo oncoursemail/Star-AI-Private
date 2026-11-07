@@ -150,6 +150,67 @@ def test_cpu_fallback_is_allowed_during_low_gpu_memory_without_claiming_speed():
     assert result.reason == "unmeasured_host_must_verify"
 
 
+def test_low_fps_live_game_refuses_explicit_gpu_speech_even_with_headroom():
+    q = ready()
+    denied = q.admit(
+        job("fast-gpu", 100, kind="speech", device="gpu"),
+        snap(100, live=True, game=True, fps=44, vram=7500),
+        now_ms=100,
+    )
+    assert not denied.admitted
+    assert denied.reason == "protect_low_fps_game_from_gpu_voice"
+    assert q.status()["inflight"] == 0
+
+    # When frame pacing recovers, an explicitly selected GPU model remains
+    # eligible for normal headroom and deadline checks.
+    healthy = q.admit(
+        job("gpu-ok", 200, kind="speech", device="gpu"),
+        snap(200, live=True, game=True, fps=60, vram=7500),
+        now_ms=200,
+    )
+    assert healthy.admitted and healthy.device == "gpu"
+
+
+def test_low_fps_never_falls_back_to_gpu_when_cpu_slots_are_full():
+    q = ready()
+    metrics = snap(100, live=True, game=True, fps=49.9,
+                   cpu_slots=0, gpu_slots=1, vram=7500)
+    denied = q.admit(job("auto-low", 100), metrics, now_ms=100)
+    assert not denied.admitted
+    assert denied.reason == "low_fps_cpu_voice_unavailable"
+    assert q.status()["inflight"] == 0
+    healthy = q.admit(
+        job("auto-healthy", 200),
+        snap(200, live=True, game=True, fps=60, cpu_slots=0, vram=7500),
+        now_ms=200,
+    )
+    assert healthy.admitted and healthy.device == "gpu"
+
+
+def test_low_fps_cpu_voice_fails_closed_if_cpu_ram_or_load_is_exhausted():
+    q = ready()
+    for ix, kwargs in enumerate(({"ram": 550}, {"cpu": 95},
+                                 {"cpu_slots": 0})):
+        at = 1000 + ix * 100
+        denied = q.admit(
+            job(f"cpu-starved-{ix}", at, kind="speech", device="auto"),
+            snap(at, live=True, game=True, fps=33, vram=7500, **kwargs),
+            now_ms=at,
+        )
+        assert not denied.admitted
+        assert denied.reason == "low_fps_cpu_voice_unavailable"
+
+
+def test_low_fps_rule_does_not_mistake_idle_low_fps_for_active_game():
+    q = ready()
+    result = q.admit(
+        job("idle-game-counter", 100, kind="speech", device="gpu"),
+        snap(100, live=True, game=False, fps=30, vram=7500),
+        now_ms=100,
+    )
+    assert result.admitted and result.device == "gpu"
+
+
 def test_measured_p95_rejects_deadline_that_cannot_be_met():
     q = ready()
     train_route(q, kind="speech", device="cpu", start=1000, duration=1500)
