@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from threading import RLock
+from typing import cast
 
 from .stream_admission import StreamAdmissionGate, StreamHealthSample
 
@@ -28,7 +29,7 @@ _MAX_CLOCK_MS = 1e13
 def _now(value: object) -> float:
     if type(value) not in (int, float):
         raise ValueError("host clock must be a finite monotonic millisecond number")
-    out = float(value)
+    out = float(cast(int | float, value))
     if not math.isfinite(out) or not 0 <= out <= _MAX_CLOCK_MS:
         raise ValueError("invalid host monotonic time")
     return out
