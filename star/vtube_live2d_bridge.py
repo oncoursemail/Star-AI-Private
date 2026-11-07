@@ -107,6 +107,7 @@ class VTubeLive2DBridge:
         self._accepted = 0
         self._rejected = 0
         self._neutral = 0
+        self._silenced = False
 
     def registration_requests(self) -> tuple[dict[str, Any], ...]:
         """Declare unique, mapped Live2D *custom* inputs for the local host.
@@ -149,6 +150,7 @@ class VTubeLive2DBridge:
             self._last_cursor_s = -1.0
             self._last_clock_ms = -1.0
             self._last_sent_ms = -1.0
+            self._silenced = False
             return True
 
     @staticmethod
@@ -198,10 +200,40 @@ class VTubeLive2DBridge:
             self._last_clock_ms = clock
             self._last_sent_ms = clock
             self._accepted += 1
+            self._silenced = False
             return _request(
                 "InjectParameterDataRequest",
                 f"StarMotion{self._generation}-{self._counter}",
                 {"mode": "set", "parameterValues": values},
+            )
+
+    def hold_silence(
+        self, plan: StagePlan, *, playback_epoch: str,
+        sampled_ms: float, host_reports_no_fresh_playback: bool = False,
+    ) -> dict[str, Any] | None:
+        """Neutralize a paused/stalled mouth without ending the speech epoch.
+
+        The trusted audio host must have stopped receiving fresh consumed-frame
+        evidence. This is one *neutral* override, not an invented audio cursor,
+        permission to speak, or a reset that prevents an eventual resume.
+        """
+        if host_reports_no_fresh_playback is not True:
+            raise PermissionError("only the trusted audio host can request silence")
+        epoch = _epoch(playback_epoch)
+        clock = _number(sampled_ms, "sampled ms", 0, 1e13)
+        with self._lock:
+            if (self._plan is not plan or self._epoch != epoch
+                    or not self._stage.current(plan)
+                    or clock < self._last_clock_ms or self._silenced):
+                return None
+            self._silenced = True
+            self._last_clock_ms = clock
+            self._last_sent_ms = clock
+            self._counter += 1
+            return _request(
+                "InjectParameterDataRequest",
+                f"StarSilence{self._generation}-{self._counter}",
+                {"mode": "set", "parameterValues": self._values(neutral_frame())},
             )
 
     def reset(self, plan: StagePlan, *, playback_epoch: str, playback_stopped: bool = False) -> dict[str, Any] | None:
