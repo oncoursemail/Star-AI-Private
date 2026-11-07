@@ -17,6 +17,8 @@ Environment=STAR_BRAIN_KEY_FILE=/opt/star/secrets/api_keys
 # STAR's resource planner on this machine: paces the embedding step (quarter duty while chat is active).
 # Unreachable planner = the old behaviour (quiet lock only).
 Environment=STAR_PLANNER_URL=http://127.0.0.1:8098
+# At most this many texts are embedded here per run; a bulk change goes to a GPU machine (starkb/offload.py).
+Environment=STAR_KB_REFRESH_EMBED_LIMIT=3000
 Environment=GIT_TERMINAL_PROMPT=0 GIT_CONFIG_GLOBAL=/dev/null
 ExecStart=/opt/star/knowledge/venv/bin/python -m starkb refresh
 Nice=15

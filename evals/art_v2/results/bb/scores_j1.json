@@ -1,0 +1,14 @@
+{"judge": "j1", "scores": {
+"n01": {"A": {"overall": 4, "note": "frog shape reads, small eyes, toes pale lime not orange, flat silhouette"}, "B": {"overall": 5, "note": "bigger eyes and clear mouth read more tree-frog; toes pale not orange, boxy body"}},
+"n02": {"A": {"overall": 6, "note": "solid stone golem, cyan glowing eyes, moss accents; no visible chest crack"}, "B": {"overall": 6, "note": "near-identical golem, blue eyes slightly protrude; no visible chest crack"}},
+"n03": {"A": {"overall": 3, "note": "dark stone pillar with purple bands and gold crosses; not wooden, no tiki faces"}, "B": {"overall": 2, "note": "grey obsidian-like column, no wood or carved faces; misses brief"}},
+"n04": {"A": {"overall": 6, "note": "clean bookshelf, good wood frame and colourful books; about five shelves not four, plain back"}, "B": {"overall": 6, "note": "essentially same as A; solid but shelf count off"}},
+"n05": {"A": {"overall": 3, "note": "toad body ok but eyes are one gold visor band; no crown"}, "B": {"overall": 4, "note": "separate bulging gold eyes read better; crown missing"}},
+"n06": {"A": {"overall": 4, "note": "golem silhouette fine but brown nether-brick look, cracks do not glow, tiny eyes"}, "B": {"overall": 4, "note": "same body, brow ridge and larger eyes, but brow juts oddly; no lava glow"}},
+"n07": {"A": {"overall": 4, "note": "obsidian pillar on pedestal; purple crosses as texture only, no crystal, gap at neck"}, "B": {"overall": 4, "note": "obsidian pillar with block head; rune is only texture, no crystal form"}},
+"n08": {"A": {"overall": 5, "note": "short bookcase with books, decent wood; no potion bottles"}, "B": {"overall": 5, "note": "similar, slightly chunkier books; no potion bottles"}},
+"n09": {"A": {"overall": 3, "note": "oversized flat head on short post with gold base; muted red, spike unclear, reads as sign"}, "B": {"overall": 4, "note": "brighter fire-axe red, same odd proportions and stand, spike unclear"}},
+"n10": {"A": {"overall": 3, "note": "reads as a chicken (red comb, beak) not an owl; no big yellow eyes; snowy palette"}, "B": {"overall": 2, "note": "same chicken shape in beige; not snowy, no owl eyes"}},
+"n11": {"A": {"overall": 2, "note": "a wooden chest with lock; no wheel or post"}, "B": {"overall": 2, "note": "plain wooden crate; no wheel or post"}},
+"n12": {"A": {"overall": 4, "note": "gold helmet on stand reads, crown spikes grey, no red gems"}, "B": {"overall": 3, "note": "silver full armor with red plume; not a gold crown helmet"}}
+}}

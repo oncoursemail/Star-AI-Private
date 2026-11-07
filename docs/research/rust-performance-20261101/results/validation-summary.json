@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-01",
+  "base_commit": "e672fd7b76ad24dac8f5f7f1fd67cc167fa6c829",
+  "scope": "isolated research and historical adapter/pilot",
+  "windows": {
+    "python": "3.15.0",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "bridge_tests_passed": 42,
+    "advisory_tests_passed": 22,
+    "rust_unit_tests_passed": 9,
+    "parity_cases_passed": 40,
+    "invalid_cli_probes_passed": 3
+  },
+  "linux_logs": [
+    "bridge-linux-20261101.txt",
+    "advisory-linux-20261101.txt"
+  ],
+  "timing_benchmark_rerun": false,
+  "production_backend_tested": false,
+  "live_model_tested": false,
+  "windows_pyo3_wheel_tested": false,
+  "packaged_star_exe_tested": false,
+  "deployment_authorized": false,
+  "historical_rust_source_sha256": "c032f4d88cf888889a206f479520cf52d5e55358d7e416e9019db69bd8aad945"
+}

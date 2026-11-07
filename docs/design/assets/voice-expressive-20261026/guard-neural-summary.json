@@ -1,0 +1,10 @@
+{
+ "engine": "qwen3-tts 0.6B clone of her own voice (10 style lines, guard: ASR small.en + speaker encoder + signal checks)",
+ "chunks": 10,
+ "attempts": 14,
+ "rejected": 4,
+ "rejection_rate": 0.286,
+ "gave_up": 0,
+ "reasons": {"jump": 4, "pitch": 1},
+ "source": "guard-log.jsonl (the rejections) + manifest.json (final wer/similarity per file); written by hand after the run because a later partial run overwrote the auto summary (fixed in expressive_lab)"
+}

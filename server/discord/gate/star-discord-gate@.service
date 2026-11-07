@@ -1,0 +1,9 @@
+[Unit]
+Description=STAR Discord bot gate: one allow-listed request (server/discord/gate/star_gate.py)
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/star/discord-gate/star_gate.py --socket
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=900

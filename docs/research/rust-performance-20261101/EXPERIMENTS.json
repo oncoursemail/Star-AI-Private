@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "e672fd7b76ad24dac8f5f7f1fd67cc167fa6c829",
+  "runtime_defaults_changed": false,
+  "experiments": [
+    {
+      "id": "P0-01",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Full-request tracing",
+      "scope": "Instrument existing boundaries before moving code",
+      "hypothesis": "Significant waiting is in admission, repeated preparation or model stages rather than language overhead",
+      "validation": "Paired requests, monotonic spans, failed/time-out inclusion; disjoint critical-path reporting",
+      "rollback": "No runtime default change; trace off switch",
+      "stop_conditions": "Trace overhead or secret/prompt leakage",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P0-02",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Existing native backend portability",
+      "scope": "Validate merged native/litha_search rather than create another index",
+      "hypothesis": "Resident extension remains correct and portable on supported Windows/Linux interpreters",
+      "validation": "Build/import/absence/ABI mismatch/fallback; clean startup without compiler; exact rank and source identity",
+      "rollback": "dense_backend=python; retain original database",
+      "stop_conditions": "Crash, silent fallback, changed rank/permission behavior or incompatible wheel",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P0-03",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Request-scoped history validation reuse",
+      "scope": "Reuse verified digest only within trustworthy revision scope",
+      "hypothesis": "Repeated immutable-state validation can be removed without skipping checks",
+      "validation": "Edits/deletes/restore/scope switches and byte-identical prompt tests; whole-turn timing",
+      "rollback": "Disable reuse, return to source validation path",
+      "stop_conditions": "Stale/misattributed history or nontrivial tail-latency regression",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P1-01",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Shared admission and CPU thread budget",
+      "scope": "Coordinate foreground/background resources without adding another unbounded pool",
+      "hypothesis": "One measured device/host policy improves interactive P95 under background load",
+      "validation": "Concurrency 1/2/4 within capacity; CPU/RAM/VRAM and task completion; cancellation and starvation",
+      "rollback": "Restore prior bounded scheduler settings",
+      "stop_conditions": "OOM, lost jobs, starvation, duplicated external effects",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P1-02",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Resident client and loop lifecycle",
+      "scope": "Reuse validated connections/lifetimes within Qt and thread ownership rules",
+      "hypothesis": "Avoid repeated setup without breaking cancellation or shutdown",
+      "validation": "Foreground chat startup/stream first useful output; shutdown/reconnect and invalid credential tests",
+      "rollback": "Restore per-request lifecycle",
+      "stop_conditions": "Cross-thread failures, leaked work, delayed cancellation or credential reuse across scope",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P1-03",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Bounded exact retrieval",
+      "scope": "Compare improved Python/native scanning at real corpus sizes",
+      "hypothesis": "Packed data and bounded top-k help a measured stage, not every task",
+      "validation": "Current native module; end-to-end conversion/metadata overhead; near-ties; peak RSS/startup",
+      "rollback": "Python backend and previous immutable snapshot",
+      "stop_conditions": "Wrong sources, partial index served as complete, memory cap or latency regressions",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P1-04",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Prompt and evidence cache correctness",
+      "scope": "Version keys by model/template/tool schema/corpus/scope",
+      "hypothesis": "Stable eligible prefixes reduce prefill without stale evidence",
+      "validation": "Cache hit/miss and actual processed tokens; tool-list changes; deleted documents; out-of-scope tests",
+      "rollback": "Disable candidate cache policy",
+      "stop_conditions": "Stale facts, unsupported citations, changed privacy or invalidation failure",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P2-01",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "ANN only beyond exact crossover",
+      "scope": "Prototype separate opt-in index snapshot behind existing contract",
+      "hypothesis": "Approximate search offers worthwhile tail benefit above measured corpus size",
+      "validation": "Recall/rank quality on held-out data, index build cost, deletion/filter behavior, exact fallback",
+      "rollback": "Keep exact index authoritative",
+      "stop_conditions": "Lost required evidence, no full-stage gain, unsafe freshness/scoping",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P2-02",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Native inference tuning",
+      "scope": "Tune installed native engine without replacing orchestration",
+      "hypothesis": "Batch/cache/quantization/speculation settings may improve accepted throughput",
+      "validation": "Same model/taskset; cold/warm prefill/decode; first meaningful output; quality and RAM/VRAM",
+      "rollback": "Restore exact previous runtime/model configuration",
+      "stop_conditions": "Quality loss, OOM, silent cloud route or foreground delay",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P2-03",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Model-specific Rust/ONNX runtime trial",
+      "scope": "Isolate an embedding/reranker or modality before considering generation migration",
+      "hypothesis": "A specific model/device can benefit from a tested alternative backend",
+      "validation": "Exact preprocessing/tokenizer/model parity, device transfer cost, provider coverage, output quality",
+      "rollback": "Existing inference provider",
+      "stop_conditions": "Unsupported operators, numerical quality loss or transfer overhead erases gain",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P2-04",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Verification-budget allocation",
+      "scope": "Spend genuine latency savings on independent checking",
+      "hypothesis": "Bounded candidate/test allocation improves verified outcomes per time",
+      "validation": "Correctness rate and latency jointly, held-out tasks, Luau/Rust checks and real visual tests when relevant",
+      "rollback": "Prior candidate budget and independent gate",
+      "stop_conditions": "Checker gaming, unverified successes, destructive tool effects or GPU saturation",
+      "requires_independent_promotion": true
+    },
+    {
+      "id": "P3-01",
+      "status": "proposed_not_implemented_by_this_publication",
+      "title": "Compiler and kernel tuning",
+      "scope": "Profile before LTO/PGO/SIMD/allocator experimentation",
+      "hypothesis": "A measured hotspot may improve after architecture bottlenecks are resolved",
+      "validation": "Portable release baseline, held-out PGO workload, scalar reference, target-CPU compatibility",
+      "rollback": "Known-good portable wheel",
+      "stop_conditions": "Illegal instruction, numerical drift, machine-specific release or no application gain",
+      "requires_independent_promotion": true
+    }
+  ]
+}

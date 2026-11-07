@@ -1,0 +1,26 @@
+# Metallic API v1 config (deploy.sh writes this inside the container; it names no private hosts).
+listen = "0.0.0.0"
+port = 8476
+db = "/var/lib/metallic-api/api.sqlite3"
+audit_file = "/var/lib/metallic-api/audit.jsonl"
+key_dir = "/etc/metallic-api/keys"                     # data-key (AES-256-GCM: sealed sign-in tokens, webhook secrets)
+tls_cert = "/etc/metallic-api/tls/cert.pem"           # self-signed now; a real certificate later (same paths)
+tls_key = "/etc/metallic-api/tls/key.pem"
+# Metallic accounts in the same container; its certificate is pinned by fingerprint (deploy.sh writes the file).
+accounts_url = "https://127.0.0.1:8475"
+accounts_fingerprint_file = "/etc/metallic-api/accounts-fingerprint"
+# Signed release channels written by `python -m launcher.updates publish` (copied here by the release step).
+releases_dir = "/var/lib/metallic-api/releases"
+trust_file = "/opt/metallic-api/app/launcher/updates/trust.json"
+channels = ["stable", "beta"]
+release_watch_seconds = 60
+# Webhook targets allowed on private/loopback addresses (internal step 1: LAN game servers). Everything else must be
+# public https.
+webhook_allow_hosts = ["127.0.0.1"]
+# Web pages allowed to make signed-in calls (public GETs are open to every origin).
+allowed_origins = []
+# Optional live probes (any 2xx = up). Leave empty for "unknown".
+# [games.RC]
+# health_url = "http://<rc backend>/healthz"
+# [status_probes]
+# star = "https://<brain>/health"

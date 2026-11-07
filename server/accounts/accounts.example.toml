@@ -1,0 +1,13 @@
+# Metallic accounts config (deploy.sh writes this file inside the container; it names no private hosts).
+listen = "0.0.0.0"
+port = 8475
+db = "/var/lib/metallic-accounts/accounts.sqlite3"
+audit_file = "/var/lib/metallic-accounts/audit.jsonl"
+key_dir = "/etc/metallic-accounts/keys"          # signing-key.pem (ES256), previous-key.pem (rotation), data-key
+tls_cert = "/etc/metallic-accounts/tls/cert.pem" # self-signed now; a real certificate later (same paths)
+tls_key = "/etc/metallic-accounts/tls/key.pem"
+registration = "open"                            # or "closed" (owner codes still work)
+rate_limit_exempt = ["127.0.0.1"]               # loopback = processes inside the container only (deploy e2e)
+providers_file = "/etc/metallic-accounts/providers.toml"   # private; pushed by deploy.sh providers (see providers.md)
+webauthn_rp_id = "localhost"                     # passkeys: the launcher serves the page on http://localhost:47615
+webauthn_origins = ["http://localhost:47615"]

@@ -1,0 +1,9 @@
+{
+  "port": 8100,
+  "brain_url": "http://<starai bridge address>:8080",
+  "nodes": [
+    {"name": "owner-pc", "status_url": "http://<owner pc>:8099/status"},
+    {"name": "laptop", "status_url": "http://<laptop>:8099/status"}
+  ],
+  "hedge": false
+}

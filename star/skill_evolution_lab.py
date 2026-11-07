@@ -97,12 +97,36 @@ async def propose_and_compare(
     baseline = validate_skill(base_skill)
     if not all(callable(fn) for fn in (mutate, development_evaluate, sealed_holdout_evaluate)):
         raise TypeError("The trusted host must supply model and independent evaluators")
-    best_text, best_score = baseline, -1.0
-    feedback = {"feedback": "Improve Roblox reliability without changing permissions."}
+    # The incumbent must be tested on the very same development evaluator first.
+    # Otherwise the first valid mutation always "wins" against -1.0, even if it is
+    # worse than the skill Star already uses. This adds one cheap development check
+    # while avoiding expensive sealed-holdout calls for non-improvements.
+    try:
+        baseline_evidence = await development_evaluate(baseline)
+        baseline_score, baseline_feedback = _development_result(baseline_evidence)
+    except (TypeError, ValueError) as exc:
+        return {"decision": "do_not_promote", "reason": "baseline_development_invalid",
+                "error_type": type(exc).__name__, "candidate_sha256": None,
+                "iterations": [], "holdout_disclosed_to_mutator": False,
+                "executed_changes": False}
+    if baseline_score < 0:
+        return {"decision": "do_not_promote", "reason": "baseline_development_hard_failure",
+                "candidate_sha256": None, "iterations": [],
+                "holdout_disclosed_to_mutator": False, "executed_changes": False}
+    if baseline_score == 1:
+        # This search optimizes development correctness, not latency or style.
+        # With no failing development tasks, evidence of a strict gain is absent.
+        return {"decision": "do_not_promote", "reason": "baseline_development_at_ceiling",
+                "baseline_development_score": 1.0, "candidate_sha256": None, "iterations": [],
+                "holdout_disclosed_to_mutator": False, "executed_changes": False}
+
+    best_text, best_score = baseline, baseline_score
+    feedback = baseline_feedback
     accepted = []
     seen = {identity(baseline)}
     for index in range(config.variants):
-        # Only development feedback is available to the model proposer.
+        # Development feedback is allowed; sealed-holdout feedback is never seen
+        # by the proposer. The model does not choose the evaluator or its tasks.
         draft = await mutate(best_text, dict(feedback), index)
         try:
             text = validate_skill(draft)
@@ -115,17 +139,27 @@ async def propose_and_compare(
             continue
         seen.add(hashed)
         try:
-            score, detail = _development_result(await development_evaluate(text))
+            development_record = await development_evaluate(text)
+            score, detail = _development_result(development_record)
         except (TypeError, ValueError):
             accepted.append({"index": index, "status": "unverified_development"})
             continue
+        # Ratios from a different evaluator/version or task count are not paired
+        # evidence. They must never displace the baseline or current winner.
+        # A trusted runner must keep its task identities fixed within one run.
+        if (development_record["evaluator"] != baseline_evidence["evaluator"]
+                or development_record["total"] != baseline_evidence["total"]):
+            accepted.append({"index": index, "status": "incomparable_development",
+                             "digest": hashed})
+            continue
         accepted.append({"index": index, "status": "tested", "score": round(score, 4),
-                         "digest": hashed})
+                         "digest": hashed, "improves_incumbent": score > baseline_score})
         feedback = detail
-        if score > best_score and score >= 0:
+        if score > best_score:
             best_score, best_text = score, text
     if best_text == baseline:
-        return {"decision": "do_not_promote", "reason": "no_valid_improving_candidate",
+        return {"decision": "do_not_promote", "reason": "no_development_improvement",
+                "baseline_development_score": round(baseline_score, 4),
                 "candidate_sha256": None, "iterations": accepted,
                 "holdout_disclosed_to_mutator": False, "executed_changes": False}
 
@@ -151,12 +185,14 @@ async def propose_and_compare(
         return {"decision": "do_not_promote", "reason": "holdout_evaluation_invalid",
                 "error_type": type(exc).__name__,
                 "candidate_sha256": identity(best_text), "iterations": accepted,
+                "baseline_development_score": round(baseline_score, 4),
                 "holdout_disclosed_to_mutator": False, "executed_changes": False}
     return {
         "decision": report["decision"], "candidate_sha256": identity(best_text),
         "baseline_sha256": identity(baseline), "target": config.path,
         "candidate_text": best_text if report["decision"] == "candidate_for_independent_review" else None,
-        "development_score": round(best_score, 4), "iterations": accepted,
+        "development_score": round(best_score, 4),
+        "baseline_development_score": round(baseline_score, 4), "iterations": accepted,
         "holdout_summary": report,
         "holdout_disclosed_to_mutator": False, "executed_changes": False,
         "owner_review_required": True, "promoted": False, "weights_changed": False,

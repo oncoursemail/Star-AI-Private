@@ -61,7 +61,7 @@ def clean_process_memory():
 
 def lan_settings(**fields) -> Settings:
     return Settings(**{"provider": "star_server", "server_endpoint": LAN, "model": "star-fast",
-                       "knowledge_endpoint": "off", **fields})
+                       "knowledge_endpoint": "off", "verify_ladder": "off", **fields})
 
 
 def fleet_settings(**fields) -> Settings:

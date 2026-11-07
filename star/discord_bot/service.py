@@ -5,9 +5,11 @@ This service never dispatches desktop tools and never writes conversation memory
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import json
 from hashlib import sha256
 from dataclasses import dataclass
+from typing import Any
 
 from .audio import decode_attachment, ffmpeg_path, synthesize_pcm, validate_attachment, voice_message
 from .brain import DiscordBrain
@@ -35,24 +37,50 @@ def source_lines(sources) -> str:
         url = str(item.get("url", "")) if isinstance(item, dict) else ""
         if url.startswith("https://") and not any(c in url for c in " <>"):
             title = " ".join(str(item.get("title", "")).split())[:90]
+            if item.get("stored"):          # from research memory: when STAR read it
+                title = f"{title} (STAR's research notes, fetched {str(item.get('fetched', ''))[:10]})".strip()
             lines.append(f"- {title}: <{url}>" if title else f"- <{url}>")
     return ("\n\nSources:\n" + "\n".join(lines)) if lines else ""
 
 
-def _accepts_live(brain) -> bool:
-    """True when the brain's reply() takes the per-turn `live` text (DiscordBrain does; test doubles may not)."""
+def _accepts(brain, name: str) -> bool:
+    """True when the brain's reply() takes the keyword `name` (DiscordBrain does; test doubles may not)."""
     import inspect
     try:
-        return "live" in inspect.signature(brain.reply).parameters
+        return name in inspect.signature(brain.reply).parameters
     except (TypeError, ValueError):
         return False
+
+
+def _accepts_live(brain) -> bool:
+    return _accepts(brain, "live")
+
+
+def lookup_schema() -> dict:
+    from .awareness import SECTIONS
+    return {"type": "function", "function": {
+        "name": "star_lookup",
+        "description": ("Only when your live status lines do not already answer him: look up one part of your "
+                        "live status in detail (services, night school hours, lesson gate results, conductor, Studio "
+                        "Lab, knowledge search, his work board, PRs, jobs he started, speed), or section 'notes' with "
+                        "a query to search the team's private notes (what changed today, how a part of STAR works)."),
+        "parameters": {"type": "object", "properties": {"section": {"type": "string", "enum": list(SECTIONS) + ["notes"]},
+                                                        "query": {"type": "string", "description": "for notes: what to look for"}},
+                       "required": ["section"]}}}
 
 
 class DiscordService:
     def __init__(self, policy: AccessPolicy, *, brain=None, memory: SessionMemory | None = None,
                  ffmpeg_dir: str = "", searcher=None, rate_limiter: RateLimiter | None = None,
-                 queue_seconds: float = 60.0) -> None:
+                 queue_seconds: float = 60.0, awareness: Any = None, runner: Any = None, prefs: Any = None,
+                 research_store_path: Any = None) -> None:
         self.policy = policy
+        # Research memory (star/research_store.py, the bot's own state folder): verified web answers with source and
+        # fetch date; None (tests, a bare service) = search every time and keep nothing.
+        self.research_store_path = research_store_path
+        # Owner-private turns only: live status (awareness.Awareness), allow-listed actions (actions.ActionRunner)
+        # and what he asked Star to remember (prefs.OwnerPrefs). All optional; without them chat is as before.
+        self.awareness, self.runner, self.prefs = awareness, runner, prefs
         self.brain = brain or DiscordBrain()
         self.memory = memory or SessionMemory()
         self.ffmpeg_dir = ffmpeg_dir
@@ -81,9 +109,13 @@ class DiscordService:
         except asyncio.TimeoutError as exc:
             raise ValueError("STAR is busy with another request. Try again shortly.") from exc
 
-    async def ask(self, key: tuple, prompt: str, *, on_delta=None, on_status=None) -> str:
+    async def ask(self, key: tuple, prompt: str, *, on_delta=None, on_status=None, private: bool = False,
+                  confirm=None) -> str:
         """`on_delta(text_so_far)` / `on_status(note)`: optional async callbacks for a live reply.
-        Passed only to a brain that streams (`brain.streams`); others answer in one piece."""
+        Passed only to a brain that streams (`brain.streams`); others answer in one piece.
+        `private`: the owner's DM or a private slash answer. Only then does the turn carry Star's live status, his
+        remembered preferences and the star_lookup / star_action tools; `confirm(request)` shows him the confirm
+        button for a disruptive action."""
         question = clean_text(prompt, max_chars=MAX_PROMPT)
         if not question:
             raise ValueError("Ask STAR a question")
@@ -101,7 +133,15 @@ class DiscordService:
                 # Web results ride in `live`, not `evidence`: the model is chosen by the question
                 # itself (a news summary does not need to queue for the main model).
                 web, sources, clock_line = await self._live_context(question)
-                live["live"] = "\n\n".join(part for part in (web, clock_line) if part)
+                status = self._private_context() if private else ""
+                live["live"] = "\n\n".join(part for part in (web, status, clock_line) if part)
+                if private and self.awareness is not None and _accepts(self.brain, "tools"):
+                    from .actions import TOOL_SCHEMA
+                    tools = [lookup_schema()] + ([TOOL_SCHEMA] if self.runner is not None else [])
+
+                    async def handler(name, arguments):
+                        return await self._tool(name, arguments, confirm)
+                    live.update(tools=tools, tool_handler=handler)
                 if not web:
                     # Stored with the time line it was sent with, so the next request starts with
                     # the bytes the server already read (prompt cache). Web results are not stored.
@@ -110,21 +150,83 @@ class DiscordService:
             # The session keeps the answer as generated (what the server cached); the owner also sees
             # the links the answer was based on.
             self.memory.remember(key, remembered, answer)
+            store_path = self._research_store_path()
+            if sources and store_path is not None:
+                from ..live_context import learn_later
+                learn_later(store_path, question, answer, sources)
             return answer + source_lines(sources)
         finally:
             self._brain_lock.release()
+
+    def _private_context(self) -> str:
+        """Live status + remembered preferences for the owner's private turn (never stored in history)."""
+        parts = []
+        if self.awareness is not None:
+            try:
+                parts.append(self.awareness.summary())
+            except Exception as exc:      # a broken status source must not break chat
+                parts.append(f"[Your live status: unavailable ({type(exc).__name__})]")
+        if self.prefs is not None:
+            try:
+                parts.append(self.prefs.context())
+            except Exception:
+                pass
+        return "\n\n".join(p for p in parts if p)
+
+    async def _tool(self, name: str, arguments: dict, confirm) -> str:
+        if name == "star_lookup" and self.awareness is not None:
+            if arguments.get("section") == "notes":
+                from .notes import search_notes
+                return await search_notes(str(arguments.get("query", "") or ""),
+                                          settings=getattr(self.brain, "_settings", None))
+            return self.awareness.detail(str(arguments.get("section", "overview")))
+        if name == "star_action" and self.runner is not None:
+            from .actions import parse_request
+            request = parse_request(arguments.get("action", ""), str(arguments.get("brain", "") or ""),
+                                    str(arguments.get("text", "") or ""), gates=self.runner.gates)
+            if request.action.name == "pr_status":
+                return await self.runner.run_now(request)
+            if request.action.disruptive:
+                if confirm is None:
+                    return ("This needs his confirmation and no button can be shown here; tell him to use "
+                            "/run in a DM with you.")
+                await confirm(request)
+                return (f"A confirm button for '{request.label}' is now shown under your reply. Nothing has started; "
+                        "tell him briefly what it will do and to press it.")
+            job = self.runner.start(request)
+            return (f"Started '{job.label}' (job {job.id}); it is still running. Tell him you're on it and will "
+                    "message him when it's done. Do not say it is done or paused yet.")
+        return f"Unknown tool {name[:40]}"
+
+    def _research_store_path(self):
+        settings = getattr(self.brain, "_settings", None)
+        if self.research_store_path is None or getattr(settings, "research_memory", True) is False:
+            return None
+        return self.research_store_path
+
+    def speed(self) -> dict:
+        stats = getattr(self.brain, "last_stats", None)
+        return {} if stats is None else {"model": stats.model, "first_text_s": stats.first_text_s,
+                                         "total_s": stats.total_s}
 
     async def _live_context(self, question: str) -> tuple[str, list, str]:
         """(web block or '', its sources, the time line). The web block is cited, untrusted results for
         a news/"latest"/weather question, or one line saying the search failed. Never raises."""
         from ..clock import now_line
-        from ..live_context import auto_search
+        from ..live_context import auto_search, open_store
+        store_path = self._research_store_path()
+        store = open_store(store_path) if store_path is not None else None
         try:
             web, sources = await auto_search(question, settings=getattr(self.brain, "_settings", None),
-                                             searcher=self._searcher)
+                                             searcher=self._searcher, store=store)
         except Exception:
             web, sources = "", []
-        return web, sources, now_line()
+        finally:
+            if store is not None:
+                store.close()
+        zone = self.awareness.owner_tz() if self.awareness is not None else None
+        # On a server the container clock is UTC: name the owner's own time when it is known.
+        return web, sources, now_line(datetime.now(zone) if zone is not None else None)
 
     async def inspect_image(self, key: tuple, prompt: str, jpeg: bytes, *, vision=None) -> str:
         """Owner image analysis (DM, /image or a confirmed /screen); bytes are never persisted."""

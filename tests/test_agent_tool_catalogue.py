@@ -49,26 +49,40 @@ STAR_KNOWLEDGE = ["star_docs_search", "star_api_lookup", "star_luau_check"]
 ROBLOX_CLOUD = ["star_roblox_cloud_universe", "star_roblox_cloud_status", "star_roblox_cloud_place",
                 "star_roblox_cloud_data_stores", "star_roblox_cloud_action", "star_roblox_cloud_request_publish",
                 "star_roblox_cloud_request_test"]
+# Prompt-scoped Roblox Intelligence Hub tools (ROBLOX_HUB_TOOLS); catalog words, and analytics only with an owner allowlist.
+HUB = ["star_roblox_marketplace_search", "star_roblox_creator_store_search", "star_roblox_creator_asset",
+       "star_roblox_analytics_metrics", "star_roblox_analytics_poll", "star_roblox_gameplay_telemetry_plan"]
 # Prompt-scoped craft tools; not part of the ordered general-prompt lists below.
 CRAFT = ["star_roblox_craft_audit", "star_roblox_craft_recipe"]
 # Experimental Asset Forge (star/intelligence.py ASSET_TOOLS); owner opt-in required.
 ASSET = ["star_asset_search", "star_building_plan", "star_terrain_preview"]
+# Business tools (star/commerce_tools.py); owner opt-in (commerce_enabled), prompt-scoped, propose-only.
+COMMERCE = ["star_commerce_overview", "star_commerce_draft_candidate", "star_commerce_propose_action"]
 # Optional architectural planning tools; STAR_ARCHITECTURE_TOOLS=1 only.
 ARCHITECTURE = ["star_architecture_preview", "star_architecture_compare_styles"]
+# Operational self-awareness (star/operational_awareness.py); STAR_SELF_AWARENESS=1 and a self-assessment prompt only.
+SELF = ["star_self_capabilities", "star_self_improvement_plan"]
 # Prepared shared stores only: not in ordered general-prompt tool expectations.
 SHARED_BRAIN = ["shared_brain_query", "shared_brain_stats"]
 # Prompt-scoped design and map-plan tools, and the opt-in live Roblox docs (off unless enabled); not part
 # of the ordered general-prompt lists below (tests/test_design_roblox_tools.py covers their gating; the opt-in
 # Studio lab tool: tests/test_studio_lab.py).
 DESIGN_MAPS = ["star_design_search", "star_design_md", "star_roblox_map_plan", "star_roblox_studio_lab",
-               "star_roblox_docs_live_search", "star_roblox_docs_live_page", "star_roblox_vfx_make"]
+               "star_roblox_docs_live_search", "star_roblox_docs_live_page", "star_roblox_vfx_make",
+               "star_roblox_ui_make"]
+# Opt-in, prompt-scoped game study; recording access is limited to a selected workspace.
+GAME_EXPERIENCE = ["star_game_episode_analyze", "star_game_episode_save", "star_game_experience_search"]
+VIDEO_STUDY = ["star_game_video_study"]
+# Source-first read-only general knowledge research curriculum; no automatic fetching or model training.
+GENERAL_KNOWLEDGE = ["star_general_knowledge_curriculum"]
 # The workspace folder (star/workspace.py TOOLS); workspace_write only with Settings.workspace_edit.
 WORKSPACE_READ = ["workspace_list", "workspace_read", "workspace_search"]
 WORKSPACE_WRITE = ["workspace_write", "workspace_edit"]
 # Three additional read-only Creator Intelligence tools, in their actual registration order.
 WORKSPACE_CREATOR = ["workspace_binary_triage", "workspace_asset_audit", "workspace_game_graph"]
-# Added in integration round 5 (pull request 69, game projects of several engines); not in a7a36a3.
-WORKSPACE_GAME = ["workspace_game_discover", "workspace_game_inspect", "workspace_game_plan"]
+# Game project tools plus the deliberately read-only Starry Eye evidence and design diversity checks.
+WORKSPACE_GAME = ["workspace_game_discover", "workspace_game_inspect", "workspace_game_plan",
+                  "workspace_starry_eye_audit", "workspace_game_concept_rank"]
 # Read-only MCP connections (star/mcp_connections.py TOOLS): when one is switched on in Settings.
 MCP = ["star_mcp_search", "star_mcp_call"]
 # Public MCP Registry search (star/mcp_registry.py TOOLS): Agent mode with "Search the web" on, and a prompt
@@ -137,8 +151,9 @@ def desk(tmp_path, monkeypatch):
     events = []
 
     def turn(prompt, *, settings=None, answers=(), **options):
+        # fixed_roblox_tools off: these tests are about which tools each message selects
         settings = settings or Settings(provider="star_server", server_endpoint=LAN, model="star-fast",
-                                        knowledge_endpoint="off")
+                                        knowledge_endpoint="off", fixed_roblox_tools=False)
         chats = Conversations(home / "conversations.sqlite3")
         try:
             chat = chats.new_chat(settings.project)
@@ -204,7 +219,8 @@ def everything_settings(desk, **fields) -> Settings:
     vault.mkdir(exist_ok=True)
     return Settings(**{"provider": "star_server", "server_endpoint": LAN, "model": "star-fast",
                        "knowledge_endpoint": "off", "workspace": str(workspace), "obsidian_enabled": True,
-                       "obsidian_vault": str(vault), "mcp_graphify_docs": True, **fields})
+                       "obsidian_vault": str(vault), "mcp_graphify_docs": True, "fixed_roblox_tools": False,
+                       **fields})
 
 
 def everything_on(desk, monkeypatch, *, knowledge: bool, **fields):
@@ -260,9 +276,16 @@ def test_the_written_lists_are_the_whole_built_in_catalogue():
     from star import intelligence, mcp_connections, mcp_registry, specialist_agents, tool_workshop, workspace
     assert set(intelligence.ALL_TOOLS) == set(SKILLS + OBSIDIAN + GRAPHIFY + ROBLOX_GAMES + ROBLOX_LINKS
                                              + ROBLOX_FORUM + ROBLOX_VIDEO + STAR_KNOWLEDGE + ROBLOX_CLOUD
-                                             + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE)
+                                             + HUB + CRAFT + ASSET + SHARED_BRAIN + DESIGN_MAPS + ARCHITECTURE + COMMERCE
+                                             + GAME_EXPERIENCE + VIDEO_STUDY + GENERAL_KNOWLEDGE + SELF)
+    assert [tool["name"] for tool in intelligence.ROBLOX_HUB_TOOLS] == HUB
     assert [tool["name"] for tool in intelligence.ARCHITECTURE_TOOLS] == ARCHITECTURE
     assert [tool["name"] for tool in intelligence.ASSET_TOOLS] == ASSET
+    assert [tool["name"] for tool in intelligence.COMMERCE_TOOLS] == COMMERCE
+    assert [tool["name"] for tool in intelligence.GAME_EXPERIENCE_TOOLS] == GAME_EXPERIENCE
+    assert [tool["name"] for tool in intelligence.VIDEO_STUDY_TOOLS] == VIDEO_STUDY
+    assert [tool["name"] for tool in intelligence.GENERAL_KNOWLEDGE_TOOLS] == GENERAL_KNOWLEDGE
+    assert [tool["name"] for tool in intelligence.SELF_TOOLS] == SELF
     assert [tool["name"] for tool in intelligence.SKILL_TOOLS] == SKILLS
     assert [tool["name"] for tool in intelligence.OBSIDIAN_TOOLS] == OBSIDIAN
     assert {tool["name"] for tool in workspace.TOOLS} == set(WORKSPACE_READ + WORKSPACE_WRITE + WORKSPACE_CREATOR + WORKSPACE_GAME)

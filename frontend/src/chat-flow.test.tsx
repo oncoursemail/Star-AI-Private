@@ -463,7 +463,7 @@ describe('connection status with a STAR Server', () => {
     const user = await openChat([], null, {settings: server, server: check(null)})
     desktop.onAction('testModel', () => ({ok: true, pending: true})) // the real host answers on a worker thread
     await user.click(screen.getByRole('button', {name: /^Settings/}))
-    await user.click(await screen.findByRole('tab', {name: 'Model'}))
+    await user.click(await screen.findByRole('tab', {name: 'Models & speed'}))
     await user.click(await screen.findByRole('button', {name: /test actual response/i}))
     const id = await waitFor(() => desktop.requestOf('testModel'))
     desktop.host({server: check(true)})

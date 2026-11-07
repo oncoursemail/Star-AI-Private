@@ -1,0 +1,15 @@
+cue_id,cut_id,character_id,target_start_frame,target_end_frame_exclusive,text,direction,delivery_route,review_status
+d01,c02,ren,156,216,Tell me that's our platform.,Ask for reassurance without hiding the practical concern.,in_scene,not_recorded
+d02,c02,miko,222,258,It's a platform.,"Answer only the easy part, dry and quick.",in_scene,not_recorded
+d03,c02,ren,264,324,That's not what I asked.,Read the dodge and leave room for a small beat.,in_scene,not_recorded
+d04,c03,omi,354,438,Storm shutters closing. Find cover.,"Dispatch concisely, with controlled urgency.",shared_radio,not_recorded
+d05,c04,miko,492,540,That's the plan.,Conceal concern about the parcel and commit to the crossing.,in_scene,not_recorded
+d06,c08,ren,1020,1056,Got you.,Speak through the pull with physical effort.,in_scene,not_recorded
+d07,c09,ren,1122,1194,You said that strap was useless.,Recover breathing; relief allows a dry challenge.,in_scene,not_recorded
+d08,c09,miko,1218,1284,Only for carrying things.,"Keep it light, still winded, no announcer cadence.",in_scene,not_recorded
+d09,c10,ren,1368,1476,Miko... don't let me go tomorrow.,"Frightened future recording; make the request personal, not declamatory.",private_receiver_audience_audible,not_recorded
+d10,c11,ren,1596,1644,What did it say?,"Notice Miko changing expression, without having heard the message.",in_scene,not_recorded
+d11,c11,miko,1680,1716,Wrong address.,Hide the message; attempt casualness and let the effort show.,in_scene,not_recorded
+d12,c11,ren,1752,1812,You're a terrible courier.,"Gentle teasing, trusting her answer.",in_scene,not_recorded
+d13,c12,omi,1896,1956,You two still there?,Check the team over the shared radio.,shared_radio,not_recorded
+d14,c12,miko,1980,2040,Yeah. Both of us.,Answer Omi while privately resolving to keep Ren safe.,in_scene_and_radio,not_recorded

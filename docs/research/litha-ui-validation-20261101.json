@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-01T01:16:04.687277+00:00",
+  "baseline_commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+  "branch": "feat/litha-ui-evidence-20261101",
+  "environment": {
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.39",
+    "packages": {
+      "pytest": "9.2.0",
+      "ruff": "0.17.3",
+      "pyright": "1.1.414",
+      "pillow": "13.0.0",
+      "jsonschema": "4.26.0"
+    }
+  },
+  "focused_tests": {
+    "tests": 386,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "passed": 386,
+    "junit_seconds": 4.936,
+    "command": "python -m pytest -q tests/test_ui_evidence.py tests/test_ui_evidence_integration.py tests/test_starry_eye_quality.py tests/test_creative_review.py tests/test_roblox_ui_compiler.py tests/test_roblox_ui_contrast.py tests/test_design_md.py tests/test_design_db.py tests/test_design_system.py tests/test_design_roblox_tools.py tests/test_workspace_path_spellings.py tests/test_windows_package_data.py tests/test_docs_guide_links.py tests/test_agent_tool_catalogue.py::test_the_written_lists_are_the_whole_built_in_catalogue --junitxml=/tmp/litha-ui-validation.xml",
+    "junit_sha256": "56a4696899cf13cd97d9473bc6b823d9deefa0b83c09db1cdd2bebac74afefd6",
+    "scope": "Offline targeted regression suite; scripted model exercises actual agent dispatch, no live inference"
+  },
+  "source_compilation": {
+    "command": "python -m compileall -q star main.py",
+    "exit_code": 0
+  },
+  "ruff": {
+    "commands": [
+      "python -m ruff check star/ui_evidence.py star/starry_eye_quality.py star/workspace.py star/roblox_ui_compiler.py tests/test_ui_evidence.py tests/test_ui_evidence_integration.py tests/test_starry_eye_quality.py tests/test_roblox_ui_contrast.py",
+      "python -m ruff check benchmarks/ui_compiler_parity.py"
+    ],
+    "exit_code": 0
+  },
+  "pyright": {
+    "command": "pyright star/ui_evidence.py star/starry_eye_quality.py star/workspace.py star/roblox_ui_compiler.py",
+    "errors": 0,
+    "warnings": 0,
+    "exit_code": 0
+  },
+  "compiler_emission_parity": {
+    "result_file": "litha-ui-compiler-parity-20261101.json",
+    "result_sha256": "ca3167b7f80008bdc64725c6d0f1b0948348016555413f7c4fc3faa4dc9b35e9",
+    "cases": 23,
+    "equal": 23,
+    "all_equal": true,
+    "command": "python benchmarks/ui_compiler_parity.py --baseline-ref a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f --output docs/research/litha-ui-compiler-parity-20261101.json"
+  },
+  "review_fixes": [
+    "Contrast decisions use unrounded values",
+    "Declared interaction states checked independently from base",
+    "Unknown native backdrops remain indeterminate",
+    "Malformed huge numbers and unhashable labels return validation errors",
+    "Failure counts survive finding truncation",
+    "Roblox contract minimum matches PNG collector"
+  ],
+  "file_sha256": {
+    "star/ui_evidence.py": "8f7401456501baf8fcabe346f2e959728e6b31993e8bff2b11b7e1e38394bfa3",
+    "star/starry_eye_quality.py": "2c6fee8d2523cfda3e783b3f1d3c9e76f8c1b4ac0c433f609d243d5a0a638ad4",
+    "star/workspace.py": "4a3b5a746eb7e3a1d2dba68646eff71e4eec8349b594936f5a5dcae3b14aea52",
+    "star/roblox_ui_compiler.py": "55703e0835b6a2d15bc5d2041d110eaf66f22e94aef8a33ce3908b98897de600",
+    "tests/test_ui_evidence.py": "b50bd8b1afb2c3d2435f5be72f31e64ddf2db783328eb33b47d7637d35e5e58b",
+    "tests/test_ui_evidence_integration.py": "b812baecd5e285abb47bb1f40eaa76c9afde81a5fb807ff2cbfc15ce8bc75710",
+    "tests/test_starry_eye_quality.py": "1e64c2c1c3ab68aca9de135ef77d8e5fcc63e2a07a132b569cb831e96697e8e3",
+    "tests/test_roblox_ui_contrast.py": "77952ad042117271ee639c3bf47d81488d1d71ce7c4f5c08ee3fd362b5a709cd",
+    "benchmarks/ui_compiler_parity.py": "4c6b1d294536439b5219483a6beff54930544595f4b27accd1d442da09bee9fa"
+  },
+  "activation": {
+    "default_enabled": false,
+    "environment": "STAR_UI_EVIDENCE=on",
+    "explicit_argument": "ui_contract_path"
+  },
+  "limits": [
+    "No real browser, Roblox Studio, Windows build, live model or GPU execution was performed.",
+    "No full-suite pass, end-to-end design quality gain, accessibility certification or whole-agent speedup is asserted.",
+    "Capture labels, layout records and traces are supplied declarations, not authenticated execution receipts.",
+    "Compiler parity covers 23 synthetic specifications and intentionally allows different diagnostic warnings."
+  ]
+}

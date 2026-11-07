@@ -3,4 +3,4 @@
 discord.py[voice]>=2.7.1,<3
 # Audio transcription/TTS additionally needs requirements-voice.txt and FFmpeg.
 # HEIC photos (iPhone) for /image and DM photos; without it STAR asks for a JPEG instead.
-pillow-heif>=1.1,<2
+pillow-heif>=1.8.1,<2

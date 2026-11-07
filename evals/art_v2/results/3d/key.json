@@ -1,0 +1,82 @@
+{
+ "p01": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "p02": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "p03": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "p04": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "s01": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "s02": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "s03": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "s04": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "l01": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "l02": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "l03": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "l04": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "r01": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "r02": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "r03": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "r04": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "h01": {
+  "A": "v2",
+  "B": "baseline"
+ },
+ "h02": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "h03": {
+  "A": "baseline",
+  "B": "v2"
+ },
+ "h04": {
+  "A": "baseline",
+  "B": "v2"
+ }
+}

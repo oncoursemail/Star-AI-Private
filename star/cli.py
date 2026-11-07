@@ -68,8 +68,24 @@ def doctor():
 
 
 async def main(args):
+    if args.command in {"project-catalog", "github-inventory", "github-resolve", "github-read"}:
+        from .github_inventory import cli_result
+        result = await cli_result(args.command, repository_id=getattr(args, "repository_id", None),
+                                  path=getattr(args, "path", ""), revision=getattr(args, "revision", "HEAD"),
+                                  credential_source=getattr(args, "credential_source", None))
+        print(json.dumps(result, indent=2))
+        return
     if args.command == "doctor":
         doctor()
+        return
+    if args.command == "live-show":
+        # An explicit request: validate and plan only. Reads the named files, writes and sends nothing.
+        from .live_show import _read_bounded, plan_report
+        report = plan_report(_read_bounded(Path(args.manifest)),
+                             _read_bounded(Path(args.reviews)) if args.reviews else None,
+                             _read_bounded(Path(args.questions)) if args.questions else None,
+                             post_episode=args.post_episode)
+        print(json.dumps(report, indent=2, allow_nan=False))
         return
     if args.command == "evals":
         from .evals import load_catalog, summarize_verdicts
@@ -115,6 +131,14 @@ async def main(args):
                 print("Locally stored image:", digest, "at", dest)
         finally:
             store.close()
+        return
+    if args.command == "anime-check":
+        # Local planning files only; prints the problems found and exits 1 when there are any.
+        from .anime_production import check_file
+        kind, errors = check_file(Path(args.file), plan=Path(args.plan) if args.plan else None)
+        print(json.dumps({"file": Path(args.file).name, "kind": kind, "valid": not errors, "errors": errors}, indent=2))
+        if errors:
+            raise SystemExit(1)
         return
     if args.command == "memory":
         from .memory import Memory
@@ -250,6 +274,11 @@ def cli():
     sub.add_parser("doctor")
     sub.add_parser("evals", help="List Roblox evaluation definitions and their not-run status")
     sub.add_parser("tools")
+    show = sub.add_parser("live-show", help="Validate and plan an episode manifest offline (no rendering, posting or network)")
+    show.add_argument("manifest")
+    show.add_argument("--reviews", help="JSON list of review records for the readiness check")
+    show.add_argument("--questions", help="JSON list of moderated audience questions")
+    show.add_argument("--post-episode", action="store_true")
     sub.add_parser("studios")
     know = sub.add_parser("knowledge-add", help="Store a candidate project note for later review")
     know.add_argument("--project", required=True)
@@ -274,8 +303,21 @@ def cli():
     build.add_argument("task", help="Improvement confined to new skill modules and docs")
     build.add_argument("--publish-draft", action="store_true", help="Publish using STAR's configured GitHub App")
     sub.add_parser("github-check")
+    sub.add_parser("project-catalog", help="Show owner-confirmed project names and repository IDs")
+    inventory = sub.add_parser("github-inventory", help="List all repositories visible to the configured read credential")
+    inventory.add_argument("--credential-source", choices=("env", "gh"))
+    for command in ("github-resolve", "github-read"):
+        read = sub.add_parser(command, help="Resolve stable repository identity or read bounded source")
+        read.add_argument("--repository-id", required=True, type=int)
+        read.add_argument("--credential-source", choices=("env", "gh"))
+        read.add_argument("--revision", default="HEAD", help="Branch or commit; HEAD uses the current default branch")
+        if command == "github-read":
+            read.add_argument("path")
     sync = sub.add_parser("github-sync")
     sync.add_argument("--branch", required=True, help="star/<development-branch>")
+    anime = sub.add_parser("anime-check", help="Validate an anime planning file (pilot.json, benchmark_template.json or a cue sheet .csv)")
+    anime.add_argument("file")
+    anime.add_argument("--plan", help="for a .csv: the pilot.json it must match")
     ask = sub.add_parser("ask")
     ask.add_argument("prompt")
     ask.add_argument("--image", action="append", default=[])

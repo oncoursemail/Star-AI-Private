@@ -1,0 +1,10 @@
+local ret, env = load_answer()
+local D = ret
+check("a body shot is unchanged", D.compute("rifle", 10, 0) == 34 and D.compute("rifle", 10, 0, false) == 34)
+check("a rifle headshot doubles", D.compute("rifle", 10, 0, true) == 68)
+check("a shotgun headshot is x1.25", D.compute("shotgun", 10, 0, true) == 15)
+check("headshot before armor", D.compute("pistol", 10, 0.5, true) == 20)
+check("armor above 0.8 is clamped", D.compute("sniper", 10, 1) == 16)
+check("negative armor is clamped to 0", D.compute("pistol", 10, -1) == 20)
+check("falloff still applies", D.compute("rifle", 200, 0) == 14)
+check("volley still multiplies pellets", D.volley("shotgun", 10, 0) == 96)

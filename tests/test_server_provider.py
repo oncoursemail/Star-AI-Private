@@ -218,7 +218,7 @@ def test_key_comes_from_environment_or_keyring_never_settings(monkeypatch, isola
     assert connection_for(settings) == (LAN, "env-key-0123456789")
     assert credential_status()["star_server"] is True
     # Nothing key-shaped exists in the settings schema or the saved file.
-    assert not [f.name for f in fields(Settings) if f.name != "server_context_tokens" and any(
+    assert not [f.name for f in fields(Settings) if f.name not in ("server_context_tokens", "strata_context_tokens") and any(
         word in f.name.lower() for word in ("key", "token", "secret", "password", "bearer", "credential"))]
     path = tmp_path / "settings.json"
     settings.save(path)

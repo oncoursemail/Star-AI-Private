@@ -28,3 +28,11 @@ def test_pyproject_and_the_frontend_package_carry_the_same_version():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     package = json.loads((ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))
     assert project["version"] == package["version"] == star.__version__ == version.__version__
+
+
+def test_the_installer_script_and_the_site_version_file_carry_the_same_version():
+    installer = (ROOT / "installer" / "STAR.iss").read_text(encoding="utf-8")
+    defined = re.search(r'#define\s+StarVersion\s+"([^"]+)"', installer)
+    assert defined and defined.group(1) == version.__version__
+    site = json.loads((ROOT / "site" / "version.json").read_text(encoding="utf-8"))
+    assert site["version"] == version.__version__

@@ -1,0 +1,36 @@
+[Unit]
+Description=STAR Knowledge: embed pending chunks on the LAN GPU worker (the laptop), then exit
+Documentation=file:/opt/star/knowledge/app/starkb/offload.py
+After=network-online.target
+# Inert until the worker's key is installed. The worker URL is not in this file (a private address):
+#   /etc/systemd/system/star-knowledge-offload.service.d/laptop.conf
+#   [Service]
+#   Environment=STAR_KB_OFFLOAD_URL=http://<worker address>:8090
+ConditionPathExists=/opt/star/secrets/laptop_gpu_embed_key
+
+# Started hourly by star-knowledge-offload.timer. With nothing pending it exits at once. More than 3000 texts pending
+# (a bulk change; the nightly refresh embeds at most 3000 itself) only runs 00:00-08:00 America/Chicago.
+# Run once by hand:  systemctl start star-knowledge-offload     Stop cleanly: systemctl stop star-knowledge-offload
+[Service]
+Type=oneshot
+User=star
+Group=star
+WorkingDirectory=/opt/star/knowledge/app
+Environment=PYTHONUNBUFFERED=1
+Environment=STAR_KB_HOME=/opt/star/knowledge
+Environment=STAR_EMBED_MODEL=star-embed-ft1
+Environment=STAR_KB_OFFLOAD_KEY_FILE=/opt/star/secrets/laptop_gpu_embed_key
+ExecStart=/opt/star/knowledge/venv/bin/python -m starkb offload-run
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=100%
+TimeoutStartSec=2h
+MemoryMax=2G
+LimitCORE=0
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/star/knowledge/data
+RestrictSUIDSGID=yes
+LockPersonality=yes

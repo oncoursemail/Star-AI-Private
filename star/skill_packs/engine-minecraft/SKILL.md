@@ -34,6 +34,9 @@ Java 26.3 (Sept 2026, Java 25), Fabric API 0.162+26.3, NeoForge 26.3.0.x, Bedroc
 10. Bedrock 2.x: `worldInitialize` is gone (`system.beforeEvents.startup` / `world.afterEvents.worldLoad`); `runCommandAsync` removed (use `runCommand`); `isValid` is a property; world access at top level throws (early execution).
 11. Client-only classes (`Minecraft`, renderers) in common code crash servers.
 
+## Server assets
+For Paper/Folia, Nexo, Blockbench, Geyser and STAR's offline pack tools, load `references/server-assets.md`. Keep gameplay server-authoritative; verify assets in-game.
+
 ## Roblox to Minecraft
 Part -> block (`BlockState`) or display entity; Model -> structure / custom entity
 Script -> mod common code, mcfunction, or Bedrock behavior script; LocalScript -> Java client entrypoint

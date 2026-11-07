@@ -1,0 +1,9 @@
+{
+  "hostname": "<BRAIN2_HOSTNAME>",
+  "services": [
+    {"name": "docker.service", "network_client": false},
+    {"name": "containerd.service", "network_client": false},
+    {"name": "wings.service", "network_client": true}
+  ],
+  "linger_users": []
+}

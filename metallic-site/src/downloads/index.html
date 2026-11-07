@@ -1,0 +1,35 @@
+<!-- title: Downloads. Metallic launcher and add-ons -->
+<!-- description: Every published Metallic build with its version, date, size and checksum, from the stable or beta release channel. Updates are signed and verified before they install. -->
+<!-- page: downloads -->
+<!-- scripts: downloads.js -->
+<section class="wrap page-head">
+  <p class="eyebrow">Downloads</p>
+  <h1>Get Metallic.</h1>
+  <p class="lede">This page reads the same release channels the launcher uses. If nothing is listed, nothing has been published yet; we do not show placeholder builds.</p>
+</section>
+
+<section class="wrap dl" aria-labelledby="dl-h">
+  <div class="dl-head">
+    <h2 id="dl-h" class="kicker">Releases</h2>
+    <div class="seg" role="group" aria-label="Release channel">
+      <button type="button" data-channel="stable" aria-pressed="true">Stable</button>
+      <button type="button" data-channel="beta" aria-pressed="false">Beta</button>
+    </div>
+  </div>
+  <p class="m3" id="dl-channel-note">Stable builds are the ones we recommend.</p>
+  <div id="dl-list" aria-live="polite">
+    <p class="empty">Loading the release list...</p>
+    <noscript><p class="empty">This list needs JavaScript. The raw channel file is at <a href="/releases/channels/stable.json">/releases/channels/stable.json</a>.</p></noscript>
+  </div>
+</section>
+
+<section class="wrap how">
+  <h2 class="kicker">How updates stay safe</h2>
+  <div class="how-grid">
+    <p class="big">Signed, checked, and reversible.</p>
+    <div>
+      <p>Each channel is a file we sign with a key that never leaves our own PC. The launcher knows the matching public key, refuses anything it cannot verify, downloads only the files that changed, checks every file against its hash, and installs the new version beside the old one. If the new version fails to start, the launcher switches back by itself.</p>
+      <p>You can check a first-install download yourself. On Windows, run <code>certutil -hashfile &lt;file&gt; SHA256</code> in a terminal and compare the result with the checksum shown above.</p>
+    </div>
+  </div>
+</section>

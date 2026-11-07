@@ -1,0 +1,15 @@
+# Optional neural expressive voices (star/voice_neural.py), on top of requirements-voice.txt and a CUDA build of torch
+# (requirements-home.txt installs torch 2.11 cu128). Licences checked 2026-10-26: faster-qwen3-tts / qwen-tts-hf code and
+# Qwen3-TTS weights Apache-2.0; chatterbox-tts code and Chatterbox-Turbo weights MIT (PerTh watermark on every output).
+# chatterbox-tts pins torch 2.6 and transformers 5.2; it is installed with --no-deps and works with torch 2.11 /
+# transformers 5.19 (tested on the dev PC), so install it separately:
+#   pip install -r requirements-voice-expressive.txt
+#   pip install --no-deps chatterbox-tts==0.1.7 s3tokenizer==0.3.0 conformer==0.3.2 resemble-perth==1.0.1 diffusers==0.29.0
+#   pip install onnx pillow spacy-pkuseg pykakasi==2.3.0
+faster-qwen3-tts==0.5.4
+qwen-tts-hf==0.1.1.post1
+librosa>=1.0,<2
+soundfile>=0.14,<1
+pyloudnorm>=0.2,<0.3
+omegaconf>=2.4,<3
+einops>=0.8,<1

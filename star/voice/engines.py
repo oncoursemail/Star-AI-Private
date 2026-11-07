@@ -28,6 +28,10 @@ def models_dir() -> Path:
     configured = os.environ.get("STAR_VOICE_MODELS", "").strip()
     if configured:
         return Path(configured)
+    from ..home import paths                      # her PC: <install root>\models\voice (star/home/paths.py)
+    rooted = paths.models_dir()
+    if rooted:
+        return rooted / "voice"
     return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "STAR" / "voice-models"
 
 
@@ -225,13 +229,18 @@ class FasterWhisperASR:
         self.device, self.language, self.prompt = device, language, prompt
         self.model_name = model
         self._lock = threading.Lock()
+        local_model = model
+        from ..home.paths import root
+        if root() is not None:
+            from ..senses.setup import installed_asr_path
+            local_model = installed_asr_path(model) or model
         try:
-            self._model = WhisperModel(model, device=device, compute_type="float16" if device == "cuda" else "int8")
+            self._model = WhisperModel(local_model, device=device, compute_type="float16" if device == "cuda" else "int8")
         except Exception:
             if device != "cuda":
                 raise
             self.device = "cpu"          # no usable CUDA runtime: carry on slower instead of failing the call
-            self._model = WhisperModel(model, device="cpu", compute_type="int8")
+            self._model = WhisperModel(local_model, device="cpu", compute_type="int8")
 
     def transcribe(self, pcm: bytes, sample_rate: int = SAMPLE_RATE) -> str:
         audio = pcm16_to_float(pcm)
@@ -339,17 +348,41 @@ class KokoroTTS:
             for _ in self.synthesize(text):
                 pass
 
-    def synthesize(self, text: str) -> Iterable[tuple[bytes, int]]:
-        ratio = pitch_ratio(self.pitch_semitones)
+    def synthesize_float(self, text: str, voice: str | None = None, rate: float = 1.0,
+                         pitch_semitones: float = 0.0, seed: int = 0, instruct: str | None = None):
+        """Speech only (no trailing gap) as float samples: (samples, sample_rate). For the expressive layer
+        (star/voice/expressive.py): `voice` renders another recipe (role-play characters) without changing this
+        engine's own voice, `rate` multiplies the speed, `pitch_semitones` adds to the voice's pitch. Kokoro is
+        deterministic, so `seed` and `instruct` are accepted and ignored."""
+        style = self._style if voice is None else sum(self._kokoro.get_voice_style(n) * w
+                                                      for n, w in parse_kokoro_voice(voice))
+        ratio = pitch_ratio(min(12.0, max(-12.0, self.pitch_semitones + pitch_semitones)))
+        with self._lock:
+            samples, sr = self._kokoro.create(text, voice=style, speed=min(2.0, max(0.5, self.speed * rate / ratio)),
+                                              lang=self.lang)
+        if ratio != 1.0:
+            samples = resample(samples, int(sr), int(round(sr / ratio)))
+        return samples, int(sr)
+
+    def synthesize(self, text: str, prosody=None) -> Iterable[tuple[bytes, int]]:
+        """`prosody` (star.emotion.Prosody) shifts this one sentence a little: speed times rate, semitones added to the
+        voice's pitch, milliseconds added to the pause after it. None leaves the voice exactly as configured."""
+        speed, pitch, gap_ms = self.speed, self.pitch_semitones, self.gap_ms
+        if prosody is not None:
+            speed = speed * prosody.rate
+            pitch = min(12.0, max(-12.0, pitch + prosody.pitch_semitones))
+            gap_ms = max(0, gap_ms + int(prosody.pause_ms))
+        ratio = pitch_ratio(pitch)
         with self._lock:
             # A pitch change is a resample (playing the clip back faster or slower), which also changes its length;
             # asking Kokoro for a speed divided by the same ratio makes the final pace the speed that was asked for.
-            samples, rate = self._kokoro.create(text, voice=self._style, speed=self.speed / ratio, lang=self.lang)
+            samples, rate = self._kokoro.create(text, voice=self._style, speed=min(2.0, max(0.5, speed / ratio)),
+                                                lang=self.lang)
         if ratio != 1.0:
             samples = resample(samples, int(rate), int(round(rate / ratio)))
         yield float_to_pcm16(samples), int(rate)
-        if self.gap_ms > 0:
-            yield b"\x00\x00" * int(int(rate) * self.gap_ms / 1000), int(rate)
+        if gap_ms > 0:
+            yield b"\x00\x00" * int(int(rate) * gap_ms / 1000), int(rate)
 
 
 # -- registries -------------------------------------------------------------------------------

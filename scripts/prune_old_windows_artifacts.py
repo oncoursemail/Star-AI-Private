@@ -35,7 +35,7 @@ import subprocess
 import sys
 from urllib.parse import quote
 
-REPO = "oncoursemail/Star-AI-Private"
+REPO = "oncoursemail/Star-AI-Project"
 REPO_ID = 1412474221
 ROOT = "repos/" + REPO
 WINDOWS_WORKFLOW_ID = 380060164

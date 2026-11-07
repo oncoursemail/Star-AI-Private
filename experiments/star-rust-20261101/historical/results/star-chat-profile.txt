@@ -1,0 +1,27 @@
+Observed cProfile summary from actual Core Forge offline fixture on starai.
+12 profiled turns; 177297 calls (170961 primitive calls), 0.507 seconds.
+Cumulative times are nested and MUST NOT be added as separate latency categories.
+
+calls  cumulative_s  function
+12     0.507         bench_chat_turn.py:92(turn)
+12     0.465         desktop_core.py:1293(run_task)
+156    0.256         base_events.py:1910(_run_once)
+36     0.252         base_events.py:651(run_until_complete)
+36     0.249         base_events.py:627(run_forever)
+12     0.140         runners.py:160(run)
+12     0.137         runners.py:61(__exit__)
+12     0.136         runners.py:64(close)
+192    0.124         events.py:86(_run)
+192    0.122         Context.run
+12     0.118         runners.py:86(run)
+12     0.107         desktop_core.py:1067(chat_history_snapshot)
+24     0.106         desktop_core.py:1542(run)
+30     0.093         conversation_memory.py:89(source_digest)
+24     0.093         conversation_memory.py:266(read_checkpoint)
+12     0.090         desktop_core.py:1736(answer_with)
+28     0.087         conversation_memory.py:243(_validate_source)
+24     0.082         conversation_memory.py:249(read_checkpoint_connection)
+
+Interpretation: investigate repeated event-loop lifecycle and history/checkpoint validation.
+This is not proof that all cumulative time is avoidable or that Rust would remove it.
+Do not remove source-integrity validation merely to make this benchmark faster.

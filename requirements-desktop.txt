@@ -1,8 +1,8 @@
 -r requirements.txt
-PySide6>=6.11.2,<7
+PySide6>=6.12.0,<7
 faster-whisper>=1.2.1,<2
 pyttsx3>=2.99,<3
 
 keyring>=25.7.0,<27
 # Local OBS WebSocket v5 control for opt-in replay buffer. OBS itself is separate.
-obsws-python>=1.7,<2
+obsws-python>=1.8.0,<2

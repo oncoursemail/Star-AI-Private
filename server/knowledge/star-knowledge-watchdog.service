@@ -1,0 +1,15 @@
+[Unit]
+Description=STAR Knowledge watchdog (one real search; restarts star-knowledge after 2 failed checks in a row)
+Documentation=file:/opt/star/knowledge/app/starkb/watchdog.py
+After=star-knowledge.service
+
+[Service]
+Type=oneshot
+# root: it restarts star-knowledge. It only reads the service key and writes data/watchdog.json.
+WorkingDirectory=/opt/star/knowledge/app
+Environment=PYTHONUNBUFFERED=1
+Environment=STAR_KB_HOME=/opt/star/knowledge
+Environment=STAR_KB_KEY_FILE=/opt/star/secrets/api_keys
+ExecStart=/opt/star/knowledge/venv/bin/python -m starkb watchdog
+TimeoutStartSec=180
+Nice=5

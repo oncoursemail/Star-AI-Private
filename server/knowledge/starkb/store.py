@@ -244,6 +244,17 @@ def _luau_site(root: Path, base: str):
 WALKERS = {"creator-docs": _creator_docs, "luau-site": _luau_site}
 
 
+NON_COMMERCIAL = re.compile(r"(?:^|-)NC(?:-|$)")
+
+
+def check_licences(config: dict) -> None:
+    """A non-commercial licence (CC BY-NC-*) may be indexed for private use but must never reach a public bundle:
+    its source must say `"public_bundle": false`, the flag any export to the app or the public site has to honour."""
+    for source in config["sources"]:
+        if NON_COMMERCIAL.search(source.get("licence", "")) and source.get("public_bundle") is not False:
+            raise ValueError(f"{source['name']}: licence {source['licence']} needs \"public_bundle\": false")
+
+
 def build(db_path: Path, sources_dir: Path, manifest: Path, *, force: bool = False,
           walkers: dict | None = None, source_metadata: dict | None = None,
           preserve_other_sources: bool = False, log=None) -> dict:
@@ -259,6 +270,7 @@ def build(db_path: Path, sources_dir: Path, manifest: Path, *, force: bool = Fal
 
     gate()
     config = json.loads(manifest.read_text(encoding="utf-8"))
+    check_licences(config)
     db = connect(db_path)
     before = db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
     old_shas = {r[0] for r in db.execute("SELECT DISTINCT text_sha FROM chunks")}
@@ -305,19 +317,34 @@ def _build_into(db, sources_dir: Path, config: dict, *, walkers: dict | None = N
     for sha, question in db.execute("SELECT text_sha, question FROM chunk_questions ORDER BY text_sha, ord"):
         questions.setdefault(sha, []).append(question)
     stats = {}
+    # Source groups ("roblox", "engines", "general", ...) let a search keep Roblox questions on the Roblox docs.
+    db.execute("INSERT OR REPLACE INTO meta VALUES('source_groups',?)",
+               (json.dumps({s["name"]: s.get("group", "roblox") for s in config["sources"]}),))
     for source in config["sources"]:
         if gate:
             gate()
         name = source["name"]
         repo = sources_dir / source.get("checkout", name)
         metadata = (source_metadata or {}).get(name)
+        if metadata is None and not (repo / ".git").is_dir():
+            from .walkers import snapshot_metadata
+            # fetched pages (Wikipedia): SNAPSHOT.json instead of Git; not fetched yet: an empty source, not a failure
+            metadata = snapshot_metadata(repo) or {"commit": "pending", "commit_date": ""}
+            repo.mkdir(parents=True, exist_ok=True)
         commit = metadata["commit"] if metadata else _git(repo, "rev-parse", "HEAD")
         commit_date = metadata["commit_date"] if metadata else _git(repo, "log", "-1", "--format=%cI")
         db.execute("INSERT INTO sources VALUES(?,?,?,?,?,?,?,?)",
-                   (name, source["repo"], source["branch"], commit, commit_date,
+                   (name, source["repo"], source.get("branch", ""), commit, commit_date,
                     source["licence"], source["attribution"], now()))
         n_docs = n_chunks = n_chars = 0
-        for doc in (WALKERS if walkers is None else walkers)[name](repo / source["content_root"], source["public_base"]):
+        table = WALKERS if walkers is None else walkers
+        if name in table:
+            walker = table[name]
+        else:
+            from .walkers import walker_for
+            walker = walker_for(source)
+        base = source["public_base"].replace("{commit}", commit)
+        for doc in walker(repo / source["content_root"] if source.get("content_root") else repo, base):
             if gate:
                 gate()
             if not doc.chunks:

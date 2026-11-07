@@ -100,7 +100,7 @@ def test_run_task_real_model_path_and_client_http_contract(monkeypatch, tmp_path
     monkeypatch.setattr(desktop_core, "open_client", model_client)
     monkeypatch.setattr(doc_knowledge, "client_for", lambda settings: knowledge)
     # This question has no documentation route: the opt-in must not depend on a search hit.
-    answer = run_task(Settings(model="m", luau_run_before_answer=True),
+    answer = run_task(Settings(model="m", luau_run_before_answer=True, verify_ladder="off"),
                       "Give a tiny arithmetic example.", mode="fast", stream_tokens=True,
                       on_event=events.append)
     assert len(calls) == 1
@@ -135,7 +135,7 @@ def test_run_task_streaming_gate_and_default_no_client_access(monkeypatch, tmp_p
     monkeypatch.setattr(desktop_core, "open_client", model_client)
     monkeypatch.setattr(desktop_core, "execute", execute)
     monkeypatch.setattr(doc_knowledge, "client_for", no_client)
-    answer = run_task(Settings(model="m", luau_run_before_answer=enabled),
+    answer = run_task(Settings(model="m", luau_run_before_answer=enabled, verify_ladder="off"),
                       "Give a tiny arithmetic example.", mode="fast", stream_tokens=True)
     assert captured == [not enabled]
     assert (MARKER in answer) is enabled
@@ -173,7 +173,7 @@ def test_runtime_uses_the_repaired_displayed_code_and_preserves_transcript(monke
     from time import monotonic
     result = asyncio.run(doc_grounding.finalize(found, route,
         (original, [{"role": "assistant", "content": original}], []), model_client=Repair(),
-        settings=Settings(luau_run_before_answer=True), started=monotonic()))
+        settings=Settings(luau_run_before_answer=True, verify_ladder="off"), started=monotonic()))
     assert len(checked) == 2 and executed == [fixed]
     assert fixed in result[0] and "not run by this static check" in result[0]
     assert "generated assertions passed" in result[0] and result[1][-1]["content"] == result[0]

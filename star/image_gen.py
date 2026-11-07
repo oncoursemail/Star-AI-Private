@@ -1,7 +1,9 @@
 """Image generation, editing and inpainting for the chat, on the place chosen in Settings.
 
-Today one place exists: ComfyUI on this PC with FLUX.2 klein 4B (`star.comfy`). One model does
-all three jobs:
+Two places: ComfyUI on this PC with FLUX.2 klein 4B (`star.comfy`), or the image service on the
+servers (`star.server_images`, text to image only, square). Settings may also say 'auto': this PC
+while its graphics card is free, otherwise the servers (`media_places.resolve`). On this PC one model
+does all three jobs:
   - text to image;
   - edit: an attached image plus an instruction (the image is given to the model as a reference);
   - inpaint: the same with a mask (white = the area to change). Sampling starts from the image,
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import secrets
 import time
 from pathlib import Path
@@ -86,15 +89,31 @@ def _save(home: Path, picture: bytes, note: dict) -> Path:
     if not NAME.fullmatch(name):
         raise RuntimeError('Unexpected generated image filename')
     path = folder / name
-    path.write_bytes(picture)
-    path.with_suffix('.json').write_text(json.dumps(note, ensure_ascii=False, indent=1), encoding='utf-8')
+    # The note first, the picture last and under a temporary name: a picture that exists is complete and has its note,
+    # and the chat only ever names a file that is on disk (a reference must never run ahead of the file).
+    try:
+        path.with_suffix('.json').write_text(json.dumps(note, ensure_ascii=False, indent=1), encoding='utf-8')
+    except (OSError, TypeError, ValueError):
+        pass        # the note is a nicety: a picture that was made is never thrown away because its note could not be written
+    partial = path.with_name(path.name + '.part')
+    with open(partial, 'wb') as out:
+        out.write(picture)
+        out.flush()
+        os.fsync(out.fileno())
+    os.replace(partial, path)
+    if not path.is_file() or path.stat().st_size != len(picture):
+        raise RuntimeError('The picture was made but could not be saved in the STAR data folder')
     return path
 
 
 def generate(settings, prompt: str, home: Path, *, size: str = DEFAULT_SIZE, seed: int | None = None,
              source: Path | None = None, mask: Path | None = None, use_references: bool = True,
-             cancel_event=None, on_progress=None, client: ComfyClient | None = None) -> dict:
-    """Make or change one picture. Returns the chat result (answer, preview, stored message, note)."""
+             cancel_event=None, on_progress=None, client: ComfyClient | None = None,
+             place: str | None = None) -> dict:
+    """Make or change one picture. Returns the chat result (answer, preview, stored message, note).
+
+    `place` is 'pc' or 'servers' when the caller already decided (`media_places.resolve`); otherwise it is
+    decided here. Changing a picture always runs on this PC ('auto' sends it there)."""
     prompt = (prompt or '').strip()
     if not 1 <= len(prompt) <= 1500:
         raise ValueError('Image prompt must be 1–1500 characters')
@@ -102,10 +121,18 @@ def generate(settings, prompt: str, home: Path, *, size: str = DEFAULT_SIZE, see
         raise ValueError('Choose one of the image sizes: ' + ', '.join(SIZES))
     if mask is not None and source is None:
         raise ValueError('A mask needs the picture it belongs to. Attach the picture first, then the mask.')
-    media_places.require(settings, 'images', home)       # the only place today is this PC
+    chosen = media_places.require(settings, 'images', home)
     say = on_progress or (lambda message: None)
     seed = secrets.randbelow(2 ** 48) if seed is None else int(seed) % 2 ** 48
     mode = 'inpaint' if mask is not None else 'edit' if source is not None else 'text'
+    if place is None:
+        place = 'pc' if chosen == 'auto' and mode != 'text' else media_places.resolve(settings, 'images', home)
+    if place == 'servers':
+        if mode != 'text':
+            raise media_places.PlaceUnavailable(
+                'Images is set to STAR Brains (servers) in Settings → Where STAR generates, and the servers only make '
+                'new pictures. Changing an attached picture runs on this PC: choose This PC or Automatic.')
+        return _generate_on_server(settings, prompt, home, size, seed, say)
     own = client is None
     comfy = client or ComfyClient(port=settings.comfy_port)
     started = time.monotonic()
@@ -158,6 +185,26 @@ def generate(settings, prompt: str, home: Path, *, size: str = DEFAULT_SIZE, see
     note = {'answer': answer, 'mode': mode, 'prompt': prompt, 'seed': seed, 'width': width, 'height': height,
             'model': KLEIN_NAME, 'steps': 4, 'seconds': seconds, 'place': 'pc', 'references': labels,
             'source': Path(source).name if source else '', 'created': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    path = _save(home, picture, note)
+    return {'answer': answer, 'image': preview_image(path), 'message': PREFIX + path.name,
+            'path': path, 'note': note}
+
+
+def _generate_on_server(settings, prompt: str, home: Path, size: str, seed: int, say) -> dict:
+    from . import server_images
+    say({'text': 'Creating the image on the STAR Brains (servers)…', 'mode': 'text'})
+    started = time.monotonic()
+    picture, info = server_images.generate(settings, prompt, size=size, seed=seed)
+    seconds = round(time.monotonic() - started, 1)
+    width, height = info['width'], info['height']
+    wanted = SIZES[size]
+    answer = (f"Image generated on the STAR Brains (servers) in {seconds} s · {info['model']}, {width} x {height}, "
+              f'seed {seed}'
+              + (' · made square: the servers make square pictures only' if wanted[0] != wanted[1] else '')
+              + ' · original saved in STAR/generated-images')
+    note = {'answer': answer, 'mode': 'text', 'prompt': prompt, 'seed': seed, 'width': width, 'height': height,
+            'model': info['model'], 'steps': info.get('steps'), 'seconds': seconds, 'place': 'servers',
+            'references': [], 'source': '', 'created': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
     path = _save(home, picture, note)
     return {'answer': answer, 'image': preview_image(path), 'message': PREFIX + path.name,
             'path': path, 'note': note}

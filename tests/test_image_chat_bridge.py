@@ -293,3 +293,61 @@ def test_latest_generated_path_is_only_the_newest_answer_and_only_inside_the_pic
     (tmp_path / 'secret.png').write_bytes(b'x')
     saved_picture(tmp_path, name='ok2.png', answered_with=PREFIX + '../secret.png')
     assert latest_generated_path(tmp_path, project, chat_id) is None
+
+
+# --- issue 573: a picture request the chat detector missed must not end as "I can't create images" ---------
+
+COW = 'Generate a real cow with no weird legs'
+REFUSAL = "I can't create or show images directly."
+
+
+def test_a_text_models_image_refusal_hands_the_same_turn_to_the_image_engine(tmp_path, monkeypatch):
+    instance = host(tmp_path, monkeypatch, comfy_home=str(tmp_path))
+    fake_chat_turn(monkeypatch, Mock(return_value=REFUSAL))
+    monkeypatch.setattr(shell.image_gen, 'status', lambda settings: {'running': True})
+    generator = made('cow.png')
+    monkeypatch.setattr(shell, 'generate_chat_image', generator)
+    result = instance._run_chat('request', COW, [])
+    assert result == {'answer': 'Created', 'image': 'data:image/png;base64,AA=='}
+    assert generator.call_args.args[1] == COW
+    assert [(r['role'], r['body']) for r in rows(tmp_path)] == [('user', COW), ('assistant', PREFIX + 'cow.png')]
+
+
+@pytest.mark.parametrize('prompt,settings', [('Can you create images?', {}), (COW, {'media_chat_auto': False})])
+def test_the_refusal_stays_when_nothing_was_asked_to_be_drawn_or_the_owner_turned_picture_routing_off(
+        tmp_path, monkeypatch, prompt, settings):
+    instance = host(tmp_path, monkeypatch, **settings)
+    fake_chat_turn(monkeypatch, Mock(return_value=REFUSAL))
+    generator = made('cow.png')
+    monkeypatch.setattr(shell, 'generate_chat_image', generator)
+    assert instance._run_chat('request', prompt, [])['answer'] == REFUSAL
+    generator.assert_not_called()
+    assert [r['role'] for r in rows(tmp_path)] == ['user', 'assistant']
+
+
+def test_a_picture_made_through_the_bridge_shows_in_the_chat_state_right_after(tmp_path, monkeypatch):
+    """Issue 573 end to end: the real built-in engine path (fake ComfyUI), then the state the chat renders."""
+    import io
+    from PIL import Image
+
+    class FakeComfy:
+        def status(self):
+            return {'running': True}
+
+        def run(self, flow, **_):
+            out = io.BytesIO()
+            Image.new('RGB', (64, 64), (0, 200, 0)).save(out, 'PNG')
+            return [out.getvalue()]
+
+        def close(self):
+            pass
+    from star import image_gen
+    instance = host(tmp_path, monkeypatch, comfy_home=str(tmp_path), image_quality=False)
+    monkeypatch.setattr(shell.image_gen, 'status', lambda settings: {'running': True})
+    real = image_gen.generate
+    monkeypatch.setattr(image_gen, 'generate', lambda *a, **k: real(*a, client=FakeComfy(), **k))
+    instance._run_image('request', 'a retro game', display_prompt='Generate image of a retro game')
+    shown = [m for m in shell._chat_view(tmp_path, Settings.load(tmp_path / 'settings.json'))['messages']
+             if m['role'] == 'assistant']
+    assert shown and shown[-1]['image'].startswith('data:image/webp;base64,')
+    assert 'missing' not in shown[-1]['text'] and 'unavailable' not in shown[-1]['text']

@@ -1,0 +1,389 @@
+{
+ "summary": {
+  "full": {
+   "passed": 13,
+   "tasks": 20,
+   "tokens": 16316,
+   "seconds": 1882.0,
+   "median_seconds": 88.36
+  },
+  "diff": {
+   "passed": 13,
+   "tasks": 20,
+   "tokens": 9719,
+   "seconds": 1555.1,
+   "median_seconds": 70.1,
+   "applied": 18,
+   "fallbacks": 2
+  }
+ },
+ "rows": [
+  {
+   "id": "EDIT-01",
+   "lines": 65,
+   "full": {
+    "passed": true,
+    "tokens": 574,
+    "seconds": 48.34,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 277,
+    "seconds": 70.81,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-02",
+   "lines": 63,
+   "full": {
+    "passed": true,
+    "tokens": 599,
+    "seconds": 44.06,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 247,
+    "seconds": 55.65,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-03",
+   "lines": 70,
+   "full": {
+    "passed": true,
+    "tokens": 712,
+    "seconds": 88.75,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 354,
+    "seconds": 59.63,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-04",
+   "lines": 60,
+   "full": {
+    "passed": false,
+    "tokens": 952,
+    "seconds": 109.65,
+    "why": "unit_tests: 7/8 passed; failed: without destroy an extra release does not error"
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 276,
+    "seconds": 55.46,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-05",
+   "lines": 47,
+   "full": {
+    "passed": false,
+    "tokens": 641,
+    "seconds": 121.35,
+    "why": "unit_tests: 7/8 passed; failed: unknown abilities return false"
+   },
+   "diff": {
+    "passed": false,
+    "tokens": 573,
+    "seconds": 101.76,
+    "why": "unit_tests: 7/8 passed; failed: unknown abilities return false",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-06",
+   "lines": 47,
+   "full": {
+    "passed": true,
+    "tokens": 1151,
+    "seconds": 127.57,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 333,
+    "seconds": 56.01,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-07",
+   "lines": 66,
+   "full": {
+    "passed": true,
+    "tokens": 437,
+    "seconds": 55.06,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 516,
+    "seconds": 80.45,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-08",
+   "lines": 49,
+   "full": {
+    "passed": true,
+    "tokens": 712,
+    "seconds": 90.35,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 409,
+    "seconds": 100.18,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-09",
+   "lines": 58,
+   "full": {
+    "passed": false,
+    "tokens": 681,
+    "seconds": 87.97,
+    "why": "luau_check[1]: line 14: Unknown type 'Projectile'; line 20: Unknown type 'Projectile'; unit_tests: 5/6 passed; failed: step returns false after MAX_RANGE"
+   },
+   "diff": {
+    "passed": false,
+    "tokens": 270,
+    "seconds": 45.47,
+    "why": "unit_tests: 5/6 passed; failed: a dead ball does not move",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-10",
+   "lines": 56,
+   "full": {
+    "passed": true,
+    "tokens": 749,
+    "seconds": 94.25,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 374,
+    "seconds": 57.28,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-11",
+   "lines": 56,
+   "full": {
+    "passed": true,
+    "tokens": 692,
+    "seconds": 81.36,
+    "why": ""
+   },
+   "diff": {
+    "passed": false,
+    "tokens": 258,
+    "seconds": 47.18,
+    "why": "unit_tests: 6/7 passed; failed: blocked calls do not count toward the window",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-12",
+   "lines": 44,
+   "full": {
+    "passed": false,
+    "tokens": 1405,
+    "seconds": 158.0,
+    "why": "unit_tests: 7/9 passed; failed: toHex rounds; toHex pads and clamps"
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 467,
+    "seconds": 74.77,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-13",
+   "lines": 53,
+   "full": {
+    "passed": true,
+    "tokens": 1339,
+    "seconds": 161.41,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 1637,
+    "seconds": 196.32,
+    "why": "",
+    "outcome": "lint: new loop-without-yield",
+    "fallback": true
+   }
+  },
+  {
+   "id": "EDIT-14",
+   "lines": 60,
+   "full": {
+    "passed": true,
+    "tokens": 601,
+    "seconds": 45.31,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 976,
+    "seconds": 134.8,
+    "why": "",
+    "outcome": "Luau check: 4 error(s) after the edit, 0 before",
+    "fallback": true
+   }
+  },
+  {
+   "id": "EDIT-15",
+   "lines": 57,
+   "full": {
+    "passed": false,
+    "tokens": 757,
+    "seconds": 92.76,
+    "why": "unit_tests: 6/8 passed; test aborted: ./t.luau:240: attempt to call missing method 'rewardsGiven' of table | 6 of 8 assertions ran"
+   },
+   "diff": {
+    "passed": false,
+    "tokens": 466,
+    "seconds": 69.39,
+    "why": "unit_tests: 0/8 passed; test aborted: answer:39: attempt to index nil with table | 0 of 8 assertions ran",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-16",
+   "lines": 46,
+   "full": {
+    "passed": false,
+    "tokens": 1747,
+    "seconds": 199.5,
+    "why": "luau_check[1]: line 7: Expected '}' (to close '{' at column 28), got ','; line 7: Expected '}' (to close '{' at column 57), got ','; unit_tests: the answer did "
+   },
+   "diff": {
+    "passed": false,
+    "tokens": 211,
+    "seconds": 43.97,
+    "why": "unit_tests: 0/7 passed; test aborted: ./t.luau:227: attempt to index nil with 'name' | 0 of 7 assertions ran",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-17",
+   "lines": 50,
+   "full": {
+    "passed": true,
+    "tokens": 615,
+    "seconds": 64.34,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 682,
+    "seconds": 87.16,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-18",
+   "lines": 58,
+   "full": {
+    "passed": true,
+    "tokens": 677,
+    "seconds": 77.87,
+    "why": ""
+   },
+   "diff": {
+    "passed": false,
+    "tokens": 810,
+    "seconds": 92.86,
+    "why": "unit_tests: 6/8 passed; 8 of 7 assertions ran | failed: once runs only for the next emit; once leaves no listener behind",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-19",
+   "lines": 66,
+   "full": {
+    "passed": true,
+    "tokens": 552,
+    "seconds": 55.85,
+    "why": ""
+   },
+   "diff": {
+    "passed": true,
+    "tokens": 261,
+    "seconds": 49.59,
+    "why": "",
+    "outcome": "applied",
+    "fallback": false
+   }
+  },
+  {
+   "id": "EDIT-20",
+   "lines": 63,
+   "full": {
+    "passed": false,
+    "tokens": 723,
+    "seconds": 78.25,
+    "why": "unit_tests: 5/7 passed; failed: a teammate cannot take their own flag from home; an enemy takes the flag"
+   },
+   "diff": {
+    "passed": false,
+    "tokens": 322,
+    "seconds": 76.34,
+    "why": "unit_tests: 5/7 passed; failed: a teammate cannot take their own flag from home; an enemy takes the flag",
+    "outcome": "applied",
+    "fallback": false
+   }
+  }
+ ],
+ "run": {
+  "date": "2026-10-20",
+  "suite": "evals/roblox/edit-tasks-v1.json",
+  "server": "temp llama-server on brain 1 with the live star-fast binary and flags (DSpark n-max 2 + ngram-mod, -np 3, ctx 98304, batch/ubatch 128), greedy, no prompt cache, one request at a time, inside the quiet lock",
+  "arms": "full = the prompt as the owner wrote it; diff = star/edit_format.py (SEARCH/REPLACE instruction, apply, knowledge-service Luau check + luau_lint, fallback to the full prompt)",
+  "notes": "EDIT-16's diff arm was re-run after find_edit missed its wording; EDIT-03's check 'last onSecond value is 0' (not asked by the request) was relaxed to 'never negative' before final scoring, same for both arms"
+ }
+}

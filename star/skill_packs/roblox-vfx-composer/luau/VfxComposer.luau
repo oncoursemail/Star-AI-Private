@@ -52,6 +52,10 @@ local FX: { [string]: (Prim.Ctx, Prim.Params?) -> () } = {
 	flash = Prim.flash,
 	tint = Prim.tint,
 	shake = Prim.shake,
+	particles = Prim.particles,
+	beam = Prim.beam,
+	projectile = Prim.projectile,
+	sweep = Prim.sweep,
 }
 Composer.FX = FX
 

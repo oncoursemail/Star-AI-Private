@@ -10,6 +10,7 @@ import re
 import shutil
 import struct
 import subprocess
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -496,15 +497,44 @@ SCRIPT = Path(__file__).resolve().parents[1] / "server" / "brain2_blender" / "bl
 BASH = shutil.which("bash")
 
 
+_BASH_RUNTIME_TROUBLE = re.compile(rb"fork|Win32 error|cygheap|signal pipe|couldn't|Resource temporarily|Cannot allocate", re.I)
+
+
+def run_bash(argv, **kwargs):
+    """subprocess.run for Git Bash. Its fork emulation can fail to start a child while the PC is saturated (the full
+    suite beside other work): a crash code or a runtime message, never the script's own exit codes 0-7. Only that is
+    retried, a few times; every real answer of the script is returned at once."""
+    for attempt in range(4):
+        result = subprocess.run(argv, capture_output=True, timeout=60, **kwargs)
+        code = result.returncode
+        trouble = (code < 0 or code >= 0xC0000000 or code >= 126 and bool(_BASH_RUNTIME_TROUBLE.search(result.stderr)))
+        if not trouble or attempt == 3:
+            return result
+        time.sleep(1 + attempt)
+
+
 def sh(tmp_path, *args):
     env = {**os.environ, "BLENDER_LAB_HOME": str(tmp_path), "HOME": str(tmp_path),
            "BLENDER_PATH": str(tmp_path / "missing-blender")}
-    return subprocess.run([BASH, str(SCRIPT), *args], capture_output=True, env=env, timeout=30)
+    return run_bash([BASH, str(SCRIPT), *args], env=env)
+
+
+def test_the_bash_helper_retries_only_runtime_trouble_and_never_a_real_script_answer(monkeypatch):
+    answers = [SimpleNamespace(returncode=0xC0000142, stderr=b"", stdout=b""),
+               SimpleNamespace(returncode=128, stderr=b"bash: fork: retry: Resource temporarily unavailable", stdout=b""),
+               SimpleNamespace(returncode=7, stderr=b"", stdout=b"")]
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append(1) or answers.pop(0))
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    assert run_bash(["bash"]).returncode == 7 and len(calls) == 3        # two transient failures, then the answer
+    calls.clear()
+    answers[:] = [SimpleNamespace(returncode=3, stderr=b"fork is in the message of a real refusal", stdout=b"")]
+    assert run_bash(["bash"]).returncode == 3 and len(calls) == 1        # the script's own exit codes are final
 
 
 @pytest.mark.skipif(BASH is None, reason="needs bash")
 def test_launcher_script_syntax_and_no_private_names():
-    assert subprocess.run([BASH, "-n", str(SCRIPT)], capture_output=True).returncode == 0
+    assert run_bash([BASH, "-n", str(SCRIPT)]).returncode == 0
     body = SCRIPT.read_text(encoding="utf-8")
     assert "0.0.0.0" not in body.replace("never 0.0.0.0", "") and "127.0.0.1" in body
     assert "/home/" not in body and "@" not in body.replace("${", "")

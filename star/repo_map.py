@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 import json
+import os
 import re
 
+from . import code_navigation
 from .code_navigation import (_IDENTIFIER, SOURCE_TYPES, _files, _other_symbols,
                               _py_symbols, _rank)
 from .redact import redact_text
@@ -37,23 +39,36 @@ def _read_map_rows(workspace):
     scan = {"limited": False}
     rows = []
     total_bytes = 0
-    for path, relative in _files(workspace, SOURCE_TYPES, scan):
+    # Share the existing bounded source/AST LRU rather than creating a second
+    # map cache. Every call still walks, resolves and stats current real files.
+    cache_on = (os.environ.get('STAR_CODE_MAP_CACHE') == 'on'
+                and os.environ.get('STAR_CODE_SEARCH_CACHE') == 'on')
+    admitted_raw_bytes = 0
+    for path, relative, info in _files(workspace, SOURCE_TYPES, scan, with_stat=True):  # pyright: ignore[reportAssignmentType]
         if len(rows) >= MAX_MAP_FILES:
             scan["limited"] = True
             break
         try:
-            size = path.stat().st_size
+            size = info.st_size
             if total_bytes + size > MAX_MAP_SOURCE_BYTES:
                 scan["limited"] = True
                 break
-            content = path.read_text(encoding="utf-8")
+            if size <= code_navigation._CACHE_FILE_LIMIT:
+                admitted_raw_bytes += size
+            cache_file = (cache_on and len(rows) < code_navigation._CACHE_ENTRIES_LIMIT
+                          and admitted_raw_bytes <= code_navigation._CACHE_BYTES_LIMIT // 6)
+            content = (code_navigation._cached_source(path, info, enabled=cache_file)[0]
+                       if cache_on else path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError):
             continue
         if "\x00" in content:
             continue
         total_bytes += size
-        defs = (_py_symbols(content) if path.suffix.lower() == ".py"
-                else _other_symbols(content, path.suffix.lower()))[:MAX_MAP_DEFINITIONS]
+        if path.suffix.lower() == ".py":
+            defs = (code_navigation._cached_py_symbols(path, info, content, enabled=cache_file)
+                    if cache_on else _py_symbols(content))[:MAX_MAP_DEFINITIONS]
+        else:
+            defs = _other_symbols(content, path.suffix.lower())[:MAX_MAP_DEFINITIONS]
         words = set()
         for match in _IDENTIFIER.finditer(content):
             words.add(match.group(0))

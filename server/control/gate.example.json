@@ -1,0 +1,24 @@
+{
+  "machine": "brain2",
+  "mounts": ["/"],
+  "star": {"container": "starai", "gate": "/opt/star/discord-gate/star_gate.py", "journal_unit": "star-ns-brain"},
+  "runners": [
+    {"name": "github", "kind": "github", "container": "ci-runner", "unit": "actions.runner.<owner>-<repo>.<runner>.service"},
+    {"name": "forge", "kind": "forge", "container": "ci-runner", "unit": "forgejo-runner.service"}
+  ],
+  "backups": [
+    {"set": "starai", "where": "brain 1 to brain 2", "schedule": "hourly",
+     "status": "~/.local/state/star-recovery/starai-status.json", "config": "~/.config/star-recovery/starai.json",
+     "unit": "star-recovery-backup.service"},
+    {"set": "kb", "where": "brain 1 to brain 2", "schedule": "daily",
+     "status": "~/.local/state/star-recovery/kb/status.json", "config": "~/.config/star-recovery/starai-kb.json",
+     "unit": "star-recovery-kb.service"},
+    {"set": "star-main", "where": "PC to brain 2", "schedule": "hourly",
+     "status": "~/.local/state/star-recovery/main/status.json", "config": "~/.config/star-recovery/star-main.json"}
+  ],
+  "timers": ["star-recovery-backup.timer", "star-recovery-kb.timer", "star-recovery-verify.timer",
+             "star-main-recovery-verify.timer", "star-recovery-retention.timer"],
+  "actions": ["restart:star-night-school", "restart:star-ns-brain", "restart:star-discord", "ns-pause", "ns-resume",
+              "runner-start:github", "runner-stop:github", "runner-start:forge", "runner-stop:forge",
+              "backup-now:starai", "backup-now:kb"]
+}

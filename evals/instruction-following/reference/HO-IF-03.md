@@ -1,0 +1,4 @@
+- Route 42 starts at the central station at dawn
+- It passes the market, the library and the old bridge
+- Buses arrive roughly every ten minutes during the day
+- The last ride leaves the harbour just after midnight

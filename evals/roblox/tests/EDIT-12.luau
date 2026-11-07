@@ -1,0 +1,13 @@
+local ret, env = load_answer()
+local C = ret
+local black, white = C.new(0, 0, 0), C.new(1, 1, 1)
+check("mix at 0 gives a", C.equal(C.mix(white, black, 0), white))
+check("mix at 1 gives b", C.equal(C.mix(white, black, 1), black))
+check("mix halfway", C.equal(C.mix(C.new(0.2, 0.4, 0.6), C.new(0.4, 0.8, 1), 0.5), C.new(0.3, 0.6, 0.8)))
+check("t is clamped", C.equal(C.mix(black, white, 2), white) and C.equal(C.mix(black, white, -1), black))
+check("toHex rounds", C.toHex(C.new(1, 0.5, 0)) == "#ff8000")
+check("toHex pads and clamps", C.toHex(C.new(0.01, 1.5, -0.2)) == "#03ff00")
+check("fromHex exists", type(C.fromHex) == "function")
+local c = C.fromHex and C.fromHex("#ff8800")
+check("fromHex parses", c ~= nil and C.equal(c, C.new(1, 136 / 255, 0)))
+check("hex round trip", C.fromHex ~= nil and C.toHex(C.fromHex("#1a2b3c")) == "#1a2b3c")

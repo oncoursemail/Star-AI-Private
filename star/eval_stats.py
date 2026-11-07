@@ -11,8 +11,10 @@ comparison run in ONE session:
   without any normal approximation;
 * a cluster bootstrap over tasks gives a confidence interval for the mean per-task change in pass rate;
 * the minimum detectable effect (MDE) for the current task count and k is printed next to every verdict;
-* the verdict is PROMOTE, REJECT or INCONCLUSIVE. **INCONCLUSIVE never promotes.** INCOMPLETE (a task without a
-  complete pair) never promotes either.
+* the verdict is PROMOTE, REJECT, UNDERPOWERED or INCONCLUSIVE. A non-significant result is UNDERPOWERED ("not
+  enough power") when the design could not have detected the smallest effect of interest (default 10 % of the
+  tasks) with 80 % power; it is INCONCLUSIVE only when the design was powered for that effect, which then means
+  "no effect of that size". **Neither promotes.** INCOMPLETE (a task without a complete pair) never promotes either.
 
 "Regression" means a task the baseline mostly passes and the candidate fails in at least 2 samples and at least 2/3 of
 its samples ("fails 2 of 3"); one failed sample is reported as unconfirmed, never as a regression. A confirmed
@@ -27,9 +29,14 @@ from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 import math
 import random
+from statistics import NormalDist
 
 PROMOTE, REJECT, INCONCLUSIVE, INCOMPLETE = "PROMOTE", "REJECT", "INCONCLUSIVE", "INCOMPLETE"
-DECISIONS = (PROMOTE, REJECT, INCONCLUSIVE, INCOMPLETE)
+UNDERPOWERED = "UNDERPOWERED"
+DECISIONS = (PROMOTE, REJECT, INCONCLUSIVE, INCOMPLETE, UNDERPOWERED)
+# The smallest improvement worth deciding on, as a share of the tasks. Below the design's MDE for it, a non-significant
+# result says "not enough power" instead of "inconclusive".
+DEFAULT_SMALLEST_EFFECT = 0.10
 # "The same prompt flips about 1 time in 6": the share of (baseline, candidate) sample pairs that disagree when the
 # change does nothing (eval-gains reruns, night school's unchanged slice). Used only for the MDE estimate.
 DEFAULT_NOISE_DISCORDANCE = 1 / 6
@@ -198,6 +205,24 @@ def _mde(n_tasks: int, k: int, noise: float, alpha: float, target: float) -> MDE
     return MDE(n_tasks, k, alpha, target, noise, lo, power(n_tasks, k, lo, noise_discordance=noise, alpha=alpha), net)
 
 
+def tasks_needed(smallest_effect: float = DEFAULT_SMALLEST_EFFECT, k: int = 1, *,
+                 noise_discordance: float = DEFAULT_NOISE_DISCORDANCE, alpha: float = DEFAULT_ALPHA,
+                 target_power: float = DEFAULT_POWER) -> int | None:
+    """About how many tasks the paired sign test needs to detect `smallest_effect` (share of tasks truly going
+    fail -> pass) with `target_power` at k samples. Normal approximation of the same model as `power` (advice for
+    sizing a set; the verdict itself always uses the exact test). None for a non-positive effect."""
+    if smallest_effect <= 0 or k < 1:
+        return None
+    f = flip_probability(noise_discordance)
+    e = min(1.0, smallest_effect)
+    p_win = noise_discordance / 2 * (1 - e) + e * (1 - f) ** 2
+    p_loss = noise_discordance / 2 * (1 - e) + e * f * f
+    mu, q = p_win - p_loss, p_win + p_loss
+    z_a, z_b = NormalDist().inv_cdf(1 - alpha), NormalDist().inv_cdf(target_power)
+    pairs = ((z_a * math.sqrt(q) + z_b * math.sqrt(max(0.0, q - mu * mu))) / mu) ** 2
+    return max(1, math.ceil(pairs / k))
+
+
 def minimum_detectable_effect(n_tasks: int, k: int = 1, *, noise_discordance: float = DEFAULT_NOISE_DISCORDANCE,
                               alpha: float = DEFAULT_ALPHA, target_power: float = DEFAULT_POWER) -> MDE:
     """The smallest true improvement (tasks going fail -> pass) the paired test detects with `target_power`."""
@@ -244,6 +269,9 @@ class PairedReport:
     ci_high: float = 0.0
     alpha: float = DEFAULT_ALPHA
     mde: dict = field(default_factory=dict)
+    smallest_effect: float = DEFAULT_SMALLEST_EFFECT
+    power_at_smallest: float = 0.0   # power of this design for the smallest effect of interest
+    observed_discordance: float = 0.0
     regressions: list[str] = field(default_factory=list)
     unconfirmed_regressions: list[str] = field(default_factory=list)
     improvements: list[str] = field(default_factory=list)
@@ -266,7 +294,9 @@ class PairedReport:
         return {"decision": self.decision, "method": self.method, "tasks": self.n_tasks, "k": self.k,
                 "wins": self.wins, "losses": self.losses, "ties": self.ties, "p_better": round(self.p_better, 4),
                 "p_worse": round(self.p_worse, 4), "ci": [round(self.ci_low, 3), round(self.ci_high, 3)],
-                "mde_tasks": self.mde.get("effect_tasks"), "regressions": list(self.regressions),
+                "mde_tasks": self.mde.get("effect_tasks"), "smallest_effect": self.smallest_effect,
+                "power_at_smallest": round(self.power_at_smallest, 3),
+                "observed_discordance": round(self.observed_discordance, 4), "regressions": list(self.regressions),
                 "canary_vetoes": list(self.canary_vetoes)}
 
     def text(self) -> str:
@@ -278,6 +308,8 @@ class PairedReport:
                  f"  mean change in pass rate per task: {self.ci_low:+.3f} .. {self.ci_high:+.3f} (bootstrap interval)"]
         if self.mde:
             lines.append("  " + MDE(**self.mde).text())
+            lines.append(f"  power for the smallest effect of interest (+{self.smallest_effect:.0%} of tasks): "
+                         f"{self.power_at_smallest:.0%}; observed pair discordance {self.observed_discordance:.1%}")
         for label, ids in (("regressions (fail 2 of 3)", self.regressions),
                            ("failed once, not confirmed", self.unconfirmed_regressions),
                            ("improvements", self.improvements), ("canary veto", self.canary_vetoes),
@@ -318,7 +350,8 @@ def is_regression(baseline: list[bool], candidate: list[bool]) -> str:
 
 def paired_decision(baseline: dict, candidate: dict, *, alpha: float = DEFAULT_ALPHA, method: str = "sign",
                     canary=(), seed: int = 0, n_boot: int = 2000,
-                    noise_discordance: float = DEFAULT_NOISE_DISCORDANCE, target_power: float = DEFAULT_POWER) -> PairedReport:
+                    noise_discordance: float = DEFAULT_NOISE_DISCORDANCE, target_power: float = DEFAULT_POWER,
+                    smallest_effect: float = DEFAULT_SMALLEST_EFFECT) -> PairedReport:
     """Paired verdict from two arms run in the same session.
 
     `baseline` and `candidate` map task id -> list of sample outcomes (True pass, False fail, None error), in the
@@ -383,9 +416,15 @@ def paired_decision(baseline: dict, candidate: dict, *, alpha: float = DEFAULT_A
     test = sign_test(report.wins, report.losses)
     report.p_better, report.p_worse = test["p_better"], test["p_worse"]
     report.ci_low, report.ci_high = bootstrap_ci(diffs, seed=seed, n_boot=n_boot, level=1 - 2 * alpha)
+    report.smallest_effect = smallest_effect
+    if report.samples:
+        report.observed_discordance = (report.wins + report.losses) / report.samples
     if report.n_tasks:
         report.mde = asdict(minimum_detectable_effect(report.n_tasks, report.k, noise_discordance=noise_discordance,
                                                       alpha=alpha, target_power=target_power))
+        target = min(report.n_tasks, max(1, math.ceil(smallest_effect * report.n_tasks)))
+        report.power_at_smallest = power(report.n_tasks, report.k, target, noise_discordance=noise_discordance,
+                                         alpha=alpha)
     if method == "sign":
         better, worse = report.p_better <= alpha, report.p_worse <= alpha
     else:
@@ -405,14 +444,37 @@ def paired_decision(baseline: dict, candidate: dict, *, alpha: float = DEFAULT_A
             report.notes.append("a canary task failed once: rerun it before promoting (" + ", ".join(unconfirmed_canary) + ")")
         else:
             report.decision = PROMOTE
+    elif report.power_at_smallest < target_power:
+        report.decision = UNDERPOWERED
+        need = tasks_needed(smallest_effect, report.k, noise_discordance=noise_discordance, alpha=alpha,
+                            target_power=target_power)
+        need2 = tasks_needed(smallest_effect, report.k + 1, noise_discordance=noise_discordance, alpha=alpha,
+                             target_power=target_power)
+        report.notes.append(
+            f"not enough power: {report.n_tasks} tasks x k={report.k} detect a +{smallest_effect:.0%} effect only "
+            f"{report.power_at_smallest:.0%} of the time (need {target_power:.0%}); about "
+            + (f"{need} tasks at k={report.k}" if need else "more than 2000 tasks")
+            + (f" or {need2} at k={report.k + 1}" if need2 else "") + " would be enough. No decision either way.")
     else:
         report.decision = INCONCLUSIVE
-        if report.wins + report.losses < min_resolvable_pairs(alpha):
-            report.notes.append(f"only {report.wins + report.losses} discordant pairs: at least "
-                                f"{min_resolvable_pairs(alpha)} are needed before any result can be significant")
-        else:
-            report.notes.append("the difference is below what this many tasks can resolve (see the MDE): no decision")
+        report.notes.append(f"powered ({report.power_at_smallest:.0%} for +{smallest_effect:.0%}) and not significant: "
+                            f"an effect of +{smallest_effect:.0%} of tasks or more is unlikely; smaller effects are not "
+                            "ruled out. Does not promote.")
     return report
+
+
+def sensitive_tasks(screening: dict) -> list[str]:
+    """The sensitive task pool: tasks whose outcome varied across screening samples (task id -> outcomes from runs
+    that are NOT part of the decision). A task that always passed or always failed carries no paired signal for small
+    changes (32 of 57 dev+creation tasks never changed result: docs/research/smarter-faster-20261025.md 1.2), so a
+    pool of varying tasks needs about 2.3x fewer runs for the same MDE. Select on separate runs only: selecting on the
+    runs being compared biases the verdict. Tasks with fewer than 2 screening samples are kept (unknown = sensitive)."""
+    pool = []
+    for tid, samples in sorted(screening.items()):
+        seen = _clean(samples)
+        if len(seen) < 2 or 0 < sum(seen) < len(seen):
+            pool.append(tid)
+    return pool
 
 
 def simulate(n_tasks: int, k: int, effect_tasks: int, *, runs: int = 1000, seed: int = 0, base_pass_share: float = 0.5,

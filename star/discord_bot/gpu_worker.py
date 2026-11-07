@@ -11,8 +11,10 @@ for signed jobs, makes each picture with the same code as STAR Desktop's Create 
 server or the network drops it reconnects by itself (5 s, doubling to at most 60 s).
 
 Settings: ~/.star/gpu-worker.env (STAR_GPU_WORKER_SSH=user@host of the server's LXD host; optional
-STAR_GPU_WORKER_CONTAINER, default starai; STAR_GPU_WORKER_SOCKET), key ~/.star/gpu-worker.key (the same key as
-the server's secrets/gpu-worker.key), log ~/.star/gpu-worker.log (no prompts, pictures or keys).
+STAR_GPU_WORKER_CONTAINER, default starai; STAR_GPU_WORKER_SOCKET; STAR_PC_FEED_ROOT, the workspace folder whose
+STATE.md and COLLAB/BOARD.md feed Star's live status, default the folder above worktrees/), key ~/.star/gpu-worker.key
+(the same key as the server's secrets/gpu-worker.key), log ~/.star/gpu-worker.log (no prompts, pictures or keys).
+Every minute it also sends the PC feed (pc_feed.py) so Star on the server knows the board, PRs and the owner's day.
 """
 from __future__ import annotations
 
@@ -42,6 +44,7 @@ LOG_FILE = "gpu-worker.log"
 LOCK_FILE = "gpu-worker.lock"
 DEFAULT_SOCKET = "/opt/star/discord/state/gpu-worker.sock"
 MAX_DELAY = 60
+FEED_SECONDS = 60
 _TARGET = re.compile(r"[A-Za-z0-9._-]{1,64}@[A-Za-z0-9.:-]{1,253}")
 _CONTAINER = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 _SOCKET = re.compile(r"/[A-Za-z0-9/._-]{1,100}")
@@ -69,7 +72,8 @@ def load_settings(folder: Path | None = None) -> dict[str, str]:
         raise ValueError(f"Set STAR_GPU_WORKER_SSH=user@host in {path}")
     if not _CONTAINER.fullmatch(container) or not _SOCKET.fullmatch(sock):
         raise ValueError(f"STAR_GPU_WORKER_CONTAINER or STAR_GPU_WORKER_SOCKET in {path} is invalid")
-    return {"target": target, "container": container, "socket": sock}
+    return {"target": target, "container": container, "socket": sock,
+            "feed_root": values.get("STAR_PC_FEED_ROOT", "")}
 
 
 def ssh_command(settings: dict[str, str], ssh: str = "ssh") -> list[str]:
@@ -82,9 +86,10 @@ def ssh_command(settings: dict[str, str], ssh: str = "ssh") -> list[str]:
 class Worker:
     """Takes one signed job at a time and answers it with draw.Drawer (ComfyUI on this PC)."""
 
-    def __init__(self, drawer: Drawer, key: bytes) -> None:
+    def __init__(self, drawer: Drawer, key: bytes, feed=None) -> None:
         self.drawer = drawer
         self.key = key
+        self.feed = feed            # pc_feed.PcFeed or None
         self.current: asyncio.Task | None = None
         self.seen: collections.deque[str] = collections.deque(maxlen=500)
 
@@ -102,8 +107,17 @@ class Worker:
                 await asyncio.sleep(ALIVE_SECONDS)
                 await send({"type": "alive"})
 
+        async def feed() -> None:
+            while self.feed is not None:
+                try:
+                    await send({"type": "pcfeed", "feed": await asyncio.to_thread(self.feed.build)})
+                except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                    _LOG.info("PC feed not sent (%s)", type(exc).__name__)
+                await asyncio.sleep(FEED_SECONDS)
+
         await send({"type": "hello", "version": 1})
         beat = asyncio.ensure_future(alive())
+        feeder = asyncio.ensure_future(feed())
         _LOG.info("connected to the bot")
         try:
             while True:
@@ -131,6 +145,7 @@ class Worker:
                 self.current = asyncio.ensure_future(self.run_job(job, send))
         finally:
             beat.cancel()
+            feeder.cancel()
             _LOG.info("connection to the bot ended")
 
     async def run_job(self, job: dict, send) -> None:
@@ -226,8 +241,11 @@ def run() -> int:
         lock.release()
         return 2
     _LOG.info("STAR GPU worker started (container %s)", settings["container"])
+    from .pc_feed import PcFeed, default_root
+    checkout = Path(__file__).resolve().parents[2]
+    feed = PcFeed(Path(settings["feed_root"]) if settings["feed_root"] else default_root(checkout), checkout)
     try:
-        asyncio.run(run_forever(Worker(Drawer(DrawSettings()), key), settings))
+        asyncio.run(run_forever(Worker(Drawer(DrawSettings()), key, feed), settings))
     except KeyboardInterrupt:
         pass
     finally:

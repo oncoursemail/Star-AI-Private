@@ -481,7 +481,7 @@ def test_a_failed_turn_still_keeps_what_the_owner_stated_and_a_retry_is_noted(de
 
 def test_documentation_misses_from_a_turn_never_reach_a_later_prompt(desk, monkeypatch):
     class Empty:
-        def search(self, query, *, top=4, mode="vector"):
+        def search(self, query, *, top=4, mode="vector", scope=None):
             return []
 
         def api_lookup(self, symbols):

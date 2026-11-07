@@ -1,0 +1,26 @@
+[Unit]
+Description=STAR research watch list: poll release notes / changelogs into the research store, re-check stored facts
+Documentation=file:/opt/star/research/current/star/research_store.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=star
+Group=star
+WorkingDirectory=/opt/star/research/current
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/opt/star/research
+# One page at a time with a pause, robots.txt obeyed, 401/403/robots refusals left alone for 30 days (never bypassed).
+ExecStart=/opt/star/research/venv/bin/python -m star.research_store poll --db /opt/star/research/research-store.sqlite3
+ExecStart=/opt/star/research/venv/bin/python -m star.research_store recheck --db /opt/star/research/research-store.sqlite3
+TimeoutStartSec=30min
+Nice=15
+CPUWeight=20
+IOWeight=20
+MemoryMax=512M
+TasksMax=64
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/star/research

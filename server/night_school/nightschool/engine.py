@@ -273,10 +273,13 @@ class Engine:
             self.store.save()
             return "error"
 
-        # (a) a waiting candidate for the same kind of failure, most successful first
+        # (a) a waiting candidate for the same kind of failure, best fix rate first. The rate is smoothed
+        # ((fixed + 1) / (tried + 2)), so a new candidate is tried on other tasks until its rate falls below the
+        # leader's; ranking by the raw fix count let one leader take every retry (10-25: 64 of 92 candidates were
+        # never tried on a second task, so they could never reach the gate).
         waiting = [l for l in self.store.lessons("candidate")
                    if l["cause"] == cause and task["id"] not in l["tried"]]
-        waiting.sort(key=lambda l: (-len(l["fixed"]), l["id"]))
+        waiting.sort(key=lambda l: (-(len(l["fixed"]) + 1) / (len(l["tried"]) + 2), l["id"]))
         for lesson in waiting[:self.settings.retry_candidates]:
             again = self._attempt(task, active + [lesson], "candidate " + lesson["id"])
             if again.error:
@@ -430,10 +433,15 @@ class Engine:
             if fixed < self.settings.promote_fixes + lesson.get("gated_at_fixes", 0):
                 continue
             active = self.active()
+            # The run's name is fixed when the gate starts and kept until it decides: a paused gate (validation
+            # budget, back-off) resumes even when the candidate fixes more tasks meanwhile. Naming it by the live fix
+            # count restarted it from zero on every new fix (10-25: 8 unfinished restarts for L226).
+            tag = lesson.setdefault("gate_tag", f"promote {lesson['id']} at {fixed}")
             run = self.measure_paired(active, active + [lesson], "gate " + lesson["id"], samples=self.settings.samples,
-                                      tag=f"promote {lesson['id']} at {fixed}")
+                                      tag=tag)
             if not run:
                 return
+            lesson.pop("gate_tag", None)
             proof = {"fixed_tasks": sorted(set(lesson["fixed"])),
                      "validation_before": f"{run['base_passed']}/{run['total']}",
                      "validation_with": f"{run['trial_passed']}/{run['total']}",

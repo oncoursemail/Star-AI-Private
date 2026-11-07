@@ -1,0 +1,1062 @@
+{
+  "schema_version": 1,
+  "research_date": "2026-10-31",
+  "timezone": "America/Chicago",
+  "scope": "Litha computer control research, implementation review and evaluation design",
+  "source_entries": 71,
+  "unique_urls": 67,
+  "note": "Some sources are intentionally referenced by more than one chapter. Entries are not a count of independent experiments.",
+  "sources": [
+    {
+      "id": "A01",
+      "publisher": "OpenAI",
+      "title": "Computer Use product documentation",
+      "url": "https://learn.chatgpt.com/docs/computer-use",
+      "web_ref": "turn30view0",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Local product supports graphical interaction on macOS and Windows where available.",
+        "Windows uses the active desktop foreground.",
+        "Prefer dedicated integrations for repeatable operations."
+      ],
+      "limitations": "Product documentation; does not establish this account entitlement or speed on Litha tasks.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A02",
+      "publisher": "Anthropic",
+      "title": "Let Claude use your computer in Cowork",
+      "url": "https://support.claude.com/en/articles/14128542-let-claude-use-your-computer-in-cowork",
+      "web_ref": "turn42view0",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Product describes connectors, browser, then screen interaction.",
+        "Desktop computer use documented on macOS and Windows.",
+        "Direct screen interaction acts on the applications without a desktop sandbox boundary."
+      ],
+      "limitations": "Product beta and account availability change; no measured Litha comparison.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A03",
+      "publisher": "Anthropic",
+      "title": "Use Claude Cowork on web, desktop, and mobile",
+      "url": "https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile",
+      "web_ref": "turn42view1",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Cloud task execution differs from local access.",
+        "Local files, browser, and computer use require the desktop app to remain available."
+      ],
+      "limitations": "Plan lists varied between indexed snapshots; report avoids exact entitlement promises.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A04",
+      "publisher": "OpenAI",
+      "title": "Responses computer use",
+      "url": "https://developers.openai.com/api/docs/guides/tools-computer-use",
+      "web_ref": "turn27view3",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Code execution and structured computer action paths are documented.",
+        "API conversation and execution environment state are separate.",
+        "A generated call marked completed still requires application execution."
+      ],
+      "limitations": "Examples were inspected, not live-run; model access and supported tools must be checked per project.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A05",
+      "publisher": "OpenAI",
+      "title": "Agents API hosted computer use",
+      "url": "https://developers.openai.com/api/docs/guides/agents-api/tools/computer-use",
+      "web_ref": "turn27view0",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Hosted browser has a session/event lifecycle.",
+        "Recover the existing session after disconnection before retrying a task.",
+        "Unknown acknowledgment requires reconciliation of current session state."
+      ],
+      "limitations": "Hosted browser is distinct from controlling the owner Windows desktop.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A06",
+      "publisher": "Anthropic",
+      "title": "Computer use tool",
+      "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool",
+      "web_ref": "turn27view4",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Current entry computer_toolset_20260801.",
+        "Ordered member calls carry toolset_name computer.",
+        "Stop at first failure and return results for every member.",
+        "Legacy display dimension arguments are rejected by the new entry."
+      ],
+      "limitations": "Version-specific contract; must not apply older examples mechanically.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A07",
+      "publisher": "Anthropic",
+      "title": "Browser use tool",
+      "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/browser-use-tool",
+      "web_ref": "turn30view2",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Page-aware references and tab state complement screenshots.",
+        "An observation may be attached to a permitted action result.",
+        "Tab-management result content has a distinct browser_state shape."
+      ],
+      "limitations": "Viewport coordinates and browser element references differ from desktop display pixels.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A08",
+      "publisher": "OpenAI",
+      "title": "Latency optimization",
+      "url": "https://developers.openai.com/api/docs/guides/latency-optimization",
+      "web_ref": "turn34view0",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Reduce unnecessary model requests.",
+        "Parallelize independent work.",
+        "Use ordinary code when model inference is unnecessary.",
+        "Evaluate quality and latency tradeoffs on actual workloads."
+      ],
+      "limitations": "Illustrative percentages are not Litha benchmarks or guaranteed improvements.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A09",
+      "publisher": "OpenAI",
+      "title": "Browser and desktop drivers",
+      "url": "https://developers.openai.com/api/docs/guides/tools-computer-use-sdk-drivers",
+      "web_ref": "turn27view2",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Computer actions run in order and the helper does not retry driver actions.",
+        "Cropped screenshot coordinates require scale and origin mapping.",
+        "Browser CSS pixels differ from display pixels.",
+        "Uncertain effects need authoritative-state inspection before retry."
+      ],
+      "limitations": "SDK example checks do not prove native Windows driver behavior.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A10",
+      "publisher": "Anthropic",
+      "title": "Browser and computer use with SDK toolsets",
+      "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/browser-use-sdk",
+      "web_ref": "turn27view5",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Drivers own image resizing and coordinate validation.",
+        "Zoom does not change the full screenshot coordinate frame.",
+        "Input checks and action limits remain executor responsibilities."
+      ],
+      "limitations": "Do not apply a generic crop offset to full-frame zoom coordinates.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A11",
+      "publisher": "OpenAI",
+      "title": "Computer use integration recipes",
+      "url": "https://developers.openai.com/api/docs/guides/tools-computer-use-integration",
+      "web_ref": "turn27view1",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Original screenshot detail recommended for computer use.",
+        "Resize when model limits require it and remap coordinates.",
+        "Local driver rehearsals can run without API calls."
+      ],
+      "limitations": "Resolution recommendations are not verified optimal for Roblox Studio or Blender.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A12",
+      "publisher": "Anthropic",
+      "title": "Tool use with prompt caching",
+      "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching",
+      "web_ref": "turn30view3",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Toolset cache breakpoints apply after its definition.",
+        "A breakpoint within an action batch takes effect at the end of that batch.",
+        "Changes to tool/configuration prefixes can invalidate cache."
+      ],
+      "limitations": "API prompt cache is distinct from local KV reuse; measure rather than infer savings.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "A13",
+      "publisher": "Anthropic",
+      "title": "Mitigate jailbreaks and prompt injections",
+      "url": "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks",
+      "web_ref": "turn30view4",
+      "accessed_date": "2026-10-31",
+      "accessed_timezone": "America/Chicago",
+      "evidence_type": "official_documentation_opened",
+      "supported_claims": [
+        "Keep third-party content in identifiable tool results.",
+        "Describe source and provenance.",
+        "Limit accessible data and action scope."
+      ],
+      "limitations": "Structured wrapping and model classification do not prove content safe or authorized.",
+      "native_execution_tested": false
+    },
+    {
+      "id": "D01",
+      "title": "UI Automation Control Patterns Overview",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-controlpatternsoverview",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn48view0"
+      ],
+      "supported_finding": "Patterns expose control capabilities; support can change dynamically.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D02",
+      "title": "Caching UI Automation Properties and Control Patterns",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-cachingforclients",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn35view0"
+      ],
+      "supported_finding": "Bulk fetching reduces per-property cross-process calls; cached-only references cannot invoke; updated cache does not mutate existing references.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D03",
+      "title": "Subscribing to UI Automation Events",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-eventsforclients",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn35view4"
+      ],
+      "supported_finding": "Scoped events reduce polling; providers do not necessarily raise every event.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D04",
+      "title": "Understanding Threading Issues",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn35view1"
+      ],
+      "supported_finding": "UIA client thread and COM MTA guidance; event registration/removal must not race across threads.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D05",
+      "title": "SetForegroundWindow",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn48view2"
+      ],
+      "supported_finding": "Foreground activation is restricted and may fail; verify actual focus.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D06",
+      "title": "SendInput",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn35view3"
+      ],
+      "supported_finding": "Returns inserted count; UIPI boundary and ambiguous failure causes; current key state matters.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D07",
+      "title": "Understanding Screen Scaling Issues",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-screenscaling",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn35view2",
+        "turn46view7"
+      ],
+      "supported_finding": "UIA uses physical coordinates; DPI virtualization requires an explicit mapping.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D08",
+      "title": "MOUSEINPUT",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-mouseinput",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn48view1"
+      ],
+      "supported_finding": "Absolute normalized coordinates and virtual desktop flag semantics.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D09",
+      "title": "Desktop Duplication API",
+      "url": "https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn35view7"
+      ],
+      "supported_finding": "DXGI frames, dirty/move rectangles, reconstruction order, cursor/rotation handling.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D10",
+      "title": "Playwright Locators",
+      "url": "https://playwright.dev/docs/locators",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn48view3"
+      ],
+      "supported_finding": "Semantic locators and test identifiers are preferred to brittle DOM-structure selectors; locators re-resolve.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D11",
+      "title": "Playwright Auto-waiting",
+      "url": "https://playwright.dev/docs/actionability",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn35view5"
+      ],
+      "supported_finding": "Action-specific readiness checks and timeouts; click checks uniqueness, visibility, stability, events and enabled state.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D12",
+      "title": "Playwright BrowserType persistent contexts",
+      "url": "https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn35view6",
+        "turn46view3"
+      ],
+      "supported_finding": "User data directory ownership; multiple simultaneous instances cannot share it; default everyday Chrome profile automation is unsupported for this launch mechanism.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D13",
+      "title": "Connect to Roblox Studio MCP server",
+      "url": "https://create.roblox.com/docs/studio/mcp",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn43view0",
+        "turn46view6"
+      ],
+      "supported_finding": "Built-in local stdio MCP, script/data-model/playtest/capture/input tools, server enablement and explicit studio_id per call.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D14",
+      "title": "StudioTestService",
+      "url": "https://create.roblox.com/docs/reference/engine/classes/StudioTestService",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn43view1"
+      ],
+      "supported_finding": "Plugin-security Run, Play, multiplayer test methods and returned test values.",
+      "verification": "Opened primary page; no runtime performance reproduction."
+    },
+    {
+      "id": "D15",
+      "title": "Blender Using Operators official source",
+      "url": "https://github.com/blender/blender/blob/main/doc/python_api/rst/info_gotchas_operators.rst",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn38search4"
+      ],
+      "supported_finding": "Context-dependent operators and poll failures; direct API approaches can avoid inappropriate operator contexts.",
+      "verification": "Read complete official source through GitHub connector after docs-site direct retrieval failed; indexed official docs agree."
+    },
+    {
+      "id": "D16",
+      "title": "Blender command-line arguments, 5.4 documentation",
+      "url": "https://docs.blender.org/manual/en/5.4/advanced/command_line/arguments.html",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn40search4"
+      ],
+      "supported_finding": "Background/Python invocation and --python-exit-code semantics; installed-version compatibility must be checked.",
+      "verification": "Indexed official primary documentation retrieved by search; direct page fetch returned 402. No claim this version is installed or stable."
+    },
+    {
+      "id": "D17",
+      "title": "Blender threading official source",
+      "url": "https://github.com/blender/blender/blob/main/doc/python_api/rst/info_gotchas_threading.rst",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn40search1"
+      ],
+      "supported_finding": "Blender Python integration is not thread-safe; long-lived threads can crash Blender; independent-process alternative.",
+      "verification": "Read complete official source through GitHub connector after docs-site direct retrieval failed; indexed official docs agree."
+    },
+    {
+      "id": "D18",
+      "title": "Microsoft UFO repository snapshot",
+      "url": "https://github.com/microsoft/UFO/tree/eae3c0a8d168c47cb10df0652e293e092eda1078",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn43view2",
+        "turn46view5"
+      ],
+      "supported_finding": "Hybrid native/UI control and speculative multi-action design; 51% fewer calls is an author claim, not a reproduced Litha measurement.",
+      "verification": "Opened README/documentation and verified main commit with GitHub connector. Author performance claims not reproduced.",
+      "commit": "eae3c0a8d168c47cb10df0652e293e092eda1078",
+      "commit_date_utc": "2026-10-14T04:20:48Z"
+    },
+    {
+      "id": "D19",
+      "title": "Microsoft UFO hybrid GUI/API actions",
+      "url": "https://github.com/microsoft/UFO/blob/eae3c0a8d168c47cb10df0652e293e092eda1078/documents/docs/ufo2/core_features/hybrid_actions.md",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn43view3"
+      ],
+      "supported_finding": "Application APIs and UI automation routed through hybrid action infrastructure.",
+      "verification": "Opened README/documentation and verified main commit with GitHub connector. Author performance claims not reproduced.",
+      "commit": "eae3c0a8d168c47cb10df0652e293e092eda1078",
+      "commit_date_utc": "2026-10-14T04:20:48Z"
+    },
+    {
+      "id": "D20",
+      "title": "Microsoft OmniParser repository snapshot",
+      "url": "https://github.com/microsoft/OmniParser/tree/354021201345a96178360b28733573e27269f2de",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "web_ref_ids": [
+        "turn43view4",
+        "turn46view4"
+      ],
+      "supported_finding": "Screenshot target parsing; latest README distinguishes v3 YOLOv9 MIT-based detector, legacy AGPL detector weights, MIT captions and CC-BY-4.0 repository.",
+      "verification": "Opened README and repository license label; verified master commit with GitHub connector. Exact model/checkpoint license should be reviewed before adoption.",
+      "commit": "354021201345a96178360b28733573e27269f2de",
+      "commit_date_utc": "2026-07-20T01:09:31Z"
+    },
+    {
+      "id": "D21",
+      "title": "Litha existing uia.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/uia.py",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "web_ref_ids": [],
+      "supported_finding": "FindAllBuildCache already in use with cached-only property snapshots.",
+      "verification": "Read the local source snapshot fetched by root; native Windows path not executed."
+    },
+    {
+      "id": "D22",
+      "title": "Litha existing driver.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/driver.py",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "web_ref_ids": [],
+      "supported_finding": "Existing observe/perform/verify/retry loop and attempt-dependent settle_s sleeps.",
+      "verification": "Read the local source snapshot fetched by root; native Windows path not executed."
+    },
+    {
+      "id": "D23",
+      "title": "Litha existing eye.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/eye.py",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "web_ref_ids": [],
+      "supported_finding": "Existing bounded latest-frame capture wrapper and explicit region handling.",
+      "verification": "Read the local source snapshot fetched by root; native Windows path not executed."
+    },
+    {
+      "id": "D24",
+      "title": "Litha existing ground.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/ground.py",
+      "primary": true,
+      "accessed_on": "2026-10-31",
+      "timezone": "America/Chicago",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "web_ref_ids": [],
+      "supported_finding": "Existing UIA/local/remote grounding chain and local grounding benchmark helper.",
+      "verification": "Read the local source snapshot fetched by root; native Windows path not executed."
+    },
+    {
+      "id": "E01",
+      "title": "OSWorld original project and version announcements",
+      "url": "https://osworld-v1.xlang.ai/",
+      "source_type": "benchmark project",
+      "version_context": "Original/Verified; inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Original 369-task set and possible 361-task variant",
+        "Separate Verified and 2.0 announcements"
+      ],
+      "limitations": [
+        "Different releases and task counts are not directly interchangeable"
+      ],
+      "web_refs": [
+        "turn36view0"
+      ]
+    },
+    {
+      "id": "E02",
+      "title": "OSWorld 2.0 paper v2",
+      "url": "https://arxiv.org/abs/2606.29537v2",
+      "source_type": "research paper",
+      "version_context": "v2, 2026-07-13",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "108 long-horizon workflows",
+        "Binary completion and partial progress differ",
+        "Reported human duration and tool-call counts are configuration-specific"
+      ],
+      "limitations": [
+        "Does not measure Litha or its target hardware"
+      ],
+      "web_refs": [
+        "turn39view1"
+      ]
+    },
+    {
+      "id": "E03",
+      "title": "OSWorld-V2 repository",
+      "url": "https://github.com/xlang-ai/OSWorld-V2",
+      "source_type": "primary implementation documentation",
+      "version_context": "Recommended release osworld-v2.1; announcement 2026-09-16",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Pin matching code, tasks, assets, websites, provider images",
+        "Historical README instructions remain alongside active recommendations"
+      ],
+      "limitations": [
+        "Main is mutable; use the named manifest for actual runs"
+      ],
+      "web_refs": [
+        "turn47view9",
+        "turn45view2"
+      ]
+    },
+    {
+      "id": "E04",
+      "title": "OSWorld benchmark release policy",
+      "url": "https://github.com/xlang-ai/OSWorld-V2/blob/main/benchmark_releases/README.md",
+      "source_type": "primary implementation documentation",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Concrete resolved versions and integrity checks distinguish comparable runs",
+        "Active manifests should not be silently changed"
+      ],
+      "limitations": [
+        "Policy text is not evidence that any particular run obeyed it"
+      ],
+      "web_refs": [
+        "turn49view5"
+      ]
+    },
+    {
+      "id": "E05",
+      "title": "OSWorld-Human paper v2",
+      "url": "https://arxiv.org/abs/2506.16042v2",
+      "source_type": "research paper",
+      "version_context": "v2, 2026-05-18",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Temporal performance study identifies planning/reflection/judging latency",
+        "Revised abstract reports 2.7\u20134.3x excess steps"
+      ],
+      "limitations": [
+        "README retains a different 1.4\u20132.7x range; do not merge ranges",
+        "Reported effects are study-specific"
+      ],
+      "web_refs": [
+        "turn45view1"
+      ]
+    },
+    {
+      "id": "E06",
+      "title": "OSWorld-Human repository",
+      "url": "https://github.com/WukLab/osworld-human",
+      "source_type": "primary dataset/evaluation repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Human reference action trajectories for efficiency scoring",
+        "Explicit instruction not to train on evaluation solutions"
+      ],
+      "limitations": [
+        "README result range differs from revised paper"
+      ],
+      "web_refs": [
+        "turn45view0"
+      ]
+    },
+    {
+      "id": "E07",
+      "title": "Windows Agent Arena repository",
+      "url": "https://github.com/microsoft/WindowsAgentArena",
+      "source_type": "primary benchmark repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Real Windows evaluation; normal and hard modes differ",
+        "Full-suite duration uses parallel VMs",
+        "Historical cost table is not current pricing"
+      ],
+      "limitations": [
+        "Suite throughput is not one-agent task latency"
+      ],
+      "web_refs": [
+        "turn36view2",
+        "turn33search2"
+      ]
+    },
+    {
+      "id": "E08",
+      "title": "BrowserGym repository",
+      "url": "https://github.com/ServiceNow/BrowserGym",
+      "source_type": "primary framework repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Shared research environment across web benchmarks"
+      ],
+      "limitations": [
+        "Browser success does not establish native desktop success"
+      ],
+      "web_refs": [
+        "turn36view1"
+      ]
+    },
+    {
+      "id": "E09",
+      "title": "WebArena repository",
+      "url": "https://github.com/web-arena-x/webarena",
+      "source_type": "primary benchmark repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Self-hostable web task environment"
+      ],
+      "limitations": [
+        "Dataset and environment revision affect comparisons"
+      ],
+      "web_refs": [
+        "turn49view0"
+      ]
+    },
+    {
+      "id": "E10",
+      "title": "VisualWebArena repository",
+      "url": "https://github.com/web-arena-x/visualwebarena",
+      "source_type": "primary benchmark repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Tasks require multimodal interpretation of web content"
+      ],
+      "limitations": [
+        "Visual-web coverage does not cover native applications"
+      ],
+      "web_refs": [
+        "turn49view1"
+      ]
+    },
+    {
+      "id": "E11",
+      "title": "WebArena-Verified repository",
+      "url": "https://github.com/ServiceNow/webarena-verified",
+      "source_type": "primary benchmark repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Audited tasks/evaluators and structural comparison",
+        "Offline evaluation from recorded network traces",
+        "812 full tasks and 258 hard-subset tasks"
+      ],
+      "limitations": [
+        "Recorded-run rescoring is distinct from offline interaction"
+      ],
+      "web_refs": [
+        "turn47view8",
+        "turn45view3"
+      ]
+    },
+    {
+      "id": "E12",
+      "title": "WorkArena repository",
+      "url": "https://github.com/ServiceNow/WorkArena",
+      "source_type": "primary benchmark repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Atomic and compositional ServiceNow tasks",
+        "Current setup requires approved instance-resource access"
+      ],
+      "limitations": [
+        "Not a ready-to-run offline benchmark without setup/access"
+      ],
+      "web_refs": [
+        "turn45view5"
+      ]
+    },
+    {
+      "id": "E13",
+      "title": "AgentLab repository",
+      "url": "https://github.com/ServiceNow/AgentLab",
+      "source_type": "primary evaluation framework",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Explicit handling of job timeouts",
+        "Shared-instance task dependencies affect parallel evaluation"
+      ],
+      "limitations": [
+        "Suggested concurrency depends on memory and workload; not a Litha target"
+      ],
+      "web_refs": [
+        "turn45view4"
+      ]
+    },
+    {
+      "id": "E14",
+      "title": "Agent S3 usage documentation",
+      "url": "https://github.com/simular-ai/Agent-S/blob/main/gui_agents/s3/README.md",
+      "source_type": "primary agent documentation",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Separate generation and grounding configuration",
+        "Example CLI is explicitly without multi-rollout selection",
+        "Grounding coordinate resolutions must match configuration"
+      ],
+      "limitations": [
+        "Example run differs from highest published multi-rollout score"
+      ],
+      "web_refs": [
+        "turn49view3"
+      ]
+    },
+    {
+      "id": "E15",
+      "title": "Scaling Agents for Computer Use",
+      "url": "https://arxiv.org/abs/2510.02250v2",
+      "source_type": "research paper",
+      "version_context": "v2, 2026-02-03",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Behavior-based selection across multiple rollouts",
+        "Reported 72.6% OSWorld result uses scaling method"
+      ],
+      "limitations": [
+        "Not equivalent to single-rollout latency or universal human-level capability"
+      ],
+      "web_refs": [
+        "turn47view6"
+      ]
+    },
+    {
+      "id": "E16",
+      "title": "Evolving Agent Interfaces",
+      "url": "https://arxiv.org/abs/2610.28601",
+      "source_type": "research paper",
+      "version_context": "v1, 2026-10-20",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Interface evolution from synthetic task experience with held-out validation",
+        "Reported 21.3% binary score with Qwen3.8-27B on OSWorld V2"
+      ],
+      "limitations": [
+        "Author-reported experimental result; no Litha speed/hardware evidence"
+      ],
+      "web_refs": [
+        "turn47view7"
+      ]
+    },
+    {
+      "id": "E17",
+      "title": "Agent S4 implementation documentation",
+      "url": "https://github.com/simular-ai/Agent-S/blob/main/agent_s4/README.md",
+      "source_type": "primary implementation documentation",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Separate interface repository, bounded edit scope and budget",
+        "Tracked dispatch and validation reevaluation",
+        "Separate train, validation, and held-out test sets"
+      ],
+      "limitations": [
+        "Documented design is not an independent audit of all code paths"
+      ],
+      "web_refs": [
+        "turn47view3",
+        "turn47view4"
+      ]
+    },
+    {
+      "id": "E18",
+      "title": "OpenCUA repository",
+      "url": "https://github.com/xlang-ai/OpenCUA",
+      "source_type": "primary model/framework repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Distinct online task, grounding, and offline action evaluations",
+        "Current vLLM guidance and model-specific loading requirements"
+      ],
+      "limitations": [
+        "Single-GPU example does not establish 8 GB VRAM fit",
+        "Old headline claims remain historical"
+      ],
+      "web_refs": [
+        "turn49view4",
+        "turn39view2"
+      ]
+    },
+    {
+      "id": "E19",
+      "title": "UI-TARS repository",
+      "url": "https://github.com/bytedance/UI-TARS",
+      "source_type": "primary model/framework repository",
+      "version_context": "UI-TARS-1.5 figures in inspected README",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Separate task and grounding benchmark tables",
+        "Explicit step budgets for reported task results"
+      ],
+      "limitations": [
+        "Grounding accuracy and task completion are different metrics"
+      ],
+      "web_refs": [
+        "turn44view8",
+        "turn39view4"
+      ]
+    },
+    {
+      "id": "E20",
+      "title": "OmniParser repository",
+      "url": "https://github.com/microsoft/OmniParser",
+      "source_type": "primary perception-tool repository",
+      "version_context": "Inspected 2026-10-31",
+      "accessed_on": "2026-10-31",
+      "findings": [
+        "Screen parsing for downstream GUI agents"
+      ],
+      "limitations": [
+        "Parsing is not task verification or a complete controller"
+      ],
+      "web_refs": [
+        "turn49view2"
+      ]
+    },
+    {
+      "id": "R01",
+      "title": "Litha inspected source: star/computer/driver.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/driver.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R02",
+      "title": "Litha inspected source: star/computer/uia.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/uia.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R03",
+      "title": "Litha inspected source: star/computer/screen.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/screen.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R04",
+      "title": "Litha inspected source: star/computer/eye.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/eye.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R05",
+      "title": "Litha inspected source: star/computer/ground.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/ground.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R06",
+      "title": "Litha inspected source: star/computer/hands.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/hands.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R07",
+      "title": "Litha inspected source: star/computer/winapi.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/winapi.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R08",
+      "title": "Litha inspected source: star/studio.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/studio.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R09",
+      "title": "Litha inspected source: star/computer/settings.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/settings.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R10",
+      "title": "Litha inspected source: star/computer/agent.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/agent.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R11",
+      "title": "Litha inspected source: star/computer/__init__.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/__init__.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R12",
+      "title": "Litha inspected source: star/computer/live_vision.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/live_vision.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R13",
+      "title": "Litha inspected source: star/computer/identity.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/identity.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    },
+    {
+      "id": "R14",
+      "title": "Litha inspected source: star/computer/stopswitch.py",
+      "url": "https://github.com/oncoursemail/Star-AI-Project/blob/a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f/star/computer/stopswitch.py",
+      "publisher": "Litha / oncoursemail",
+      "accessed_on": "2026-10-31",
+      "evidence_type": "repository_source_inspected",
+      "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+      "limitations": "Source inspection; does not establish deployed behavior or native performance."
+    }
+  ]
+}

@@ -29,6 +29,17 @@ describe('Brain 2 Blender MCP setup',()=>{
    fireEvent.change(screen.getByRole('textbox',{name:'Blender executable path'}),{target:{value:'C:\\Blender\\blender.exe'}})
    expect(change).toHaveBeenCalledWith(expect.objectContaining({blender_executable:'C:\\Blender\\blender.exe'}))
  })
+ it('offers the animation motion check only after enabling Blender, off by default',()=>{
+   const change=vi.fn()
+   const {unmount}=render(<BlenderPanel draft={settings()} onChange={change} invoke={async()=>null}/>)
+   const off=screen.getByRole('checkbox',{name:'Check animation motion'}) as HTMLInputElement
+   expect(off.checked).toBe(false)
+   expect(off.disabled).toBe(true)
+   unmount()
+   render(<BlenderPanel draft={settings({blender_enabled:true})} onChange={change} invoke={async()=>null}/>)
+   fireEvent.click(screen.getByRole('checkbox',{name:'Check animation motion'}))
+   expect(change).toHaveBeenCalledWith(expect.objectContaining({blender_enabled:true,blender_motion_qa:true}))
+ })
  it('does not claim an executable probe completed based solely on presence on disk',()=>{
    render(<BlenderPanel draft={settings({blender_enabled:true})} onChange={()=>{}}
      status={{enabled:true,installed:true,edit_enabled:false,executable:'C:\\Blender\\blender.exe',

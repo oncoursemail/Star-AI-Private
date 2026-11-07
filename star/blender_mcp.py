@@ -30,7 +30,8 @@ INSPECT = "star_blender_inspect"
 BUILD = "star_blender_build_scene"
 ANIMATION_PREFLIGHT = "star_blender_animation_preflight"
 ANIMATION_EXPORT = "star_blender_animation_export_r15_draft"
-NAMES = frozenset({STATUS, PROBE, INSPECT, BUILD, ANIMATION_PREFLIGHT, ANIMATION_EXPORT})
+MOTION_QA = "star_blender_animation_motion_qa"
+NAMES = frozenset({STATUS, PROBE, INSPECT, BUILD, ANIMATION_PREFLIGHT, ANIMATION_EXPORT, MOTION_QA})
 MAX_ARGS = 25_000
 MAX_PREVIEW = 1_800_000
 CALL_SECONDS = 205
@@ -52,6 +53,14 @@ CATALOG = (
                      "rig-specific bone names, loops, motion-rate warnings, and native Studio import limits. "
                      "Does not launch Blender, upload, train or prove an animation is playable."),
      "inputSchema": ANIMATION_SCHEMA},
+    {"name": MOTION_QA,
+     "description": ("Read-only motion check of an R15/R6 animation keyframe plan: samples every frame, reports peak "
+                     "and p95 joint speed, sharp accelerations and loop seams; with `reference` (an approved clip of "
+                     "the same rig, fps and length) also the per-frame difference. Authored values only, not "
+                     "rendered Blender or Studio frames; no Blender process starts."),
+     "inputSchema": {"type": "object", "additionalProperties": False, "required": ["clip"],
+                     "properties": {"clip": ANIMATION_SCHEMA, "reference": ANIMATION_SCHEMA,
+                                    "tolerance_deg": {"type": "number", "minimum": 0, "maximum": 120}}}},
     {"name": ANIMATION_EXPORT,
      "description": ("EXPERIMENTAL: author editable Blender R15 proxy bone actions and export "
                      "one draft animation.fbx plus scene.blend into a private STAR job. "
@@ -98,9 +107,11 @@ def make_server(controller: BlenderController):
     enabled = getattr(controller.settings, "blender_enabled", False) is True
     editing = enabled and getattr(controller.settings, "blender_edit", False) is True
     animation_export = editing and os.environ.get("STAR_BLENDER_R15_ANIMATION_EXPERIMENT") == "on"
+    motion_qa = enabled and getattr(controller.settings, "blender_motion_qa", False) is True
     catalog = [tool for tool in CATALOG
                if (tool["name"] != BUILD or editing)
-               and (tool["name"] != ANIMATION_EXPORT or animation_export)]
+               and (tool["name"] != ANIMATION_EXPORT or animation_export)
+               and (tool["name"] != MOTION_QA or motion_qa)]
     server = Server("STAR Blender MCP", version="1.0")
 
     @server.list_tools()
@@ -126,6 +137,14 @@ def make_server(controller: BlenderController):
                 result = controller.inspect(arguments["job_id"])
             elif name == ANIMATION_PREFLIGHT:
                 result = analyze_animation(arguments)
+            elif name == MOTION_QA:
+                from .animation_regression import compare_clip_to_reference, motion_quality_report
+                if "clip" not in arguments or not set(arguments) <= {"clip", "reference", "tolerance_deg"}:
+                    return _error("STAR Blender MCP: motion check takes clip, optional reference and tolerance_deg")
+                result = motion_quality_report(arguments["clip"])
+                if "reference" in arguments:
+                    result["reference_comparison"] = compare_clip_to_reference(
+                        arguments["reference"], arguments["clip"], tolerance_deg=arguments.get("tolerance_deg", 5.0))
             elif name == ANIMATION_EXPORT:
                 if not animation_export:
                     return _error("STAR Blender MCP: experimental R15 animation permission required")

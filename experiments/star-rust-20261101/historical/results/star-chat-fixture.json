@@ -1,0 +1,16 @@
+{
+  "kind": "actual_STAR_code_offline_fake_model_fixture_NOT_live_inference",
+  "host": "starai",
+  "checkout": "<CORE_FORGE_CHECKOUT>",
+  "commit_short": "e941c121",
+  "branch": "feat/star-core-forge-local-20261025",
+  "benchmark": "benchmarks/bench_chat_turn.py",
+  "mode": "fast",
+  "network": "Python socket connect, connect_ex and create_connection blocked",
+  "app_data": "benchmark-created temporary directory; not real user chats",
+  "thread_environment": {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"},
+  "profiled": {"import_desktop_core_ms":691.2,"turns":12,"history_messages":200,"other_messages":20000,"turn_ms_median":39.83,"turn_ms_p90":43.07,"turn_ms_min":35.67},
+  "unprofiled": {"import_desktop_core_ms":617.2,"turns":12,"history_messages":200,"other_messages":20000,"turn_ms_median":35.15,"turn_ms_p90":38.83,"turn_ms_min":29.63},
+  "working_tree_after": "clean",
+  "limits": ["12 timed turns after one warmup, single run per configuration", "Fake non-streaming model and synthetic history", "No live inference, UI, production knowledge service, GPU or agent-tool execution measured", "cProfile cumulative times overlap; do not add nested entries"]
+}

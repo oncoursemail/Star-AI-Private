@@ -15,6 +15,8 @@ describe('image intent',()=>{
   ['create a logo for my game','a logo for my game'],
   ['render a wallpaper of a forest','a wallpaper of a forest'],
   ['draw a cat','a cat'],
+  ['Generate me a real cow with no weird legs','a real cow with no weird legs'],
+  ['create me a dragon with three heads','a dragon with three heads'],
   ['Draw me a cat.','a cat'],
   ['please draw a castle','a castle'],
   ['paint a sunset','a sunset'],
@@ -39,7 +41,7 @@ describe('image intent',()=>{
   'Can you create images?','Can you create an image?','Can you make a logo?','Can you draw?','Do you generate images?',
   'draw a conclusion from this','draw attention to the second point','draw a line under the total','draw a diagram of the architecture',
   'draw a flowchart for the login','show me the picture frame code','I need a picture frame','I need help with a logo',
-  'make me a table of the results','show me a list of images',
+  'make me a table of the results','generate me a list of names','Create me a plan for the week','make me a script for the intro','show me a list of images',
  ])('leaves %j in chat',input=>expect(imageIntent(input)).toBeNull())
 
  it('keeps an order that is only the command whole',()=>expect(imageIntent('Generate an image')).toEqual({prompt:'an image',followup:false}))

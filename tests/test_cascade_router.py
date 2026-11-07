@@ -182,6 +182,7 @@ def test_eval_runner_pin_model_makes_every_role_answer_with_the_model(monkeypatc
     monkeypatch.setattr(doc_knowledge, "client_for", lambda settings: object())
     monkeypatch.setattr(desktop_core, "run_task", lambda settings, prompt, **kw: seen.setdefault("s", settings) and "ok")
     monkeypatch.setattr(eval_runner, "isolated_appdata", lambda: __import__("contextlib").nullcontext())
+    monkeypatch.setenv("STAR_BACKGROUND_WORK", "0")     # build_real marks the process; undone after this test
     for pinned in (False, True):
         seen.clear()
         args = argparse.Namespace(key_file=str(tmp_path / "k"), packs="off", server="http://127.0.0.1:8080/v1",

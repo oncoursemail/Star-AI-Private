@@ -1,0 +1,13 @@
+local ret, env = load_answer()
+local Backpack = ret
+local b = Backpack.new(20)
+b:add("grenade", 3)
+check("totalWeight counts the stack", b:totalWeight() == 6)
+b:add("medkit", 2)
+check("two stacks", b:totalWeight() == 12 and b:freeWeight() == 8)
+check("an add over the limit is refused", b:add("shield", 2) == false)
+check("a refused add changes nothing", b:count("shield") == 0 and b:totalWeight() == 12)
+check("an add up to the limit is allowed", b:add("paintball_pod", 16) == true and b:totalWeight() == 20)
+local u = Backpack.new(5)
+check("unknown items weigh 1", u:add("rock", 5) == true and u:totalWeight() == 5 and u:add("rock") == false)
+check("remove still works", b:remove("grenade", 1) == true and b:totalWeight() == 18)

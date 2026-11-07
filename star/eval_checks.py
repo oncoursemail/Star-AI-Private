@@ -354,8 +354,101 @@ def citation_check(auto: dict, footer: str) -> Check:
     return Check("citation", True)
 
 
+# --- Python / JavaScript tasks: tests run in the star-judge container (no network) -------------------------------
+
+PY_HARNESS = """
+
+# ===== harness (owned by the eval; the answer never sees it) =====
+__passed = 0
+__total = 0
+def check(name, fn):
+    global __passed, __total
+    __total += 1
+    try:
+        ok = bool(fn())
+    except Exception as exc:
+        ok = False
+        name = name + " (raised " + type(exc).__name__ + ")"
+    if ok:
+        __passed += 1
+    print(("@@PASS " if ok else "@@FAIL ") + name)
+"""
+JS_HARNESS = """
+
+// ===== harness (owned by the eval; the answer never sees it) =====
+let __passed = 0, __total = 0;
+function check(name, fn) {
+  __total += 1;
+  let ok = false;
+  try { ok = !!fn(); } catch (e) { name += " (threw " + (e && e.name) + ")"; }
+  if (ok) __passed += 1;
+  console.log((ok ? "@@PASS " : "@@FAIL ") + name);
+}
+"""
+_PY_DONE = '\nprint("@@DONE %d/%d" % (__passed, __total))\n'
+_JS_DONE = '\nconsole.log("@@DONE " + __passed + "/" + __total);\n'
+JUDGE_FENCES = {"python": ("python", "py", "python3"), "javascript": ("javascript", "js", "node")}
+_JPASS = re.compile(r"^@@PASS (.*)$", re.M)
+_JFAIL = re.compile(r"^@@FAIL (.*)$", re.M)
+_JDONE = re.compile(r"^@@DONE (\d+)/(\d+)\s*$", re.M)
+
+
+def judge_source(language: str, answer_code: str, test: str) -> str:
+    """The one file the judge runs: the answer, then the harness and the test body."""
+    if language == "python":
+        return answer_code.rstrip() + "\n" + PY_HARNESS + test.rstrip() + "\n" + _PY_DONE
+    if language == "javascript":
+        return answer_code.rstrip() + "\n" + JS_HARNESS + test.rstrip() + "\n" + _JS_DONE
+    raise ValueError("judge languages are python and javascript")
+
+
+def judge_outcome(stdout: str) -> tuple[list[str], list[str], bool]:
+    """(passed names, failed names, finished): finished when the final @@DONE line matches the lines seen, so an
+    answer that prints its own @@PASS lines (or exits early) is not finished."""
+    passed, failed = _JPASS.findall(stdout), _JFAIL.findall(stdout)
+    done = _JDONE.findall(stdout)
+    finished = bool(done) and int(done[-1][0]) == len(passed) and int(done[-1][1]) == len(passed) + len(failed)
+    return passed, failed, finished
+
+
+def extract_code_blocks(body: str, language: str) -> list[str]:
+    tags = "|".join(re.escape(t) for t in JUDGE_FENCES[language])
+    labelled = [m.group(1) for m in re.finditer(r"```[ \t]*(?:" + tags + r")\b[^\n]*\n(.*?)```", body, re.S | re.I)
+                if m.group(1).strip()]
+    return labelled or [m.group(1) for m in PLAIN_FENCE.finditer(body) if m.group(1).strip()]
+
+
+def judge_checks(auto: dict, body: str, judge) -> list[Check]:
+    language = auto["language"]
+    blocks = extract_code_blocks(body, language)
+    if not blocks:
+        return [Check("code_block", False, f"no fenced {language} block in the answer")]
+    spec = auto.get("judge") or {}
+    if judge is None:
+        raise InfraError("no judge configured for a Python/JavaScript task")
+    run = judge.run(language, judge_source(language, max(blocks, key=len), spec.get("tests", "")))
+    if getattr(run, "error", ""):
+        raise InfraError("judge: " + run.error[:120])
+    if getattr(run, "timed_out", False):
+        return [Check("judge_tests", False, "timed out in the judge")]
+    passed, failed, finished = judge_outcome(run.stdout)
+    expect = spec.get("expect")
+    problems = []
+    if failed:
+        problems.append("failed: " + "; ".join(failed[:6]))
+    if not finished:
+        problems.append("harness did not finish (load error, crash or forged output)")
+    if expect is not None and len(passed) + len(failed) != expect:
+        problems.append(f"{len(passed) + len(failed)} of {expect} assertions ran")
+    if not passed and not problems:
+        problems.append("no assertions ran")
+    ok = not problems
+    return [Check("judge_tests", ok, "" if ok else f"{len(passed)}/{max(len(passed) + len(failed), expect or 0)} passed; "
+                  + " | ".join(problems)[:MAX_DETAIL])]
+
+
 def score_answer(task: dict, answer: str, *, luau_check, sandbox=None, prelude: str = "",
-                 test_body: str = "", clock=monotonic) -> TaskScore:
+                 test_body: str = "", clock=monotonic, judge=None) -> TaskScore:
     """Score one answer. `luau_check(code, strict=bool)` returns the knowledge client's dict.
 
     Raises InfraError when a check that the task needs cannot run.
@@ -363,6 +456,15 @@ def score_answer(task: dict, answer: str, *, luau_check, sandbox=None, prelude: 
     auto = task.get("auto") or {}
     score = TaskScore()
     body, footer = split_answer(answer or "")
+    if auto.get("language") in JUDGE_FENCES:       # Python / JavaScript: the judge's unit tests decide
+        if not (answer or "").strip():
+            score.checks.append(Check("answer", False, "empty answer"))
+            return score
+        started = clock()
+        score.checks.extend(judge_checks(auto, body, judge))
+        score.timings["judge_s"] = round(clock() - started, 2)
+        score.checks.extend(pattern_checks(auto, [], body))
+        return score
     blocks = extract_luau_blocks(body)
     score.blocks = len(blocks)
     needs_code = auto.get("code", True)
@@ -423,6 +525,9 @@ def score_answer(task: dict, answer: str, *, luau_check, sandbox=None, prelude: 
         score.checks.append(Check("unit_tests", False, "no code to test"))
 
     score.checks.extend(pattern_checks(auto, blocks, body))
+    if auto.get("answer"):            # knowledge school: exact / numeric / choice / order / match / short / rubric keys
+        from .knowledge_checks import answer_checks
+        score.checks.extend(answer_checks(auto["answer"], answer))
     if auto.get("citation", {}).get("required"):
         score.checks.append(citation_check(auto, footer))
     return score

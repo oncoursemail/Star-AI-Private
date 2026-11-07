@@ -302,9 +302,11 @@ def test_chat_entry_point_uses_the_built_in_model_without_a_workflow_file(tmp_pa
 
     def fake(settings, prompt, home, **kwargs):
         seen.update(kwargs, prompt=prompt)
+        (home / 'generated-images').mkdir(parents=True, exist_ok=True)
+        (home / 'generated-images' / 'x.png').write_bytes(b'x')
         return {'answer': 'ok', 'image': 'data:image/webp;base64,AA', 'message': PREFIX + 'x.png', 'path': home, 'note': {}}
     monkeypatch.setattr(image_gen, 'generate', fake)
-    result = generate_chat_image(Settings(project='Test'), 'a cat', tmp_path, size='draft')
+    result = generate_chat_image(Settings(project='Test', image_quality=False), 'a cat', tmp_path, size='draft')
     assert result == {'answer': 'ok', 'image': 'data:image/webp;base64,AA', 'message': PREFIX + 'x.png'}
     assert seen['size'] == 'draft' and seen['source'] is None and seen['prompt'] == 'a cat'
 
@@ -317,23 +319,27 @@ def test_switch_lists_both_places_for_every_capability_with_honest_notes(tmp_pat
     shown = {entry['id']: entry for entry in media_places.describe(Settings(), tmp_path)}
     assert list(shown) == ['images', 'voice', 'video']
     for entry in shown.values():
-        assert [option['label'] for option in entry['options']] == ['STAR Brains (servers)', 'This PC (your GPU)']
+        labels = [option['label'] for option in entry['options']]
+        assert labels[:2] == ['STAR Brains (servers)', 'This PC (your GPU)']
+        assert labels[2:] == (['Automatic: this PC when its graphics card is free, otherwise the STAR Brains']
+                              if entry['id'] == 'images' else [])
         for option in entry['options']:
             assert option['available'] or option['reason'].startswith('Not available')
     images = {option['id']: option for option in shown['images']['options']}
     assert shown['images']['chosen'] == 'pc' and images['pc']['available'] and not images['servers']['available']
     assert 'Measured on this PC' in images['pc']['note'] and '1024x1024 in 6.8 s' in images['pc']['note']
-    assert 'no graphics card' in images['servers']['reason'] and 'estimate' in images['servers']['reason']
-    assert '480 to 1500 s' in images['servers']['reason'] and 'not measured on the servers' in images['servers']['reason']
+    # The servers' image service exists now: a setting (its address + the STAR Server key) makes it available.
+    assert 'no image service address is set' in images['servers']['reason'] and not images['auto']['available']
+    assert '512x512 in 5.5 s' in images['servers']['note'] and '1024x1024 in 14 s' in images['servers']['note']
     voice = {option['id']: option for option in shown['voice']['options']}
     assert voice['pc']['available'] and not voice['servers']['available']
     assert 'no speech recogniser or voice is installed on the servers' in voice['servers']['reason']
     video = {option['id']: option for option in shown['video']['options']}
     assert not video['servers']['available'] and 'no STAR Server is connected' in video['servers']['reason']
     assert not video['pc']['available'] and 'on-device brain is not installed' in video['pc']['reason']
-    # Settings can make video places available; images and voice on the servers cannot exist here.
+    # Settings can make video and image places available; voice on the servers cannot exist here.
     assert video['servers']['fixable'] and video['pc']['fixable']
-    assert images['servers']['fixable'] is False and voice['servers']['fixable'] is False
+    assert images['servers']['fixable'] and images['auto']['fixable'] and voice['servers']['fixable'] is False
     assert images['pc']['fixable'] and voice['pc']['fixable']
 
 
@@ -700,6 +706,16 @@ def test_comfyui_is_found_on_its_own_only_in_the_fixed_places(tmp_path):
     assert media_actions.find_comfy_home(search_from=(code,), **nowhere) == mine
     named = _comfy_install(tmp_path / 'chosen' / 'ComfyUI')
     assert media_actions.find_comfy_home(search_from=(code,), **{**nowhere, 'env': {'STAR_COMFY_HOME': named}}) == named
+
+
+def test_comfyui_is_found_in_the_projects_media_folder_inside_the_profile(tmp_path):
+    profile = tmp_path / 'profile'
+    nowhere = dict(env={}, data_dir=tmp_path / 'data', user_home=profile)
+    elsewhere = tmp_path / 'Program Files' / 'STAR'
+    elsewhere.mkdir(parents=True)
+    assert media_actions.find_comfy_home(search_from=(elsewhere,), **nowhere) == ''
+    found = _comfy_install(profile / 'Documents' / 'starai' / 'media' / 'ComfyUI')
+    assert media_actions.find_comfy_home(search_from=(elsewhere,), **nowhere) == found
 
 
 def test_a_folder_that_is_not_a_complete_install_or_sits_outside_the_profile_is_not_used(tmp_path):

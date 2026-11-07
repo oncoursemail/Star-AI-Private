@@ -66,7 +66,7 @@ describe('axe: pages', () => {
     await check('empty chat')
   })
 
-  for (const [page, more] of [['Projects', false], ['Tools', false], ['Settings', false], ['Library', true], ['Analytics', true], ['Model', true]] as const) {
+  for (const [page, more] of [['Projects', false], ['Tools', false], ['Business', false], ['Settings', false], ['Library', true], ['Analytics', true], ['Model', true]] as const) {
     it(page, async () => {
       const user = await open()
       if (more) await user.click(screen.getByRole('button', {name: 'More'}))

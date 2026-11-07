@@ -1,0 +1,116 @@
+{
+ "n": 16,
+ "mean": {
+  "template": 6.92,
+  "baseline": 2.02,
+  "old_pipeline": 2.42
+ },
+ "template_vs_baseline": {
+  "wins": 16,
+  "losses": 0,
+  "ties": 0,
+  "sign_p": 3e-05
+ },
+ "template_vs_old_pipeline": {
+  "wins": 16,
+  "losses": 0,
+  "ties": 0,
+  "sign_p": 3e-05
+ },
+ "per_judge": [
+  {
+   "briefs": 16,
+   "template_better_than_baseline": 16
+  },
+  {
+   "briefs": 16,
+   "template_better_than_baseline": 16
+  },
+  {
+   "briefs": 16,
+   "template_better_than_baseline": 15
+  }
+ ],
+ "per_brief": {
+  "h01": {
+   "template": 5.67,
+   "baseline": 1.0,
+   "old_pipeline": 2.0
+  },
+  "h02": {
+   "template": 7.0,
+   "baseline": 1.0,
+   "old_pipeline": 3.0
+  },
+  "h03": {
+   "template": 6.0,
+   "baseline": 1.0,
+   "old_pipeline": 3.33
+  },
+  "h04": {
+   "template": 7.0,
+   "baseline": 2.67,
+   "old_pipeline": 3.0
+  },
+  "h05": {
+   "template": 4.0,
+   "baseline": 3.33,
+   "old_pipeline": 1.67
+  },
+  "h06": {
+   "template": 7.0,
+   "baseline": 2.0,
+   "old_pipeline": 2.0
+  },
+  "h07": {
+   "template": 8.0,
+   "baseline": 1.67,
+   "old_pipeline": 2.33
+  },
+  "h08": {
+   "template": 7.0,
+   "baseline": 1.67,
+   "old_pipeline": 2.0
+  },
+  "h09": {
+   "template": 7.67,
+   "baseline": 1.0,
+   "old_pipeline": 1.0
+  },
+  "h10": {
+   "template": 8.0,
+   "baseline": 3.0,
+   "old_pipeline": 2.0
+  },
+  "h11": {
+   "template": 7.0,
+   "baseline": 2.0,
+   "old_pipeline": 1.67
+  },
+  "h12": {
+   "template": 7.0,
+   "baseline": 3.33,
+   "old_pipeline": 3.33
+  },
+  "h13": {
+   "template": 8.0,
+   "baseline": 2.33,
+   "old_pipeline": 2.0
+  },
+  "h14": {
+   "template": 8.0,
+   "baseline": 2.0,
+   "old_pipeline": 3.33
+  },
+  "h15": {
+   "template": 5.33,
+   "baseline": 2.33,
+   "old_pipeline": 2.0
+  },
+  "h16": {
+   "template": 8.0,
+   "baseline": 2.0,
+   "old_pipeline": 4.0
+  }
+ }
+}

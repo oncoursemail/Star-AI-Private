@@ -14,9 +14,12 @@ written for everyone, not just programmers. Start with **Getting started**, then
 | [Voice and calls](voice-and-calls.md) | Star's voice, turning recordings into text, and live calls (coming soon) |
 | [Roblox tools](roblox-tools.md) | Roblox questions, Luau checks, map plans, connecting Roblox Studio safely, Studio Lab (coming soon) |
 | [Design tools](design-tools.md) | Colours, fonts, DESIGN.md notes, pictures, simple Blender models |
+| [UI evidence contracts](ui-evidence-contract.md) | Experimental checks for required screens, states, viewports and evidence bindings |
 | [Self-learning](self-learning.md) | Lessons, corrections, night school, "What STAR learned this week", and how to undo it all |
 | [Privacy and data](privacy-and-data.md) | What is stored where, what leaves your PC, deleting and backing up |
 | [Troubleshooting and FAQ](troubleshooting.md) | Error messages and what to do, common questions, asking for help |
+| [IK trace diagnostics](ik-trace-diagnostics.md) | Opt-in developer check of IK trace files (offline; does not change STAR) |
+| [Computer driver recovery](computer-driver-recovery.md) | Opt-in safety for STAR's computer control: no uncertain replays, optional outcome waits |
 | [Glossary](glossary.md) | Plain-language meanings of the words STAR uses |
 
 ## What the status labels mean
@@ -52,6 +55,7 @@ Every feature in this guide is marked with one of three labels:
 | Roblox Open Cloud test pipeline | Opt-in | Every action needs your approval |
 | Studio Lab | Coming soon | |
 | Colours, fonts, DESIGN.md | Available | Saving files is opt-in |
+| UI evidence contracts | Opt-in | Experimental; checks supplied evidence, does not run the interface |
 | Blender models | Opt-in | Early draft |
 | Lessons and corrections | Available | |
 | What STAR learned this week | Available | Empty until a release includes night school lessons |

@@ -1,0 +1,13 @@
+{
+  "_doc": "Every repository Litha looks after. mode merge = she merges PRs into base when every gate and her review pass; mode review = she reviews and logs ready/hold but never merges. base * = PRs into any branch (review only). The first entry is STAR's home repo: fixer, proofs, bug hunt and main promotion run there (they need the local clone). To let her merge somewhere else, change review to merge (merging into main also needs allow_main true). Owner, 2026-10-31: Litha manages everything the owner works on. Owner, 2026-11-02: Metallic-Club/studio left out for now (Matt is rebuilding it).",
+  "repos": [
+    {"repo": "oncoursemail/Star-AI-Project", "base": "star/next", "mode": "merge"},
+    {"repo": "oncoursemail/Metallic-RC", "base": "*", "mode": "review"},
+    {"repo": "oncoursemail/Metallic-RB", "base": "*", "mode": "review"},
+    {"repo": "oncoursemail/Metallic-MC", "base": "*", "mode": "review"},
+    {"repo": "oncoursemail/Metallic-PX", "base": "*", "mode": "review"},
+    {"repo": "Metallic-Club/plateform", "base": "*", "mode": "review"},
+    {"repo": "oncoursemail/Star-AI", "base": "*", "mode": "review",
+     "why": "public website and downloads: merging main publishes"}
+  ]
+}

@@ -1,0 +1,31 @@
+# instruction-following holdout-v1 freeze record: frozen 2026-10-25.
+# Any later edit makes earlier results incomparable; never use these files for training data, prompts or tuning.
+# SHA-256 of each file with CRLF turned into LF (the same normalisation the harness uses).
+# Check with tests/test_breadth_evals.py::test_frozen_holdout_files_still_have_the_recorded_hashes.
+# The checker code (star/breadth_ifbench.py) is the grader; its fingerprint is written to every result file (run.breadth).
+
+3b6ddc033a57634240dc43834598112052793c52c5352708464c4461b35afca4  holdout-v1.json
+23bab32cbd529abb71be8888701df6c6db760532d2c374f94a312e8679d050b6  reference/HO-IF-01.bad.md
+6321cdb8ae200191f116c24bee77aec8e7359f222c9f1dd9fa192df18ec3b72c  reference/HO-IF-01.md
+5585e2f986c3ea16b1289d56b75c47cfe5553c70165df000f1c9ce2a23be916e  reference/HO-IF-02.bad.md
+d521f0d0e56f71611d59c7080ed33298b5b60916c36ca237eafb799197797e60  reference/HO-IF-02.md
+d72e226d1641fc14bdde2f06f15252d18e24effb8880c902d6b6019d203f5f8c  reference/HO-IF-03.bad.md
+216bc163710a5656dd8ae8ed157a334419da742d016b6304e387e3ec65fee64d  reference/HO-IF-03.md
+354fe48ad04f900487c6c40bf620a1b71316d92116bc024e701a1258e30bab32  reference/HO-IF-04.bad.md
+eac40856b7a7041f3194734376da6eaec791c117dc030f9b076ae5f17aa2e177  reference/HO-IF-04.md
+c43277925788227cf0e0148d2cb2842f9a9c24ea71c67bb9c5d5254aaf9a78db  reference/HO-IF-05.bad.md
+0239c6c8f21b98ee27b089fa8156edbe9117da3b74b41d66142fb8d543f6f21b  reference/HO-IF-05.md
+bf87634632f2ab4259a1da85d6f1d37bbf9d1677651cfa85826daaf55690b745  reference/HO-IF-06.bad.md
+b79752b06141f719d1dce45ae146b7c385b319e50ff91e9bf75cd9b8c058b8d3  reference/HO-IF-06.md
+319c0d478cf81a3685dfac13b04e4364c47ecbf25653bf150cdfe0166bb8a91b  reference/HO-IF-07.bad.md
+6c5ed8388220c4ed50ae8b4ce1a26a22d3037bdb7bcb1bc2ef4145a28861e858  reference/HO-IF-07.md
+aea0f50702e95a167ab72116baaa568ee99d902e5ac3808e82108d369a71d122  reference/HO-IF-08.bad.md
+07263732522af81e64f6c35040a411716c13db48d1a1eb0abca8b9f8e631310e  reference/HO-IF-08.md
+03a3d89c3c09c6284bcf3bda115697918da73b8d38e4fbcca4c6f93be53747bb  reference/HO-IF-09.bad.md
+111dfc7cdfc8642cd8df0b1c81ef90e35113e0301b25ee649e45c824772e51d5  reference/HO-IF-09.md
+b13d4f8a3b04e7d772e6fb6a44dfe82ef39ac1d2b5bdf8ec4f6813e0bc5fed26  reference/HO-IF-10.bad.md
+6bc9bddf4e1ee8996fe35bc343520b136907805bad74eabd391fffa028758074  reference/HO-IF-10.md
+b3fd2105bad3be618c389dc5c020e1ca8d17715ea4f6182c2355583abc98a6e6  reference/HO-IF-11.bad.md
+d2e6c2bd420d8517e8e97d0538f6d5df1ff821569b7e5df55fec91687f79c894  reference/HO-IF-11.md
+8bbba39a095e64de99f0098c44c550e16f80d72505aaec74220892b00ba09023  reference/HO-IF-12.bad.md
+82c747b0993a726ac360026d7a137d5dd3bf225bf81383d193ce2556d3c0356d  reference/HO-IF-12.md

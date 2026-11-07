@@ -1,7 +1,9 @@
 """Offline verified-example importer, ranking, prompt, and real desktop integration tests."""
 from contextlib import asynccontextmanager
 import copy
+import gc
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -118,6 +120,20 @@ def test_duplicate_id_within_export_is_rejected_atomically(tmp_path):
     with pytest.raises(ValueError, match="Duplicate"):
         examples.import_file(export_file(tmp_path, rows), home=tmp_path / "home", project="STAR")
     assert not (tmp_path / "home").exists()
+
+
+def test_import_and_select_close_the_database_so_home_can_be_deleted(tmp_path):
+    # sqlite3's `with connect()` only commits; an unclosed handle locks the file on Windows (WinError 32).
+    file = export_file(tmp_path, [row(1, TOPICS[0])])
+    home = tmp_path / "home"
+    gc.disable()
+    try:
+        examples.import_file(file, home=home, project="STAR")
+        assert examples.select(home, "STAR", "Implement " + TOPICS[0])[1]
+        shutil.rmtree(home)
+    finally:
+        gc.enable()
+    assert not home.exists()
 
 
 @pytest.mark.parametrize("size,character", [(4001, "x"), (16_000, "x"), (64_000, "x"), (64_000, "\U0001f680")])

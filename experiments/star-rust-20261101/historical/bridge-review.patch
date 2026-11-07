@@ -1,0 +1,379 @@
+--- a/.env.example
++++ b/.env.example
+@@ -11,3 +11,7 @@
+ LITHA_MAX_PARALLEL_CHAT=1
+ LITHA_MAX_CONTEXT_CHARS=6000
+ LITHA_MAX_RETRIEVED_CHUNKS=4
++
++# Queue admission timeout, separate from per-socket network timeout:
++LITHA_QUEUE_TIMEOUT=5
++LITHA_MAX_PROMPT_CHARS=50000
+--- a/.github/workflows/bridge-tests.yml
++++ b/.github/workflows/bridge-tests.yml
+@@ -4,11 +4,15 @@
+     paths:
+       - 'src/litha_bridge/**'
+       - 'tests/**'
++      - 'pyproject.toml'
++      - '.env.example'
+       - '.github/workflows/bridge-tests.yml'
+   pull_request:
+     paths:
+       - 'src/litha_bridge/**'
+       - 'tests/**'
++      - 'pyproject.toml'
++      - '.env.example'
+       - '.github/workflows/bridge-tests.yml'
+ permissions:
+   contents: read
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,14 @@
+ # Litha local AI bridge — experimental integration candidate
+ 
+ **Status: not committed to a Litha repository.** Litha's source repository was not accessible through the connected GitHub account on 2026-10-29. This is an original, standalone Python adapter and test suite, designed to be reviewed and integrated into the correct codebase. No third-party code or model weights are bundled.
++
++## Review update — October 30, 2026 (candidate 0.1.1)
++
++42 offline tests now pass in the assistant's Python 3.13.5 Linux environment (the original 25 plus 17 regression tests). Fixes cover timed queue admission, strict settings and model metadata, aggregate prompt size, exact evidence excerpts and robust citation IDs. The 25-test note below is historical.
++
++The generation interface remains non-streaming, and model-list preflight is still performed per call. Queue timeout is per client, not a global scheduler; the network timeout is not a strict total deadline. Reuse one client per endpoint when appropriate. This remains a standalone **Litha** candidate, not an installed STAR feature. No GitHub CI or live providers were tested in this review.
++
++New environment options: `LITHA_QUEUE_TIMEOUT=5` seconds and `LITHA_MAX_PROMPT_CHARS=50000`. Both providers remain disabled by default.
+ 
+ ## What it does
+ 
+--- a/docs/RESEARCH.md
++++ b/docs/RESEARCH.md
+@@ -142,3 +142,8 @@
+ - This package implements a Python *candidate adapter*, not native integration in Litha's unknown programming language.
+ - The 25 passing tests use simulated HTTP servers, not real Lemonade, AnythingLLM, Litha, AMD NPU, CUDA GPU or model-quality tests.
+ - The retrieved chunks remain untrusted even when they originate from an ostensibly trusted AnythingLLM workspace.
++
++
++## Review note — October 30, 2026
++
++The standalone adapter has a reviewed 0.1.1 candidate with 42 offline tests. See the package README for changed behavior and the enclosing STAR audit for measured experiments. The original research remains a dated source snapshot, not evidence of deployment or performance gains.
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -4,7 +4,7 @@
+ 
+ [project]
+ name = "litha-local-ai-bridge"
+-version = "0.1.0"
++version = "0.1.1"
+ description = "Opt-in, loopback-first adapters for Lemonade and AnythingLLM"
+ requires-python = ">=3.10"
+ dependencies = []
+--- a/src/litha_bridge/clients.py
++++ b/src/litha_bridge/clients.py
+@@ -57,17 +57,22 @@
+         items = result.get("data")
+         if not isinstance(items, list):
+             raise ProviderError("Lemonade models response is malformed")
+-        # Do not echo local paths or other sensitive metadata to callers.
+-        return [
+-            {"id": item["id"], "labels": item.get("labels", [])}
+-            for item in items
+-            if isinstance(item, dict)
+-            and isinstance(item.get("id"), str)
+-            and item.get("recipe") != "cloud"
+-            # Composite collections may invoke internal tools or route to cloud.
+-            and not str(item.get("recipe", "")).startswith("collection.")
+-            and not item.get("cloud_provider")
+-        ]
++        # Fail closed on malformed capability metadata; never use substring
++        # membership on a provider-supplied string in place of a labels array.
++        models: list[dict[str, Any]] = []
++        for item in items:
++            if not isinstance(item, dict) or not isinstance(item.get("id"), str):
++                continue
++            labels = item.get("labels", [])
++            if not isinstance(labels, list) or not all(isinstance(x, str) for x in labels):
++                raise ProviderError("Lemonade model metadata is malformed")
++            recipe = item.get("recipe", "")
++            if not isinstance(recipe, str):
++                raise ProviderError("Lemonade model metadata is malformed")
++            if recipe == "cloud" or recipe.startswith("collection.") or item.get("cloud_provider"):
++                continue
++            models.append({"id": item["id"], "labels": list(labels)})
++        return models
+ 
+     def chat(
+         self,
+@@ -80,25 +85,36 @@
+         _must_have(self.config.lemonade_enabled, "Lemonade")
+         if not isinstance(model, str) or not model.strip() or len(model) > 200:
+             raise ConfigError("An explicit model ID is required")
+-        if not isinstance(max_tokens, int) or not (1 <= max_tokens <= 8192):
++        if type(max_tokens) is not int or not (1 <= max_tokens <= 8192):
+             raise ConfigError("max_tokens must be between 1 and 8192")
+         if not messages or len(messages) > 64:
+             raise ConfigError("Provide between 1 and 64 messages")
+         sanitized: list[dict[str, str]] = []
++        total_characters = 0
+         for message in messages:
+             if not isinstance(message, Mapping) or message.get("role") not in {"system", "user", "assistant"}:
+                 raise ConfigError("Only text system/user/assistant messages are supported")
+             content = message.get("content")
+             if not isinstance(content, str) or len(content) > 50_000:
+                 raise ConfigError("Message content must be text up to 50,000 characters")
++            total_characters += len(content)
++            if total_characters > self.config.max_prompt_characters:
++                raise ConfigError("Combined messages exceed max_prompt_characters")
+             sanitized.append({"role": message["role"], "content": content})
+-        with self._chat_slots:
++        # Bound admission separately from socket inactivity timeouts. The caller
++        # should share one client instance per endpoint; this is not a cross-
++        # process/global resource scheduler and not an end-to-end deadline.
++        if not self._chat_slots.acquire(timeout=self.config.queue_timeout_seconds):
++            raise ProviderError("Lemonade chat queue wait expired; no request was sent")
++        try:
+             chat_ids = {item["id"] for item in self.models() if "chat" in item["labels"]}
+             if model not in chat_ids:
+                 raise ProviderError("Requested Lemonade chat model is not installed locally; no model was pulled")
+             result = self.transport.request("POST", "/chat/completions", payload={
+                 "model": model, "messages": sanitized, "stream": False, "max_tokens": max_tokens,
+             })
++        finally:
++            self._chat_slots.release()
+         choices = result.get("choices")
+         if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+             raise ProviderError("Lemonade chat response is malformed")
+@@ -138,11 +154,11 @@
+         if not isinstance(query, str) or not query.strip() or len(query) > 12000:
+             raise ConfigError("Query must be nonempty and at most 12000 characters")
+         limit = top_n if top_n is not None else self.config.max_search_results
+-        if not isinstance(limit, int) or not (1 <= limit <= 20):
++        if type(limit) is not int or not (1 <= limit <= 20):
+             raise ConfigError("top_n must be between 1 and 20")
+         payload: dict[str, Any] = {"query": query, "topN": limit}
+         if score_threshold is not None:
+-            if not isinstance(score_threshold, (int, float)) or not 0 <= score_threshold <= 1:
++            if type(score_threshold) not in (int, float) or not 0 <= score_threshold <= 1:
+                 raise ConfigError("score_threshold must be between 0 and 1")
+             payload["scoreThreshold"] = score_threshold
+         result = self.transport.request("POST", self._workspace_path(workspace_slug, "vector-search"), payload=payload)
+--- a/src/litha_bridge/config.py
++++ b/src/litha_bridge/config.py
+@@ -3,6 +3,7 @@
+ 
+ from dataclasses import dataclass, field
+ import os
++import math
+ from urllib.parse import urlsplit, urlunsplit
+ 
+ 
+@@ -62,19 +63,29 @@
+     lemonade_api_key: str = field(default="", repr=False)
+     anythingllm_api_key: str = field(default="", repr=False)
+     timeout_seconds: float = 30.0
++    queue_timeout_seconds: float = 5.0
++    max_prompt_characters: int = 50_000
+     max_parallel_chat: int = 1
+     max_context_characters: int = 6000
+     max_search_results: int = 4
+ 
+     def __post_init__(self) -> None:
+-        if not (0.2 <= self.timeout_seconds <= 300):
+-            raise ConfigError("timeout_seconds must be in [0.2, 300]")
+-        if not (1 <= self.max_parallel_chat <= 16):
+-            raise ConfigError("max_parallel_chat must be in [1, 16]")
+-        if not (200 <= self.max_context_characters <= 50000):
+-            raise ConfigError("max_context_characters must be in [200, 50000]")
+-        if not (1 <= self.max_search_results <= 20):
+-            raise ConfigError("max_search_results must be in [1, 20]")
++        for name in ("lemonade_enabled", "anythingllm_enabled", "remote_enabled"):
++            if type(getattr(self, name)) is not bool:
++                raise ConfigError(f"{name} must be a boolean")
++        for name, lower, upper in (("timeout_seconds", 0.2, 300),
++                                    ("queue_timeout_seconds", 0.01, 60)):
++            value = getattr(self, name)
++            if (type(value) not in (int, float) or not math.isfinite(value)
++                    or not lower <= value <= upper):
++                raise ConfigError(f"{name} must be finite and in [{lower}, {upper}]")
++        for name, lower, upper in (("max_parallel_chat", 1, 16),
++                                   ("max_context_characters", 200, 50000),
++                                   ("max_prompt_characters", 200, 200000),
++                                   ("max_search_results", 1, 20)):
++            value = getattr(self, name)
++            if type(value) is not int or not lower <= value <= upper:
++                raise ConfigError(f"{name} must be an integer in [{lower}, {upper}]")
+         validated_api_base(self.lemonade_url, remote_enabled=self.remote_enabled, name="Lemonade")
+         validated_api_base(self.anythingllm_url, remote_enabled=self.remote_enabled, name="AnythingLLM")
+ 
+@@ -98,6 +109,8 @@
+             lemonade_api_key=os.getenv("LITHA_LEMONADE_API_KEY", ""),
+             anythingllm_api_key=os.getenv("LITHA_ANYTHINGLLM_API_KEY", ""),
+             timeout_seconds=number("LITHA_AI_TIMEOUT", float, 30.0),
++            queue_timeout_seconds=number("LITHA_QUEUE_TIMEOUT", float, 5.0),
++            max_prompt_characters=number("LITHA_MAX_PROMPT_CHARS", int, 50000),
+             max_parallel_chat=number("LITHA_MAX_PARALLEL_CHAT", int, 1),
+             max_context_characters=number("LITHA_MAX_CONTEXT_CHARS", int, 6000),
+             max_search_results=number("LITHA_MAX_RETRIEVED_CHUNKS", int, 4),
+--- a/src/litha_bridge/grounded.py
++++ b/src/litha_bridge/grounded.py
+@@ -5,7 +5,7 @@
+ """
+ from __future__ import annotations
+ 
+-from dataclasses import dataclass
++from dataclasses import dataclass, replace
+ import json
+ import re
+ 
+@@ -48,7 +48,8 @@
+                 break
+             reference = f"S{len(selected) + 1}"
+             evidence.append({"source_id": reference, "title": hit.title, "excerpt": text})
+-            selected.append(hit)
++            # Return exactly the excerpt supplied to the model, not unseen text.
++            selected.append(replace(hit, text=text))
+             used += len(text)
+         instruction = (
+             "Answer only with support from the supplied retrieved excerpts. "
+@@ -62,8 +63,8 @@
+             {"role": "system", "content": instruction},
+             {"role": "user", "content": json.dumps({"question": question, "retrieved_excerpts": evidence}, ensure_ascii=False)},
+         ], max_tokens=max_output_tokens)
+-        citation_ids = {int(identifier) for identifier in re.findall(r"\[S(\d+)\]", response.text)}
+-        valid_ids = set(range(1, len(selected) + 1))
++        citation_ids = set(re.findall(r"\[S(\d+)\]", response.text))
++        valid_ids = {str(i) for i in range(1, len(selected) + 1)}
+         # Mechanical check only: referenced evidence can still fail to support a claim.
+         needs_review = not citation_ids or not citation_ids.issubset(valid_ids)
+         return GroundedAnswer(
+--- /dev/null
++++ b/tests/test_review.py
+@@ -0,0 +1,131 @@
++from __future__ import annotations
++import json
++import threading
++import unittest
++from types import SimpleNamespace
++from unittest.mock import patch
++from litha_bridge import BridgeConfig, ConfigError, GroundedBridge, LemonadeClient, ProviderError, SearchHit, AnythingLLMClient
++
++class ReviewRegressionTests(unittest.TestCase):
++    def client(self, **config):
++        c = LemonadeClient(BridgeConfig(lemonade_enabled=True, **config))
++        self.calls = []
++        def request(method, route, **kw):
++            self.calls.append((method, route, kw))
++            if route == '/models':
++                return {'data': [{'id': 'local', 'labels': ['chat']}]}
++            return {'choices': [{'message': {'content': 'ok'}}]}
++        c.transport = SimpleNamespace(request=request)
++        return c
++
++    def test_boolean_flags_are_strict(self):
++        for name in ('lemonade_enabled', 'anythingllm_enabled', 'remote_enabled'):
++            for value in ('false', 'true', 0, 1, None):
++                with self.subTest(name=name, value=value), self.assertRaises(ConfigError):
++                    BridgeConfig(**{name: value})
++
++    def test_integer_limits_reject_boolean_and_fraction(self):
++        for name in ('max_parallel_chat','max_search_results','max_context_characters','max_prompt_characters'):
++            for value in (True, False, 1.5, '4'):
++                with self.subTest(name=name,value=value), self.assertRaises(ConfigError):
++                    BridgeConfig(**{name: value})
++
++    def test_finite_timeouts_required(self):
++        for name in ('timeout_seconds','queue_timeout_seconds'):
++            for value in (float('nan'),float('inf'),True,'30',0,-1):
++                with self.subTest(name=name,value=value), self.assertRaises(ConfigError):
++                    BridgeConfig(**{name:value})
++
++    def test_queue_has_bounded_wait_and_does_not_call_provider(self):
++        c=self.client(queue_timeout_seconds=0.01)
++        c._chat_slots.acquire()
++        done=threading.Event(); errors=[]
++        def run():
++            try: c.chat('local',[{'role':'user','content':'hello'}])
++            except Exception as exc: errors.append(exc)
++            finally: done.set()
++        worker=threading.Thread(target=run,daemon=True); worker.start()
++        try:
++            self.assertTrue(done.wait(2), 'admission wait did not time out')
++            self.assertEqual(len(errors),1)
++            self.assertIsInstance(errors[0],ProviderError)
++            self.assertIn('queue wait expired', str(errors[0]))
++            self.assertEqual(self.calls,[])
++        finally:
++            c._chat_slots.release(); worker.join(2)
++
++    def test_slot_released_after_provider_error(self):
++        c=self.client(queue_timeout_seconds=0.01)
++        c.transport=SimpleNamespace(request=lambda *a,**k: {'data':None})
++        with self.assertRaises(ProviderError): c.chat('local',[{'role':'user','content':'hi'}])
++        self.assertTrue(c._chat_slots.acquire(blocking=False)); c._chat_slots.release()
++
++    def test_slot_released_after_success(self):
++        c=self.client(); c.chat('local',[{'role':'user','content':'hi'}])
++        self.assertTrue(c._chat_slots.acquire(blocking=False)); c._chat_slots.release()
++
++    def test_malformed_labels_are_sanitized_errors(self):
++        for labels in (None,'chat','not-chat',{},[None],[1]):
++            with self.subTest(labels=labels):
++                c=self.client()
++                c.transport=SimpleNamespace(request=lambda *a,**k: {'data':[{'id':'local','labels':labels}]})
++                with self.assertRaisesRegex(ProviderError,'metadata is malformed'):
++                    c.chat('local',[{'role':'user','content':'hi'}])
++
++    def test_malformed_recipe_is_sanitized_error(self):
++        c=self.client(); c.transport=SimpleNamespace(request=lambda *a,**k:{'data':[{'id':'local','labels':['chat'],'recipe':None}]})
++        with self.assertRaises(ProviderError): c.models()
++
++    def test_aggregate_prompt_cap_precedes_network(self):
++        c=self.client(max_prompt_characters=200)
++        with self.assertRaisesRegex(ConfigError,'Combined messages'):
++            c.chat('local',[{'role':'user','content':'x'*110},{'role':'assistant','content':'y'*110}])
++        self.assertFalse(self.calls)
++
++    def test_exact_aggregate_cap_is_accepted(self):
++        c=self.client(max_prompt_characters=200)
++        self.assertEqual(c.chat('local',[{'role':'user','content':'x'*200}]).text,'ok')
++
++    def test_boolean_token_cap_rejected(self):
++        c=self.client()
++        with self.assertRaises(ConfigError): c.chat('local',[{'role':'user','content':'hi'}],max_tokens=True)
++        self.assertFalse(self.calls)
++
++    def test_boolean_search_limit_rejected(self):
++        c=AnythingLLMClient(BridgeConfig(anythingllm_enabled=True,anythingllm_api_key='test'))
++        with self.assertRaises(ConfigError): c.vector_search('docs','q',top_n=True)
++
++    def test_boolean_score_threshold_rejected(self):
++        c=AnythingLLMClient(BridgeConfig(anythingllm_enabled=True,anythingllm_api_key='test'))
++        with self.assertRaises(ConfigError): c.vector_search('docs','q',score_threshold=True)
++
++    def test_returned_source_matches_exact_model_excerpt(self):
++        hit=SearchHit('x'*5000,'doc','doc.md'); captured=[]
++        r=SimpleNamespace(config=BridgeConfig(max_context_characters=1200), vector_search=lambda *a:[hit])
++        def chat(model,messages,**kw):
++            captured.append(json.loads(messages[1]['content']))
++            return SimpleNamespace(text='supported [S1]', model=model)
++        a=GroundedBridge(r,SimpleNamespace(chat=chat)).ask('docs','q',model='local')
++        self.assertEqual(a.sources[0].text,captured[0]['retrieved_excerpts'][0]['excerpt'])
++        self.assertEqual(len(a.sources[0].text),1200)
++        self.assertEqual(len(hit.text),5000)
++
++    def test_huge_citation_id_needs_review_instead_of_crashing(self):
++        r=SimpleNamespace(config=BridgeConfig(), vector_search=lambda *a:[SearchHit('text','doc','doc')])
++        g=SimpleNamespace(chat=lambda *a,**kw:SimpleNamespace(text='[S'+'9'*5000+']',model='local'))
++        self.assertEqual(GroundedBridge(r,g).ask('docs','q',model='local').status,'needs_review')
++
++    def test_noncanonical_citation_is_not_accepted(self):
++        r=SimpleNamespace(config=BridgeConfig(), vector_search=lambda *a:[SearchHit('text','doc','doc')])
++        for text in ('[S01]', '[S١]', '[S0]'):
++            with self.subTest(text=text):
++                g=SimpleNamespace(chat=lambda *a,**kw:SimpleNamespace(text=text,model='local'))
++                self.assertEqual(GroundedBridge(r,g).ask('docs','q',model='local').status,'needs_review')
++
++    def test_new_environment_options(self):
++        with patch.dict('os.environ',{'LITHA_QUEUE_TIMEOUT':'0.5','LITHA_MAX_PROMPT_CHARS':'1234'},clear=True):
++            cfg=BridgeConfig.from_env()
++        self.assertEqual(cfg.queue_timeout_seconds,.5)
++        self.assertEqual(cfg.max_prompt_characters,1234)
++
++if __name__ == '__main__': unittest.main()

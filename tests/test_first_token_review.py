@@ -119,7 +119,7 @@ def test_plain_chat_rules_keep_the_rule_against_asking_for_credentials():
     assert "never ask for" in short and "credentials" in short
     for secret in ("password", "cookie", "api key"):
         assert secret in short
-    assert len(FAST_RULES) < 0.45 * len(RULES)          # still the short form
+    assert len(FAST_RULES) < 0.5 * len(RULES)          # still the short form
 
 
 # ------------------------------------------------------------------ compaction

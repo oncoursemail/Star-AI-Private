@@ -1,0 +1,656 @@
+[
+  {
+    "repository": "maxbogo/awesome-ai-tools-for-ui",
+    "commit": "680b351764199b9b6b4352d3ea5af0bce927b6ed",
+    "commit_date": "2026-09-25T18:28:07Z",
+    "url": "https://github.com/maxbogo/awesome-ai-tools-for-ui/tree/680b351764199b9b6b4352d3ea5af0bce927b6ed",
+    "license_metadata": null,
+    "license_paths": [],
+    "tree_complete": true
+  },
+  {
+    "repository": "pbakaus/impeccable",
+    "commit": "4f956490f0056ae1ff5ea80372cf56e83c001d3c",
+    "commit_date": "2026-10-31T18:13:22Z",
+    "url": "https://github.com/pbakaus/impeccable/tree/4f956490f0056ae1ff5ea80372cf56e83c001d3c",
+    "license_metadata": "Apache-2.0",
+    "license_paths": [
+      "LICENSE",
+      "NOTICE.md",
+      "crates/context/src/staleness_notice.rs",
+      "cursor-plugin/LICENSE",
+      "tests/fixtures/consent/site-notice-contents.html",
+      "tests/fixtures/consent/site-notice-short.html",
+      "tests/fixtures/consent/site-notice.html"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "raphaelsalaja/userinterface-wiki",
+    "commit": "256a954080c8bcf1b1ceb1e2a4079d1f24cf593a",
+    "commit_date": "2026-03-17T17:35:29Z",
+    "url": "https://github.com/raphaelsalaja/userinterface-wiki/tree/256a954080c8bcf1b1ceb1e2a4079d1f24cf593a",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "license.md"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "nextlevelbuilder/ui-ux-pro-max-skill",
+    "commit": "bf41cbc3ce63e30c922e58ef48741ba6133f9aa9",
+    "commit_date": "2026-10-31T16:07:44Z",
+    "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/bf41cbc3ce63e30c922e58ef48741ba6133f9aa9",
+    "license_metadata": "MIT",
+    "license_paths": [
+      ".claude/skills/ui-styling/LICENSE.txt",
+      ".claude/skills/ui-ux-pro-max/data/google-font-licenses.json",
+      "LICENSE",
+      "cli/assets/data/google-font-licenses.json",
+      "cli/assets/skills/ui-styling/LICENSE.txt",
+      "src/ui-ux-pro-max/data/google-font-licenses.json"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "anthropics/skills",
+    "commit": "ca45fc496a3436251f191354091d557da31c15b5",
+    "commit_date": "2026-10-28T19:20:38Z",
+    "url": "https://github.com/anthropics/skills/tree/ca45fc496a3436251f191354091d557da31c15b5",
+    "license_metadata": null,
+    "license_paths": [
+      "THIRD_PARTY_NOTICES.md",
+      "skills/academy-guide/LICENSE.txt",
+      "skills/algorithmic-art/LICENSE.txt",
+      "skills/brand-guidelines/LICENSE.txt",
+      "skills/canvas-design/LICENSE.txt",
+      "skills/claude-api/LICENSE.txt",
+      "skills/discernment-nudge/LICENSE.txt",
+      "skills/docx/LICENSE.txt",
+      "skills/frontend-design/LICENSE.txt",
+      "skills/internal-comms/LICENSE.txt",
+      "skills/mcp-builder/LICENSE.txt",
+      "skills/pdf/LICENSE.txt",
+      "skills/pptx/LICENSE.txt",
+      "skills/skill-creator/LICENSE.txt",
+      "skills/slack-gif-creator/LICENSE.txt",
+      "skills/theme-factory/LICENSE.txt",
+      "skills/web-artifacts-builder/LICENSE.txt",
+      "skills/webapp-testing/LICENSE.txt",
+      "skills/xlsx/LICENSE.txt"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "Leonxlnx/taste-skill",
+    "commit": "12af471f627f866411b4bd785b19646d3672784c",
+    "commit_date": "2026-10-24T23:42:19Z",
+    "url": "https://github.com/Leonxlnx/taste-skill/tree/12af471f627f866411b4bd785b19646d3672784c",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "shadcn-ui/ui",
+    "commit": "c0d63c339d6cd2fc26135590a54cf1f362269451",
+    "commit_date": "2026-10-31T20:40:44Z",
+    "url": "https://github.com/shadcn-ui/ui/tree/c0d63c339d6cd2fc26135590a54cf1f362269451",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE.md",
+      "packages/registry/test/fixtures/frameworks/remix-indie-stack/LICENSE.md",
+      "packages/registry/test/fixtures/layout-corpus/text--license-header-no-imports.tsx",
+      "packages/registry/test/fixtures/transform-corpus/third-party--license-panel.tsx"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "vercel-labs/agent-skills",
+    "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+    "commit_date": "2026-10-27T21:40:02Z",
+    "url": "https://github.com/vercel-labs/agent-skills/tree/1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+    "license_metadata": null,
+    "license_paths": [],
+    "tree_complete": true
+  },
+  {
+    "repository": "vercel-labs/web-interface-guidelines",
+    "commit": "434b7f91364665f2f733b310ec54809bf8f37937",
+    "commit_date": "2026-10-05T20:49:16Z",
+    "url": "https://github.com/vercel-labs/web-interface-guidelines/tree/434b7f91364665f2f733b310ec54809bf8f37937",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "Dammyjay93/interface-design",
+    "commit": "2f9be3206855bcb2d1d0af262c8bae25cba6658d",
+    "commit_date": "2026-06-20T11:32:44Z",
+    "url": "https://github.com/Dammyjay93/interface-design/tree/2f9be3206855bcb2d1d0af262c8bae25cba6658d",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "0xdesign/design-plugin",
+    "commit": "913a7ab2ac7e0f48eab77c93f2f5376150864b02",
+    "commit_date": "2026-09-17T16:07:52Z",
+    "url": "https://github.com/0xdesign/design-plugin/tree/913a7ab2ac7e0f48eab77c93f2f5376150864b02",
+    "license_metadata": null,
+    "license_paths": [],
+    "tree_complete": true
+  },
+  {
+    "repository": "VoltAgent/awesome-design-md",
+    "commit": "fcc70284932276d085f01ef9f83edde90b1258cb",
+    "commit_date": "2026-10-28T15:45:37Z",
+    "url": "https://github.com/VoltAgent/awesome-design-md/tree/fcc70284932276d085f01ef9f83edde90b1258cb",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "jakubkrehel/make-interfaces-feel-better",
+    "commit": "35545ea1512ad59fa463e6b1f95ca9c052981fe6",
+    "commit_date": "2026-08-29T16:59:35Z",
+    "url": "https://github.com/jakubkrehel/make-interfaces-feel-better/tree/35545ea1512ad59fa463e6b1f95ca9c052981fe6",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "emilkowalski/skills",
+    "commit": "a81dbca07f2217b7103e510c0f13f8d5b017afc9",
+    "commit_date": "2026-10-28T18:25:28Z",
+    "url": "https://github.com/emilkowalski/skills/tree/a81dbca07f2217b7103e510c0f13f8d5b017afc9",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "cursor/plugins",
+    "commit": "ae5650febf4320793844c12c4adaa937f417f8da",
+    "commit_date": "2026-11-01T00:10:38Z",
+    "url": "https://github.com/cursor/plugins/tree/ae5650febf4320793844c12c4adaa937f417f8da",
+    "license_metadata": null,
+    "license_paths": [
+      "advisor/LICENSE",
+      "agent-compatibility/LICENSE",
+      "cli-for-agent/LICENSE",
+      "continual-learning/LICENSE",
+      "create-plugin/LICENSE",
+      "cursor-sdk/LICENSE",
+      "cursor-team-kit/LICENSE",
+      "docs-canvas/LICENSE",
+      "dyl-stack/LICENSE",
+      "grok-voice/LICENSE",
+      "harness/pstack/claude-code/LICENSE",
+      "orchestrate/LICENSE",
+      "origin-apps/LICENSE",
+      "pr-review-canvas/LICENSE",
+      "pstack/LICENSE",
+      "ralph-loop/LICENSE",
+      "teaching/LICENSE",
+      "thermos/LICENSE",
+      "third_party/ahrefs/LICENSE",
+      "third_party/amplemarket/LICENSE",
+      "third_party/ashby/LICENSE",
+      "third_party/attio/LICENSE",
+      "third_party/beehiiv/LICENSE",
+      "third_party/brevo/LICENSE",
+      "third_party/brex/LICENSE",
+      "third_party/buffer/LICENSE",
+      "third_party/business-central/LICENSE",
+      "third_party/calendly/LICENSE",
+      "third_party/circleback/LICENSE",
+      "third_party/clay/LICENSE",
+      "third_party/coda/LICENSE",
+      "third_party/coinbase/LICENSE",
+      "third_party/craft/LICENSE",
+      "third_party/customer-io/LICENSE",
+      "third_party/daloopa/LICENSE",
+      "third_party/databricks-genie-one/LICENSE",
+      "third_party/docusign/LICENSE",
+      "third_party/etoro-trading/LICENSE",
+      "third_party/excalidraw/LICENSE",
+      "third_party/fathom/LICENSE",
+      "third_party/feishu/LICENSE",
+      "third_party/finance/LICENSE",
+      "third_party/finary/LICENSE",
+      "third_party/fireflies/LICENSE",
+      "third_party/framer/LICENSE",
+      "third_party/gamma/LICENSE",
+      "third_party/github/LICENSE",
+      "third_party/gmail/LICENSE",
+      "third_party/godaddy/LICENSE",
+      "third_party/gong/LICENSE",
+      "third_party/google-ads/LICENSE",
+      "third_party/google-calendar/LICENSE",
+      "third_party/google-cloud-bigquery/LICENSE",
+      "third_party/google-docs/LICENSE",
+      "third_party/google-drive/LICENSE",
+      "third_party/google-sheets/LICENSE",
+      "third_party/google-slides/LICENSE",
+      "third_party/gopuff/LICENSE",
+      "third_party/greenhouse/LICENSE",
+      "third_party/guru/LICENSE",
+      "third_party/gusto/LICENSE",
+      "third_party/highlevel/LICENSE",
+      "third_party/hubspot/LICENSE",
+      "third_party/hunter/LICENSE",
+      "third_party/interactive-brokers/LICENSE",
+      "third_party/intercom/LICENSE",
+      "third_party/jobber/LICENSE",
+      "third_party/jotform/LICENSE",
+      "third_party/juicebox/LICENSE",
+      "third_party/klaviyo/LICENSE",
+      "third_party/lark-base/LICENSE",
+      "third_party/lark/LICENSE",
+      "third_party/mailerlite/LICENSE",
+      "third_party/meltwater/LICENSE",
+      "third_party/mem/LICENSE",
+      "third_party/meta-ads/LICENSE",
+      "third_party/navan/LICENSE",
+      "third_party/onedrive/LICENSE",
+      "third_party/onepay/LICENSE",
+      "third_party/otter/LICENSE",
+      "third_party/outlook-calendar/LICENSE",
+      "third_party/outlook/LICENSE",
+      "third_party/outreach/LICENSE",
+      "third_party/pitchbook/LICENSE",
+      "third_party/plaud/LICENSE",
+      "third_party/playwright/LICENSE",
+      "third_party/posthog-mcp/LICENSE",
+      "third_party/power-bi/LICENSE",
+      "third_party/profound/LICENSE",
+      "third_party/questrade/LICENSE",
+      "third_party/quickbooks-online/LICENSE",
+      "third_party/readwise/LICENSE",
+      "third_party/ringcentral-chat/LICENSE",
+      "third_party/ringcentral-phone/LICENSE",
+      "third_party/rippling/LICENSE",
+      "third_party/robinhood/LICENSE",
+      "third_party/salesforce-headless-360/LICENSE",
+      "third_party/salesforce/LICENSE",
+      "third_party/semrush/LICENSE",
+      "third_party/servicenow/LICENSE",
+      "third_party/sharepoint/LICENSE",
+      "third_party/shopify-store/LICENSE",
+      "third_party/similarweb/LICENSE",
+      "third_party/smartsheet/LICENSE",
+      "third_party/sp-global/LICENSE",
+      "third_party/square/LICENSE",
+      "third_party/stable/LICENSE",
+      "third_party/statsig/LICENSE",
+      "third_party/tailscale/LICENSE",
+      "third_party/teams/LICENSE",
+      "third_party/tiktok-for-business/LICENSE",
+      "third_party/tinyfish/LICENSE",
+      "third_party/todoist/LICENSE",
+      "third_party/trello/LICENSE",
+      "third_party/typeform/LICENSE",
+      "third_party/upwork/LICENSE",
+      "third_party/vanta/LICENSE",
+      "third_party/webull/LICENSE",
+      "third_party/whatsapp-business/LICENSE",
+      "third_party/workable/LICENSE",
+      "third_party/workday/LICENSE",
+      "third_party/wrike/LICENSE",
+      "third_party/x-ads/LICENSE",
+      "third_party/x-money/LICENSE",
+      "third_party/x/LICENSE",
+      "third_party/xero/LICENSE",
+      "third_party/zoho-books/LICENSE",
+      "third_party/zoho-crm/LICENSE",
+      "third_party/zoho-desk/LICENSE",
+      "third_party/zoom/LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "s0xDk/refactoring-ui-skill",
+    "commit": "48872143abb0a8feb6d9bf58e222afbd800210b0",
+    "commit_date": "2026-08-26T22:47:16Z",
+    "url": "https://github.com/s0xDk/refactoring-ui-skill/tree/48872143abb0a8feb6d9bf58e222afbd800210b0",
+    "license_metadata": "NOASSERTION",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "Owl-Listener/designer-skills",
+    "commit": "9a6930cf84a822eb458624bd11c61aac5bbdf224",
+    "commit_date": "2026-09-05T15:32:50Z",
+    "url": "https://github.com/Owl-Listener/designer-skills/tree/9a6930cf84a822eb458624bd11c61aac5bbdf224",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "maxbogo/yc-web-design-strategy-skill",
+    "commit": "bf9e5ace80a958f25dbe60989762770bdcf3505f",
+    "commit_date": "2026-03-23T19:00:45Z",
+    "url": "https://github.com/maxbogo/yc-web-design-strategy-skill/tree/bf9e5ace80a958f25dbe60989762770bdcf3505f",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "bencium/bencium-marketplace",
+    "commit": "5de46a39b4640fa419560cd0b67e4c4b50dac802",
+    "commit_date": "2026-10-04T09:16:45Z",
+    "url": "https://github.com/bencium/bencium-marketplace/tree/5de46a39b4640fa419560cd0b67e4c4b50dac802",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE",
+      "eu-ai-act-reviewer/skills/eu-ai-act-reviewer/LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "CloudAI-X/threejs-skills",
+    "commit": "0e181866f095b5f06d005133876e926515390d95",
+    "commit_date": "2026-10-19T05:17:17Z",
+    "url": "https://github.com/CloudAI-X/threejs-skills/tree/0e181866f095b5f06d005133876e926515390d95",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "bitjaru/styleseed",
+    "commit": "ce66f1dc1d14609ec43bc48eed1d97abb51489c8",
+    "commit_date": "2026-10-28T03:07:06Z",
+    "url": "https://github.com/bitjaru/styleseed/tree/ce66f1dc1d14609ec43bc48eed1d97abb51489c8",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE",
+      "demo-pricing/content/upgrade-notice.json",
+      "engine/.claude/skills/styleseed/workflows/ss-update/references/upgrade-notice.json",
+      "skills/styleseed/workflows/ss-update/references/upgrade-notice.json"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "OneRedOak/claude-code-workflows",
+    "commit": "29a34c725313c7621f426f838ed31cf482473fb4",
+    "commit_date": "2026-10-09T05:59:19Z",
+    "url": "https://github.com/OneRedOak/claude-code-workflows/tree/29a34c725313c7621f426f838ed31cf482473fb4",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "alchaincyf/huashu-design",
+    "commit": "9b01ee8751679724dd43d855a532944aaa2c2b59",
+    "commit_date": "2026-10-30T17:50:57Z",
+    "url": "https://github.com/alchaincyf/huashu-design/tree/9b01ee8751679724dd43d855a532944aaa2c2b59",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE",
+      "assets/style-specimens/xhs/_kit/stickers/LICENSE.md"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "dominikmartn/nothing-design-skill",
+    "commit": "74affbb786af098b18503467b205c10a7df30126",
+    "commit_date": "2026-04-01T05:40:01Z",
+    "url": "https://github.com/dominikmartn/nothing-design-skill/tree/74affbb786af098b18503467b205c10a7df30126",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "nutlope/hallmark",
+    "commit": "4f6a46c6dc325d40ab268c93e25c7b96676ebccd",
+    "commit_date": "2026-10-29T16:50:04Z",
+    "url": "https://github.com/nutlope/hallmark/tree/4f6a46c6dc325d40ab268c93e25c7b96676ebccd",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE",
+      "skills/hallmark/LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "hamen/material-3-skill",
+    "commit": "14385f2bf3804d8779f8b4db2604211f1e70b4c1",
+    "commit_date": "2026-07-15T22:10:48Z",
+    "url": "https://github.com/hamen/material-3-skill/tree/14385f2bf3804d8779f8b4db2604211f1e70b4c1",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "ericzakariasson/scandinavian-design",
+    "commit": "295742307b97fa0fb848f9be2d6e229ca517c736",
+    "commit_date": "2026-08-22T17:02:53Z",
+    "url": "https://github.com/ericzakariasson/scandinavian-design/tree/295742307b97fa0fb848f9be2d6e229ca517c736",
+    "license_metadata": null,
+    "license_paths": [],
+    "tree_complete": true
+  },
+  {
+    "repository": "JCodesMore/ai-website-cloner-template",
+    "commit": "ee3f5a2f31fd549b9593fa4f7cf6d2955ee593bb",
+    "commit_date": "2026-10-05T08:06:55Z",
+    "url": "https://github.com/JCodesMore/ai-website-cloner-template/tree/ee3f5a2f31fd549b9593fa4f7cf6d2955ee593bb",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "nexu-io/open-design",
+    "commit": "12d970eacc8971150e3c76470d2a9afe16dc2ed1",
+    "commit_date": "2026-10-30T04:05:01Z",
+    "url": "https://github.com/nexu-io/open-design/tree/12d970eacc8971150e3c76470d2a9afe16dc2ed1",
+    "license_metadata": "Apache-2.0",
+    "license_paths": null,
+    "tree_complete": null
+  },
+  {
+    "repository": "21st-dev/magic-mcp",
+    "commit": "6b5299e8a83ceffa73d4fc4e148905bb3eeeeb55",
+    "commit_date": "2026-09-09T20:38:21Z",
+    "url": "https://github.com/21st-dev/magic-mcp/tree/6b5299e8a83ceffa73d4fc4e148905bb3eeeeb55",
+    "license_metadata": "ISC",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "zarazhangrui/beautiful-html-templates",
+    "commit": "e5e204fb1f3b06290846e7dcd7aceddabeceec8c",
+    "commit_date": "2026-06-09T23:59:36Z",
+    "url": "https://github.com/zarazhangrui/beautiful-html-templates/tree/e5e204fb1f3b06290846e7dcd7aceddabeceec8c",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "paper-design/shaders",
+    "commit": "1923e9f536ea079e2a95d23291cbfacfd69d37f6",
+    "commit_date": "2026-10-25T14:08:57Z",
+    "url": "https://github.com/paper-design/shaders/tree/1923e9f536ea079e2a95d23291cbfacfd69d37f6",
+    "license_metadata": "Apache-2.0",
+    "license_paths": [
+      "LICENSE",
+      "NOTICE",
+      "packages/shaders-react/LICENSE",
+      "packages/shaders-react/NOTICE",
+      "packages/shaders/LICENSE",
+      "packages/shaders/NOTICE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "google-labs-code/design.md",
+    "commit": "6e5da5382f41edbba9d73b2c62f33f32e9971f15",
+    "commit_date": "2026-10-16T18:21:40Z",
+    "url": "https://github.com/google-labs-code/design.md/tree/6e5da5382f41edbba9d73b2c62f33f32e9971f15",
+    "license_metadata": "Apache-2.0",
+    "license_paths": null,
+    "tree_complete": null
+  },
+  {
+    "repository": "zeke/swiss-design-skill",
+    "commit": "285009f3dc4ba311f59bb757973274de2c9446c3",
+    "commit_date": "2026-09-24T01:37:14Z",
+    "url": "https://github.com/zeke/swiss-design-skill/tree/285009f3dc4ba311f59bb757973274de2c9446c3",
+    "license_metadata": "MIT",
+    "license_paths": null,
+    "tree_complete": null
+  },
+  {
+    "repository": "ibelick/prompt-kit",
+    "commit": "5a9496635cc0e1bf7679fe2a9e35d9b36b99c08a",
+    "commit_date": "2026-09-28T13:33:24Z",
+    "url": "https://github.com/ibelick/prompt-kit/tree/5a9496635cc0e1bf7679fe2a9e35d9b36b99c08a",
+    "license_metadata": "MIT",
+    "license_paths": null,
+    "tree_complete": null
+  },
+  {
+    "repository": "aicanvas-me/aicanvas",
+    "commit": "8164f1e423e4e654dd0828a941ba5cdda69f08fe",
+    "commit_date": "2026-10-30T22:36:15Z",
+    "url": "https://github.com/aicanvas-me/aicanvas/tree/8164f1e423e4e654dd0828a941ba5cdda69f08fe",
+    "license_metadata": "MIT",
+    "license_paths": null,
+    "tree_complete": null
+  },
+  {
+    "repository": "Jakubantalik/transitions.dev",
+    "commit": "e3aefb554d8fd2cb3e91e773e82a0f2d5a4f82a0",
+    "commit_date": "2026-10-29T10:48:25Z",
+    "url": "https://github.com/Jakubantalik/transitions.dev/tree/e3aefb554d8fd2cb3e91e773e82a0f2d5a4f82a0",
+    "license_metadata": "NOASSERTION",
+    "license_paths": [
+      "LICENSE",
+      "skills/transitions-dev/LICENSE.txt",
+      "skills/transitions-polish/LICENSE.txt",
+      "skills/transitions-ui-generation/LICENSE.txt"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "saadeghi/daisyui",
+    "commit": "bf3bac3a397b543e55641ecb2d60a2ed961f09ec",
+    "commit_date": "2026-10-13T11:44:04Z",
+    "url": "https://github.com/saadeghi/daisyui/tree/bf3bac3a397b543e55641ecb2d60a2ed961f09ec",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE",
+      "packages/daisyui/LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "SamHerbert/SVG-Loaders",
+    "commit": "561eacac2f46e2b02e48df547324dcea94a6a1c5",
+    "commit_date": "2025-01-02T15:41:35Z",
+    "url": "https://github.com/SamHerbert/SVG-Loaders/tree/561eacac2f46e2b02e48df547324dcea94a6a1c5",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE.md"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "n3r4zzurr0/svg-spinners",
+    "commit": "abfa05c49acf005b8b1e0ef8eb25a67a7057eb20",
+    "commit_date": "2023-03-06T02:52:05Z",
+    "url": "https://github.com/n3r4zzurr0/svg-spinners/tree/abfa05c49acf005b8b1e0ef8eb25a67a7057eb20",
+    "license_metadata": "MIT",
+    "license_paths": [
+      "LICENSE"
+    ],
+    "tree_complete": true
+  },
+  {
+    "repository": "microsoft/playwright",
+    "commit": "deb7e86201e26cb4a8e25191fce5ef2f7a28aa87",
+    "url": "https://github.com/microsoft/playwright/tree/deb7e86201e26cb4a8e25191fce5ef2f7a28aa87",
+    "license_metadata": "Apache-2.0",
+    "review_scope": "Official documentation or paper review plus repository metadata; not a complete source audit"
+  },
+  {
+    "repository": "dequelabs/axe-core",
+    "commit": "6b52b841461bd23345970b91ec75fdaff6bad31a",
+    "url": "https://github.com/dequelabs/axe-core/tree/6b52b841461bd23345970b91ec75fdaff6bad31a",
+    "license_metadata": "MPL-2.0",
+    "review_scope": "Official documentation or paper review plus repository metadata; not a complete source audit"
+  },
+  {
+    "repository": "adobe/react-spectrum",
+    "commit": "a562b335e645c172ec5a940b3e47ccdadbeeaa15",
+    "url": "https://github.com/adobe/react-spectrum/tree/a562b335e645c172ec5a940b3e47ccdadbeeaa15",
+    "license_metadata": "Apache-2.0",
+    "review_scope": "Official documentation or paper review plus repository metadata; not a complete source audit"
+  },
+  {
+    "repository": "motiondivision/motion",
+    "commit": "7415b6cd14dfdb35d91dfc5b9758994444cc228b",
+    "url": "https://github.com/motiondivision/motion/tree/7415b6cd14dfdb35d91dfc5b9758994444cc228b",
+    "license_metadata": "MIT",
+    "review_scope": "Official documentation or paper review plus repository metadata; not a complete source audit"
+  },
+  {
+    "repository": "storybookjs/storybook",
+    "commit": "43a13889a499ee209a52dc5f874c0ad84b3eeec3",
+    "url": "https://github.com/storybookjs/storybook/tree/43a13889a499ee209a52dc5f874c0ad84b3eeec3",
+    "license_metadata": "MIT",
+    "review_scope": "Official documentation or paper review plus repository metadata; not a complete source audit"
+  },
+  {
+    "repository": "NoviScl/Design2Code",
+    "commit": "7a575e4c33f417c4be5c64072b8f5798de0d0f99",
+    "url": "https://github.com/NoviScl/Design2Code/tree/7a575e4c33f417c4be5c64072b8f5798de0d0f99",
+    "license_metadata": "MIT",
+    "review_scope": "Official documentation or paper review plus repository metadata; not a complete source audit"
+  },
+  {
+    "repository": "WebPAI/DesignBench",
+    "commit": "a1e58d66ecbf1f77848bc5529ee7bbbe33bc25ba",
+    "url": "https://github.com/WebPAI/DesignBench/tree/a1e58d66ecbf1f77848bc5529ee7bbbe33bc25ba",
+    "license_metadata": null,
+    "review_scope": "Official documentation or paper review plus repository metadata; not a complete source audit"
+  },
+  {
+    "repository": "Roblox/creator-docs",
+    "commit": "c8f5276703948ef4868c9b9fd44fae619dbe2f11",
+    "url": "https://github.com/Roblox/creator-docs/tree/c8f5276703948ef4868c9b9fd44fae619dbe2f11",
+    "license_metadata": "CC-BY-4.0",
+    "review_scope": "Official documentation or paper review plus repository metadata; not a complete source audit"
+  }
+]

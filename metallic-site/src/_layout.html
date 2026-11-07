@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<meta name="theme-color" content="#0b0b0e">
+<link rel="canonical" href="{{canonical}}">
+<link rel="icon" href="/assets/brand/crow.ico">
+<link rel="preload" href="/assets/fonts/archivo-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css">
+{{head_extra}}
+</head>
+<body data-page="{{page}}">
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="brand" href="/" aria-label="Metallic, home"><img src="/assets/brand/crow-silhouette-silver.svg" alt="" width="30" height="30"><span>Metallic</span></a>
+  <nav aria-label="Main">
+    <a href="/games/"{{cur_games}}>Games</a>
+    <a href="/litha/"{{cur_litha}}>Litha</a>
+    <a href="/downloads/"{{cur_downloads}}>Downloads</a>
+    <a href="/progress/"{{cur_progress}}>Progress</a>
+    <a href="/news/"{{cur_news}}>News</a>
+  </nav>
+</header>
+<main id="main">
+{{content}}
+</main>
+<footer class="foot">
+  <div class="foot-in">
+    <div>
+      <a class="brand" href="/" aria-label="Metallic, home"><img src="/assets/brand/crow-silhouette-silver.svg" alt="" width="26" height="26"><span>Metallic</span></a>
+      <p class="m3">Games and tools for all ages. This site sets no cookies and loads nothing from other companies.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="/games/">Games</a><a href="/litha/">Litha</a><a href="/downloads/">Downloads</a><a href="/progress/">Progress</a><a href="/news/">News</a>
+    </nav>
+  </div>
+</footer>
+{{scripts}}
+</body>
+</html>

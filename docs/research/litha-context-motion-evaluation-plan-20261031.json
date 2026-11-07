@@ -1,0 +1,408 @@
+{
+  "schema_version": 1,
+  "title": "Proposed crawl, design, and resource integration acceptance cases",
+  "research_date": "2026-10-31",
+  "timezone": "America/Chicago",
+  "status": "proposed_not_run",
+  "purpose": "Documentation-only recommendations for future integration evaluation; not implementations, executed tests, passing results, or active release gates.",
+  "activation": "documentation_only",
+  "existing_modules": [
+    "star/design_md.py",
+    "resource_atlas.py",
+    "scene_integrity.py"
+  ],
+  "existing_work_note": "Check current module behavior and active PR #855 before adding overlapping coverage; do not replace existing implementations based on this plan.",
+  "source_registry_file": "crawl_design_sources.json",
+  "case_count": 20,
+  "cases": [
+    {
+      "id": "CD01",
+      "area": "acquisition",
+      "title": "Deterministic extraction retains required fields",
+      "status": "proposed_not_run",
+      "setup": "Prepare controlled static documentation fixtures with headings, nested tables, version labels, and code examples; use a reviewed CSS/XPath schema.",
+      "expected_behavior": "Extract required fields with exact source spans; retain version labels and code content; perform no model call for ordinary extraction.",
+      "observations_to_record": [
+        "required_field_recall",
+        "source_span_accuracy",
+        "model_call_count",
+        "elapsed_ms"
+      ],
+      "source_ids": [
+        "C02",
+        "C08"
+      ]
+    },
+    {
+      "id": "CD02",
+      "area": "acquisition",
+      "title": "Broken selectors fail explicitly",
+      "status": "proposed_not_run",
+      "setup": "Change a fixture's container class and remove a required field while keeping surrounding prose plausible.",
+      "expected_behavior": "Mark the extraction incomplete and retain the raw evidence; do not invent fields or silently turn missing data into a verified lesson.",
+      "observations_to_record": [
+        "missing_field_report",
+        "verification_state",
+        "raw_evidence_pointer"
+      ],
+      "source_ids": [
+        "C02",
+        "C08"
+      ]
+    },
+    {
+      "id": "CD03",
+      "area": "provenance",
+      "title": "Pruning preserves technical meaning",
+      "status": "proposed_not_run",
+      "setup": "Use fixtures with negation, exceptions, table headers, adjacent code fences, and outbound references; compare raw and filtered representations.",
+      "expected_behavior": "Required qualifiers and source links remain recoverable; any filtered excerpt that changes the technical claim is rejected for verified retrieval.",
+      "observations_to_record": [
+        "qualifier_retention",
+        "code_block_integrity",
+        "reference_mapping",
+        "claim_span_coverage"
+      ],
+      "source_ids": [
+        "C08"
+      ]
+    },
+    {
+      "id": "CD04",
+      "area": "cache",
+      "title": "Explicit cache mode matrix",
+      "status": "proposed_not_run",
+      "setup": "For each of ENABLED, READ_ONLY, WRITE_ONLY, BYPASS, and DISABLED, exercise controlled cold and warm cache cases against a counting test origin.",
+      "expected_behavior": "Observed ordinary cache reads match ENABLED/READ_ONLY and writes match ENABLED/WRITE_ONLY in the pinned implementation; WRITE_ONLY performs a fresh fetch and updates cache; BYPASS and DISABLED do neither cache operation.",
+      "observations_to_record": [
+        "mode",
+        "cache_read_count",
+        "cache_write_count",
+        "origin_request_count",
+        "returned_content_hash"
+      ],
+      "source_ids": [
+        "C04"
+      ]
+    },
+    {
+      "id": "CD05",
+      "area": "cache",
+      "title": "READ_ONLY is not mistaken for offline mode",
+      "status": "proposed_not_run",
+      "setup": "Request a cache miss using READ_ONLY in a controlled environment and separately exercise the product's actual research-disabled state.",
+      "expected_behavior": "The adapter never claims READ_ONLY is a network prohibition; the independent product OFF policy blocks dispatch before the crawler can fetch anything.",
+      "observations_to_record": [
+        "cache_hit_state",
+        "dispatch_decision",
+        "origin_request_count",
+        "policy_reason"
+      ],
+      "source_ids": [
+        "C04",
+        "C06"
+      ]
+    },
+    {
+      "id": "CD06",
+      "area": "cache",
+      "title": "Body-only changes invalidate high-confidence reuse",
+      "status": "proposed_not_run",
+      "setup": "Cache a page, then change a code example or API parameter while leaving the HTML head unchanged.",
+      "expected_behavior": "A head-fingerprint match is not labeled proof that body content is unchanged; a full-refresh policy detects the new body and updates its content hash before claiming current verified evidence.",
+      "observations_to_record": [
+        "validation_method",
+        "old_content_hash",
+        "new_content_hash",
+        "fetched_at",
+        "validated_at",
+        "evidence_freshness_label"
+      ],
+      "source_ids": [
+        "C05"
+      ]
+    },
+    {
+      "id": "CD07",
+      "area": "cache",
+      "title": "Conditional validation and error fallback remain distinct",
+      "status": "proposed_not_run",
+      "setup": "Use one controlled response returning 304 and another timing out during freshness validation.",
+      "expected_behavior": "A successful validation updates validation metadata without inventing a new body-fetch time; timeout fallback remains explicitly stale or freshness-unknown rather than freshly verified.",
+      "observations_to_record": [
+        "http_outcome",
+        "fetched_at",
+        "validated_at",
+        "fallback_reason",
+        "freshness_state"
+      ],
+      "source_ids": [
+        "C05"
+      ]
+    },
+    {
+      "id": "CD08",
+      "area": "cache",
+      "title": "Extraction-version changes do not silently reuse old derived content",
+      "status": "proposed_not_run",
+      "setup": "Retain source bytes, then change the schema or normalization version without changing the source URL.",
+      "expected_behavior": "Derived extraction keys include relevant version/profile state or are recomputed; old extraction output is not mislabeled as generated by the new schema.",
+      "observations_to_record": [
+        "source_hash",
+        "extractor_version",
+        "profile_hash",
+        "derived_content_hash",
+        "recompute_decision"
+      ],
+      "source_ids": [
+        "C04",
+        "C08"
+      ]
+    },
+    {
+      "id": "CD09",
+      "area": "network_boundary",
+      "title": "Redirects and auxiliary fetches obey the same destination policy",
+      "status": "proposed_not_run",
+      "setup": "Within an isolated controlled test network, simulate permitted initial requests that redirect toward forbidden destinations and requests through cache freshness, robots, and link-preview paths.",
+      "expected_behavior": "The actual connection policy rejects forbidden destinations on all relevant paths; arbitrary browser/script/config inputs are not accepted through the Litha adapter; no public service is probed.",
+      "observations_to_record": [
+        "initial_policy_decision",
+        "redirect_policy_decision",
+        "auxiliary_path",
+        "blocked_connection_count",
+        "unexpected_outbound_connections"
+      ],
+      "source_ids": [
+        "C01",
+        "C06",
+        "C07"
+      ]
+    },
+    {
+      "id": "CD10",
+      "area": "resource_limits",
+      "title": "Concurrency, wall time, and cancellation stay bounded",
+      "status": "proposed_not_run",
+      "setup": "Queue controlled slow pages and oversized documents under an explicitly configured small resource budget, then cancel the job.",
+      "expected_behavior": "Concurrency and configured limits remain bounded; cancellation stops queued work and closes owned active pages/tasks; incomplete work is reported without a success claim.",
+      "observations_to_record": [
+        "active_page_peak",
+        "worker_peak_rss_bytes",
+        "available_system_ram_bytes",
+        "wall_time_ms",
+        "tasks_remaining_after_cancel",
+        "limit_reason"
+      ],
+      "source_ids": [
+        "C03"
+      ]
+    },
+    {
+      "id": "CD11",
+      "area": "offline_policy",
+      "title": "Research disabled means zero acquisition network activity",
+      "status": "proposed_not_run",
+      "setup": "Turn the product's research toggle off with pending URLs, cached entries requiring validation, and extraction metadata present; instrument outbound requests.",
+      "expected_behavior": "No network acquisition, robots fetch, freshness validation, preview fetch, or worker-start side effect occurs; existing local evidence may be read according to local policy.",
+      "observations_to_record": [
+        "worker_dispatch_count",
+        "outbound_request_count",
+        "local_cache_reads",
+        "pending_job_state"
+      ],
+      "source_ids": [
+        "C04",
+        "C05",
+        "C06"
+      ]
+    },
+    {
+      "id": "CD12",
+      "area": "artifact_integrity",
+      "title": "README artifact claims are checked against actual tree",
+      "status": "proposed_not_run",
+      "setup": "Use the pinned awesome-design-md README claims and complete repository tree as a documentation-review fixture.",
+      "expected_behavior": "Report the 84 inspected DESIGN.md files and absent checked-in HTML previews separately; do not count referenced external previews as local artifacts; retain the snapshot used for the conclusion.",
+      "observations_to_record": [
+        "snapshot_commit",
+        "design_file_count",
+        "html_preview_count",
+        "claim_evidence_mismatch",
+        "external_reference_state"
+      ],
+      "source_ids": [
+        "D01",
+        "D02"
+      ]
+    },
+    {
+      "id": "CD13",
+      "area": "design_provenance",
+      "title": "Unknown component states and separate asset rights stay explicit",
+      "status": "proposed_not_run",
+      "setup": "Load an analysis that contains observed colors and focus states but lacks form-error evidence and references a proprietary font.",
+      "expected_behavior": "Preserve observed/inferred/project-authored distinctions; record absent states as unknown or proposed; use a reviewed licensed substitute where needed; retain applicable document attribution.",
+      "observations_to_record": [
+        "rule_provenance",
+        "unknown_states",
+        "proposed_states",
+        "font_source_status",
+        "attribution_reference"
+      ],
+      "source_ids": [
+        "D02",
+        "D03"
+      ]
+    },
+    {
+      "id": "CD14",
+      "area": "roblox_ui",
+      "title": "Responsive layouts handle long labels and dense content",
+      "status": "proposed_not_run",
+      "setup": "In Studio, render a native UI with long localized labels, larger text preference, small and large viewports, and empty versus full lists.",
+      "expected_behavior": "Critical labels and actions remain readable and reachable; layouts do not clip, overlap, or distort; scroll regions reach their final item.",
+      "observations_to_record": [
+        "viewport",
+        "text_preference",
+        "clipping_count",
+        "unintended_overlap_count",
+        "unreachable_action_count",
+        "screenshot_reference"
+      ],
+      "source_ids": [
+        "R01",
+        "R02"
+      ]
+    },
+    {
+      "id": "CD15",
+      "area": "roblox_ui",
+      "title": "Controller focus and all operational states are usable",
+      "status": "proposed_not_run",
+      "setup": "Exercise keyboard/controller selection across normal, focused, selected, disabled, loading, error, and empty states of representative native controls.",
+      "expected_behavior": "Selection is visible and follows the intended order; unavailable controls communicate their state; actions work or fail with the intended recovery path; no critical state is silently omitted.",
+      "observations_to_record": [
+        "state_coverage",
+        "selection_path",
+        "focus_visibility",
+        "action_result",
+        "recovery_result"
+      ],
+      "source_ids": [
+        "R02",
+        "D02"
+      ]
+    },
+    {
+      "id": "CD16",
+      "area": "roblox_ui",
+      "title": "Motion and text preferences update an already-open UI",
+      "status": "proposed_not_run",
+      "setup": "Open a native screen, then change ReducedMotionEnabled and PreferredTextSize while it remains visible.",
+      "expected_behavior": "Nonessential animation follows the motion preference and text layout follows the text preference without losing selection or hiding controls.",
+      "observations_to_record": [
+        "preference_before",
+        "preference_after",
+        "animation_behavior",
+        "text_layout_result",
+        "selection_preserved"
+      ],
+      "source_ids": [
+        "R02"
+      ]
+    },
+    {
+      "id": "CD17",
+      "area": "design_validation",
+      "title": "Contrast and target-size claims are accurately scoped",
+      "status": "proposed_not_run",
+      "setup": "Inspect representative text/button/focus states on actual backgrounds and distinguish CSS-pixel web checks from native UI product checks.",
+      "expected_behavior": "Computed web contrast is checked against applicable text criteria; target exceptions are handled explicitly; a proposed 44-pixel product touch target is not mislabeled as the WCAG AA minimum; Roblox usability is verified in its own renderer.",
+      "observations_to_record": [
+        "foreground",
+        "background",
+        "computed_contrast",
+        "text_category",
+        "target_dimensions",
+        "exception_reason",
+        "platform"
+      ],
+      "source_ids": [
+        "W01",
+        "W02",
+        "R01"
+      ]
+    },
+    {
+      "id": "CD18",
+      "area": "resource_directory",
+      "title": "Stale directory entries remain unverified leads",
+      "status": "proposed_not_run",
+      "setup": "Import candidate metadata from the pinned awesome-ai-tools README and its August 2024 HEAD without current per-tool evidence.",
+      "expected_behavior": "Retain the directory's old commit date and separate the current inspection date; classify candidates as leads needing revalidation; do not call them current, free, local, or compatible without supporting evidence.",
+      "observations_to_record": [
+        "directory_commit_date",
+        "inspected_at",
+        "candidate_verification_state",
+        "unsupported_claims"
+      ],
+      "source_ids": [
+        "A01",
+        "A02"
+      ]
+    },
+    {
+      "id": "CD19",
+      "area": "resource_directory",
+      "title": "License and deployment gaps prevent automatic promotion",
+      "status": "proposed_not_run",
+      "setup": "Review one commercial hosted service, one tool with a separate model license, and one candidate without verified licensing or API details.",
+      "expected_behavior": "Store software/model/asset rights and deployment mode separately; missing evidence remains unknown; no package is auto-installed and no third-party credential or paid service is activated by directory ingestion.",
+      "observations_to_record": [
+        "software_license_status",
+        "model_license_status",
+        "asset_license_status",
+        "deployment_mode",
+        "promotion_decision",
+        "external_mutation_count"
+      ],
+      "source_ids": [
+        "A02",
+        "D03",
+        "X10",
+        "X12"
+      ]
+    },
+    {
+      "id": "CD20",
+      "area": "evaluation",
+      "title": "Quality and total verified-task time govern adoption",
+      "status": "proposed_not_run",
+      "setup": "Run the same representative corpus and tasks through current versus proposed adapters under fixed hardware, versions, workload, and explicit budgets; include regression examples.",
+      "expected_behavior": "Report passing-task rate, evidence quality, total wall time, retries, tokens, and peak memory together; do not claim improvement from token reduction or throughput alone; record failures and uncertainties and retain a rollback path.",
+      "observations_to_record": [
+        "task_pass_rate",
+        "evidence_coverage",
+        "total_wall_time_ms",
+        "retry_count",
+        "input_tokens",
+        "output_tokens",
+        "peak_ram_bytes",
+        "peak_vram_bytes",
+        "regression_examples"
+      ],
+      "source_ids": [
+        "C02",
+        "C03",
+        "C08",
+        "D02",
+        "X04",
+        "X08",
+        "X09",
+        "X10"
+      ]
+    }
+  ],
+  "scope_note": "Proposed acquisition and design acceptance cases only. No case in this file is an executed test, active gate, or reported result. Separate diagnostic verification has its own record."
+}

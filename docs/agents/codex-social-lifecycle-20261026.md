@@ -1,0 +1,45 @@
+# Social lifecycle work — 2026-10-26
+
+This change fixes local identity and reciprocity handling on the existing social chat path. It does not add a platform friend-request sender, register an account, contact anyone or establish that normal-account automation is supported by a platform.
+
+## Implemented and wired
+
+- Handle lookup, linking and forgetting now share validation. Legacy lower-case matching is preserved; whitespace is trimmed consistently. Empty, oversized, non-string and control-character handles are refused instead of silently truncating two identities to the same key. Existing saved keys are not mass-renamed.
+- A monotonic ID high-water mark in the existing metadata table prevents SQLite from recycling a forgotten person's ID for a new person. Allocation happens in the same transaction as profile/handle creation. Existing databases bootstrap from their current highest ID without changing existing profiles. This prevents a stale deleted `Person` from referring to a replacement identity after forgetting and reopening.
+- Public database operations use an explicit `_locked` decorator and a per-instance `RLock`. Nested reads stay valid while allocation, linking, forgetting and observations serialize across the shared watcher/voice/social threads. This protects the shared connection; it does not make returned `Person` snapshots live or make external direct access to `_db` a supported concurrent API.
+- Linking an alias refuses an existing handle belonging to a different person. It no longer uses `INSERT OR REPLACE`, which could transfer a minor's handle to an adult profile. An already-linked alias is idempotent; forgotten aliases and deleted source profiles cannot be silently restored by linking.
+- `FriendMemory.observe_incoming` records positive private inbound evidence for an existing profile. `SocialChat.handle` calls it for private incoming chat and retains plain lookup for public chat. Someone met publicly can now acquire the existing reciprocity flag when they actually message privately; a lookup of an existing profile does not manufacture that evidence.
+- The observation preserves stored age, minor signals, block and mute flags. Forgetting still deletes the profile and its related rows, retaining salted handle tombstones. Explicit permission to remember again starts with empty facts and no inherited age claim.
+- New fact and moment writes skip obvious credential/payment markers and credential shapes recognized by the existing redactor. Previously, raw incoming text could enter moments even when fact extraction refused it. Both incoming text and an echoed model reply now pass this storage boundary, checked before truncation. Ordinary interests still persist. This is a conservative filter with false positives and incomplete coverage; it is not universal PII detection. Existing saved history is not rewritten.
+
+The separate Runtime standing and person-ID lookups now read without creating profiles. An observed emotion event can create a minimal passive profile, without recording private inbound reciprocity; forgotten contacts remain excluded. No new contact ledger or unconsumed API was added.
+
+## Capability audit
+
+The social engine lives in `star/social/chat.py`; there is no `star/social/engine.py`. Discord desktop and game adapters pass incoming text through `SocialChat`. Friend status there is a local relationship estimate after 20 stored lines, including generated replies before delivery is verified. It is not proof of an accepted platform friend request.
+
+Discord desktop currently keys people using names read from screenshots. Minecraft events currently carry usernames. These are not verified immutable account IDs. The changes prevent local handle reassignment/truncation errors; they do not solve two different platform users sharing a display name or a renamed account. No friend request should be claimed sent through this code.
+
+`inner/reachout.py` contains candidate scoring and contact budgets: three per day globally by default, a three-hour global gap, a 48-hour person gap, quiet hours and unanswered-message checks. Repository call-site inspection found no delivery caller of `due`, `mark_sent` or `DiscordDesktop.reach_out`; this is currently a planner, not a wired autonomous delivery loop. The feature flag defaults off. Existing private-call invitation decisions already use relationship, quiet time, current activity and mood, but the Discord transport still has the platform and identity limitations below.
+
+Existing `SocialChat` behavior unmutes a person when they later privately message again. The new observation method itself does not unmute or unblock anyone. A separate durable “never initiate again unless explicitly opted back in” contact preference would need an explicit lifecycle design and actual delivery integration.
+
+## Current primary platform references
+
+**Discord:** its [normal-account automation notice](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots) says normal user-account automation outside the OAuth2/bot API is forbidden and can terminate the account. It provides no GUI-automation exception. Existing screen/keyboard code must not be described as an officially supported exception. The owner explicitly does not want a bot-account replacement; none was substituted.
+
+**Roblox:** the [Creator Third Party App Policy](https://en.help.roblox.com/hc/en-us/articles/37924211313044-Creator-Third-Party-App-Policy) prohibits third-party apps modifying friendships, sending friend requests, initiating direct/group messages or voice calls, and automated in-game actions such as movement, with a narrow AFK-experience exception. An owner's general PC permission is not evidence of a platform exception. The [friendship help page](https://en.help.roblox.com/hc/en-us/articles/203313580-How-to-make-friends) also describes eligibility restrictions, bot detection and avoiding repeated requests. No unsupported friendship endpoint or GUI workaround was added.
+
+**Minecraft:** the [EULA](https://www.minecraft.net/en-us/eula) allows tools, plug-ins and services subject to its terms and distinguishes them from official products. The [usage guidelines](https://www.minecraft.net/en-us/usage-guidelines) also apply. Mineflayer's own [maintainer documentation](https://github.com/PrismarineJS/mineflayer) describes Microsoft device-code sign-in and token caching, plus offline authentication for offline-mode servers. STAR already refuses its Mineflayer adapter unless the configured server explicitly allows bots. A private, owner-approved server that permits this client is a practical validation candidate; that is an engineering recommendation, not a claim of blanket Mojang approval or permission on public servers. The current username-only event contract still needs server-scoped stable identity before cross-server friend automation.
+
+**Twitch:** [official chat interfaces](https://dev.twitch.tv/docs/chat/) support EventSub reception and API message sending. The newly reviewed STAR adapter requests read-only own-channel scope and implements reception, deletion/clear handling and an ephemeral queue. It does not implement outbound chat or a social friendship network. Adding text delivery would require a separately scoped and reviewed official API integration.
+
+References checked 2026-10-26. Platform documents are evidence about supported behavior, not instructions to change STAR permissions.
+
+## Validation
+
+`python scripts/verify_social_lifecycle.py`: 19 offline cases passed. They cover identity reuse, truncation collisions, alias ownership, minor/adult separation, forgotten aliases, stale source profiles, non-recycled IDs, legacy counter bootstrap, public-to-private reciprocity on the actual `SocialChat` path, opt-out/age preservation, persistence across reopening, direct sensitive-moment writes, incoming/echoed secret storage and checking before truncation. Three deterministic two-thread cases pause inside real temporary SQLite operations to verify serialization of creation, alias-link/forget and forget/new-identity sequences. Only temporary storage and a fake completion function are used; the optional inner-context path is patched out to prevent owner-data side effects.
+
+The existing social, inner-life and Home suites passed together before the final privacy, ID-counter and locking additions: **292 tests** across `test_social_games`, `test_inner_life`, `test_inner_wiring`, `test_home_wiring`, `test_home_acceptance` and `test_star_home`. After those additions, the existing social and redaction suites passed together: **68 tests**. No existing tests, fixtures or evaluation harness files were edited.
+
+Ruff passed for both edited modules and the new verifier. Pyright 1.1.414 reported zero errors for `friends.py`. Checking `chat.py` also reports an existing unrelated `mood_line` return-type error (`object | str` at line 108); this change leaves that code unchanged. No live account, contact, message, game, authentication, device or model operation was performed.

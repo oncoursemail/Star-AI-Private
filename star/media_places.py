@@ -5,8 +5,11 @@ path asks (`require`), and one description the Settings page shows (`describe`).
 does not exist is listed as unavailable with the reason; choosing it never falls back silently
 to the other place. `fixable` tells the page whether a setting could make an option available
 (connect STAR Server, install the on-device brain) or whether this install can never offer it
-(no image or voice model on servers without a graphics card); the page explains the second kind
+(no voice model on the servers); the page explains the second kind
 instead of drawing it as a choice.
+
+Images can also be 'auto': this PC while its graphics card is free, the servers' image service
+(`server_images`) while it is not; `resolve` decides per picture.
 
 The speed notes come from `media_measurements.py`: numbers measured on the owner's hardware,
 each with its date. Where a number is an estimate from published measurements it says so.
@@ -17,7 +20,13 @@ from pathlib import Path
 
 CAPABILITIES = ('images', 'voice', 'video')
 PLACES = ('servers', 'pc')
-LABELS = {'servers': 'STAR Brains (servers)', 'pc': 'This PC (your GPU)'}
+# Images may also follow the graphics card: this PC while it is free, the servers while it is busy (a game, the
+# Litha model). Never silent: the answer says where the picture was made.
+PLACES_FOR = {'images': ('servers', 'pc', 'auto'), 'voice': PLACES, 'video': PLACES}
+LABELS = {'servers': 'STAR Brains (servers)', 'pc': 'This PC (your GPU)',
+          'auto': 'Automatic: this PC when its graphics card is free, otherwise the STAR Brains'}
+GPU_FREE_MIB = 5800      # free video memory the picture model needs: measured peak 7730 MB with the desktop at 1997
+GPU_BUSY_PERCENT = 60    # utilisation above this: something else (a game) is using the card
 TITLES = {'images': 'Images', 'voice': 'Voice', 'video': 'Video understanding'}
 FIELDS = {'images': 'media_images', 'voice': 'media_voice', 'video': 'media_video'}
 DEFAULTS = {'images': 'pc', 'voice': 'pc', 'video': 'servers'}
@@ -36,7 +45,7 @@ def chosen(settings, capability: str) -> str:
     if capability not in CAPABILITIES:
         raise ValueError('Unknown media capability')
     value = getattr(settings, FIELDS[capability], DEFAULTS[capability])
-    return value if value in PLACES else DEFAULTS[capability]
+    return value if value in PLACES_FOR[capability] else DEFAULTS[capability]
 
 
 def _seconds(value) -> str:
@@ -58,15 +67,21 @@ def _images(settings, home: Path | None) -> dict:
                 "1 GB of the same card, and the two were not measured together.")
     else:
         note = 'Not measured on this PC yet.'
-    low, high = (servers.get('estimate_seconds_1024') or [0, 0])[:2]
-    reason = ('Not available: no image model is installed on the servers, and they have no graphics card. '
-              + (f'On their processors one 1024 image with this model is estimated at {low // 60} to '
-                 f'{high // 60} minutes ({low} to {high} s), an estimate from published processor '
-                 'measurements, not measured on the servers. ' if high else '')
-              + (f"This PC makes the same image in about {_seconds(sizes.get('1024x1024'))} s."
-                 if sizes.get('1024x1024') else ''))
+    from . import server_images
+    served = servers.get('seconds_per_image', {})
+    measured = (f"Measured on the servers ({servers.get('machine', 'processors')}, {servers.get('date', '')}): "
+                + ', '.join(f'{size} in {_seconds(seconds)} s' for size, seconds in served.items())
+                + f" with {servers.get('model', 'the server model')}, square pictures only, no editing. "
+                + servers.get('llm_slowdown_note', '')) if served else 'Not measured on the servers yet.'
+    ready = server_images.configured(settings)
+    reason = '' if ready else ('Not available: no image service address is set, or STAR Server is not connected. '
+                               'Add the address below and connect STAR Server (its key is used).')
     return {'pc': {'available': True, 'note': note, 'reason': '', 'fixable': True},
-            'servers': {'available': False, 'note': '', 'reason': reason.strip(), 'fixable': False}}
+            'servers': {'available': ready, 'note': measured, 'reason': reason, 'fixable': True},
+            'auto': {'available': ready, 'fixable': True, 'reason': reason,
+                     'note': ('This PC while its graphics card is free (the picture model needs about '
+                              f'{GPU_FREE_MIB / 1000:.1f} GB of free video memory and a card that is not busy with a game); '
+                              'otherwise the servers, square and without editing. The answer says which one made it.')}}
 
 
 def _voice(settings, home: Path | None) -> dict:
@@ -123,7 +138,8 @@ def describe(settings, home: Path | None = None) -> list[dict]:
         facts = _RULES[capability](settings, home)
         shown.append({'id': capability, 'title': TITLES[capability], 'field': FIELDS[capability],
                       'chosen': chosen(settings, capability),
-                      'options': [{'id': place, 'label': LABELS[place], **facts[place]} for place in PLACES]})
+                      'options': [{'id': place, 'label': LABELS[place], **facts[place]}
+                                  for place in PLACES_FOR[capability]]})
     return shown
 
 
@@ -135,6 +151,30 @@ def require(settings, capability: str, home: Path | None = None) -> str:
         raise PlaceUnavailable(f"{TITLES[capability]} is set to {LABELS[place]} in Settings → Where STAR generates. "
                                + option['reason'])
     return place
+
+
+def pc_gpu_free(settings, *, read_gpu=None, comfy_running=None) -> bool:
+    """This PC's graphics card can make a picture now: ComfyUI is already loaded, or there is enough free video
+    memory and nothing (a game) keeps the card busy. When the card cannot be read, the PC is used."""
+    from . import gpu_helper
+    reading = (read_gpu or gpu_helper.read_gpu)()
+    if reading is None:
+        return True
+    if comfy_running is None:
+        from .image_gen import status
+        comfy_running = lambda: status(settings).get('running', False)   # noqa: E731
+    if comfy_running():
+        return True
+    return reading.free_mib >= GPU_FREE_MIB and reading.utilization < GPU_BUSY_PERCENT
+
+
+def resolve(settings, capability: str, home: Path | None = None, *, gpu_free=None) -> str:
+    """Where this job runs now: 'pc' or 'servers' ('auto' decided by the card). PlaceUnavailable as `require`."""
+    place = require(settings, capability, home)
+    if place != 'auto':
+        return place
+    free = gpu_free() if gpu_free is not None else pc_gpu_free(settings)
+    return 'pc' if free else 'servers'
 
 
 def require_video_provider(settings, home: Path | None = None) -> str:

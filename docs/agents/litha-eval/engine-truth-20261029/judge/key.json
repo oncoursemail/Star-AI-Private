@@ -1,0 +1,456 @@
+{
+ "gd-chat-command#A": [
+  "B",
+  "BV"
+ ],
+ "gd-chat-command#B": [
+  "F",
+  "FV"
+ ],
+ "lua-seeded-loot#A": [
+  "B",
+  "BV"
+ ],
+ "lua-seeded-loot#B": [
+  "F",
+  "FV"
+ ],
+ "ue-async-terrain#A": [
+  "B",
+  "BV"
+ ],
+ "ue-async-terrain#B": [
+  "F",
+  "FV"
+ ],
+ "unreal-health-component#A": [
+  "F",
+  "FV"
+ ],
+ "unreal-health-component#B": [
+  "BV"
+ ],
+ "unreal-health-component#C": [
+  "B"
+ ],
+ "unity-so-inventory#A": [
+  "F",
+  "FV"
+ ],
+ "unity-so-inventory#B": [
+  "B",
+  "BV"
+ ],
+ "ue-gas-attributes#A": [
+  "B",
+  "BV"
+ ],
+ "ue-gas-attributes#B": [
+  "F",
+  "FV"
+ ],
+ "un-awaitable-dash#A": [
+  "B"
+ ],
+ "un-awaitable-dash#B": [
+  "BV"
+ ],
+ "un-awaitable-dash#C": [
+  "F",
+  "FV"
+ ],
+ "unity-json-save#A": [
+  "B",
+  "BV"
+ ],
+ "unity-json-save#B": [
+  "F",
+  "FV"
+ ],
+ "lv-dev-console#A": [
+  "FV"
+ ],
+ "lv-dev-console#B": [
+  "BV"
+ ],
+ "lv-dev-console#C": [
+  "B"
+ ],
+ "lv-dev-console#D": [
+  "F"
+ ],
+ "lua-bitmask#A": [
+  "B",
+  "BV"
+ ],
+ "lua-bitmask#B": [
+  "FV"
+ ],
+ "lua-bitmask#C": [
+  "F"
+ ],
+ "lua-grid-paths-mod#A": [
+  "F",
+  "FV"
+ ],
+ "lua-grid-paths-mod#B": [
+  "B",
+  "BV"
+ ],
+ "gd-score-ranking#A": [
+  "B",
+  "BV"
+ ],
+ "gd-score-ranking#B": [
+  "F",
+  "FV"
+ ],
+ "lv-highscore-file#A": [
+  "BV"
+ ],
+ "lv-highscore-file#B": [
+  "B"
+ ],
+ "lv-highscore-file#C": [
+  "F",
+  "FV"
+ ],
+ "gd-combat-math#A": [
+  "B",
+  "BV"
+ ],
+ "gd-combat-math#B": [
+  "F",
+  "FV"
+ ],
+ "love-state-machine#A": [
+  "B",
+  "BV"
+ ],
+ "love-state-machine#B": [
+  "F",
+  "FV"
+ ],
+ "un-anim-channel#A": [
+  "B"
+ ],
+ "un-anim-channel#B": [
+  "FV"
+ ],
+ "un-anim-channel#C": [
+  "BV"
+ ],
+ "un-anim-channel#D": [
+  "F"
+ ],
+ "un-explosion-nonalloc#A": [
+  "B",
+  "BV"
+ ],
+ "un-explosion-nonalloc#B": [
+  "F",
+  "FV"
+ ],
+ "unity-rigidbody-controller#A": [
+  "B"
+ ],
+ "unity-rigidbody-controller#B": [
+  "BV"
+ ],
+ "unity-rigidbody-controller#C": [
+  "F",
+  "FV"
+ ],
+ "godot-wave-spawner#A": [
+  "B",
+  "BV"
+ ],
+ "godot-wave-spawner#B": [
+  "F",
+  "FV"
+ ],
+ "ue-weapon-data-async#A": [
+  "B",
+  "BV"
+ ],
+ "ue-weapon-data-async#B": [
+  "F",
+  "FV"
+ ],
+ "gds-ability-charges#A": [
+  "B",
+  "BV"
+ ],
+ "gds-ability-charges#B": [
+  "F",
+  "FV"
+ ],
+ "ue-replicated-inventory#A": [
+  "F",
+  "FV"
+ ],
+ "ue-replicated-inventory#B": [
+  "B",
+  "BV"
+ ],
+ "lua-ini-parser#A": [
+  "F",
+  "FV"
+ ],
+ "lua-ini-parser#B": [
+  "BV"
+ ],
+ "lua-ini-parser#C": [
+  "B"
+ ],
+ "godot-platformer-coyote#A": [
+  "F",
+  "FV"
+ ],
+ "godot-platformer-coyote#B": [
+  "B",
+  "BV"
+ ],
+ "gd-duration-strings#A": [
+  "B"
+ ],
+ "gd-duration-strings#B": [
+  "BV"
+ ],
+ "gd-duration-strings#C": [
+  "F",
+  "FV"
+ ],
+ "gds-enemy-fsm#A": [
+  "B",
+  "BV"
+ ],
+ "gds-enemy-fsm#B": [
+  "F",
+  "FV"
+ ],
+ "lv-camera-trail#A": [
+  "FV"
+ ],
+ "lv-camera-trail#B": [
+  "B"
+ ],
+ "lv-camera-trail#C": [
+  "BV"
+ ],
+ "lv-camera-trail#D": [
+  "F"
+ ],
+ "gd-grid-bfs#A": [
+  "B",
+  "BV"
+ ],
+ "gd-grid-bfs#B": [
+  "FV"
+ ],
+ "gd-grid-bfs#C": [
+  "F"
+ ],
+ "unreal-enhanced-input-character#A": [
+  "F",
+  "FV"
+ ],
+ "unreal-enhanced-input-character#B": [
+  "B",
+  "BV"
+ ],
+ "unity-navmesh-patrol#A": [
+  "B",
+  "BV"
+ ],
+ "unity-navmesh-patrol#B": [
+  "F",
+  "FV"
+ ],
+ "unity-health-iframes#A": [
+  "F",
+  "FV"
+ ],
+ "unity-health-iframes#B": [
+  "B",
+  "BV"
+ ],
+ "lua-utf8-names#A": [
+  "F",
+  "FV"
+ ],
+ "lua-utf8-names#B": [
+  "B",
+  "BV"
+ ],
+ "un-cinemachine3-zone#A": [
+  "B",
+  "BV"
+ ],
+ "un-cinemachine3-zone#B": [
+  "F",
+  "FV"
+ ],
+ "gds-inventory-save#A": [
+  "FV"
+ ],
+ "gds-inventory-save#B": [
+  "BV"
+ ],
+ "gds-inventory-save#C": [
+  "B"
+ ],
+ "gds-inventory-save#D": [
+  "F"
+ ],
+ "ue-hitscan-weapon#A": [
+  "B",
+  "BV"
+ ],
+ "ue-hitscan-weapon#B": [
+  "F",
+  "FV"
+ ],
+ "unreal-coin-pickup#A": [
+  "BV"
+ ],
+ "unreal-coin-pickup#B": [
+  "B"
+ ],
+ "unreal-coin-pickup#C": [
+  "F",
+  "FV"
+ ],
+ "un-uitk-hud#A": [
+  "F",
+  "FV"
+ ],
+ "un-uitk-hud#B": [
+  "B",
+  "BV"
+ ],
+ "godot-health-component#A": [
+  "F",
+  "FV"
+ ],
+ "godot-health-component#B": [
+  "B",
+  "BV"
+ ],
+ "lua-calendar#A": [
+  "F"
+ ],
+ "lua-calendar#B": [
+  "FV"
+ ],
+ "lua-calendar#C": [
+  "B",
+  "BV"
+ ],
+ "lua-damage-totals#A": [
+  "F",
+  "FV"
+ ],
+ "lua-damage-totals#B": [
+  "B",
+  "BV"
+ ],
+ "gd-tile-chunks#A": [
+  "F",
+  "FV"
+ ],
+ "gd-tile-chunks#B": [
+  "B",
+  "BV"
+ ],
+ "lv-physics-jump-ball#A": [
+  "F",
+  "FV"
+ ],
+ "lv-physics-jump-ball#B": [
+  "BV"
+ ],
+ "lv-physics-jump-ball#C": [
+  "B"
+ ],
+ "unity-projectile-pool#A": [
+  "B"
+ ],
+ "unity-projectile-pool#B": [
+  "BV"
+ ],
+ "unity-projectile-pool#C": [
+  "F",
+  "FV"
+ ],
+ "godot-settings-autoload#A": [
+  "B",
+  "BV"
+ ],
+ "godot-settings-autoload#B": [
+  "F",
+  "FV"
+ ],
+ "lua-fnv1a#A": [
+  "FV"
+ ],
+ "lua-fnv1a#B": [
+  "BV"
+ ],
+ "lua-fnv1a#C": [
+  "F"
+ ],
+ "lua-fnv1a#D": [
+  "B"
+ ],
+ "lv-sliding-puzzle#A": [
+  "F",
+  "FV"
+ ],
+ "lv-sliding-puzzle#B": [
+  "B",
+  "BV"
+ ],
+ "lua-split-fields#A": [
+  "F",
+  "FV"
+ ],
+ "lua-split-fields#B": [
+  "B",
+  "BV"
+ ],
+ "un-input-actions#A": [
+  "B",
+  "BV"
+ ],
+ "un-input-actions#B": [
+  "F",
+  "FV"
+ ],
+ "love-topdown-shooter#A": [
+  "B"
+ ],
+ "love-topdown-shooter#B": [
+  "F",
+  "FV"
+ ],
+ "love-topdown-shooter#C": [
+  "BV"
+ ],
+ "lv-seeded-starfield#A": [
+  "F",
+  "FV"
+ ],
+ "lv-seeded-starfield#B": [
+  "B",
+  "BV"
+ ],
+ "ue-save-subsystem#A": [
+  "B",
+  "BV"
+ ],
+ "ue-save-subsystem#B": [
+  "F",
+  "FV"
+ ]
+}

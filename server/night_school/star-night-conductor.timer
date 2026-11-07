@@ -1,0 +1,11 @@
+[Unit]
+Description=STAR night conductor, every 30 minutes (the program itself only works between 18:00 and 09:00 owner-local)
+
+[Timer]
+OnCalendar=*:10,40
+RandomizedDelaySec=60
+Persistent=false
+Unit=star-night-conductor.service
+
+[Install]
+WantedBy=timers.target

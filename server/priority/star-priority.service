@@ -1,0 +1,34 @@
+[Unit]
+Description=STAR priority proxy (owner requests first: pauses and resumes background generations on star-fast/star-voice)
+After=network-online.target star-brain.service
+
+# The front door of brain 1: port 8080 (unlabelled = P0, the owner: desktop app, Discord bot, voice), 8082 (P2:
+# agents, fleet) and 8083 (P3: night school, conductor, evals, Studio Lab, playtest learning, knowledge jobs); a URL
+# prefix /p0../p3 or the X-Star-Priority header also sets the class. The llama.cpp router listens on 127.0.0.1:8081
+# behind it. Status: curl -s http://127.0.0.1:8080/priority/v1/status
+# Log: /opt/star/logs/priority.jsonl (one line per scheduled request), journalctl -u star-priority.
+# Settings: /opt/star/config/priority.json (server/priority/priority.json). Undo: bash /opt/star/priority/undo.sh
+[Service]
+Type=simple
+User=star
+Group=star
+WorkingDirectory=/opt/star/priority
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/star/priority/priority_proxy.py --config /opt/star/config/priority.json
+Nice=-5
+Restart=always
+RestartSec=5
+MemoryMax=256M
+TasksMax=256
+LimitCORE=0
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/star/logs
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

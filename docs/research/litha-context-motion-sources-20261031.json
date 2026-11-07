@@ -1,0 +1,729 @@
+{
+  "research_date": "2026-10-31",
+  "timezone": "America/Chicago",
+  "litha_repository": "oncoursemail/Star-AI-Project",
+  "litha_base_commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+  "purpose": "research provenance, not an executable integration allowlist",
+  "sources": [
+    {
+      "repository": "yamadashy/repomix",
+      "path": "src/config/configSchema.ts",
+      "topics": [
+        "context_budget",
+        "default_tokenizer",
+        "per_file_inclusion"
+      ],
+      "commit": "2050e90141b01a1fa40bb278f170057ff67eb157",
+      "url": "https://github.com/yamadashy/repomix/blob/2050e90141b01a1fa40bb278f170057ff67eb157/src/config/configSchema.ts",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "yamadashy/repomix",
+      "path": "src/core/treeSitter/languageConfig.ts",
+      "topics": [
+        "supported_languages",
+        "luau_not_supported_for_ast_compression"
+      ],
+      "commit": "2050e90141b01a1fa40bb278f170057ff67eb157",
+      "url": "https://github.com/yamadashy/repomix/blob/2050e90141b01a1fa40bb278f170057ff67eb157/src/core/treeSitter/languageConfig.ts",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "yamadashy/repomix",
+      "path": "src/core/treeSitter/parseFile.ts",
+      "topics": [
+        "unsupported_language_fallback",
+        "parser_failure_fallback"
+      ],
+      "commit": "2050e90141b01a1fa40bb278f170057ff67eb157",
+      "url": "https://github.com/yamadashy/repomix/blob/2050e90141b01a1fa40bb278f170057ff67eb157/src/core/treeSitter/parseFile.ts",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "yamadashy/repomix",
+      "path": "src/core/security/validateFileSafety.ts",
+      "topics": [
+        "secret_scan",
+        "git_diff_log_inclusion_caveat"
+      ],
+      "commit": "2050e90141b01a1fa40bb278f170057ff67eb157",
+      "url": "https://github.com/yamadashy/repomix/blob/2050e90141b01a1fa40bb278f170057ff67eb157/src/core/security/validateFileSafety.ts",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "yamadashy/repomix",
+      "path": "tests/cli/actions/defaultAction.tokenBudget.test.ts",
+      "topics": [
+        "budget_guard"
+      ],
+      "commit": "2050e90141b01a1fa40bb278f170057ff67eb157",
+      "url": "https://github.com/yamadashy/repomix/blob/2050e90141b01a1fa40bb278f170057ff67eb157/tests/cli/actions/defaultAction.tokenBudget.test.ts",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "ccusage/ccusage",
+      "path": "rust/crates/ccusage-core/src/cost.rs",
+      "topics": [
+        "cost_modes",
+        "cache_buckets",
+        "missing_prices",
+        "long_context_tiers"
+      ],
+      "commit": "1c1bb1e1bfe327dad6ef056e725f8d4a9cfaa709",
+      "url": "https://github.com/ccusage/ccusage/blob/1c1bb1e1bfe327dad6ef056e725f8d4a9cfaa709/rust/crates/ccusage-core/src/cost.rs",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "ccusage/ccusage",
+      "path": "rust/adapters/claude/src/README.md",
+      "topics": [
+        "deduplication",
+        "malformed_events",
+        "source_semantics"
+      ],
+      "commit": "1c1bb1e1bfe327dad6ef056e725f8d4a9cfaa709",
+      "url": "https://github.com/ccusage/ccusage/blob/1c1bb1e1bfe327dad6ef056e725f8d4a9cfaa709/rust/adapters/claude/src/README.md",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "ccusage/ccusage",
+      "path": "rust/adapters/claude/src/daily.rs",
+      "topics": [
+        "parallel_reads",
+        "deduplication"
+      ],
+      "commit": "1c1bb1e1bfe327dad6ef056e725f8d4a9cfaa709",
+      "url": "https://github.com/ccusage/ccusage/blob/1c1bb1e1bfe327dad6ef056e725f8d4a9cfaa709/rust/adapters/claude/src/daily.rs",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "JuliusBrussee/caveman",
+      "path": "docs/HONEST-NUMBERS.md",
+      "topics": [
+        "benchmark_limitations",
+        "output_only_skill"
+      ],
+      "commit": "9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4",
+      "url": "https://github.com/JuliusBrussee/caveman/blob/9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4/docs/HONEST-NUMBERS.md",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "web_main_text_cross_referenced_to_snapshot",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "JuliusBrussee/caveman",
+      "path": "skills/caveman/SKILL.md",
+      "topics": [
+        "meaning_preservation",
+        "payload_verbatim"
+      ],
+      "commit": "9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4",
+      "url": "https://github.com/JuliusBrussee/caveman/blob/9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4/skills/caveman/SKILL.md",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "web_main_text_cross_referenced_to_snapshot",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "JuliusBrussee/caveman",
+      "path": "proxy/providers/anthropic/content_compress.go",
+      "topics": [
+        "cache_stable_compression"
+      ],
+      "commit": "9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4",
+      "url": "https://github.com/JuliusBrussee/caveman/blob/9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4/proxy/providers/anthropic/content_compress.go",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "JuliusBrussee/caveman",
+      "path": "engine/compressors/invariants.go",
+      "topics": [
+        "deterministic_elision",
+        "recoverable_summaries"
+      ],
+      "commit": "9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4",
+      "url": "https://github.com/JuliusBrussee/caveman/blob/9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4/engine/compressors/invariants.go",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "repository": "JuliusBrussee/caveman",
+      "path": "docs/technical/security-and-privacy.md",
+      "topics": [
+        "local_vs_cloud",
+        "recovery_limitations"
+      ],
+      "commit": "9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4",
+      "url": "https://github.com/JuliusBrussee/caveman/blob/9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4/docs/technical/security-and-privacy.md",
+      "source_kind": "primary_source_code_or_project_documentation",
+      "inspection_method": "github_connector_pinned",
+      "validated_on_user_hardware": false
+    },
+    {
+      "id": "C01",
+      "project": "Crawl4AI",
+      "topic": "Current inspected release",
+      "url": "https://github.com/unclecode/crawl4ai/releases/tag/v0.9.5",
+      "source_kind": "release_metadata",
+      "evidence_kind": "primary_release_evidence",
+      "repository_snapshot": null,
+      "observation": "Release v0.9.5 was published on 2026-10-14 and was returned as latest during this research pass.",
+      "proposed_use": "Evaluate a pinned release and dependencies; do not assume older examples have current fixes.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "C02",
+      "project": "Crawl4AI",
+      "topic": "Deterministic extraction",
+      "url": "https://docs.crawl4ai.com/extraction/no-llm-strategies/",
+      "source_kind": "official_documentation",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "Documentation covers CSS, XPath, and regex extraction without a model call.",
+      "proposed_use": "Use reviewed deterministic schemas for stable documentation templates.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "C03",
+      "project": "Crawl4AI",
+      "topic": "Concurrency and resource admission",
+      "url": "https://github.com/unclecode/crawl4ai/blob/888299fb5f0b82181897dc0e61bfb4b036f0aea5/crawl4ai/async_dispatcher.py",
+      "source_kind": "repository_code",
+      "evidence_kind": "inspected_code",
+      "repository_snapshot": {
+        "repository": "unclecode/crawl4ai",
+        "branch": "main",
+        "commit": "888299fb5f0b82181897dc0e61bfb4b036f0aea5",
+        "commit_date_utc": "2026-10-26T08:41:46Z"
+      },
+      "observation": "MemoryAdaptiveDispatcher exposes memory-pressure thresholds and max_session_permit; streaming cleanup handles owned tasks.",
+      "proposed_use": "Pilot low explicit concurrency and verify cancellation and whole-machine resource pressure.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "C04",
+      "project": "Crawl4AI",
+      "topic": "Exact cache mode semantics",
+      "url": "https://github.com/unclecode/crawl4ai/blob/888299fb5f0b82181897dc0e61bfb4b036f0aea5/crawl4ai/cache_context.py",
+      "source_kind": "repository_code",
+      "evidence_kind": "inspected_code",
+      "repository_snapshot": {
+        "repository": "unclecode/crawl4ai",
+        "branch": "main",
+        "commit": "888299fb5f0b82181897dc0e61bfb4b036f0aea5",
+        "commit_date_utc": "2026-10-26T08:41:46Z"
+      },
+      "observation": "Cache reads are allowed for ENABLED/READ_ONLY; writes are allowed for ENABLED/WRITE_ONLY.",
+      "proposed_use": "Use WRITE_ONLY for deliberate refresh; do not interpret READ_ONLY as an offline network guarantee.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "C05",
+      "project": "Crawl4AI",
+      "topic": "Freshness validation",
+      "url": "https://github.com/unclecode/crawl4ai/blob/888299fb5f0b82181897dc0e61bfb4b036f0aea5/crawl4ai/cache_validator.py",
+      "source_kind": "repository_code",
+      "evidence_kind": "inspected_code",
+      "repository_snapshot": {
+        "repository": "unclecode/crawl4ai",
+        "branch": "main",
+        "commit": "888299fb5f0b82181897dc0e61bfb4b036f0aea5",
+        "commit_date_utc": "2026-10-26T08:41:46Z"
+      },
+      "observation": "Validator uses conditional requests and head fingerprints and has an error outcome.",
+      "proposed_use": "Distinguish fetched, validated, and stale states; require full content checks when body changes matter.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "C06",
+      "project": "Crawl4AI",
+      "topic": "Library versus Docker egress policy",
+      "url": "https://github.com/unclecode/crawl4ai/blob/888299fb5f0b82181897dc0e61bfb4b036f0aea5/crawl4ai/egress_policy.py",
+      "source_kind": "repository_code",
+      "evidence_kind": "inspected_code",
+      "repository_snapshot": {
+        "repository": "unclecode/crawl4ai",
+        "branch": "main",
+        "commit": "888299fb5f0b82181897dc0e61bfb4b036f0aea5",
+        "commit_date_utc": "2026-10-26T08:41:46Z"
+      },
+      "observation": "Plain-library proxy state defaults to None; Docker installs the pinning proxy.",
+      "proposed_use": "Provide isolation and bounded egress outside a direct Python-library integration.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "C07",
+      "project": "Crawl4AI",
+      "topic": "Cache freshness SSRF patch",
+      "url": "https://github.com/unclecode/crawl4ai/security/advisories/GHSA-w4xc-px5p-c32w",
+      "source_kind": "security_advisory",
+      "evidence_kind": "primary_maintainer_advisory",
+      "repository_snapshot": null,
+      "observation": "The advisory lists versions through 0.9.4 as affected and 0.9.5 as patched.",
+      "proposed_use": "Include cache-validation and redirected requests in controlled egress verification.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "C08",
+      "project": "Crawl4AI",
+      "topic": "Extraction outputs and provenance",
+      "url": "https://docs.crawl4ai.com/core/crawler-result/",
+      "source_kind": "official_documentation",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "CrawlResult includes raw/cleaned content and Markdown variants including references and filtered content.",
+      "proposed_use": "Retain raw evidence and source spans separately from derived summaries.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "D01",
+      "project": "awesome-design-md",
+      "topic": "Checked-in artifact inventory",
+      "url": "https://api.github.com/repos/VoltAgent/awesome-design-md/git/trees/84becd0fc3b6c3646093fcf65d4d62637e09aabc?recursive=1",
+      "source_kind": "repository_tree",
+      "evidence_kind": "inspected_complete_tree",
+      "repository_snapshot": {
+        "repository": "VoltAgent/awesome-design-md",
+        "branch": "main",
+        "commit": "fcc70284932276d085f01ef9f83edde90b1258cb",
+        "commit_date_utc": "2026-10-28T15:45:37Z"
+      },
+      "observation": "The complete inspected tree contains 84 DESIGN.md files and no HTML preview files.",
+      "proposed_use": "Verify actual artifact availability instead of trusting README artifact claims.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "D02",
+      "project": "awesome-design-md",
+      "topic": "Tokens, states, responsive rules, and known gaps",
+      "url": "https://github.com/VoltAgent/awesome-design-md/blob/fcc70284932276d085f01ef9f83edde90b1258cb/design-md/linear.app/DESIGN.md",
+      "source_kind": "repository_document",
+      "evidence_kind": "inspected_document",
+      "repository_snapshot": {
+        "repository": "VoltAgent/awesome-design-md",
+        "branch": "main",
+        "commit": "fcc70284932276d085f01ef9f83edde90b1258cb",
+        "commit_date_utc": "2026-10-28T15:45:37Z"
+      },
+      "observation": "The Linear analysis includes semantic tokens, component states, responsive rules, font substitutes, and explicit known gaps.",
+      "proposed_use": "Extend the existing design parser with provenance and unknown-state handling; author Litha's own design specification.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "D03",
+      "project": "awesome-design-md",
+      "topic": "Repository license",
+      "url": "https://github.com/VoltAgent/awesome-design-md/blob/fcc70284932276d085f01ef9f83edde90b1258cb/LICENSE",
+      "source_kind": "repository_license",
+      "evidence_kind": "inspected_license",
+      "repository_snapshot": {
+        "repository": "VoltAgent/awesome-design-md",
+        "branch": "main",
+        "commit": "fcc70284932276d085f01ef9f83edde90b1258cb",
+        "commit_date_utc": "2026-10-28T15:45:37Z"
+      },
+      "observation": "The repository contains an MIT license and copyright notice.",
+      "proposed_use": "Preserve applicable notices for substantial reused material; verify separate asset and font rights.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "A01",
+      "project": "awesome-ai-tools",
+      "topic": "Repository freshness",
+      "url": "https://api.github.com/repos/AI-Tools-Inc/awesome-ai-tools/commits/2feac57be856d522b07f879f317668a2966c373f",
+      "source_kind": "repository_metadata",
+      "evidence_kind": "inspected_commit_metadata",
+      "repository_snapshot": {
+        "repository": "AI-Tools-Inc/awesome-ai-tools",
+        "branch": "main",
+        "commit": "2feac57be856d522b07f879f317668a2966c373f",
+        "commit_date_utc": "2024-08-25T00:31:29Z"
+      },
+      "observation": "The inspected main HEAD commit is dated 2024-08-25T00:31:29Z.",
+      "proposed_use": "Mark entries as leads requiring current primary-source revalidation.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "A02",
+      "project": "awesome-ai-tools",
+      "topic": "Directory content and limitations",
+      "url": "https://github.com/AI-Tools-Inc/awesome-ai-tools/blob/2feac57be856d522b07f879f317668a2966c373f/README.md",
+      "source_kind": "repository_document",
+      "evidence_kind": "inspected_document",
+      "repository_snapshot": {
+        "repository": "AI-Tools-Inc/awesome-ai-tools",
+        "branch": "main",
+        "commit": "2feac57be856d522b07f879f317668a2966c373f",
+        "commit_date_utc": "2024-08-25T00:31:29Z"
+      },
+      "observation": "README mixes short marketing descriptions, commercial services, direct links, and referral-style links without tested integration contracts.",
+      "proposed_use": "Promote a resource only after current capability, deployment mode, license, and representative evaluation checks.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "R01",
+      "project": "Roblox",
+      "topic": "Native responsive UI",
+      "url": "https://create.roblox.com/docs/ui/size-modifiers",
+      "source_kind": "official_documentation",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "Documentation covers UIScale, AutomaticSize, AutomaticCanvasSize, and size constraints.",
+      "proposed_use": "Map semantic design rules into native Roblox layouts and verify real rendered states.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "R02",
+      "project": "Roblox",
+      "topic": "UI preferences and selection",
+      "url": "https://create.roblox.com/docs/reference/engine/classes/GuiService",
+      "source_kind": "official_api_reference",
+      "evidence_kind": "documented_api",
+      "repository_snapshot": null,
+      "observation": "GuiService exposes ReducedMotionEnabled, PreferredTextSize, SelectedObject, and related UI properties.",
+      "proposed_use": "Verify dynamic preference changes and controller selection in Studio.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "W01",
+      "project": "W3C WCAG",
+      "topic": "Text contrast criteria",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+      "source_kind": "standards_documentation",
+      "evidence_kind": "primary_standards_explanation",
+      "repository_snapshot": null,
+      "observation": "SC 1.4.3 describes 4.5:1 normal-text and 3:1 qualifying-large-text contrast with stated exceptions.",
+      "proposed_use": "Use exact computed contrast and rendered-state checks in the existing design validation.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "W02",
+      "project": "W3C WCAG",
+      "topic": "Pointer target criteria",
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html",
+      "source_kind": "standards_documentation",
+      "evidence_kind": "primary_standards_explanation",
+      "repository_snapshot": null,
+      "observation": "SC 2.5.8 describes a 24 CSS pixel minimum target size with specified exceptions.",
+      "proposed_use": "Keep any stronger product touch-size target distinct from the standards minimum.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X01",
+      "project": "ripgrep",
+      "topic": "Exact local code search",
+      "url": "https://github.com/BurntSushi/ripgrep",
+      "source_kind": "official_repository_overview",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "ripgrep provides recursive regex search with ignore-file handling.",
+      "proposed_use": "Use exact local search before packing or asking a model to read broad code context.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X02",
+      "project": "Tree-sitter",
+      "topic": "Incremental syntax structure",
+      "url": "https://tree-sitter.github.io/tree-sitter/",
+      "source_kind": "official_documentation",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "Tree-sitter builds and incrementally updates concrete syntax trees.",
+      "proposed_use": "Use symbol-aware context boundaries while retaining type-check and language-coverage fallbacks.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X03",
+      "project": "SQLite FTS5",
+      "topic": "Local evidence search",
+      "url": "https://www.sqlite.org/fts5.html",
+      "source_kind": "official_documentation",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "FTS5 provides SQLite full-text indexing and query support.",
+      "proposed_use": "Pilot a local lexical evidence index before introducing a separate retrieval service.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X04",
+      "project": "Playwright",
+      "topic": "Web visual regression",
+      "url": "https://playwright.dev/docs/test-snapshots",
+      "source_kind": "official_documentation",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "Playwright documents screenshot-based visual comparison.",
+      "proposed_use": "Validate actual web interactions and screenshots under a pinned environment; keep Roblox verification separate.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X05",
+      "project": "axe-core",
+      "topic": "Automated web accessibility",
+      "url": "https://github.com/dequelabs/axe-core",
+      "source_kind": "official_repository_overview",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "axe-core provides automated accessibility rules and marks uncertain results for review.",
+      "proposed_use": "Add partial automated checks without treating them as complete accessibility or design approval.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X06",
+      "project": "luau-lsp",
+      "topic": "Standalone Roblox-aware analysis",
+      "url": "https://github.com/JohnnyMorganz/luau-lsp",
+      "source_kind": "official_repository_overview",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "README documents standalone analyze, Rojo resolution, Roblox API types, and opt-in strict DataModel diagnostics.",
+      "proposed_use": "Configure diagnostic strictness and pinned type definitions deliberately before Studio execution.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X07",
+      "project": "StyLua",
+      "topic": "Formatting verification",
+      "url": "https://github.com/JohnnyMorganz/StyLua",
+      "source_kind": "official_repository_overview",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "The --verify option reparses formatted output and compares its AST with the input.",
+      "proposed_use": "Use formatting verification alongside separate behavioral and type checks.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X08",
+      "project": "glTF-Validator",
+      "topic": "Asset and animation data validity",
+      "url": "https://github.com/KhronosGroup/glTF-Validator",
+      "source_kind": "official_repository_overview",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "Validator emits JSON issues and asset statistics and checks references, buffers, quaternions, and animation data.",
+      "proposed_use": "Complement scene and IK outcome diagnostics; do not treat format validity as motion-quality approval.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X09",
+      "project": "OpenTelemetry",
+      "topic": "Model and tool observability",
+      "url": "https://opentelemetry.io/blog/2026/genai-observability/",
+      "source_kind": "official_project_article",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "Project documentation describes model/tool traces, latency, token usage, and opt-in content capture.",
+      "proposed_use": "Use a pinned telemetry schema to measure bottlenecks while omitting prompt contents by default.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X10",
+      "project": "promptfoo",
+      "topic": "Offline evaluation boundaries",
+      "url": "https://www.promptfoo.dev/docs/faq/",
+      "source_kind": "official_documentation",
+      "evidence_kind": "documented_capability_and_limit",
+      "repository_snapshot": null,
+      "observation": "FAQ distinguishes local operation from strict offline operation and recommends network egress controls for the latter.",
+      "proposed_use": "Configure all provider/grader paths and sharing/telemetry explicitly before using offline evaluations.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X11",
+      "project": "whisper.cpp",
+      "topic": "Local speech transcription",
+      "url": "https://github.com/ggml-org/whisper.cpp",
+      "source_kind": "official_repository_overview",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "Repository documents local Whisper inference and multiple CPU/accelerator backends.",
+      "proposed_use": "Benchmark a selected model and voice workload under Litha's real compute budget.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "id": "X12",
+      "project": "ComfyUI",
+      "topic": "Reproducible visual workflows",
+      "url": "https://github.com/Comfy-Org/ComfyUI",
+      "source_kind": "official_repository_overview",
+      "evidence_kind": "documented_capability",
+      "repository_snapshot": null,
+      "observation": "Repository documents graph-based image-generation workflows and local execution options.",
+      "proposed_use": "Use reviewed pinned workflows with separate model/node license checks and GPU admission control.",
+      "proposed_use_status": "recommendation_not_implemented"
+    },
+    {
+      "title": "Claude Agent SDK",
+      "url": "https://code.claude.com/docs/en/agent-sdk/overview",
+      "topic": "agent architecture",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Claude Code subagents",
+      "url": "https://code.claude.com/docs/en/sub-agents",
+      "topic": "isolated worker context",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Claude Code skills",
+      "url": "https://code.claude.com/docs/en/skills",
+      "topic": "task-selected procedures",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Claude Code hooks",
+      "url": "https://code.claude.com/docs/en/hooks",
+      "topic": "lifecycle automation",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Claude prompt caching",
+      "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+      "topic": "exact prefix reuse",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Claude tool context",
+      "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/manage-tool-context",
+      "topic": "tool discovery and batching",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Roblox IK overview",
+      "url": "https://create.roblox.com/docs/animation/inverse-kinematics",
+      "topic": "native IKControl",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Roblox IK API",
+      "url": "https://github.com/Roblox/creator-docs/blob/main/content/en-us/reference/engine/classes/IKControl.yaml",
+      "topic": "properties and documentation conflict",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false,
+      "inspected_blob_sha": "5bd5ecf2ed1ac4ab0b3ef646880495c4ef7cd9ae"
+    },
+    {
+      "title": "FABRIK author",
+      "url": "https://www.andreasaristidou.com/FABRIK",
+      "topic": "positional solver literature",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "FABRIK paper",
+      "url": "https://www.andreasaristidou.com/publications/papers/FABRIK.pdf",
+      "topic": "original algorithm",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "DLS and SDLS author",
+      "url": "https://mathweb.ucsd.edu/~sbuss/ResearchWeb/ikmethods/",
+      "topic": "singularities and damping",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Blender IK manual",
+      "url": "https://docs.blender.org/manual/en/4.5/animation/constraints/tracking/ik_solver.html",
+      "topic": "versioned rig constraints",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false,
+      "retrieval_limit": "Primary-domain search supplied manual text; direct page opening returned an error. Match the installed Blender version before integration."
+    },
+    {
+      "title": "ozz IK",
+      "url": "https://guillaumeblanc.github.io/ozz-animation/documentation/ik/",
+      "topic": "native corrections",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "ozz foot sample",
+      "url": "https://guillaumeblanc.github.io/ozz-animation/samples/foot_ik/",
+      "topic": "contact system limits",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "ozz two-bone implementation contract",
+      "url": "https://github.com/guillaumeblanc/ozz-animation/blob/master/include/ozz/animation/runtime/ik_two_bone_job.h",
+      "topic": "pole, softening and reach status",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false,
+      "inspected_blob_sha": "ded310fdc182af82daad22978c11e502808d0280"
+    },
+    {
+      "title": "Three.js CCD",
+      "url": "https://threejs.org/docs/pages/CCDIKSolver.html",
+      "topic": "web rig preview",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Three.js CCD implementation",
+      "url": "https://github.com/mrdoob/three.js/blob/dev/examples/jsm/animation/CCDIKSolver.js",
+      "topic": "allocation and transform costs",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false,
+      "inspected_blob_sha": "fb3bd8c12e9f7efaabd286bced40471a22cd3e94"
+    },
+    {
+      "title": "Godot IK",
+      "url": "https://godotengine.org/article/inverse-kinematics-returns-to-godot-4-6/",
+      "topic": "version-specific native solver choices",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    },
+    {
+      "title": "Mink",
+      "url": "https://github.com/kevinzakka/mink",
+      "topic": "optional whole-body differential IK",
+      "source_kind": "primary_documentation_or_implementation",
+      "inspection_method": "official_source_read_or_primary_domain_search",
+      "validated_on_user_hardware": false
+    }
+  ]
+}

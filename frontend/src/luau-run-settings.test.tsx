@@ -16,7 +16,7 @@ async function openSettings(){
  await screen.findByRole('textbox',{name:/message star/i})
  await waitFor(()=>expect(desktop.sent('bootstrap').length).toBeGreaterThan(0))
  await user.click(screen.getByRole('button',{name:/^settings/i}))
- await user.click(await screen.findByRole('tab',{name:'Model'}))   // Settings shows one section at a time (#342)
+ await user.click(await screen.findByRole('tab',{name:'Models & speed'}))   // Settings shows one section at a time (#342)
  await screen.findByRole('region',{name:'AI provider settings'})
  return user
 }

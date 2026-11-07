@@ -10,8 +10,13 @@ APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$HOME_DIR/sources"
 python3 - "$APP_DIR/corpora.json" <<'PY' | while read -r NAME REPO BRANCH; do
 import json, sys
+seen = set()
 for s in json.load(open(sys.argv[1], encoding="utf-8"))["sources"]:
-    print(s["name"], s["repo"], s["branch"])
+    checkout = s.get("checkout", s["name"])
+    if s.get("kind", "git") != "git" or checkout in seen:
+        continue   # fetched pages have their own fetcher; one checkout may serve two sources
+    seen.add(checkout)
+    print(checkout, s["repo"], s["branch"])
 PY
   # One checkout is a work unit; use the same stale-aware lock check as Python jobs.
   PYTHONPATH="$APP_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m starkb.quiet

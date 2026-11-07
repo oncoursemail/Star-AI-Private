@@ -1,0 +1,21 @@
+{"note": "Held-out eval briefs for the roblox-build lane (written 2026-10-29 before any pipeline output on them). Dev/tuning briefs are separate (dev list below) and never scored.",
+ "dev": [
+  {"id": "dev-cathedral", "style": "highpoly", "brief": "Abandoned gothic cathedral nave at dawn with rows of pews, columns, a collapsed corner and an altar."},
+  {"id": "dev-cafe", "style": "lowpoly", "brief": "A relaxing small-town cafe interior on a rainy afternoon: counter with coffee machines, cozy booths by the windows, plants, warm lamps, a reading corner."},
+  {"id": "dev-house", "style": "stud", "brief": "Cozy two-room house: living room with sofa and fireplace, kitchen corner, garden with a fence outside."},
+  {"id": "dev-obby", "style": "midpoly", "brief": "Short obby course over water: jumping platforms, a spinner, kill bricks, checkpoints and a finish pad on an island."}
+ ],
+ "heldout": [
+  {"id": "h01-fishing", "style": "stud", "brief": "Small fishing-game map: a lake with a wooden dock, a bait shop, a few rowboats, trees around the shore and a lighthouse on a rocky point."},
+  {"id": "h02-museum", "style": "stud", "brief": "Museum dinosaur hall: a big skeleton as the centrepiece, display cases with fossils, rope barriers, info plaques, high windows."},
+  {"id": "h03-themepark", "style": "stud", "brief": "Creepy abandoned theme park entrance at dusk: a gate arch with a sign, ticket booth, a broken carousel behind, flickering lamp posts, litter."},
+  {"id": "h04-aquarium", "style": "lowpoly", "brief": "Abandoned aquarium hall: walk-through tunnel tank, dark wall tanks with algae, broken benches, a gift kiosk, water puddles."},
+  {"id": "h05-camp", "style": "lowpoly", "brief": "Forest camp minigame arena: a clearing with tents, a campfire in the middle, log seats, cover walls for a round-based game, tall pines around."},
+  {"id": "h06-winter", "style": "lowpoly", "brief": "Snowy winter cabin village at night: three small cabins with porches, snow pines, a frozen pond, lanterns and a snowman."},
+  {"id": "h07-subway", "style": "midpoly", "brief": "Abandoned subway station platform: a stopped train car, platform edge, tiled pillars, benches, a vending machine, turnstiles, flickering lights."},
+  {"id": "h08-bookshop", "style": "midpoly", "brief": "Cozy bookshop interior: tall bookcases, a reading table with green lamps, an armchair corner by a fireplace, a counter with a register."},
+  {"id": "h09-beach", "style": "midpoly", "brief": "Tropical beach minigame map: sand, palm trees, umbrellas and towels, a lifeguard tower, a dock into the sea, sandcastles."},
+  {"id": "h10-library", "style": "highpoly", "brief": "Gothic library hall: two-storey bookcases, long reading tables, chandeliers, stained glass windows, a globe and a lectern at the end."},
+  {"id": "h11-teahouse", "style": "highpoly", "brief": "Japanese garden teahouse: a koi pond with an arched bridge, stone lanterns, a torii gate, bamboo, cherry trees and a small tea room with paper screens."},
+  {"id": "h12-hospital", "style": "highpoly", "brief": "Derelict hospital ward at night: rows of beds with curtain dividers, IV stands, a nurse station counter, flickering lamps, papers on the floor."}
+ ]}

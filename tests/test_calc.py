@@ -129,3 +129,10 @@ def test_calculate_dispatch_and_invalid_units():
 ])
 def test_numeric_trigger(prompt, selected):
     assert numerical_request(prompt) is selected
+
+
+@pytest.mark.parametrize("prompt", [
+    "9 + 10 / 23123 + 21349120 x 100 1/2 x 4.232323e", "12 x 7", "100 / 8", "3 - 1",
+])
+def test_a_bare_sum_attaches_the_calculator(prompt):
+    assert numerical_request(prompt) is True

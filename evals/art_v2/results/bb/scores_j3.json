@@ -1,0 +1,14 @@
+{"judge": "j3", "scores": {
+"n01": {"A": {"overall": 4, "note": "frog-like squat body, small eyes on top, toes yellow-green not orange, flat silhouette"}, "B": {"overall": 5, "note": "bigger eyes and wide mouth read more as frog; still no orange toes, boxy"}},
+"n02": {"A": {"overall": 6, "note": "solid stone golem, mossy, cyan eyes; no visible cracked chest"}, "B": {"overall": 6, "note": "near-identical golem, brow ridge and blue eyes; chest crack missing"}},
+"n03": {"A": {"overall": 3, "note": "dark stone pillar with purple bands and gold crosses; not wooden, no tiki faces"}, "B": {"overall": 3, "note": "mottled grey stone column with faint carved bumps; not wood, tiki faces unclear"}},
+"n04": {"A": {"overall": 7, "note": "clean MC bookshelf, good frame and books; five rows not four, flat back"}, "B": {"overall": 7, "note": "essentially same quality bookshelf, tidy textures"}},
+"n05": {"A": {"overall": 4, "note": "toad body ok but eyes are a yellow visor band; no crown"}, "B": {"overall": 5, "note": "bulging gold eyes read well as toad; crown missing"}},
+"n06": {"A": {"overall": 4, "note": "golem shape fine but reads as netherrack; no glowing orange cracks, eyes tiny"}, "B": {"overall": 4, "note": "same with brow ridge; no glow cracks, lacks lava feel"}},
+"n07": {"A": {"overall": 5, "note": "obsidian obelisk on pedestal with purple runes; no distinct crystal, plain"}, "B": {"overall": 4, "note": "blocky head on pillar, purple runes; less obelisk silhouette, no crystal"}},
+"n08": {"A": {"overall": 6, "note": "nice short bookcase, good wood; no potion bottles"}, "B": {"overall": 6, "note": "same quality, four clean shelves; no potion bottles"}},
+"n09": {"A": {"overall": 3, "note": "reads as a flag/sign on a post with gold base; huge flat head, no clear spike"}, "B": {"overall": 3, "note": "brighter red but same flag-on-post silhouette, not an axe"}},
+"n10": {"A": {"overall": 3, "note": "reads as white chicken with red comb; no big yellow eyes, not owl"}, "B": {"overall": 3, "note": "same chicken-like build, warmer palette; owl features missing"}},
+"n11": {"A": {"overall": 2, "note": "wooden chest with latch; no wheel or post"}, "B": {"overall": 2, "note": "plain wooden crate; no wheel or post"}},
+"n12": {"A": {"overall": 4, "note": "gold crowned helmet on wooden stand with pauldrons; no red gems, stand odd"}, "B": {"overall": 3, "note": "well-made silver knight armor with red plume; not gold crown, no gems"}}
+}}

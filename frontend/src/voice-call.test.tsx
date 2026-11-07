@@ -154,7 +154,7 @@ describe('Settings > read-aloud and call mode', () => {
     })
     const user = await openApp()
     await user.click(screen.getByRole('button', {name: /^settings/i}))
-    await user.click(await screen.findByRole('tab', {name: 'Images, voice & 3D'}))   // one section at a time (#342)
+    await user.click(await screen.findByRole('tab', {name: 'Voice'}))   // one section at a time (#342)
     const group = await screen.findByRole('group', {name: /read-aloud and calls/i})
     const auto = within(group).getByRole('checkbox', {name: /read new replies aloud/i}) as HTMLInputElement
     expect(auto.checked).toBe(false)

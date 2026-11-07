@@ -8,10 +8,10 @@
  * (star/corrections.py), which is never the blind exam. Every button is an explicit owner action.
  */
 import {useCallback,useEffect,useState} from 'react'
-import {Check,FlaskConical,GraduationCap,LoaderCircle,RotateCcw,Undo2,X} from 'lucide-react'
+import {Check,ClipboardList,FlaskConical,GraduationCap,LoaderCircle,RotateCcw,Undo2,X} from 'lucide-react'
 import {Tag} from './components'
 import {EmptyState,ErrorState,LoadingState} from './states'
-import type {CorrectionItem,CorrectionListing,LearnedItem,LearnedWeek} from './types'
+import type {CorrectionItem,CorrectionListing,LearnedItem,LearnedWeek,SelfAuditReport} from './types'
 import './learning.css'
 
 type Invoke=(action:string,params?:Record<string,unknown>)=>Promise<unknown|null>
@@ -38,6 +38,7 @@ function gateText(item:LearnedItem):string{
 export function LearnedThisWeek({invoke,disabled=false,project}:{invoke:Invoke;disabled?:boolean;project:string}){
  const [week,setWeek]=useState<LearnedWeek|null>(null)
  const [fixes,setFixes]=useState<CorrectionListing|null>(null)
+ const [audit,setAudit]=useState<SelfAuditReport|null>(null)
  const [pending,setPending]=useState('')
  const [notice,setNotice]=useState('')
  // First read: '' until it answers, then 'ok' or 'failed' (a failed read is not "nothing learned").
@@ -49,6 +50,8 @@ export function LearnedThisWeek({invoke,disabled=false,project}:{invoke:Invoke;d
    setRead(current=>found&&Array.isArray(found.items)?'ok':current==='ok'?'ok':'failed')
    const listed=await invoke('listCorrections') as CorrectionListing|null
    if(listed&&Array.isArray(listed.corrections))setFixes(listed)
+   const audited=await invoke('selfAudit') as {report?:SelfAuditReport|null}|null
+   if(audited?.report&&Array.isArray(audited.report.strengths))setAudit(audited.report)
  },[disabled,invoke])
  useEffect(()=>{void load()},[load,project])
  const change=async(op:'undo'|'restore'|'keep',item:LearnedItem)=>{
@@ -118,6 +121,19 @@ export function LearnedThisWeek({invoke,disabled=false,project}:{invoke:Invoke;d
        </div>
      </li>})}</ul>}
    {tested.length>0&&<p className="learn-help">In the corrections suite: {tested.map(c=>c.task_id).join(', ')}{fixes?.counts?.approved&&fixes.counts.approved>tested.length?` and ${fixes.counts.approved-tested.length} more`:''}.</p>}
+   {audit&&<>
+     <div className="learn-head learn-subhead">
+       <ClipboardList size={18} aria-hidden="true"/>
+       <div className="learn-title"><h3>STAR’s weekly self-audit</h3><p>Measured from stored eval results, practice mistakes, lessons and what STAR did not know. No model was asked. Written {audit.generated.slice(0,10)}; a new one follows every 7 days.</p></div>
+     </div>
+     <div className="learn-audit">
+       <h4>Strengths</h4>
+       {audit.strengths.length?<ul>{audit.strengths.slice(0,6).map(t=><li key={t}>{t}</li>)}</ul>:<p className="learn-help">None measured yet.</p>}
+       <h4>Weaknesses</h4>
+       {audit.weaknesses.length?<ul>{audit.weaknesses.slice(0,6).map(t=><li key={t}>{t}</li>)}</ul>:<p className="learn-help">None measured.</p>}
+       {(audit.missing?.length??0)>0&&<p className="learn-help">No data on this PC for: {audit.missing!.join(', ')}.</p>}
+     </div>
+   </>}
    {notice&&<p className="learn-notice" role="status">{notice}</p>}
  </section>
 }

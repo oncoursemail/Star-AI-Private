@@ -1,0 +1,27 @@
+[Unit]
+Description=Metallic Control (collector + admin dashboard; metallic/metallic/control, server/control)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mcontrol
+Group=mcontrol
+Environment=PYTHONPATH=/opt/metallic-control/app
+Environment=PYTHONDONTWRITEBYTECODE=1
+WorkingDirectory=/var/lib/metallic-control
+ExecStart=/usr/bin/python3 -m metallic control serve /etc/metallic-control/control.toml
+Restart=on-failure
+RestartSec=10
+# Cheap and polite: lowest CPU and I/O priority, bounded memory (the container is capped at 2 CPUs / 512 MiB too).
+Nice=19
+CPUWeight=10
+IOSchedulingClass=idle
+MemoryMax=300M
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/metallic-control
+
+[Install]
+WantedBy=multi-user.target

@@ -241,8 +241,11 @@ class Brain:
 
     def __call__(self, messages: list[dict]) -> dict:
         import urllib.request
+        from .background_cap import slot_for
+        slot = slot_for(self.url, self._key, self.model, opener=self._open)   # background: never the chat's slot
         body = json.dumps({"model": self.model, "temperature": 0.3, "max_tokens": self.max_tokens,
-                           "messages": messages, **self.extra}).encode()
+                           "messages": messages, **self.extra,
+                           **({"id_slot": slot} if slot is not None else {})}).encode()
         request = urllib.request.Request(self.url + "/v1/chat/completions", data=body, method="POST", headers={
             "Content-Type": "application/json", **({"Authorization": "Bearer " + self._key} if self._key else {})})
         started = time.monotonic()

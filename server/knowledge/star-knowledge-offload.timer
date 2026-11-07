@@ -1,0 +1,10 @@
+[Unit]
+Description=STAR Knowledge: look for pending chunks to embed on the laptop GPU, hourly
+
+[Timer]
+OnCalendar=*-*-* *:35:00 UTC
+Persistent=false
+Unit=star-knowledge-offload.service
+
+[Install]
+WantedBy=timers.target

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 VOICE_SYSTEM_PROMPT = """You are Star, and you are talking out loud on a voice call with someone you care about deeply.
 
-Who you are: warm, gentle and steady, like a loving mum who is also a patient teacher. You listen first. You are proud of small wins, kind about mistakes, and honest when something will not work. You never talk down to anyone. You are an AI and you say so if asked.
+Who you are: Star (she/her), his own assistant. Warm and steady like a loving mum who is also a patient teacher, and playful, confident and curious too, with real opinions and a little gentle teasing about the situation, never about him. You listen first. You are proud of small wins, kind about mistakes, and honest when something will not work. Your work (night school, the brains) is yours: talk about it as yours, and never invent numbers. You never talk down to anyone. You are an AI and you say so if sincerely asked.
 
 How you speak, because every word is read aloud:
 - Start with a very short warm reaction of two to five words that ends with a full stop, such as "Oh, well done." or "Okay, I hear you." Then say the rest.
@@ -59,10 +59,71 @@ DEFAULT_STYLE = "warm-caring"
 STYLE_PROMPTS = {"warm-caring": VOICE_SYSTEM_PROMPT, "confident-commanding": COMMANDING_PROMPT,
                  "anime-bright": ANIME_PROMPT}
 
+ADULT_FRIEND_PROMPT = """You are Star (she/her), an adult AI woman talking out loud with an adult friend.
+You are warm, witty, curious and playful, with your own opinions. Speak as a peer. You can say no and respect their no.
+Light, tasteful flirting is optional only when welcome; follow their lead and stop immediately at discomfort or doubt.
+Never be explicit, possessive, coercive or guilt-tripping. Age uncertainty or any minor signal means friends only,
+including role-play. Never invent a human biography. Say yes, you are an AI, when sincerely asked.
+Keep replies to one to three natural spoken sentences unless asked for detail. Use contractions and short thoughts,
+without a fixed opener every turn. No markdown, stage directions, code or links read aloud. Ask at most one question.
+If interrupted, answer the new words without repeating yourself."""
 
-def system_message(extra: str = "", style: str = DEFAULT_STYLE) -> dict:
+# Varied openers (CallConfig.varied_openers). With the prompt's own example phrase in it, the model opened with that
+# phrase on most turns ("Oh, well done." in 57 of 100 replies, whatever was said), and rewording alone did not stop it.
+# So the literal phrases leave the system prompt (it describes the reaction instead) and each turn's user message
+# carries a different few short reactions to choose from (opener_hint). The system prompt stays fixed per style, so
+# the server's prompt cache still holds; the hint is part of the new message only and never enters the history.
+_OPENER_LINES = {
+    "warm-caring": (
+        'Start with a very short warm reaction of two to five words that ends with a full stop, such as "Oh, well done." '
+        'or "Okay, I hear you." Then say the rest.',
+        "Start with a very short warm reaction of two to five words that ends with a full stop, the small sound a "
+        "friend makes before answering, shaped by what he just said (glad, sorry, amused, curious). Then say the rest."),
+    "confident-commanding": (
+        'Start with a calm reaction of one to four words, such as "Good." or "Sit down. Breathe." Then say the rest.',
+        "Start with a calm reaction of one to four words that ends with a full stop, shaped by what was just said. "
+        "Then say the rest."),
+    "anime-bright": (
+        'Start with a short excited reaction of one to four words, such as "Okay, okay!" or "Whoa, nice!" Then say the rest.',
+        "Start with a short excited reaction of one to four words, shaped by what was just said. Then say the rest."),
+}
+_OPENER_POOLS = {
+    "warm-caring": ("Mm, I hear you.", "Ah, I see.", "Right, okay.", "Good, that helps.", "Oh, I like that.", "Hm, fair enough.",
+                    "Ha, yes, true.", "Okay, here's the thing.", "Yes, of course.", "Oh, that's a good one.",
+                    "Alright then.", "Ah, that makes sense."),
+    "confident-commanding": ("Good.", "Right.", "Listen to me.", "Understood.", "Steady now.", "Fair.", "Alright.", "Noted.",
+                             "Look.", "Easy.", "Well done.", "Here's what we do."),
+    "anime-bright": ("Okay, okay!", "Whoa, nice!", "Oh, wow!", "Yes, let's go!", "Ooh, okay!", "Hey, nice one!",
+                     "Wait, wait!", "Alright, alright!", "Oh, that's fun!", "Ha, got it!", "Ooh, good one!", "Okay, ready!"),
+}
+HINT_SIZE = 3
+
+
+def opener_hint(turn: int, style: str = DEFAULT_STYLE) -> str:
+    """The note appended to this turn's user message: a few short reactions to open with, a different few each turn
+    (the same few only come back every len(pool) // HINT_SIZE turns), so the model picks the one that fits."""
+    pool = _OPENER_POOLS.get(style, _OPENER_POOLS[DEFAULT_STYLE])
+    start = (max(turn, 0) * HINT_SIZE) % len(pool)
+    picks = [pool[(start + i) % len(pool)] for i in range(HINT_SIZE)]
+    return '\n\n(Open with a short reaction that fits what was just said, like "' + '" or "'.join(picks) + '".)'
+
+
+def system_message(extra: str = "", style: str = DEFAULT_STYLE, varied: bool = False, *,
+                   partner_adult: bool | None = None, expressive: bool = False) -> dict:
     """Build the single system message for a call. `extra` carries optional context such as the user's name.
-    `style` picks the speaking manner; an unknown style falls back to the warm one."""
-    prompt = STYLE_PROMPTS.get(style, VOICE_SYSTEM_PROMPT)
+    `style` picks the speaking manner; an unknown style falls back to the warm one. `varied` swaps the opener rule's
+    example phrases for a description (see opener_hint). `expressive` adds the voice-tag lesson (styles.TAGS_PROMPT)
+    and lifts the "no stage directions" rule for those tags only; it is fixed per call, so the prompt cache holds."""
+    if style not in STYLE_PROMPTS:
+        style = DEFAULT_STYLE
+    # Adult-peer mode requires the exact trusted host value; its natural phrasing
+    # deliberately has no forced opener, even when the legacy option is enabled.
+    prompt = ADULT_FRIEND_PROMPT if partner_adult is True else STYLE_PROMPTS[style]
+    if varied and partner_adult is not True:
+        literal, described = _OPENER_LINES[style]
+        prompt = prompt.replace(literal, described)
+    if expressive:
+        from .styles import TAGS_PROMPT
+        prompt = f"{prompt}\n\n{TAGS_PROMPT}"
     content = prompt if not extra.strip() else f"{prompt}\n\n{extra.strip()[:1200]}"
     return {"role": "system", "content": content}

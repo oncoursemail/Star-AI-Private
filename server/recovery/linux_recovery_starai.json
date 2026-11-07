@@ -1,0 +1,10 @@
+{
+  "hostname": "starai",
+  "services": [
+    {"name": "star-brain.service", "network_client": true},
+    {"name": "star-knowledge.service", "network_client": false},
+    {"name": "star-search-gateway.service", "network_client": true},
+    {"name": "star-night-school.service", "network_client": true}
+  ],
+  "linger_users": ["star"]
+}

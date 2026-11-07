@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import closing
 from dataclasses import dataclass
+from functools import lru_cache
+from itertools import islice
 import json
 import math
 from pathlib import Path
@@ -124,7 +127,7 @@ def import_file(path: Path, *, home: Path, project: str) -> dict:
         rows = parse_export(handle.read(MAX_FILE_BYTES + 1))
     home = Path(home)
     home.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(home / "worked_examples.sqlite3") as db:
+    with closing(sqlite3.connect(home / "worked_examples.sqlite3")) as db, db:
         db.execute("""CREATE TABLE IF NOT EXISTS worked_examples (
             project TEXT NOT NULL, id TEXT NOT NULL, group_id TEXT NOT NULL,
             category TEXT NOT NULL, instruction TEXT NOT NULL, response TEXT NOT NULL,
@@ -180,12 +183,55 @@ def _document(row: Example) -> Counter[str]:
         return found
     # Original request dominates; the response contributes API names only.
     request = terms(row.instruction)
-    api = [piece for match in list(_API.finditer(row.response))[:50]
+    api = [piece for match in islice(_API.finditer(row.response), 50)
            for piece in terms(match.group())]
     if len(_DOCUMENTS) >= _DOCUMENT_CACHE:
         _DOCUMENTS.clear()
     found = _DOCUMENTS[key] = Counter(request * 3 + api)
     return found
+
+
+@dataclass(frozen=True)
+class _Corpus:
+    """Read-only scoring data; positions refer to the caller's current rows."""
+    documents: tuple[Counter[str], ...]
+    length_bias: tuple[float, ...]
+    inverse_frequency: dict[str, float]
+    postings: dict[str, tuple[int, ...]]
+
+
+# Exact text keys avoid stale scores after imports, edits, expiry, or removal.
+# Keep no Example objects or selected answers: a cache hit must return the
+# current caller's IDs, metadata and response. The two-entry cache retains at
+# most 4,194,304 characters of key text; oversized corpora run uncached.
+_CORPUS_CACHE_MAX_CHARS = 2 * 1024 * 1024
+
+
+@lru_cache(maxsize=2)
+def _compile_corpus(key: tuple[tuple[str, str], ...]) -> _Corpus:
+    documents = tuple(_document(Example("", "", "", instruction, response))
+                      for instruction, response in key)
+    lengths = [sum(doc.values()) for doc in documents]
+    average = max(1.0, sum(lengths) / len(lengths))
+    posting_lists: dict[str, list[int]] = {}
+    for position, doc in enumerate(documents):
+        for word in doc:
+            posting_lists.setdefault(word, []).append(position)
+    return _Corpus(
+        documents=documents,
+        length_bias=tuple(1.2 * (.25 + .75 * length / average) for length in lengths),
+        inverse_frequency={word: math.log1p((len(key) - len(positions) + .5) / (len(positions) + .5))
+                           for word, positions in posting_lists.items()},
+        postings={word: tuple(positions) for word, positions in posting_lists.items()},
+    )
+
+
+def _corpus(examples: list[Example]) -> _Corpus:
+    key = tuple((row.instruction, row.response) for row in examples)
+    if (len(key) > MAX_ROWS
+            or sum(len(instruction) + len(response) for instruction, response in key) > _CORPUS_CACHE_MAX_CHARS):
+        return _compile_corpus.__wrapped__(key)
+    return _compile_corpus(key)
 
 
 def rank(prompt: str, examples: list[Example], *, limit: int = 2) -> list[tuple[Example, float]]:
@@ -195,18 +241,19 @@ def rank(prompt: str, examples: list[Example], *, limit: int = 2) -> list[tuple[
     query = set(terms(prompt))
     if len(query) < 2 or not examples:
         return []
-    docs = [_document(row) for row in examples]
-    lengths = [sum(doc.values()) for doc in docs]
-    average = max(1.0, sum(lengths) / len(lengths))
-    frequency = Counter(token for doc in docs for token in doc)
+    corpus = _corpus(examples)
+    # Only visit rows containing query terms. Coverage and the two-term rule
+    # remain exactly the same; unrelated examples never need a scoring pass.
+    matches = Counter(position for word in query for position in corpus.postings.get(word, ()))
     found = []
-    for row, doc, length in zip(examples, docs, lengths):
-        overlap = query & doc.keys()
-        if len(overlap) < 2 or len(overlap) / len(query) < .40:
+    for position in sorted(matches):
+        count = matches[position]
+        if count < 2 or count / len(query) < .40:
             continue
+        row, doc = examples[position], corpus.documents[position]
+        overlap = query & doc.keys()
         value = sum(
-            math.log1p((len(examples) - frequency[word] + .5) / (frequency[word] + .5))
-            * doc[word] * 2.2 / (doc[word] + 1.2 * (.25 + .75 * length / average))
+            corpus.inverse_frequency[word] * doc[word] * 2.2 / (doc[word] + corpus.length_bias[position])
             for word in overlap)
         if value >= MIN_SCORE:
             found.append((row, value))
@@ -221,7 +268,7 @@ def select(home: Path, project: str, prompt: str, *, max_chars: int = MAX_PROMPT
     path = Path(home) / "worked_examples.sqlite3"
     if max_chars < 200 or not path.is_file():
         return "", []
-    with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)) as db, db:
         # Examples from a learning bundle (star/learned_week.py) stop being used when their 14 days are over.
         timed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='example_expiry'").fetchone()
         expiry = ("AND id NOT IN (SELECT id FROM example_expiry WHERE project=? AND expires_at<=?) " if timed else "")

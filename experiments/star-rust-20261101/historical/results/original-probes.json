@@ -1,0 +1,13 @@
+{
+  "source_trace": {
+    "sent_excerpt_characters": 1200,
+    "returned_source_characters": 5000
+  },
+  "queue": {
+    "socket_timeout_seconds": 0.2,
+    "still_waiting_after_seconds": 0.3,
+    "still_waiting": true
+  },
+  "malformed_labels_result": "TypeError",
+  "non_boolean_false_string_accepted": true
+}

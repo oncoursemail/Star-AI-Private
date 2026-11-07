@@ -88,3 +88,43 @@ def test_load_keys(tmp_path):
     keyfile.write_text("one\n\n two \n", encoding="utf-8")
     assert gateway.load_keys(str(keyfile)) == [b"one", b"two"]
     assert gateway.load_keys(str(tmp_path / "missing")) == []
+
+
+def _watch_db(path, rows):
+    import sqlite3
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE pages(url TEXT PRIMARY KEY, name TEXT, title TEXT, text TEXT, sha TEXT, fetched_at TEXT, "
+               "changed_at TEXT, every_hours INTEGER, error TEXT DEFAULT '')")
+    db.executemany("INSERT INTO pages(url,name,title,text,fetched_at,changed_at) VALUES(?,?,?,?,?,?)", rows)
+    db.commit()
+    db.close()
+
+
+def test_watched_snapshots_need_the_key_and_come_since_a_time(tmp_path):
+    path = tmp_path / "research-store.sqlite3"
+    _watch_db(path, [("https://a.example/notes", "a", "A", "alpha", "t1", "2026-10-30T08:00:00"),
+                     ("https://b.example/notes", "b", "B", "beta", "t2", "2026-10-31T08:00:00"),
+                     ("https://c.example/empty", "c", "C", "", "t3", "2026-10-31T09:00:00"),
+                     ("javascript:alert(1)", "d", "D", "bad", "t4", "2026-10-31T10:00:00")])
+    g = gateway.Gateway([KEY], watch_db=str(path))
+    assert g.watched("", None)[0] == 401
+    status, body = g.watched("", AUTH)
+    assert status == 200 and [p["url"] for p in body["pages"]] == ["https://a.example/notes", "https://b.example/notes"]
+    assert body["newest"] == "2026-10-31T08:00:00" and body["more"] is False
+    status, body = g.watched("since=2026-10-30T08:00:00", AUTH)
+    assert [p["text"] for p in body["pages"]] == ["beta"]
+    assert gateway.Gateway([KEY], watch_db=str(tmp_path / "missing.sqlite3")).watched("", AUTH)[1]["pages"] == []
+
+
+def test_watched_reply_is_bounded_and_resumes_before_a_cut_group(tmp_path, monkeypatch):
+    path = tmp_path / "research-store.sqlite3"
+    _watch_db(path, [("https://a.example/1", "a", "A", "x" * 60, "t", "2026-10-30T08:00:00"),
+                     ("https://b.example/2", "b", "B", "y" * 60, "t", "2026-10-31T08:00:00"),
+                     ("https://c.example/3", "c", "C", "z" * 60, "t", "2026-10-31T08:00:00")])
+    monkeypatch.setattr(gateway, "WATCHED_MAX_BYTES", 130)
+    g = gateway.Gateway([KEY], watch_db=str(path))
+    body = g.watched("", AUTH)[1]
+    assert len(body["pages"]) == 2 and body["more"] is True
+    assert body["newest"] == "2026-10-30T08:00:00"             # the 10-31 group comes again, whole
+    rest = g.watched("since=" + body["newest"], AUTH)[1]
+    assert [p["url"] for p in rest["pages"]] == ["https://b.example/2", "https://c.example/3"]

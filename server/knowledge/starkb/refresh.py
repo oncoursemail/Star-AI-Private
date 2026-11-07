@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import subprocess
 import time
@@ -23,6 +24,10 @@ from .quiet import Stopper, lock_held, wait_while_locked
 from .store import RebuildRefused, build, connect
 
 REPORT_NAME = "refresh-report.log"
+# Most texts the nightly refresh embeds on this machine (0 = all). A bulk change (a new corpus) is left for a GPU
+# machine (offload.py) instead of slowing chat for days; the daily Roblox docs changes (tens of texts) fit easily, and
+# pending texts are taken in index order, so the Roblox sources come first.
+EMBED_LIMIT = int(os.environ.get("STAR_KB_REFRESH_EMBED_LIMIT", "0"))
 
 
 def _git(repo: Path, *args: str, timeout: float = 600) -> str:
@@ -44,16 +49,23 @@ def wait_for_quiet(max_wait: float, stop, log) -> bool:
 def fetch_all(sources_dir: Path, config: dict, git=_git, *, wait=None) -> list[dict]:
     """Fetch every source without moving any checkout. Raises RuntimeError if one fetch fails."""
     found = []
+    seen: set[str] = set()
     for source in config["sources"]:
+        if source.get("kind", "git") != "git":
+            continue        # fetched pages (fetch_pages.py) are refreshed by their own job, not by git
+        checkout = source.get("checkout", source["name"])
+        if checkout in seen:
+            continue        # two sources (licences) in one checkout: fetched once
+        seen.add(checkout)
         if wait is not None and not wait():
             raise QuietTimeout("server lock held during repository fetch")
-        repo = sources_dir / source["name"]
+        repo = sources_dir / checkout
         if not (repo / ".git").is_dir():
             raise RuntimeError(f"no checkout for {source['name']} (run fetch.sh once)")
         old = git(repo, "rev-parse", "HEAD")
         git(repo, "fetch", "--quiet", "--depth", "1", "origin", source["branch"])
         new = git(repo, "rev-parse", "FETCH_HEAD")
-        found.append({"name": source["name"], "repo": repo, "old": old, "new": new})
+        found.append({"name": checkout, "repo": repo, "old": old, "new": new})
     return found
 
 
@@ -64,7 +76,7 @@ def report_line(result: dict) -> str:
         parts.append(f"{source['name']}=" + (old if old == new else f"{old}>{new}"))
     if "chunks" in result:
         parts.append(f"chunks={result['chunks']}")
-    for key in ("texts_added", "texts_removed", "embedded_now", "embedded", "unstudied"):
+    for key in ("texts_added", "texts_removed", "embedded_now", "embed_left", "embedded", "unstudied"):
         if key in result:
             parts.append(f"{key}={result[key]}")
     if result.get("eval"):
@@ -76,7 +88,8 @@ def report_line(result: dict) -> str:
 
 
 def run(db_path: Path, home: Path, app: Path, *, max_wait: float = 3 * 3600, modes: str = "bm25,vector",
-        report: Path | None = None, log=print, stop=None, fetch=fetch_all, check=True) -> dict:
+        report: Path | None = None, log=print, stop=None, fetch=fetch_all, check=True,
+        embed_limit: int = EMBED_LIMIT) -> dict:
     stop = stop or Stopper()
     report = report or (db_path.parent / REPORT_NAME)
     sources_dir = home / "sources"
@@ -125,8 +138,10 @@ def run(db_path: Path, home: Path, app: Path, *, max_wait: float = 3 * 3600, mod
                         result["error"] = result.get("error", "") + f"; could not restore {source['name']}: {undo}"
                 return result
             from .embed import run as embed_run
-            embedded = embed_run(db_path, batch=8, log=log, stop=stop)
+            embedded = embed_run(db_path, batch=8, log=log, stop=stop, limit=embed_limit or None)
             result["embedded_now"] = embedded["embedded_now"]
+            if embed_limit and embedded["pending_before"] >= embed_limit:
+                result["embed_left"] = "offload"     # more texts were pending than the limit: see offload.py
         else:
             result["status"] = "unchanged"
         db = connect(db_path)

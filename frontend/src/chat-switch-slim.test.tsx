@@ -27,7 +27,7 @@ it('opening another chat with a chat-only reply keeps the rest of the app state'
  await user.click(screen.getByRole('button',{name:'Other chat'}))
  expect(await screen.findByText('How do doors open?')).toBeTruthy()
  // Version and settings came from the start-up state, not from the chat reply.
- expect(screen.getByRole('button',{name:/^Settings/}).textContent).toContain('v1.0.0')
+ expect(screen.getByRole('button',{name:/^Settings/}).textContent).toContain('v2.0.0')
  expect(screen.getByRole('textbox',{name:/message star/i})).toBeTruthy()
 })
 
@@ -39,5 +39,5 @@ it('a new chat with a chat-only reply clears the thread and keeps the app usable
  await screen.findByRole('textbox',{name:/message star/i})
  await user.click(screen.getAllByRole('button',{name:/new chat/i})[0])
  await waitFor(()=>expect(bridge.sent('newChat')).toHaveLength(1))
- expect(screen.getByRole('button',{name:/^Settings/}).textContent).toContain('v1.0.0')
+ expect(screen.getByRole('button',{name:/^Settings/}).textContent).toContain('v2.0.0')
 })

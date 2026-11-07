@@ -240,7 +240,8 @@ def test_agent_dispatches_authorized_intelligence_without_studio(tmp_path):
         client = SimpleNamespace(chat=SimpleNamespace(completions=answer_model))
         hub = LocalIntelligence(home=tmp_path / "data")
         answer, messages, _ = await execute(client=client, model="local",
-            prompt="What Roblox skills can you use?", image_paths=[], intelligence=hub)
+            prompt="What Roblox skills can you use?", image_paths=[], intelligence=hub,
+            context_chars=40000)   # the bundled catalogue (~120 skills) outgrew the 25k default
         assert "skills" in answer.lower()
         assert any(m["role"] == "tool" and "roblox-ui-craft" in m["content"] for m in messages)
         assert [m["role"] for m in messages].count("system") == 1

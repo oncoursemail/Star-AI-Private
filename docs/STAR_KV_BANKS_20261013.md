@@ -1,5 +1,14 @@
 # STAR KV cache banks: first-stage CAG experiment
 
+> **Update 2026-10-21 (G0b "saved project memory", docs/agents/precognition-20261021.md in the workspace).**
+> star/cache_banks.py now banks only the stable start of a request (system message + tools, rendered by the
+> server's template), keyed by the SHA-256 of that text + model + server + STAR_KV_BANK_MODEL_REVISION, and only
+> into an EMPTY slot (model restarted or slot erased); a used slot is left to the server's RAM prompt cache. Files
+> are a fixed pool per install (STAR_KV_BANKS_MAX, default 8, least recently used name reused). Used from the
+> warm-up and from "Start thinking while I type". Measured on the PC (2,664-token start): bank 279.6 MB, restore
+> 0.23-0.49 s, turn after restore reads 38 tokens (first token 0.9-2.0 s vs 10.1-10.5 s cold). Server side:
+> server/brain/kv_banks/live.sh enable|undo. The per-chat description in "Implemented scope" below is superseded.
+
 **2026-10-13. Draft feature — disabled by default.** This is a bounded prototype for saving and restoring an already-primed llama.cpp **prompt prefix**. It does not preload the entire Roblox corpus, reserve 80 GB of RAM, make model decoding faster, replace documentation retrieval, train model weights, or prove an improvement.
 
 ## Implemented scope

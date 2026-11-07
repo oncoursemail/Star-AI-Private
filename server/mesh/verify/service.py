@@ -1,0 +1,196 @@
+"""HTTP front of the verifier, a sibling of the mesh router in the star-mesh container (default :8101).
+
+    GET  /health                      no auth: {"status", "dump": {version, fetched}, "luau_analyze": bool}
+    POST /mesh/verify                 Bearer key (same keys as the router/brain)
+         body {"code": "...", "language"?: "luau|csharp|minecraft|mcfunction"} or {"answer": "<markdown>"}
+         -> {"ok", "needs_fix", "blocks": [{index, language, ok, needs_fix, problems: [{kind, severity, name,
+             message, suggestion, line}]}], "problems": [...prose...], "ms", "dump"}
+    POST /mesh/mc/facts               Bearer key; body {"question", "extra"?, "budget"?} -> {"text", "version", "parts",
+                                      "ms"}: the Minecraft facts block (exact ids/syntax/pack formats from the game)
+    POST /mesh/verify?fix=1           also repairs failing blocks through the router's `litha` (max 2 rounds; the
+                                      client's Authorization header is forwarded) -> {"answer", "ok", "rounds",
+                                      "changes", "before", "after", "verify", "model_ms", "ms"}
+
+    PYTHONPATH=server python -m mesh.verify [verify.json]
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from ..router import KeyFile
+from ..mcdata.facts import Facts
+from ..mcdata.index import McIndex
+from ..polyglot.client import Polyglot
+from .apidump import ApiIndex
+from .core import Verifier
+from .javamc import JvmClient
+
+DEFAULTS = {
+    "listen": "0.0.0.0",
+    "port": 8101,
+    "index": "/var/lib/star-verify/roblox-api-index.json",
+    "luau_analyze": "/opt/star-verify/bin/luau-analyze",
+    "router_url": "http://127.0.0.1:8100",
+    "fix_model": "litha",
+    "fix_rounds": 2,
+    "fix_max_tokens": 2048,
+    "fix_timeout_s": 180,
+    "client_keys_file": "/etc/star-mesh/api_keys",
+    "max_body_kb": 512,
+    "docs_url": "http://127.0.0.1:8102",      # official docs entries for the fix loop ("" = off)
+    "docs_timeout_s": 1.0,
+    "mc_index": "/var/lib/star-verify/mc",   # Minecraft data from the game itself (mesh.mcdata.build); missing = old checks
+    "mc_facts_chars": 3200,                  # size cap of the Minecraft facts block
+    "jvm_url": "",                            # warm javac for Minecraft plugins/mods (jvm/CompileServer.java; "" = off)
+    "jvm_token_file": "/var/lib/star-verify/jvm_token",
+    "jvm_timeout_s": 4.0,
+    # star-polyglot compilers (server/mesh/polyglot, own no-network container); the URL is written by its deploy.sh
+    # into polyglot_url_file; no URL or no token file = off
+    "polyglot_url": "",
+    "polyglot_url_file": "/etc/star-mesh/polyglot_url",
+    "polyglot_token_file": "/etc/star-mesh/polyglot_token",
+    "polyglot_timeout_s": 3.0,
+}
+
+
+def load_config(path: str | None = None) -> dict:
+    cfg = dict(DEFAULTS)
+    path = path or os.environ.get("STAR_VERIFY_CONFIG", "")
+    if path and Path(path).is_file():
+        cfg.update(json.loads(Path(path).read_text(encoding="utf-8")))
+    return cfg
+
+
+def model_caller(cfg: dict, auth: str):
+    """call(messages) -> reply text, through the mesh router (fast tier, thinking off)."""
+    def call(messages):
+        body = json.dumps({"model": cfg["fix_model"], "messages": messages, "temperature": 0.2, "stream": False,
+                           "max_tokens": cfg["fix_max_tokens"],
+                           "chat_template_kwargs": {"enable_thinking": False},
+                           "mesh_docs": False,      # the fix prompt carries its own doc entries
+                           "mesh_polyglot": False, "mesh_engine": False}).encode()
+        req = urllib.request.Request(cfg["router_url"].rstrip("/") + "/v1/chat/completions", body,
+                                     {"Content-Type": "application/json", "Authorization": auth})
+        with urllib.request.urlopen(req, timeout=cfg["fix_timeout_s"]) as r:
+            data = json.loads(r.read())
+        return data["choices"][0]["message"].get("content") or ""
+    return call
+
+
+def docs_lookup(cfg: dict, auth: str):
+    """docs(names) -> exact entries text from the docs service ('' when off, down or late)."""
+    def docs(names):
+        if not cfg.get("docs_url") or not names:
+            return ""
+        req = urllib.request.Request(cfg["docs_url"].rstrip("/") + "/mesh/docs/entries",
+                                     json.dumps({"names": list(names)}).encode(),
+                                     {"Content-Type": "application/json", "Authorization": auth})
+        try:
+            with urllib.request.urlopen(req, timeout=cfg["docs_timeout_s"]) as r:
+                return json.loads(r.read()).get("text") or ""
+        except (OSError, ValueError):
+            return ""
+    return docs
+
+
+def make_handler(cfg: dict, verifier: Verifier, keys, caller_factory=model_caller, docs_factory=docs_lookup,
+                 facts: Facts | None = None):
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+        server_version = "star-verify/1"
+
+        def log_message(self, fmt, *args):      # no request logging (bodies may hold user code)
+            pass
+
+        def _send(self, status, obj):
+            body = json.dumps(obj).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if urllib.parse.urlsplit(self.path).path == "/health":
+                return self._send(200, {"status": "ok", "dump": verifier.api.meta,
+                                        "luau_analyze": bool(verifier.luau.analyzer), "jvm": bool(verifier.jvm),
+                                        "minecraft": list(verifier.mc.versions) if verifier.mc else [],
+                                        "polyglot": bool(verifier.polyglot)})
+            return self._send(404, {"error": {"message": "not found"}})
+
+        def do_POST(self):
+            url = urllib.parse.urlsplit(self.path)
+            if url.path not in ("/mesh/verify", "/mesh/mc/facts"):
+                return self._send(404, {"error": {"message": "not found"}})
+            auth = self.headers.get("Authorization", "")
+            token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+            if not token or not keys.check(token):
+                return self._send(401, {"error": {"message": "invalid api key"}})
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > cfg["max_body_kb"] << 10:
+                return self._send(413, {"error": {"message": "request too large"}})
+            if url.path == "/mesh/mc/facts":
+                try:
+                    req = json.loads(self.rfile.read(n) or b"{}")
+                    q = req.get("question")
+                    assert isinstance(q, str)
+                except (ValueError, AssertionError, AttributeError):
+                    return self._send(400, {"error": {"message": "send {\"question\": ...}"}})
+                if facts is None:
+                    return self._send(200, {"text": "", "version": None, "parts": [], "ms": 0})
+                t0 = time.perf_counter()
+                out = facts.block(q, str(req.get("extra") or ""), int(req.get("budget") or cfg["mc_facts_chars"]))
+                return self._send(200, {**out, "ms": round((time.perf_counter() - t0) * 1000, 1)})
+            try:
+                req = json.loads(self.rfile.read(n) or b"{}")
+                text = req.get("answer") or req.get("code") or ""
+                assert isinstance(text, str) and text.strip()
+            except (ValueError, AssertionError, AttributeError):
+                return self._send(400, {"error": {"message": "send {\"code\": ...} or {\"answer\": ...}"}})
+            lang = req.get("language") or ("auto" if not req.get("answer") else None)
+            fix = urllib.parse.parse_qs(url.query).get("fix", ["0"])[0] in ("1", "true", "yes")
+            question = req.get("question") if isinstance(req.get("question"), str) else None
+            if not fix:
+                return self._send(200, verifier.verify(text, lang, question))
+            rounds = max(1, min(int(req.get("rounds") or cfg["fix_rounds"]), cfg["fix_rounds"]))
+            docs = docs_factory(cfg, auth) if req.get("docs") is not False else None
+            return self._send(200, verifier.fix(text, caller_factory(cfg, auth), lang, rounds, docs, question))
+
+    return Handler
+
+
+def serve(cfg: dict, caller_factory=model_caller) -> ThreadingHTTPServer:
+    api = ApiIndex.load(cfg["index"])
+    mc = McIndex.load(cfg.get("mc_index"))
+    verifier = Verifier(api, cfg.get("luau_analyze"), JvmClient.from_config(cfg), mc=mc,
+                        polyglot=Polyglot.from_config(cfg))
+    facts = Facts(mc, cfg.get("mc_index")) if mc else None
+    srv = ThreadingHTTPServer((cfg["listen"], cfg["port"]),
+                              make_handler(cfg, verifier, KeyFile(cfg["client_keys_file"]), caller_factory,
+                                           facts=facts))
+    srv.daemon_threads = True
+    return srv
+
+
+def main(argv: list[str]) -> int:
+    cfg = load_config(argv[0] if argv else None)
+    srv = serve(cfg)
+    print(f"star-verify on {cfg['listen']}:{cfg['port']}", flush=True)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

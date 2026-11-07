@@ -1,0 +1,35 @@
+// 30 retrieval questions about STAR's own notes (the brain vault, `python -m star.brain_vault`), written on 2026-10-20 by
+// reading the notes' opening sections and BEFORE any search was run on them. "expected" lists vault notes that were checked
+// (plain text match on the "fact" string, not by any search engine) to contain the answer; a hit on any of them counts.
+// The vault path is the index path (docs.path). Notes created later never invalidate a question; a question dated "2026-10-18"
+// stays valid because daily notes are per date. Run: python scripts/brain_vault_eval.py --vault <vault>
+{"id": "v01", "question": "how does night school write its own practice tasks", "expected": ["notes/agents/night-conductor.md"], "fact": "NEW, smaller practice tasks"}
+{"id": "v02", "question": "how does night school work", "expected": ["notes/agents/night-school.md", "notes/agents/night-conductor.md", "notes/agents/night-school-restart.md"], "fact": "night"}
+{"id": "v03", "question": "what size limit did the worked example importer put on answers before it was raised", "expected": ["notes/agents/night-school-import-limit.md"], "fact": "4,000 characters"}
+{"id": "v04", "question": "why was the knowledge embedding job moved to the PC graphics card", "expected": ["notes/agents/embed-offload-20261020.md"], "fact": "340,882 chunks"}
+{"id": "v05", "question": "what froze the knowledge search service for five hours", "expected": ["notes/agents/knowledge-fix-20261020.md"], "fact": "Freeze 07:07:38Z"}
+{"id": "v06", "question": "which machines run the self-hosted CI runners", "expected": ["notes/agents/local-ci-20261020.md"], "fact": "brain2-ci-runner"}
+{"id": "v07", "question": "what port does the forge accept git over ssh on", "expected": ["notes/agents/metallic-forge-20261020.md"], "fact": "port 2222"}
+{"id": "v08", "question": "how much faster did speculative decoding make star-fast", "expected": ["notes/agents/speed-20261020.md"], "fact": "+19% live"}
+{"id": "v09", "question": "why did we roll back three parallel slots on star-fast", "expected": ["notes/agents/chat-slot-20261020.md"], "fact": "ROLLED BACK to parallel 2"}
+{"id": "v10", "question": "what is the most common kind of slop in star answers", "expected": ["notes/agents/anti-slop-20261020.md", "notes/research/breakthroughs-20261020.md"], "fact": "invented Roblox member"}
+{"id": "v11", "question": "what is the plan for throwaway windows machines for CI", "expected": ["notes/research/windows-ci-20261020.md", "notes/agents/windows-ci-fast-20261020.md"], "fact": "Windows Sandbox"}
+{"id": "v12", "question": "what can star run from discord and how is it restricted", "expected": ["notes/agents/discord-star-20261020.md"], "fact": "allow-list"}
+{"id": "v13", "question": "where is the priority proxy and which port does it listen on", "expected": ["notes/agents/priority-scheduler-20261020.md"], "fact": "8097"}
+{"id": "v14", "question": "why were github actions jobs not starting on the private repo", "expected": ["notes/agents/pr-review-20261020.md", "notes/agents/local-ci-20261020.md"], "fact": "billing"}
+{"id": "v15", "question": "how does the apprentice model get trained on the PC", "expected": ["notes/agents/apprentice-model.md"], "fact": "RTX 3060 Ti"}
+{"id": "v16", "question": "what is best of n verification for code requests", "expected": ["notes/agents/best-of-n-20261013.md"], "fact": "N adaptive candidates"}
+{"id": "v17", "question": "how did rec room throw games decide which player owned the round state", "expected": ["notes/research/recroom-throw-netcode-20261016.md"], "fact": "room authority"}
+{"id": "v18", "question": "what are the layers of a roblox anime ability visual effect", "expected": ["notes/research/roblox-vfx.md"], "fact": "VFX"}
+{"id": "v19", "question": "where should image generation run for star", "expected": ["notes/research/media-pipeline.md"], "fact": "FLUX.2 klein"}
+{"id": "v20", "question": "what budget gpu build was considered for a third brain", "expected": ["notes/research/brain3-budget-build.md"], "fact": "$200"}
+{"id": "v21", "question": "what did the omniroute research conclude about using it", "expected": ["notes/research/omniroute.md", "notes/agents/omniroute-research.md"], "fact": "OmniRoute"}
+{"id": "v22", "question": "what did the bot night find about the ten playtest bugs", "expected": ["notes/agents/bot-night-20261018.md"], "fact": "different account"}
+{"id": "v23", "question": "which file implements the anti slop checker and what does it define", "expected": ["code/star/slop_py.md"], "fact": "check_prose"}
+{"id": "v24", "question": "where is the knowledge service search code that scopes roblox queries", "expected": ["code/server/knowledge/starkb/search_py.md"], "fact": "auto_scope"}
+{"id": "v25", "question": "which file defines the obsidian vault bridge", "expected": ["code/star/obsidian_bridge_py.md"], "fact": "ObsidianVault"}
+{"id": "v26", "question": "what did we change on 2026-10-18", "expected": ["daily/2026-10-18.md"], "fact": "What changed on 2026-10-18"}
+{"id": "v27", "question": "what did the model scout find about the draft model for star-fast", "expected": ["notes/agents/model-scout-20261018.md"], "fact": "DSpark"}
+{"id": "v28", "question": "what does the quality a b test compare", "expected": ["notes/agents/quality-ab-20261020.md"], "fact": "api_hints"}
+{"id": "v29", "question": "what is the gold exemplar bank", "expected": ["notes/agents/gold-bank-20261020.md"], "fact": "exemplar bank"}
+{"id": "v30", "question": "what still blocks the v2.0 release", "expected": ["notes/agents/v2-milestone-20261020.md", "notes/release/v2.0--STATUS.md", "notes/release/v2.0--CHECKLIST.md"], "fact": "blocker"}

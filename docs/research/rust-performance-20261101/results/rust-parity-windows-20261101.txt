@@ -1,0 +1,5 @@
+Command: C:\Python315\python.exe <PUBLICATION_WORKSPACE>\repo\experiments\star-rust-20261101\check_rust_parity.py --exe <PUBLICATION_WORKSPACE>\build\rrf_pilot.exe
+Exit code: 0
+
+{"parity_cases_passed": 40, "invalid_cli_probes_passed": 3, "timing_benchmark_rerun": false, "production_backend_tested": false}
+

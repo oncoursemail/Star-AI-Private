@@ -54,6 +54,52 @@
    "notes": "The default Star persona: warm, nurturing and patient, a little slower than stock with a short pause after each sentence. Chosen on 2026-10-13 for the best recipe fit (98) with a high MOS estimate (4.4) among the live-speed voices."
   },
   {
+   "id": "star-cute",
+   "name": "Star (cute, young adult)",
+   "style": "anime-bright",
+   "archetype": "soft",
+   "engine": "kokoro",
+   "engine_settings": {
+    "recipe": [
+     [
+      "af_bella",
+      0.5
+     ],
+     [
+      "af_sarah",
+      0.5
+     ]
+    ],
+    "speed": 0.92,
+    "lang": "en-us",
+    "sentence_gap_ms": 0,
+    "pitch_semitones": 0.0
+   },
+   "reference_clip": "",
+   "audition": "kokoro/blend-bella-sarah",
+   "licence": "Kokoro-82M weights and code: Apache-2.0 (hexgrad). A 50/50 blend of two stock voices shipped with the model (bella, sarah); no real person is cloned. Runs in STAR calls and read-aloud today.",
+   "latency": {
+    "first_audio_seconds": 0.33,
+    "first_audio_kind": "first sentence",
+    "first_sentence_seconds": 0.33,
+    "realtime_factor": 0.08,
+    "device": "PC GPU (RTX 3060 Ti)"
+   },
+   "measured": {
+    "pitch_hz": 197.5,
+    "words_per_minute": 208.0,
+    "pitch_range_st": 8.9,
+    "pause_share": 0.241,
+    "final_fall_st": -2.7,
+    "heard_back_wer_percent": 0.0,
+    "mos_utmos": 4.49,
+    "line_pitch_spread_st": 0.4,
+    "measured_on": "the six comparison lines (docs/voice-samples/ab/kokoro/blend-bella-sarah)"
+   },
+   "recommended_for": [],
+   "notes": "Chosen 2026-10-26 for her own PC as the best young-adult voice on measured proxies, not by ear: highest naturalness estimate among the live voices that are not pitch-shifted (UTMOS 4.49, 0.0 percent heard-back error), a little higher than the warm-mum voice (197 Hz against 186 Hz), fluent and quick (208 words a minute), very steady between lines (0.4 semitones). The cuter but processed alternative is ani-bella-heart-up (239 Hz, +3.5 semitones, UTMOS 3.46). The owner's ears decide: docs/agents/senses-voice-20261026-data/voice-samples."
+  },
+  {
    "id": "heart",
    "name": "Heart",
    "style": "warm-caring",

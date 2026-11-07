@@ -41,7 +41,7 @@ WEEK_DAYS = 7
 PROVISIONAL = "provisional:"
 MAX_BUNDLE_BYTES = 6 * 1024 * 1024
 MAX_LESSONS = 200
-GATE = re.compile(r"paired gate (PROMOTE|REJECT|INCONCLUSIVE|INCOMPLETE): (\d+) wins / (\d+) losses over (\d+) "
+GATE = re.compile(r"paired gate (PROMOTE|REJECT|INCONCLUSIVE|UNDERPOWERED|INCOMPLETE): (\d+) wins / (\d+) losses over (\d+) "
                   r"tasks x k=(\d+), sign test p=([0-9.eE+-]+|None)")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}\Z")
 STATES = ("live", "undone", "expired", "kept")

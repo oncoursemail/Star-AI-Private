@@ -34,14 +34,23 @@ class EditResult:
     count: int      # places replaced
 
 
-def apply_edit(source: str, old: str, new: str, *, replace_all: bool = False) -> EditResult:
-    """Return ``source`` with ``old`` replaced by ``new``, or raise :class:`EditMismatch`."""
+def apply_edit(source: str, old: str, new: str, *, replace_all: bool = False,
+               whole_lines: bool = False) -> EditResult:
+    """Return ``source`` with ``old`` replaced by ``new``, or raise :class:`EditMismatch`.
+
+    ``whole_lines`` (SEARCH/REPLACE blocks, star/edit_format.py): ``old`` must match complete lines, never a
+    part of a line, so only the ``whitespace`` strategy runs (it also covers the exact case)."""
     if not all(isinstance(value, str) for value in (source, old, new)):
         raise TypeError("source, old and new must be str")
     if not old:
         raise EditMismatch("old_string is empty")
     if old == new:
         raise EditMismatch("old_string and new_string are the same")
+    if whole_lines:
+        found = _whitespace(source, old, new)
+        if found is None:
+            raise EditMismatch("old_string was not found in the file" + _hint(source, old))
+        return found
     found = _exact(source, old, new, replace_all, "exact")
     if found is None and "\r\n" in source and "\r\n" not in old:
         found = _exact(source, old.replace("\n", "\r\n"), new.replace("\n", "\r\n"), replace_all, "line_endings")
@@ -86,10 +95,14 @@ def _whitespace(source: str, old: str, new: str) -> EditResult | None:
     bare = [line.rstrip("\r\n").rstrip() for line in lines]
     size = len(wanted)
     first = next(i for i, line in enumerate(wanted) if line)
+    lead = _indent(wanted[first])        # the first line may be deeper than the block's common indentation
     matches: list[tuple[int, str]] = []
     for start in range(len(lines) - size + 1):
         window = bare[start:start + size]
-        shift = _indent(window[first])
+        have = _indent(window[first])
+        if not have.endswith(lead):
+            continue
+        shift = have[:len(have) - len(lead)]
         if all((not want and not have.strip()) or (want and have == shift + want)
                for want, have in zip(wanted, window)):
             matches.append((start, shift))

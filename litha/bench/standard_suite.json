@@ -1,0 +1,485 @@
+{
+ "made": "2026-11-02",
+ "sha": "91c3972dfac267f826ad5cb4507825ac1cfe1acb",
+ "seed": 32,
+ "families": [
+  "op-swap",
+  "cmp-flip",
+  "off-by-one",
+  "drop-return",
+  "swap-args",
+  "drop-guard",
+  "bool-invert"
+ ],
+ "rule": "killed by the module's existing tests; tests green and < 60 s on the clean code",
+ "items": [
+  {
+   "id": "S01",
+   "file": "star/failure_ledger.py",
+   "line": 306,
+   "col": 11,
+   "op": "op-swap",
+   "sub": "and->or",
+   "tests": [
+    "tests/test_corrections.py",
+    "tests/test_failure_ledger.py",
+    "tests/test_practice_gen.py"
+   ],
+   "orig": "if prelude.exists() and prelude.read_text(encoding=\"utf-8\").replace(\"\\r\\n\", \"\\n\") != PRELUDE:",
+   "bad": "if prelude.exists() or prelude.read_text(encoding=\"utf-8\").replace(\"\\r\\n\", \"\\n\") != PRELUDE:",
+   "file_sha": "1386f605fe28d51e"
+  },
+  {
+   "id": "S02",
+   "file": "star/updates.py",
+   "line": 169,
+   "col": 7,
+   "op": "cmp-flip",
+   "sub": "!=->==",
+   "tests": [
+    "tests/test_browser_updates.py",
+    "tests/test_install_scope.py",
+    "tests/test_public_distribution.py"
+   ],
+   "orig": "if len(matches) != 1:",
+   "bad": "if len(matches) == 1:",
+   "file_sha": "c8e01eebde8a1cfb"
+  },
+  {
+   "id": "S03",
+   "file": "star/play/perception.py",
+   "line": 113,
+   "col": 39,
+   "op": "off-by-one",
+   "sub": "4->5",
+   "tests": [
+    "tests/test_play_vision.py"
+   ],
+   "orig": "boxes, scores = raw[:4].T, raw[4:].T",
+   "bad": "boxes, scores = raw[:4].T, raw[5:].T",
+   "file_sha": "525e4c247a60264a"
+  },
+  {
+   "id": "S04",
+   "file": "star/curiosity.py",
+   "line": 61,
+   "col": 8,
+   "op": "drop-return",
+   "sub": "return x->x",
+   "tests": [
+    "tests/test_api_dump_diff.py",
+    "tests/test_curiosity.py",
+    "tests/test_gpu_night_turbo.py"
+   ],
+   "orig": "return Path(override)",
+   "bad": "Path(override)",
+   "file_sha": "329632a0960c8fe9"
+  },
+  {
+   "id": "S05",
+   "file": "star/discord_bot/learning_reports.py",
+   "line": 64,
+   "col": 14,
+   "op": "swap-args",
+   "sub": "f(a, b)->f(b, a)",
+   "tests": [
+    "tests/test_discord_evidence.py",
+    "tests/test_discord_learning_digests.py"
+   ],
+   "orig": "matches = re.findall(expression, report, flags=re.M)",
+   "bad": "matches = re.findall(report, expression, flags=re.M)",
+   "file_sha": "800b3c0c61863de7"
+  },
+  {
+   "id": "S06",
+   "file": "star/roblox_build/checks.py",
+   "line": 265,
+   "col": 16,
+   "op": "drop-guard",
+   "sub": "if c: exit->pass",
+   "tests": [
+    "tests/test_roblox_build.py"
+   ],
+   "orig": "if seen[gx * nz + gz]:",
+   "bad": "pass",
+   "file_sha": "de5d687e9c79ba9e"
+  },
+  {
+   "id": "S07",
+   "file": "star/roblox_data_compiler.py",
+   "line": 173,
+   "col": 15,
+   "op": "bool-invert",
+   "sub": "c->not c",
+   "tests": [
+    "tests/test_roblox_data_compiler.py"
+   ],
+   "orig": "if op[\"op\"] == \"set\":",
+   "bad": "if not (op[\"op\"] == \"set\"):",
+   "file_sha": "794a56fc39e708be"
+  },
+  {
+   "id": "S08",
+   "file": "star/design_system.py",
+   "line": 37,
+   "col": 55,
+   "op": "op-swap",
+   "sub": "*->/",
+   "tests": [
+    "tests/test_brain_release_regression.py",
+    "tests/test_design_system.py",
+    "tests/test_public_distribution.py"
+   ],
+   "orig": "return .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2]",
+   "bad": "return .2126 * linear[0] + .7152 * linear[1] + .0722 / linear[2]",
+   "file_sha": "77ee2aafd324cb64"
+  },
+  {
+   "id": "S09",
+   "file": "star/general_knowledge_benchmark.py",
+   "line": 329,
+   "col": 11,
+   "op": "cmp-flip",
+   "sub": "==->!=",
+   "tests": [
+    "tests/test_general_knowledge_benchmark.py"
+   ],
+   "orig": "if args.command == \"list\":",
+   "bad": "if args.command != \"list\":",
+   "file_sha": "47dd6fae13de0e05"
+  },
+  {
+   "id": "S10",
+   "file": "star/roblox_ui_check.py",
+   "line": 453,
+   "col": 13,
+   "op": "off-by-one",
+   "sub": "50->51",
+   "tests": [
+    "tests/test_roblox_ui_designer.py"
+   ],
+   "orig": "total += 50 * len(missing)",
+   "bad": "total += 51 * len(missing)",
+   "file_sha": "0b0ec1a663ca5c32"
+  },
+  {
+   "id": "S11",
+   "file": "star/brain_benchmark.py",
+   "line": 331,
+   "col": 8,
+   "op": "drop-return",
+   "sub": "return x->x",
+   "tests": [
+    "tests/test_brain_benchmark.py",
+    "tests/test_server_first_flow.py"
+   ],
+   "orig": "return {\"PROMOTE\": 0, \"REJECT\": 1}.get(result[\"decision\"], 4)",
+   "bad": "{\"PROMOTE\": 0, \"REJECT\": 1}.get(result[\"decision\"], 4)",
+   "file_sha": "8601e518bfec76bf"
+  },
+  {
+   "id": "S12",
+   "file": "star/image_quality.py",
+   "line": 398,
+   "col": 14,
+   "op": "swap-args",
+   "sub": "f(a, b)->f(b, a)",
+   "tests": [
+    "tests/test_image_quality.py",
+    "tests/test_image_quality2.py"
+   ],
+   "orig": "seconds = round(time.monotonic() - started, 1)",
+   "bad": "seconds = round(1, time.monotonic() - started)",
+   "file_sha": "202e34810cf9cf9b"
+  },
+  {
+   "id": "S13",
+   "file": "star/play/perception.py",
+   "line": 174,
+   "col": 12,
+   "op": "drop-guard",
+   "sub": "if c: exit->pass",
+   "tests": [
+    "tests/test_play_vision.py"
+   ],
+   "orig": "if line in self._seen:",
+   "bad": "pass",
+   "file_sha": "525e4c247a60264a"
+  },
+  {
+   "id": "S14",
+   "file": "star/rag_quality.py",
+   "line": 156,
+   "col": 15,
+   "op": "bool-invert",
+   "sub": "c->not c",
+   "tests": [
+    "tests/test_rag_quality.py"
+   ],
+   "orig": "if source[\"sha256\"] != hit[\"sha256\"]:",
+   "bad": "if not (source[\"sha256\"] != hit[\"sha256\"]):",
+   "file_sha": "1cf2d9a558f174e0"
+  },
+  {
+   "id": "S15",
+   "file": "star/gpu_helper.py",
+   "line": 354,
+   "col": 15,
+   "op": "op-swap",
+   "sub": "and->or",
+   "tests": [
+    "tests/test_gpu_helper.py"
+   ],
+   "orig": "if not ok and hard:",
+   "bad": "if not ok or hard:",
+   "file_sha": "7daa442e6f486a5e"
+  },
+  {
+   "id": "S16",
+   "file": "star/live_show.py",
+   "line": 55,
+   "col": 37,
+   "op": "cmp-flip",
+   "sub": "is->is not",
+   "tests": [
+    "tests/test_live_show.py",
+    "tests/test_live_show_wiring.py"
+   ],
+   "orig": "if not isinstance(value, str) or ID_PATTERN.fullmatch(value) is None:",
+   "bad": "if not isinstance(value, str) or ID_PATTERN.fullmatch(value) is not None:",
+   "file_sha": "9fb0b9757c5858cc"
+  },
+  {
+   "id": "S17",
+   "file": "star/scene_integrity.py",
+   "line": 63,
+   "col": 31,
+   "op": "off-by-one",
+   "sub": "0->1",
+   "tests": [
+    "tests/test_scene_integrity.py"
+   ],
+   "orig": "ra = (abs(axis[0] * ua[0] + axis[1] * ua[1]) * a[\"size\"][0]",
+   "bad": "ra = (abs(axis[0] * ua[1] + axis[1] * ua[1]) * a[\"size\"][0]",
+   "file_sha": "02b3ededcfbe0018"
+  },
+  {
+   "id": "S18",
+   "file": "star/computer/skills.py",
+   "line": 61,
+   "col": 8,
+   "op": "drop-return",
+   "sub": "return x->x",
+   "tests": [
+    "tests/test_computer_driver.py"
+   ],
+   "orig": "return focus_window(d, match)",
+   "bad": "focus_window(d, match)",
+   "file_sha": "61a28d5c1ea6acd0"
+  },
+  {
+   "id": "S19",
+   "file": "star/curiosity.py",
+   "line": 67,
+   "col": 11,
+   "op": "swap-args",
+   "sub": "f(a, b)->f(b, a)",
+   "tests": [
+    "tests/test_api_dump_diff.py",
+    "tests/test_curiosity.py",
+    "tests/test_gpu_night_turbo.py"
+   ],
+   "orig": "return time.strftime(_STAMP, time.gmtime())",
+   "bad": "return time.strftime(time.gmtime(), _STAMP)",
+   "file_sha": "329632a0960c8fe9"
+  },
+  {
+   "id": "S20",
+   "file": "star/stream_game_reactions.py",
+   "line": 185,
+   "col": 12,
+   "op": "drop-guard",
+   "sub": "if c: exit->pass",
+   "tests": [
+    "tests/test_stream_game_reactions.py"
+   ],
+   "orig": "if now - self._last_offered < self._gap:",
+   "bad": "pass",
+   "file_sha": "51a45b6c19ded288"
+  },
+  {
+   "id": "S21",
+   "file": "star/capability_frontier.py",
+   "line": 35,
+   "col": 7,
+   "op": "bool-invert",
+   "sub": "c->not c",
+   "tests": [
+    "tests/test_capability_frontier.py"
+   ],
+   "orig": "if not isinstance(v, list) or len(v) > cap:",
+   "bad": "if not (not isinstance(v, list) or len(v) > cap):",
+   "file_sha": "27e2fd106ad5caef"
+  },
+  {
+   "id": "S22",
+   "file": "star/comfy.py",
+   "line": 384,
+   "col": 38,
+   "op": "op-swap",
+   "sub": "+->-",
+   "tests": [
+    "tests/test_comfy_runner.py",
+    "tests/test_desktop_genesis.py",
+    "tests/test_discord_draw.py"
+   ],
+   "orig": "reply = self._call('GET', '/history/' + job)",
+   "bad": "reply = self._call('GET', '/history/' - job)",
+   "file_sha": "21bea3f8de6516c6"
+  },
+  {
+   "id": "S23",
+   "file": "star/shapes/bb.py",
+   "line": 397,
+   "col": 7,
+   "op": "cmp-flip",
+   "sub": "!=->==",
+   "tests": [
+    "tests/test_shapes_templates.py"
+   ],
+   "orig": "if tail != \"none\":",
+   "bad": "if tail == \"none\":",
+   "file_sha": "cf794e8ba02e9977"
+  },
+  {
+   "id": "S24",
+   "file": "star/stream_observe.py",
+   "line": 74,
+   "col": 41,
+   "op": "off-by-one",
+   "sub": "1->2",
+   "tests": [
+    "tests/test_stream_observe.py"
+   ],
+   "orig": "if type(burst) is not int or not 1 <= burst <= 8:",
+   "bad": "if type(burst) is not int or not 2 <= burst <= 8:",
+   "file_sha": "a507b6094fbe9bb7"
+  },
+  {
+   "id": "S25",
+   "file": "star/computer/screen.py",
+   "line": 76,
+   "col": 12,
+   "op": "drop-return",
+   "sub": "return x->x",
+   "tests": [
+    "tests/test_computer_driver.py",
+    "tests/test_computer_use.py",
+    "tests/test_computer_use_draw.py"
+   ],
+   "orig": "return 1.0",
+   "bad": "1.0",
+   "file_sha": "929cc2a9e02113c1"
+  },
+  {
+   "id": "S26",
+   "file": "star/watch/choose.py",
+   "line": 76,
+   "col": 21,
+   "op": "swap-args",
+   "sub": "f(a, b)->f(b, a)",
+   "tests": [
+    "tests/test_watch_videos.py"
+   ],
+   "orig": "row = {\"ts\": datetime.fromtimestamp(self.clock(), timezone.utc).strftime(_STAMP), **row}",
+   "bad": "row = {\"ts\": datetime.fromtimestamp(timezone.utc, self.clock()).strftime(_STAMP), **row}",
+   "file_sha": "90ec5d4f37ee4f58"
+  },
+  {
+   "id": "S27",
+   "file": "star/re_ps3_elf.py",
+   "line": 297,
+   "col": 4,
+   "op": "drop-guard",
+   "sub": "if c: exit->pass",
+   "tests": [
+    "tests/test_re_ps3_elf.py"
+   ],
+   "orig": "if len(data) < size:",
+   "bad": "pass",
+   "file_sha": "5c131e001809ed74"
+  },
+  {
+   "id": "S28",
+   "file": "star/social/felt_time.py",
+   "line": 211,
+   "col": 68,
+   "op": "bool-invert",
+   "sub": "not c->c",
+   "tests": [
+    "tests/test_star_alive.py"
+   ],
+   "orig": "due = now + 3 * 3600 if found is None else _at(found.day, 12 if not found.evening else 19)",
+   "bad": "due = now + 3 * 3600 if found is None else _at(found.day, 12 if found.evening else 19)",
+   "file_sha": "3b0b2f0fa8564b1b"
+  },
+  {
+   "id": "S29",
+   "file": "star/voice/styles.py",
+   "line": 390,
+   "col": 20,
+   "op": "op-swap",
+   "sub": "or->and",
+   "tests": [
+    "tests/test_voice_expressive.py"
+   ],
+   "orig": "arousal = float(mood.get(\"arousal\", 0.35) or 0.35)",
+   "bad": "arousal = float(mood.get(\"arousal\", 0.35) and 0.35)",
+   "file_sha": "1797cff2b61b062c"
+  },
+  {
+   "id": "S30",
+   "file": "star/image_judge.py",
+   "line": 107,
+   "col": 11,
+   "op": "cmp-flip",
+   "sub": "in->not in",
+   "tests": [
+    "tests/test_image_quality.py",
+    "tests/test_image_quality2.py"
+   ],
+   "orig": "if form in _KIND:",
+   "bad": "if form not in _KIND:",
+   "file_sha": "79188ba5ee35c874"
+  },
+  {
+   "id": "S31",
+   "file": "star/evolution_research.py",
+   "line": 81,
+   "col": 42,
+   "op": "off-by-one",
+   "sub": "0->1",
+   "tests": [
+    "tests/test_evolution_research.py"
+   ],
+   "orig": "media_type = media_type.split(\";\", 1)[0].strip().lower()",
+   "bad": "media_type = media_type.split(\";\", 1)[1].strip().lower()",
+   "file_sha": "8f303dfa673344b5"
+  },
+  {
+   "id": "S32",
+   "file": "star/protected_paths.py",
+   "line": 114,
+   "col": 12,
+   "op": "drop-return",
+   "sub": "return x->x",
+   "tests": [
+    "tests/test_protected_closure.py",
+    "tests/test_sealed_integrity.py"
+   ],
+   "orig": "return pattern",
+   "bad": "pattern",
+   "file_sha": "22c06bcd706a7769"
+  }
+ ]
+}

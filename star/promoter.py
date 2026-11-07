@@ -471,7 +471,10 @@ def propose(change: dict, evidence: dict, *, home=None) -> int:
 
 def apply(promotion_id: int, *, home=None) -> dict:
     with Promoter(home) as store:
-        return store.apply(promotion_id)
+        record = store.apply(promotion_id)
+    from . import emotion        # a night school promotion that went live is something to be pleased about
+    emotion.on_event("promotion", home=home, only_if_enabled=True, detail=f"promotion {promotion_id}")
+    return record
 
 
 def undo(promotion_id: int, *, home=None) -> bool:

@@ -1,0 +1,13 @@
+{
+  "kind": "synthetic_rank_fusion_NOT_ai_benchmark",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.15.0",
+  "processor": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+  "parity_cases_passed": 40,
+  "samples_per_case": 5,
+  "results": [
+    {"rankings":7,"entries_per_ranking":50,"repeat":500,"python_median_ms":0.07880459999432787,"rust_kernel_median_ms":0.0185276,"kernel_speedup":4.253362550698842,"rust_amortized_process_ms":0.8533305999590084,"rust_new_process_per_call_ms":427.19649997889064,"python_samples_ms":[0.07490780000807717,0.07880459999432787,0.08196300000417978,0.0979687999933958,0.07018839998636395],"rust_kernel_samples_ms":[0.1025676,0.0139688,0.0197652,0.0185276,0.0176746]},
+    {"rankings":7,"entries_per_ranking":500,"repeat":100,"python_median_ms":0.9472329998970963,"rust_kernel_median_ms":0.20332099999999997,"kernel_speedup":4.658805533600053,"rust_amortized_process_ms":4.179404000169598,"rust_new_process_per_call_ms":453.91519999247976,"python_samples_ms":[0.9472329998970963,0.9171589999459684,3.245636000065133,1.746706000121776,0.7328690000576898],"rust_kernel_samples_ms":[1.5059320000000003,0.179642,0.450425,0.20332099999999997,0.197238]},
+    {"rankings":7,"entries_per_ranking":5000,"repeat":10,"python_median_ms":11.53080000076443,"rust_kernel_median_ms":2.2399999999999998,"kernel_speedup":5.147678571769835,"rust_amortized_process_ms":55.39402999856975,"rust_new_process_per_call_ms":642.866000009235,"python_samples_ms":[8.157899999059737,11.03002000018023,18.024360001436435,11.53080000076443,15.684320000582376],"rust_kernel_samples_ms":[1.9478900000000001,2.20848,2.7271199999999998,2.2399999999999998,2.56639]}
+  ]
+}

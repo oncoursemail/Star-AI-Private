@@ -1,0 +1,2246 @@
+[
+ {
+  "id": "bb-b01",
+  "domain": "blockbench",
+  "group": "bb-b01",
+  "brief": "a hanging iron chain lantern with a warm candle inside",
+  "A": [
+   "img/bb-b01_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-b01_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "bb-b02",
+  "domain": "blockbench",
+  "group": "bb-b02",
+  "brief": "a mossy stone birdbath with a small water basin",
+  "A": [
+   "img/bb-b02_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-b02_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "bb-b03",
+  "domain": "blockbench",
+  "group": "bb-b03",
+  "brief": "an alchemist's cauldron on three short legs with green bubbling liquid",
+  "A": [
+   "img/bb-b03_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-b03_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "bb-b04",
+  "domain": "blockbench",
+  "group": "bb-b04",
+  "brief": "a wooden beehive box with honey dripping from the entrance",
+  "A": [
+   "img/bb-b04_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-b04_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "bb-b05",
+  "domain": "blockbench",
+  "group": "bb-b05",
+  "brief": "a small clockwork machine block with copper pipes and a gear",
+  "A": [
+   "img/bb-b05_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-b05_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "bb-i01",
+  "domain": "blockbench",
+  "group": "bb-i01",
+  "brief": "a crystal-tipped wizard staff with a wrapped leather grip",
+  "A": [
+   "img/bb-i01_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-i01_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   0,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "bb-i02",
+  "domain": "blockbench",
+  "group": "bb-i02",
+  "brief": "a stout dwarven war hammer with a gold-banded head",
+  "A": [
+   "img/bb-i02_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-i02_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "bb-i03",
+  "domain": "blockbench",
+  "group": "bb-i03",
+  "brief": "a glass potion bottle with a cork stopper and pink liquid",
+  "A": [
+   "img/bb-i03_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-i03_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   0,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "bb-i04",
+  "domain": "blockbench",
+  "group": "bb-i04",
+  "brief": "a miner's pickaxe with an amethyst head",
+  "A": [
+   "img/bb-i04_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-i04_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "bb-f01",
+  "domain": "blockbench",
+  "group": "bb-f01",
+  "brief": "a rustic oak dining table with chunky legs",
+  "A": [
+   "img/bb-f01_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-f01_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "bb-f02",
+  "domain": "blockbench",
+  "group": "bb-f02",
+  "brief": "a royal velvet armchair with gold trim",
+  "A": [
+   "img/bb-f02_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-f02_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "bb-f04",
+  "domain": "blockbench",
+  "group": "bb-f04",
+  "brief": "a cozy single bed with a patchwork quilt and a pillow",
+  "A": [
+   "img/bb-f04_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-f04_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   1
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "dev"
+ },
+ {
+  "id": "bb-m01",
+  "domain": "blockbench",
+  "group": "bb-m01",
+  "brief": "a round fluffy cloud sheep with stubby legs",
+  "A": [
+   "img/bb-m01_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-m01_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   1,
+   -1
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "bb-m02",
+  "domain": "blockbench",
+  "group": "bb-m02",
+  "brief": "a small orange fox with a big bushy tail",
+  "A": [
+   "img/bb-m02_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-m02_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "bb-m03",
+  "domain": "blockbench",
+  "group": "bb-m03",
+  "brief": "a desert scorpion with a raised stinger tail and pincers",
+  "A": [
+   "img/bb-m03_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-m03_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   0,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "bb-m04",
+  "domain": "blockbench",
+  "group": "bb-m04",
+  "brief": "a mossy stone golem guardian with glowing eyes",
+  "A": [
+   "img/bb-m04_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-m04_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "bb-m05",
+  "domain": "blockbench",
+  "group": "bb-m05",
+  "brief": "a friendly green frog with big eyes",
+  "A": [
+   "img/bb-m05_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-m05_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "bb-m06",
+  "domain": "blockbench",
+  "group": "bb-m06",
+  "brief": "a waddling penguin with a yellow beak",
+  "A": [
+   "img/bb-m06_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-m06_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "bb-e01",
+  "domain": "blockbench",
+  "group": "bb-e01",
+  "brief": "a small wooden rowboat with two oars",
+  "A": [
+   "img/bb-e01_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-e01_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "dev"
+ },
+ {
+  "id": "bb-e02",
+  "domain": "blockbench",
+  "group": "bb-e02",
+  "brief": "a floating crystal totem that bobs up and down",
+  "A": [
+   "img/bb-e02_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-e02_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   1,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "dev"
+ },
+ {
+  "id": "bb-a01",
+  "domain": "blockbench",
+  "group": "bb-a01",
+  "brief": "a knight's iron armor set with a plumed helmet",
+  "A": [
+   "img/bb-a01_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-a01_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "dev"
+ },
+ {
+  "id": "bb-a02",
+  "domain": "blockbench",
+  "group": "bb-a02",
+  "brief": "a druid armor set made of leaves and vines",
+  "A": [
+   "img/bb-a02_A_0.jpg"
+  ],
+  "B": [
+   "img/bb-a02_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d1-h01-AB",
+  "domain": "3d-assets",
+  "group": "3d-h01",
+  "brief": "Compact 9mm sidearm pistol: black polymer frame, steel slide with front and rear serrations, tan grip panels. (style: pbr, category: weapon)",
+  "A": [
+   "img/3d1-h01-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h01-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h01-AC",
+  "domain": "3d-assets",
+  "group": "3d-h01",
+  "brief": "Compact 9mm sidearm pistol: black polymer frame, steel slide with front and rear serrations, tan grip panels. (style: pbr, category: weapon)",
+  "A": [
+   "img/3d1-h01-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h01-AC_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h01-BC",
+  "domain": "3d-assets",
+  "group": "3d-h01",
+  "brief": "Compact 9mm sidearm pistol: black polymer frame, steel slide with front and rear serrations, tan grip panels. (style: pbr, category: weapon)",
+  "A": [
+   "img/3d1-h01-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h01-BC_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d1-h02-AB",
+  "domain": "3d-assets",
+  "group": "3d-h02",
+  "brief": "Bolt-action hunting rifle with a walnut stock, blued steel barrel and a scope on two rings. (style: pbr, category: weapon)",
+  "A": [
+   "img/3d1-h02-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h02-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h03-AB",
+  "domain": "3d-assets",
+  "group": "3d-h03",
+  "brief": "Chunky stylized sci-fi plasma blaster, orange and white panels with a glowing cyan energy cell. (style: stylized, category: weapon)",
+  "A": [
+   "img/3d1-h03-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h03-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "3d1-h04-AB",
+  "domain": "3d-assets",
+  "group": "3d-h04",
+  "brief": "Low-poly medieval longsword with a straight crossguard, round pommel and leather-wrapped grip. (style: lowpoly, category: weapon)",
+  "A": [
+   "img/3d1-h04-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h04-AB_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d1-h05-AB",
+  "domain": "3d-assets",
+  "group": "3d-h05",
+  "brief": "Roblox-ready fire axe: red painted steel head with a pick on the back, wooden handle. (style: roblox, category: weapon)",
+  "A": [
+   "img/3d1-h05-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h05-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h06-AB",
+  "domain": "3d-assets",
+  "group": "3d-h06",
+  "brief": "Stylized cartoon delivery van with chunky proportions, yellow body with blue trim. (style: stylized, category: vehicle)",
+  "A": [
+   "img/3d1-h06-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h06-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d1-h07-AB",
+  "domain": "3d-assets",
+  "group": "3d-h07",
+  "brief": "Low-poly farm tractor: green body, big rear wheels, small front wheels, exhaust pipe. (style: lowpoly, category: vehicle)",
+  "A": [
+   "img/3d1-h07-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h07-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "3d1-h08-AB",
+  "domain": "3d-assets",
+  "group": "3d-h08",
+  "brief": "Realistic quad bike ATV with a matte olive body, black knobby tires and front and rear racks. (style: pbr, category: vehicle)",
+  "A": [
+   "img/3d1-h08-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h08-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   0,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h08-AC",
+  "domain": "3d-assets",
+  "group": "3d-h08",
+  "brief": "Realistic quad bike ATV with a matte olive body, black knobby tires and front and rear racks. (style: pbr, category: vehicle)",
+  "A": [
+   "img/3d1-h08-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h08-AC_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   0,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h08-BC",
+  "domain": "3d-assets",
+  "group": "3d-h08",
+  "brief": "Realistic quad bike ATV with a matte olive body, black knobby tires and front and rear racks. (style: pbr, category: vehicle)",
+  "A": [
+   "img/3d1-h08-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h08-BC_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d1-h09-AB",
+  "domain": "3d-assets",
+  "group": "3d-h09",
+  "brief": "Roblox-ready go-kart with a tube frame, roll bar, seat and steering wheel. (style: roblox, category: vehicle)",
+  "A": [
+   "img/3d1-h09-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h09-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "3d1-h09-AC",
+  "domain": "3d-assets",
+  "group": "3d-h09",
+  "brief": "Roblox-ready go-kart with a tube frame, roll bar, seat and steering wheel. (style: roblox, category: vehicle)",
+  "A": [
+   "img/3d1-h09-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h09-AC_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "dev"
+ },
+ {
+  "id": "3d1-h09-BC",
+  "domain": "3d-assets",
+  "group": "3d-h09",
+  "brief": "Roblox-ready go-kart with a tube frame, roll bar, seat and steering wheel. (style: roblox, category: vehicle)",
+  "A": [
+   "img/3d1-h09-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h09-BC_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "3d1-h10-AB",
+  "domain": "3d-assets",
+  "group": "3d-h10",
+  "brief": "Industrial workbench: steel frame, oak top, lower shelf, bench vise on one corner. (style: pbr, category: furniture)",
+  "A": [
+   "img/3d1-h10-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h10-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h10-AC",
+  "domain": "3d-assets",
+  "group": "3d-h10",
+  "brief": "Industrial workbench: steel frame, oak top, lower shelf, bench vise on one corner. (style: pbr, category: furniture)",
+  "A": [
+   "img/3d1-h10-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h10-AC_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h10-BC",
+  "domain": "3d-assets",
+  "group": "3d-h10",
+  "brief": "Industrial workbench: steel frame, oak top, lower shelf, bench vise on one corner. (style: pbr, category: furniture)",
+  "A": [
+   "img/3d1-h10-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h10-BC_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d1-h11-AB",
+  "domain": "3d-assets",
+  "group": "3d-h11",
+  "brief": "Stylized tavern wooden chair with iron studs and a slightly crooked back. (style: stylized, category: furniture)",
+  "A": [
+   "img/3d1-h11-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h11-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "3d1-h12-AB",
+  "domain": "3d-assets",
+  "group": "3d-h12",
+  "brief": "Military ammo crate: olive painted steel, two side latches and folding carry handles. (style: pbr, category: prop)",
+  "A": [
+   "img/3d1-h12-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h12-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h13-AB",
+  "domain": "3d-assets",
+  "group": "3d-h13",
+  "brief": "Stylized treasure chest: wooden planks, gold metal bands and corner caps, a lock plate. (style: stylized, category: prop)",
+  "A": [
+   "img/3d1-h13-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h13-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "3d1-h14-AB",
+  "domain": "3d-assets",
+  "group": "3d-h14",
+  "brief": "Roblox-ready red fuel jerrycan with a three-bar handle and a spout cap. (style: roblox, category: prop)",
+  "A": [
+   "img/3d1-h14-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h14-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "dev"
+ },
+ {
+  "id": "3d1-h15-AB",
+  "domain": "3d-assets",
+  "group": "3d-h15",
+  "brief": "Tactical combat helmet with a night-vision mount on the front and side accessory rails. (style: pbr, category: accessory)",
+  "A": [
+   "img/3d1-h15-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h15-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h16-AB",
+  "domain": "3d-assets",
+  "group": "3d-h16",
+  "brief": "Stylized adventurer backpack with a rolled bedroll on top, side pouches and leather straps. (style: stylized, category: accessory)",
+  "A": [
+   "img/3d1-h16-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h16-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h16-AC",
+  "domain": "3d-assets",
+  "group": "3d-h16",
+  "brief": "Stylized adventurer backpack with a rolled bedroll on top, side pouches and leather straps. (style: stylized, category: accessory)",
+  "A": [
+   "img/3d1-h16-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h16-AC_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   0
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d1-h16-BC",
+  "domain": "3d-assets",
+  "group": "3d-h16",
+  "brief": "Stylized adventurer backpack with a rolled bedroll on top, side pouches and leather straps. (style: stylized, category: accessory)",
+  "A": [
+   "img/3d1-h16-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d1-h16-BC_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h01-AB",
+  "domain": "3d-assets",
+  "group": "3d-h01",
+  "brief": "Compact 9mm sidearm pistol: black polymer frame, steel slide with front and rear serrations, tan grip panels. (style: pbr, category: weapon)",
+  "A": [
+   "img/3d2-h01-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h01-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h01-AC",
+  "domain": "3d-assets",
+  "group": "3d-h01",
+  "brief": "Compact 9mm sidearm pistol: black polymer frame, steel slide with front and rear serrations, tan grip panels. (style: pbr, category: weapon)",
+  "A": [
+   "img/3d2-h01-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h01-AC_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h01-BC",
+  "domain": "3d-assets",
+  "group": "3d-h01",
+  "brief": "Compact 9mm sidearm pistol: black polymer frame, steel slide with front and rear serrations, tan grip panels. (style: pbr, category: weapon)",
+  "A": [
+   "img/3d2-h01-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h01-BC_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   1,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d2-h02-AB",
+  "domain": "3d-assets",
+  "group": "3d-h02",
+  "brief": "Bolt-action hunting rifle with a walnut stock, blued steel barrel and a scope on two rings. (style: pbr, category: weapon)",
+  "A": [
+   "img/3d2-h02-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h02-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h03-AB",
+  "domain": "3d-assets",
+  "group": "3d-h03",
+  "brief": "Chunky stylized sci-fi plasma blaster, orange and white panels with a glowing cyan energy cell. (style: stylized, category: weapon)",
+  "A": [
+   "img/3d2-h03-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h03-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "3d2-h04-AB",
+  "domain": "3d-assets",
+  "group": "3d-h04",
+  "brief": "Low-poly medieval longsword with a straight crossguard, round pommel and leather-wrapped grip. (style: lowpoly, category: weapon)",
+  "A": [
+   "img/3d2-h04-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h04-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h05-AB",
+  "domain": "3d-assets",
+  "group": "3d-h05",
+  "brief": "Roblox-ready fire axe: red painted steel head with a pick on the back, wooden handle. (style: roblox, category: weapon)",
+  "A": [
+   "img/3d2-h05-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h05-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h06-AB",
+  "domain": "3d-assets",
+  "group": "3d-h06",
+  "brief": "Stylized cartoon delivery van with chunky proportions, yellow body with blue trim. (style: stylized, category: vehicle)",
+  "A": [
+   "img/3d2-h06-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h06-AB_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d2-h07-AB",
+  "domain": "3d-assets",
+  "group": "3d-h07",
+  "brief": "Low-poly farm tractor: green body, big rear wheels, small front wheels, exhaust pipe. (style: lowpoly, category: vehicle)",
+  "A": [
+   "img/3d2-h07-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h07-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "3d2-h08-AB",
+  "domain": "3d-assets",
+  "group": "3d-h08",
+  "brief": "Realistic quad bike ATV with a matte olive body, black knobby tires and front and rear racks. (style: pbr, category: vehicle)",
+  "A": [
+   "img/3d2-h08-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h08-AB_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d2-h08-AC",
+  "domain": "3d-assets",
+  "group": "3d-h08",
+  "brief": "Realistic quad bike ATV with a matte olive body, black knobby tires and front and rear racks. (style: pbr, category: vehicle)",
+  "A": [
+   "img/3d2-h08-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h08-AC_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   -1,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d2-h08-BC",
+  "domain": "3d-assets",
+  "group": "3d-h08",
+  "brief": "Realistic quad bike ATV with a matte olive body, black knobby tires and front and rear racks. (style: pbr, category: vehicle)",
+  "A": [
+   "img/3d2-h08-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h08-BC_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   -1,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d2-h09-AB",
+  "domain": "3d-assets",
+  "group": "3d-h09",
+  "brief": "Roblox-ready go-kart with a tube frame, roll bar, seat and steering wheel. (style: roblox, category: vehicle)",
+  "A": [
+   "img/3d2-h09-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h09-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "3d2-h09-AC",
+  "domain": "3d-assets",
+  "group": "3d-h09",
+  "brief": "Roblox-ready go-kart with a tube frame, roll bar, seat and steering wheel. (style: roblox, category: vehicle)",
+  "A": [
+   "img/3d2-h09-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h09-AC_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   -1,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "dev"
+ },
+ {
+  "id": "3d2-h09-BC",
+  "domain": "3d-assets",
+  "group": "3d-h09",
+  "brief": "Roblox-ready go-kart with a tube frame, roll bar, seat and steering wheel. (style: roblox, category: vehicle)",
+  "A": [
+   "img/3d2-h09-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h09-BC_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   0,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "3d2-h10-AB",
+  "domain": "3d-assets",
+  "group": "3d-h10",
+  "brief": "Industrial workbench: steel frame, oak top, lower shelf, bench vise on one corner. (style: pbr, category: furniture)",
+  "A": [
+   "img/3d2-h10-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h10-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h10-AC",
+  "domain": "3d-assets",
+  "group": "3d-h10",
+  "brief": "Industrial workbench: steel frame, oak top, lower shelf, bench vise on one corner. (style: pbr, category: furniture)",
+  "A": [
+   "img/3d2-h10-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h10-AC_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d2-h10-BC",
+  "domain": "3d-assets",
+  "group": "3d-h10",
+  "brief": "Industrial workbench: steel frame, oak top, lower shelf, bench vise on one corner. (style: pbr, category: furniture)",
+  "A": [
+   "img/3d2-h10-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h10-BC_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h11-AB",
+  "domain": "3d-assets",
+  "group": "3d-h11",
+  "brief": "Stylized tavern wooden chair with iron studs and a slightly crooked back. (style: stylized, category: furniture)",
+  "A": [
+   "img/3d2-h11-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h11-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "3d2-h12-AB",
+  "domain": "3d-assets",
+  "group": "3d-h12",
+  "brief": "Military ammo crate: olive painted steel, two side latches and folding carry handles. (style: pbr, category: prop)",
+  "A": [
+   "img/3d2-h12-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h12-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   0,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "3d2-h13-AB",
+  "domain": "3d-assets",
+  "group": "3d-h13",
+  "brief": "Stylized treasure chest: wooden planks, gold metal bands and corner caps, a lock plate. (style: stylized, category: prop)",
+  "A": [
+   "img/3d2-h13-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h13-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "3d2-h14-AB",
+  "domain": "3d-assets",
+  "group": "3d-h14",
+  "brief": "Roblox-ready red fuel jerrycan with a three-bar handle and a spout cap. (style: roblox, category: prop)",
+  "A": [
+   "img/3d2-h14-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h14-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "3d2-h15-AB",
+  "domain": "3d-assets",
+  "group": "3d-h15",
+  "brief": "Tactical combat helmet with a night-vision mount on the front and side accessory rails. (style: pbr, category: accessory)",
+  "A": [
+   "img/3d2-h15-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h15-AB_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h16-AB",
+  "domain": "3d-assets",
+  "group": "3d-h16",
+  "brief": "Stylized adventurer backpack with a rolled bedroll on top, side pouches and leather straps. (style: stylized, category: accessory)",
+  "A": [
+   "img/3d2-h16-AB_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h16-AB_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h16-AC",
+  "domain": "3d-assets",
+  "group": "3d-h16",
+  "brief": "Stylized adventurer backpack with a rolled bedroll on top, side pouches and leather straps. (style: stylized, category: accessory)",
+  "A": [
+   "img/3d2-h16-AC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h16-AC_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "3d2-h16-BC",
+  "domain": "3d-assets",
+  "group": "3d-h16",
+  "brief": "Stylized adventurer backpack with a rolled bedroll on top, side pouches and leather straps. (style: stylized, category: accessory)",
+  "A": [
+   "img/3d2-h16-BC_A_0.jpg"
+  ],
+  "B": [
+   "img/3d2-h16-BC_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "rb-P01",
+  "domain": "roblox-build",
+  "group": "rb-P01",
+  "brief": "style=stud brief=Small fishing-game map: a lake with a wooden dock, a bait shop, a few rowboats, trees around the shore and a lighthouse on a rocky point.",
+  "A": [
+   "img/rb-P01_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P01_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "rb-P03",
+  "domain": "roblox-build",
+  "group": "rb-P03",
+  "brief": "style=stud brief=Creepy abandoned theme park entrance at dusk: a gate arch with a sign, ticket booth, a broken carousel behind, flickering lamp posts, litter.",
+  "A": [
+   "img/rb-P03_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P03_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "rb-P04",
+  "domain": "roblox-build",
+  "group": "rb-P04",
+  "brief": "style=lowpoly brief=Abandoned aquarium hall: walk-through tunnel tank, dark wall tanks with algae, broken benches, a gift kiosk, water puddles.",
+  "A": [
+   "img/rb-P04_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P04_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   0,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "rb-P05",
+  "domain": "roblox-build",
+  "group": "rb-P05",
+  "brief": "style=lowpoly brief=Forest camp minigame arena: a clearing with tents, a campfire in the middle, log seats, cover walls for a round-based game, tall pines around.",
+  "A": [
+   "img/rb-P05_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P05_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   0
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "rb-P06",
+  "domain": "roblox-build",
+  "group": "rb-P06",
+  "brief": "style=lowpoly brief=Snowy winter cabin village at night: three small cabins with porches, snow pines, a frozen pond, lanterns and a snowman.",
+  "A": [
+   "img/rb-P06_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P06_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "rb-P07",
+  "domain": "roblox-build",
+  "group": "rb-P07",
+  "brief": "style=midpoly brief=Abandoned subway station platform: a stopped train car, platform edge, tiled pillars, benches, a vending machine, turnstiles, flickering lights.",
+  "A": [
+   "img/rb-P07_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P07_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "rb-P08",
+  "domain": "roblox-build",
+  "group": "rb-P08",
+  "brief": "style=midpoly brief=Cozy bookshop interior: tall bookcases, a reading table with green lamps, an armchair corner by a fireplace, a counter with a register.",
+  "A": [
+   "img/rb-P08_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P08_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "rb-P09",
+  "domain": "roblox-build",
+  "group": "rb-P09",
+  "brief": "style=midpoly brief=Tropical beach minigame map: sand, palm trees, umbrellas and towels, a lifeguard tower, a dock into the sea, sandcastles.",
+  "A": [
+   "img/rb-P09_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P09_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "rb-P10",
+  "domain": "roblox-build",
+  "group": "rb-P10",
+  "brief": "style=highpoly brief=Gothic library hall: two-storey bookcases, long reading tables, chandeliers, stained glass windows, a globe and a lectern at the end.",
+  "A": [
+   "img/rb-P10_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P10_B_0.jpg"
+  ],
+  "votes": [
+   0,
+   1,
+   0
+  ],
+  "clear": false,
+  "pref": null,
+  "split": "test"
+ },
+ {
+  "id": "rb-P11",
+  "domain": "roblox-build",
+  "group": "rb-P11",
+  "brief": "style=highpoly brief=Japanese garden teahouse: a koi pond with an arched bridge, stone lanterns, a torii gate, bamboo, cherry trees and a small tea room with paper screens.",
+  "A": [
+   "img/rb-P11_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P11_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "rb-P12",
+  "domain": "roblox-build",
+  "group": "rb-P12",
+  "brief": "style=highpoly brief=Derelict hospital ward at night: rows of beds with curtain dividers, IV stands, a nurse station counter, flickering lamps, papers on the floor.",
+  "A": [
+   "img/rb-P12_A_0.jpg"
+  ],
+  "B": [
+   "img/rb-P12_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "ui-u01_scifi_shop",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u01_scifi_shop",
+  "brief": "Sci-fi space station shop selling ship upgrades (thrusters, shields, laser cannons, hull plating), credits currency and category tabs.",
+  "A": [
+   "img/ui-u01_scifi_shop_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u01_scifi_shop_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "ui-u02_fantasy_inventory",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u02_fantasy_inventory",
+  "brief": "Medieval fantasy RPG inventory / backpack with weapons, armor and potions, showing which items are equipped.",
+  "A": [
+   "img/ui-u02_fantasy_inventory_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u02_fantasy_inventory_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "ui-u03_zombie_hud",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u03_zombie_hud",
+  "brief": "HUD for a zombie survival shooter: health, stamina, a 4-weapon hotbar with cooldowns, cash counter and the current objective.",
+  "A": [
+   "img/ui-u03_zombie_hud_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u03_zombie_hud_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "ui-u04_farm_settings",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u04_farm_settings",
+  "brief": "Settings menu for a cozy farming game: music volume, sound effects volume, graphics quality, camera shake toggle, show tutorials toggle.",
+  "A": [
+   "img/ui-u04_farm_settings_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u04_farm_settings_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "ui-u05_anime_menu",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u05_anime_menu",
+  "brief": "Main menu for an anime fighting game called Blade Requiem with Play, Ranked, Characters and Settings buttons and a news panel about the new season.",
+  "A": [
+   "img/ui-u05_anime_menu_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u05_anime_menu_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "ui-u06_blacksmith_dialog",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u06_blacksmith_dialog",
+  "brief": "NPC dialogue: an old blacksmith offers to upgrade your sword for 500 gold; three answer choices.",
+  "A": [
+   "img/ui-u06_blacksmith_dialog_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u06_blacksmith_dialog_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "ui-u07_obby_leaderboard",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u07_obby_leaderboard",
+  "brief": "Global leaderboard for a speedrun obby showing the fastest completion times, with Daily and All-Time tabs, and the player's own rank.",
+  "A": [
+   "img/ui-u07_obby_leaderboard_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u07_obby_leaderboard_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "ui-u08_pet_daily",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u08_pet_daily",
+  "brief": "Daily login rewards calendar for a pet simulator (7 days, day 4 is today, rewards get better each day).",
+  "A": [
+   "img/ui-u08_pet_daily_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u08_pet_daily_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "ui-u09_pirate_quests",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u09_pirate_quests",
+  "brief": "Quest log for a pirate adventure game with four quests, their progress, objectives and gold rewards.",
+  "A": [
+   "img/ui-u09_pirate_quests_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u09_pirate_quests_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "ui-u10_br_results",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u10_br_results",
+  "brief": "Victory results screen after a battle royale round: placement, kills, damage dealt, time survived, and rewards earned, with Play Again and Lobby.",
+  "A": [
+   "img/ui-u10_br_results_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u10_br_results_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "ui-u11_horror_loading",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u11_horror_loading",
+  "brief": "Loading screen for a horror game set in an abandoned hospital called Ward 13, with a progress bar and a creepy tip.",
+  "A": [
+   "img/ui-u11_horror_loading_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u11_horror_loading_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "ui-u12_car_dealer",
+  "domain": "ui-vfx:ui",
+  "group": "ui-u12_car_dealer",
+  "brief": "Luxury car dealership shop for a roleplay city game: six cars with prices and a premium dark look, cash balance on top.",
+  "A": [
+   "img/ui-u12_car_dealer_A_0.jpg"
+  ],
+  "B": [
+   "img/ui-u12_car_dealer_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "lighting-cyberpunk_alley",
+  "domain": "ui-vfx:lighting",
+  "group": "lighting-cyberpunk_alley",
+  "brief": "cyberpunk alley at night, neon signs, wet streets (exterior test scene)",
+  "A": [
+   "img/lighting-cyberpunk_alley_A_0.jpg",
+   "img/lighting-cyberpunk_alley_A_1.jpg"
+  ],
+  "B": [
+   "img/lighting-cyberpunk_alley_B_0.jpg",
+   "img/lighting-cyberpunk_alley_B_1.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "lighting-diner_2am_rain",
+  "domain": "ui-vfx:lighting",
+  "group": "lighting-diner_2am_rain",
+  "brief": "abandoned diner at 2am, rain outside the window (interior test scene)",
+  "A": [
+   "img/lighting-diner_2am_rain_A_0.jpg",
+   "img/lighting-diner_2am_rain_A_1.jpg"
+  ],
+  "B": [
+   "img/lighting-diner_2am_rain_B_0.jpg",
+   "img/lighting-diner_2am_rain_B_1.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "lighting-foggy_graveyard",
+  "domain": "ui-vfx:lighting",
+  "group": "lighting-foggy_graveyard",
+  "brief": "foggy graveyard at night (exterior test scene)",
+  "A": [
+   "img/lighting-foggy_graveyard_A_0.jpg",
+   "img/lighting-foggy_graveyard_A_1.jpg"
+  ],
+  "B": [
+   "img/lighting-foggy_graveyard_B_0.jpg",
+   "img/lighting-foggy_graveyard_B_1.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "lighting-hotel_lobby_night",
+  "domain": "ui-vfx:lighting",
+  "group": "lighting-hotel_lobby_night",
+  "brief": "cozy hotel lobby at night (interior test scene)",
+  "A": [
+   "img/lighting-hotel_lobby_night_A_0.jpg",
+   "img/lighting-hotel_lobby_night_A_1.jpg"
+  ],
+  "B": [
+   "img/lighting-hotel_lobby_night_B_0.jpg",
+   "img/lighting-hotel_lobby_night_B_1.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "lighting-sunny_obby_island",
+  "domain": "ui-vfx:lighting",
+  "group": "lighting-sunny_obby_island",
+  "brief": "sunny obby island, bright and cheerful (exterior test scene)",
+  "A": [
+   "img/lighting-sunny_obby_island_A_0.jpg",
+   "img/lighting-sunny_obby_island_A_1.jpg"
+  ],
+  "B": [
+   "img/lighting-sunny_obby_island_B_0.jpg",
+   "img/lighting-sunny_obby_island_B_1.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "lighting-sunset_castle_courtyard",
+  "domain": "ui-vfx:lighting",
+  "group": "lighting-sunset_castle_courtyard",
+  "brief": "sunset castle courtyard (exterior test scene)",
+  "A": [
+   "img/lighting-sunset_castle_courtyard_A_0.jpg",
+   "img/lighting-sunset_castle_courtyard_A_1.jpg"
+  ],
+  "B": [
+   "img/lighting-sunset_castle_courtyard_B_0.jpg",
+   "img/lighting-sunset_castle_courtyard_B_1.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "vfx-v01-fireball",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v01-fireball",
+  "brief": "A fireball projectile for a mage: a roaring orange-red ball of flame that flies forward leaving a long fiery trail with embers, then bursts on impact.",
+  "A": [
+   "img/vfx-v01-fireball_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v01-fireball_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "test"
+ },
+ {
+  "id": "vfx-v02-sword-slash",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v02-sword-slash",
+  "brief": "A fast anime sword slash: a bright white-blue crescent arc that sweeps in front of the player with a sharp trail and a few sparks.",
+  "A": [
+   "img/vfx-v02-sword-slash_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v02-sword-slash_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "dev"
+ },
+ {
+  "id": "vfx-v03-heal-aura",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v03-heal-aura",
+  "brief": "A soft green healing aura around the player: gentle rising motes and a glowing ring on the ground that pulses while the heal lasts.",
+  "A": [
+   "img/vfx-v03-heal-aura_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v03-heal-aura_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "vfx-v04-lightning",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v04-lightning",
+  "brief": "A lightning strike from the sky: a jagged electric-blue bolt slams into the ground with a blinding flash and crackling sparks.",
+  "A": [
+   "img/vfx-v04-lightning_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v04-lightning_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "vfx-v05-coin-pickup",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v05-coin-pickup",
+  "brief": "A coin pickup sparkle for a cartoon simulator game: a quick pop of golden sparkles and little stars when the player collects a coin.",
+  "A": [
+   "img/vfx-v05-coin-pickup_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v05-coin-pickup_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "vfx-v06-portal",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v06-portal",
+  "brief": "A looping purple magic portal: a swirling vertical ring of violet energy with particles being drawn into its centre.",
+  "A": [
+   "img/vfx-v06-portal_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v06-portal_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "vfx-v07-ground-slam",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v07-ground-slam",
+  "brief": "A heavy ground slam: the hero smashes the floor, a dusty shockwave ring expands outward, rocks fly and the camera shakes.",
+  "A": [
+   "img/vfx-v07-ground-slam_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v07-ground-slam_B_0.jpg"
+  ],
+  "votes": [
+   1,
+   1
+  ],
+  "clear": true,
+  "pref": "A",
+  "split": "dev"
+ },
+ {
+  "id": "vfx-v08-ice-shards",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v08-ice-shards",
+  "brief": "An ice shard burst: sharp pale-blue crystals explode outward from a point with frosty mist and glittering particles.",
+  "A": [
+   "img/vfx-v08-ice-shards_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v08-ice-shards_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "vfx-v09-poison-cloud",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v09-poison-cloud",
+  "brief": "A lingering poison gas cloud: thick sickly green toxic smoke that bubbles and swirls low over the ground for a few seconds.",
+  "A": [
+   "img/vfx-v09-poison-cloud_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v09-poison-cloud_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ },
+ {
+  "id": "vfx-v10-level-up",
+  "domain": "ui-vfx:vfx",
+  "group": "vfx-v10-level-up",
+  "brief": "A level-up effect: a tall golden pillar of light shoots up around the player with rising sparkles and a bright ring at the base.",
+  "A": [
+   "img/vfx-v10-level-up_A_0.jpg"
+  ],
+  "B": [
+   "img/vfx-v10-level-up_B_0.jpg"
+  ],
+  "votes": [
+   -1,
+   -1
+  ],
+  "clear": true,
+  "pref": "B",
+  "split": "test"
+ }
+]

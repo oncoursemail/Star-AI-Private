@@ -1,0 +1,18 @@
+{
+  "character": "Star",
+  "status": "visual_proposal_awaiting_owner_review",
+  "direction": "adult cute anime streamer, expressive face, playful outfit, soft hair",
+  "design_sheet": "star-streamer-design-sheet-v3.png",
+  "earlier_concept": "star-streamer-concept-v2.png",
+  "existing_mascot_replaced": false,
+  "runtime_avatar_enabled": false,
+  "layered_psd_available": false,
+  "cubism_model_available": false,
+  "mode_concepts": {"cat": "modes/cat-concept.png", "puppy": "modes/puppy-concept.png"},
+  "mode_art_status": "flat_concepts_not_separated_or_rigged",
+  "emotes": ["laugh", "love", "hype", "think"],
+  "emote_masters": "emotes/masters",
+  "emote_upload_exports": "emotes/upload/{28,56,112}",
+  "generated_with": "built-in image_gen",
+  "reference_analysis": "../../docs/design/STAR_VTUBER_DIRECTION_20261025.md"
+}

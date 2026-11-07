@@ -1,0 +1,47 @@
+test_agentic_mode_explicitly_blocked (test_bridge.AnythingLLMTests.test_agentic_mode_explicitly_blocked) ... ok
+test_chat_abort_does_not_show_untrusted_error (test_bridge.AnythingLLMTests.test_chat_abort_does_not_show_untrusted_error) ... ok
+test_does_not_follow_redirects (test_bridge.AnythingLLMTests.test_does_not_follow_redirects) ... ok
+test_limits_response_size (test_bridge.AnythingLLMTests.test_limits_response_size) ... ok
+test_query_chat_mode_and_session (test_bridge.AnythingLLMTests.test_query_chat_mode_and_session) ... ok
+test_requires_api_key (test_bridge.AnythingLLMTests.test_requires_api_key) ... ok
+test_vector_search_with_source_metadata (test_bridge.AnythingLLMTests.test_vector_search_with_source_metadata) ... ok
+test_workspace_path_is_not_path_traversal (test_bridge.AnythingLLMTests.test_workspace_path_is_not_path_traversal) ... ok
+test_env_flags_are_explicit (test_bridge.ConfigurationTests.test_env_flags_are_explicit) ... ok
+test_feature_flags_off_by_default (test_bridge.ConfigurationTests.test_feature_flags_off_by_default) ... ok
+test_reject_plain_http_even_with_remote_opt_in (test_bridge.ConfigurationTests.test_reject_plain_http_even_with_remote_opt_in) ... ok
+test_reject_remote_host_without_opt_in (test_bridge.ConfigurationTests.test_reject_remote_host_without_opt_in) ... ok
+test_reject_url_credentials_and_strange_paths (test_bridge.ConfigurationTests.test_reject_url_credentials_and_strange_paths) ... ok
+test_secrets_not_in_repr (test_bridge.ConfigurationTests.test_secrets_not_in_repr) ... ok
+test_url_canonicalization (test_bridge.ConfigurationTests.test_url_canonicalization) ... ok
+test_bad_citation_is_flagged_needs_review (test_bridge.GroundedTests.test_bad_citation_is_flagged_needs_review) ... ok
+test_evidence_is_bounded_and_identified (test_bridge.GroundedTests.test_evidence_is_bounded_and_identified) ... ok
+test_no_evidence_means_no_inference (test_bridge.GroundedTests.test_no_evidence_means_no_inference) ... ok
+test_bad_model_payload_cannot_infer (test_bridge.LemonadeTests.test_bad_model_payload_cannot_infer) ... ok
+test_chat_checks_installed_and_passes_key (test_bridge.LemonadeTests.test_chat_checks_installed_and_passes_key) ... ok
+test_chat_never_auto_downloads_missing_model (test_bridge.LemonadeTests.test_chat_never_auto_downloads_missing_model) ... ok
+test_cloud_models_excluded_even_if_server_lists_them (test_bridge.LemonadeTests.test_cloud_models_excluded_even_if_server_lists_them) ... ok
+test_invalid_roles_rejected_before_io (test_bridge.LemonadeTests.test_invalid_roles_rejected_before_io) ... ok
+test_non_chat_model_rejected_before_chat_request (test_bridge.LemonadeTests.test_non_chat_model_rejected_before_chat_request) ... ok
+test_stats_and_health_shape (test_bridge.LemonadeTests.test_stats_and_health_shape) ... ok
+test_aggregate_prompt_cap_precedes_network (test_review.ReviewRegressionTests.test_aggregate_prompt_cap_precedes_network) ... ok
+test_boolean_flags_are_strict (test_review.ReviewRegressionTests.test_boolean_flags_are_strict) ... ok
+test_boolean_score_threshold_rejected (test_review.ReviewRegressionTests.test_boolean_score_threshold_rejected) ... ok
+test_boolean_search_limit_rejected (test_review.ReviewRegressionTests.test_boolean_search_limit_rejected) ... ok
+test_boolean_token_cap_rejected (test_review.ReviewRegressionTests.test_boolean_token_cap_rejected) ... ok
+test_exact_aggregate_cap_is_accepted (test_review.ReviewRegressionTests.test_exact_aggregate_cap_is_accepted) ... ok
+test_finite_timeouts_required (test_review.ReviewRegressionTests.test_finite_timeouts_required) ... ok
+test_huge_citation_id_needs_review_instead_of_crashing (test_review.ReviewRegressionTests.test_huge_citation_id_needs_review_instead_of_crashing) ... ok
+test_integer_limits_reject_boolean_and_fraction (test_review.ReviewRegressionTests.test_integer_limits_reject_boolean_and_fraction) ... ok
+test_malformed_labels_are_sanitized_errors (test_review.ReviewRegressionTests.test_malformed_labels_are_sanitized_errors) ... ok
+test_malformed_recipe_is_sanitized_error (test_review.ReviewRegressionTests.test_malformed_recipe_is_sanitized_error) ... ok
+test_new_environment_options (test_review.ReviewRegressionTests.test_new_environment_options) ... ok
+test_noncanonical_citation_is_not_accepted (test_review.ReviewRegressionTests.test_noncanonical_citation_is_not_accepted) ... ok
+test_queue_has_bounded_wait_and_does_not_call_provider (test_review.ReviewRegressionTests.test_queue_has_bounded_wait_and_does_not_call_provider) ... ok
+test_returned_source_matches_exact_model_excerpt (test_review.ReviewRegressionTests.test_returned_source_matches_exact_model_excerpt) ... ok
+test_slot_released_after_provider_error (test_review.ReviewRegressionTests.test_slot_released_after_provider_error) ... ok
+test_slot_released_after_success (test_review.ReviewRegressionTests.test_slot_released_after_success) ... ok
+
+----------------------------------------------------------------------
+Ran 42 tests in 5.684s
+
+OK

@@ -23,6 +23,10 @@ const NOT_A_PICTURE=String.raw`(?:conclusion|comparison|parallel|distinction|ana
 const COMMAND=new RegExp(String.raw`${LEAD}(?:generate|draw|make|create|render|paint|design|produce|sketch|illustrate|doodle)\s+(?:me\s+)?${ART}`,'i')
 // "draw a cat", "paint a sunset", "sketch me a house": the thing itself is the subject, no picture word needed.
 const DRAW=new RegExp(String.raw`${LEAD}(?:draw|paint|sketch|illustrate|doodle)\s+(?:me\s+)?(?=(?:an?|some)\s+(?!${NOT_A_PICTURE}\b)[a-z])`,'i')
+// "generate me a real cow", "make me a dragon with three heads": the thing itself is the subject. Only with "me" and a
+// thing, never text or code deliverables ("make me a list/plan/script/name ...").
+const NOT_A_THING=String.raw`(?:list|plan|summary|story|poem|essay|email|letter|message|table|schedule|outline|joke|idea|song|recipe|report|document|post|caption|title|description|sentence|paragraph|query|password|name|names|prompt|template|checklist|budget|reply|response|answer|speech|bio|resume|cv|quiz|question|test)`
+const MAKE_ME=new RegExp(String.raw`${LEAD}(?:generate|create|make|render|produce)\s+me\s+(?=(?:an?|some)\s+(?!${NOT_A_THING}s?\b)[a-z])`,'i')
 // "show me an image of ...", "I need a poster of ...": these only count with the description after the picture word.
 const SHOW=new RegExp(String.raw`${LEAD}(?:show|give|send|get)\s+me\s+${ART}`,'i')
 const NEED=new RegExp(String.raw`^(?:(?:i|we)\s+(?:really\s+)?(?:need|want|would\s+like)|(?:i|we)'d\s+like|(?:can|could)\s+i\s+(?:have|get))\s+${ART}`,'i')
@@ -45,7 +49,7 @@ export function imageIntent(text:string,{hasImage=false,hasPreviousImage=false}:
     const subject=rest.replace(GENERIC,'').replace(/[\s.!?]+$/,'').trim()
     return {prompt:subject||rest||request,followup:false}
   }
-  const command=request.match(COMMAND)||request.match(DRAW)
+  const command=request.match(COMMAND)||request.match(DRAW)||request.match(MAKE_ME)
   if(command)return ordered(command)
   const described=request.match(SHOW)||request.match(NEED)
   if(described)return ordered(described,true)

@@ -1,0 +1,122 @@
+{
+ "b01": {
+  "A": "template",
+  "B": "baseline",
+  "C": "old_pipeline"
+ },
+ "b02": {
+  "A": "old_pipeline",
+  "B": "baseline",
+  "C": "template"
+ },
+ "b03": {
+  "A": "template",
+  "B": "baseline",
+  "old_pipeline_same_as_baseline": true
+ },
+ "b04": {
+  "A": "template",
+  "B": "baseline",
+  "old_pipeline_same_as_baseline": true
+ },
+ "b05": {
+  "A": "old_pipeline",
+  "B": "baseline",
+  "C": "template"
+ },
+ "i01": {
+  "A": "template",
+  "B": "baseline",
+  "old_pipeline_same_as_baseline": true
+ },
+ "i02": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "i03": {
+  "A": "template",
+  "B": "old_pipeline",
+  "C": "baseline"
+ },
+ "i04": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "f01": {
+  "A": "template",
+  "B": "baseline",
+  "old_pipeline_same_as_baseline": true
+ },
+ "f02": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "f03": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "f04": {
+  "A": "template",
+  "B": "baseline",
+  "old_pipeline_same_as_baseline": true
+ },
+ "f05": {
+  "A": "template",
+  "B": "baseline",
+  "old_pipeline_same_as_baseline": true
+ },
+ "m01": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "m02": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "m03": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "m04": {
+  "A": "template",
+  "B": "old_pipeline",
+  "C": "baseline"
+ },
+ "m05": {
+  "A": "old_pipeline",
+  "B": "baseline",
+  "C": "template"
+ },
+ "m06": {
+  "A": "template",
+  "B": "baseline",
+  "old_pipeline_same_as_baseline": true
+ },
+ "e01": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "e02": {
+  "A": "baseline",
+  "B": "old_pipeline",
+  "C": "template"
+ },
+ "a01": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ },
+ "a02": {
+  "A": "baseline",
+  "B": "template",
+  "old_pipeline_same_as_baseline": true
+ }
+}

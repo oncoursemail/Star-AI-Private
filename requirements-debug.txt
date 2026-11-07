@@ -1,0 +1,3 @@
+# Optional developer capture environment; desktop report analysis needs no debugpy.
+-r requirements-dev.txt
+debugpy==1.8.22

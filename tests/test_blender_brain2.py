@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from star.blender_bridge import BlenderController, discover_blender, status, validate_scene
-from star.blender_mcp import (ANIMATION_EXPORT, BUILD, INSPECT, NAMES, PROBE, STATUS,
+from star.blender_mcp import (ANIMATION_EXPORT, BUILD, INSPECT, MOTION_QA, NAMES, PROBE, STATUS,
                               connect_blender, make_server, wants_blender)
 from star.desktop_core import Settings
 from star.react_shell import ALLOWED_ACTIONS, PERMITTED_SETTINGS
@@ -172,7 +172,7 @@ def test_actual_sdk_mcp_bridge_blocks_write_without_owner_permission(tmp_path):
     async def run():
         async with connect_blender(settings, tmp_path) as client:
             defs = client.definitions("Use Blender")
-            assert {item["name"] for item in defs} == NAMES - {BUILD, ANIMATION_EXPORT}
+            assert {item["name"] for item in defs} == NAMES - {BUILD, ANIMATION_EXPORT, MOTION_QA}
             status_reply = await client.call(STATUS, {})
             assert status_reply["isError"] is False
             denied = await client.call(INSPECT, {"job_id": "../secret"})

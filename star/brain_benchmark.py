@@ -225,20 +225,112 @@ def run_samples(client: httpx.Client, endpoint: str, model: str, prompt: str, *,
     return results, max(1, round((time.perf_counter() - started) * 1000))
 
 
+MAX_REPORT_BYTES = 256_000
+_IDENTITY = ("model", "scenario", "target", "endpoint")
+_COMPARED = ("ttft_ms", "total_ms")
+
+
+def _report_measurements(report: object, label: str) -> tuple[dict, list[dict]]:
+    if not isinstance(report, dict) or not isinstance(report.get("summary"), dict):
+        raise ValueError(f"{label}: not a brain_benchmark report")
+    for key in _IDENTITY:
+        if not isinstance(report.get(key), str) or not report[key]:
+            raise ValueError(f"{label}: missing {key}")
+    rows = report.get("measurements")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"{label}: no measurements")
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError(f"{label}: invalid measurement row")
+        for key in (*_COMPARED, "output_chars_per_s"):
+            value = row.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise ValueError(f"{label}: invalid {key}")
+    return report, rows
+
+
+def compare_reports(baseline: object, candidate: object, *, alpha: float = 0.05) -> dict:
+    """Paired speed verdict for two reports of the same model, scenario, target and parallelism.
+
+    Sample i of the baseline is paired with sample i of the candidate and scored with the exact sign test and
+    cluster bootstrap from star/eval_stats.py (lower time is a win). Any sample count works; with fewer pairs
+    than the test can resolve the verdict stays INCONCLUSIVE. Speed only: says nothing about answer quality.
+    """
+    from . import eval_stats
+
+    baseline, base_rows = _report_measurements(baseline, "baseline")
+    candidate, cand_rows = _report_measurements(candidate, "candidate")
+    for key in _IDENTITY:
+        if baseline[key] != candidate[key]:
+            raise ValueError(f"Reports differ in {key}: not a like-for-like comparison")
+    if baseline["summary"].get("parallel", 1) != candidate["summary"].get("parallel", 1):
+        raise ValueError("Reports differ in parallel requests: not a like-for-like comparison")
+    pairs = min(len(base_rows), len(cand_rows))
+    metrics, decisions = {}, []
+    for key in _COMPARED:
+        saved = [float(b[key]) - float(c[key]) for b, c in zip(base_rows, cand_rows)]
+        wins, losses = sum(d > 0 for d in saved), sum(d < 0 for d in saved)
+        test = eval_stats.sign_test(wins, losses)
+        decision = (eval_stats.PROMOTE if test["p_better"] <= alpha else
+                    eval_stats.REJECT if test["p_worse"] <= alpha else eval_stats.INCONCLUSIVE)
+        low, high = eval_stats.bootstrap_ci(saved, level=1 - 2 * alpha)
+        decisions.append(decision)
+        metrics[key] = {"decision": decision, "wins": wins, "losses": losses, "ties": pairs - wins - losses,
+                        "p_better": round(test["p_better"], 6), "p_worse": round(test["p_worse"], 6),
+                        "mean_saved_ms_interval": [round(low, 1), round(high, 1)]}
+    overall = (eval_stats.REJECT if eval_stats.REJECT in decisions else
+               eval_stats.PROMOTE if eval_stats.PROMOTE in decisions else eval_stats.INCONCLUSIVE)
+    notes = ["Arms were run one after the other, so drift between them is not cancelled; "
+             "match hardware, model file, load and cache state.",
+             "Speed evidence only: run the eval gate for answer quality before changing routing."]
+    if pairs < eval_stats.min_resolvable_pairs(alpha):
+        notes.append(f"{pairs} pairs cannot reach significance at alpha {alpha:g}; "
+                     f"use at least {eval_stats.min_resolvable_pairs(alpha)} runs per arm.")
+    if len(base_rows) != len(cand_rows):
+        notes.append(f"Unequal run counts: only the first {pairs} samples of each arm are paired.")
+    return {"decision": overall, "pairs": pairs, "alpha": alpha,
+            **{key: baseline[key] for key in _IDENTITY}, "metrics": metrics,
+            "baseline_summary": summarize(base_rows), "candidate_summary": summarize(cand_rows), "notes": notes}
+
+
+def _load_report(path: str) -> object:
+    with open(path, "rb") as file:
+        data = file.read(MAX_REPORT_BYTES + 1)
+    if len(data) > MAX_REPORT_BYTES:
+        raise ValueError(f"{path}: report is larger than {MAX_REPORT_BYTES} bytes")
+    return json.loads(data)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Measure STAR's local model speed without uploading prompts")
+    parser.add_argument("--compare", nargs=2, metavar=("BASELINE", "CANDIDATE"), default=None,
+                        help="Compare two saved reports of this command with a paired sign test (no requests sent). "
+                             "Exit 0 faster, 1 slower, 2 unusable input, 4 inconclusive")
+    parser.add_argument("--alpha", type=float, default=0.05, help="Significance level for --compare")
     parser.add_argument("--endpoint", default=None,
                         help="Loopback /v1 URL (default http://127.0.0.1:8080/v1), or with --server "
                              "the private STAR Server address (default: the one saved in Settings)")
     parser.add_argument("--server", action="store_true",
                         help="Measure STAR Server on the LAN; the key comes from the keyring or STAR_SERVER_API_KEY")
-    parser.add_argument("--model", required=True, help="Model ID shown in the local server /models endpoint")
+    parser.add_argument("--model", help="Model ID shown in the local server /models endpoint (required to measure)")
     parser.add_argument("--scenario", choices=sorted(_PROMPTS), default="chat")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--parallel", type=int, default=1,
                         help="Concurrent requests, 1..4 and no more than --runs (default 1)")
     parser.add_argument("--tokens", type=int, default=96)
     args = parser.parse_args(argv)
+    if args.compare:
+        if not 0 < args.alpha < 0.5:
+            parser.error("--alpha must be between 0 and 0.5")
+        try:
+            result = compare_reports(*(_load_report(path) for path in args.compare), alpha=args.alpha)
+        except (OSError, ValueError) as exc:
+            print(json.dumps({"decision": "UNUSABLE", "error": str(exc)}, indent=2))
+            return 2
+        print(json.dumps(result, indent=2))
+        return {"PROMOTE": 0, "REJECT": 1}.get(result["decision"], 4)
+    if not args.model:
+        parser.error("--model is required to measure (or use --compare)")
     endpoint, api_key = benchmark_target(args.endpoint, server=args.server)
     validate_alias(args.model)
     if not 1 <= args.runs <= 10:

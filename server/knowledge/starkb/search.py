@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import json
 import threading
 import time
 
@@ -29,6 +30,11 @@ FALLBACK_DEPTH = 5              # vector mode: chunks with no embedding are cand
 FALLBACK_EMBED = 4              # ... and at most this many of them are embedded for one query
 FALLBACK_CACHE = 4000           # on-the-fly vectors kept in memory (never written to the index)
 RRF_K = 60                          # Cormack et al. 2009 default
+# `hybrid` fusion: the BM25 list counts this much against the vector list (1.0 = plain RRF). Equal weights let a weak
+# BM25 list push good vector hits down. Brain-1 index, 145 questions (action-wave1-20261025): r@5 / MRR@10 for weight
+# 1.0 127 / .751, 0.5 128 / .782, 0.3 129 / .789, 0.2 132 / .799, 0.1 133 / .800; plain `vector` 134 / .799. 0.1 was
+# best on the dev sets (questions + golden 48/55 vs 42/55); hybrid still does not beat `vector`, which stays the default.
+HYBRID_LEXICAL_WEIGHT = float(os.environ.get("STAR_KB_HYBRID_LEXICAL_WEIGHT", "0.1"))
 BM25_WEIGHTS = (3.0, 2.0, 2.0, 1.0)  # title, heading, idents, text (fixed before evaluation, not tuned)
 BM25_QUESTION_WEIGHT = 2.0          # generated questions, weighted like a heading (fixed before evaluation, not tuned)
 BASE_COLUMNS = "{title heading idents text}"   # FTS5 column filter: match outside the questions column only
@@ -72,6 +78,34 @@ def merge_facets(whole: list[tuple[int, float]], parts: list[list[tuple[int, flo
         for rank, (chunk_id, _) in enumerate(ranking, 1):
             fused[chunk_id] = fused.get(chunk_id, 0.0) + weight / (RRF_K + rank)
     return sorted(fused.items(), key=lambda item: -item[1])
+
+
+# Source scope. The index may hold more than the Roblox documentation (Godot and Blender manuals, textbooks,
+# encyclopaedia pages; see corpora.json `group`). A client may pass `scope` ("roblox", "all" or a group name); None
+# means auto_scope: a query with Roblox/Luau words is answered from the "roblox" group only, one that names another
+# engine or a general source searches everything, and any other query is "auto": Roblox first, and the other
+# corpora only when one of them is clearly better (ROBLOX_MARGIN), so general text cannot push a Roblox page down.
+ROBLOX_QUERY = re.compile(
+    r"\b(?:roblox|luau|studio|workspace|LocalScript|ModuleScript|ServerScriptService|ServerStorage|ReplicatedStorage|"
+    r"StarterGui|StarterPlayer\w*|PlayerGui|ScreenGui|Instance\.new|game:GetService|Humanoid|RemoteEvent|RemoteFunction|"
+    r"DataStore\w*|OnServerEvent|BindToClose|TweenService|BasePart|Workspace|Players\.|CFrame|UDim2|R6|R15)\b", re.I)
+OTHER_ENGINE_QUERY = re.compile(r"\b(?:godot|gdscript|blender|unity|unreal|openstax|wikipedia|textbook)\b", re.I)
+DEFAULT_GROUP = "roblox"
+
+
+# "auto": the other corpora win only when their best cosine beats the best Roblox cosine by this much (BM25 mode:
+# their best score is ROBLOX_BM25_RATIO times the best Roblox score). Set on 2026-10-20 from the cosine gaps of the
+# four eval sets (knowledge-fix-20261020.md): Roblox questions without a Roblox word trail by at most 0.03, general
+# questions without a domain word lead by 0.15 or more.
+ROBLOX_MARGIN = 0.08
+ROBLOX_BM25_RATIO = 1.3
+
+
+def auto_scope(query: str) -> str:
+    """"roblox", "all" or "auto" (decided after the search, see ROBLOX_MARGIN)."""
+    if OTHER_ENGINE_QUERY.search(query):
+        return "all"
+    return "roblox" if ROBLOX_QUERY.search(query) else "auto"
 
 
 # Off unless STAR_KB_QUESTIONS=1 (set in the unit file once the measured effect justified it); `questions=` overrides per call.
@@ -129,6 +163,22 @@ class Vectors:
         self.allowed: set[int] = set(int(i) for i in ids)
         self.q_rows: np.ndarray = q_rows
         self.q_matrix: np.ndarray = q_matrix
+        self.source_of: np.ndarray | None = None      # source name per row of `ids` (filled on first scoped search)
+        self.masks: dict[frozenset, np.ndarray] = {}   # scope (set of source names) -> row mask
+        self._mask_lock = threading.Lock()
+
+    def mask_for(self, db, sources: frozenset) -> np.ndarray:
+        with self._mask_lock:
+            mask = self.masks.get(sources)
+            if mask is None:
+                if self.source_of is None:
+                    of = {int(r[0]): r[1] for r in db.execute("SELECT c.id, d.source FROM chunks c JOIN docs d ON d.id=c.doc_id")}
+                    self.source_of = np.array([of.get(int(i), "") for i in self.ids], dtype=object)
+                mask = np.isin(self.source_of, list(sources))
+                if len(self.masks) > 16:
+                    self.masks.clear()
+                self.masks[sources] = mask
+            return mask
 
     def __iter__(self):   # (ids, matrix, allowed): the shape older callers unpack
         return iter((self.ids, self.matrix, self.allowed))
@@ -233,6 +283,22 @@ class Searcher:
         self._chunks: int | None = None
         self._extra: dict[str, np.ndarray] = {}
         self.sources = {r["name"]: dict(r) for r in self.db.execute("SELECT * FROM sources")}
+        row = self.db.execute("SELECT value FROM meta WHERE name='source_groups'").fetchone()
+        groups = json.loads(row[0]) if row else {}
+        # an index built before groups existed: every source counts as the Roblox documentation
+        self.groups: dict[str, str] = {name: groups.get(name, DEFAULT_GROUP) for name in self.sources}
+
+    def scope_plan(self, scope: str | None, query: str = "") -> tuple[frozenset | None, frozenset | None]:
+        """(sources, prefer): `sources` limits the search (None: the whole index); `prefer` is the Roblox group
+        when the scope is "auto" (search everything, then keep only Roblox unless another corpus is clearly better)."""
+        if scope is None:
+            scope = auto_scope(query)
+        if scope == "all" or len(set(self.groups.values())) <= 1:
+            return None, None
+        if scope == "auto":
+            return None, frozenset(name for name, group in self.groups.items() if group == DEFAULT_GROUP) or None
+        chosen = frozenset(name for name, group in self.groups.items() if group == scope or name == scope)
+        return chosen or None, None
 
     # -- candidate generators -------------------------------------------------------------
     def _load_vectors(self) -> None:
@@ -262,7 +328,8 @@ class Searcher:
         self._load_vectors()
         return int(len(self._ids))
 
-    def bm25(self, query: str, k: int = 50, questions: bool = False) -> list[tuple[int, float]]:
+    def bm25(self, query: str, k: int = 50, questions: bool = False,
+             sources: frozenset | None = None) -> list[tuple[int, float]]:
         match = fts_query(query)
         if not match:
             return []
@@ -273,26 +340,42 @@ class Searcher:
         if not questions:   # the questions column must neither match nor score
             match = f"{BASE_COLUMNS} : ({match})"
         weights = (*BM25_WEIGHTS, BM25_QUESTION_WEIGHT if questions else 0.0)
-        sql = ("SELECT rowid, bm25(chunks_fts, ?, ?, ?, ?, ?) AS s FROM chunks_fts WHERE chunks_fts MATCH ? "
-               "ORDER BY s LIMIT ?")
-        rows = self.db.execute(sql, (*weights, match, fetch)).fetchall()
+        where, extra = "", ()
+        if sources is not None:    # exact: rank only the rows of the wanted sources
+            # "+rowid": an expression, so FTS5 does not get it as a rowid constraint (it would run the MATCH once per id)
+            where = (" AND +rowid IN (SELECT c.id FROM chunks c JOIN docs d ON d.id=c.doc_id WHERE d.source IN ("
+                     + ",".join("?" * len(sources)) + "))")
+            extra = tuple(sorted(sources))
+        sql = ("SELECT rowid, bm25(chunks_fts, ?, ?, ?, ?, ?) AS s FROM chunks_fts WHERE chunks_fts MATCH ?"
+               + where + " ORDER BY s LIMIT ?")
+        rows = self.db.execute(sql, (*weights, match, *extra, fetch)).fetchall()
         out = [(int(r[0]), -float(r[1])) for r in rows if not scoped or int(r[0]) in self._scope]
         return out[:k]
 
     def vector(self, query: str, k: int = 50, qvec: np.ndarray | None = None,
-               questions: bool = False) -> list[tuple[int, float]]:
+               questions: bool = False, sources: frozenset | None = None) -> list[tuple[int, float]]:
         self._load_vectors()
         if not len(self._ids):
             return []
         if qvec is None:
             qvec = np.asarray(self.brain.embed_query(query), dtype=np.float32)
+        return self._top(self._scores(qvec, questions), k, sources)
+
+    def _scores(self, qvec: np.ndarray, questions: bool) -> np.ndarray:
         scores = self._matrix @ qvec
         if questions and len(self._vectors.q_rows):
             # a chunk is as good as its best generated question (scaled), if that beats its own text
             np.maximum.at(scores, self._vectors.q_rows, (self._vectors.q_matrix @ qvec) * self.question_scale)
-        if self._scope_mask is not None:
-            scores = np.where(self._scope_mask, scores, -2.0)
-            k = min(k, int(self._scope_mask.sum()))
+        return scores
+
+    def _top(self, scores: np.ndarray, k: int, sources: frozenset | None) -> list[tuple[int, float]]:
+        mask = self._scope_mask
+        if sources is not None:
+            source_mask = self._vectors.mask_for(self.db, sources)
+            mask = source_mask if mask is None else (mask & source_mask)
+        if mask is not None:
+            scores = np.where(mask, scores, -2.0)
+            k = min(k, int(mask.sum()))
             if k <= 0:
                 return []
         k = min(k, len(scores))
@@ -301,11 +384,13 @@ class Searcher:
         return [(int(self._ids[i]), float(scores[i])) for i in top]
 
     @staticmethod
-    def rrf(*rankings: list[tuple[int, float]], k: int = RRF_K) -> list[tuple[int, float]]:
+    def rrf(*rankings: list[tuple[int, float]], k: int = RRF_K,
+            weights: tuple[float, ...] | None = None) -> list[tuple[int, float]]:
         fused: dict[int, float] = {}
-        for ranking in rankings:
+        for index, ranking in enumerate(rankings):
+            weight = 1.0 if weights is None else weights[index]
             for rank, (chunk_id, _) in enumerate(ranking, 1):
-                fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (k + rank)
+                fused[chunk_id] = fused.get(chunk_id, 0.0) + weight / (k + rank)
         return sorted(fused.items(), key=lambda item: -item[1])
 
     # -- full pipeline --------------------------------------------------------------------
@@ -336,16 +421,23 @@ class Searcher:
     def search(self, query: str, *, mode: str = "hybrid+rerank", top: int = 5, per_doc: int = 2,
                candidates: int = 50, rerank_n: int = 15, fallback: bool = False,
                degrade: bool = False, questions: bool | None = None, facets: bool | None = None,
-               facet_merge: str = "max") -> tuple[list[Passage], dict]:
+               facet_merge: str = "max", scope: str | None = None,
+               remote_rerank_n: int = 0, lexical_weight: float | None = None) -> tuple[list[Passage], dict]:
         """fallback=True (the service default): in `vector` mode on a partly embedded index, the
         chunks without an embedding that BM25 ranks in its top FALLBACK_DEPTH over the whole corpus
         are embedded at query time (at most FALLBACK_EMBED) and ranked by cosine with the rest.
         With every chunk embedded this is plain `vector`. degrade=True: if the embedding model
-        cannot be reached, answer with BM25 and report `timing["degraded"]` instead of failing."""
+        cannot be reached, answer with BM25 and report `timing["degraded"]` instead of failing.
+        lexical_weight: the BM25 list's weight in `hybrid` fusion (None = HYBRID_LEXICAL_WEIGHT).
+        remote_rerank_n=N (`vector` or `hybrid` mode, only when the brain has a remote reranker): the top N are reranked on the
+        remote GPU and the reranked order is fused with the vector order by RRF (scores stay cosines). There is no
+        fallback to the brain's slow reranker here: if the remote fails, the vector order stands
+        (`timing["rerank_skipped"]`). Measured 2026-10-21 (docs/agents/laptop-rerank-20261021.md)."""
         if mode not in MODES:
             raise ValueError("mode must be one of " + ", ".join(MODES))
         if questions is None:
             questions = USE_QUESTIONS
+        sources, prefer = self.scope_plan(scope, query)
         parts = split_facets(query) if (USE_FACETS if facets is None else facets) else []
         timing: dict[str, float] = {}
         if parts:
@@ -354,6 +446,9 @@ class Searcher:
         ranked: list[tuple[int, float]]
         lexical: list[tuple[int, float]] = []
         dense: list[tuple[int, float]] = []
+        lexical_pref: list[tuple[int, float]] = []     # scope "auto": the same lists limited to `prefer`
+        dense_pref: list[tuple[int, float]] = []
+        gate: tuple[list, list, bool] | None = None    # scope "auto": (Roblox list, whole-index list, cosine scores?)
         partial = False
         if mode != "bm25":
             self._load_vectors()
@@ -369,35 +464,79 @@ class Searcher:
             else:
                 timing["embed_query_ms"] = (time.perf_counter() - t) * 1000
                 t = time.perf_counter()
-                dense = self.vector(query, candidates, qvec=qvec, questions=questions)
-                if parts:
-                    dense = merge_facets(dense, [self.vector(p, candidates, qvec=v, questions=questions)
-                                                 for p, v in zip(parts, part_vectors)], facet_merge)
+                if len(self._ids):
+                    scores = self._scores(qvec, questions)
+                    dense = self._top(scores, candidates, sources)
+                    if prefer is not None:
+                        dense_pref = self._top(scores, candidates, prefer)
+                        gate = (dense_pref, dense, True)
+                    if parts:
+                        part_scores = [self._scores(v, questions) for v in part_vectors]
+                        dense = merge_facets(dense, [self._top(ps, candidates, sources) for ps in part_scores],
+                                             facet_merge)
+                        if prefer is not None:
+                            dense_pref = merge_facets(dense_pref, [self._top(ps, candidates, prefer) for ps in part_scores],
+                                                      facet_merge)
                 timing["vector_ms"] = (time.perf_counter() - t) * 1000
         if mode != "vector" or partial:
             t = time.perf_counter()
-            lexical = self.bm25(query, candidates, questions=questions)
+            lexical = self.bm25(query, candidates, questions=questions, sources=sources)
+            if prefer is not None and mode != "vector":
+                lexical_pref = self.bm25(query, candidates, questions=questions, sources=prefer)
+            if gate is None and prefer is not None:
+                gate = (lexical_pref, lexical, False)
             if parts and mode != "vector":
-                lexical = merge_facets(lexical, [self.bm25(p, candidates, questions=questions) for p in parts], "rrf")
+                lexical = merge_facets(lexical, [self.bm25(p, candidates, questions=questions, sources=sources)
+                                                 for p in parts], "rrf")
+                if prefer is not None:
+                    lexical_pref = merge_facets(lexical_pref, [self.bm25(p, candidates, questions=questions,
+                                                                         sources=prefer) for p in parts], "rrf")
             timing["bm25_ms"] = (time.perf_counter() - t) * 1000
+        scored: list[tuple[int, float]] = []
+        if mode == "vector" and partial:
+            extra = [cid for cid, _ in lexical[:FALLBACK_DEPTH] if cid not in self._allowed][:FALLBACK_EMBED]
+            if extra:
+                t = time.perf_counter()
+                try:
+                    scored = self._score_unembedded(extra, qvec)
+                except Exception:   # the fallback must never cost the embedding results
+                    scored = []
+                    timing["fallback_failed"] = 1.0
+                timing["fallback_embed_ms"] = (time.perf_counter() - t) * 1000
+                timing["fallback_unembedded"] = float(len(scored))
+                dense = sorted(dense + scored, key=lambda item: -item[1])
+        if gate is not None:
+            if self._roblox_first(gate[0], gate[1], extra=scored if gate[2] else [], cosine=gate[2]):
+                sources = prefer
+                keep = ({int(r[0]) for r in self.db.execute(
+                    f"SELECT c.id FROM chunks c JOIN docs d ON d.id=c.doc_id WHERE c.id IN ({','.join('?' * len(scored))})"
+                    f" AND d.source IN ({','.join('?' * len(prefer))})", [c for c, _ in scored] + sorted(prefer))}
+                    if scored else set())
+                dense = sorted(dense_pref + [item for item in scored if item[0] in keep], key=lambda item: -item[1])
+                lexical = lexical_pref
+            timing["roblox_first"] = 1.0 if sources is not None else 0.0
         if mode == "bm25":
             ranked = lexical
         elif mode == "vector":
             ranked = dense
-            if partial:
-                extra = [cid for cid, _ in lexical[:FALLBACK_DEPTH] if cid not in self._allowed][:FALLBACK_EMBED]
-                if extra:
-                    t = time.perf_counter()
-                    try:
-                        scored = self._score_unembedded(extra, qvec)
-                    except Exception:   # the fallback must never cost the embedding results
-                        scored = []
-                        timing["fallback_failed"] = 1.0
-                    timing["fallback_embed_ms"] = (time.perf_counter() - t) * 1000
-                    timing["fallback_unembedded"] = float(len(scored))
-                    ranked = sorted(dense + scored, key=lambda item: -item[1])
         else:
-            ranked = self.rrf(lexical, dense)
+            weight = HYBRID_LEXICAL_WEIGHT if lexical_weight is None else lexical_weight
+            ranked = self.rrf(lexical, dense, weights=(weight, 1.0))
+        if remote_rerank_n and mode in ("vector", "hybrid") and ranked and getattr(self.brain, "remote_rerank", None):
+            head = ranked[:remote_rerank_n]
+            rows = self._rows([cid for cid, _ in head])
+            docs = [(rows[cid]["heading"] + "\n" + rows[cid]["text"])[:RERANK_DOC_CHARS] for cid, _ in head]
+            t = time.perf_counter()
+            try:
+                order = self.brain.rerank(query, docs, local_fallback=False)
+            except RuntimeError:
+                timing["rerank_skipped"] = 1.0
+            else:
+                cosine = dict(head)
+                fused = self.rrf(head, [head[i] for i, _ in sorted(order, key=lambda x: -x[1])])
+                ranked = [(cid, cosine[cid]) for cid, _ in fused] + ranked[remote_rerank_n:]
+                timing["rerank_remote"] = 1.0
+            timing["rerank_ms"] = (time.perf_counter() - t) * 1000
         if mode == "hybrid+rerank" and ranked:
             head = ranked[:rerank_n]
             rows = self._rows([cid for cid, _ in head])
@@ -412,6 +551,7 @@ class Searcher:
                 order = self.brain.rerank(query, [d[: RERANK_DOC_CHARS * 6 // 10] for d in docs])
                 timing["rerank_retry"] = 1.0
             timing["rerank_ms"] = (time.perf_counter() - t) * 1000
+            timing["rerank_remote"] = 1.0 if getattr(self.brain, "last_rerank_source", "") == "remote" else 0.0
             ranked = [(head[i][0], score) for i, score in sorted(order, key=lambda x: -x[1])] + ranked[rerank_n:]
         # per-document cap keeps the short context diverse (same rule for every mode)
         chosen, per = [], {}
@@ -430,15 +570,29 @@ class Searcher:
         passages = []
         for rank, (row, score) in enumerate(chosen, 1):
             src = self.sources[row["source"]]
-            repo = src["repo"][:-4] if src["repo"].endswith(".git") else src["repo"]
+            is_git = src["repo"].endswith(".git")
+            repo = src["repo"][:-4] if is_git else src["repo"]
             passages.append(Passage(
                 rank=rank, score=round(score, 6), chunk_id=row["id"], source=row["source"], path=row["path"],
                 title=row["title"], heading=row["heading"], kind=row["kind"],
                 url=row["url"] + ("#" + row["anchor"] if row["anchor"] else ""),
-                permalink=f"{repo}/blob/{src['commit_sha']}/{row['path']}",
+                permalink=f"{repo}/blob/{src['commit_sha']}/{row['path']}" if is_git else row["url"],
                 commit=src["commit_sha"], licence=src["licence"], retrieved_at=stamp, text=row["text"]))
         timing["total_ms"] = (time.perf_counter() - t0) * 1000
+        if sources is not None:
+            timing["scoped_sources"] = float(len(sources))
         return passages, {k: round(v, 1) for k, v in timing.items()}
+
+    @staticmethod
+    def _roblox_first(preferred: list[tuple[int, float]], whole: list[tuple[int, float]], *,
+                      extra: list[tuple[int, float]] = (), cosine: bool = True) -> bool:
+        """Scope "auto": keep the Roblox results unless the whole index has a clearly better one. The best of the
+        whole-index list either is a Roblox chunk (then Roblox wins) or beats every Roblox chunk."""
+        best = max([score for _, score in whole[:1]] + [score for _, score in extra], default=None)
+        if not preferred or best is None:
+            return bool(preferred)
+        top = preferred[0][1]
+        return best - top <= ROBLOX_MARGIN if cosine else best <= top * ROBLOX_BM25_RATIO
 
     def _embed_queries(self, texts: list[str]) -> list[np.ndarray]:
         """Query vectors for the texts, in one embedding request for all that are not known yet."""

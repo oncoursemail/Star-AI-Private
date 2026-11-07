@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "check": "roblox_ui_compiler_emission_parity",
+  "observed_at_utc": "2026-11-01T01:15:41.029485+00:00",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "baseline": {
+    "requested_ref": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+    "commit": "a2f8ea5de8ccfa539795700f9d7e26c74ebd8e4f",
+    "path": "star/roblox_ui_compiler.py",
+    "file_sha256": "33d3eb400a7c07bc5fa53e37bed0068b0c7909648d72c6ddd0667871142cfaec"
+  },
+  "candidate": {
+    "path": "star/roblox_ui_compiler.py",
+    "file_sha256": "55703e0835b6a2d15bc5d2041d110eaf66f22e94aef8a33ce3908b98897de600",
+    "unchanged_during_check": true
+  },
+  "verification_script_sha256": "4c6b1d294536439b5219483a6beff54930544595f4b27accd1d442da09bee9fa",
+  "case_count": 23,
+  "equal_count": 23,
+  "all_equal": true,
+  "cases": [
+    {
+      "id": "shop",
+      "spec_sha256": "f4a991f77cd02833c89b3b4422a89d16124cc4e8f62b9fd1659c163c94262083",
+      "baseline_source_sha256": "37e1ae057af915bf7733a71c8854eabca7783e5ae1df72f6f1258451679f1c8d",
+      "candidate_source_sha256": "37e1ae057af915bf7733a71c8854eabca7783e5ae1df72f6f1258451679f1c8d",
+      "baseline_source_bytes": 4210,
+      "candidate_source_bytes": 4210,
+      "equal": true
+    },
+    {
+      "id": "inventory",
+      "spec_sha256": "e99f85d2a38752b38b17bffaa70d1da78dc2f5bb928aae94f7ce11cb721cf7df",
+      "baseline_source_sha256": "6b5d0f67111de5f7fc3afedacffab7e23a794b46bd9c865a30bb740ddd31216e",
+      "candidate_source_sha256": "6b5d0f67111de5f7fc3afedacffab7e23a794b46bd9c865a30bb740ddd31216e",
+      "baseline_source_bytes": 2743,
+      "candidate_source_bytes": 2743,
+      "equal": true
+    },
+    {
+      "id": "settings",
+      "spec_sha256": "057a0af4390cd3eb69076ffaeb86018cbabd15632036f6b16a58aa5ec5b6c801",
+      "baseline_source_sha256": "0efdacea8b8a46f0d93624be6d4ac77a0df6712ad2503778524d2916e70bf9e5",
+      "candidate_source_sha256": "0efdacea8b8a46f0d93624be6d4ac77a0df6712ad2503778524d2916e70bf9e5",
+      "baseline_source_bytes": 4468,
+      "candidate_source_bytes": 4468,
+      "equal": true
+    },
+    {
+      "id": "hud",
+      "spec_sha256": "a6ef70e18c4dc5eebc98c3b7182996d8ae0733dada58fa52d2815bfeacfc8185",
+      "baseline_source_sha256": "cbf8af9183350da48fb89ff7d77bcb1d9217c2738432e6f525e7733b6eee5da9",
+      "candidate_source_sha256": "cbf8af9183350da48fb89ff7d77bcb1d9217c2738432e6f525e7733b6eee5da9",
+      "baseline_source_bytes": 2653,
+      "candidate_source_bytes": 2653,
+      "equal": true
+    },
+    {
+      "id": "dialog",
+      "spec_sha256": "d7d798798b16ef28b51c1678685312a25c81b5fe52f31c3ff1d36cb7d4c401c0",
+      "baseline_source_sha256": "b37e3b0ace3774f7079326ec2482f6b3760d3d67f58f4400fb5c6ad98db05054",
+      "candidate_source_sha256": "b37e3b0ace3774f7079326ec2482f6b3760d3d67f58f4400fb5c6ad98db05054",
+      "baseline_source_bytes": 3953,
+      "candidate_source_bytes": 3953,
+      "equal": true
+    },
+    {
+      "id": "leaderboard",
+      "spec_sha256": "52c08377ae2b147206ad6182225db737d1421aa542a341b4aef9a5798787614f",
+      "baseline_source_sha256": "c8aea3a1747a8a9dbd27fdba681b4487a8b407ada1663b51bac07ad2f4aa1e7c",
+      "candidate_source_sha256": "c8aea3a1747a8a9dbd27fdba681b4487a8b407ada1663b51bac07ad2f4aa1e7c",
+      "baseline_source_bytes": 2785,
+      "candidate_source_bytes": 2785,
+      "equal": true
+    },
+    {
+      "id": "state-button-hover",
+      "spec_sha256": "500ebe1c53350976ed283dd6b8b674068165e17c696a88de23e391ec156c45ee",
+      "baseline_source_sha256": "f3f84e9e21071445a871a9ef7198e1881df1c6dd37767cd9665a74a104665652",
+      "candidate_source_sha256": "f3f84e9e21071445a871a9ef7198e1881df1c6dd37767cd9665a74a104665652",
+      "baseline_source_bytes": 3946,
+      "candidate_source_bytes": 3946,
+      "equal": true
+    },
+    {
+      "id": "state-button-pressed",
+      "spec_sha256": "4e2bf1ea5b5287dbe81cdb8e4bad646be50f01cca4e262ecde2b94ff09fff811",
+      "baseline_source_sha256": "c8b2c9cceb1e0840ca2cb2a17112ebd6407504f8c184b32e78dacd9ff08117bf",
+      "candidate_source_sha256": "c8b2c9cceb1e0840ca2cb2a17112ebd6407504f8c184b32e78dacd9ff08117bf",
+      "baseline_source_bytes": 3948,
+      "candidate_source_bytes": 3948,
+      "equal": true
+    },
+    {
+      "id": "state-button-selected",
+      "spec_sha256": "799ef59d9e8aae6608e1cbe2503ddd580427b8e152e219df9d66f77f96415ffc",
+      "baseline_source_sha256": "11ea358c5ea79611948778577c82ff4e83b6c6d54c33f72dd9c81e10fda727ad",
+      "candidate_source_sha256": "11ea358c5ea79611948778577c82ff4e83b6c6d54c33f72dd9c81e10fda727ad",
+      "baseline_source_bytes": 3949,
+      "candidate_source_bytes": 3949,
+      "equal": true
+    },
+    {
+      "id": "state-button-disabled",
+      "spec_sha256": "a22431ebaee713c2f6bfab9c122f1678f27ea3864e50d912aec11c6d3b689b1b",
+      "baseline_source_sha256": "e3bbfdaa429c40f126197bee82f8a7dbafadd4fb21db79459cd03e7877ffa9e3",
+      "candidate_source_sha256": "e3bbfdaa429c40f126197bee82f8a7dbafadd4fb21db79459cd03e7877ffa9e3",
+      "baseline_source_bytes": 3949,
+      "candidate_source_bytes": 3949,
+      "equal": true
+    },
+    {
+      "id": "state-toggle-hover",
+      "spec_sha256": "35f9a97d624cdd2d0ce09c592ba33f65df822cb0a1eb0b22e35c2b401f1a4fb4",
+      "baseline_source_sha256": "4e09d461bb76c95d71d554b2839a5c1f065e5a2909920038306be69554ce17de",
+      "candidate_source_sha256": "4e09d461bb76c95d71d554b2839a5c1f065e5a2909920038306be69554ce17de",
+      "baseline_source_bytes": 4029,
+      "candidate_source_bytes": 4029,
+      "equal": true
+    },
+    {
+      "id": "state-toggle-pressed",
+      "spec_sha256": "d6917e4f9d96da35b47ccd5a104f44c91334b3fec1d4f079dd229aa6b50d53b0",
+      "baseline_source_sha256": "b2324a4d52ebf8f0dd529d5be390a976a4fc66b3f7ee9dededa5bdd546c67814",
+      "candidate_source_sha256": "b2324a4d52ebf8f0dd529d5be390a976a4fc66b3f7ee9dededa5bdd546c67814",
+      "baseline_source_bytes": 4031,
+      "candidate_source_bytes": 4031,
+      "equal": true
+    },
+    {
+      "id": "state-toggle-selected",
+      "spec_sha256": "e10c792daebcd2de89e667cdc28c8a5dde349e05a1c12690ab601818719a4f9d",
+      "baseline_source_sha256": "fa658991f86a5ddb00b6fcc15a8aa33e87c01fbb97d16a526634fbe8540b3bd7",
+      "candidate_source_sha256": "fa658991f86a5ddb00b6fcc15a8aa33e87c01fbb97d16a526634fbe8540b3bd7",
+      "baseline_source_bytes": 4032,
+      "candidate_source_bytes": 4032,
+      "equal": true
+    },
+    {
+      "id": "state-toggle-disabled",
+      "spec_sha256": "b32483ae3562d01b8245cd5b984051e715d20b87d72aa597a3694b53e4a36a64",
+      "baseline_source_sha256": "9e6938d103b4897352ccf808d50bf29ed661b517a4e4f463eb4114c43343fed2",
+      "candidate_source_sha256": "9e6938d103b4897352ccf808d50bf29ed661b517a4e4f463eb4114c43343fed2",
+      "baseline_source_bytes": 4032,
+      "candidate_source_bytes": 4032,
+      "equal": true
+    },
+    {
+      "id": "state-input-hover",
+      "spec_sha256": "f3887d252a146c8dbf233789b590f1878e4ffba57161b9b20b072c80a7644f5a",
+      "baseline_source_sha256": "1dbbe5e89a52b031c89619c0a68b842f47905c34d3fe627bfa2661192eae99ba",
+      "candidate_source_sha256": "1dbbe5e89a52b031c89619c0a68b842f47905c34d3fe627bfa2661192eae99ba",
+      "baseline_source_bytes": 3957,
+      "candidate_source_bytes": 3957,
+      "equal": true
+    },
+    {
+      "id": "state-input-pressed",
+      "spec_sha256": "2332e6bd8da503f38389414d00a65f1bd829609d650da7075fd584de1a95d82c",
+      "baseline_source_sha256": "d477a12dc1128f5ce5e6fbb7529b356db6511af07eaeee21bee15dcfba382a15",
+      "candidate_source_sha256": "d477a12dc1128f5ce5e6fbb7529b356db6511af07eaeee21bee15dcfba382a15",
+      "baseline_source_bytes": 3959,
+      "candidate_source_bytes": 3959,
+      "equal": true
+    },
+    {
+      "id": "state-input-selected",
+      "spec_sha256": "d90d368b3b3c8dff0ea6385b91bf408570891dadd11af5fb1c8191e7b1d311db",
+      "baseline_source_sha256": "446553bce99ff9ab867a0401d130f90aeb7391e9d24b5bf0bbcca483fa97504a",
+      "candidate_source_sha256": "446553bce99ff9ab867a0401d130f90aeb7391e9d24b5bf0bbcca483fa97504a",
+      "baseline_source_bytes": 3960,
+      "candidate_source_bytes": 3960,
+      "equal": true
+    },
+    {
+      "id": "state-input-disabled",
+      "spec_sha256": "a0276ea6d688ebcf89948c3c93d095a4806605ca4a2b60fcdb4e5655de70274b",
+      "baseline_source_sha256": "78a98dd38c4c45db2660d29c333d4a4005a81c4688e05e1a22a5dc77e2d28787",
+      "candidate_source_sha256": "78a98dd38c4c45db2660d29c333d4a4005a81c4688e05e1a22a5dc77e2d28787",
+      "baseline_source_bytes": 3960,
+      "candidate_source_bytes": 3960,
+      "equal": true
+    },
+    {
+      "id": "transparency-0",
+      "spec_sha256": "1c52aa108c7607b2156d73fe80a90d34019b68e733c0a5b3cce2e2d1c23c3bcb",
+      "baseline_source_sha256": "24d122174eb5214168a779a174bf55f8adcc86a76a0c56b2b8f3f96c091c944a",
+      "candidate_source_sha256": "24d122174eb5214168a779a174bf55f8adcc86a76a0c56b2b8f3f96c091c944a",
+      "baseline_source_bytes": 2636,
+      "candidate_source_bytes": 2636,
+      "equal": true
+    },
+    {
+      "id": "transparency-0.25",
+      "spec_sha256": "851d885de511ffbe34944245e11a7522a7ef17086589131dbe845d638007f18c",
+      "baseline_source_sha256": "71368118abd20c6190954ca77a35f291fd6efa8f849ece1d077a34ed52f365e7",
+      "candidate_source_sha256": "71368118abd20c6190954ca77a35f291fd6efa8f849ece1d077a34ed52f365e7",
+      "baseline_source_bytes": 2639,
+      "candidate_source_bytes": 2639,
+      "equal": true
+    },
+    {
+      "id": "transparency-0.5",
+      "spec_sha256": "d08ea2fe1cd5ba9444fbf11572dae9b291436fab7801fdae78bf9591067c39f4",
+      "baseline_source_sha256": "2951a962458845b4279baba9a5f05da931e4c14e479a19004a1e432f4b3c9f16",
+      "candidate_source_sha256": "2951a962458845b4279baba9a5f05da931e4c14e479a19004a1e432f4b3c9f16",
+      "baseline_source_bytes": 2638,
+      "candidate_source_bytes": 2638,
+      "equal": true
+    },
+    {
+      "id": "transparency-0.75",
+      "spec_sha256": "b679ad89e4bbebeef2bb003dfa96c992947b93e96fb32477813c2c4cb944a666",
+      "baseline_source_sha256": "a098894724630dd7332691a0e36c72518b6062e6c1fc8e1224d1c1b7dc344102",
+      "candidate_source_sha256": "a098894724630dd7332691a0e36c72518b6062e6c1fc8e1224d1c1b7dc344102",
+      "baseline_source_bytes": 2639,
+      "candidate_source_bytes": 2639,
+      "equal": true
+    },
+    {
+      "id": "transparency-1",
+      "spec_sha256": "e36727ba12f54075198c6ab472c32c21397d8818b33a703e8c55c5450139cb18",
+      "baseline_source_sha256": "f4d884c1b33a2032c17f2a552dd91b1df6250ce514445320bc5b6696c4045a97",
+      "candidate_source_sha256": "f4d884c1b33a2032c17f2a552dd91b1df6250ce514445320bc5b6696c4045a97",
+      "baseline_source_bytes": 2636,
+      "candidate_source_bytes": 2636,
+      "equal": true
+    }
+  ],
+  "limits": [
+    "Synthetic specifications check deterministic emitted Luau bytes, not all possible compiler inputs.",
+    "Generated Luau was not executed; Roblox runtime behavior and visual quality are unverified.",
+    "Diagnostic warnings are intentionally allowed to differ between baseline and candidate."
+  ]
+}

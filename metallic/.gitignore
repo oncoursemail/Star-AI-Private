@@ -1,0 +1,9 @@
+dashboard/node_modules/
+dashboard/dist/
+dashboard/public/data.json
+dashboard/*.tsbuildinfo
+control-ui/node_modules/
+control-ui/dist/
+control-ui/src/sample/
+control-ui/*.tsbuildinfo
+control-ui/dist-preview/

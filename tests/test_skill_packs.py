@@ -20,9 +20,10 @@ NAMES = ["godot-scenes-and-nodes", "godot-gdscript-typing-and-signals", "godot-p
          "design-level-and-obby-layout", "design-economy-and-fair-monetisation", "design-ui-ux-for-games",
          "roblox-datastore-service-patterns", "roblox-remote-event-function-patterns",
          "roblox-tweenservice-easing",
-         "roblox-studio-mcp-workflow", "roblox-replication-hot-paths", "roblox-editable-memory-streaming",
+         "roblox-studio-mcp-workflow", "roblox-replication-hot-paths", "roblox-editablemesh-batching", "roblox-editable-memory-streaming",
          "roblox-asset-upload-moderation", "roblox-multi-agent-studio", "roblox-architecture-blender", "roblox-combat-hitboxes", "roblox-pathfinding-npc", "roblox-physics-constraints", "roblox-collection-tags", "roblox-input-devices", "roblox-sound-design", "roblox-luau-specs", "roblox-marketplace-purchases", "roblox-teleport-matchmaking", "roblox-open-cloud",
-         "roblox-purchases-badges", "roblox-vfx-composer", "roblox-cutscenes"]
+         "roblox-purchases-badges", "roblox-vfx-composer", "roblox-cutscenes", "roblox-secondary-motion-lab",
+         "roblox-server-authority", "roblox-luau-new-solver", "roblox-data-limits-2026"]
 ENGINEERING = {"eng-debugging", "eng-test-first", "eng-verify-before-done"}
 CORE_SERVICE_PACKS = {"roblox-datastore-service-patterns", "roblox-remote-event-function-patterns",
                       "roblox-tweenservice-easing", "roblox-purchases-badges"}
@@ -66,6 +67,16 @@ def test_implementation_packs_cite_official_documentation_and_list_the_api_names
             assert sources.count("https://create.roblox.com/docs/") >= 5, pack.name
             assert pack.name not in skill_packs.DEFAULT_ENABLED
             assert "API names not yet verified by STAR Knowledge /api-lookup" in sources
+        elif pack.name == "roblox-editablemesh-batching":
+            # Experimental 2026 batching pack (#578): official pages, OFF until API lookup and evaluation.
+            assert sources.count("https://create.roblox.com/docs/") >= 4, pack.name
+            assert pack.name not in skill_packs.DEFAULT_ENABLED
+            assert "API names not yet verified by STAR Knowledge /api-lookup" in sources
+        elif pack.name == "roblox-secondary-motion-lab":
+            # Experimental pack: three Roblox pages plus the XPBD paper and SmartBone 2; OFF until evaluated.
+            assert sources.count("https://create.roblox.com/docs/") >= 3, pack.name
+            assert pack.name not in skill_packs.DEFAULT_ENABLED
+            assert "No native Roblox profile was collected" in sources
         else:
             assert sources.count("https://create.roblox.com/docs/") >= 5, pack.name
             assert "verified with the knowledge service /api-lookup" in sources, pack.name
@@ -202,7 +213,7 @@ def test_quick_chat_mode_never_gets_a_pack(monkeypatch, tmp_path):
 def test_engineering_packs_keep_the_attribution_and_licence_of_the_two_mit_collections():
     notices = (skill_packs.PACKS_DIR / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
     assert "Copyright (c) 2025 Addy Osmani" in notices and "Copyright (c) 2025 Jesse Vincent" in notices
-    assert notices.count("Permission is hereby granted, free of charge") == 2
+    assert notices.count("Permission is hereby granted, free of charge") == 3   # the two collections + miqdadbadjuber/anti-slop
     for name in ENGINEERING:
         text = (skill_packs.PACKS_DIR / name / "references" / "ATTRIBUTION.md").read_text(encoding="utf-8")
         assert "MIT" in text and "github.com/addyosmani/agent-skills" in text and "github.com/obra/superpowers" in text, name

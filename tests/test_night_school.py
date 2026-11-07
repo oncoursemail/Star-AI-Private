@@ -93,6 +93,47 @@ def test_the_gate_waits_while_the_brain_is_busy_and_needs_ten_quiet_minutes(tmp_
     assert gate.look() == ""
 
 
+class ProxiedSlots(Slots):
+    """The same brain seen through STAR's priority proxy (star/priority_proxy.py answers /priority/v1/status)."""
+
+    def __init__(self):
+        super().__init__()
+        self.proxy_up = True
+
+    def fetch(self, path):
+        if path == "/priority/v1/status":
+            if not self.proxy_up:
+                raise OSError("no proxy")
+            return {"p0_active": False, "classes": {"P0": {}, "P3": {}}, "models": {}}
+        return super().fetch(path)
+
+
+def test_priority_gate_works_beside_other_clients_when_the_proxy_schedules(tmp_path):
+    from nightschool.idle import PriorityGate
+    slots, clock, said = ProxiedSlots(), Clock(), []
+    settings = settings_for(tmp_path, gate="priority")
+    gate = PriorityGate(settings, BrainWatch("http://brain", fetch=slots.fetch), log=said.append, clock=clock,
+                        sleep=clock.sleep)
+    slots.table[("star-fast", 0)][0] = True                     # the owner is chatting on another slot
+    assert gate.look() == ""                                    # no ten-minute wait: the proxy pauses us for chat
+    assert gate.intruder(1) == ""                               # and a chat does not cancel our request
+    Path(settings.hold_file).write_text("hold")
+    assert gate.look() == "HOLD file present, paused" and gate.intruder(1) == "HOLD file"
+    Path(settings.hold_file).unlink()
+    slots.proxy_up = False                                      # brain URL not behind the proxy: the old idle gate
+    clock.sleep(60)
+    assert gate.look() == "brain busy, waiting"
+    assert gate.intruder(1).startswith("another client")
+
+
+def test_priority_gate_is_chosen_by_setting(tmp_path):
+    from nightschool.__main__ import make_gate
+    from nightschool.idle import PlannedGate, PriorityGate
+    watch = BrainWatch("http://brain", fetch=ProxiedSlots().fetch)
+    assert isinstance(make_gate(settings_for(tmp_path, gate="priority"), watch, planner=None), PriorityGate)
+    assert type(make_gate(settings_for(tmp_path), watch, planner=None)) is PlannedGate
+
+
 def test_wait_logs_brain_busy_once_and_returns_after_the_quiet_period(tmp_path):
     slots, clock, said = Slots(), Clock(), []
     slots.table[("star-fast", 1)][0] = True
@@ -342,7 +383,8 @@ def test_a_win_below_the_noise_floor_is_inconclusive_never_promotes_and_waits_fo
     engine.run_batch()                                          # H-1, H-2 fixed: the gate runs
     lesson = store.state["lessons"]["L1"]
     assert lesson["status"] == "candidate" and lesson["gated_at_fixes"] == 2
-    assert lesson["gates"][0]["gate"]["decision"] == "INCONCLUSIVE"
+    # a small slice cannot resolve the noise floor: UNDERPOWERED (#608) is the same "no decision, wait" as INCONCLUSIVE
+    assert lesson["gates"][0]["gate"]["decision"] in ("INCONCLUSIVE", "UNDERPOWERED")
     assert (lesson["gates"][0]["gate"]["wins"], lesson["gates"][0]["gate"]["losses"]) == (2, 0)
     assert store.state["counters"]["lessons_inconclusive"] == 1 and engine.active() == []
     calls = len(script.calls)
@@ -400,7 +442,7 @@ def test_a_small_drop_at_recheck_retires_nothing(tmp_path):
     engine._solve = one_flaky
     engine.run_batch(1)
     lesson = store.state["lessons"]["L1"]
-    assert lesson["status"] == "active" and lesson["rechecks"][-1]["decision"] == "INCONCLUSIVE"
+    assert lesson["status"] == "active" and lesson["rechecks"][-1]["decision"] in ("INCONCLUSIVE", "UNDERPOWERED")
     assert "lessons_retired" not in store.state["counters"]
 
 
@@ -512,6 +554,7 @@ def test_real_path_backs_off_at_once_when_another_client_appears_and_writes_the_
     monkeypatch.setenv("STAR_NS_APP", str(repo))
     monkeypatch.setenv("STAR_SERVER_API_KEY", "test-key-not-real")
     monkeypatch.delenv("STAR_SKILL_PACKS", raising=False)
+    monkeypatch.delenv("STAR_PRIORITY", raising=False)
     with fake.FakeBrain() as brain:
         settings = settings_for(tmp_path, brain_url=brain.url, idle_s=0, poll_s=0.05, watch_s=0.1,
                                 key_file=str(tmp_path / "no-key-file"))
@@ -521,6 +564,7 @@ def test_real_path_backs_off_at_once_when_another_client_appears_and_writes_the_
         request.addfinalizer(model.close)                       # also when an assertion below fails
         import star.providers as providers
         assert providers.open_client.__qualname__.startswith("pin_slots")
+        assert providers.open_client(model.app_settings).default_headers["X-Star-Priority"] == "P3"   # background class
         task = dict(fake.practice_task("P-01", "limitHealth"), _test_body="")
         first = model.solve(task, [])
         assert first.passed is False and first.reasons == ["require:uses_expected_call: the expected call is used"]
@@ -841,6 +885,52 @@ def test_a_budget_paused_gate_never_promotes_on_an_incomplete_slice(tmp_path):
     assert lesson["status"] == "candidate" and "promotion" not in lesson and "gates" not in lesson
     run = next(iter(store.state["paired_runs"].values()))
     assert run["done"] is False
+
+
+def test_a_paused_gate_resumes_when_the_candidate_fixes_more_tasks_meanwhile(tmp_path):
+    # Brain 1 on 10-25: L226 fixed 24 tasks but its gate restarted 8 times (one new paired run per new fix) and never
+    # decided. The paused run must resume where it stopped, whatever the candidate fixes meanwhile.
+    script = Script()
+    settings, store, engine = engine_for(tmp_path, ["H-1", "E-1", "H-2", "V-1"] + NEEDS
+                                         + [f"H-{n}" for n in range(3, 13)] + [f"E-{n}" for n in range(2, 40)],
+                                         script, batch=3, recheck_every=999, validation_share=1 / 3)
+    engine.run_batch()                                  # H-1, H-2 fixed: the gate starts and pauses on the budget
+    lesson = store.state["lessons"]["L1"]
+    for _ in range(40):                                 # H-3..H-12 are fixed by the candidate while the gate waits
+        if lesson["status"] != "candidate":
+            break
+        engine.run_batch()
+    assert len(lesson["fixed"]) > 2                     # it really fixed tasks while its gate was paused
+    assert lesson["status"] == "active" and lesson["promotion"]["gate"]["decision"] == "PROMOTE"
+    assert "gate_tag" not in lesson
+    paired = [a for a in map(json.loads, (settings.data / "attempts.jsonl").read_text(encoding="utf-8").splitlines())
+              if a["purpose"].startswith("validation ")]
+    assert len(paired) == 16                            # 4 tasks x 2 arms x k=2: no restart, nothing measured twice
+    assert len(store.state["paired_runs"]) == 1
+
+
+def test_a_new_candidate_is_tried_on_other_tasks_before_the_leader_takes_every_retry(tmp_path):
+    # Brain 1 on 10-25: ranked by raw fix count, one leader per cause took every retry and 64 of 92 candidates were
+    # never tried on a second task. The smoothed fix rate (fixed + 1) / (tried + 2) gives a new one its turns.
+    def lessons(new_tried: int):
+        cause = "required element missing (uses_expected_call)"
+        leader = {"id": "L1", "text": "Prefer the checked clamp call over chained ifs in every limit helper.",
+                  "cause": cause, "status": "candidate", "tried": [f"T-{n}" for n in range(10)],
+                  "fixed": ["T-0", "T-1", "T-2"], "evidence": []}
+        new = {"id": "L2", "text": "Return the clamped value instead of mutating the argument in limit helpers.",
+               "cause": cause, "status": "candidate", "tried": ["N-0"] + [f"N-{n}" for n in range(1, new_tried)],
+               "fixed": ["N-0"], "evidence": []}
+        return {"L1": leader, "L2": new}
+
+    for new_tried, expected in ((1, "candidate L2"), (6, "candidate L1")):
+        folder = tmp_path / str(new_tried)
+        script = Script()
+        settings, store, engine = engine_for(folder, ["X-1", "V-1"], script, retry_candidates=1)
+        store.state["lessons"] = lessons(new_tried)
+        engine._diagnose = lambda _task, _result: {}
+        assert engine.run_item(engine.training[0]) == "failed"
+        attempts = [json.loads(row) for row in (settings.data / "attempts.jsonl").read_text().splitlines()]
+        assert [row["purpose"] for row in attempts] == ["first", expected]
 
 
 def test_shares_split_the_practice_tasks_without_overlap_and_keep_the_validation_slice(tmp_path):

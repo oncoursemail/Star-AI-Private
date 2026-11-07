@@ -1,0 +1,62 @@
+{
+ "counts": {
+  "dropped": 0,
+  "dropped_by_check": {},
+  "kept": 384,
+  "kept_by_category": {
+   "animation": 11,
+   "building-layout": 6,
+   "building-lighting": 5,
+   "combat-hitbox": 8,
+   "datastore-safety": 28,
+   "docs-question": 20,
+   "economy-simulation": 16,
+   "engineering-algorithm": 20,
+   "engineering-debugging": 18,
+   "engineering-test-first": 8,
+   "gameplay-systems": 13,
+   "luau-syntax": 9,
+   "luau-typing": 16,
+   "messaging": 8,
+   "npc-pathing": 7,
+   "performance": 15,
+   "performance-streaming": 8,
+   "physics": 9,
+   "remote-security": 26,
+   "rig-prop-alignment": 5,
+   "round-systems": 9,
+   "server-authoritative-inventory": 12,
+   "tool-attachment": 6,
+   "ui-interaction": 20,
+   "ui-layout": 18,
+   "ui-overflow": 9,
+   "ui-style": 14,
+   "ui-text": 16,
+   "vfx-beam-trail": 5,
+   "vfx-particles": 7,
+   "world-collectionservice": 6,
+   "world-raycast": 6
+  },
+  "kept_by_source": {
+   "cmdr": 1,
+   "creator-docs": 41,
+   "fusion": 1,
+   "janitor": 1,
+   "jecs": 1,
+   "luau-site": 4,
+   "original": 323,
+   "profilestore": 1,
+   "promise": 2,
+   "rbxutil": 9
+  },
+  "kept_runtime": {
+   "none": 12,
+   "pass": 372
+  },
+  "written": 384
+ },
+ "dropped": {},
+ "schema": 1,
+ "stubs_sha256": "9ab75ff66f98bc469a2e593aa8419fdb39c535ecf382f67d9c3b073b66d8f425",
+ "verifier_version": 6
+}

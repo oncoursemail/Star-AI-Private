@@ -1,0 +1,18 @@
+{
+  "upstream": "http://127.0.0.1:8081",
+  "host": "0.0.0.0",
+  "port": 8080,
+  "default_class": "P2",
+  "owner_fingerprint": true,
+  "class_ports": {"8082": "P2", "8083": "P3"},
+  "key_file": "/opt/star/secrets/api_keys",
+  "log": "/opt/star/logs/priority.jsonl",
+  "solo_p0": true,
+  "grace_s": 1.0,
+  "solo_keep": 1,
+  "mark_low_priority": true,
+  "models": {
+    "star-fast": {"slots": 3, "bg_cap": 2, "aliases": ["star-code", "star-vision"]},
+    "star-voice": {"slots": 2, "bg_cap": 1, "aliases": ["star-quick"]}
+  }
+}

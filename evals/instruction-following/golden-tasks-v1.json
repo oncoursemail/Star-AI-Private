@@ -1,0 +1,920 @@
+[
+ {
+  "id": "IF-01",
+  "category": "length-and-ending",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: word_count, no_char, ends_with",
+  "prompt": "Explain how a rainbow forms to a ten-year-old. Use between 90 and 120 words, use no commas anywhere, and finish your answer with exactly this sentence: Isn't science wonderful?",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: word_count, no_char, ends_with"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "word_count",
+      "min": 90,
+      "max": 120
+     },
+     {
+      "type": "no_char",
+      "chars": ","
+     },
+     {
+      "type": "ends_with",
+      "text": "Isn't science wonderful?"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-02",
+  "category": "format-and-keywords",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: all_lowercase, bullets, keyword_count",
+  "prompt": "Write a short product description for a reusable water bottle. Everything must be in lowercase letters, with no capital letters at all. Give exactly four bullet points, each starting with '- ', and use the word 'bottle' at least three times.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: all_lowercase, bullets, keyword_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "all_lowercase"
+     },
+     {
+      "type": "bullets",
+      "n": 4,
+      "marker": "-"
+     },
+     {
+      "type": "keyword_count",
+      "word": "bottle",
+      "min": 3
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-03",
+  "category": "language",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: language, paragraph_count, word_count",
+  "prompt": "Explain what a mortgage is. Answer in Spanish only, in exactly two paragraphs, and keep the whole answer under 120 words.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: language, paragraph_count, word_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "language",
+      "lang": "es"
+     },
+     {
+      "type": "paragraph_count",
+      "n": 2
+     },
+     {
+      "type": "word_count",
+      "max": 119
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-04",
+  "category": "json",
+  "difficulty": 2,
+  "goal": "Follow every verifiable constraint in the prompt: json_only",
+  "prompt": "Give me a packing list for a weekend camping trip as JSON. The whole answer must be one JSON object and nothing else, with exactly these keys: \"trip\" (a string), \"days\" (an integer) and \"items\" (an array of at least 6 strings).",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 1 constraints hold: json_only"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "json_only",
+      "keys": {
+       "trip": "string",
+       "days": "integer",
+       "items": "array<string>"
+      },
+      "exact_keys": true,
+      "min_items": {
+       "items": 6
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-05",
+  "category": "title-and-style",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: title_brackets, sentence_count, forbidden_words",
+  "prompt": "Write a short motivational note about learning to code. Put a title wrapped in double angular brackets on the first line, like <<Title>>. Use between 4 and 6 sentences in the body and do not use the words journey, unlock or passion.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: title_brackets, sentence_count, forbidden_words"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "title_brackets"
+     },
+     {
+      "type": "sentence_count",
+      "min": 4,
+      "max": 6
+     },
+     {
+      "type": "forbidden_words",
+      "words": [
+       "journey",
+       "unlock",
+       "passion"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-06",
+  "category": "separators",
+  "difficulty": 3,
+  "goal": "Follow every verifiable constraint in the prompt: paragraph_sep, contains_all",
+  "prompt": "Explain recursion with a short story. Write exactly three parts separated by a line containing only ***. The story must mention both the phrase 'base case' and the word 'stack'.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 2 constraints hold: paragraph_sep, contains_all"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "paragraph_sep",
+      "n": 3,
+      "sep": "***"
+     },
+     {
+      "type": "contains_all",
+      "words": [
+       "base case",
+       "stack"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-07",
+  "category": "acrostic",
+  "difficulty": 3,
+  "goal": "Follow every verifiable constraint in the prompt: acrostic, no_char",
+  "prompt": "Write a six-line poem about autumn in which the first letters of the lines spell LEAVES from top to bottom. Do not use any exclamation marks.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 2 constraints hold: acrostic, no_char"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "acrostic",
+      "word": "LEAVES"
+     },
+     {
+      "type": "no_char",
+      "chars": "!"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-08",
+  "category": "numbered-list",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: numbered_list, word_count, forbidden_words",
+  "prompt": "Summarize the plot of Cinderella in exactly three numbered steps (1., 2., 3.). Keep the whole answer to at most 70 words and do not use the word 'prince'.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: numbered_list, word_count, forbidden_words"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "numbered_list",
+      "n": 3
+     },
+     {
+      "type": "word_count",
+      "max": 70
+     },
+     {
+      "type": "forbidden_words",
+      "words": [
+       "prince"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-09",
+  "category": "placeholders",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: placeholders, word_count, postscript",
+  "prompt": "Write a thank-you email to a landlord who fixed a leaking roof quickly. Use at least three placeholders in square brackets such as [Landlord Name], keep it between 80 and 140 words, and add a postscript that starts with P.S. as the final paragraph.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: placeholders, word_count, postscript"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "placeholders",
+      "min": 3
+     },
+     {
+      "type": "word_count",
+      "min": 80,
+      "max": 140
+     },
+     {
+      "type": "postscript",
+      "marker": "P.S."
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-10",
+  "category": "lists",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: bullets, alphabetical_bullets, line_count",
+  "prompt": "List five fruits as bullet points that start with '* ', in alphabetical order, one per line. Write nothing else: the answer must have exactly five non-empty lines.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: bullets, alphabetical_bullets, line_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "bullets",
+      "n": 5,
+      "marker": "*"
+     },
+     {
+      "type": "alphabetical_bullets"
+     },
+     {
+      "type": "line_count",
+      "min": 5,
+      "max": 5
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-11",
+  "category": "sections",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: sections, keyword_count, no_char",
+  "prompt": "Explain photosynthesis in exactly three sections. Start each section with a line that reads SECTION 1, SECTION 2 and SECTION 3. Use the word 'chlorophyll' at least twice and do not use any semicolons.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: sections, keyword_count, no_char"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "sections",
+      "n": 3,
+      "label": "SECTION"
+     },
+     {
+      "type": "keyword_count",
+      "word": "chlorophyll",
+      "min": 2
+     },
+     {
+      "type": "no_char",
+      "chars": ";"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-12",
+  "category": "uniqueness",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: word_count, no_repeat_words, sentence_count",
+  "prompt": "Write a single sentence of 10 to 20 words describing the sea in which no word appears twice (ignore capitalization).",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: word_count, no_repeat_words, sentence_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "word_count",
+      "min": 10,
+      "max": 20
+     },
+     {
+      "type": "no_repeat_words"
+     },
+     {
+      "type": "sentence_count",
+      "min": 1,
+      "max": 1
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-13",
+  "category": "case",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: all_uppercase, char_count, word_count",
+  "prompt": "Describe your ideal weekend in ALL CAPITAL LETTERS. Use at least three exclamation marks and no more than 60 words.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: all_uppercase, char_count, word_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "all_uppercase"
+     },
+     {
+      "type": "char_count",
+      "char": "!",
+      "min": 3
+     },
+     {
+      "type": "word_count",
+      "max": 60
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-14",
+  "category": "language-and-format",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: language, bullets, ends_with",
+  "prompt": "Answer in French: what are three benefits of cycling? Use exactly three bullet points that start with '- ' and end your answer with the exact sentence: Bonne route !",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: language, bullets, ends_with"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "language",
+      "lang": "fr"
+     },
+     {
+      "type": "bullets",
+      "n": 3,
+      "marker": "-"
+     },
+     {
+      "type": "ends_with",
+      "text": "Bonne route !"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-15",
+  "category": "table",
+  "difficulty": 3,
+  "goal": "Follow every verifiable constraint in the prompt: markdown_table, contains_all",
+  "prompt": "Give a markdown table of four planets: Mercury, Venus, Earth and Mars. The columns must be exactly Planet, Moons and Type, with a header row, a separator row and four data rows, and nothing else besides the table.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 2 constraints hold: markdown_table, contains_all"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "markdown_table",
+      "cols": 3,
+      "rows": 4,
+      "header": [
+       "Planet",
+       "Moons",
+       "Type"
+      ]
+     },
+     {
+      "type": "contains_all",
+      "words": [
+       "Mercury",
+       "Venus",
+       "Earth",
+       "Mars"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-16",
+  "category": "csv",
+  "difficulty": 2,
+  "goal": "Follow every verifiable constraint in the prompt: csv",
+  "prompt": "Output CSV only, with no explanation and no code fence: the header line `name,age,city` followed by exactly four rows describing fictional people.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 1 constraints hold: csv"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "csv",
+      "header": [
+       "name",
+       "age",
+       "city"
+      ],
+      "rows": 4
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-17",
+  "category": "repeat-then-answer",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: repeat_prompt, word_count, forbidden_words",
+  "prompt": "First repeat this question exactly, without changing anything: What does an API do? Then answer it in plain words, using at most 70 words in total and without using the word 'interface'.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: repeat_prompt, word_count, forbidden_words"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "repeat_prompt",
+      "text": "What does an API do?"
+     },
+     {
+      "type": "word_count",
+      "max": 70
+     },
+     {
+      "type": "forbidden_words",
+      "words": [
+       "interface"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-18",
+  "category": "sentence-structure",
+  "difficulty": 5,
+  "goal": "Follow every verifiable constraint in the prompt: paragraph_count, sentence_count, distinct_sentence_starts, keyword_count",
+  "prompt": "Write advice for a first-time marathon runner as one paragraph of at most four sentences. Every sentence must start with a different letter, and the word 'pace' must appear exactly twice.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 4 constraints hold: paragraph_count, sentence_count, distinct_sentence_starts, keyword_count"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "paragraph_count",
+      "n": 1
+     },
+     {
+      "type": "sentence_count",
+      "min": 2,
+      "max": 4
+     },
+     {
+      "type": "distinct_sentence_starts"
+     },
+     {
+      "type": "keyword_count",
+      "word": "pace",
+      "min": 2,
+      "max": 2
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-19",
+  "category": "start-and-word-length",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: starts_with, word_count, max_word_length",
+  "prompt": "Write the opening of a bedtime story. It must begin with the exact words 'Once upon a midnight', use between 60 and 100 words, and contain no word longer than nine letters.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: starts_with, word_count, max_word_length"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "starts_with",
+      "text": "Once upon a midnight"
+     },
+     {
+      "type": "word_count",
+      "min": 60,
+      "max": 100
+     },
+     {
+      "type": "max_word_length",
+      "n": 9
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-20",
+  "category": "quotes",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: quote_wrap, word_count, forbidden_words",
+  "prompt": "Write a one-paragraph pep talk for a goalkeeper. Wrap your entire answer in double quotation marks, use between 40 and 70 words, and do not use the word 'goal'.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: quote_wrap, word_count, forbidden_words"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "quote_wrap"
+     },
+     {
+      "type": "word_count",
+      "min": 40,
+      "max": 70
+     },
+     {
+      "type": "forbidden_words",
+      "words": [
+       "goal"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-21",
+  "category": "line-format",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: line_end, line_count, all_lowercase",
+  "prompt": "Write a to-do list for moving house. Use exactly six lines, one task per line, every line ending with a semicolon, all in lowercase letters.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: line_end, line_count, all_lowercase"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "line_end",
+      "char": ";"
+     },
+     {
+      "type": "line_count",
+      "min": 6,
+      "max": 6
+     },
+     {
+      "type": "all_lowercase"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-22",
+  "category": "capitals-and-keywords",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: word_count, capital_words, contains_all",
+  "prompt": "Explain the difference between TCP and UDP in 80 to 150 words. Write between 5 and 12 words entirely in capital letters (acronyms such as TCP count) and make sure the words 'handshake' and 'packet' both appear.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: word_count, capital_words, contains_all"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "word_count",
+      "min": 80,
+      "max": 150
+     },
+     {
+      "type": "capital_words",
+      "min": 5,
+      "max": 12
+     },
+     {
+      "type": "contains_all",
+      "words": [
+       "handshake",
+       "packet"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-23",
+  "category": "language",
+  "difficulty": 4,
+  "goal": "Follow every verifiable constraint in the prompt: language, sentence_count, contains_all",
+  "prompt": "Beschreibe in genau drei Sätzen deine liebste Jahreszeit. Antworte nur auf Deutsch und erwähne das Wort Winter.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 3 constraints hold: language, sentence_count, contains_all"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "language",
+      "lang": "de"
+     },
+     {
+      "type": "sentence_count",
+      "min": 3,
+      "max": 3
+     },
+     {
+      "type": "contains_all",
+      "words": [
+       "Winter"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "id": "IF-24",
+  "category": "json",
+  "difficulty": 2,
+  "goal": "Follow every verifiable constraint in the prompt: json_only",
+  "prompt": "Return a JSON array of exactly three objects and nothing else. Each object has exactly two keys: \"city\" (a string) and \"population\" (an integer).",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "the answer text (no code block is expected)"
+  ],
+  "pass_conditions": [
+   "all 1 constraints hold: json_only"
+  ],
+  "fixtures": [],
+  "auto": {
+   "code": false,
+   "breadth": {
+    "kind": "ifbench",
+    "constraints": [
+     {
+      "type": "json_only",
+      "shape": "array",
+      "length": 3,
+      "items": {
+       "city": "string",
+       "population": "integer"
+      }
+     }
+    ]
+   }
+  }
+ }
+]

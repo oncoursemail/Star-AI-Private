@@ -1,0 +1,542 @@
+[
+ {
+  "id": "GD-CORE-01",
+  "category": "gdscript-core",
+  "difficulty": 2,
+  "goal": "Stackable inventory with guarded add/remove and sorted names",
+  "prompt": "In Godot 4, write a GDScript class `extends RefCounted` for a simple stackable inventory. Methods: `add(item: String, qty: int = 1) -> void` (a qty of 0 or less is ignored), `remove(item: String, qty: int = 1) -> bool` (returns false and changes nothing when qty is 0 or less or fewer than qty are held; when the count reaches 0 the entry disappears), `count(item: String) -> int` (0 for an unknown item), `total() -> int` (sum of all counts), `names() -> Array[String]` (the item names sorted alphabetically). Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-CORE-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 8 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-CORE-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-CORE-01.gd",
+    "checks": 8
+   }
+  }
+ },
+ {
+  "id": "GD-CORE-02",
+  "category": "gdscript-core",
+  "difficulty": 2,
+  "goal": "Enum with wrap-around arithmetic, vectors and an out-of-range name",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` that declares `enum Direction { UP, RIGHT, DOWN, LEFT }` (so the values are 0 to 3 in that order) and these plain (non-static) methods taking and returning ints: `turn_right(d: int) -> int` (clockwise), `turn_left(d: int) -> int`, `opposite(d: int) -> int`, `to_vector(d: int) -> Vector2i` (UP is (0, -1), RIGHT (1, 0), DOWN (0, 1), LEFT (-1, 0)), and `name_of(d: int) -> String` which gives \"UP\", \"RIGHT\", \"DOWN\" or \"LEFT\" and \"UNKNOWN\" for any value outside 0 to 3 (negative values included). Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-CORE-02.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-CORE-02.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-CORE-02.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "GD-CORE-03",
+  "category": "gdscript-core",
+  "difficulty": 2,
+  "goal": "match on typeof with numeric-only summing that ignores bool",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with `classify(v: Variant) -> String` and `sum_numbers(values: Array) -> float`. `classify` returns \"nil\" for null, \"bool\", \"int\", \"float\", \"string\", \"vector2\", \"array\", \"dictionary\", \"object\" for an Object, and \"other\" for every other type. `sum_numbers` adds up only the ints and floats in the array; bools, strings, nulls and nested arrays are skipped, and an empty array gives 0.0. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-CORE-03.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-CORE-03.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-CORE-03.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "GD-NODE-01",
+  "category": "gdscript-nodes",
+  "difficulty": 2,
+  "goal": "Recursive scene-tree walk: count nodes by class and measure depth",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with `count_by_class(root: Node) -> Dictionary` and `deepest(root: Node) -> int`. `count_by_class` walks the whole subtree under `root`, including `root` itself, and returns a Dictionary from each node's `get_class()` name to how many nodes have it. `deepest` returns the depth of the deepest node when `root` has depth 0 (a node with no children gives 0). The nodes are not necessarily inside the scene tree, so do not rely on `get_tree()`. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-NODE-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 6 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-NODE-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-NODE-01.gd",
+    "checks": 6
+   }
+  }
+ },
+ {
+  "id": "GD-NODE-02",
+  "category": "gdscript-nodes",
+  "difficulty": 3,
+  "goal": "Spawner that names nodes, joins a group and frees them deferred",
+  "prompt": "In Godot 4, write a GDScript `extends Node` called by a test as a child of the scene root. `spawn(n: int) -> void` adds n new `Node2D` children; numbering continues across calls: the k-th enemy ever spawned (counting from 0) is named `Enemy<k>` (for example `Enemy0`, `Enemy1`), sits at position `Vector2(50 * k, 0)` and belongs to the group `enemies`. `kill_all() -> void` removes every enemy it spawned using `queue_free()`; after one frame there are no children left and nothing remains in the `enemies` group. Calling `kill_all()` twice, or `spawn(0)`, must be harmless. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-NODE-02.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-NODE-02.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-NODE-02.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "GD-RES-01",
+  "category": "gdscript-resources",
+  "difficulty": 3,
+  "goal": "Custom Resource with exports and a validating static JSON factory",
+  "prompt": "In Godot 4, write a GDScript `extends Resource` describing a shop item with `@export var display_name: String`, `@export var price: int` and `@export var tags: PackedStringArray`. `to_json() -> String` returns JSON text of an object with the keys \"name\" (the display name), \"price\" and \"tags\" (a plain JSON array of strings). `static func from_json(text: String)` returns a new instance of this same script filled from such text, or `null` when the text is not valid JSON, the top level is not an object, \"name\" is missing or not a string, or \"price\" is missing or not a whole number (a JSON number such as 12 or 12.0 is fine, 2.5 is not). A missing \"tags\" means no tags. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-RES-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 10 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-RES-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-RES-01.gd",
+    "checks": 10
+   }
+  }
+ },
+ {
+  "id": "GD-MATH-01",
+  "category": "gdscript-math",
+  "difficulty": 2,
+  "goal": "Capped movement step, angle wrapping and unsigned angle between vectors",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with three plain methods. `step_toward(pos: Vector2, target: Vector2, speed: float, delta: float) -> Vector2` moves from pos toward target by at most speed * delta and never overshoots (it returns target when within reach, and pos when pos already equals target). `wrap_angle(a: float) -> float` returns the equivalent angle in radians within -PI to PI (for example 1.5 * PI becomes -0.5 * PI). `angle_between_deg(a: Vector2, b: Vector2) -> float` returns the unsigned angle between the two directions in degrees (0 to 180), and 0 when either vector has zero length. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-MATH-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 10 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-MATH-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-MATH-01.gd",
+    "checks": 10
+   }
+  }
+ },
+ {
+  "id": "GD-MATH-02",
+  "category": "gdscript-math",
+  "difficulty": 3,
+  "goal": "Weighted pick by cumulative buckets with exact boundary handling",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with `pick_weighted(weights: Array, roll: float) -> int`. The weights are numbers; think of them laid end to end, so index i owns the half-open interval from the sum of the earlier positive weights up to that sum plus its own weight. It returns the index whose interval contains `roll`. Weights of 0 or less own nothing and are never returned. A negative roll counts as 0. A roll at or beyond the total returns the last index that has a positive weight. With no positive weight at all (or an empty array) it returns -1. For example [1, 1, 2] gives 0 for rolls in [0, 1), 1 for [1, 2) and 2 for [2, 4). Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-MATH-02.gd)"
+  ],
+  "pass_conditions": [
+   "all 9 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-MATH-02.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-MATH-02.gd",
+    "checks": 9
+   }
+  }
+ },
+ {
+  "id": "GD-DATA-01",
+  "category": "gdscript-data",
+  "difficulty": 3,
+  "goal": "Deep dictionary merge that copies and never mutates its inputs",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with `merge_deep(a: Dictionary, b: Dictionary) -> Dictionary` returning a new Dictionary. Keys from both appear. When both values for a key are Dictionaries they are merged the same way, recursively; otherwise the value from b wins (an Array in b replaces the one in a, it is not concatenated). Neither input may be modified, and the result must not share any nested Dictionary or Array with either input: changing the result's nested values afterwards must not change a or b. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-DATA-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 9 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-DATA-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-DATA-01.gd",
+    "checks": 9
+   }
+  }
+ },
+ {
+  "id": "GD-FUNC-01",
+  "category": "gdscript-functional",
+  "difficulty": 3,
+  "goal": "Callable composition, partial application and repeated application",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with three plain methods working on Callables. `compose(fns: Array) -> Callable` returns a Callable that takes one argument and passes it through each Callable in `fns` from first to last (every one takes one argument and returns one value); an empty array gives the identity. `partial(fn: Callable, first: Variant) -> Callable` returns a Callable that takes one argument x and calls `fn(first, x)`. `apply_n(fn: Callable, x: Variant, n: int) -> Variant` applies `fn` to x n times in a row (n of 0 or less returns x unchanged). Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-FUNC-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-FUNC-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-FUNC-01.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "GD-INPUT-01",
+  "category": "gdscript-input",
+  "difficulty": 3,
+  "goal": "Register InputMap actions in code, idempotently, and read an axis",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with `setup_actions() -> void` and `horizontal() -> float`. `setup_actions` registers these InputMap actions with keyboard events (InputEventKey): `move_left` for the A key and the Left arrow, `move_right` for D and Right arrow, `jump` for Space. It must be safe to call twice (an action that already exists is left as it is, so no duplicate events appear). `horizontal` returns `Input.get_axis(\"move_left\", \"move_right\")`. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-INPUT-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 8 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-INPUT-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-INPUT-01.gd",
+    "checks": 8
+   }
+  }
+ },
+ {
+  "id": "GD-STR-01",
+  "category": "gdscript-strings",
+  "difficulty": 2,
+  "goal": "Duration formatting with padding rules, title case and ellipsis truncation",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with three plain methods. `format_duration(seconds: int) -> String`: under a minute gives \"5s\"; under an hour gives minutes without padding and seconds with two digits (\"3m 07s\"); an hour or more gives hours without padding and minutes and seconds with two digits (\"1h 02m 05s\", and 25 hours is \"25h 01m 01s\"); a negative value gives \"0s\". `title_case(s: String) -> String` trims the ends, collapses runs of spaces into one, upper-cases the first letter of each word and lower-cases the rest. `truncate(s: String, max_len: int) -> String` returns s unchanged when it fits in max_len characters; otherwise the first max_len - 1 characters followed by the single character \"…\" (U+2026); a max_len below 1 gives an empty string. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-STR-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 9 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-STR-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-STR-01.gd",
+    "checks": 9
+   }
+  }
+ },
+ {
+  "id": "GD-CLASS-01",
+  "category": "gdscript-classes",
+  "difficulty": 3,
+  "goal": "Inner class used by outer methods: reverse words and bracket matching",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` that declares an inner class `Stack` (`class Stack:`) with `push(v)`, `pop()` (returns null when empty), `peek()` (null when empty) and `size() -> int`. The outer script uses that Stack in two plain methods: `reverse_words(s: String) -> String` (the words in reverse order separated by single spaces; runs of whitespace collapse; an empty or blank string gives \"\") and `balanced(s: String) -> bool` (true when every (), [] and {} in the text is closed in the right order; other characters are ignored; the empty string is balanced). Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-CLASS-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 6 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-CLASS-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-CLASS-01.gd",
+    "checks": 6
+   }
+  }
+ },
+ {
+  "id": "GD-TWEEN-01",
+  "category": "gdscript-animation",
+  "difficulty": 3,
+  "goal": "Tween fade that frees the node when finished and returns the Tween",
+  "prompt": "In Godot 4, write a GDScript `extends Node` with `fade_out(node: CanvasItem, duration: float) -> Tween`. It animates the node's `modulate:a` to 0.0 over `duration` seconds with a Tween, calls `queue_free()` on the node once the tween has finished, and returns the Tween. The node is already in the scene tree; use the Godot 4 Tween API (`create_tween`), not the removed Godot 3 Tween node. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-TWEEN-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 5 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-TWEEN-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-TWEEN-01.gd",
+    "checks": 5
+   }
+  }
+ },
+ {
+  "id": "GD-PHYS-01",
+  "category": "gdscript-physics",
+  "difficulty": 3,
+  "goal": "Per-physics-step integration order, one-shot expiry signal",
+  "prompt": "In Godot 4, write a GDScript `extends Node2D` for a projectile with `var velocity: Vector2`, `var gravity: float = 980.0`, `var lifetime: float = 2.0` and `signal expired`. `_physics_process(delta)` first adds `gravity * delta` to velocity.y, then moves `position` by the new velocity times delta, then subtracts delta from lifetime. When lifetime reaches 0 or below it emits `expired` exactly once (not again on later calls) and calls `queue_free()`. The test calls `_physics_process` by hand with chosen deltas. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-PHYS-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 6 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-PHYS-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-PHYS-01.gd",
+    "checks": 6
+   }
+  }
+ },
+ {
+  "id": "GD-ARR-01",
+  "category": "gdscript-collections",
+  "difficulty": 2,
+  "goal": "Non-mutating top-n, chunking and unique sort over arrays",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with three plain methods on arrays of numbers. `top_n(values: Array, n: int) -> Array` returns the n largest values in descending order, keeping duplicates; n of 0 or less gives an empty array, and an n above the size returns everything; the input must not be modified. `chunk(values: Array, size: int) -> Array` splits into consecutive arrays of at most `size` items in the original order (the last may be shorter); a size below 1 gives an empty array. `unique_sorted(values: Array) -> Array` returns the distinct values in ascending order without modifying the input. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-ARR-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-ARR-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-ARR-01.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "GD-COLOR-01",
+  "category": "gdscript-data",
+  "difficulty": 2,
+  "goal": "Hex colour parsing with a sentinel, lightening with clamped alpha-preserving mix",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with three plain methods. `hex_to_color(hex: String) -> Color` accepts \"#rrggbb\", \"rrggbb\" and the short forms \"#rgb\" / \"rgb\" (each digit doubled), upper or lower case, with full alpha; anything else (wrong length, non-hex characters, empty) returns `Color.MAGENTA`. `lighten(c: Color, amount: float) -> Color` mixes the colour toward white by `amount` (clamped to 0..1) and keeps the original alpha. `to_hex(c: Color) -> String` returns the lower-case \"#rrggbb\" form, ignoring alpha. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-COLOR-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 7 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-COLOR-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-COLOR-01.gd",
+    "checks": 7
+   }
+  }
+ },
+ {
+  "id": "GD-SORT-01",
+  "category": "gdscript-collections",
+  "difficulty": 3,
+  "goal": "Multi-key stable sort of dictionaries without mutating the input",
+  "prompt": "In Godot 4, write a GDScript `extends RefCounted` with `sort_players(players: Array) -> Array`. Each element is a Dictionary with a \"name\" (String) and a \"score\" (number), and possibly other keys. Return a new Array holding the same Dictionary objects ordered by score from high to low, then by name in ascending order (plain String comparison, so upper case sorts before lower case). Entries that tie on both score and name keep their original relative order. The input array must keep its original order. Reply with the complete script in one gdscript code block.",
+  "run_mode": "automated",
+  "helps": [],
+  "split": "dev",
+  "required_evidence": [
+   "a fenced GDScript block in the answer",
+   "the script's behaviour in headless Godot 4 (tests/GD-SORT-01.gd)"
+  ],
+  "pass_conditions": [
+   "all 5 harness assertions pass",
+   "the script loads without parse errors"
+  ],
+  "fixtures": [
+   "tests/GD-SORT-01.gd"
+  ],
+  "auto": {
+   "breadth": {
+    "kind": "gdscript"
+   },
+   "unit_test": {
+    "file": "tests/GD-SORT-01.gd",
+    "checks": 5
+   }
+  }
+ }
+]

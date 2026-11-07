@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "rig_scale": 1.0,
+  "chains": [
+    {
+      "name": "left_foot",
+      "samples": [
+        {
+          "t": 0.0,
+          "effector": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "contact": true,
+          "contact_frame": "platform_A_local",
+          "contact_position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "contact_anchor": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "t": 1.0,
+          "effector": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "target": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "contact": true,
+          "contact_frame": "platform_A_local",
+          "contact_position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "contact_anchor": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    }
+  ]
+}

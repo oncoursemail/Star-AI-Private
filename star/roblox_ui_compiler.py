@@ -75,7 +75,7 @@ def _location(raw: str, path: str) -> tuple[int, int]:
 
 
 def _color(rgb: str) -> tuple[int, int, int]:
-    return tuple(int(rgb[i:i + 2], 16) for i in (1, 3, 5))
+    return int(rgb[1:3], 16), int(rgb[3:5], 16), int(rgb[5:7], 16)
 
 
 def _luminance(rgb: str) -> float:
@@ -90,8 +90,21 @@ def _contrast(a: str, b: str) -> float:
     return (x + .05) / (y + .05)
 
 
+def _declared_backdrop(color: str | None, transparency: Any,
+                       inherited: str | None) -> str | None:
+    """Resolve only an opaque declared colour, without guessing alpha composition."""
+    if (type(transparency) not in (int, float) or not 0 <= transparency <= 1
+            or not math.isfinite(transparency)):
+        return None  # Validation reports the malformed property separately.
+    if transparency == 1:
+        return inherited
+    if transparency == 0:
+        return color
+    return None
+
+
 def validate(spec: str | dict[str, Any]) -> tuple[dict[str, Any], tuple[Diagnostic, ...]]:
-    """Validate a spec, raising SpecError for errors and returning contrast warnings."""
+    """Validate a spec and report declared contrast; rendered UI remains unverified."""
     try:
         raw = spec if isinstance(spec, str) else json.dumps(spec)
         data = json.loads(raw, object_pairs_hook=_unique_pairs)
@@ -163,6 +176,20 @@ def validate(spec: str | dict[str, Any]) -> tuple[dict[str, Any], tuple[Diagnost
             issue("error", path, "expected a defined, valid palette colour name")
             return None
         return palette[value]
+
+    def contrast_warning(foreground: str | None, background: str | None,
+                         path: str, state: str, *, inactive: bool = False) -> None:
+        # 4.5:1 is a conservative authoring target for every declared text state.
+        # It is not a WCAG conformance verdict: inactive controls are exempt,
+        # and the format does not establish rendered font weight/large-text size.
+        qualifier = "; inactive controls are exempt from WCAG text contrast" if inactive else ""
+        if foreground is None or background is None:
+            issue("warning", path + ".textColor",
+                  f"{state} text contrast is indeterminate: foreground or opaque backdrop "
+                  f"is not fully specified; inspect the rendered UI{qualifier}")
+        elif _contrast(foreground, background) < 4.5:
+            issue("warning", path + ".textColor",
+                  f"declared {state} text contrast is below the 4.5:1 authoring target{qualifier}")
 
     seen: set[str] = set()
     node_count = 0
@@ -251,12 +278,17 @@ def validate(spec: str | dict[str, Any]) -> tuple[dict[str, Any], tuple[Diagnost
                 issue("error", path + "." + k, "expected boolean")
         if "font" in obj and (not isinstance(obj["font"], str) or obj["font"] not in FONTS):
             issue("error", path + ".font", "unsupported font enum")
-        background = inherited_bg
-        if "background" in obj:
-            background = palette_color(obj["background"], path + ".background")
+        background_color = palette_color(obj["background"], path + ".background") if "background" in obj else None
         foreground = palette_color(obj["textColor"], path + ".textColor") if "textColor" in obj else None
-        if kind in TEXT_KINDS and foreground and background and _contrast(foreground, background) < 4.5:
-            issue("warning", path + ".textColor", "text contrast is below 4.5:1")
+        # Match emission: only these container-like kinds force transparency to
+        # one when no background is authored, even if transparency was supplied.
+        # Text/image/control defaults do not inherit the parent's colour.
+        transparency = obj.get("transparency", 0)
+        if kind in {"screen", "frame", "scroll", "grid", "progress"} and "background" not in obj:
+            transparency = 1
+        background = _declared_backdrop(background_color, transparency, inherited_bg)
+        if kind in TEXT_KINDS:
+            contrast_warning(foreground, background, path, "base", inactive=obj.get("enabled") is False)
         stroke = obj.get("stroke")
         if stroke is not None and keys(stroke, {"color", "thickness", "transparency"}, path + ".stroke"):
             if "color" in stroke:
@@ -292,12 +324,19 @@ def validate(spec: str | dict[str, Any]) -> tuple[dict[str, Any], tuple[Diagnost
             for state, settings in states.items():
                 sp = path + ".states." + state
                 if keys(settings, STYLE_KEYS, sp):
-                    for k in ("background", "textColor"):
-                        if k in settings:
-                            palette_color(settings[k], sp + "." + k)
+                    # The emitted refresh() resets every goal from the base
+                    # style. A pressed state never inherits hover overrides.
+                    state_background = (palette_color(settings["background"], sp + ".background")
+                                        if "background" in settings else background_color)
+                    state_foreground = (palette_color(settings["textColor"], sp + ".textColor")
+                                        if "textColor" in settings else foreground)
                     for k, lo, hi in (("transparency", 0, 1), ("duration", 0, 5)):
                         if k in settings:
                             number(settings[k], sp + "." + k, lo, hi)
+                    if kind in TEXT_KINDS:
+                        state_backdrop = _declared_backdrop(
+                            state_background, settings.get("transparency", transparency), inherited_bg)
+                        contrast_warning(state_foreground, state_backdrop, sp, state, inactive=state == "disabled")
                     easing = settings.get("easing", "Quad")
                     if not isinstance(easing, str) or easing not in EASING:
                         issue("error", sp + ".easing", "unsupported TweenService easing")

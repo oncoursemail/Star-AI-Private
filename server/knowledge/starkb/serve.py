@@ -33,8 +33,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import os
+import faulthandler
 from pathlib import Path
 import re
+import signal
 import sys
 import threading
 import time
@@ -46,6 +48,9 @@ from .store import now
 
 SERVICE_MODES = ("vector", "bm25", "hybrid")   # rerank costs about 14 s per query and is not offered
 DEFAULT_MODE = "vector"
+# With STAR_KB_RERANK_URL set (starkb.client.RemoteReranker, the laptop GPU), `vector` searches rerank their top N
+# there and fuse the two orders; a remote that is off or slow leaves plain `vector` (never brain 1's reranker).
+REMOTE_RERANK_N = 10
 MAX_BODY = 16_384
 MAX_LUAU_BODY = 96 * 1024
 MAX_QUERY = 600
@@ -234,8 +239,12 @@ def load_keys(key_file: str) -> list[bytes]:
 class Service:
     """Shared state for all request threads."""
 
-    def __init__(self, db_path: Path, keys: list[bytes], brain: Brain | None = None):
+    def __init__(self, db_path: Path, keys: list[bytes], brain: Brain | None = None,
+                 private_db_path: Path | None = None):
         self.db_path = db_path
+        # the team's own notes (private_corpus.py): a second index that only `{"corpus": "private"}` can reach
+        self.private_db_path = private_db_path
+        self.private_vectors = VectorCache(recheck=VECTOR_RECHECK)
         self.keys = keys
         self.brain = brain or Brain(timeout=EMBED_TIMEOUT, retries=1)
         self.vectors = VectorCache(recheck=VECTOR_RECHECK)
@@ -249,13 +258,13 @@ class Service:
         self.cache = ResultCache()
         self.server: "Server | None" = None
 
-    def generation(self, searcher: Searcher) -> tuple:
+    def generation(self, searcher: Searcher, vectors: VectorCache | None = None) -> tuple:
         """What a cached reply depends on: the index build (its stamp is read on every call, it
         is one row) and the vector set this process has loaded. A rebuilt index or newly loaded
         vectors therefore never get an old reply; within one loaded set a reply may be up to
         CACHE_TTL old."""
         searcher.embedded_count()   # loads or re-checks the shared vectors
-        return (built_stamp(searcher.db), self.vectors.loaded_at)
+        return (built_stamp(searcher.db), (vectors or self.vectors).loaded_at)
 
     def count(self, name: str) -> None:
         with self._count_lock:
@@ -268,7 +277,9 @@ class Service:
             ok = hmac.compare_digest(supplied, b"Bearer " + key) or ok
         return ok
 
-    def searcher(self) -> Searcher:
+    def searcher(self, corpus: str | None = None) -> Searcher:
+        if corpus == "private":
+            return Searcher(self.private_db_path, brain=self.brain, vectors=self.private_vectors, readonly=True)
         return Searcher(self.db_path, brain=self.brain, vectors=self.vectors, readonly=True)
 
     # -- routes ------------------------------------------------------------------------------
@@ -309,6 +320,7 @@ class Service:
                 "limits": {"max_body": MAX_BODY, "max_luau_body": MAX_LUAU_BODY, "max_query": MAX_QUERY,
                            "max_top": MAX_TOP, "max_per_page": MAX_PER_PAGE, "default_per_page": DEFAULT_PER_PAGE,
                            "embed_timeout_s": EMBED_TIMEOUT,
+                           "remote_rerank": getattr(self.brain, "remote_rerank", None) is not None,
                            "max_connections": MAX_CONNECTIONS, "max_per_client": MAX_PER_CLIENT,
                            "header_deadline_s": HEADER_DEADLINE, "body_deadline_s": BODY_DEADLINE},
                 "connections": self.server.connection_stats() if self.server is not None else {},
@@ -324,30 +336,43 @@ class Service:
         mode = body.get("mode", DEFAULT_MODE)
         top = body.get("top", 5)
         per_page = body.get("per_page", DEFAULT_PER_PAGE)
+        scope = body.get("scope")          # None: decided from the query (search.auto_scope); "roblox" | "all" | group
+        corpus = body.get("corpus")        # None: the public index; "private": the team's notes (STAR_KB_PRIVATE_DB)
+        if corpus not in (None, "private"):
+            return 400, {"error": "corpus must be omitted or 'private'"}
+        if corpus == "private" and not (self.private_db_path and self.private_db_path.is_file()):
+            return 404, {"error": "no private corpus is configured on this service"}
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= MAX_QUERY:
             return 400, {"error": f"query must be 1..{MAX_QUERY} characters"}
+        if scope is not None and (not isinstance(scope, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", scope)):
+            return 400, {"error": "scope must be a short lowercase group name, 'roblox' or 'all'"}
         if mode not in SERVICE_MODES or type(top) is not int or not 1 <= top <= MAX_TOP:
             return 400, {"error": "mode must be one of " + ", ".join(SERVICE_MODES) + f" and top 1..{MAX_TOP}"}
         if type(per_page) is not int or not 1 <= per_page <= MAX_PER_PAGE:
             return 400, {"error": f"per_page must be 1..{MAX_PER_PAGE}"}
         query = " ".join(query.split())
         started = time.perf_counter()
-        s = self.searcher()
+        s = self.searcher(corpus)
         try:
-            key = (self.generation(s), mode, top, per_page, query)
+            key = (self.generation(s, self.private_vectors if corpus == "private" else None),
+                   corpus, mode, top, per_page, query, scope)
             hit = self.cache.get(key)
             if hit is not None:
                 return 200, {**hit, "cached": True,
                              "timing_ms": {"total_ms": round((time.perf_counter() - started) * 1000, 1)}}
-            passages, timing = s.search(query, mode=mode, top=top, per_doc=per_page, fallback=True, degrade=True)
+            passages, timing = s.search(query, mode=mode, top=top, per_doc=per_page, fallback=True, degrade=True,
+                                        scope=scope, remote_rerank_n=REMOTE_RERANK_N)
             degraded = bool(timing.pop("degraded", 0))
             reply = {
                 "mode": mode, "mode_used": "bm25" if degraded else mode, "degraded": degraded,
                 "timing_ms": timing, "untrusted": True, "cached": False,
                 "index": {"chunks": s.chunk_count(), "embedded": s.embedded_count()},
                 "attribution": {n: v["attribution"] for n, v in s.sources.items()},
+                "scope": scope or ("roblox" if timing.get("scoped_sources") else "all"),
+                "corpus": corpus or "public",
                 "passages": [p.as_dict() for p in passages]}
-            if not degraded and not timing.get("fallback_failed"):   # only a full-quality reply is worth repeating
+            if not degraded and not timing.get("fallback_failed") and not timing.get("rerank_skipped"):
+                # only a full-quality reply is worth repeating
                 self.cache.put(key, reply)
             return 200, reply
         finally:
@@ -578,13 +603,22 @@ class Server(ThreadingHTTPServer):
             self._release(str(client_address[0]))
 
 
-def serve(db_path: Path, host: str = "127.0.0.1", port: int = 8091, key_file: str = DEFAULT_KEY_FILE) -> None:
+def serve(db_path: Path, host: str = "127.0.0.1", port: int = 8091, key_file: str = DEFAULT_KEY_FILE,
+          private_db: Path | None = None) -> None:
     keys = load_keys(key_file)
     if not keys:
         raise SystemExit("refusing to start without an API key file")
     if not db_path.is_file():
         raise SystemExit("refusing to start without an index (run: python -m starkb build)")
-    service = Service(db_path, keys)
+    # `systemctl kill --signal=SIGUSR1 star-knowledge` (the watchdog, before a restart) prints every thread's stack
+    # to the journal: a hung service can be diagnosed afterwards.
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
+    if private_db is None and os.environ.get("STAR_KB_PRIVATE_DB"):
+        private_db = Path(os.environ["STAR_KB_PRIVATE_DB"])
+    if private_db is not None and not private_db.is_file():
+        print("star-knowledge: STAR_KB_PRIVATE_DB names no file; the private corpus is off", flush=True)
+        private_db = None
+    service = Service(db_path, keys, private_db_path=private_db)
     service.health()   # load the vectors once before accepting requests; fails fast on a broken index
     server = Server((host, port), make_handler(service))
     service.server = server

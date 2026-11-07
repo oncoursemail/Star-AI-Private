@@ -14,6 +14,7 @@ A mode without `+q` ignores generated questions even when the index has them.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 import statistics
@@ -43,10 +44,15 @@ def load_questions(path: Path) -> list[dict]:
 
 def parse_mode(mode: str) -> tuple[str, dict]:
     base, *flags = mode.split("+")
-    unknown = set(flags) - {"q", "fallback", "rerank", "f", "frrf"}
+    weights = [f for f in flags if re.fullmatch(r"lw\d+(?:\.\d+)?", f)]
+    unknown = set(flags) - {"q", "fallback", "rerank", "f", "frrf", "rr"} - set(weights)
     if unknown:
         raise ValueError(f"unknown mode flag in {mode!r}: {sorted(unknown)}")
     options = {"fallback": "fallback" in flags, "questions": "q" in flags, "facets": "f" in flags or "frrf" in flags}
+    if "rr" in flags:
+        options["remote_rerank_n"] = 10
+    if weights:
+        options["lexical_weight"] = float(weights[-1][2:])
     if "frrf" in flags:
         options["facet_merge"] = "rrf"
     return base + ("+rerank" if "rerank" in flags else ""), options
@@ -69,6 +75,10 @@ def run_eval(db_path: Path, questions_path: Path, modes: list[str], *, scope_emb
         for path in q["expected"]:
             if path not in known:
                 raise ValueError(f"{q['id']}: expected path not in index: {path}")
+        if q.get("answer") and not any(q["answer"] in r[0] for r in searcher.db.execute(
+                f"SELECT c.text FROM chunks c JOIN docs d ON d.id=c.doc_id WHERE d.path IN ({','.join('?' * len(q['expected']))})",
+                q["expected"])):    # a question with a verbatim answer must be answerable from its expected pages
+            raise ValueError(f"{q['id']}: answer not found in its expected pages")
     asked = len(questions)
     if scope_shas is not None:
         in_scope = {r[0] for r in searcher.db.execute("SELECT d.path, c.text_sha FROM chunks c JOIN docs d ON d.id=c.doc_id")

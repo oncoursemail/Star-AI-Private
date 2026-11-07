@@ -270,7 +270,8 @@ export function ProviderPanel({draft,onChange,credentials,invoke,refresh,disable
 
 const targets=[{name:'graphify_docs',flag:'mcp_graphify_docs',label:'Graphify documentation',note:'Fixed remote read-only Graphify documentation tools'},
  {name:'graphify_local',flag:'mcp_graphify_local',label:'Local Graphify MCP',note:'Explicit localhost Graphify MCP; read-only tools'},
- {name:'obsidian_live',flag:'mcp_obsidian_live',label:'Obsidian live MCP',note:'Existing local vault integration remains independently scoped'}] as const
+ {name:'obsidian_live',flag:'mcp_obsidian_live',label:'Obsidian live MCP',note:'Existing local vault integration remains independently scoped'},
+ {name:'github_repositories',flag:'mcp_github_repositories',label:'GitHub repositories',note:'Read your authorized repositories and their source. Stable repository IDs follow name changes.'}] as const
 
 export function McpPanel({draft,onChange,status,invoke,disabled=false}:{draft:AppSettings;onChange:(settings:AppSettings)=>void;status?:McpStatus;invoke:Invoke;disabled?:boolean}){
  const [pending,setPending]=useState('')
@@ -280,12 +281,22 @@ export function McpPanel({draft,onChange,status,invoke,disabled=false}:{draft:Ap
    if(!pendingId.current||event.requestId!==pendingId.current||event.kind==='progress')return
    setPending('');pendingId.current=''
    if(event.kind==='error'){setResults(prev=>({...prev,error:String(event.data||'Connection test failed').slice(0,240)}));return}
-   const value=event.data as {server?:string;read_tool_count?:number;protocol?:string}|null
-   if(value?.server){const name=value.server;setResults(prev=>({...prev,[name]:String(value.read_tool_count??0)+' read tools / '+String(value.protocol||'unknown')}))}
+   const value=event.data as {name?:string;server?:string;read_tool_count?:number;protocol?:string;repository_count?:number;complete?:boolean}|null
+   const name=value?.name||value?.server
+   if(value&&name){
+     if(name==='github_repositories'&&!(value.complete===true&&Number.isSafeInteger(value.repository_count)&&(value.repository_count??-1)>=0)){
+       setResults(prev=>({...prev,github_repositories:'',error:'Repository access has not been fully checked. Check repositories again.'}));return
+     }
+     const detail=name==='github_repositories'
+       ? String(value.repository_count)+' repositories visible to this credential / read-only'
+       : String(value.read_tool_count??0)+' read tools / '+String(value.protocol||'unknown')
+     setResults(prev=>({...prev,[name]:detail}))
+   }
  }),[])
  const probe=async(name:string)=>{
    if(pending||disabled)return
    setPending(name)
+   setResults(prev=>({...prev,[name]:'',error:''}))
    const reply=await invoke('testMcpConnection',{server:name}) as {pending?:boolean;requestId?:string}|null
    if(!reply){setPending('');return}
    if(reply.pending&&reply.requestId)pendingId.current=reply.requestId
@@ -298,13 +309,20 @@ export function McpPanel({draft,onChange,status,invoke,disabled=false}:{draft:Ap
        const active=Boolean(draft[target.flag]);const info=status?.servers?.find(s=>s.name===target.name)
        return <div className="integrated-connector" key={target.name}>
          <div><strong>{target.label}</strong><small>{target.note}</small>
+           {target.name==='github_repositories'&&<label className="integrated-field">GitHub credential source
+             <select disabled={disabled||pending===target.name} value={draft.github_repository_access_source??'gh'}
+               onChange={e=>{setResults(prev=>({...prev,github_repositories:'',error:''}));onChange({...draft,github_repository_access_source:e.target.value as 'gh'|'env'})}}>
+               <option value="gh">GitHub CLI account (gh)</option>
+               <option value="env">Configured environment token</option>
+             </select>
+           </label>}
            {results[target.name]&&<small className="integrated-connected">{results[target.name]}</small>}
            {info&&<small>{connectorState(info)}</small>}
          </div>
          <div className="integrated-connector-actions">
-           <label className="integrated-switch"><input type="checkbox" disabled={disabled} checked={active} onChange={e=>onChange({...draft,[target.flag]:e.target.checked})}/><span>Enable</span></label>
+           <label className="integrated-switch"><input type="checkbox" aria-label={target.name==='github_repositories'?'Enable GitHub repositories':undefined} disabled={disabled||(target.name==='github_repositories'&&pending===target.name)} checked={active} onChange={e=>{if(target.name==='github_repositories')setResults(prev=>({...prev,github_repositories:'',error:''}));onChange({...draft,[target.flag]:e.target.checked})}}/><span>Enable</span></label>
            <button type="button" className="secondary-button" disabled={disabled||!!pending||!active}
-             onClick={()=>void probe(target.name)}>{pending===target.name?<LoaderCircle className="spin" size={14}/>:<RefreshCcw size={14}/>} Test</button>
+             onClick={()=>void probe(target.name)}>{pending===target.name?<LoaderCircle className="spin" size={14}/>:<RefreshCcw size={14}/>} {target.name==='github_repositories'?'Check repositories':'Test'}</button>
          </div>
        </div>
      })}
@@ -313,6 +331,6 @@ export function McpPanel({draft,onChange,status,invoke,disabled=false}:{draft:Ap
      <input type="number" min={1024} max={65535} disabled={disabled} value={draft.mcp_graphify_port} onChange={e=>onChange({...draft,mcp_graphify_port:Number(e.target.value)})}/>
    </label>
    {results.error&&<p role="alert" className="integrated-error">{results.error}</p>}
-   <p className="integrated-help">Save Settings before testing connections. A successful test confirms read-only tool discovery—not that an answer was factually correct.</p>
+   <p className="integrated-help">Save connector settings before testing connections. GitHub checks list repositories visible to the saved credential source; each file read is verified separately. Other tests confirm read-only tool discovery.</p>
  </section>
 }

@@ -1,0 +1,442 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Metallic API",
+  "version": "1.0.0",
+  "summary": "One API for the Metallic launcher, website, game servers and (later) outside developers.",
+  "description": "Metallic API v1 sits on top of Metallic accounts. Signed-in calls use a Metallic sign-in token (the launcher's access token) or a scoped token made from it with POST /v1/oauth/token. Game servers use server keys (`msk_...`) with their own scopes and rate limits. Minors' data is private by default: other parties never receive a minor's username or display name, and scoped tokens for minors can only read the minor's own profile.\n\nErrors always look like `{\"ok\": false, \"error\": \"code\", \"text\": \"plain words\"}`. A 429 carries `Retry-After` (seconds). Every response carries `RateLimit-Limit` and `RateLimit-Remaining` for the bucket that was charged.",
+  "license": {"name": "Proprietary", "identifier": "LicenseRef-Metallic"}
+ },
+ "servers": [{"url": "https://{host}:8476", "variables": {"host": {"default": "metallic-api.local"}}}],
+ "tags": [
+  {"name": "account", "description": "The signed-in player: profile, friends, presence, invites."},
+  {"name": "content", "description": "Public: news, games, Rec Room revivals, releases, progress, project status."},
+  {"name": "auth", "description": "Scoped tokens."},
+  {"name": "servers", "description": "Game servers and backends (server keys)."},
+  {"name": "webhooks", "description": "Signed event deliveries."},
+  {"name": "admin", "description": "Owner and admins only."}
+ ],
+ "x-metallic-scopes": {
+  "profile:read": {"kind": "user", "minors": true, "description": "Read your own profile (username, display name, role, age band)."},
+  "profile:write": {"kind": "user", "minors": false, "description": "Change your display name."},
+  "friends:read": {"kind": "user", "minors": false, "description": "Read your friends list and friend requests."},
+  "friends:write": {"kind": "user", "minors": false, "description": "Send, accept, decline and remove friends."},
+  "presence:read": {"kind": "user", "minors": false, "description": "Read what your friends are doing (only what they share with you)."},
+  "presence:write": {"kind": "user", "minors": false, "description": "Set your own presence (online, playing RC, ...)."},
+  "invites:read": {"kind": "user", "minors": false, "description": "Read your game invites."},
+  "invites:write": {"kind": "user", "minors": false, "description": "Send and answer game invites."},
+  "keys:admin": {"kind": "admin", "minors": false, "description": "Create and revoke server keys (owner/admin sign-in only, never delegated)."},
+  "webhooks:manage": {"kind": "admin+server", "minors": false, "description": "Create, list and delete webhooks (server keys, or owner/admin sign-in)."},
+  "servers:write": {"kind": "server", "minors": false, "description": "Report server heartbeats and player events for the key's games."},
+  "players:read": {"kind": "server", "minors": false, "description": "Check a player's Metallic sign-in token (minors come back without names)."}
+ },
+ "x-metallic-rate-limits": {
+  "anonymous": {"per_minute": 60, "burst": 30, "key": "client IP"},
+  "user": {"per_minute": 120, "burst": 60, "key": "account"},
+  "server_key": {"per_minute": "set per key (default 120)", "burst": "half the per-minute rate", "key": "server key"}
+ },
+ "paths": {
+  "/health": {
+   "get": {"operationId": "health", "tags": ["content"], "summary": "Service health", "security": [],
+    "responses": {"200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Health"}}}}}}
+  },
+  "/v1/openapi.json": {
+   "get": {"operationId": "getOpenapi", "tags": ["content"], "summary": "This document", "security": [],
+    "responses": {"200": {"description": "The OpenAPI document", "content": {"application/json": {"schema": {"type": "object"}}}}}}
+  },
+  "/v1/scopes": {
+   "get": {"operationId": "listScopes", "tags": ["auth"], "summary": "Every scope and who may hold it", "security": [],
+    "responses": {"200": {"description": "Scopes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ScopeList"}}}}}}
+  },
+  "/v1/oauth/token": {
+   "post": {"operationId": "exchangeToken", "tags": ["auth"], "summary": "Make a scoped token from a sign-in token",
+    "description": "OAuth 2.0 token exchange (RFC 8693 style). `subject_token` is a Metallic sign-in token. The new token carries only the requested scopes, lives at most 15 minutes and never longer than the sign-in token, and stops working when the player signs out. Minors may only request `profile:read`. Admin scopes are never delegated.",
+    "security": [], "x-metallic-rate": {"per_minute": 10, "burst": 10},
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TokenRequest"}}}},
+    "responses": {"200": {"description": "Scoped token", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TokenResponse"}}}},
+     "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "429": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/oauth/revoke": {
+   "post": {"operationId": "revokeToken", "tags": ["auth"], "summary": "Revoke a scoped token", "security": [],
+    "x-metallic-rate": {"per_minute": 10, "burst": 10},
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RevokeRequest"}}}},
+    "responses": {"200": {"description": "Done (also when the token was unknown)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Ok"}}}}}}
+  },
+  "/v1/me": {
+   "get": {"operationId": "getMe", "tags": ["account"], "summary": "Your profile", "security": [{"metallicUser": ["profile:read"]}],
+    "x-metallic-upstream": {"method": "GET", "path": "/v1/me"},
+    "responses": {"200": {"description": "Profile", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Me"}}}}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}}},
+   "patch": {"operationId": "updateMe", "tags": ["account"], "summary": "Change your display name", "security": [{"metallicUser": ["profile:write"]}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/me/profile"},
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProfileUpdate"}}}},
+    "responses": {"200": {"description": "Updated profile", "content": {"application/json": {"schema": {"type": "object"}}}}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/friends": {
+   "get": {"operationId": "listFriends", "tags": ["account"], "summary": "Friends and friend requests", "security": [{"metallicUser": ["friends:read"]}],
+    "x-metallic-upstream": {"method": "GET", "path": "/v1/friends"},
+    "responses": {"200": {"description": "Friends", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FriendsList"}}}}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/friends/requests": {
+   "post": {"operationId": "sendFriendRequest", "tags": ["account"], "summary": "Ask a player to be friends", "security": [{"metallicUser": ["friends:write"]}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/friends/request"},
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Username"}}}},
+    "responses": {"200": {"description": "State after the request", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FriendState"}}}}, "403": {"$ref": "#/components/responses/Error"}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/friends/requests/{username}/accept": {
+   "post": {"operationId": "acceptFriendRequest", "tags": ["account"], "summary": "Accept a friend request (sends friend.added)", "security": [{"metallicUser": ["friends:write"]}],
+    "parameters": [{"$ref": "#/components/parameters/Username"}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/friends/accept", "body_from_path": ["username"]},
+    "responses": {"200": {"description": "Now friends", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FriendState"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/friends/requests/{username}/decline": {
+   "post": {"operationId": "declineFriendRequest", "tags": ["account"], "summary": "Decline an incoming or cancel an outgoing request", "security": [{"metallicUser": ["friends:write"]}],
+    "parameters": [{"$ref": "#/components/parameters/Username"}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/friends/decline", "body_from_path": ["username"]},
+    "responses": {"200": {"description": "Declined", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FriendState"}}}}}}
+  },
+  "/v1/friends/{username}": {
+   "delete": {"operationId": "removeFriend", "tags": ["account"], "summary": "Remove a friend", "security": [{"metallicUser": ["friends:write"]}],
+    "parameters": [{"$ref": "#/components/parameters/Username"}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/friends/remove", "body_from_path": ["username"]},
+    "responses": {"200": {"description": "Removed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FriendState"}}}}}}
+  },
+  "/v1/presence": {
+   "get": {"operationId": "listPresence", "tags": ["account"], "summary": "What your friends are doing", "description": "Only what each friend shares with you; minors share with friends only.", "security": [{"metallicUser": ["presence:read"]}],
+    "x-metallic-upstream": {"method": "GET", "path": "/v1/presence"},
+    "responses": {"200": {"description": "Presence", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PresenceList"}}}}}}
+  },
+  "/v1/me/presence": {
+   "put": {"operationId": "setPresence", "tags": ["account"], "summary": "Set your presence", "security": [{"metallicUser": ["presence:write"]}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/presence"},
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PresenceUpdate"}}}},
+    "responses": {"200": {"description": "Saved; refresh before `ttl` seconds", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PresenceSaved"}}}}, "400": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/invites": {
+   "get": {"operationId": "listInvites", "tags": ["account"], "summary": "Your open game invites", "security": [{"metallicUser": ["invites:read"]}],
+    "x-metallic-upstream": {"method": "GET", "path": "/v1/invites"},
+    "responses": {"200": {"description": "Invites", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InviteList"}}}}}},
+   "post": {"operationId": "sendInvite", "tags": ["account"], "summary": "Invite a friend to a game", "description": "Invites carry only a game and a target id: no free text.", "security": [{"metallicUser": ["invites:write"]}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/invites"},
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InviteCreate"}}}},
+    "responses": {"201": {"description": "Sent", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InviteSent"}}}}, "403": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/invites/{invite_id}/accept": {
+   "post": {"operationId": "acceptInvite", "tags": ["account"], "summary": "Accept an invite", "security": [{"metallicUser": ["invites:write"]}],
+    "parameters": [{"$ref": "#/components/parameters/InviteId"}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/invites/{invite_id}/accept"},
+    "responses": {"200": {"description": "Accepted; join `target` in `game`", "content": {"application/json": {"schema": {"type": "object"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/invites/{invite_id}/decline": {
+   "post": {"operationId": "declineInvite", "tags": ["account"], "summary": "Decline an invite", "security": [{"metallicUser": ["invites:write"]}],
+    "parameters": [{"$ref": "#/components/parameters/InviteId"}],
+    "x-metallic-upstream": {"method": "POST", "path": "/v1/invites/{invite_id}/decline"},
+    "responses": {"200": {"description": "Declined", "content": {"application/json": {"schema": {"type": "object"}}}}}}
+  },
+  "/v1/news": {
+   "get": {"operationId": "listNews", "tags": ["content"], "summary": "News posts", "security": [],
+    "parameters": [{"name": "game", "in": "query", "schema": {"$ref": "#/components/schemas/GameId"}},
+     {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20}}],
+    "responses": {"200": {"description": "News", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NewsList"}}}}, "502": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/games": {
+   "get": {"operationId": "listGames", "tags": ["content"], "summary": "RC, MC, RB and PX status", "security": [],
+    "responses": {"200": {"description": "Games", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GameList"}}}}}}
+  },
+  "/v1/games/{game}": {
+   "get": {"operationId": "getGame", "tags": ["content"], "summary": "One game's status", "security": [],
+    "parameters": [{"name": "game", "in": "path", "required": true, "schema": {"$ref": "#/components/schemas/GameId"}}],
+    "responses": {"200": {"description": "Game", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Game"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/revivals": {
+   "get": {
+    "operationId": "listRevivals",
+    "tags": ["content"],
+    "summary": "Every Rec Room revival: status and people online",
+    "description": "discord.online is people online in each revival's Discord; players is players in game, only where a revival publishes it without a sign-in. Discord refreshed at most every 2 minutes; servers every minute.",
+    "security": [],
+    "responses": {"200": {"description": "Revivals, most online first", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RevivalList"}}}}}
+   }
+  },
+  "/v1/revivals/{revival}": {
+   "get": {
+    "operationId": "getRevival",
+    "tags": ["content"],
+    "summary": "One revival's status and people online",
+    "security": [],
+    "parameters": [{"name": "revival", "in": "path", "required": true, "schema": {"$ref": "#/components/schemas/RevivalId"}}],
+    "responses": {"200": {"description": "Revival", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Revival"}}}}, "404": {"$ref": "#/components/responses/Error"}}
+   }
+  },
+  "/v1/revival-news": {
+   "get": {
+    "operationId": "listRevivalNews",
+    "tags": ["content"],
+    "summary": "Latest news from the Rec Room revivals",
+    "description": "Newest first, from public feeds only (websites, YouTube); each source is read at most every 15 minutes.",
+    "security": [],
+    "responses": {"200": {"description": "News items", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RevivalNewsList"}}}}}
+   }
+  },
+  "/v1/releases": {
+   "get": {"operationId": "listReleases", "tags": ["content"], "summary": "Release channels", "security": [],
+    "responses": {"200": {"description": "Channels", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChannelList"}}}}}}
+  },
+  "/v1/releases/{channel}": {
+   "get": {"operationId": "getRelease", "tags": ["content"], "summary": "A verified release channel", "description": "Read from the signed channel files (Ed25519). A channel that fails verification is never served as verified: the answer is 503 `unverified`. The launcher still verifies the files itself before installing anything.", "security": [],
+    "parameters": [{"name": "channel", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"}}],
+    "responses": {"200": {"description": "Channel", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Channel"}}}}, "404": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/progress": {
+   "get": {"operationId": "getProgress", "tags": ["content"], "summary": "PX progress (public view)", "description": "The same data as the PX page in public mode: five honest states per item, no percentages.", "security": [],
+    "responses": {"200": {"description": "Progress", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Progress"}}}}}}
+  },
+  "/v1/progress/{project}": {
+   "get": {"operationId": "getProjectProgress", "tags": ["content"], "summary": "One project's progress", "security": [],
+    "parameters": [{"name": "project", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[a-z0-9-]{1,32}$"}}],
+    "responses": {"200": {"description": "Project", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProgressProject"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/projects/status": {
+   "get": {"operationId": "getProjectStatus", "tags": ["content"], "summary": "Litha and STAR status (read-only)", "security": [],
+    "responses": {"200": {"description": "Status", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectStatusList"}}}}}}
+  },
+  "/v1/servers/heartbeat": {
+   "post": {"operationId": "serverHeartbeat", "tags": ["servers"], "summary": "Report a live game server", "description": "Send every 30-60 s. A server that stops reporting drops out after 90 s. Counts only, never player names.", "security": [{"serverKey": ["servers:write"]}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Heartbeat"}}}},
+    "responses": {"200": {"description": "Recorded", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Ok"}}}}, "403": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/servers/events": {
+   "post": {"operationId": "serverEvent", "tags": ["servers"], "summary": "Report a player joining or leaving (sends player.joined / player.left)", "description": "Pass the player's Metallic sign-in token as `player_token` to attach their account id (and, for adults, their username). Without it, only your own opaque `player_ref` is passed on.", "security": [{"serverKey": ["servers:write"]}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ServerEvent"}}}},
+    "responses": {"202": {"description": "Accepted and queued for webhooks", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EventAccepted"}}}}, "403": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/players/verify": {
+   "post": {"operationId": "verifyPlayer", "tags": ["servers"], "summary": "Check a player's Metallic sign-in token", "security": [{"serverKey": ["players:read"]}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlayerVerifyRequest"}}}},
+    "responses": {"200": {"description": "Who the player is (minors without names)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlayerInfo"}}}}}}
+  },
+  "/v1/webhooks": {
+   "get": {"operationId": "listWebhooks", "tags": ["webhooks"], "summary": "Your webhooks", "security": [{"serverKey": ["webhooks:manage"]}, {"metallicUser": ["webhooks:manage"]}],
+    "responses": {"200": {"description": "Webhooks", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WebhookList"}}}}}},
+   "post": {"operationId": "createWebhook", "tags": ["webhooks"], "summary": "Add a webhook (the secret is shown once)", "security": [{"serverKey": ["webhooks:manage"]}, {"metallicUser": ["webhooks:manage"]}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WebhookCreate"}}}},
+    "responses": {"201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WebhookCreated"}}}}, "400": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/webhooks/{webhook_id}": {
+   "delete": {"operationId": "deleteWebhook", "tags": ["webhooks"], "summary": "Delete a webhook", "security": [{"serverKey": ["webhooks:manage"]}, {"metallicUser": ["webhooks:manage"]}],
+    "parameters": [{"$ref": "#/components/parameters/WebhookId"}],
+    "responses": {"200": {"description": "Deleted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Ok"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/webhooks/{webhook_id}/deliveries": {
+   "get": {"operationId": "listDeliveries", "tags": ["webhooks"], "summary": "Delivery log (newest first)", "security": [{"serverKey": ["webhooks:manage"]}, {"metallicUser": ["webhooks:manage"]}],
+    "parameters": [{"$ref": "#/components/parameters/WebhookId"}, {"name": "limit", "in": "query", "schema": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50}}],
+    "responses": {"200": {"description": "Deliveries", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeliveryList"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/webhooks/{webhook_id}/ping": {
+   "post": {"operationId": "pingWebhook", "tags": ["webhooks"], "summary": "Send a signed `ping` event", "security": [{"serverKey": ["webhooks:manage"]}, {"metallicUser": ["webhooks:manage"]}],
+    "parameters": [{"$ref": "#/components/parameters/WebhookId"}],
+    "responses": {"202": {"description": "Queued", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EventAccepted"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/keys": {
+   "get": {"operationId": "listKeys", "tags": ["admin"], "summary": "Server keys", "security": [{"metallicUser": ["keys:admin"]}],
+    "responses": {"200": {"description": "Keys (never the secrets)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/KeyList"}}}}}},
+   "post": {"operationId": "createKey", "tags": ["admin"], "summary": "Create a server key (the secret is shown once)", "security": [{"metallicUser": ["keys:admin"]}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/KeyCreate"}}}},
+    "responses": {"201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/KeyCreated"}}}}, "400": {"$ref": "#/components/responses/Error"}}}
+  },
+  "/v1/keys/{key_id}": {
+   "delete": {"operationId": "revokeKey", "tags": ["admin"], "summary": "Revoke a server key", "security": [{"metallicUser": ["keys:admin"]}],
+    "parameters": [{"name": "key_id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^key_[a-z0-9]{8,32}$"}}],
+    "responses": {"200": {"description": "Revoked", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Ok"}}}}, "404": {"$ref": "#/components/responses/Error"}}}
+  }
+ },
+ "webhooks": {
+  "player.joined": {"post": {"summary": "A player joined a game server", "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlayerEventPayload"}}}}, "responses": {"200": {"description": "Any 2xx counts as delivered"}}}},
+  "player.left": {"post": {"summary": "A player left a game server", "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlayerEventPayload"}}}}, "responses": {"200": {"description": "Any 2xx counts as delivered"}}}},
+  "release.published": {"post": {"summary": "A release channel has a new signed manifest", "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReleaseEventPayload"}}}}, "responses": {"200": {"description": "Any 2xx counts as delivered"}}}},
+  "friend.added": {"post": {"summary": "Two accounts became friends (account ids only)", "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/FriendEventPayload"}}}}, "responses": {"200": {"description": "Any 2xx counts as delivered"}}}},
+  "ping": {"post": {"summary": "Test event from POST /v1/webhooks/{id}/ping", "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/EventEnvelope"}}}}, "responses": {"200": {"description": "Any 2xx counts as delivered"}}}}
+ },
+ "components": {
+  "securitySchemes": {
+   "metallicUser": {"type": "http", "scheme": "bearer", "bearerFormat": "Metallic sign-in token (JWT) or scoped token (mtk_...)",
+    "description": "The launcher's Metallic access token (first-party: every user scope; owner/admin also get keys:admin and webhooks:manage), or a scoped `mtk_` token from POST /v1/oauth/token that carries only its granted scopes."},
+   "serverKey": {"type": "http", "scheme": "bearer", "bearerFormat": "msk_<id>_<secret>",
+    "description": "Server-to-server key for game servers and backends. Keep it on the server: in Roblox store it as an HttpService secret and never send it to a client. Each key has scopes, a games list and its own rate limit."}
+  },
+  "parameters": {
+   "Username": {"name": "username", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[A-Za-z0-9_]{3,20}$"}},
+   "InviteId": {"name": "invite_id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^inv_[a-z0-9]{4,40}$"}},
+   "WebhookId": {"name": "webhook_id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^wh_[a-z0-9]{8,32}$"}}
+  },
+  "responses": {
+   "Error": {"description": "Refused", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+  },
+  "schemas": {
+   "Error": {"type": "object", "required": ["ok", "error", "text"], "properties": {
+    "ok": {"const": false}, "error": {"type": "string", "examples": ["insufficient_scope"]}, "text": {"type": "string"},
+    "retry_after": {"type": "number"}, "scope": {"type": "string"}}},
+   "Ok": {"type": "object", "required": ["ok"], "properties": {"ok": {"const": true}}},
+   "Health": {"type": "object", "required": ["ok", "service", "version"], "properties": {
+    "ok": {"type": "boolean"}, "service": {"const": "metallic-api"}, "version": {"type": "string"},
+    "accounts": {"type": "string", "enum": ["up", "down"]}}},
+   "GameId": {"type": "string", "enum": ["RC", "MC", "RB", "PX"]},
+   "ScopeList": {"type": "object", "required": ["scopes"], "properties": {"scopes": {"type": "array", "items": {
+    "type": "object", "required": ["name", "kind", "minors", "description"], "properties": {
+     "name": {"type": "string"}, "kind": {"type": "string"}, "minors": {"type": "boolean"}, "description": {"type": "string"}}}}}},
+   "TokenRequest": {"type": "object", "required": ["subject_token", "scope"], "additionalProperties": false, "properties": {
+    "grant_type": {"const": "urn:ietf:params:oauth:grant-type:token-exchange"},
+    "subject_token": {"type": "string", "minLength": 20, "maxLength": 4096},
+    "subject_token_type": {"const": "urn:ietf:params:oauth:token-type:access_token"},
+    "scope": {"type": "string", "minLength": 1, "maxLength": 512, "description": "Space-separated scopes"},
+    "client_name": {"type": "string", "maxLength": 64, "description": "Shown to the player in their token list later"}}},
+   "TokenResponse": {"type": "object", "required": ["access_token", "token_type", "expires_in", "scope"], "properties": {
+    "access_token": {"type": "string", "pattern": "^mtk_"}, "token_type": {"const": "Bearer"},
+    "expires_in": {"type": "integer"}, "scope": {"type": "string"},
+    "issued_token_type": {"const": "urn:ietf:params:oauth:token-type:access_token"}}},
+   "RevokeRequest": {"type": "object", "required": ["token"], "additionalProperties": false, "properties": {"token": {"type": "string", "maxLength": 4096}}},
+   "Account": {"type": "object", "required": ["id", "username"], "properties": {
+    "id": {"type": "string"}, "username": {"type": "string"}, "display_name": {"type": ["string", "null"]}}},
+   "Me": {"type": "object", "required": ["id", "username", "role", "minor"], "properties": {
+    "id": {"type": "string"}, "username": {"type": "string"}, "display_name": {"type": ["string", "null"]},
+    "role": {"type": "string"}, "age_band": {"type": "string"}, "minor": {"type": "boolean"}, "created": {"type": "number"},
+    "privacy": {"type": "object"}}},
+   "ProfileUpdate": {"type": "object", "required": ["display_name"], "additionalProperties": false, "properties": {"display_name": {"type": "string", "minLength": 1, "maxLength": 32}}},
+   "Presence": {"type": "object", "required": ["status"], "properties": {
+    "status": {"type": "string", "enum": ["online", "away", "busy", "playing", "offline"]},
+    "game": {"type": ["string", "null"]}, "detail": {"type": ["string", "null"]}, "joinable": {"type": "boolean"}}},
+   "Friend": {"allOf": [{"$ref": "#/components/schemas/Account"}, {"type": "object", "properties": {"presence": {"$ref": "#/components/schemas/Presence"}}}]},
+   "FriendsList": {"type": "object", "required": ["friends", "incoming", "outgoing"], "properties": {
+    "friends": {"type": "array", "items": {"$ref": "#/components/schemas/Friend"}},
+    "incoming": {"type": "array", "items": {"$ref": "#/components/schemas/Account"}},
+    "outgoing": {"type": "array", "items": {"$ref": "#/components/schemas/Account"}},
+    "blocked": {"type": "array", "items": {"$ref": "#/components/schemas/Account"}}}},
+   "FriendState": {"type": "object", "required": ["ok", "state"], "properties": {"ok": {"type": "boolean"}, "state": {"type": "string", "enum": ["none", "requested", "friends"]}}},
+   "Username": {"type": "object", "required": ["username"], "additionalProperties": false, "properties": {"username": {"type": "string", "pattern": "^[A-Za-z0-9_]{3,20}$"}}},
+   "PresenceList": {"type": "object", "required": ["friends"], "properties": {"friends": {"type": "array", "items": {
+    "type": "object", "required": ["username", "presence"], "properties": {"username": {"type": "string"}, "presence": {"$ref": "#/components/schemas/Presence"}}}}}},
+   "PresenceUpdate": {"type": "object", "required": ["status"], "additionalProperties": false, "properties": {
+    "status": {"type": "string", "enum": ["online", "away", "busy", "playing", "offline"]},
+    "game": {"type": ["string", "null"], "enum": ["RC", "MC", "RB", "PX", "", null]},
+    "detail": {"type": ["string", "null"], "maxLength": 64}, "joinable": {"type": "boolean"}}},
+   "PresenceSaved": {"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}, "ttl": {"type": "integer"}}},
+   "Invite": {"type": "object", "required": ["id", "game", "target", "state"], "properties": {
+    "id": {"type": "string"}, "game": {"type": "string"}, "target": {"type": "string"}, "created": {"type": "number"},
+    "expires": {"type": "number"}, "state": {"type": "string"}, "from": {"type": "string"}, "to": {"type": "string"}}},
+   "InviteList": {"type": "object", "required": ["incoming"], "properties": {
+    "incoming": {"type": "array", "items": {"$ref": "#/components/schemas/Invite"}}, "outgoing": {"type": "array", "items": {"$ref": "#/components/schemas/Invite"}}}},
+   "InviteCreate": {"type": "object", "required": ["to", "game", "target"], "additionalProperties": false, "properties": {
+    "to": {"type": "string", "pattern": "^[A-Za-z0-9_]{3,20}$"}, "game": {"type": "string", "enum": ["RC", "MC", "RB"]},
+    "target": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"}}},
+   "InviteSent": {"type": "object", "required": ["ok", "id"], "properties": {"ok": {"type": "boolean"}, "id": {"type": "string"}, "expires": {"type": "number"}}},
+   "NewsItem": {"type": "object", "required": ["id", "title", "body", "created"], "properties": {
+    "id": {"type": "string"}, "title": {"type": "string"}, "body": {"type": "string"}, "game": {"type": ["string", "null"]},
+    "author": {"type": ["string", "null"]}, "created": {"type": "number"}, "pinned": {"type": "boolean"}}},
+   "NewsList": {"type": "object", "required": ["news"], "properties": {"news": {"type": "array", "items": {"$ref": "#/components/schemas/NewsItem"}}}},
+   "StateCounts": {"type": "object", "properties": {
+    "planned": {"type": "integer"}, "implemented": {"type": "integer"}, "tested": {"type": "integer"},
+    "accepted": {"type": "integer"}, "released": {"type": "integer"}}},
+   "Game": {"type": "object", "required": ["id", "name", "role", "roadmap", "servers", "service"], "properties": {
+    "id": {"$ref": "#/components/schemas/GameId"}, "name": {"type": "string"}, "role": {"type": "string"},
+    "roadmap": {"$ref": "#/components/schemas/StateCounts"},
+    "servers": {"type": "object", "required": ["online", "players"], "properties": {
+     "online": {"type": "integer"}, "players": {"type": "integer"}, "updated": {"type": ["number", "null"]}}},
+    "service": {"type": "object", "required": ["status"], "properties": {
+     "status": {"type": "string", "enum": ["up", "down", "unknown"]}, "checked": {"type": ["number", "null"]}}},
+    "release": {"type": ["object", "null"], "properties": {"channel": {"type": "string"}, "component": {"type": "string"}, "version": {"type": "string"}}}}},
+   "GameList": {"type": "object", "required": ["games"], "properties": {"games": {"type": "array", "items": {"$ref": "#/components/schemas/Game"}}}},
+   "RevivalId": {
+    "type": "string",
+    "pattern": "^[a-z0-9]{2,20}$"
+   },
+   "Revival": {
+    "type": "object",
+    "required": ["id", "name", "blurb", "era", "platforms", "invite", "website", "status", "version", "discord", "trend", "peak_24h", "players", "players_trend", "players_peak_24h", "meta"],
+    "properties": {"id": {"$ref": "#/components/schemas/RevivalId"}, "name": {"type": "string"}, "blurb": {"type": "string"}, "era": {"type": "string", "description": "Rec Room years it runs, when known; empty otherwise."}, "platforms": {"type": "string"}, "invite": {"type": ["string", "null"], "format": "uri"}, "website": {"type": ["string", "null"], "format": "uri"}, "status": {"type": "string", "enum": ["answering", "not_answering", "community", "invite_gone", "unknown"], "description": "answering / not_answering: the revival's own public address was checked in the last minute. community: no server check, its Discord is live. invite_gone: its Discord invite was deleted. unknown: nothing public to check."}, "version": {"type": ["string", "null"], "description": "Version its server reports, when it publishes one."}, "discord": {"type": ["object", "null"], "description": "From Discord's public invite data: people in its Discord, not players in game.", "required": ["online", "members"], "properties": {"online": {"type": "integer"}, "members": {"type": "integer"}, "guild": {"type": ["string", "null"]}, "description": {"type": ["string", "null"]}, "icon": {"type": ["string", "null"]}, "banner": {"type": ["string", "null"]}, "splash": {"type": ["string", "null"]}, "stale": {"type": "boolean"}}}, "trend": {"type": "array", "description": "Online in its Discord over the last 24 hours: [unix time, online], highest per half hour.", "items": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "integer"}], "minItems": 2, "maxItems": 2}}, "peak_24h": {"type": ["integer", "null"]}, "players": {"type": ["integer", "null"], "description": "Players in game, only where the revival publishes it without a sign-in (RecFlare: logged-in accounts online). Never a Discord number."}, "players_trend": {"type": "array", "description": "Players in game over the last 24 hours: [unix time, players], highest per half hour.", "items": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "integer"}], "minItems": 2, "maxItems": 2}}, "players_peak_24h": {"type": ["integer", "null"]}, "meta": {"type": ["object", "null"], "description": "Its Meta Quest store page: url, and when read rating (stars), ratings (count), version (build) and released (as the store shows it).", "required": ["url"], "properties": {"url": {"type": "string", "format": "uri"}, "rating": {"type": ["number", "null"]}, "ratings": {"type": ["integer", "null"]}, "version": {"type": ["string", "null"]}, "released": {"type": ["string", "null"]}}}}
+   },
+   "RevivalList": {
+    "type": "object",
+    "required": ["checked_at", "revivals", "totals"],
+    "properties": {"checked_at": {"type": "integer"}, "revivals": {"type": "array", "items": {"$ref": "#/components/schemas/Revival"}}, "totals": {"type": "object", "required": ["revivals", "with_numbers", "online", "members", "answering", "in_game", "with_players"], "properties": {"revivals": {"type": "integer"}, "with_numbers": {"type": "integer"}, "online": {"type": "integer"}, "members": {"type": "integer"}, "answering": {"type": "integer"}, "in_game": {"type": "integer"}, "with_players": {"type": "integer"}}}}
+   },
+   "RevivalNewsList": {
+    "type": "object", "required": ["items", "sources", "checked_at"],
+    "properties": {"sources": {"type": "integer"}, "checked_at": {"type": "integer"}, "items": {"type": "array", "items": {"type": "object", "required": ["revival", "source", "title", "date", "link", "image"], "properties": {"revival": {"$ref": "#/components/schemas/RevivalId"}, "source": {"type": "string"}, "title": {"type": "string"}, "date": {"type": ["integer", "null"]}, "link": {"type": "string", "format": "uri"}, "image": {"type": ["string", "null"]}}}}}
+   },
+   "ChannelComponent": {"type": "object", "required": ["name", "version"], "properties": {
+    "name": {"type": "string"}, "version": {"type": "string"}, "platform": {"type": "string"}, "released": {"type": "string"},
+    "notes": {"type": "string"}, "min_launcher": {"type": "string"}, "size": {"type": "integer", "description": "Installed size in bytes"},
+    "installer": {"type": ["object", "null"], "properties": {"path": {"type": "string"}, "size": {"type": "integer"}, "sha256": {"type": "string"}}}}},
+   "Channel": {"type": "object", "required": ["channel", "sequence", "issued", "expires", "verified", "components"], "properties": {
+    "channel": {"type": "string"}, "sequence": {"type": "integer"}, "issued": {"type": "string"}, "expires": {"type": "string"},
+    "verified": {"const": true}, "signed_by": {"type": "string"},
+    "components": {"type": "array", "items": {"$ref": "#/components/schemas/ChannelComponent"}}}},
+   "ChannelList": {"type": "object", "required": ["channels"], "properties": {"channels": {"type": "array", "items": {
+    "type": "object", "required": ["channel", "state"], "properties": {
+     "channel": {"type": "string"}, "state": {"type": "string", "enum": ["ok", "unverified", "missing", "expired"]},
+     "sequence": {"type": ["integer", "null"]}, "detail": {"type": "string"}}}}}},
+   "ProgressProject": {"type": "object", "required": ["id", "name", "states", "items"], "properties": {
+    "id": {"type": "string"}, "name": {"type": "string"}, "role": {"type": "string"}, "states": {"$ref": "#/components/schemas/StateCounts"},
+    "total": {"type": "integer"}, "updated": {"type": "string"}, "items": {"type": "array", "items": {"type": "object"}}}},
+   "Progress": {"type": "object", "required": ["schema", "generated", "projects"], "properties": {
+    "schema": {"const": 1}, "generated": {"type": "string"}, "mode": {"const": "public"},
+    "projects": {"type": "array", "items": {"$ref": "#/components/schemas/ProgressProject"}}, "changelog": {"type": "array"}}},
+   "ProjectStatus": {"type": "object", "required": ["id", "name", "states"], "properties": {
+    "id": {"type": "string", "enum": ["litha", "star"]}, "name": {"type": "string"}, "states": {"$ref": "#/components/schemas/StateCounts"},
+    "next": {"type": "array", "items": {"type": "string"}, "description": "Titles of items not yet tested"},
+    "live": {"type": ["object", "null"], "properties": {"status": {"type": "string", "enum": ["up", "down", "unknown"]}, "checked": {"type": ["number", "null"]}}},
+    "release": {"type": ["object", "null"], "properties": {"channel": {"type": "string"}, "version": {"type": "string"}}}}},
+   "ProjectStatusList": {"type": "object", "required": ["projects"], "properties": {"projects": {"type": "array", "items": {"$ref": "#/components/schemas/ProjectStatus"}}}},
+   "Heartbeat": {"type": "object", "required": ["game", "server_id", "players"], "additionalProperties": false, "properties": {
+    "game": {"$ref": "#/components/schemas/GameId"}, "server_id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"},
+    "players": {"type": "integer", "minimum": 0, "maximum": 100000}, "max_players": {"type": "integer", "minimum": 0, "maximum": 100000},
+    "version": {"type": "string", "maxLength": 32}}},
+   "ServerEvent": {"type": "object", "required": ["type", "game", "server_id"], "additionalProperties": false, "properties": {
+    "type": {"type": "string", "enum": ["player.joined", "player.left"]}, "game": {"$ref": "#/components/schemas/GameId"},
+    "server_id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"},
+    "player_token": {"type": "string", "maxLength": 4096, "description": "The player's Metallic sign-in token (optional)"},
+    "player_ref": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$", "description": "Your own opaque player id. Never a name."},
+    "players": {"type": "integer", "minimum": 0, "maximum": 100000}}},
+   "EventAccepted": {"type": "object", "required": ["ok", "event_id", "deliveries"], "properties": {
+    "ok": {"type": "boolean"}, "event_id": {"type": "string"}, "deliveries": {"type": "integer"}}},
+   "PlayerVerifyRequest": {"type": "object", "required": ["player_token"], "additionalProperties": false, "properties": {"player_token": {"type": "string", "maxLength": 4096}}},
+   "PlayerInfo": {"type": "object", "required": ["active"], "properties": {
+    "active": {"type": "boolean"}, "id": {"type": "string"}, "username": {"type": ["string", "null"]}, "minor": {"type": "boolean"}}},
+   "Webhook": {"type": "object", "required": ["id", "url", "events", "created", "active"], "properties": {
+    "id": {"type": "string"}, "url": {"type": "string"}, "events": {"type": "array", "items": {"type": "string"}},
+    "description": {"type": "string"}, "created": {"type": "number"}, "active": {"type": "boolean"}}},
+   "WebhookCreate": {"type": "object", "required": ["url", "events"], "additionalProperties": false, "properties": {
+    "url": {"type": "string", "format": "uri", "maxLength": 512},
+    "events": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "enum": ["player.joined", "player.left", "release.published", "friend.added", "ping"]}},
+    "description": {"type": "string", "maxLength": 120}}},
+   "WebhookCreated": {"allOf": [{"$ref": "#/components/schemas/Webhook"}, {"type": "object", "required": ["secret"], "properties": {"secret": {"type": "string", "pattern": "^whsec_"}}}]},
+   "WebhookList": {"type": "object", "required": ["webhooks"], "properties": {"webhooks": {"type": "array", "items": {"$ref": "#/components/schemas/Webhook"}}}},
+   "Delivery": {"type": "object", "required": ["id", "event", "event_id", "attempt", "status"], "properties": {
+    "id": {"type": "string"}, "event": {"type": "string"}, "event_id": {"type": "string"}, "attempt": {"type": "integer"},
+    "status": {"type": "string", "enum": ["pending", "delivered", "retrying", "failed"]},
+    "http_status": {"type": ["integer", "null"]}, "error": {"type": ["string", "null"]},
+    "created": {"type": "number"}, "next_attempt": {"type": ["number", "null"]}, "delivered": {"type": ["number", "null"]}}},
+   "DeliveryList": {"type": "object", "required": ["deliveries"], "properties": {"deliveries": {"type": "array", "items": {"$ref": "#/components/schemas/Delivery"}}}},
+   "Key": {"type": "object", "required": ["id", "name", "scopes", "games", "rate_per_minute", "created", "revoked"], "properties": {
+    "id": {"type": "string"}, "name": {"type": "string"}, "scopes": {"type": "array", "items": {"type": "string"}},
+    "games": {"type": "array", "items": {"$ref": "#/components/schemas/GameId"}}, "rate_per_minute": {"type": "integer"},
+    "created": {"type": "number"}, "last_used": {"type": ["number", "null"]}, "revoked": {"type": "boolean"}}},
+   "KeyCreate": {"type": "object", "required": ["name", "scopes"], "additionalProperties": false, "properties": {
+    "name": {"type": "string", "pattern": "^[A-Za-z0-9 ._-]{1,48}$"},
+    "scopes": {"type": "array", "minItems": 1, "items": {"type": "string", "enum": ["servers:write", "players:read", "webhooks:manage"]}},
+    "games": {"type": "array", "items": {"$ref": "#/components/schemas/GameId"}},
+    "rate_per_minute": {"type": "integer", "minimum": 1, "maximum": 6000}}},
+   "KeyCreated": {"allOf": [{"$ref": "#/components/schemas/Key"}, {"type": "object", "required": ["secret"], "properties": {"secret": {"type": "string", "pattern": "^msk_"}}}]},
+   "KeyList": {"type": "object", "required": ["keys"], "properties": {"keys": {"type": "array", "items": {"$ref": "#/components/schemas/Key"}}}},
+   "EventEnvelope": {"type": "object", "required": ["id", "type", "created", "data"], "description": "Every webhook body. Headers: `Metallic-Event`, `Metallic-Delivery`, `Metallic-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, t + \".\" + body)>`. Reject a signature older than 5 minutes; deliveries are retried, so de-duplicate on `id`.", "properties": {
+    "id": {"type": "string"}, "type": {"type": "string"}, "created": {"type": "number"}, "data": {"type": "object"}}},
+   "PlayerEventPayload": {"allOf": [{"$ref": "#/components/schemas/EventEnvelope"}, {"type": "object", "properties": {"data": {"type": "object", "required": ["game", "server_id", "player"], "properties": {
+    "game": {"$ref": "#/components/schemas/GameId"}, "server_id": {"type": "string"}, "players": {"type": ["integer", "null"]},
+    "player": {"type": "object", "properties": {"account_id": {"type": ["string", "null"]}, "username": {"type": ["string", "null"], "description": "Adults only"}, "minor": {"type": ["boolean", "null"]}, "ref": {"type": ["string", "null"]}}}}}}}]},
+   "ReleaseEventPayload": {"allOf": [{"$ref": "#/components/schemas/EventEnvelope"}, {"type": "object", "properties": {"data": {"type": "object", "required": ["channel", "sequence", "components"], "properties": {
+    "channel": {"type": "string"}, "sequence": {"type": "integer"},
+    "components": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "version": {"type": "string"}}}}}}}}]},
+   "FriendEventPayload": {"allOf": [{"$ref": "#/components/schemas/EventEnvelope"}, {"type": "object", "properties": {"data": {"type": "object", "required": ["accounts"], "properties": {
+    "accounts": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string"}}}}}}]}
+  }
+ }
+}

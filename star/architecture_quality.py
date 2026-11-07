@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 import struct
 
+from .scene_integrity import audit_scene, audit_scene_contract, audit_shell_blueprint
+
 _MAX_PARTS = 2500
 _MAX_TRIANGLES = 100_000
 _MAX_GLB_BYTES = 64 * 1024 * 1024
@@ -100,12 +102,22 @@ def audit_plan(plan: object) -> dict:
                                ("material_groups", metrics["material_groups"])):
             if supplied.get(key) != generated:
                 errors.append(f"Metric mismatch: {key}")
+    scene = audit_scene(plan.get("parts")) if isinstance(plan, dict) else None
+    blueprint = audit_shell_blueprint(plan)
+    contract = audit_scene_contract(plan)
+    for gate in (scene, blueprint, contract):
+        if gate is not None:
+            errors.extend(f"{item['code']}: {', '.join(item['parts'])}: {item['message']}"
+                          for item in gate["issues"])
     return {
         "valid": not errors,
         "status": "blocked" if errors else "static_checks_passed_visual_review_required",
         "metrics": metrics,
         "errors": errors,
         "warnings": warnings,
+        "scene_integrity": scene,
+        "blueprint_integrity": blueprint,
+        "scene_contract": contract,
     }
 
 

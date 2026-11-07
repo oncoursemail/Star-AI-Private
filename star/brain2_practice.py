@@ -336,6 +336,8 @@ def main(argv=None) -> int:
     parser.add_argument("--plan", type=Path, required=True, help="Operator-authored manifest outside project source")
     parser.add_argument("--home", type=Path, required=True, help="Existing STAR private data directory")
     parser.add_argument("--run", action="store_true", help="Authorize Saved-version publish and Luau tests")
+    parser.add_argument("--suggest-learning", action="store_true",
+                        help="Read-only recommendations from independently verified practice history")
     parser.add_argument("--cycles", type=int, default=1, help="1-12 bounded cycles; no infinite loops")
     parser.add_argument("--acknowledge", type=int, help="After independently checking an unknown run, unblock this ID")
     args = parser.parse_args(argv)
@@ -343,8 +345,18 @@ def main(argv=None) -> int:
         parser.error("--home must be absolute and --cycles must be 1-12")
     if args.acknowledge is not None and args.run:
         parser.error("Acknowledgement and testing must be separate operator actions")
+    if args.suggest_learning and (args.run or args.acknowledge is not None):
+        parser.error("Suggestions must be separate from writes and acknowledgement")
     try:
         plan = PracticePlan.load(args.plan)
+        if args.suggest_learning:
+            # Preview only. Do not instantiate PracticeLedger (it creates a DB),
+            # RobloxCloud, or an agent tool; do not execute any practice.
+            from .learning_accelerator import recommend_from_ledger
+            result = recommend_from_ledger(args.home / "brain2-practice.sqlite3",
+                                           plan.project, target=plan.target)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
         ledger = PracticeLedger(args.home / "brain2-practice.sqlite3")
         try:
             if args.acknowledge is not None:

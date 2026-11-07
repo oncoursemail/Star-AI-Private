@@ -29,7 +29,7 @@ it('only enables worked-example retrieval after a saved opt-in, and preserves re
  const view=render(<App/>)
  await screen.findByRole('textbox',{name:/message star/i})
  await user.click(screen.getByRole('button',{name:/^settings/i}))
- await user.click(await screen.findByRole('tab',{name:'Knowledge & search'}))
+ await user.click(await screen.findByRole('tab',{name:'Advanced'}))
  const option=screen.getByRole('checkbox',{name:'Use checked practice examples'}) as HTMLInputElement
  expect(option.checked).toBe(false)
  expect(screen.getByText(/untrusted local references, never training data/)).toBeTruthy()
@@ -43,7 +43,7 @@ it('only enables worked-example retrieval after a saved opt-in, and preserves re
  const again=render(<App/>)
  await screen.findByRole('textbox',{name:/message star/i})
  await user.click(screen.getByRole('button',{name:/^settings/i}))
- await user.click(await screen.findByRole('tab',{name:'Knowledge & search'}))
+ await user.click(await screen.findByRole('tab',{name:'Advanced'}))
  const stored=screen.getByRole('checkbox',{name:'Use checked practice examples'}) as HTMLInputElement
  expect(stored.checked).toBe(true)
  await user.click(stored)

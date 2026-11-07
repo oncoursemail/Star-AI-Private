@@ -1,0 +1,99 @@
+{
+  "node": "",
+  "llama_server": "engine/llama-server.exe",
+  "model_path": "models/gemma-4-12b-it-qat-q4_0.gguf",
+  "model_id": "litha-fast",
+  "ctx": 4096,
+  "llama_args": [
+    "-lm",
+    "none",
+    "--fit",
+    "off",
+    "-ngl",
+    "99",
+    "-fa",
+    "on",
+    "-ctk",
+    "q4_0",
+    "-ctv",
+    "q4_0",
+    "-np",
+    "2",
+    "-kvu",
+    "-b",
+    "512",
+    "-ub",
+    "128",
+    "-t",
+    "4",
+    "--jinja",
+    "--reasoning",
+    "off"
+  ],
+  "autoload": true,
+  "resume_seconds": 180,
+  "poll_seconds": 2.5,
+  "ngl_ladder": [
+    [
+      100,
+      7300,
+      "mtp"
+    ],
+    [
+      47,
+      7170,
+      "mtp"
+    ],
+    [
+      99,
+      7130
+    ],
+    [
+      46,
+      7050,
+      "mtp"
+    ],
+    [
+      47,
+      6900
+    ],
+    [
+      46,
+      6770
+    ],
+    [
+      44,
+      6520
+    ],
+    [
+      43,
+      6400
+    ],
+    [
+      42,
+      6275
+    ],
+    [
+      41,
+      6150
+    ],
+    [
+      40,
+      6025
+    ]
+  ],
+  "vram_reserve_mb": 150,
+  "min_free_loaded_mb": 100,
+  "step_args": {
+    "mtp": [
+      "--model-draft",
+      "models/mtp-gemma-4-12B-it-qat-Q4_0.gguf",
+      "--spec-type",
+      "draft-mtp",
+      "--spec-draft-n-max",
+      "4",
+      "-ngld",
+      "99"
+    ]
+  }
+}

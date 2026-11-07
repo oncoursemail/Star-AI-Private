@@ -18,10 +18,10 @@ it('starts off, explains itself and is saved only with Save settings',async()=>{
  render(<App/>)
  await screen.findByRole('textbox',{name:/message star/i})
  await user.click(screen.getByRole('button',{name:/^settings/i}))
- await user.click(await screen.findByRole('tab',{name:'Roblox & Studio'}))
+ await user.click(await screen.findByRole('tab',{name:'Advanced'}))
  const box=screen.getByRole('checkbox',{name:'Find guidance packs by meaning'}) as HTMLInputElement
  expect(box.checked).toBe(false)
- expect(screen.getByText(/Falls back to word matching/)).toBeTruthy()
+ expect(screen.getByText(/falls back to word matching/)).toBeTruthy()
  await user.click(box)
  expect(saves).toHaveLength(0)
  await user.click(screen.getByRole('button',{name:'Save settings'}))
