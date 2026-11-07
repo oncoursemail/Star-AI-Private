@@ -21,6 +21,7 @@ from typing import Callable
 
 from .stream_director import StreamSignal
 from .stream_episode import EpisodePacket
+from .stream_continuity import ContinuityPacket
 from .stream_knowledge import KnowledgePacket
 from .stream_hardware_telemetry import LiveHostSample, RealtimeTelemetryHost
 from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
@@ -160,6 +161,24 @@ class StreamBrainGovernor:
         # reports its actual sample time. QoS enforces the tighter live limit.
         return sample
 
+    def refresh_game_guard(self) -> bool:
+        """Forward a trusted, fresh telemetry heartbeat to the QoS latch.
+
+        A live renderer can recover while Star remains silent: do not require
+        speculative speech requests merely to measure sustained healthy FPS.
+        The embedding host still owns OS probes and actual frame presents.
+        """
+        with self._lock:
+            if not self._enabled:
+                return False
+            sample = self._sample()
+            if sample is None:
+                return False
+            assert sample.qos is not None
+            return self._qos.observe_telemetry(
+                sample.qos, now_ms=_now(self._clock)
+            )
+
     def admit(self, job: InferenceJob) -> BrainAdmission:
         """Advisory one-shot reservation. Host executes only its allowed tools."""
         if not isinstance(job, InferenceJob):
@@ -244,6 +263,7 @@ class StreamBrainGovernor:
         turn: TurnAdvice | None = None,
         knowledge: KnowledgePacket | None = None,
         episode: EpisodePacket | None = None,
+        continuity: ContinuityPacket | None = None,
     ) -> StagePlan | None:
         """Propose contextual speech only with fresh trusted hardware data.
 
@@ -255,6 +275,8 @@ class StreamBrainGovernor:
             raise TypeError("expected reviewed KnowledgePacket")
         if episode is not None and not isinstance(episode, EpisodePacket):
             raise TypeError("expected verified EpisodePacket")
+        if continuity is not None and not isinstance(continuity, ContinuityPacket):
+            raise TypeError("expected verified ContinuityPacket")
         with self._lock:
             if not self._enabled:
                 return None
@@ -268,6 +290,7 @@ class StreamBrainGovernor:
                 viewer_speaking=viewer_speaking,
                 gameplay_critical=gameplay_critical,
                 turn=turn, knowledge=knowledge, episode=episode,
+                continuity=continuity,
             )
             if plan is not None:
                 self._counts["speech_prepared"] += 1
@@ -373,6 +396,16 @@ class StreamBrainGovernor:
             self._speech_binding = None
             self._counts["audio_interrupted"] += 1
             return True
+
+    def session_generation(self) -> int:
+        """Session-scoped host token, invalid after disable/re-enable."""
+        with self._lock:
+            return self._generation if self._enabled else -1
+
+    def prepared_plan(self, plan: StagePlan) -> bool:
+        """Only the exact active, unqueued StagePlan may consume a preview."""
+        with self._lock:
+            return self._enabled and self._stage.prepared(plan)
 
     def status(self) -> dict[str, object]:
         """Anonymous health counters only, never audience or prompt contents."""
