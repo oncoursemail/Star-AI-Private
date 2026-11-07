@@ -202,6 +202,15 @@ def test_wrong_precommit_rejected(tmp_path):
         make_bytes() + b" " * (1_048_577),
         b"\xff\n" + make_bytes(),
     ],
+    ids=(
+        "empty",
+        "empty-object",
+        "nonterminated-object",
+        "missing-final-newline",
+        "extra-blank-line",
+        "oversized-file",
+        "non-ascii",
+    ),
 )
 def test_invalid_or_truncated_file_rejected(tmp_path, data):
     path, root, digest = create_case(tmp_path, data)
