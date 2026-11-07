@@ -24,6 +24,54 @@ internal static class Program
     private static long _lastPacketTicks;
     private static int _peakMilli;
 
+    // Per-interval activity is a diagnostic only. A zero-callback interval
+    // means *missing PCM observation*, never confirmed digital or physical silence.
+    // Capture callbacks never block on disk I/O or console output.
+    private static readonly object WindowGate = new();
+    private static long _windowStartTicks = Stopwatch.GetTimestamp();
+    private static long _windowCallbacks;
+    private static long _windowFrames;
+    private static long _windowSamples;
+    private static double _windowSumSquares;
+    private static int _windowPeakMilli;
+
+    private sealed record ActivityWindow(
+        long SpanMs, long Callbacks, long Frames, int? PeakMilli, int? RmsMilli);
+
+    // Capture the current interval and cumulative counters *under one lock*.
+    // Otherwise a native audio callback between TakeActivityWindow() and
+    // Interlocked.Read() could make a valid JSON interval contradict its totals.
+    // The external rehearsal verifier requires coherent deltas.
+    private sealed record ActivitySnapshot(
+        ActivityWindow Window, long TotalCallbacks, long TotalFrames,
+        int MaxPeakMilli, long LastPacketTicks);
+
+    private static ActivitySnapshot TakeActivitySnapshot()
+    {
+        lock (WindowGate)
+        {
+            long now = Stopwatch.GetTimestamp();
+            long span = Math.Max(0L, (long)Stopwatch.GetElapsedTime(_windowStartTicks, now).TotalMilliseconds);
+            int? peak = _windowSamples > 0 ? _windowPeakMilli : null;
+            int? rms = _windowSamples > 0
+                ? (int)Math.Clamp(Math.Round(Math.Sqrt(_windowSumSquares / _windowSamples) * 1000.0), 0, 1000)
+                : null;
+            var result = new ActivitySnapshot(
+                new ActivityWindow(span, _windowCallbacks, _windowFrames, peak, rms),
+                Interlocked.Read(ref _callbacks), Interlocked.Read(ref _frames),
+                Volatile.Read(ref _peakMilli), Volatile.Read(ref _lastPacketTicks));
+            _windowStartTicks = now;
+            _windowCallbacks = 0;
+            _windowFrames = 0;
+            _windowSamples = 0;
+            _windowSumSquares = 0;
+            _windowPeakMilli = 0;
+            return result;
+        }
+    }
+
+    private static ActivityWindow TakeActivityWindow() => TakeActivitySnapshot().Window;
+
     private static Options Parse(string[] args)
     {
         if (args.Length != 7 || args[0] != "--observe")
@@ -49,7 +97,9 @@ internal static class Program
 
     private static void Emit(string state, long elapsedMs = 0)
     {
-        long last = Volatile.Read(ref _lastPacketTicks);
+        ActivitySnapshot snapshot = TakeActivitySnapshot();
+        ActivityWindow activity = snapshot.Window;
+        long last = snapshot.LastPacketTicks;
         long age = last == 0 ? -1L :
             Math.Max(0L, (long)Stopwatch.GetElapsedTime(last).TotalMilliseconds);
         // No process identifiers, filenames, audio bytes, transcripts, paths or keys.
@@ -58,11 +108,18 @@ internal static class Program
             schema = "star.process_loopback.diagnostic.v1",
             state,
             elapsed_ms = elapsedMs,
-            callback_generation = Interlocked.Read(ref _callbacks),
-            sample_frames = Interlocked.Read(ref _frames),
+            callback_generation = snapshot.TotalCallbacks,
+            sample_frames = snapshot.TotalFrames,
             bad_packets = Interlocked.Read(ref _badPackets),
-            max_peak_milli = Volatile.Read(ref _peakMilli),
+            max_peak_milli = snapshot.MaxPeakMilli,
             last_callback_age_ms = age,
+            activity_window_ms = activity.SpanMs,
+            activity_callbacks = activity.Callbacks,
+            activity_sample_frames = activity.Frames,
+            // Null means no PCM samples arrived, NOT a zero-volume reading.
+            activity_peak_milli = activity.PeakMilli,
+            activity_rms_milli = activity.RmsMilli,
+            activity_is_audio_observation_only = true,
             verified_silence = false,
             gameplay_authorized = false,
             broadcast_authorized = false
@@ -78,6 +135,7 @@ internal static class Program
         }
         ReadOnlySpan<float> samples = MemoryMarshal.Cast<byte, float>(buffer);
         int peak = 0;
+        double squares = 0;
         foreach (float sample in samples)
         {
             if (!float.IsFinite(sample))
@@ -85,17 +143,25 @@ internal static class Program
                 Interlocked.Increment(ref _badPackets);
                 return;
             }
-            peak = Math.Max(peak, (int)MathF.Min(1000.0f, MathF.Abs(sample) * 1000.0f));
+            float magnitude = MathF.Min(1.0f, MathF.Abs(sample));
+            peak = Math.Max(peak, (int)(magnitude * 1000.0f));
+            squares += (double)magnitude * magnitude;
         }
-        int old;
-        do
+        lock (WindowGate)
         {
-            old = Volatile.Read(ref _peakMilli);
-            if (peak <= old) break;
-        } while (Interlocked.CompareExchange(ref _peakMilli, peak, old) != old);
-        Interlocked.Add(ref _frames, samples.Length / 2);
-        Volatile.Write(ref _lastPacketTicks, Stopwatch.GetTimestamp());
-        Interlocked.Increment(ref _callbacks);
+            _windowCallbacks++;
+            _windowFrames += samples.Length / 2;
+            _windowSamples += samples.Length;
+            _windowSumSquares += squares;
+            _windowPeakMilli = Math.Max(_windowPeakMilli, peak);
+            if (peak > _peakMilli)
+                Volatile.Write(ref _peakMilli, peak);
+            // Keep cumulative counters no older than their corresponding
+            // interval bucket, even when Emit races with the audio callback.
+            Interlocked.Add(ref _frames, samples.Length / 2);
+            Volatile.Write(ref _lastPacketTicks, Stopwatch.GetTimestamp());
+            Interlocked.Increment(ref _callbacks);
+        }
     }
 
     private static bool SameProcess(Process process, DateTime originalStartUtc, string expectedExe)
@@ -140,10 +206,53 @@ internal static class Program
             if (Interlocked.Read(ref _callbacks) != 1 || Interlocked.Read(ref _frames) != 2 ||
                 Volatile.Read(ref _peakMilli) != 750 || Volatile.Read(ref _lastPacketTicks) == 0)
                 return 1;
+            ActivitySnapshot snapshot = TakeActivitySnapshot();
+            ActivityWindow activity = snapshot.Window;
+            if (snapshot.TotalCallbacks != 1 || snapshot.TotalFrames != 2 ||
+                snapshot.MaxPeakMilli != 750 || snapshot.LastPacketTicks == 0 ||
+                activity.Callbacks != 1 || activity.Frames != 2 ||
+                activity.PeakMilli != 750 || activity.RmsMilli != 468)
+                return 1;
+            ActivityWindow empty = TakeActivityWindow();
+            if (empty.Callbacks != 0 || empty.Frames != 0 ||
+                empty.PeakMilli is not null || empty.RmsMilli is not null)
+                return 1;
             AcceptPacket(MemoryMarshal.AsBytes(new float[] { float.NaN, 0f }.AsSpan()));
             if (Interlocked.Read(ref _badPackets) != 1 || Interlocked.Read(ref _callbacks) != 1)
                 return 1;
-            Console.WriteLine("{\"self_test\":\"pass\",\"capture_started\":false}");
+            ActivityWindow invalid = TakeActivityWindow();
+            if (invalid.Callbacks != 0 || invalid.RmsMilli is not null)
+                return 1;
+
+            // Deterministically test the accounting invariant under concurrent
+            // packet ingestion. It used to be possible for Emit() to observe
+            // a new cumulative callback after resetting the activity bucket.
+            // No OS/device capture is started for this synthetic stress test.
+            long previousCallbacks = Interlocked.Read(ref _callbacks);
+            long previousFrames = Interlocked.Read(ref _frames);
+            byte[] synthetic = MemoryMarshal.AsBytes(
+                new float[] { 0.1f, -0.2f }.AsSpan()).ToArray();
+            var writer = Task.Run(() =>
+            {
+                for (int i = 0; i < 2048; ++i)
+                    AcceptPacket(synthetic);
+            });
+            for (int i = 0; i < 2048; ++i)
+            {
+                ActivitySnapshot concurrent = TakeActivitySnapshot();
+                if (concurrent.TotalCallbacks - previousCallbacks != concurrent.Window.Callbacks ||
+                    concurrent.TotalFrames - previousFrames != concurrent.Window.Frames)
+                    return 1;
+                previousCallbacks = concurrent.TotalCallbacks;
+                previousFrames = concurrent.TotalFrames;
+            }
+            writer.GetAwaiter().GetResult();
+            ActivitySnapshot trailing = TakeActivitySnapshot();
+            if (trailing.TotalCallbacks - previousCallbacks != trailing.Window.Callbacks ||
+                trailing.TotalFrames - previousFrames != trailing.Window.Frames ||
+                trailing.TotalCallbacks != 2049 || trailing.TotalFrames != 2050)
+                return 1;
+            Console.WriteLine("{\"self_test\":\"pass\",\"capture_started\":false,\"activity_window_tested\":true,\"missing_pcm_means_unknown\":true,\"atomic_activity_windows_tested\":true}");
             return 0;
         }
         catch { return 1; }
@@ -179,6 +288,7 @@ internal static class Program
                 .WithFormat(WaveFormat.CreateIeeeFloatWaveFormat(48000, 2))
                 .BuildAsync();
             recorder.DataAvailable += (buffer, _, _, _) => AcceptPacket(buffer);
+            _ = TakeActivityWindow(); // Reset at owner-invoked recording start.
             recorder.StartRecording();
             var clock = Stopwatch.StartNew();
             Emit("capture_started");

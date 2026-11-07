@@ -25,7 +25,13 @@ dotnet tools/star-process-loopback/bin/Release/net9.0/Star.ProcessLoopback.dll -
 dotnet tools/star-process-loopback/bin/Release/net9.0/Star.ProcessLoopback.dll --observe --pid <StarVoicePID> --expect-exe StarVoice.exe --duration-ms 1200
 ```
 
-This observes only the target voice **process tree** for 300–5000 ms and emits sanitized newline-delimited JSON. The `max_peak_milli` is a diagnostic peak (0–1000), not loudness in dB, recognition quality, audible output identity, speech presence, or calibrated threshold. It never drives input or starts OBS/voice. No PCM is written. A native callback may **stop firing when the process is silent**; no callback does *not* prove quietness. Process exit, PID/creation-time mismatch, malformed PCM, unsupported Windows or audio activation failure produces nonzero exit or `capture_invalid`. Do not reuse a stale successful run after an audio route/worker restart.
+This observes only the target voice **process tree** for 300–5000 ms and emits sanitized newline-delimited JSON. The `max_peak_milli` is a diagnostic peak (0–1000), not loudness in dB, recognition quality, audible output identity, speech presence, or calibrated threshold. It never drives input or starts OBS/voice. No PCM is written. A native callback may **stop firing when the process is silent**; no callback does *not* prove quietness.
+
+Each emitted JSON record now also reports a **local per-interval activity window**: `activity_window_ms`, `activity_callbacks`, `activity_sample_frames`, `activity_peak_milli` and `activity_rms_milli`. Peak and RMS are amplitude indicators scaled from clamped floating-point PCM (0–1000), not calibrated sound-pressure levels. They reset between reports instead of retaining the peak of the entire recording. **If no PCM samples arrive, peak and RMS are null, not zero**—missing callbacks are not evidence of digital silence. A callback may cover a different period than the JSON polling interval, so these windows are arrival-time buckets, not sample-accurate synchronization, speech recognition or guaranteed end-to-end latency. The dedicated host still needs native packet-state, voice PID lifecycle, audio abort, OBS and avatar evidence. `verified_silence` remains false.
+
+Even though the CLI emits no audio bytes, its coarse activity timing can expose when the voice process was speaking. Keep the output local, ephemeral and private; do not forward the JSON to public chat, Discord, telemetry, a model prompt, or broadcast overlays. The new fields offer a **diagnostic before/after activity trace for owner-supervised rehearsal**, never playback-control authority.
+
+ Process exit, PID/creation-time mismatch, malformed PCM, unsupported Windows or audio activation failure produces nonzero exit or `capture_invalid`. Do not reuse a stale successful run after an audio route/worker restart.
 
 ## Real acceptance needed before integration
 
@@ -37,3 +43,43 @@ This observes only the target voice **process tree** for 300–5000 ms and emits
 No live process capture or Windows-native smoke test has yet been performed by this commit.
 
 Sources: [Microsoft process loopback](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_process_loopback_params), [NAudio 3 WasapiRecorder](https://naudio.github.io/NAudio/docs/WasapiRecorder.html), [NuGet NAudio.Wasapi 3.3.0](https://www.nuget.org/packages/NAudio.Wasapi/3.3.0).
+
+## Optional GitHub-hosted Windows packaging check
+
+The separate [Windows process-loopback smoke workflow](../../.github/workflows/star-process-loopback-windows.yml) uses an **ephemeral GitHub-hosted Windows runner**, never the owner's Windows PC. For a pull request touching this diagnostic it restores NAudio 3.3.0, builds a **self-contained Windows x64 single-file executable**, executes only `--self-test` and rejected argument paths (no valid `--observe` invocation), and uploads a **one-day retention** diagnostic artifact.
+
+The artifact includes `Star.ProcessLoopback.exe`, this README, and `manifest.json` containing the checked-out Git commit/tree, executable SHA-256, and explicit negative attestation fields for live capture, quiet-state verification, and permission to stream. Self-contained publishing eliminates the need to install .NET 9 on the target Windows machine; it does **not** eliminate Windows/NAudio requirements or attest native capture reliability.
+
+To inspect the artifact **without capturing anything**, extract into a fresh local directory, verify the executable's SHA-256 against `manifest.json`, and run:
+
+```powershell
+Get-FileHash .\Star.ProcessLoopback.exe -Algorithm SHA256
+.\Star.ProcessLoopback.exe --self-test
+```
+
+Do not run the `--observe` command on a general-use process. A real capture rehearsal requires an independently verified dedicated voice subprocess and owner-approved isolation; the artifact is a **diagnostic**, not a streaming executable or proof of silence. If the Windows workflow is queued, failing, or has never run, there is **no verified Windows executable** to claim yet.
+
+
+## Read-only Python JSONL integrity boundary (new)
+
+For a **private, owner-started diagnostic**, the local trusted host may instantiate
+the Python `star.process_loopback_activity.ProcessLoopbackActivityVerifier` with
+`owner_approved=True` and feed each complete UTF-8 JSON line from this
+native process's **authenticated, PID/start-time pinned stdout stream** to its
+`feed_line()` method. The parser validates monotonic cumulative callback
+and frame counts against each **atomic activity interval** and fails closed for
+malformed/reordered/duplicated/invalid messages. It rejects claims of silence,
+game authority, and broadcast permission. Missing PCM yields an *unknown*
+amplitude hint; it never manufactures a quiet period.
+
+Read `summary()` only after a normal native process exit and the
+`capture_complete_no_silence_claim` terminal event. The summary remains
+an advisory PRIVATE diagnostic, **not** an audio-quietness witness. The host
+must separately attest that capture remained process-isolated, native stop
+succeeded, the avatar returned neutral, OBS never broadcast, and the correct
+Windows speaker/monitor was independently observed. A model, chat message or
+webhook cannot supply native JSONL or assert these conditions.
+
+The `--self-test` now exercises atomic cross-thread activity-window
+accounting with synthetic float packets. It starts **no** Windows capture.
+See `docs/research/STAR_20261107_PROCESS_VOICE_ACTIVITY_INTEGRITY_AND_REALTIME_GENERALIST.md`.
