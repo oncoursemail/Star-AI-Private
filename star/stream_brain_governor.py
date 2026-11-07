@@ -21,9 +21,13 @@ from typing import Callable
 
 from .stream_director import StreamSignal
 from .stream_episode import EpisodePacket
+from .stream_continuity import ContinuityPacket
 from .stream_knowledge import KnowledgePacket
 from .stream_hardware_telemetry import LiveHostSample, RealtimeTelemetryHost
+from .memory_stall_guard import MemoryStallGuard
 from .stream_qos import AdaptiveQoS, InferenceJob, QoSDecision
+from .stream_host_model_catalog import HostInferenceCatalog
+from .stream_quality_route_selector import QualityGatedRouteSelector
 from .stream_stage import StagePlan, StarStage
 from .stream_turntaking import TurnAdvice
 
@@ -78,6 +82,9 @@ class StreamBrainGovernor:
         qos: AdaptiveQoS,
         stage: StarStage,
         clock_ms: Callable[[], float] = lambda: time.monotonic() * 1000,
+        memory_guard: MemoryStallGuard | None = None,
+        route_catalog: HostInferenceCatalog | None = None,
+        enforce_host_route_binding: bool = False,
     ) -> None:
         if not isinstance(telemetry, RealtimeTelemetryHost):
             raise TypeError("telemetry must be a RealtimeTelemetryHost")
@@ -85,6 +92,17 @@ class StreamBrainGovernor:
             raise TypeError("expected existing AdaptiveQoS and StarStage")
         if not callable(clock_ms):
             raise TypeError("host clock must be callable")
+        if memory_guard is not None and not isinstance(memory_guard, MemoryStallGuard):
+            raise TypeError("optional memory guard must be MemoryStallGuard")
+        if route_catalog is not None and not isinstance(route_catalog, HostInferenceCatalog):
+            raise TypeError("route_catalog must be a trusted HostInferenceCatalog")
+        if type(enforce_host_route_binding) is not bool:
+            raise TypeError("enforce_host_route_binding must be an explicit boolean")
+        if enforce_host_route_binding and route_catalog is None:
+            raise ValueError("strict binding requires a host-owned model catalog")
+        self._route_catalog = route_catalog
+        self._enforce_host_route_binding = enforce_host_route_binding
+        self._memory_guard = memory_guard
         self._telemetry, self._qos, self._stage = telemetry, qos, stage
         self._clock = clock_ms
         self._lock = RLock()
@@ -103,12 +121,16 @@ class StreamBrainGovernor:
         self, *, owner_approved: bool = False,
         live: bool, game_active: bool,
         mode: str = "normal", reduced_motion: bool = False,
+        private_stream_rehearsal: bool = False,
     ) -> None:
         """Opt into one measured local session, never an actual broadcast."""
         if owner_approved is not True:
             raise PermissionError("authenticated owner must enable the stream brain")
-        if type(live) is not bool or type(game_active) is not bool:
+        if (type(live) is not bool or type(game_active) is not bool
+                or type(private_stream_rehearsal) is not bool):
             raise ValueError("session flags must be booleans")
+        if live and private_stream_rehearsal:
+            raise ValueError("private rehearsal must not be marked live")
         with self._lock:
             if self._enabled or self._leases or self._speech_binding is not None:
                 raise RuntimeError("stop the previous session, audio and workers first")
@@ -121,7 +143,8 @@ class StreamBrainGovernor:
             try:
                 self._qos.enable(owner_approved=True)
                 self._telemetry.set_context(
-                    live=live, game_active=game_active, owner_approved=True
+                    live=live, game_active=game_active, owner_approved=True,
+                    private_stream_rehearsal=private_stream_rehearsal,
                 )
             except Exception:
                 self._qos.disable()
@@ -160,20 +183,102 @@ class StreamBrainGovernor:
         # reports its actual sample time. QoS enforces the tighter live limit.
         return sample
 
+    def refresh_game_guard(self) -> bool:
+        """Forward a trusted, fresh telemetry heartbeat to the QoS latch.
+
+        A live renderer can recover while Star remains silent: do not require
+        speculative speech requests merely to measure sustained healthy FPS.
+        The embedding host still owns OS probes and actual frame presents.
+        """
+        with self._lock:
+            if not self._enabled:
+                return False
+            sample = self._sample()
+            if sample is None:
+                return False
+            assert sample.qos is not None
+            return self._qos.observe_telemetry(
+                sample.qos, now_ms=_now(self._clock)
+            )
+
     def admit(self, job: InferenceJob) -> BrainAdmission:
-        """Advisory one-shot reservation. Host executes only its allowed tools."""
+        """Legacy advisory reservation, denied when host binding is enforced."""
+        return self._admit(job, from_catalog=False)
+
+    def admit_registered(self, job: InferenceJob, *, route_alias: str) -> BrainAdmission:
+        """Trusted host chooses the *actual deployed worker* by catalog alias.
+
+        Calibrated p95 and RAM/VRAM budgets come from the bound manifest, never
+        model/chat-provided profile names or resource estimates. The host must
+        actually launch the recorded worker; this is not runtime attestation.
+        """
+        if self._route_catalog is None:
+            return BrainAdmission(False, "host_model_catalog_not_configured")
+        bound = self._route_catalog.bind(job, route_alias=route_alias)
+        return self._admit(bound, from_catalog=True)
+
+    def admit_quality_pilot(
+        self, job: InferenceJob, *, pilot_approved: bool = False,
+        selector: QualityGatedRouteSelector, baseline_alias: str,
+        workload: str, suite_sha256: str, now_unix_s: int,
+        max_p95_ms: float, max_total_gpu_mib: float,
+    ) -> BrainAdmission:
+        """Opt-in *admission*, never launch, through trusted quality evidence.
+
+        The local owner/host must preregister and independently score the
+        selector's held-out suite, explicitly approve each pilot, and supply
+        actual load budgets. No chat/model tools may call this host API.
+        Reuse the exact catalog so advice cannot silently rebind to a
+        different deployed model. Normal live QoS still vetoes unsafe work.
+        """
+        if not isinstance(job, InferenceJob):
+            raise TypeError("expected a validated inference job")
+        if type(pilot_approved) is not bool:
+            raise ValueError("pilot_approved must be a boolean")
+        if not pilot_approved:
+            return BrainAdmission(False, "quality_pilot_owner_approval_missing")
+        if not isinstance(selector, QualityGatedRouteSelector):
+            raise TypeError("trusted host quality route selector required")
+        with self._lock:
+            if not self._enabled:
+                return BrainAdmission(False, "owner_opt_in_missing")
+            if self._route_catalog is None or selector.catalog is not self._route_catalog:
+                return BrainAdmission(False, "quality_pilot_catalog_identity_mismatch")
+            advice = selector.advise(
+                owner_approved=True, baseline_alias=baseline_alias,
+                task_kind=job.kind, workload=workload,
+                suite_sha256=suite_sha256, now_unix_s=now_unix_s,
+                max_p95_ms=max_p95_ms, max_total_gpu_mib=max_total_gpu_mib,
+            )
+            if advice.route_alias is None:
+                return BrainAdmission(False, "quality_pilot_" + advice.reason)
+            return self.admit_registered(job, route_alias=advice.route_alias)
+
+    def _admit(self, job: InferenceJob, *, from_catalog: bool) -> BrainAdmission:
         if not isinstance(job, InferenceJob):
             raise TypeError("expected an InferenceJob")
         with self._lock:
             if not self._enabled:
                 self._counts["deferred"] += 1
                 return BrainAdmission(False, "owner_opt_in_missing")
+            if self._enforce_host_route_binding and not from_catalog:
+                self._counts["deferred"] += 1
+                return BrainAdmission(False, "trusted_host_model_binding_required")
             now = _now(self._clock)
             sample = self._sample()
             if sample is None:
                 self._counts["deferred"] += 1
                 return BrainAdmission(False, "trusted_game_gpu_audio_cpu_sample_missing")
             assert sample.qos is not None
+            # Optional Linux PSI observer is sampled on a separate worker.
+            # Do not allocate GPU/CPU leases for new background jobs while
+            # stalls or swap churn are active. Live speech is never vetoed by
+            # this guard; the existing QoS rules still protect its resources.
+            if self._memory_guard is not None:
+                pressure = self._memory_guard.advise(job.kind, now_ms=now)
+                if not pressure.allowed:
+                    self._counts["deferred"] += 1
+                    return BrainAdmission(False, pressure.reason)
             decision: QoSDecision = self._qos.admit(
                 job, sample.qos, now_ms=now
             )
@@ -244,6 +349,7 @@ class StreamBrainGovernor:
         turn: TurnAdvice | None = None,
         knowledge: KnowledgePacket | None = None,
         episode: EpisodePacket | None = None,
+        continuity: ContinuityPacket | None = None,
     ) -> StagePlan | None:
         """Propose contextual speech only with fresh trusted hardware data.
 
@@ -255,6 +361,8 @@ class StreamBrainGovernor:
             raise TypeError("expected reviewed KnowledgePacket")
         if episode is not None and not isinstance(episode, EpisodePacket):
             raise TypeError("expected verified EpisodePacket")
+        if continuity is not None and not isinstance(continuity, ContinuityPacket):
+            raise TypeError("expected verified ContinuityPacket")
         with self._lock:
             if not self._enabled:
                 return None
@@ -268,6 +376,7 @@ class StreamBrainGovernor:
                 viewer_speaking=viewer_speaking,
                 gameplay_critical=gameplay_critical,
                 turn=turn, knowledge=knowledge, episode=episode,
+                continuity=continuity,
             )
             if plan is not None:
                 self._counts["speech_prepared"] += 1
@@ -374,12 +483,26 @@ class StreamBrainGovernor:
             self._counts["audio_interrupted"] += 1
             return True
 
+    def session_generation(self) -> int:
+        """Session-scoped host token, invalid after disable/re-enable."""
+        with self._lock:
+            return self._generation if self._enabled else -1
+
+    def prepared_plan(self, plan: StagePlan) -> bool:
+        """Only the exact active, unqueued StagePlan may consume a preview."""
+        with self._lock:
+            return self._enabled and self._stage.prepared(plan)
+
     def status(self) -> dict[str, object]:
         """Anonymous health counters only, never audience or prompt contents."""
         with self._lock:
             return {
                 **self._counts, "enabled": self._enabled,
                 "reserved_workers": len(self._leases),
+                "host_route_binding_enforced": self._enforce_host_route_binding,
+                "registered_model_routes": (
+                    self._route_catalog.route_count if self._route_catalog else 0
+                ),
                 "pending_hardware_stop": (
                     len(self._leases) if not self._enabled else 0
                 ),

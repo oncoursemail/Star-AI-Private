@@ -7,13 +7,15 @@ reports only aggregate numbers, not voice, chat, content, player names or IDs.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from dataclasses import asdict, dataclass
 import json
 import math
 from pathlib import Path
 import random
 import re
-from typing import Iterable, cast
+from typing import Iterable
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 _RUN_FIELDS = frozenset({
@@ -26,7 +28,7 @@ def _bounded(value: object, name: str, lower: float, upper: float) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{name} must be a finite number")
     try:
-        val = float(cast(float, value))
+        val = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} must be finite") from exc
     if not math.isfinite(val) or not lower <= val <= upper:
@@ -106,6 +108,10 @@ class RealtimeComparison:
     candidate_gpu_peak_mib: float | None
     verdict: str                 # eligible_for_manual_pilot | regressed | inconclusive
     note: str = "host-measured only; no automatic deployment or causal claim"
+    candidate_pair_audio_regressions: int = 0
+    candidate_pair_fps_regressions: int = 0
+    candidate_hitch_runs: int = 0
+    candidate_new_hitch_runs: int = 0
 
 
 def _bootstrap_mean_ci(diffs: list[float], *, seed: int) -> tuple[float, float]:
@@ -124,18 +130,31 @@ def _low_fps(run: RealtimeRun) -> float:
 def compare_realtime(
     runs: Iterable[RealtimeRun], *, minimum_pairs: int = 20,
     gpu_budget_mib: float = 6656,
+    max_pair_audio_regression_ms: float = 250,
+    max_pair_fps_loss: float = 6,
+    max_candidate_frame_ms: float = 200,
 ) -> RealtimeComparison:
     """Evaluate completed matched recordings, never decide live routing.
 
     Conservative pilot criterion: 20+ pre-registered complete pairs,
     uninterrupted speech, bootstrap lower CI of TTFA gain > 30 ms, p95 TTFA
     no worse, bootstrap lower CI of 1%-low FPS delta >= -3 FPS, candidate
-    GPU peak within a manually chosen budget. The CI quantifies sampling
-    uncertainty only, not uncontrolled changes, measurement bias or causality.
+    GPU peak within a manually chosen budget. Also reject per-pair serious
+    audible delays, game-FPS losses, and new display hitches that percentile
+    or average metrics can mask. Existing hitches prevent pilot promotion but
+    do not alone prove the candidate caused a regression. Thresholds are
+    operator-tunable acceptance heuristics, not clinical or causal limits.
+    The CI quantifies sampling uncertainty only, not uncontrolled changes,
+    measurement bias or causality.
     """
     if type(minimum_pairs) is not int or not 10 <= minimum_pairs <= 500:
         raise ValueError("minimum_pairs must be 10..500")
     budget = _bounded(gpu_budget_mib, "gpu_budget_mib", 512, 262_144)
+    audio_limit = _bounded(max_pair_audio_regression_ms,
+                           "max_pair_audio_regression_ms", 50, 5000)
+    fps_loss_limit = _bounded(max_pair_fps_loss, "max_pair_fps_loss", 1, 30)
+    frame_cap = _bounded(max_candidate_frame_ms,
+                         "max_candidate_frame_ms", 50, 1000)
     pairs: dict[str, dict[str, RealtimeRun]] = {}
     scope: tuple[str, str] | None = None
     count = 0
@@ -157,6 +176,9 @@ def compare_realtime(
     if not pairs:
         return RealtimeComparison("none", 0, 0, 0, None, None, None, None,
                                   None, None, None, None, "inconclusive")
+    # A nonempty pair collection is constructed only from a concrete scope.
+    if scope is None:
+        raise RuntimeError("matched gameplay scope unavailable")
     completed = [p for p in pairs.values() if len(p) == 2]
     incomplete = len(pairs) - len(completed)
     failures = sum(
@@ -187,14 +209,30 @@ def compare_realtime(
     mean_diff = sum(ttfa_diffs) / len(ttfa_diffs)
     fps_base = sum(_low_fps(r) for r in baseline) / len(baseline)
     fps_new = sum(_low_fps(r) for r in candidate) / len(candidate)
+    # A cohort-wide p95 ignores the worst of 24 turns, and a p99 over 150
+    # frames ignores its single slowest frame. Check these tails explicitly.
+    audio_pair_regressions = sum(
+        c.first_audio_ms - b.first_audio_ms > audio_limit
+        for b, c in zip(baseline, candidate)
+    )
+    fps_pair_regressions = sum(loss < -fps_loss_limit for loss in fps_diffs)
+    candidate_hitches = sum(max(c.frame_times_ms) > frame_cap for c in candidate)
+    introduced_hitches = sum(
+        max(c.frame_times_ms) > frame_cap
+        and max(c.frame_times_ms) > max(b.frame_times_ms) + 50
+        for b, c in zip(baseline, candidate)
+    )
 
     eligible = (
         len(completed) >= minimum_pairs and incomplete == 0 and failures == 0
         and ci[0] > 30 and p95_new <= p95_base and fps_ci[0] >= -3
-        and peak <= budget
+        and peak <= budget and audio_pair_regressions == 0
+        and fps_pair_regressions == 0 and candidate_hitches == 0
     )
     regressed = (
         ci[1] < -30 or fps_ci[1] < -3 or peak > budget or failures > 0
+        or audio_pair_regressions > 0 or fps_pair_regressions > 0
+        or introduced_hitches > 0
     )
     verdict = ("eligible_for_manual_pilot" if eligible else
                "regressed" if regressed else "inconclusive")
@@ -203,6 +241,10 @@ def compare_realtime(
         round(p95_base, 3), round(p95_new, 3),
         round(mean_diff, 3), ci, round(fps_base, 3), round(fps_new, 3),
         fps_ci, round(peak, 3), verdict,
+        candidate_pair_audio_regressions=audio_pair_regressions,
+        candidate_pair_fps_regressions=fps_pair_regressions,
+        candidate_hitch_runs=candidate_hitches,
+        candidate_new_hitch_runs=introduced_hitches,
     )
 
 

@@ -51,6 +51,84 @@ class TurnTakingTests(unittest.TestCase):
         self.assertEqual(decision.reason, "confirmed_authenticated_owner_voice")
         self.assertEqual(self.gate.metrics()["owner_yields"], 1)
 
+    def test_barge_in_metric_is_once_per_confirmed_utterance_not_per_poll(self):
+        self.gate.enable(owner_approved=True)
+        for at in (100, 130, 160, 190):
+            self.gate.observe(frame(at, owner=1))
+        # The host may poll faster than VAD emits frames. The advice must
+        # remain actionable if an earlier interruption wasn't yet performed.
+        for _ in range(10):
+            decision = self.gate.advise(now_ms=200, star_speaking=True)
+            self.assertTrue(decision.should_interrupt)
+            self.assertEqual(decision.action, "yield_owner")
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        # A single lost/quiet frame does not prove that the owner finished
+        # the utterance. Reconfirmed speech must not count a second barge-in.
+        self.gate.observe(frame(220))
+        for at in (250, 280, 310, 340):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(
+            self.gate.advise(now_ms=340, star_speaking=True).should_interrupt
+        )
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        # Only a verified continuous quiet interval re-arms a genuinely new
+        # utterance; a resumed owner can then interrupt again.
+        for at in range(370, 730, 30):
+            self.gate.observe(frame(at))
+        for at in (730, 760, 790, 820):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(
+            self.gate.advise(now_ms=820, star_speaking=True).should_interrupt
+        )
+        self.assertEqual(self.gate.metrics()["owner_yields"], 2)
+        self.gate.disable()
+        self.gate.enable(owner_approved=True)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 2)
+        # Counters are cumulative; utterance state, not counters, resets.
+        for at in (600, 630, 660, 690):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(
+            self.gate.advise(now_ms=690, star_speaking=True).should_interrupt
+        )
+        self.assertEqual(self.gate.metrics()["owner_yields"], 3)
+
+    def test_brief_mixed_or_echo_dropout_cannot_double_count_one_owner_utterance(self):
+        self.gate.enable(owner_approved=True)
+        for at in (100, 130, 160, 190):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(self.gate.advise(now_ms=190, star_speaking=True).should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        for at, probabilities in (
+            (220, dict(owner=.4, guest=.4)),
+            (250, dict(owner=1, echo=False)),
+            (280, dict(guest=1)),
+        ):
+            self.gate.observe(frame(at, **probabilities))
+        for at in (310, 340, 370, 400):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(self.gate.advise(now_ms=400, star_speaking=True).should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+
+    def test_unobserved_gap_does_not_forge_verified_quiet_rearm(self):
+        self.gate.enable(owner_approved=True, require_verified_quiet=True)
+        for at in (100, 130, 160, 190):
+            self.gate.observe(frame(at, owner=1))
+        self.gate.advise(now_ms=190, star_speaking=True)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        # A large capture gap is unknown audio, NOT proof of silence.
+        self.gate.observe(frame(800))
+        for at in (830, 860, 890, 920):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(self.gate.advise(now_ms=920, star_speaking=True).should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+        # 12 clean contiguous 30-ms quiet frames explicitly prove new floor.
+        for at in range(950, 1310, 30):
+            self.gate.observe(frame(at))
+        for at in (1310, 1340, 1370, 1400):
+            self.gate.observe(frame(at, owner=1))
+        self.assertTrue(self.gate.advise(now_ms=1400, star_speaking=True).should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 2)
+
     def test_guest_voice_holds_speech_without_owner_privilege(self):
         self.gate.enable(owner_approved=True)
         for at in (100, 130, 160, 190):
@@ -84,6 +162,32 @@ class TurnTakingTests(unittest.TestCase):
         self.assertEqual(self.gate.advise(now_ms=751, star_speaking=True).reason,
                          "vad_missing_or_stale")
         self.assertEqual(self.gate.advise(now_ms=800, star_speaking=False).action, "hold")
+
+    def test_sparse_short_voice_bursts_do_not_become_a_barge_in(self):
+        self.gate.enable(owner_approved=True)
+        # Each 30-ms frame is separated by 50 ms of unobserved silence.
+        # Comparing only frame end timestamps (80 ms < 150 ms) used to
+        # incorrectly accumulate 120 ms of apparent continuous owner voice.
+        for at in (100, 180, 260, 340):
+            self.gate.observe(frame(at, owner=.99))
+        advice = self.gate.advise(now_ms=340, star_speaking=True)
+        self.assertFalse(advice.should_interrupt)
+        self.assertEqual(self.gate.metrics()["owner_yields"], 0)
+        # Four genuinely contiguous 30-ms frames still interrupt.
+        for at in (370, 400, 430):
+            self.gate.observe(frame(at, owner=.99))
+        self.assertTrue(
+            self.gate.advise(now_ms=430, star_speaking=True).should_interrupt
+        )
+        self.assertEqual(self.gate.metrics()["owner_yields"], 1)
+
+    def test_sparse_guest_frames_do_not_fake_sustained_guest_speech(self):
+        self.gate.enable(owner_approved=True)
+        for at in (100, 180, 260, 340):
+            self.gate.observe(frame(at, guest=.99))
+        decision = self.gate.advise(now_ms=340, star_speaking=False)
+        self.assertFalse(decision.should_interrupt)
+        self.assertNotEqual(decision.reason, "confirmed_guest_voice")
 
     def test_reverse_duplicate_and_overlapping_frames_rejected(self):
         self.gate.enable(owner_approved=True)
@@ -152,6 +256,75 @@ class TurnTakingTests(unittest.TestCase):
             stage.prepare(now=100, turn={"action": "speak"})
         self.assertIsNone(stage.prepare(now=100,
                                         turn=TurnAdvice("hold", False, "quiet")))
+
+    def test_ambiguous_voice_keeps_legacy_turn_taker_from_talking_over_people(self):
+        # Neither label is strong enough to prove who is speaking, but
+        # probabilities above the calibrated quiet floor are NOT silence.
+        for role, probability in (("owner", .35), ("guest", .42)):
+            with self.subTest(role=role):
+                gate = TurnTakingGate()
+                gate.enable(owner_approved=True)
+                gate.observe(frame(100, **{role: probability}))
+                uncertain = gate.advise(now_ms=100, star_speaking=False)
+                self.assertEqual(uncertain.action, "hold")
+                self.assertFalse(uncertain.should_interrupt)
+                self.assertEqual(uncertain.reason, "speech_or_noise_hangover")
+                gate.observe(frame(130))
+                self.assertEqual(
+                    gate.advise(now_ms=130, star_speaking=False).action, "hold"
+                )
+                # Only after the hangover has elapsed may legacy mode speak.
+                gate.observe(frame(450))
+                self.assertEqual(
+                    gate.advise(now_ms=450, star_speaking=False).action, "speak"
+                )
+
+    def test_mixed_low_confidence_voice_is_not_trusted_silence(self):
+        self.gate.enable(owner_approved=True)
+        self.gate.observe(frame(100, owner=.25, guest=.25))
+        advice = self.gate.advise(now_ms=100, star_speaking=True)
+        self.assertFalse(advice.should_interrupt)
+        self.assertEqual(advice.action, "hold")
+        self.assertEqual(self.gate.metrics()["owner_yields"], 0)
+        # A true quiet frame at the calibrated floor is still available.
+        self.gate.observe(frame(500, owner=.10, guest=.10))
+        self.assertEqual(
+            self.gate.advise(now_ms=500, star_speaking=False).action, "speak"
+        )
+
+    def test_uncleared_echo_cannot_become_instant_silence_after_one_frame(self):
+        self.gate.enable(owner_approved=True)
+        self.gate.observe(frame(100, echo=False))
+        self.assertEqual(
+            self.gate.advise(now_ms=100, star_speaking=False).reason,
+            "echo_not_cleared",
+        )
+        self.gate.observe(frame(130))
+        self.assertEqual(
+            self.gate.advise(now_ms=130, star_speaking=False).action, "hold"
+        )
+        self.gate.observe(frame(450))
+        self.assertEqual(
+            self.gate.advise(now_ms=450, star_speaking=False).action, "speak"
+        )
+
+    def test_stage_uses_ambiguous_voice_hold_before_creating_spoken_turn(self):
+        stage = StarStage(clock=lambda: 100.0)
+        stage.enable(owner_approved=True)
+        self.gate.enable(owner_approved=True)
+        event = StreamSignal(
+            "question2", "viewer_question", 100.0, "How does that work?",
+            speaker_id="moderated-viewer", evidence="unknown",
+        )
+        self.assertTrue(stage.offer(event, now=100, moderated=True))
+        self.gate.observe(frame(100, guest=.35))
+        uncertain = self.gate.advise(now_ms=100, star_speaking=False)
+        self.assertTrue(uncertain.hold)
+        self.assertIsNone(stage.prepare(now=100.1, turn=uncertain))
+        self.gate.observe(frame(500))
+        quiet = self.gate.advise(now_ms=500, star_speaking=False)
+        self.assertEqual(quiet.action, "speak")
+        self.assertIsNotNone(stage.prepare(now=100.5, turn=quiet))
 
     def test_only_counts_leave_metrics(self):
         self.gate.enable(owner_approved=True)

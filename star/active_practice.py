@@ -98,6 +98,16 @@ class ActivePracticePlanner:
         self._stats = {"offered": 0, "deferred": 0, "expired": 0,
                        "verified": 0, "unverified": 0}
 
+    @property
+    def reservation_seconds(self) -> int:
+        """Configured ticket lifetime. A reservation expires strictly AFTER this."""
+        return self._reservation_seconds
+
+    @property
+    def max_trials_per_action(self) -> int:
+        """Configured signed-practice budget per action and exact situation."""
+        return self._max_trials
+
     def enable(self, *, owner_approved: bool = False) -> None:
         if owner_approved is not True:
             raise PermissionError("explicit owner approval required for practice planning")

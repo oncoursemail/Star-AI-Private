@@ -1,0 +1,50 @@
+# Star AI — verified fast game-skill route and generalist VTuber research
+**Date:** 2026-11-07 · **Status:** implemented, offline-tested advisory integration; not deployed, not a gameplay or speech performance claim.
+
+## Why this change, after the physical audio-stop host
+
+Star's repository already has unusually broad but separate systems: a signed GameplaySkillBank, practice curricula, preregistered holdouts, game actuation fences, real-time game telemetry, an OBS epoch witness, host model/GPU routing, stream conversation timing, VTube Studio motion, and verified PCM-drain requests. Further duplicating research-only "agents" would be lower value than connecting trustworthy evidence to the tight real-time loop.
+
+Specifically, `GameplaySkillBank.suggest()` verifies every relevant signed practice and validation record in SQLite, computes statistical lower bounds, and returns an advisory. That is sensible on a database-owning worker but **not** inside a 16.7 ms game-frame deadline or urgent inference admission. A model response must not be substituted for a signed outcome, and the validation holdout must remain independent of practice.
+
+## Shipped in this pull request
+
+- `star/game_verified_fast_path.py`: `VerifiedGameSkillFastPath` caches the bank's independently signed, heldout-reviewed *symbolic skill suggestion* for a single owner-curated (game, version, objective, situation) with a fixed action allowlist. `refresh()` can run on the database-owning host worker; `advise()` checks only in-memory state, focus, scope, critical gameplay, and a monotonic deadline. No SQLite, inference, new network I/O, OS input or model access happens in `advise()`.
+- Off by default. Cache expires (default 1 second, configurable 50–10,000 ms), resets on opt-out, rejects reversed clock, wrong game/version/situation, lost game focus, nonallowed action, expired cache, and missing validation. Concurrent failed/old refreshes cannot overwrite a newer snapshot. HMAC evidence is still verified by the existing bank at refresh time.
+- The interface never grants control: `authorized_to_play=False`, `authorizes_game_input=False`. Every actual game action still requires the existing `game_action_gate` / focus / watchdog path and permission for that game. No game was launched, controlled or streamed during offline tests.
+- `tests/test_game_verified_fast_path.py`: real SQLite + HMAC-signed practice and heldout validation, expiration, wrong-scope denial, practice-only denial, changed focus, cancellation, clock rollback, missing keys, error handling and threading tests; includes a non-blocking 10k-advice microbenchmark with **no fixed performance-SLO assertions**. Record machine-specific times from the actual run rather than claim gaming FPS improvement.
+
+## Prioritized end-to-end architecture
+
+| Priority | Component | Exact integration / independent acceptance |
+|---|---|---|
+| P0 | Private gaming pilot | Host binds real game identity + version, game focus, key-up watchdog and input permission. Capture real frame/tick + action result on the Windows machine. Cache a signed bank suggestion on a non-render worker and offer it to the tactical planner; never directly press a key. Measure capture-to-action p50/p95, wrong-action rate and input release. |
+| P0 | One private VTuber rehearsal | Use the existing `NaturalTurnPhysicalHost`, `AudibleAvatarSession`, `VTubeLocalHost`, and read-only OBS evidence; wire actual WASAPI output worker, physical drain probes and VTube Studio neutral observations. Keep *broadcast disabled*. Measure p95 first audible response, interruption-to-silence, frame present stability, audio-avatar gap and accidental overlapping speech. |
+| P1 | Reflex/tactics split | Fast 20–60 Hz, **host-approved deterministic** survival/hazard controls (within a narrow permissioned game); slower multimodal planner adjusts objectives at 0.5–2 Hz; an offline learning worker compares verified outcomes. Never let the LLM bypass focus, server rules or input permits. |
+| P1 | Generalist transferable learning | Signed practice -> counterbalanced, separately signed validation on unseen games/versions/seeds (`game_holdout_schedule`, `game_transfer_eval`) -> manual promotion/rollback. Track success rate **per game**, mistakes, time-to-goal, failed attempts and transfer to a new mechanic. Do not call practice accuracy "intelligence improvement". |
+| P1 | Star's game-creation loop | Use Roblox Studio MCP permission-gated edits, inspect assets before changing them, run Luau static checks, publish nothing by default; execute OpenGameEval style scene AND play-session checks. Preserve reproducible captures and visual inspection; reject screenshots as sufficient proof of gameplay. |
+| P2 | General world knowledge | Project-scoped retrieval with provenance, recency, uncertainty, tool access isolation and user-reviewed public-note permissions. Add citations, conflict resolution, calibration challenges and checked tool-use benchmark tasks. Refresh knowledge without leaking chat/private data to the stream. |
+| P2 | Speed experiments | Compare CPU/RAM/VRAM placement, quantized routes, prefix/KV caching, ASR partials, streaming TTS and speculative decoding. Use paired same-task versions, same GPU pressure profile, actual first-audible latency and gameplay FPS. Roll back slower/worse-quality options. |
+
+## Relevant research and what it actually supports
+
+1. **Gym-Anything-RT** (Aggarwal & Welleck, submitted October 27, 2026, https://arxiv.org/abs/2610.37567): 100 evolving visual minigames explicitly compare real-time and paused interaction. The finding is a *latency-sensitive capability gap*. Reproduce a similar paired real-time vs paused test for Star; complex deliberation alone is not enough. Do not infer that one benchmark's frontier-model percentages predict Star's gameplay.
+2. **Roblox OpenGameEval** (Turkel et al., submitted October 1, 2026, https://arxiv.org/abs/2610.02563 ; official source https://github.com/Roblox/open-game-eval): 84 curated Studio tasks, edited-scene AND simulated-play checks. The paper reports more exploration correlates with better task success; inspect the scene first, then edit and verify rather than relying on one-shot Luau generation. Benchmark is not itself a Roblox gameplay agent.
+3. **Proact-VL** (Microsoft Research, ICML 2026, https://www.microsoft.com/en-us/research/publication/proact-vl-a-proactive-videollm-for-real-time-ai-companions/): real-time gaming commentator/guide uses response timing and content selection. Apply to event prioritization, silence, contextual questions and co-commentary; measure unnecessary interruptions and overlooked questions.
+4. **DyaPlex** (NVIDIA, June 2026, https://research.nvidia.com/labs/amri/publication/nagano2026dyaplex/): synchronized full-duplex speech/motion research. It motivates *alignment metrics* but is not a drop-in deployable, low-VRAM VTube Studio plug-in. Continue with existing PCM-consumed sample clock + VTS motion bridge; evaluate any research model separately.
+5. **VTube Studio local API** (official https://github.com/DenchiSoft/VTubeStudio): prefer authenticated loopback WebSocket only and bounded send/recv timeouts; a successful socket reply is NOT physical proof of avatar state or PCM silence.
+6. **OBS WebSocket** (official https://github.com/obsproject/obs-websocket): private recording/scene/read-only event evidence, explicit operator broadcast gate. Streaming automatically to public channels is not an acceptance test.
+7. **SIMA 2** (DeepMind, November 13, 2025, https://deepmind.google/blog/sima-2-an-agent-that-plays-reasons-and-learns-with-you-in-virtual-3d-worlds/): a useful reference for natural-language guided 3-D interaction and transfer, not a licensing or integration plan for Star.
+8. **Local inference caution**: community runtime comparisons (e.g., Strata Oct 6, 2026) can differ dramatically by model, PCIe offload, GPU and build; do not promise published tokens/sec on Star's ~8GB NVIDIA device. Speculative decoding can be slower when its draft cache displaces expert layers from VRAM. Report first **speakable** syllable latency (ASR->planner->TTS->physical PCM) and game FPS, not tokens/sec in isolation.
+
+## Becoming humanlike *in behavior*, not pretending to be human
+
+- Stable Star identity and voluntarily developed hobbies: learning games, creating art, making Roblox/Blender projects, talking about her verified past attempts and her motivations as an **AI**. A consistent persona is not a claim of sentience, inner subjective feelings or human biography.
+- Natural timing: yield to owner interruptions, chat pauses, occasional backchannels and game-critical silence. Use spontaneous surprise/humor anchored to observed events; avoid fake wins and repetitive catchphrases.
+- Animated body language: nonverbal breathing, anticipatory gaze/eye movement, blink scheduling, visibly different listening vs speaking posture, head motion tied to real playback. For interactive social scenes, avoid unsafe mimicry/impersonation.
+- Safety and privacy: human-reviewed public facts, input/chat prompt-injection isolation, moderation, consent-based voice recording, no viewer-driven file/system tools, no secrets in stream logs, explicit user-owned broadcast opt-in, reduced-motion toggle and local emergency stop.
+- Objective measurement: matched blinded human preferences for naturalness, replay coherence, word timing and conversational interruptions, not "she is now fully human."
+
+## Deployment and verification boundaries
+
+No automatic model weight update, no Windows production patch, no live OBS broadcast, no fabricated frame/test evidence. The new code does NOT increase measured neural inference tokens/sec or measured gameplay win rate. Quality improvement is architectural: enabling host-verified candidate skill *lookups* without database I/O on the time-critical action path. The next proof requires a single real Windows game loop and private recording with trustworthy instrumentation. If it fails to outperform baseline under matched workload, leave it disabled and revert.

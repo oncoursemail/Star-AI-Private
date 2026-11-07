@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-import time
 import unittest
 
-from star.stream_director import StreamDirector, StreamSignal
+from star.stream_director import StreamSignal
 from star.stream_motion import AudioLevel, MotionFrame
 from star.stream_stage import StarStage
 
@@ -14,7 +13,8 @@ def signal(ident="s1", kind="game_success", evidence="observed",
            timestamp=100.0, detail="Won a round", speaker_id=""):
     return StreamSignal(
         signal_id=ident, kind=kind, timestamp=timestamp,
-        detail=detail, evidence=evidence, speaker_id=speaker_id,
+        detail=detail, evidence=evidence,
+        speaker_id=speaker_id or ("viewer-test" if kind.startswith("viewer_") else ""),
     )
 
 
@@ -128,6 +128,47 @@ class StageTests(unittest.TestCase):
         self.assertTrue(all(f.tail_sway == f.hair_sway == f.body_lean == f.head_x == 0
                             for f in frames))
         self.assertTrue(s.finish(p))
+
+    def test_opt_in_natural_gaze_uses_only_grounded_game_focus(self):
+        base = stage()
+        opt = StarStage(clock=lambda: 100.0)
+        opt.enable(owner_approved=True, natural_gaze=True)
+        observed = signal(kind="game_observation", evidence="observed",
+                          detail="An obstacle appears on the left")
+        baseline_plan = go_audible(base, observed)
+        eased_plan = go_audible(opt, observed)
+        assert not baseline_plan.natural_gaze
+        assert eased_plan.natural_gaze
+        kwargs = dict(duration_s=1, audio_levels=[AudioLevel(0, .6)],
+                      focus_target_x=-1, focus_host_verified=True)
+        baseline = base.motion(baseline_plan, **kwargs)
+        eased = opt.motion(eased_plan, **kwargs)
+        self.assertLess(abs(eased[0].gaze_x), abs(baseline[0].gaze_x))
+        self.assertLess(eased[4].gaze_x, -.25)
+        self.assertEqual([f.mouth_open for f in baseline],
+                         [f.mouth_open for f in eased])
+        base.finish(baseline_plan)
+        opt.finish(eased_plan)
+
+    def test_attested_gaze_required_and_config_frozen_per_turn(self):
+        s = StarStage(clock=lambda: 100.)
+        s.enable(owner_approved=True)
+        p = go_audible(s, signal(kind="game_observation"))
+        with self.assertRaises(PermissionError):
+            s.motion(p, duration_s=.3, audio_levels=[],
+                     focus_target_x=1.0)
+        for invalid in (float("nan"), float("inf"), 1.1, True, "left"):
+            with self.subTest(value=invalid), self.assertRaises(ValueError):
+                s.motion(p, duration_s=.3, audio_levels=[],
+                         focus_target_x=invalid)
+        with self.assertRaises(RuntimeError):
+            s.configure(mode="normal", natural_gaze=True)
+        s.finish(p)
+        s.configure(mode="normal", natural_gaze=True)
+        p2 = go_audible(s, signal(ident="s2", kind="game_observation"))
+        self.assertTrue(p2.natural_gaze)
+        with self.assertRaises(ValueError):
+            s.enable(owner_approved=True, natural_gaze=1)
 
     def test_no_talking_over_viewer_and_keep_silent_in_critical_gameplay(self):
         s = stage()

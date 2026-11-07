@@ -12,7 +12,7 @@ This PR adds both an offline QoS **advisory governor** and a separate held-out *
 
 ## Implemented A: StreamLoadGovernor
 
-Module: star/stream_load_governor.py.
+Module: star/stream_latency_advisor.py.
 
 The host supplies one atomic StreamSample: a monotonically sequenced timestamp, whether game and stream are active, 10th-percentile game FPS, p95 time to spoken output, dropped OBS-frame percentage, free VRAM and audio underrun count. The client adapter must independently measure these; user text or model self-reports are NOT telemetry.
 
@@ -98,9 +98,9 @@ During high action: game and voice essential, optional comments short, chat samp
 
 ## Reproduction and review
 
-    PYTHONPATH=. python -m unittest discover -s tests -p test_stream_load_governor.py -v
+    PYTHONPATH=. python -m unittest discover -s tests -p test_stream_latency_advisor.py -v
     PYTHONPATH=. python -m unittest discover -s tests -p test_game_skill_promotion.py -v
-    python -m compileall -q star/stream_load_governor.py star/game_skill_promotion.py
+    python -m compileall -q star/stream_latency_advisor.py star/game_skill_promotion.py
 
 Both modules are pure Python 3.11+ and are **not wired to live OBS, Roblox, GPUs or the model** in this PR. Locally, 49 deterministic targeted tests passed, covering hysteresis, stale telemetry, replay, vRAM reserves, authorization assertions, skill data leakage, conservative lower bounds and skill version isolation. Full-repository CI, hardware benchmark, owner adapters, persistency and actual streaming tests are separate release gates.
 

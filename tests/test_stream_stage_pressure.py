@@ -14,7 +14,9 @@ def telem(*, live=True, game=True, fps=60., vram=4000., backlog=0.):
 
 def event(kind, i="a", *, evidence="observed"):
     return StreamSignal(i, kind, NOW, "A verified game signal" if kind.startswith("game_")
-                        else "Moderated chat input", evidence=evidence)
+                        else "Moderated chat input",
+                        speaker_id="viewer-test" if kind.startswith("viewer_") else "",
+                        evidence=evidence)
 
 
 def ready(kind="viewer_question", *, evidence="observed"):

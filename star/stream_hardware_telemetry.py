@@ -16,13 +16,15 @@ model inference. The corresponding consumers remain responsible for policy.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from collections import deque
 from dataclasses import dataclass
 import math
 import os
 from threading import RLock
 import time
-from typing import Callable, Protocol, cast
+from typing import Callable, Protocol
 
 from . import resource_probes
 from .stream_budget import StreamTelemetry
@@ -57,7 +59,7 @@ def _ms(value: object, name: str) -> float:
     if type(value) not in (float, int):
         raise ValueError(f"{name} must be numeric")
     try:
-        number = float(cast(float, value))
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{name} is invalid") from exc
     if not math.isfinite(number) or not 0 <= number <= 1e13:
@@ -123,6 +125,7 @@ class RealtimeTelemetryHost:
         self._enabled = False
         self._live = False
         self._game_active = False
+        self._private_stream_rehearsal = False
         self._generation = 0
         self._polling = False
         self._hardware: HardwareSnapshot | None = None
@@ -134,15 +137,20 @@ class RealtimeTelemetryHost:
                         "audio_samples": 0, "snapshots_rejected": 0}
 
     def set_context(self, *, live: bool, game_active: bool,
-                    owner_approved: bool = False) -> None:
+                    owner_approved: bool = False,
+                    private_stream_rehearsal: bool = False) -> None:
         if owner_approved is not True:
             raise PermissionError("authorized host must enable telemetry")
-        if type(live) is not bool or type(game_active) is not bool:
+        if (type(live) is not bool or type(game_active) is not bool
+                or type(private_stream_rehearsal) is not bool):
             raise ValueError("stream and game state must be explicit booleans")
+        if live and private_stream_rehearsal:
+            raise ValueError("private rehearsal and live mode are exclusive")
         with self._lock:
             self._generation += 1
             self._enabled = True
             self._live, self._game_active = live, game_active
+            self._private_stream_rehearsal = private_stream_rehearsal
             # No old scene/audio/resource measurement may be reused after
             # a broadcast transition, game switch, or focus change.
             self._hardware = None
@@ -155,6 +163,7 @@ class RealtimeTelemetryHost:
         with self._lock:
             self._generation += 1
             self._enabled = False
+            self._private_stream_rehearsal = False
             self._hardware = None
             self._last_cpu = None
             self._frame_intervals.clear()
@@ -178,10 +187,13 @@ class RealtimeTelemetryHost:
             generation = self._generation
         try:
             try:
+                # Timestamp the earliest probe, not the end of potentially
+                # blocking device I/O. Otherwise an old GPU measurement can
+                # masquerade as fresh after a slow CPU/memory probe.
+                measured_ms = self._now()
                 gpu = self._gpu_probe()
                 mem = self._memory_probe()
                 cpu = _cpu_times(self._cpu_probe())
-                measured_ms = self._now()
                 if (type(gpu) is not dict or
                         type(mem) is not tuple or len(mem) != 2 or
                         any(type(v) is not int or v <= 0 for v in mem) or
@@ -259,17 +271,33 @@ class RealtimeTelemetryHost:
             return True
 
     def sample_speaker(self, speaker: SpeakerBacklog) -> bool:
-        """Read only pending duration; do not capture voice or private audio."""
+        """Read pending duration, but never carry it across a session reset.
+
+        The device callback may block while the host changes the active game,
+        output device or stream epoch. Both a late successful read and a late
+        exception belong to the OLD generation and cannot modify new audio
+        evidence. Hold the reentrant lock across the final generation check
+        and report so a reset cannot interleave with their commit.
+        """
+        with self._lock:
+            if not self._enabled:
+                return False
+            generation = self._generation
         try:
             seconds = speaker.pending_seconds()
             if type(seconds) not in (float, int):
-                return False
+                raise ValueError("invalid speaker backlog")
             ms = _limited(seconds * 1000, "speaker backlog", 120000)
-            return self.report_audio_backlog(backlog_ms=ms, at_ms=self._now())
+            at = self._now()
         except Exception:
             with self._lock:
-                self._audio = None
+                if self._enabled and self._generation == generation:
+                    self._audio = None
             return False
+        with self._lock:
+            if not self._enabled or self._generation != generation:
+                return False
+            return self.report_audio_backlog(backlog_ms=ms, at_ms=at)
 
     def snapshot(self) -> LiveHostSample | None:
         """Zero blocking I/O; never infer missing game/audio/hardware values."""
@@ -306,16 +334,19 @@ class RealtimeTelemetryHost:
             telemetry = StreamTelemetry(
                 self._live, self._game_active,
                 hardware.free_vram_mib, hardware.total_vram_mib,
-                fps, backlog
+                fps, backlog,
+                private_stream_rehearsal=self._private_stream_rehearsal,
             )
-            # AdaptiveQoS's live sampling gate is <=250ms. Do not lie by
-            # stamping the current time on older GPU/CPU readings.
+            # Both broadcasts and private OBS rehearsals require <=250 ms
+            # GPU/CPU freshness; neither may relabel an aged sample as fresh.
             qos = None
             if (hardware.cpu_busy_percent is not None
-                    and (not self._live or now - hardware.sampled_ms <= 250)):
+                    and (not (self._live or self._private_stream_rehearsal)
+                         or now - hardware.sampled_ms <= 250)):
                 qos = QoSSnapshot(
                     hardware.sampled_ms, telemetry, hardware.free_ram_mib,
-                    hardware.cpu_busy_percent, self._cpu_slots, self._gpu_slots
+                    hardware.cpu_busy_percent, self._cpu_slots, self._gpu_slots,
+                    private_stream_rehearsal=self._private_stream_rehearsal,
                 )
             return LiveHostSample(
                 telemetry, qos, intervals, now - hardware.sampled_ms,
@@ -328,6 +359,7 @@ class RealtimeTelemetryHost:
             return dict(
                 enabled=self._enabled, live=self._live,
                 game_active=self._game_active,
+                private_stream_rehearsal=self._private_stream_rehearsal,
                 hardware_ready=self._hardware is not None,
                 frame_intervals=len(self._frame_intervals),
                 audio_ready=self._audio is not None,

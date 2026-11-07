@@ -30,6 +30,7 @@ from contextlib import asynccontextmanager
 import json
 import os
 from pathlib import Path
+import secrets
 import sys
 import time
 from typing import Any
@@ -183,19 +184,30 @@ class PinnedSession:
         return getattr(self._session, name)
 
     async def pinned(self, studio_id: str) -> bool:
-        """Ask the open place, in one engine call that fails anywhere else. True only on the exact answer."""
+        """Accept only the exact, freshly challenged reply from the chosen place.
+
+        Connector output can contain diagnostic lines, echoed Luau source or
+        previous responses. An embedded static success substring is not proof
+        of a successful identity query: pin receipts must be single, exact and
+        tied to this request. The challenge is not a credential or permission.
+        """
+        challenge = secrets.token_hex(16)
         result = await self._session.call_tool("execute_luau", arguments={
-            "studio_id": studio_id, "datamodel_type": "Edit", "code": PIN_QUESTION})
-        text = studio_loop.result_text(result)
-        answers = {f"{PIN_OK} {TEST_PLACE_ID} {TEST_UNIVERSE_ID}": (TEST_UNIVERSE_ID, TEST_PLACE_ID),
-                   f"{PIN_OK} 0 0": (0, 0)}
+            "studio_id": studio_id, "datamodel_type": "Edit",
+            "code": PIN_QUESTION + f' .. " {challenge}"',
+        })
         if studio_loop.result_failed(result):
             return False
-        for answer, place in answers.items():
-            if answer in text:
-                self.place = place
-                return True
-        return False
+        text = studio_loop.result_text(result).strip()
+        answers = {
+            f"{PIN_OK} {TEST_PLACE_ID} {TEST_UNIVERSE_ID} {challenge}": (TEST_UNIVERSE_ID, TEST_PLACE_ID),
+            f"{PIN_OK} 0 0 {challenge}": (0, 0),
+        }
+        place = answers.get(text)
+        if place is None:
+            return False
+        self.place = place
+        return True
 
     def _admit_playtest(self) -> str:
         """"" when the playtest may start (planner admitted it, or no planner), else the planner's reason."""

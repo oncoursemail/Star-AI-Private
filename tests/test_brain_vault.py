@@ -62,6 +62,46 @@ def test_the_account_running_the_generator_is_redacted_as_a_whole_word(monkeypat
     assert "owner [user] wrote C--Users-[user]-Documents" in out and "morganite" in out
 
 
+def test_code_map_preserves_only_public_graph_paths_even_if_os_user_is_star(monkeypatch):
+    """Avoid corrupt wiki-links while still sanitizing prose and absolute homes."""
+    from collections import Counter
+
+    monkeypatch.setattr(brain_vault.getpass, "getuser", lambda: "star")
+    text = (
+        'title: "star/slop.py"\n'
+        '# star/slop.py\n'
+        '[[code/star/agent_py|star/agent.py]]\n'
+        'tag: star/code\n'
+        'owner star logs in via /home/star/notes and C:\\Users\\star\\Documents\n'
+        'Unlisted star/unapproved.py and src/star/other.py are not public paths\n'
+        f'secret {ADMIN} from {IP}; [star] in prose\n'
+    )
+    totals = Counter()
+    cleaned = brain_vault._redact_code_map(text, totals, brain_vault._public_code_paths({"star/slop.py", "star/agent.py"}))
+    assert 'title: "star/slop.py"' in cleaned
+    assert '# star/slop.py' in cleaned
+    assert '[[code/star/agent_py|star/agent.py]]' in cleaned
+    assert 'tag: star/code' in cleaned
+    assert 'owner [user] logs in via /home/[user]/notes' in cleaned
+    assert 'C:\\Users\\[user]\\Documents' in cleaned
+    assert 'Unlisted [user]/unapproved.py and src/[user]/other.py' in cleaned
+    assert '[user] from [private-ip]' in cleaned
+    assert totals["private-ip"] == 1
+    assert brain_vault._redact_code_map(cleaned, Counter(), brain_vault._public_code_paths({"star/slop.py", "star/agent.py"})) == cleaned
+
+
+def test_code_map_private_name_redaction_cannot_be_bypassed_by_fake_marker(monkeypatch):
+    from collections import Counter
+
+    monkeypatch.setattr(brain_vault.getpass, "getuser", lambda: "star")
+    marker = "⟦PUBLIC_PACKAGE_NAMESPACE⟧"
+    text = f"original {marker}; owner star, safe star/slop.py and private /home/star/slop.py"
+    out = brain_vault._redact_code_map(text, Counter(), brain_vault._public_code_paths({"star/slop.py"}))
+    assert f"original {marker}" in out
+    assert "owner [user]" in out and "safe star/slop.py" in out
+    assert "private /home/[user]/slop.py" in out
+
+
 GRAPH = {"directed": False, "nodes": [
     {"id": "a", "label": "slop.py", "file_type": "code", "source_file": "star/slop.py", "source_location": "L1"},
     {"id": "a1", "label": "check_prose()", "file_type": "code", "source_file": "star/slop.py", "source_location": "L12"},
