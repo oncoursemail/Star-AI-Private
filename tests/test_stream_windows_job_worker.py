@@ -1,6 +1,7 @@
 """Optional Windows job-tree regression tests; all portable tests are offline."""
 
 import os
+import sys
 from hashlib import sha256
 
 import pytest
@@ -50,7 +51,8 @@ class FakeJob(WindowsJobWorker):
         pass
 
 
-def make(tmp_path, *, job=None, os_name="Windows", pin=False, strict=False):
+def make(tmp_path, *, job=None, os_name="Windows", pin=False, strict=False,
+         tamper_after_initial_pin_check=False):
     binary = tmp_path / "owned_worker.exe"
     binary.write_bytes(b"test fixture; never execute")
     plan = HostOptionalWorkerPlan(
@@ -98,8 +100,14 @@ def make(tmp_path, *, job=None, os_name="Windows", pin=False, strict=False):
     process = job or FakeJob()
     launches = []
 
-    def spawn(argv, cwd):
+    def spawn(argv, cwd, *, pre_resume=None):
         launches.append((argv, cwd))
+        if tamper_after_initial_pin_check:
+            # The real Win32 process is already suspended and Job-contained
+            # at this point: change owner-selected disk bytes in the gap.
+            plan.executable.write_bytes(b"modified after first digest check")
+        if pre_resume is not None and pre_resume() is not True:
+            raise ValueError("worker cannot resume with changed artifacts")
         return process
 
     host = HostOptionalGPUWorkerLaunchSupervisor(
@@ -353,3 +361,49 @@ def test_artifact_pin_cumulative_budget_is_enforced(tmp_path):
                                   additional_pins=(input_pin,))
     with pytest.raises(ValueError, match="too large"):
         plan.verified_command(require_artifact_pins=True)
+
+
+def test_second_digest_check_rejects_files_changed_after_first_check(tmp_path):
+    host, plan, leases, _, _, launches = make(
+        tmp_path, pin=True, strict=True, tamper_after_initial_pin_check=True,
+    )
+    host.enable(owner_approved=True)
+    result = host.launch(plan, now_ms=1001, owner_approved=True)
+    assert result.outcome == "fault"
+    assert result.reason == "launch_uncertain_claim_retained"
+    assert len(launches) == 1
+    assert host.metrics()["faulted"]
+    # The supervisor does not assume a created process was cleaned up. A host
+    # must independently reconcile before releasing the VRAM reservation.
+    assert leases.metrics()["outstanding_claims"] == 1
+
+
+def test_pre_resume_callback_only_present_for_strict_contained_mode(tmp_path):
+    host, plan, leases, _, _, launches = make(tmp_path, pin=False, strict=False)
+    host.enable(owner_approved=True)
+    assert host.launch(plan, now_ms=1001, owner_approved=True).outcome == "started"
+    assert len(launches) == 1
+    assert leases.metrics()["outstanding_claims"] == 1
+
+
+def test_raw_win32_job_rejects_embedded_null_and_untrusted_hook():
+    with pytest.raises(ValueError, match="invalid command"):
+        WindowsJobWorker(["/tmp/worker.exe", "\x00"])
+    with pytest.raises(TypeError, match="pre-resume"):
+        WindowsJobWorker(["/tmp/worker.exe"], pre_resume=42)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="real Windows-only suspended process")
+def test_win32_pre_resume_denial_kills_suspended_disposable_child():
+    invoked = []
+
+    def reject():
+        invoked.append(True)
+        return False
+
+    with pytest.raises(ValueError, match="artifact changed"):
+        WindowsJobWorker(
+            [sys.executable, "-c", "import time; time.sleep(0.25)"],
+            pre_resume=reject,
+        )
+    assert invoked == [True]
