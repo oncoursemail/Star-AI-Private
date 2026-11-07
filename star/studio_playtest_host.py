@@ -171,8 +171,18 @@ class StudioPlaytestHost:
                 and snapshot.playtesting and snapshot.focused
                 and snapshot.private_local_test and snapshot.owner_authorized)
 
-    def dispatch(self, permit: ActionPermit, *, port: StudioInputPort) -> DispatchReport:
-        """Synchronous bounded pulse. A failed key-up QUARANTINES future actions."""
+    def dispatch(
+        self, permit: ActionPermit, *, port: StudioInputPort,
+        dispatch_guard: Callable[[], bool] | None = None,
+    ) -> DispatchReport:
+        """Synchronous pulse with optional host revocation at physical key-down.
+
+        The guard is trusted host code, never a model suggestion. Recheck it
+        after the second Studio snapshot; either snapshot may be slow. On
+        rejection, the claimed gate ticket is safely released without input.
+        """
+        if dispatch_guard is not None and not callable(dispatch_guard):
+            raise TypeError("dispatch_guard must be a trusted host callable")
         with self._lock:
             if (self._studio_id is None or self._scope is None
                     or self._held is not None or not isinstance(permit, ActionPermit)
@@ -207,9 +217,21 @@ class StudioPlaytestHost:
                 if not self._valid_snapshot(port.snapshot(self._studio_id)):
                     problem = "playtest_focus_changed"
                 else:
-                    port.key_down(self._studio_id, key)
-                    self._sleep(permit.hold_ms / 1000)
-                    sent = True
+                    # Crucial late check: a portfolio reservation can expire
+                    # while the host waits for either Studio snapshot.
+                    # No key-down is attempted on rejection or clock failure.
+                    permitted = True
+                    if dispatch_guard is not None:
+                        try:
+                            permitted = dispatch_guard() is True
+                        except Exception:
+                            permitted = False
+                    if not permitted:
+                        problem = "trusted_dispatch_guard_revoked"
+                    else:
+                        port.key_down(self._studio_id, key)
+                        self._sleep(permit.hold_ms / 1000)
+                        sent = True
             except Exception:
                 problem = "studio_input_port_failed"
             finally:
