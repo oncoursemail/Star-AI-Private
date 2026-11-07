@@ -38,7 +38,7 @@ class Sensors:
         self.cpu = (self.cpu[0] + busy, self.cpu[1] + total)
 
 
-def setup(*, live=True, game=True):
+def setup(*, live=True, game=True, private=False):
     sensors = Sensors()
     hardware = RealtimeTelemetryHost(
         gpu_probe=sensors.gpu_probe, cpu_probe=sensors.cpu_probe,
@@ -50,7 +50,8 @@ def setup(*, live=True, game=True):
         telemetry=hardware, qos=qos, stage=stage,
         clock_ms=lambda: sensors.now,
     )
-    host.enable(owner_approved=True, live=live, game_active=game, mode="cat")
+    host.enable(owner_approved=True, live=live, game_active=game,
+                mode="cat", private_stream_rehearsal=private)
     return host, sensors, hardware, qos, stage
 
 
@@ -570,3 +571,68 @@ def test_actual_vad_host_bargein_reconciles_the_brain_without_ghost_speech():
         lease.lease, worker_stopped=True, succeeded=False)
     g.disable()  # would have failed without confirmed physical cleanup
     assert not g.status()["enabled"]
+
+
+def test_live_game_guard_heartbeat_recovery_without_repeated_voice_jobs():
+    """Real host frame-present timestamps, not fabricated model FPS reports."""
+    g, s, t, q, st = setup(live=True, game=True)
+    assert not g.refresh_game_guard()  # no trustworthy hardware/audio yet
+    warm(s, t)
+    reads = s.gpu_reads
+    assert g.refresh_game_guard()
+    assert s.gpu_reads == reads  # no device polling on game/audio hot path
+    for _ in range(25):
+        s.tick(90)
+        assert t.presented_frame(s.now)
+    assert t.report_audio_backlog(backlog_ms=20, at_ms=s.now)
+    s.cpu_tick()
+    assert t.refresh_hardware()
+    assert t.snapshot().telemetry.game_fps < 50
+    assert g.refresh_game_guard()
+    assert q.status()["gpu_voice_fps_guarded"]
+    # Every heartbeat is from a refreshed host snapshot. No speech attempts
+    # needed to demonstrate >=2 seconds of sustained frame recovery.
+    for _ in range(22):
+        for _ in range(20):
+            s.tick(16)
+            assert t.presented_frame(s.now)
+        assert t.report_audio_backlog(backlog_ms=20, at_ms=s.now)
+        s.cpu_tick()
+        assert t.refresh_hardware()
+        assert g.refresh_game_guard()
+    assert t.snapshot().telemetry.game_fps > 58
+    assert not q.status()["gpu_voice_fps_guarded"]
+
+
+def test_governor_can_collect_matching_private_rehearsal_profile_only_on_host():
+    governor, sensors, telemetry, qos, stage = setup(
+        live=False, game=True, private=True,
+    )
+    warm(sensors, telemetry, live=False, game=True)
+    sample = telemetry.snapshot()
+    assert sample is not None and sample.qos is not None
+    assert sample.qos.private_stream_rehearsal is True
+    # Still no permission to start OBS, a game, a broadcast, or a model.
+    assert qos.status()["inflight"] == 0
+    governor.disable()
+    assert telemetry.status()["private_stream_rehearsal"] is False
+
+
+def test_governor_rejects_conflicting_live_and_private_stream_flags():
+    s = Sensors()
+    t = RealtimeTelemetryHost(
+        gpu_probe=s.gpu_probe, cpu_probe=s.cpu_probe,
+        memory_probe=s.memory_probe, clock_ms=lambda: s.now,
+    )
+    g = StreamBrainGovernor(
+        telemetry=t, qos=AdaptiveQoS(),
+        stage=StarStage(clock=lambda: s.now / 1000),
+        clock_ms=lambda: s.now,
+    )
+    with pytest.raises(ValueError):
+        g.enable(owner_approved=True, live=True, game_active=True,
+                 private_stream_rehearsal=True)
+    with pytest.raises(ValueError):
+        g.enable(owner_approved=True, live=False, game_active=True,
+                 private_stream_rehearsal="yes")
+    assert not t.status()["enabled"] and not g.status()["enabled"]

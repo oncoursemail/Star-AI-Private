@@ -36,14 +36,15 @@ class Sensors:
         self.cpu = (self.cpu[0] + busy, self.cpu[1] + total)
 
 
-def host(sensors, *, live=True, game=True):
+def host(sensors, *, live=True, game=True, private=False):
     h = RealtimeTelemetryHost(
         gpu_probe=sensors.gpu_probe,
         memory_probe=sensors.ram_probe,
         cpu_probe=sensors.cpu_probe,
         clock_ms=lambda: sensors.now,
     )
-    h.set_context(live=live, game_active=game, owner_approved=True)
+    h.set_context(live=live, game_active=game, owner_approved=True,
+                  private_stream_rehearsal=private)
     return h
 
 
@@ -53,9 +54,9 @@ def frames(h, s, count=22, duration=16):
         assert h.presented_frame(s.now)
 
 
-def ready(*, live=True, game=True, count=22, duration=16):
+def ready(*, live=True, game=True, count=22, duration=16, private=False):
     s = Sensors()
-    h = host(s, live=live, game=game)
+    h = host(s, live=live, game=game, private=private)
     assert h.refresh_hardware()  # CPU load not known until second poll
     s.cpu_tick()
     s.advance(100)
@@ -300,3 +301,138 @@ def test_audio_timestamps_and_long_backlogs_are_rejected():
         h.report_audio_backlog(backlog_ms=120001, at_ms=s.now)
     assert not h.report_audio_backlog(backlog_ms=0, at_ms=s.now - 900)
     assert not h.report_audio_backlog(backlog_ms=0, at_ms=s.now + 99)
+
+
+def test_old_failed_speaker_probe_cannot_clear_new_session_audio():
+    """A late exception from yesterday's output epoch must not mute today."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    sensors = Sensors()
+    h = host(sensors, live=True, game=False)
+    assert h.refresh_hardware()
+    assert h.report_audio_backlog(backlog_ms=50, at_ms=sensors.now)
+    started, release = Event(), Event()
+
+    class DelayedFailure:
+        def pending_seconds(self):
+            started.set()
+            assert release.wait(3)
+            raise RuntimeError("old output device disappeared")
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(h.sample_speaker, DelayedFailure())
+        assert started.wait(3)
+        h.set_context(live=True, game_active=False, owner_approved=True)
+        assert h.refresh_hardware()
+        assert h.report_audio_backlog(backlog_ms=15, at_ms=sensors.now)
+        release.set()
+        assert pending.result(timeout=3) is False
+    assert h.status()["audio_ready"]
+    assert h.snapshot().telemetry.speech_backlog_ms == 15
+
+
+def test_old_successful_speaker_probe_cannot_forge_new_session_audio():
+    """An in-flight old callback must not populate the just-reset epoch."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    sensors = Sensors()
+    h = host(sensors, live=True, game=False)
+    assert h.refresh_hardware()
+    started, release = Event(), Event()
+
+    class DelayedSuccess:
+        def pending_seconds(self):
+            started.set()
+            assert release.wait(3)
+            return .001
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(h.sample_speaker, DelayedSuccess())
+        assert started.wait(3)
+        h.set_context(live=True, game_active=False, owner_approved=True)
+        assert h.refresh_hardware()
+        release.set()
+        assert pending.result(timeout=3) is False
+    assert not h.status()["audio_ready"]
+    assert h.snapshot() is None  # no new-session physical speaker reading
+
+
+def test_invalid_speaker_sample_revokes_same_session_stale_backlog():
+    sensors = Sensors()
+    h = host(sensors, live=True, game=False)
+    assert h.refresh_hardware()
+    assert h.report_audio_backlog(backlog_ms=25, at_ms=sensors.now)
+    assert h.snapshot() is not None
+
+    class NonNumericSpeaker:
+        def pending_seconds(self):
+            return True  # bool must not masquerade as a sample duration
+
+    assert not h.sample_speaker(NonNumericSpeaker())
+    assert not h.status()["audio_ready"]
+    assert h.snapshot() is None
+
+
+def test_nonbroadcast_recording_profile_reaches_qos_then_clears_on_transition():
+    h, s = ready(live=False, game=True, private=True)
+    observed = h.snapshot()
+    assert observed is not None and observed.qos is not None
+    assert not observed.telemetry.live
+    assert observed.qos.private_stream_rehearsal is True
+    assert observed.telemetry.private_stream_rehearsal is True
+    assert h.status()["private_stream_rehearsal"] is True
+    # Transitions invalidate ALL old game/frame/hardware/voice evidence.
+    h.set_context(live=False, game_active=True, owner_approved=True,
+                  private_stream_rehearsal=False)
+    assert h.status()["private_stream_rehearsal"] is False
+    assert h.snapshot() is None
+    assert h.status()["frame_intervals"] == 0
+    h.disable()
+    assert h.status()["private_stream_rehearsal"] is False
+
+
+def test_rehearsal_label_is_not_authorized_by_bad_flags_or_missing_owner():
+    s = Sensors()
+    h = RealtimeTelemetryHost(gpu_probe=s.gpu_probe, memory_probe=s.ram_probe,
+                              cpu_probe=s.cpu_probe, clock_ms=lambda: s.now)
+    with pytest.raises(PermissionError):
+        h.set_context(live=False, game_active=True,
+                      private_stream_rehearsal=True)
+    for invalid in (None, 1, "true", 0.0):
+        with pytest.raises(ValueError):
+            h.set_context(live=False, game_active=True, owner_approved=True,
+                          private_stream_rehearsal=invalid)
+    with pytest.raises(ValueError):
+        h.set_context(live=True, game_active=True, owner_approved=True,
+                      private_stream_rehearsal=True)
+    assert s.calls == 0 and not h.status()["enabled"]
+
+
+def test_slow_hardware_probe_does_not_relabel_old_vram_as_fresh():
+    s = Sensors()
+    h = host(s, live=True, game=False)
+    assert h.refresh_hardware()
+    s.cpu_tick()
+    # GPU measurement is captured at 1000 ms, but a different probe stalls.
+    # Snapshot at 1700 ms must not claim the GPU was measured at 1700 ms.
+    def slow_cpu():
+        s.advance(700)
+        return s.cpu
+    h._cpu_probe = slow_cpu
+    assert h.refresh_hardware()
+    assert h.report_audio_backlog(backlog_ms=20, at_ms=s.now)
+    snapshot = h.snapshot()
+    assert snapshot is None or snapshot.qos is None
+
+
+def test_private_recording_qos_does_not_expose_aged_gpu_samples():
+    h, s = ready(live=False, game=True, private=True)
+    s.advance(300)
+    frames(h, s, count=12)
+    assert h.report_audio_backlog(backlog_ms=20, at_ms=s.now)
+    snap = h.snapshot()
+    assert snap is not None  # still useful as read-only historical diagnostics
+    assert snap.hardware_age_ms > 250
+    assert snap.qos is None  # realtime inference must get a fresh sample

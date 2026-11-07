@@ -106,6 +106,13 @@ class PracticeEvidence:
     trials: int
     successes: int
     most_recent_unix_s: int
+    # PRACTICE-only newest outcome. Optional for older callers constructing
+    # the four-field aggregate, and never includes held-out validation.
+    most_recent_success: bool | None = None
+    # Number of consecutive, distinctly timestamped PRACTICE success buckets.
+    # A failure tied in the same second wins the bucket. None means the
+    # evidence producer did not supply a verified streak (legacy callers).
+    consecutive_success_seconds: int | None = None
 
 
 class GameplaySkillBank:
@@ -198,50 +205,141 @@ class GameplaySkillBank:
             raise ValueError("game, version, objective and situation must be bounded IDs")
         return parts
 
-    def practice_evidence(self, game_id: str, game_version: str,
-                          objective_id: str, situation_id: str, *,
-                          now_unix_s: int) -> tuple[PracticeEvidence, ...]:
-        """Summarize fresh, signed practice only; never disclose holdout results.
+    def _verified_unique_scope_trials(
+        self, scope: tuple[str, str, str, str],
+    ) -> tuple[GameTrial, ...]:
+        """Verify all signed records; count each *observation* at most once.
 
-        External agents can use these aggregates to select which skill to
-        rehearse next. Neither withheld validation outcomes nor receipts, raw
-        evidence, keys or individual run IDs leave this boundary. An invalid
-        row fails closed rather than becoming training evidence.
+        A new run ID, HMAC or timestamp does not turn the same evidence bytes
+        into an independent game attempt. Keep the oldest timestamp so a
+        replay cannot refresh a stale observation. Conflicting outcomes,
+        splits or actions for the same capture fail closed.
         """
-        scope = self._scope(game_id, game_version, objective_id, situation_id)
-        now = _seconds(now_unix_s)
         rows = self._db.execute(
             "SELECT trial_id, run_id, payload_json, receipt FROM gameplay_trials "
             "WHERE game_id=? AND game_version=? AND objective_id=? AND situation_id=?",
             scope,
         ).fetchall()
-        aggregates: dict[str, list[int]] = {}
+        unique: dict[str, GameTrial] = {}
         for trial_id, run_id, payload_json, receipt in rows:
             try:
                 payload = json.loads(payload_json)
                 if type(payload) is not dict:
-                    raise ValueError("invalid trial JSON")
+                    raise ValueError("invalid signed trial")
                 trial = GameTrial(**payload)
                 if (trial.trial_id != trial_id or trial.run_id != run_id
                         or self._scope(trial.game_id, trial.game_version,
                                        trial.objective_id, trial.situation_id) != scope):
-                    raise ValueError("trial scope/identity mismatch")
+                    raise ValueError("signed trial identity or scope mismatch")
                 self._check_receipt(trial, receipt)
             except (TypeError, ValueError, PermissionError) as exc:
                 raise sqlite3.IntegrityError("gameplay evidence ledger corrupted") from exc
+            previous = unique.get(trial.evidence_sha256)
+            if previous is not None:
+                if (previous.action_id != trial.action_id
+                        or previous.split != trial.split
+                        or previous.outcome != trial.outcome):
+                    raise sqlite3.IntegrityError(
+                        "one gameplay observation has conflicting signed claims")
+                if trial.observed_unix_s < previous.observed_unix_s:
+                    unique[trial.evidence_sha256] = trial
+            else:
+                unique[trial.evidence_sha256] = trial
+        return tuple(unique.values())
+
+    def _signed_audit_counts(
+        self, game_id: str, game_version: str, objective_id: str,
+        situation_id: str, action_id: str, *, split: str,
+        now_unix_s: int, after_unix_s: int = 0,
+        before_unix_s: int | None = None,
+        include_stale: bool = False,
+    ) -> tuple[int, int]:
+        """Trusted OWNER-side transfer audit only; never a planner or LLM API.
+
+        Validate EVERY row in the selected scope before counting outcomes.
+        Source PRACTICE is frozen before preregistration; target VALIDATION
+        must be genuinely later. No holdout evidence is exposed to practice.
+        """
+        scope = self._scope(game_id, game_version, objective_id, situation_id)
+        if type(action_id) is not str or (action_id != "*" and not _ID.fullmatch(action_id)):
+            raise ValueError("invalid action")
+        if split not in ("practice", "validation"):
+            raise ValueError("invalid split")
+        now = _seconds(now_unix_s)
+        if (type(after_unix_s) is not int or after_unix_s < 0
+                or before_unix_s is not None
+                and (type(before_unix_s) is not int or before_unix_s < 1)):
+            raise ValueError("invalid audit evidence window")
+        successes = attempts = 0
+        for trial in self._verified_unique_scope_trials(scope):
+            age_limit = (_PRACTICE_MAX_AGE_S if split == "practice"
+                         else _VALIDATION_MAX_AGE_S)
+            if ((action_id == "*" or trial.action_id == action_id) and trial.split == split
+                    and after_unix_s < trial.observed_unix_s <= now
+                    and (before_unix_s is None
+                         or trial.observed_unix_s <= before_unix_s)
+                    and (include_stale or now - trial.observed_unix_s <= age_limit)):
+                attempts += 1
+                successes += int(trial.outcome == "success")
+        return successes, attempts
+
+    def practice_evidence(self, game_id: str, game_version: str,
+                          objective_id: str, situation_id: str, *,
+                          now_unix_s: int,
+                          max_age_s: int = _PRACTICE_MAX_AGE_S) -> tuple[PracticeEvidence, ...]:
+        """Summarize fresh, signed practice only; never disclose holdout results.
+
+        External agents can use these aggregates to select which skill to
+        rehearse next. An explicit short lookback window must be applied to
+        *every signed trial*, not just the most recent trial timestamp;
+        otherwise one fresh failure can revive weeks of historic wins. Neither withheld validation outcomes nor receipts, raw
+        evidence, keys or individual run IDs leave this boundary. An invalid
+        row fails closed rather than becoming training evidence.
+        """
+        scope = self._scope(game_id, game_version, objective_id, situation_id)
+        now = _seconds(now_unix_s)
+        if type(max_age_s) is not int or not 1 <= max_age_s <= _PRACTICE_MAX_AGE_S:
+            raise ValueError("practice lookback must be 1..90 days")
+        aggregates: dict[str, list[int]] = {}
+        # A fresh success following a failure should not instantly restore
+        # mastery. Count consecutive SUCCESS *time buckets*, not repeated
+        # same-second captures whose causal order cannot be verified.
+        by_action_second: dict[str, dict[int, bool]] = {}
+        for trial in self._verified_unique_scope_trials(scope):
             # Withheld validation is checked for integrity but NEVER used in
             # action selection. Otherwise the curriculum leaks its test set.
             if trial.split != "practice":
                 continue
             age = now - trial.observed_unix_s
-            if not 0 <= age <= _PRACTICE_MAX_AGE_S:
+            if not 0 <= age <= max_age_s:
                 continue
-            entry = aggregates.setdefault(trial.action_id, [0, 0, 0])
+            entry = aggregates.setdefault(trial.action_id, [0, 0, 0, 0])
+            seconds = by_action_second.setdefault(trial.action_id, {})
+            at = trial.observed_unix_s
+            seconds[at] = seconds.get(at, True) and trial.outcome == "success"
             entry[0] += 1
             entry[1] += int(trial.outcome == "success")
-            entry[2] = max(entry[2], trial.observed_unix_s)
-        return tuple(PracticeEvidence(action, *totals)
-                     for action, totals in sorted(aggregates.items()))
+            # A recent failure must not be hidden by a strong historical
+            # aggregate. When events share a one-second timestamp, any
+            # failure wins the tie rather than depending on SQLite row order.
+            if trial.observed_unix_s > entry[2]:
+                entry[2] = trial.observed_unix_s
+                entry[3] = int(trial.outcome == "success")
+            elif trial.observed_unix_s == entry[2] and trial.outcome == "failure":
+                entry[3] = 0
+        def success_streak(action: str) -> int:
+            streak = 0
+            for timestamp in sorted(by_action_second[action], reverse=True):
+                if not by_action_second[action][timestamp]:
+                    break
+                streak += 1
+            return streak
+
+        return tuple(
+            PracticeEvidence(action, totals[0], totals[1], totals[2],
+                             bool(totals[3]), success_streak(action))
+            for action, totals in sorted(aggregates.items())
+        )
 
     def verify_practice_trial(self, trial: GameTrial, *, now_unix_s: int) -> bool:
         """Match an *exact* PRACTICE outcome to an existing signed bank record.
@@ -333,6 +431,7 @@ class GameplaySkillBank:
         """Conservative, strictly scoped advisory; never a live-play permission.
 
         Missing validation produces an offline rehearsal candidate only.
+        Signed replays of identical capture bytes count once, not as new trials.
         A failed independent holdout cannot be overruled by practice success.
         """
         scope = self._scope(game_id, game_version, objective_id, situation_id)
@@ -344,25 +443,8 @@ class GameplaySkillBank:
                 or not math.isfinite(min_validation_lower_bound)
                 or not 0.55 <= min_validation_lower_bound <= 0.95):
             raise ValueError("invalid offline evidence thresholds")
-        rows = self._db.execute(
-            "SELECT trial_id, run_id, payload_json, receipt FROM gameplay_trials "
-            "WHERE game_id=? AND game_version=? AND objective_id=? AND situation_id=?",
-            scope,
-        ).fetchall()
         by_action: dict[str, dict[str, list[str]]] = {}
-        for trial_id, run_id, payload_json, receipt in rows:
-            try:
-                payload = json.loads(payload_json)
-                if type(payload) is not dict:
-                    raise ValueError("invalid trial JSON")
-                trial = GameTrial(**payload)
-                if (trial.trial_id != trial_id or trial.run_id != run_id
-                        or self._scope(trial.game_id, trial.game_version,
-                                       trial.objective_id, trial.situation_id) != scope):
-                    raise ValueError("trial scope/identity mismatch")
-                self._check_receipt(trial, receipt)
-            except (TypeError, ValueError, PermissionError) as exc:
-                raise sqlite3.IntegrityError("gameplay evidence ledger corrupted") from exc
+        for trial in self._verified_unique_scope_trials(scope):
             age = now - trial.observed_unix_s
             max_age = (_PRACTICE_MAX_AGE_S if trial.split == "practice"
                        else _VALIDATION_MAX_AGE_S)

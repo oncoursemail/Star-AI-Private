@@ -11,12 +11,14 @@ an independent signed GameTrial in gameplay_skill_bank.
 """
 from __future__ import annotations
 
+from typing import cast
+
 from collections import deque
 from dataclasses import dataclass
 import math
 import re
 from threading import RLock
-from typing import Sequence, cast
+from typing import Sequence
 
 from .stream_budget import StreamTelemetry
 
@@ -29,7 +31,7 @@ def _ms(value: object, label: str) -> float:
     if type(value) not in (int, float):
         raise ValueError(f"{label} must be a finite monotonic millisecond value")
     try:
-        number = float(cast(float, value))
+        number = float(cast(int | float, value))
     except (OverflowError, ValueError) as exc:
         raise ValueError(f"{label} must be finite") from exc
     if not math.isfinite(number) or not 0 <= number <= _MAX_CLOCK:
@@ -41,6 +43,14 @@ def _id(value: object, label: str) -> str:
     if type(value) is not str or not _ID.fullmatch(value):
         raise ValueError(f"{label} must be a bounded symbolic ID")
     return value
+
+
+def _rank_ms(samples: deque[float], fraction: float) -> float | None:
+    """Nearest-rank summary of at most 64 anonymous host-clock samples."""
+    if not samples:
+        return None
+    ordered = sorted(samples)
+    return round(ordered[math.ceil(fraction * len(ordered)) - 1], 2)
 
 
 @dataclass(frozen=True)
@@ -117,6 +127,7 @@ class ActionPermit:
 class _Pending:
     ticket: int
     expires_ms: float
+    captured_ms: float
     claimed: bool = False
     expired: bool = False
 
@@ -160,12 +171,18 @@ class GameActionGate:
         self._allowlist: frozenset[str] = frozenset()
         self._clock_ms: float | None = None
         self._last_sequence = 0
+        self._last_capture_ms: float | None = None
         self._serial = 0
         self._pending: _Pending | None = None
         # Exact object identity is reserved for trusted-host dispatch adapters.
         # A model-supplied copied ticket/permit must never authorize input.
         self._offered_permit: ActionPermit | None = None
         self._offered_at: deque[float] = deque(maxlen=120)
+        # Never store scenes, action names or identities in performance samples.
+        # These timings are trusted-host acknowledgements, NOT physical input
+        # timestamps. Bounded state keeps percentile summaries inexpensive.
+        self._observation_to_offer_ms: deque[float] = deque(maxlen=64)
+        self._observation_to_claim_ms: deque[float] = deque(maxlen=64)
         self._counts = dict(offered=0, denied=0, claimed=0, released=0,
                             expired=0, host_rechecks_failed=0)
 
@@ -188,7 +205,10 @@ class GameActionGate:
             self._allowlist = frozenset(action_ids)
             self._clock_ms = None
             self._last_sequence = 0
+            self._last_capture_ms = None
             self._offered_at.clear()
+            self._observation_to_offer_ms.clear()
+            self._observation_to_claim_ms.clear()
             self._offered_permit = None
             self._enabled = True
 
@@ -242,6 +262,11 @@ class GameActionGate:
                 return deny("uncertain_observation")
             if frame.sequence <= self._last_sequence:
                 return deny("stale_or_replayed_frame_sequence")
+            # A larger sequence is insufficient if an asynchronous observer
+            # delivers an OLDER scene after a newer one was already used.
+            if (self._last_capture_ms is not None
+                    and frame.captured_ms <= self._last_capture_ms):
+                return deny("out_of_order_frame_capture")
             if frame.captured_ms > now + 15 or now - frame.captured_ms > self.frame_max_age_ms:
                 return deny("frame_not_current")
             if hint.frame_sequence != frame.sequence or hint.frame_sha256 != (
@@ -269,9 +294,11 @@ class GameActionGate:
             if expiry - now < 20:
                 return deny("too_little_time_to_claim")
             self._serial += 1
-            self._pending = _Pending(self._serial, expiry)
+            self._pending = _Pending(self._serial, expiry, frame.captured_ms)
             self._last_sequence = frame.sequence
+            self._last_capture_ms = frame.captured_ms
             self._offered_at.append(now)
+            self._observation_to_offer_ms.append(max(0.0, now - frame.captured_ms))
             self._counts["offered"] += 1
             permit = ActionPermit(True, "host_must_recheck_before_dispatch",
                                   self._serial, hint.action_id, hint.hold_ms,
@@ -297,6 +324,9 @@ class GameActionGate:
                 self._counts["host_rechecks_failed"] += 1
                 return False
             pending.claimed = True
+            self._observation_to_claim_ms.append(
+                max(0.0, now - pending.captured_ms),
+            )
             self._counts["claimed"] += 1
             return True
 
@@ -310,7 +340,11 @@ class GameActionGate:
         with self._lock:
             if not isinstance(permit, ActionPermit) or self._offered_permit is not permit:
                 return False
-            accepted = self.claim(cast(int, permit.ticket), now_ms=now_ms,
+            # An offered permit always has a ticket, but keep the claim API
+            # fail-closed if a malformed internal permit reaches this path.
+            if permit.ticket is None:
+                return False
+            accepted = self.claim(permit.ticket, now_ms=now_ms,
                                   host_focus_and_permission=host_focus_and_permission)
             if accepted:
                 self._offered_permit = None
@@ -333,13 +367,25 @@ class GameActionGate:
             self._counts["released"] += 1
             return True
 
-    def metrics(self) -> dict[str, int | bool | str]:
-        """Privacy-minimal metrics, with no frame, game, action, or owner IDs."""
+    def metrics(self) -> dict[str, int | bool | str | float | None]:
+        """Host-acknowledgement latency only, never real keypress/gameplay proof."""
         with self._lock:
             return {
                 **self._counts, "enabled": self._enabled,
                 "awaiting_host_release": self._pending is not None,
                 "quarantined": bool(self._pending and self._pending.expired),
+                "observation_to_offer_p50_ms": _rank_ms(
+                    self._observation_to_offer_ms, 0.50,
+                ),
+                "observation_to_offer_p95_ms": _rank_ms(
+                    self._observation_to_offer_ms, 0.95,
+                ),
+                "observation_to_host_claim_p50_ms": _rank_ms(
+                    self._observation_to_claim_ms, 0.50,
+                ),
+                "observation_to_host_claim_p95_ms": _rank_ms(
+                    self._observation_to_claim_ms, 0.95,
+                ),
                 "basis": "advisory; not dispatched game input or verified success",
             }
 

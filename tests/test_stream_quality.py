@@ -1,4 +1,5 @@
 """Independent paired-stream quality gate; synthetic records only."""
+import hashlib
 import math
 import unittest
 
@@ -9,8 +10,9 @@ SHA = "c" * 64
 
 def turn(case="case0", *, route="baseline", needed=True, outcome="spoken",
          grade="supported", first=1000, overlap=0, stall=0,
-         digest=SHA, reviewed=True):
-    return StreamAuditTurn(case, digest, route, needed, outcome, grade,
+         digest=None, reviewed=True):
+    return StreamAuditTurn(case, hashlib.sha256(case.encode()).hexdigest() if digest is None else digest,
+                           route, needed, outcome, grade,
                            first if outcome == "spoken" else None, overlap, stall, reviewed)
 
 
@@ -29,6 +31,7 @@ class StreamQualityTests(unittest.TestCase):
         self.assertEqual(report["decision"], "candidate_for_independent_review")
         self.assertFalse(report["promoted"])
         self.assertTrue(report["owner_review_required"])
+        self.assertEqual(report["distinct_contexts"], 20)
         self.assertEqual(report["baseline"]["useful_replies"], 20)
         self.assertEqual(report["candidate"]["useful_replies"], 20)
         self.assertEqual(report["p95_relative_latency_gain"], .4)
@@ -157,9 +160,99 @@ class StreamQualityTests(unittest.TestCase):
         result = compare_stream_profiles(tuple(source))
         self.assertIn("increased_unexpected_speech", result["reasons"])
 
+    def test_relocated_unwanted_speech_is_new_harm_not_aggregate_tie(self):
+        # Both profiles have exactly one bad unsolicited reply. Moving it to
+        # a previously quiet game moment is a NEW viewer-facing regression.
+        rows = []
+        for index in range(20):
+            case = f"trial_{index}"
+            needed = index < 18
+            old_spoken = needed or index == 18
+            new_spoken = needed or index == 19
+            rows.append(turn(case, needed=needed,
+                             outcome="spoken" if old_spoken else "silent",
+                             grade="supported" if old_spoken else "not_applicable"))
+            rows.append(turn(case, needed=needed, route="candidate", first=600,
+                             outcome="spoken" if new_spoken else "silent",
+                             grade="supported" if new_spoken else "not_applicable"))
+        result = compare_stream_profiles(tuple(rows))
+        self.assertEqual(result["baseline"]["unexpected_speech"], 1)
+        self.assertEqual(result["candidate"]["unexpected_speech"], 1)
+        self.assertEqual(result["decision"], "do_not_promote")
+        self.assertIn("new_unexpected_speech_cases", result["reasons"])
+
+    def test_relocated_user_talkover_is_new_harm_not_aggregate_tie(self):
+        rows = []
+        for index in range(20):
+            case = f"trial_{index}"
+            rows.append(turn(case, first=1000,
+                             overlap=100 if index == 0 else 0))
+            rows.append(turn(case, route="candidate", first=600,
+                             overlap=100 if index == 1 else 0))
+        result = compare_stream_profiles(tuple(rows))
+        self.assertEqual(result["baseline"]["total_overlap_ms"], 100)
+        self.assertEqual(result["candidate"]["total_overlap_ms"], 100)
+        self.assertEqual(result["decision"], "do_not_promote")
+        self.assertIn("new_talkover_cases", result["reasons"])
+
+    def test_lower_total_overlap_still_cannot_hide_newly_interrupted_case(self):
+        # Cutting one old 200 ms talk-over to zero does not erase the harm
+        # of introducing a 20 ms interruption into a different interaction.
+        rows = []
+        for index in range(20):
+            case = f"trial_{index}"
+            rows.append(turn(case, first=1000,
+                             overlap=200 if index == 0 else 0))
+            rows.append(turn(case, route="candidate", first=600,
+                             overlap=20 if index == 1 else 0))
+        report = compare_stream_profiles(tuple(rows))
+        self.assertLess(report["candidate"]["total_overlap_ms"],
+                        report["baseline"]["total_overlap_ms"])
+        self.assertEqual(report["new_talkover_cases"], 1)
+        self.assertEqual(report["decision"], "do_not_promote")
+        self.assertIn("new_talkover_cases", report["reasons"])
+
+    def test_relocated_game_stall_is_new_harm_not_aggregate_tie(self):
+        rows = []
+        for index in range(20):
+            case = f"trial_{index}"
+            rows.append(turn(case, first=1000,
+                             stall=75 if index == 0 else 0))
+            rows.append(turn(case, route="candidate", first=600,
+                             stall=75 if index == 1 else 0))
+        result = compare_stream_profiles(tuple(rows))
+        self.assertEqual(result["baseline"]["game_stalls_over_50ms"], 1)
+        self.assertEqual(result["candidate"]["game_stalls_over_50ms"], 1)
+        self.assertEqual(result["decision"], "do_not_promote")
+        self.assertIn("new_game_stall_cases", result["reasons"])
+
     def test_very_small_samples_do_not_count(self):
         report = compare_stream_profiles(pairs(5))
         self.assertEqual(report["decision"], "insufficient_or_unpaired_evidence")
+
+    def test_identical_contexts_with_distinct_ids_are_not_independent(self):
+        # IDs differ, but the host supplied one and the same context for
+        # every purported trial. Treating these as 20 independent samples
+        # would create a misleading 2^-20 paired sign-test p-value.
+        records = tuple(
+            turn(row.case_id, route=row.route, first=row.first_audible_ms,
+                 digest=SHA) for row in pairs()
+        )
+        result = compare_stream_profiles(records)
+        self.assertEqual(result["decision"], "insufficient_or_unpaired_evidence")
+        self.assertEqual(result["distinct_contexts"], 1)
+        self.assertEqual(result["paired_cases"], 20)
+        self.assertIn("context", result["reason"])
+
+    def test_one_duplicate_context_blocks_a_pseudoreplicated_cohort(self):
+        records = list(pairs())
+        for index, record in enumerate(records):
+            if record.case_id == "trial_19":
+                records[index] = turn(record.case_id, route=record.route,
+                                      first=record.first_audible_ms,
+                                      digest=hashlib.sha256(b"trial_0").hexdigest())
+        result = compare_stream_profiles(tuple(records))
+        self.assertEqual(result["decision"], "insufficient_or_unpaired_evidence")
 
     def test_invalid_row_inputs(self):
         cases = (

@@ -76,6 +76,33 @@ class TestVerifiedGameplayEpisode(unittest.TestCase):
         self.assertIn('"practice_successes":0', packet.context_record)
         self.assertIn('"practice_failures":1', packet.context_record)
 
+    def test_signed_duplicate_observation_cannot_inflate_live_packet(self):
+        # Independent trial IDs, run IDs, timestamps and host signatures do
+        # not turn a reused capture into two independent game attempts.
+        first = trial(1, outcome="failure")
+        replay = replace(trial(2, outcome="failure"),
+                         evidence_sha256=first.evidence_sha256)
+        self._ingest(first)
+        self._ingest(replay)
+        self._start()
+        self.assertTrue(self.episode.append(first, now_unix_s=NOW + 1))
+        self.assertFalse(self.episode.append(replay, now_unix_s=NOW + 2))
+        packet = self.episode.public_packet(
+            now_unix_s=NOW + 2, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        )
+        facts = json.loads(packet.context_record.split("\n")[2])
+        self.assertEqual(facts[0]["practice_attempts_this_session"], 1)
+        self.assertEqual(facts[0]["practice_failures"], 1)
+        # Aging the first event out of the short-term window cannot restore
+        # the same capture under a different signed run ID.
+        self.assertIsNone(self.episode.public_packet(
+            now_unix_s=NOW + 62, public_action_ids=frozenset({"jump_left"}),
+            broadcast_approved=True,
+        ))
+        self.assertFalse(self.episode.append(replay, now_unix_s=NOW + 62))
+        self.assertEqual(self.episode.metrics()["duplicate_observations"], 2)
+
     def test_unrecorded_tampered_receipt_and_corrupt_index(self):
         x = trial(2)
         self.assertFalse(self.bank.verify_practice_trial(x, now_unix_s=NOW + 2))
@@ -121,6 +148,7 @@ class TestVerifiedGameplayEpisode(unittest.TestCase):
             now_unix_s=NOW + 1, public_action_ids=frozenset({"jump_left"}),
             broadcast_approved=True)
         self.assertIsInstance(packet, EpisodePacket)
+        self.assertEqual(packet.game_scope, self.episode.game_scope)
         self.assertEqual(packet.user_message()["role"], "user")
         self.assertNotIn(a.trial_id, packet.context_record)
         self.assertNotIn(a.run_id, packet.context_record)

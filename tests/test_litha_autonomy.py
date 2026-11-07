@@ -13,7 +13,10 @@ import litha.autonomy as A
 import litha.pr_fixer as F
 
 HOME_REPO, OTHER = "o/home", "o/studio"
-NEW, OLD = "2026-11-02T20:00:00Z", "2026-10-01T00:00:00Z"
+# The base head moved a day ago, relative to now: a fixed date made the "failure older than the base move but within
+# RETRY_DAYS" case stop being true a week after it was written.
+NEW = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 86400))
+OLD = "2026-10-01T00:00:00Z"
 FIX_LOG = """____________________________ test_add ____________________________
 
     def test_add():

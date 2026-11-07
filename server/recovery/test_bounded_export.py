@@ -95,7 +95,9 @@ class BoundedExportTests(unittest.TestCase):
                 "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
                 "child=subprocess.Popen([sys.executable,'-c',sys.argv[3],sys.argv[2]])\n"
                 "while not os.path.exists(sys.argv[2]): time.sleep(0.01)\n"
-                "open(sys.argv[1],'w').write(json.dumps([os.getpid(),child.pid]))\n"
+                "tmp=sys.argv[1]+'.tmp'\n"
+                "open(tmp,'w').write(json.dumps([os.getpid(),child.pid]))\n"
+                "os.replace(tmp,sys.argv[1])\n"
                 "time.sleep(30)\n"
             )
             command = self.command(code, timeout=10, args=(str(marker), str(child_marker), child_code))

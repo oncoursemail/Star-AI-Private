@@ -310,7 +310,7 @@ class Completions:
         self.peak = max(self.active, self.peak)
         await asyncio.sleep(0)  # yield to concurrent calls without wall-clock delay
         self.active -= 1
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="finding"))])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="finding"), finish_reason="stop")])
 
 
 def capture_client(monkeypatch):

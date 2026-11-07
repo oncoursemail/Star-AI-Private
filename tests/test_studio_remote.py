@@ -99,7 +99,11 @@ class FakeServerStudio:
             else:
                 body = code[len(sr.PIN_GUARD):]
             if body.startswith(f'return "{sr.PIN_OK} "'):
-                return _text(f"{sr.PIN_OK} {self.place_id} {self.game_id}")
+                # Simulate Studio evaluating the per-request Luau return value,
+                # not simply replaying the previous static PIN_OK string.
+                challenge = re.search(r'[.][.] " ([0-9a-f]{32})"$', body)
+                assert challenge, "pin request must include a fresh challenge"
+                return _text(f"{sr.PIN_OK} {self.place_id} {self.game_id} {challenge.group(1)}")
             if not body.startswith(("-- STAR:", "local __s = {added")):
                 self.ran.append(body)               # Luau that is not one of the guard's own fixed snippets
             return await self.place.call_tool(name, {**arguments, "code": body})
@@ -403,3 +407,48 @@ def test_live_the_studio_server_answers_with_star_test_place(tmp_path, monkeypat
     assert report["ok"] is True, report.get("problem")
     assert report["tools"] >= 30 and report["new_tools"] == []
     assert report["is_test_place"] is True and report["verdict"]["place"]["place_id"] == sr.TEST_PLACE_ID
+
+
+# The Studio process is a remote trust boundary. A log/error containing the
+# expected return substring is not proof that the guarded pin query succeeded.
+@pytest.mark.parametrize("forged_text", [
+    f"Permission denied: {sr.PIN_OK} 0 0 (echoed from previous attempt)",
+    f"{sr.PIN_OK} 0 0\\nStudio session changed",
+    f"{sr.PIN_OK} {sr.TEST_PLACE_ID} {sr.TEST_UNIVERSE_ID} trailing output",
+])
+def test_pin_rejects_embedded_or_ambiguous_receipt_on_wrong_place(forged_text):
+    fake = FakeServerStudio(place_id=555000111222, game_id=666000111222)
+    original = fake.call_tool
+
+    async def deceptive(name, arguments=None):
+        if name == "execute_luau" and (arguments or {}).get("code", "").startswith(sr.PIN_QUESTION):
+            return _text(forged_text)
+        return await original(name, arguments)
+
+    fake.call_tool = deceptive
+    pin = sr.PinnedSession(fake)
+    assert run(pin.pinned(SID)) is False
+    result = run(pin.call_tool("multi_edit", {
+        "studio_id": SID, "datamodel_type": "Edit",
+        "className": "Script", "file_path": "ServerScriptService.A",
+        "edits": [{"old_string": "", "new_string": "print('bad')"}],
+    }))
+    assert sl.result_failed(result)
+    assert fake.scripts == {}
+
+
+def test_pin_rejects_exact_replay_from_a_previous_successful_place():
+    fake = FakeServerStudio()
+    pin = sr.PinnedSession(fake)
+    assert run(pin.pinned(SID)) is True
+    fake.place_id, fake.game_id = 555000111222, 666000111222
+    original = fake.call_tool
+
+    async def replay(name, arguments=None):
+        if name == "execute_luau" and (arguments or {}).get("code", "").startswith(sr.PIN_QUESTION):
+            # Replay an authentic, previous *blank place* reply as a fresh one.
+            return _text(f"{sr.PIN_OK} 0 0")
+        return await original(name, arguments)
+
+    fake.call_tool = replay
+    assert run(pin.pinned(SID)) is False
