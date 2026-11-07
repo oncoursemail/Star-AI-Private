@@ -74,6 +74,32 @@ class StreamAuditTurn:
             raise ValueError("spoken output must be reviewed for grounding")
 
 
+def _one_sided_sign_p(faster: int, slower: int) -> float:
+    """Exact one-sided paired sign-test tail, stable for thousands of turns.
+
+    Ties are excluded. This tests the *direction* of paired latency changes,
+    not the magnitude, independence of cases, or causal attribution. Derive
+    the upper tail from its first probability and use a recurrence to avoid
+    computing enormous integer binomial coefficients.
+    """
+    n = faster + slower
+    if n == 0:
+        return 1.0
+    if faster == 0:
+        return 1.0
+    if faster <= n // 2:
+        # Symmetry avoids underflow starting at 2**(-n) for long cohorts.
+        return max(0.0, 1.0 - _one_sided_sign_p(n - faster + 1, faster - 1))
+    log_first = (math.lgamma(n + 1) - math.lgamma(faster + 1)
+                 - math.lgamma(n - faster + 1) - n * math.log(2.0))
+    term = math.exp(log_first)
+    total = term
+    for k in range(faster, n):
+        term *= (n - k) / (k + 1)
+        total += term
+    return min(1.0, max(0.0, total))
+
+
 def _summary(rows: list[StreamAuditTurn]) -> dict:
     needed = [r for r in rows if r.should_reply]
     audible = [r for r in rows if r.result == "spoken"]
@@ -104,8 +130,9 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
     """Strict paired evaluation. Unreviewed/changed cases fail closed.
 
     A candidate may only be *recommended for human review*, never promoted.
-    Exact binomial confidence intervals and repeated-trial studies should be
-    added by the owning eval service before any release decision.
+    A one-sided paired sign test now checks whether improvements are broad,
+    rather than due to a few fast outliers. A host-independent preregistered
+    study and repeated trials are still required before any release decision.
     """
     if type(rows) is not tuple or not all(isinstance(row, StreamAuditTurn) for row in rows):
         raise TypeError("expected a tuple of StreamAuditTurn")
@@ -183,6 +210,30 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
     gain = None if old is None or new is None or old == 0 else round((old - new) / old, 4)
     if old is None or new is None or gain is None or gain < min_relative_latency_gain:
         reasons.append("no_measured_p95_latency_improvement")
+    # Even a 40% p95 gain can be misleading when only the two slowest cases
+    # improved while the other eighteen viewers experienced regressions. Use
+    # *paired* direction and a 10 ms / 1% measurement-jitter deadband. The
+    # configured evidence floor applies to matched, useful speech cases.
+    # Neither the sign test nor p95 establishes independence or causality.
+    faster = slower = neutral = 0
+    for before_ms, after_ms in matched:
+        tolerance = max(10.0, before_ms * 0.01)
+        change = before_ms - after_ms
+        if change > tolerance:
+            faster += 1
+        elif change < -tolerance:
+            slower += 1
+        else:
+            neutral += 1
+    sign_p = _one_sided_sign_p(faster, slower)
+    directional_support = (
+        len(matched) >= max(10, min_spoken)
+        and faster >= math.ceil(0.60 * len(matched))
+        and slower <= math.floor(0.10 * len(matched))
+        and sign_p < 0.025
+    )
+    if not directional_support:
+        reasons.append("paired_latency_gain_not_broadly_supported")
     return {
         "decision": "candidate_for_independent_review" if not reasons else "do_not_promote",
         "owner_review_required": True, "promoted": False,
@@ -190,9 +241,17 @@ def compare_stream_profiles(rows: tuple[StreamAuditTurn, ...], *,
         "p95_relative_latency_gain": gain,
         "min_useful_reply_ratio": min_useful_reply_ratio,
         "matched_audible_cases": len(matched),
+        "paired_faster_cases": faster,
+        "paired_slower_cases": slower,
+        "paired_neutral_cases": neutral,
+        "paired_one_sided_sign_p": round(sign_p, 8),
+        "paired_directional_gain_supported": directional_support,
+        "paired_latency_noise_floor": "max(10ms, 1% of baseline case latency)",
         "matched_baseline_p95_ms": old,
         "matched_candidate_p95_ms": new,
         "reasons": reasons,
         "basis": "Host-reported, independently reviewed, matched-case offline traces. "
-                 "No authenticated referee or statistical significance claim; no live performance measured.",
+                 "Descriptive paired sign p-value is conditional on an unverified case set; "
+                 "the host must preregister and independently reproduce the comparison. "
+                 "No authenticated referee, causal claim, or live performance measured.",
     }

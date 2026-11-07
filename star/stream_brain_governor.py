@@ -160,6 +160,24 @@ class StreamBrainGovernor:
         # reports its actual sample time. QoS enforces the tighter live limit.
         return sample
 
+    def refresh_game_guard(self) -> bool:
+        """Forward a trusted, fresh telemetry heartbeat to the QoS latch.
+
+        A live renderer can recover while Star remains silent: do not require
+        speculative speech requests merely to measure sustained healthy FPS.
+        The embedding host still owns OS probes and actual frame presents.
+        """
+        with self._lock:
+            if not self._enabled:
+                return False
+            sample = self._sample()
+            if sample is None:
+                return False
+            assert sample.qos is not None
+            return self._qos.observe_telemetry(
+                sample.qos, now_ms=_now(self._clock)
+            )
+
     def admit(self, job: InferenceJob) -> BrainAdmission:
         """Advisory one-shot reservation. Host executes only its allowed tools."""
         if not isinstance(job, InferenceJob):
