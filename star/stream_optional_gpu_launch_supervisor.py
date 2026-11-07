@@ -21,6 +21,7 @@ from threading import RLock
 from typing import Callable
 
 from .stream_gpu_owned_worker_host import HostOwnedOptionalGPUWorkers, OwnedWorkerTick
+from .stream_windows_job_worker import WindowsJobWorker, spawn_windows_job
 from .stream_realtime_gpu_leases import RealtimeGPUWorkLeases, WorkLeaseTicket, _now
 
 _ALIAS = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}\Z")
@@ -119,6 +120,8 @@ class HostOptionalGPUWorkerLaunchSupervisor:
         *,
         system_name: Callable[[], str] = platform.system,
         spawn: Callable[[list[str], str | None], subprocess.Popen[bytes]] = _spawn_windows,
+        require_job_tree: bool = False,
+        job_spawn: Callable[[list[str], str | None], WindowsJobWorker] = spawn_windows_job,
     ) -> None:
         if not isinstance(leases, RealtimeGPUWorkLeases) or workers._leases is not leases:
             raise TypeError("launch supervisor needs one trusted host lease session")
@@ -127,6 +130,8 @@ class HostOptionalGPUWorkerLaunchSupervisor:
             raise TypeError("a nonempty immutable owner-configured plan registry is required")
         if len({plan.alias for plan in plans}) != len(plans):
             raise ValueError("duplicate host plan")
+        if type(require_job_tree) is not bool or not callable(job_spawn):
+            raise TypeError("explicit host-owned Windows job policy required")
         if not callable(system_name) or not callable(spawn):
             raise TypeError("trusted local OS and process factories required")
         self._leases = leases
@@ -134,6 +139,8 @@ class HostOptionalGPUWorkerLaunchSupervisor:
         self._plans = plans
         self._system_name = system_name
         self._spawn = spawn
+        self._job_spawn = job_spawn
+        self._require_job_tree = require_job_tree
         self._lock = RLock()
         self._enabled = False
         self._faulted = False
@@ -185,8 +192,12 @@ class HostOptionalGPUWorkerLaunchSupervisor:
             # A reserved lease is not permission to bypass changing host
             # pressure. A tick later must stop the worker if it changes.
             try:
-                process = self._spawn(argv, cwd)
-                if not isinstance(process, subprocess.Popen):
+                process = (self._job_spawn(argv, cwd) if self._require_job_tree
+                           else self._spawn(argv, cwd))
+                if self._require_job_tree:
+                    if not isinstance(process, WindowsJobWorker):
+                        raise TypeError("host must return original Windows Job worker")
+                elif not isinstance(process, subprocess.Popen):
                     raise TypeError("trusted launch factory returned no original Popen")
             except Exception:
                 self._faulted = True
@@ -205,7 +216,7 @@ class HostOptionalGPUWorkerLaunchSupervisor:
                 self._workers.disable()
                 # Original host-owned process handle, never a looked-up PID.
                 try:
-                    if process.poll() is None:
+                    if isinstance(process, WindowsJobWorker) or process.poll() is None:
                         process.terminate()
                 except Exception:
                     pass
@@ -242,6 +253,7 @@ class HostOptionalGPUWorkerLaunchSupervisor:
                 "enabled": self._enabled,
                 "faulted": self._faulted,
                 "configured_optional_plans": len(self._plans),
+                "job_tree_containment_required": self._require_job_tree,
                 "outstanding_reservations": self._leases.metrics()["outstanding_claims"],
                 "owned_workers": self._workers.metrics()["owned_workers"],
             }
