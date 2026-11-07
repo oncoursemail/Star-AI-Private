@@ -1,0 +1,80 @@
+name: STAR process-loopback Windows smoke and portable diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'tools/star-process-loopback/**'
+      - '.github/workflows/star-process-loopback-windows.yml'
+  workflow_dispatch:
+
+# Never use the owner's self-hosted Windows PC for CI. No app data or secrets.
+permissions:
+  contents: read
+
+concurrency:
+  group: star-loopback-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-diagnostic:
+    name: Windows self-contained diagnostic smoke (NO audio capture)
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install .NET 9 SDK in isolated runner
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.x'
+      - name: Publish self-contained x64 Windows diagnostic and smoke-test entry points
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = 'tools/star-process-loopback/Star.ProcessLoopback.csproj'
+          $publishDir = Join-Path $env:RUNNER_TEMP 'star-loopback-publish'
+          dotnet restore $project -r win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency restore failed' }
+          dotnet publish $project --no-restore -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:DebugSymbols=false -p:DebugType=None -p:IncludeNativeLibrariesForSelfExtract=true -o $publishDir
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic Windows publish failed' }
+          $exe = Join-Path $publishDir 'Star.ProcessLoopback.exe'
+          if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Executable missing' }
+          if ((Get-Item -LiteralPath $exe).Length -gt 209715200) { throw 'Unexpected executable size >200 MiB' }
+          # Never perform a valid --observe capture in CI or use a random PID.
+          $selfTest = & $exe --self-test
+          if ($LASTEXITCODE -ne 0 -or "$selfTest" -notmatch '"capture_started":false') { throw 'Self-test failed or unexpectedly reported capture' }
+          $null = & $exe --observe 2>$null
+          if ($LASTEXITCODE -ne 2) { throw 'Bare --observe was not safely rejected' }
+          $null = & $exe --help 2>$null
+          if ($LASTEXITCODE -ne 2) { throw 'Unrecognized commands were not safely rejected' }
+          $artifactDir = 'artifacts/star-process-loopback-windows'
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          Copy-Item -LiteralPath $exe -Destination $artifactDir
+          Copy-Item -LiteralPath 'tools/star-process-loopback/README.md' -Destination $artifactDir
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = @{
+            schema = 'star.process_loopback.windows_diagnostic_artifact.v1'
+            checkout_commit = (git rev-parse HEAD).Trim()
+            checkout_tree = (git rev-parse 'HEAD^{tree}').Trim()
+            executable_sha256 = $hash
+            platform = 'windows-x64'
+            requires_installed_dotnet = $false
+            self_test_passed = $true
+            live_audio_capture_tested = $false
+            quiet_evidence_verified = $false
+            permitted_to_stream = $false
+          } | ConvertTo-Json -Depth 3
+          [System.IO.File]::WriteAllText((Join-Path $artifactDir 'manifest.json'), $manifest + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+          "Windows self-contained diagnostic: self-test PASS; invalid invocations rejected; live capture NOT TESTED." >> $env:GITHUB_STEP_SUMMARY
+          ("Executable SHA-256: " + $hash) >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload short-lived portable diagnostic for private trial
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: star-process-loopback-windows-x64-${{ github.run_id }}
+          path: artifacts/star-process-loopback-windows/
+          if-no-files-found: error
+          retention-days: 1
