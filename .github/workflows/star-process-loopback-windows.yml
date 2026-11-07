@@ -88,7 +88,17 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python -m pip install --disable-pip-version-check pytest==9.1.1
           if ($LASTEXITCODE -ne 0) { throw 'Unable to install pytest' }
-          python -m pytest -q tests/test_process_loopback_activity.py tests/test_process_loopback_private_audit_cli.py
+          # Run outside repository tests/conftest.py. Its application-wide
+          # autouse fixtures import unrelated providers/httpx and require the
+          # full production dependency graph. These two isolated modules use
+          # Python stdlib + pytest and must never access live services.
+          $isolated = Join-Path $env:RUNNER_TEMP 'star-private-voice-pytests'
+          New-Item -ItemType Directory -Force -Path $isolated | Out-Null
+          Copy-Item 'tests/test_process_loopback_activity.py' -Destination $isolated
+          Copy-Item 'tests/test_process_loopback_private_audit_cli.py' -Destination $isolated
+          $env:PYTHONPATH = (Get-Location).Path
+          $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
+          python -m pytest -q --confcutdir $isolated --tb=short -p no:cacheprovider $isolated
           if ($LASTEXITCODE -ne 0) { throw 'Private JSONL Windows synthetic regression failed' }
           "Private offline JSONL importer: Windows synthetic tests PASS; no audio captured." >> $env:GITHUB_STEP_SUMMARY
       - name: Upload short-lived portable diagnostic for private trial
